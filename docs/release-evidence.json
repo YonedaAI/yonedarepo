@@ -391,7 +391,17 @@
       "Biome",
       "production browser build"
     ],
-    "review": "One fresh whole-branch review; four Important/Critical findings reproduced RED then fixed GREEN; no deferred minors"
+    "review": "One fresh whole-branch review; four Important/Critical findings reproduced RED then fixed GREEN; no deferred minors",
+    "public_ci": {
+      "run_url": "https://github.com/MagnetonIO/yonedarepo/actions/runs/37795843377",
+      "source_commit": "6924369474d25ef1132efd86029a30b0f0eb3b79",
+      "conclusion": "success",
+      "completed_at": "2026-10-08T14:59:13Z",
+      "linux_native_tests": 74,
+      "workerd_tests": 35,
+      "linux_image_runtime_tests": 16,
+      "note": "Subsequent public commits change release documentation only."
+    }
   },
   "limits": [
     "Static relative-path hosting; no arbitrary external networking, service workers or full-stack runtime",
