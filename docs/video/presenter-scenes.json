@@ -5,16 +5,22 @@
   "status": "production_script_not_generated_video",
   "format": { "width": 1920, "height": 1080, "fps": 30 },
   "voice": {
-    "casting": "Adult male stock voice, neutral American English, warm mid-low register, calm technical founder explaining his own product",
+    "provider": "artlist",
+    "name": "Sleek",
+    "voice_id": 18,
+    "model": "Eleven v3",
+    "model_id": 2070,
+    "selection": "Owner selected Sleek after auditioning both stock voice samples",
+    "casting": "Sleek stock voice, calm technical founder explaining his own product",
     "target_words_per_minute": 135,
-    "direction": "Conversational and precise. Natural contractions, varied sentence length, brief pauses for source revisions and interface changes. No announcer voice or exaggerated enthusiasm.",
+    "direction": "Use the owner-selected Sleek voice throughout, including presenter clips. Conversational and precise, with natural pauses for source revisions and interface changes. Measure actual takes; the audition was faster than the target. Use only model-supported delivery controls and do not assume a speed parameter exists. No announcer voice or exaggerated enthusiasm.",
     "pronunciation": { "YonedaRepo": "yoh-NEH-dah REE-poh", "MCP": "em see pee", "D1": "dee one", "R2": "are two", "SQLite": "sequel light" },
     "voice_clone": false
   },
   "presenter": {
     "reference": "private user-supplied portrait; provide through the selected service reference-image input",
-    "direction": "Preserve the reference person's face, rectangular dark glasses, short brown hair and trimmed beard. Chest-up framing, camera at eye level, plain navy crew-neck shirt, soft daylight, quiet modern office with an unobtrusive warm-grey background. Small natural gestures, relaxed shoulders and steady eye contact. No beauty retouching, exaggerated gestures or changes to identity.",
-    "layout": "Full-screen for the opening and closing. Small picture-in-picture only when it does not cover product controls. Use narration over real screen captures for the other passages.",
+    "direction": "Preserve the reference person's face, rectangular dark glasses, short brown hair and trimmed beard. Use the portrait only as the identity reference. Create a continuous filmed scene in a quiet modern office, with warm wood, a softly blurred desk and restrained background detail. Chest-up framing with room around the shoulders, camera at eye level, plain navy crew-neck shirt, soft daylight, natural shadows and depth of field. Small natural gestures, relaxed shoulders, blinks and steady eye contact. Generate a 16:9 scene; the pilot's white wall and square portrait composition are not the final setting. No beauty retouching, exaggerated gestures or changes to identity.",
+    "layout": "1920x1080 landscape edit. Presenter opening and closing in the filmed office scene, with a restrained name/title lower third. Small picture-in-picture only when it does not cover product controls. Use Sleek narration over real screen captures for the other passages; show the product full frame where text must be read.",
     "synthetic_disclosure": "AI presenter and voice; actual product captures; edited walkthrough"
   },
   "scenes": [
