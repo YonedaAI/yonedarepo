@@ -4,9 +4,9 @@ The deliverable is an edited **8:48 product walkthrough**, with a presenter in t
 
 ## Creative direction
 
-Use the supplied portrait as the identity reference: preserve the rectangular dark glasses, short hair, beard and facial proportions. Frame the presenter from the chest up in a navy crew-neck shirt, with soft daylight and a quiet office background. Keep the expression relaxed and gestures small. A founder explaining a working tool should sound interested and precise, with occasional pauses while the viewer reads the screen.
+The owner confirmed that the final presenter should appear in a produced video scene. The square white-wall sample tested likeness only. Use the supplied portrait as the identity reference: preserve the rectangular dark glasses, short hair, beard and facial proportions. Generate a continuous 16:9 filmed scene in a quiet modern office, with warm wood, a softly blurred desk, soft daylight and natural shadows. Frame the presenter from the chest up in a navy crew-neck shirt, with room around the shoulders. Keep the expression relaxed, with natural blinks and small gestures. A founder explaining a working tool should sound interested and precise, with occasional pauses while the viewer reads the screen. Inspect a short sample in this final setting before rendering the full presenter passages.
 
-Choose an adult male stock voice in neutral American English, warm mid-low register, at about **135 words per minute**. The photo provides a likeness reference, not a voice reference. A cloned voice would require a separate recording; this package specifies a stock voice. Pronounce YonedaRepo as "yoh-NEH-dah REE-poh" and read MCP as letters. Do not speak source hashes aloud.
+Use **Artlist Sleek**, selected by the owner after auditioning both samples. The inspected route is Eleven v3, voice ID `18`, model ID `2070`; recheck these against the connected catalog before generating. Keep this voice for the entire narration and supply the matching audio to the avatar service, which can be chosen independently. Target a calm delivery at about **135 words per minute**. The Sleek audition measured about 186 words/minute, so measure final takes and check delivery and reading holds. Use only supported voice controls; the inspected model configuration did not expose a speed setting. The photo provides a likeness reference, not a voice reference. A cloned voice would require a separate recording; this package specifies a stock voice. Pronounce YonedaRepo as "yoh-NEH-dah REE-poh" and read MCP as letters. Do not speak source hashes aloud.
 
 Use the presenter for about 15 seconds at the opening and 20 seconds near the end. During the technical walkthrough, give the product the full frame and keep the same voice. This limits identity drift and lets the audience read the UI. If picture-in-picture is used, place it in a quiet corner away from controls, diffs and graph evidence.
 
@@ -27,7 +27,7 @@ These service notes were checked October 8, 2026. The authenticated Artlist cata
 ## Generation order
 
 1. Keep the owner's portrait in a private production folder outside the public repository. Upload it only to the selected avatar service. Credentials belong in the connector or server environment, never the scene manifest or screenshots.
-2. Generate one short voice sample using the opening paragraph. Check pronunciation and pacing. Reuse that voice ID and settings for every scene.
+2. Keep the owner-selected Sleek voice. Generate a short opening take to check pronunciation and deliberate pacing, then a 16:9 presenter sample in the final office setting with that exact audio. Do not use the earlier square white-wall pilot as final footage. Reuse the selected voice ID and supported settings for every scene.
 3. Generate ten narration takes from `narration` in the manifest. Treat `visuals`, `assets`, `on_screen` and presenter directions as editing instructions, not spoken text.
 4. Measure the audio. Each take must fit its scene with room for a short reading hold. Adjust delivery or re-record a take that overruns; avoid stretching speech to force a duration. The 1,066 spoken words leave about 54 seconds for screen reading at 135 wpm. The actual voice result determines the holds.
 5. Generate lip-synced presenter clips for the marked `presenter_windows_seconds`, using the matching measured audio passage. Split further if the chosen model's schema requires shorter clips. Maintain the same portrait, wardrobe, framing and voice.
@@ -40,7 +40,12 @@ These service notes were checked October 8, 2026. The authenticated Artlist cata
 Prepare the YonedaRepo presenter video using presenter-scenes.json as the edit
 manifest and presenter-narration.txt as the spoken copy. Target exactly 08:48.
 Use the supplied owner's portrait as the likeness reference. Preserve identity,
-glasses and beard. Cast a calm professional male technical voice at about 135 wpm.
+glasses and beard. Use Artlist Sleek for all narration, including lip-synced
+presenter passages. Aim for calm, deliberate delivery and measure actual takes.
+Generate a 16:9 filmed office scene with soft daylight, natural shadows and a
+subtle blurred background. Keep the portrait as an identity reference. The square
+white-wall likeness pilot is not final footage. Check a short sample in the final
+setting before rendering the presenter passages.
 Use real product captures for all UI, source, graph and published-site footage.
 Never generate or redraw the product UI. Opening and closing presenter windows
 are marked in the manifest; the rest is narration over product footage.

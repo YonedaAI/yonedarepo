@@ -20,11 +20,17 @@ The portrait, generated likeness clips, account details and raw MCP responses re
 
 Credit units are service-specific. These quotes do not establish which service is cheaper in dollars. Artlist's separate fast model quoted more credits for this input, so a faster generation setting was not assumed to be a cheaper one.
 
+## Owner selection and final visual direction
+
+The owner auditioned both voices and selected **Artlist Sleek** for the final narration. This is the voice choice; the avatar service remains a separate decision. Reuse the Sleek audio in any presenter generation. The earlier shared Grady track remains the historical comparison input.
+
+The owner also clarified that the final presenter should appear in a produced video scene. Use a 16:9 office setting with soft daylight, depth of field and natural movement, then intercut real product footage. The square white-wall pilot is a likeness check and is not the final visual direction. The full styled presenter edit has not been rendered. This voice selection does not approve Artlist's separate avatar-generation credit gate.
+
 ## What the evidence supports
 
 The downloaded Higgsfield pilot is an H.264/AAC MP4, **17.056 seconds, 960×960 pixels, 24 fps**. Three sampled frames retain the portrait's glasses, beard, clothing and facial appearance, with changing mouth and head positions. This supports using it for a presenter pilot; sampled frames do not establish continuous identity stability or correct lip synchronization.
 
-Higgsfield's tested voice settings are closer to the script's target of 135 words/minute. This is a pacing result, not a judgment of pronunciation, tone or audio quality. The assistant cannot hear the generated audio. The owner should audition both voices before the full narration is generated.
+Higgsfield's tested voice settings are closer to the script's target of 135 words/minute. This is a pacing result, not a judgment of pronunciation, tone or audio quality. The assistant cannot hear the generated audio. The owner has now selected Sleek on listening preference; measure its final narration takes and check pacing before the full edit.
 
 The comparison is not yet sufficient to name an avatar-quality winner. Inspect both completed clips for likeness, stable glasses and beard, mouth motion, natural head movement and synchronization to the shared audio. A model appearing in an authenticated catalog proves availability, not quality.
 
