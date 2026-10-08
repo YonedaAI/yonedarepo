@@ -11,8 +11,10 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     {
         return Err(Error::new("FORBIDDEN", "Attempt lacks this capability"));
     }
+    if kind == "model" {
+        return super::model_reservations::reserve(db, &c, job, now);
+    }
     let limit = match kind.as_str() {
-        "model" => 24,
         "dependency" => 512,
         _ => return Err(bad("Unknown request kind")),
     };

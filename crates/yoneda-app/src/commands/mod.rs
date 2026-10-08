@@ -3,14 +3,18 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
 mod completion;
+mod delegation;
 mod events;
 mod external;
 mod history;
 mod leases;
 mod mcp;
+mod model_budgets;
+mod model_reservations;
 mod policy;
 mod repository;
 mod resources;
+mod restarts;
 mod runs;
 mod scheduling;
 mod sites;
@@ -37,6 +41,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "update_policy" => policy::update(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
+        "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
             leases::handle(db, c, now)
@@ -50,6 +55,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "register_site" => sites::register(db, c, now),
         "record_transcript" => transcripts::record(db, c, now),
         "reserve_request" => resources::reserve(db, c),
+        "settle_model_request" => model_reservations::settle(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }
 }

@@ -67,6 +67,11 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     if run["status"] == "cancelled" {
         return Err(Error::new("FENCED", "Run was cancelled"));
     }
+    check_lineage(
+        db,
+        &json!({"payload":{"execution":{"id":candidate["execution"]}}}),
+        now,
+    )?;
     let eid = string(&candidate, "evaluation").map_err(|_| {
         Error::new(
             "MISSING_EVIDENCE",
@@ -154,7 +159,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         &format!("publish:{did}"),
         "publish",
         now,
-        json!({"decision_id":did,"expected":candidate["base"],"target":candidate["revision"],"canonical":r["remote"]}),
+        json!({"decision_id":did,"expected":candidate["base"],"target":candidate["revision"],"canonical":r["remote"],"execution":{"id":candidate["execution"],"run_id":candidate["run_id"]}}),
     )?;
     event(db, "decision.selected", now, receipt.clone())?;
     Ok(receipt)

@@ -4,8 +4,10 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const CONTRACT_VERSION: u32 = 1;
+pub mod agents;
 pub mod build;
 pub mod context;
+pub mod model_budget;
 /// Remote MCP tool contracts shared with the Worker transport.
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub mod retry;

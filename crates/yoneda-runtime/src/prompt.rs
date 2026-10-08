@@ -1,17 +1,43 @@
 use crate::field;
-use serde_json::Value;
+use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
     let execution = &payload["execution"];
     if !payload["policy"]["build"].is_null() {
+        let model_budget = crate::execution_limits::model_budget(&json!({"payload":payload}))?;
+        let output_tokens = model_budget
+            .as_ref()
+            .map_or(4096, |budget| budget.max_output_tokens);
+        let budget_notice = model_budget.map_or_else(String::new,|budget|format!(
+            " Owner-approved shared provider/model limits: {}. Requests and spend are shared across connections, root agents, children and infrastructure retries. Check delegation_status for current usage; a child does not receive a fresh allowance.",json!(budget)));
+        let task = if execution["parent_execution"].is_string() {
+            format!(
+                " You are a delegated child of {} at depth {}. Assigned task: {}. Keep the approved brief and criteria authoritative; your changes are an independent candidate, not an automatic merge into your parent's workspace.",
+                execution["parent_execution"], execution["depth"], execution["task"]
+            )
+        } else {
+            String::new()
+        };
+        let delegation = if payload["run"]["delegation"]["enabled"] == true {
+            format!(
+                " The owner permits bounded delegation: {}. Use delegate_agent only for useful independent work, with a stable request_id; the child inherits your provider, model, source and context. All agents share the run maximum of 144 model requests. delegation_status shows your children, their evidence and current model-group allowances. Do not wait in a polling loop for children: finish your own approach while children are checked separately. Only the owner can select what ships.",
+                payload["run"]["delegation"]
+            )
+        } else {
+            " Delegation is disabled for this approved run; do not launch additional agents.".into()
+        };
         return Ok(format!(
-            "You are an isolated YonedaRepo coding agent. Implement the approved brief in the frozen checkout. Strategy: {}. Brief: {}. Acceptance criteria: {}. Frozen context: {}. Owner-approved build profile: {}. Read AGENTS.md and other repository instructions before editing. First call repo_context. Use context_search and context_get to investigate prior alternatives and decisions. Publish important requirements, constraints, assumptions, findings, alternatives, proposed_decisions and questions with context_publish; give each a purpose, link to intent:{} and reference earlier records with supports, challenges, depends_on, supersedes, answers or motivates. These are assertions; only the independent evaluator and owner can verify or approve. Change source files and run the approved checks where possible. Do not change the requested verification policy or claim publication. Keep changes focused and finish by calling execution_complete with a concise explanation. Your approach will be captured and evaluated independently alongside other agents. Stay within the execution deadline.",
+            "You are an isolated YonedaRepo coding agent. Implement the approved brief in the frozen checkout. Strategy: {}. Brief: {}. Acceptance criteria: {}. Frozen context: {}. Owner-approved build profile: {}. Read AGENTS.md and other repository instructions before editing. First call repo_context. Use context_search and context_get to investigate prior alternatives and decisions. Publish a few important requirements, constraints, assumptions, findings, alternatives, proposed_decisions or questions with context_publish; give each a purpose. The platform supplies your assigned intent (intent:{}); omit intent_id rather than guessing it. Reference earlier records with supports, challenges, depends_on, supersedes, answers or motivates. Prioritize a working implementation over exhaustive context records. These are assertions; only the independent evaluator and owner can verify or approve. Change source files and run the approved checks where possible. Do not change the requested verification policy or claim publication. Each model response is capped at {} output tokens. Write and edit source in small chunks; avoid generating a large file in one tool call because truncated JSON cannot be applied. Keep changes focused and finish by calling execution_complete with a concise explanation. Your approach will be captured and evaluated independently alongside other agents. Stay within the execution deadline.{}{}{}",
             field(execution, "strategy")?,
             payload["run"]["intent"],
             payload["run"]["criteria"],
             payload["run"]["context_records"],
             payload["policy"]["build"],
-            field(&payload["run"], "id")?
+            field(&payload["run"], "id")?,
+            output_tokens,
+            task,
+            delegation,
+            budget_notice
         ));
     }
     Ok(format!(

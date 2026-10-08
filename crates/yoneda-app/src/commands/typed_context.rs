@@ -18,13 +18,21 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     };
     match string(&c, "op")?.as_str() {
         "context_publish" => {
-            let record: ContextInput =
-                serde_json::from_value(c["record"].clone()).map_err(|e| bad(&e.to_string()))?;
-            record.validate()?;
-            let intent = get(db, "nodes", &record.intent_id)?;
-            if intent["kind"] != "intent" {
-                return Err(bad("Context intent must reference an intent node"));
+            let mut input = c["record"].clone();
+            if let Some(job) = &attempt
+                && job["external"] != true
+                && let Some(record) = input.as_object_mut()
+            {
+                let run_id = string(&job["payload"]["execution"], "run_id")?;
+                // A hosted attempt already has an assigned intent. Accept its exact
+                // run-ID alias without changing an explicit different intent.
+                if !record.contains_key("intent_id") || record["intent_id"] == run_id {
+                    record.insert("intent_id".into(), json!(format!("intent:{run_id}")));
+                }
             }
+            let record: ContextInput =
+                serde_json::from_value(input).map_err(|e| bad(&e.to_string()))?;
+            record.validate()?;
             if let Some(job) = &attempt
                 && record.intent_id
                     != format!("intent:{}", string(&job["payload"]["execution"], "run_id")?)
@@ -33,6 +41,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "FORBIDDEN",
                     "Attempt must contribute to its assigned intent",
                 ));
+            }
+            let intent = get(db, "nodes", &record.intent_id)?;
+            if intent["kind"] != "intent" {
+                return Err(bad("Context intent must reference an intent node"));
             }
             for link in &record.links {
                 get(db, "nodes", &link.target)?;

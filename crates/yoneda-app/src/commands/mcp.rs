@@ -11,7 +11,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "Context tools are for coding harnesses",
                 ));
             }
-            Ok(j["payload"].clone())
+            let mut context = j["payload"].clone();
+            context["intent_id"] = json!(format!(
+                "intent:{}",
+                string(&j["payload"]["execution"], "run_id")?
+            ));
+            Ok(context)
         }
         "publish_artifact" => {
             let j = active(db, &c, now)?;

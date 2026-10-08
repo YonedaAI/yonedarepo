@@ -1,5 +1,9 @@
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod lineage;
+pub(crate) use lineage::{
+    cancel_job, check_lineage, descendant_ids, fence_descendants, run_executions, run_jobs,
+};
 
 pub trait SqlStore: Clone + 'static {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>>;
@@ -7,7 +11,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 4;
+    const SCHEMA_VERSION: i64 = 5;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -16,6 +20,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (2, include_str!("migrations/0002_run_index.sql")),
             (3, include_str!("migrations/0003_execution_graph.sql")),
             (4, include_str!("migrations/0004_state_graph.sql")),
+            (5, include_str!("migrations/0005_model_reservations.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",
@@ -272,5 +277,6 @@ pub(crate) fn active<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             "Attempt expired, was cancelled, or has been superseded",
         ));
     }
+    check_lineage(db, &j, now)?;
     Ok(j)
 }

@@ -109,7 +109,7 @@
   },
   {
     "name": "context_publish",
-    "description": "Contribute a typed assertion to the assigned intent. Identity comes from this attempt. Supersede earlier records instead of editing them.",
+    "description": "Contribute a typed assertion to the assigned intent. The platform supplies intent and author identity from this active attempt. Supersede earlier records instead of editing them.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -135,7 +135,8 @@
           "maxLength": 2048
         },
         "intent_id": {
-          "type": "string"
+          "type": "string",
+          "description": "Optional canonical intent ID returned by repo_context. Omit it to use this attempt's assigned intent; a different intent is forbidden."
         },
         "links": {
           "type": "array",
@@ -169,8 +170,7 @@
       "required": [
         "kind",
         "statement",
-        "purpose",
-        "intent_id"
+        "purpose"
       ],
       "additionalProperties": false
     }
@@ -212,6 +212,46 @@
       "required": [
         "id"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "delegate_agent",
+    "description": "If the approved run allows delegation, schedule an isolated child approach from the same frozen source and context. Provider, model and identity are inherited. Reuse request_id when retrying the identical request. Children have independent capture/checks and cannot publish canonical source. Do not wait in a loop for children; finish your own work.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "task": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "strategy": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "request_id",
+        "task",
+        "strategy"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "delegation_status",
+    "description": "Read this execution's direct children, their captured candidates and typed context, current shared provider/model request and spend allowances, approved output/time limits, and the 144-request run maximum. This does not approve or merge their source.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
       "additionalProperties": false
     }
   }

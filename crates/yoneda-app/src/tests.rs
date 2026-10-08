@@ -2,10 +2,18 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
+#[path = "tests/context_intent.rs"]
+mod context_intent;
+#[path = "tests/delegation.rs"]
+mod delegation;
 #[path = "tests/graph_status.rs"]
 mod graph_status;
+#[path = "tests/model_budgets.rs"]
+mod model_budgets;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
+#[path = "tests/restarts.rs"]
+mod restarts;
 
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {
@@ -242,7 +250,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5}])
             .as_array()
             .unwrap()
             .clone()
@@ -251,7 +259,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        4
+        5
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();
