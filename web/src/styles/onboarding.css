@@ -1,115 +1,213 @@
-.account-panel,
-.workspace-panel {
-  margin: 28px auto;
-  padding: 28px;
-  max-width: 760px;
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+.welcome-onboarding {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(300px, 400px);
+  align-items: center;
+  gap: clamp(32px, 6vw, 100px);
+  max-width: 1180px;
+  margin: auto;
+  padding: clamp(36px, 7vw, 100px) 48px;
+  min-height: calc(100dvh - 68px);
+}
+.welcome-story h1,
+.workspace-start h1 {
+  font-size: clamp(36px, 4.5vw, 58px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -2px;
+  margin-bottom: 24px;
+}
+.welcome-story > p {
+  max-width: 42ch;
+  font-size: 16px;
+  line-height: 1.8;
+}
+.intent-symbol {
+  display: inline-flex;
+  padding: 13px;
+  border-radius: 14px;
+  background: #eaf0ff;
+  color: var(--blue);
+  margin-bottom: 28px;
+}
+.welcome-flow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 36px 0;
+  color: #90a0b4;
+}
+.welcome-flow span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #43546b;
+}
+.welcome-note,
+.welcome-story .welcome-note {
+  font-size: 12px;
+  color: var(--muted);
 }
 .account-panel {
-  max-width: 480px;
-  margin: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 12px 32px #15243606;
 }
-.account-panel form,
-.workspace-panel form {
+.account-panel h2 {
+  font-size: 24px;
+  letter-spacing: -0.6px;
+  margin: 20px 0 12px;
+}
+.account-panel > p {
+  font-size: 13px;
+}
+.account-panel form {
   display: grid;
-  gap: 16px;
+  gap: 18px;
+  margin-top: 24px;
 }
 .account-panel label,
-.workspace-panel label,
-.run-composer label {
+.workspace-panel label {
   display: grid;
   gap: 7px;
 }
-.panel-heading {
+.account-panel :where(form) > p {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
+.account-panel .run-actions {
+  margin: 20px 0 0;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  gap: 12px;
+}
+.account-tabs {
+  display: flex;
+  padding: 3px;
+  background: #f3f5f9;
+  border-radius: 7px;
+  gap: 3px;
+}
+.account-tabs button {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 34px;
+}
+.account-tabs button.selected {
+  background: white;
+  color: #152436;
+  box-shadow: 0 1px 3px #15243618;
 }
 .recovery-code {
   display: block;
   overflow-wrap: anywhere;
   padding: 18px 0;
 }
-.welcome-onboarding {
+.workspace-start {
+  max-width: 1000px;
+  margin: 64px auto;
+  padding: 0 48px;
+}
+.workspace-start > p {
+  max-width: 55ch;
+  font-size: 16px;
+}
+.workspace-start > button {
+  margin: 12px 0 48px;
+}
+.getting-started {
   display: grid;
-  grid-template-columns: minmax(250px, 1fr) minmax(300px, 480px);
-  align-items: center;
-  gap: 60px;
-  padding: 64px;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  gap: 28px;
+  padding: 28px 0;
+  margin-bottom: 26px;
 }
-.welcome-onboarding h1 {
-  font-size: clamp(30px, 4vw, 52px);
+.getting-started > div,
+.getting-started > button {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  background: transparent;
+  padding: 0;
+  color: #152436;
+  text-align: left;
 }
-.welcome-onboarding p {
-  max-width: 56ch;
+.getting-started h2,
+.getting-started strong {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
 }
-.rail .add-project {
-  margin: 18px 12px;
+.getting-started p,
+.getting-started span {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 0;
 }
-.project-state {
-  padding: 50px;
+.workspace-loading {
+  text-align: center;
+  padding: 100px 24px;
+}
+.workspace-loading > svg {
+  color: var(--blue);
+  margin-bottom: 24px;
+}
+.workspace-loading h1 {
+  margin: 0 auto 16px;
+  font-size: 26px;
 }
 .context-tools {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: end;
+  gap: 10px;
+  margin: 24px 0 16px;
 }
 .context-tools label {
   display: grid;
-  gap: 5px;
+  gap: 7px;
 }
 .context-results {
-  max-height: 250px;
-  overflow: auto;
   display: grid;
+  max-height: 220px;
+  overflow: auto;
   gap: 6px;
   margin: 12px 0;
 }
 .context-results button {
+  justify-content: start;
   text-align: left;
-  justify-content: flex-start;
-  color: var(--blue);
-  background: #e6eff5;
+  color: #244da1;
+  background: #edf3ff;
 }
-.run-composer .agent-inputs {
+.provider-list {
+  padding: 0;
+  list-style: none;
   display: grid;
-  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+  margin: 24px 0;
+}
+.provider-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  border: 1px solid var(--line);
+  padding: 12px;
+  border-radius: 8px;
 }
-.run-composer pre {
-  white-space: pre-wrap;
-}
-.run-composer .profile-input {
-  min-height: 240px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 12px;
-}
-@media (max-width: 900px) {
-  .welcome-onboarding {
-    grid-template-columns: 1fr;
-    padding: 24px;
-    gap: 20px;
-  }
-  .account-panel,
-  .workspace-panel {
-    margin: 16px;
-    padding: 20px;
-  }
-}
-
-.graph-section .context-tools,
-.graph-section .context-results {
-  margin-left: 36px;
-  margin-right: 36px;
-}
-@media (max-width: 760px) {
-  .graph-section .context-tools,
-  .graph-section .context-results {
-    margin-left: 18px;
-    margin-right: 18px;
-  }
+.provider-list small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
 }

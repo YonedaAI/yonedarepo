@@ -8,7 +8,7 @@ import type { Env } from './types';
 import { providerKey } from './vault';
 import { workspace } from './workspace';
 export const modelHandler =
-  (provider: 'codex' | 'claude'): OutboundHandler<Env> =>
+  (provider: 'codex' | 'claude' | 'gemini'): OutboundHandler<Env> =>
   async (req, env, ctx) => {
     try {
       const { scope } = await scopeFor(env, ctx.containerId);
@@ -16,18 +16,17 @@ export const modelHandler =
       if (job.kind !== 'agent' || job.payload.execution.harness !== provider)
         return error('FORBIDDEN', 'Provider outside this attempt scope', 403);
       const path = new URL(req.url).pathname;
-      if (
-        req.method !== 'POST' ||
-        !(
-          provider === 'codex' ? ['/v1/responses'] : ['/v1/messages', '/v1/messages/count_tokens']
-        ).includes(path)
-      )
-        return error('FORBIDDEN', 'Provider endpoint not allowed', 403);
       if (req.method !== 'POST') return error('FORBIDDEN', 'POST required', 403);
       const prepared = prepareModelRequest(job, provider, path, await readJson(req, 256 * 1024));
       const snapshot = await ledger(env, scope.repo_id, { op: 'snapshot' });
       const owner = snapshot.repository.workspace ?? '_admin';
-      const key = await providerKey(env, owner, prepared.provider);
+      const key = await providerKey(
+        env,
+        owner,
+        prepared.provider,
+        job.payload.execution.connection,
+        job.model,
+      );
       const counted = await ledger(env, scope.repo_id, {
         op: 'reserve_request',
         job_id: job.id,
@@ -43,7 +42,8 @@ export const modelHandler =
           amount: prepared.reservation,
         });
       const headers = new Headers({ 'content-type': 'application/json' });
-      if (prepared.provider !== 'claude') headers.set('authorization', `Bearer ${key}`);
+      if (prepared.provider === 'gemini') headers.set('x-goog-api-key', key);
+      else if (prepared.provider !== 'claude') headers.set('authorization', `Bearer ${key}`);
       else {
         headers.set('x-api-key', key);
       }

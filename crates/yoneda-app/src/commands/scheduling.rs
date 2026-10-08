@@ -13,9 +13,22 @@ pub(super) fn validate_agents(c: &Value) -> Result<()> {
     let mut strategies = BTreeSet::new();
     for agent in agents {
         let provider = string(agent, "provider")?;
+        if let Some(connection) = agent.get("connection") {
+            let id = connection
+                .as_str()
+                .ok_or_else(|| bad("Invalid provider connection"))?;
+            if id.is_empty()
+                || id.len() > 80
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+            {
+                return Err(bad("Invalid provider connection"));
+            }
+        }
         let model = string(agent, "model")?;
         let strategy = string(agent, "strategy")?;
-        if !["codex", "claude", "mimo", "zai"].contains(&provider.as_str())
+        if !["codex", "claude", "mimo", "zai", "gemini"].contains(&provider.as_str())
             || model.len() > 128
             || !model
                 .bytes()
@@ -40,10 +53,12 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
         let provider = string(agent, "provider")?;
         let harness = if provider == "codex" {
             "codex"
+        } else if provider == "gemini" {
+            "gemini"
         } else {
             "claude"
         };
-        let e = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"model":agent["model"],"strategy":agent["strategy"],"role":"coding","status":"queued","context":run["context"],"base":run["base"]});
+        let e = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(|| json!(provider)),"model":agent["model"],"strategy":agent["strategy"],"role":"coding","status":"queued","context":run["context"],"base":run["base"]});
         create(db, "executions", &id, &e)?;
         node(
             db,

@@ -1,5 +1,5 @@
 .history-tools {
-  padding: 28px 36px;
+  padding: 30px 32px;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 32px;
@@ -74,27 +74,7 @@
 .setup-hint {
   font-size: 13px;
 }
-.welcome {
-  max-width: 800px;
-  margin: 100px auto;
-  padding: 30px;
-}
-.welcome h1 {
-  font-size: 38px;
-  line-height: 1.25;
-  margin: 30px 0 20px;
-  letter-spacing: -1px;
-}
-.welcome p {
-  max-width: 460px;
-  margin-bottom: 26px;
-}
-.welcome-graph {
-  display: flex;
-  align-items: center;
-  gap: 30px;
-  color: #477ca6;
-}
+
 .empty-note {
   padding: 20px;
   background: #e8f0f5;
@@ -118,4 +98,12 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.history-tools > form,
+.history-tools > section {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 24px;
 }

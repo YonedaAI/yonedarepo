@@ -286,3 +286,29 @@ fn capture_after_policy_update_schedules_current_independent_verification() {
     .unwrap();
     assert_eq!(evaluation["payload"]["policy"]["version"], "site-v2");
 }
+
+#[test]
+fn four_agents_freeze_independent_connections_and_gemini_harness() {
+    let db = repo_with_policy(product_policy());
+    let mut command = run_command();
+    command["agents"] = json!([
+        {"provider":"mimo","connection":"connection-personal","model":"mimo-v2.6-flash","strategy":"minimal"},
+        {"provider":"mimo","connection":"connection-team","model":"mimo-v2.6-flash","strategy":"accessible"},
+        {"provider":"gemini","connection":"connection-google","model":"gemini-3.8-flash","strategy":"editorial"},
+        {"provider":"codex","connection":"connection-openai","model":"gpt-5.6-luna","strategy":"structured"}
+    ]);
+    call(&db, command).unwrap();
+    let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
+    assert_eq!(snapshot["executions"].as_array().unwrap().len(), 4);
+    let gemini = call(&db, json!({"op":"claim","job_id":"job:site:agent-3"})).unwrap();
+    assert_eq!(gemini["payload"]["execution"]["harness"], "gemini");
+    assert_eq!(
+        gemini["payload"]["execution"]["connection"],
+        "connection-google"
+    );
+    assert_eq!(gemini["model"], "gemini-3.8-flash");
+    assert_eq!(
+        snapshot["executions"][0]["base"],
+        snapshot["executions"][3]["base"]
+    );
+}

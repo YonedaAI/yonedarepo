@@ -1,19 +1,21 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
-import type { Provider } from '../workspace/ProviderSettings';
+import { type Provider, providerNames } from '../workspace/ProviderSettings';
 export function RunComposer({
   busy,
   snapshot,
   onStart,
   onClose,
+  onProviders,
 }: {
   busy: boolean;
   snapshot: Snapshot;
   onStart: (body: Record<string, unknown>) => Promise<void>;
   onClose: () => void;
+  onProviders: () => void;
 }) {
-  const [intent, setIntent] = useState('Build a responsive website for ');
+  const [intent, setIntent] = useState('');
   const [criteria, setCriteria] = useState(
     'Works on mobile and desktop\nKeyboard accessible navigation\nClear content and useful interactions',
   );
@@ -21,12 +23,12 @@ export function RunComposer({
   const [agents, setAgents] = useState([
     {
       id: crypto.randomUUID(),
-      provider: '',
+      connection: '',
       strategy: 'Small, focused implementation with clear content',
     },
     {
       id: crypto.randomUUID(),
-      provider: '',
+      connection: '',
       strategy: 'Explore a different design with accessible interactions',
     },
   ]);
@@ -41,7 +43,7 @@ export function RunComposer({
         setAgents((a) =>
           a.map((v, i) => ({
             ...v,
-            provider: r.providers[i % r.providers.length]?.provider ?? '',
+            connection: r.providers[i % r.providers.length]?.id ?? '',
           })),
         );
       })
@@ -78,7 +80,8 @@ export function RunComposer({
         context,
         agents: agents.map((a) => ({
           ...a,
-          model: providers.find((p) => p.provider === a.provider)?.model,
+          provider: providers.find((p) => p.id === a.connection)?.provider,
+          model: providers.find((p) => p.id === a.connection)?.model,
         })),
       });
     } catch (e) {
@@ -97,15 +100,16 @@ export function RunComposer({
         void start();
       }}
     >
-      <h2>Approve a shared brief</h2>
+      <h3>One brief. Independent approaches.</h3>
       <p>
-        Both agents start concurrently from the same source revision, brief, and selected context.
+        Your agents start concurrently from the same source revision, brief, and selected context.
         Each works in an isolated workspace. Approval starts paid inference using your provider
         keys.
       </p>
       <label>
         What should they build?
         <textarea
+          placeholder="Build a website for a neighborhood garden, with events and a clear way to get involved…"
           value={intent}
           onChange={(e) => setIntent(e.target.value)}
           required
@@ -122,25 +126,56 @@ export function RunComposer({
           disabled={locked}
         />
       </label>
-      <h3>Independent approaches</h3>
+      <div className="section-heading">
+        <h3>Independent approaches</h3>
+        <button
+          type="button"
+          className="quiet"
+          disabled={locked || agents.length >= 4}
+          onClick={() =>
+            setAgents((all) => [
+              ...all,
+              {
+                id: crypto.randomUUID(),
+                connection: providers[all.length % providers.length]?.id ?? '',
+                strategy: '',
+              },
+            ])
+          }
+        >
+          Add agent
+        </button>
+      </div>
+      <p className="subtle">
+        Run 2–4 agents concurrently. Each needs a distinct approach; providers can be reused.
+      </p>
+      {!providers.length && (
+        <div className="inline-empty">
+          <p>Connect a provider key before starting hosted agents.</p>
+          <button type="button" className="quiet" onClick={onProviders}>
+            Connect provider
+          </button>
+        </div>
+      )}
       {agents.map((a, i) => (
-        <div className="agent-inputs" key={a.id}>
+        <fieldset className="agent-inputs" key={a.id}>
+          <legend>Agent {i + 1}</legend>
           <label>
-            Agent {i + 1} provider
+            Provider connection
             <select
               required
               disabled={locked}
-              value={a.provider}
+              value={a.connection}
               onChange={(e) =>
                 setAgents((all) =>
-                  all.map((v, n) => (n === i ? { ...v, provider: e.target.value } : v)),
+                  all.map((v, n) => (n === i ? { ...v, connection: e.target.value } : v)),
                 )
               }
             >
               <option value="">Connect a provider first</option>
               {providers.map((p) => (
-                <option key={p.provider} value={p.provider}>
-                  {p.provider}: {p.model}
+                <option key={p.id} value={p.id}>
+                  {p.label} · {providerNames[p.provider]} · {p.model}
                 </option>
               ))}
             </select>
@@ -155,11 +190,22 @@ export function RunComposer({
                 )
               }
               required
-              maxLength={256}
+              maxLength={128}
               disabled={locked}
             />
           </label>
-        </div>
+          {agents.length > 2 && (
+            <button
+              type="button"
+              className="text-button"
+              aria-label={`Remove agent ${i + 1}`}
+              disabled={locked}
+              onClick={() => setAgents((all) => all.filter((v) => v.id !== a.id))}
+            >
+              Remove agent
+            </button>
+          )}
+        </fieldset>
       ))}
       <details>
         <summary>Reuse existing context ({context.length} selected)</summary>

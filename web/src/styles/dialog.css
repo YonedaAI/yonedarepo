@@ -1,0 +1,109 @@
+.dialog {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0;
+  width: min(600px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  color: #152436;
+  background: #fff;
+  box-shadow: 0 24px 80px #12243b30;
+}
+.dialog-wide {
+  width: min(800px, calc(100vw - 32px));
+}
+.dialog::backdrop {
+  background: #15243665;
+  backdrop-filter: blur(3px);
+}
+.dialog-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: #fff;
+  z-index: 2;
+}
+.dialog-heading h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.dialog-body {
+  padding: 24px;
+}
+.dialog .workspace-panel,
+.dialog .run-composer,
+.dialog .decision-form,
+.dialog .demo-guide {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.dialog .panel-heading {
+  display: none;
+}
+.dialog .auth-form {
+  padding: 0;
+  background: none;
+}
+.dialog form,
+.dialog form label {
+  display: grid;
+  gap: 10px;
+}
+.dialog form {
+  gap: 18px;
+}
+.dialog form > p {
+  margin: 0;
+}
+.dialog .run-actions,
+.dialog .decision-form > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 8px 0 0;
+}
+.dialog .agent-inputs {
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.dialog .agent-inputs legend {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 6px;
+}
+.dialog .profile-input {
+  min-height: 240px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+.dialog .section-heading {
+  margin-top: 8px;
+}
+.dialog .inline-empty {
+  border: 1px dashed var(--line);
+  padding: 16px;
+  border-radius: 8px;
+}
+.selection-summary {
+  padding: 14px 16px;
+  background: #f6f8fb;
+  border-radius: 8px;
+  line-height: 1.8;
+}
+.selection-summary strong {
+  color: #152436;
+}

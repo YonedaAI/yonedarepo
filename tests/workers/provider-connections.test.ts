@@ -1,0 +1,32 @@
+import { env } from 'cloudflare:workers';
+import { reset } from 'cloudflare:test';
+import { afterEach, expect, it } from 'vitest';
+import type { Env } from '../../worker/types';
+import { open, providerKey } from '../../worker/vault';
+import { workspace } from '../../worker/workspace';
+const bindings = env as unknown as Env;
+afterEach(async () => { await reset(); });
+it('keeps same-provider connections independent, authenticated and bound to their identity', async () => {
+  const signup = await bindings.SELF.fetch('https://yoneda/api/auth/signup', { method: 'POST', body: JSON.stringify({ username: 'connections_user', password: 'a long test password' }) });
+  const cookie = (signup.headers.get('set-cookie') ?? '').split(';')[0];
+  const save = async (label: string, key: string) => {
+    const result = await bindings.SELF.fetch('https://yoneda/api/settings/connections', { method: 'POST', headers: { cookie }, body: JSON.stringify({ label, provider: 'mimo', model: 'mimo-v2.6-flash', key }) });
+    expect(result.status).toBe(200);
+    return await result.json() as { id: string };
+  };
+  const first = await save('Personal testing', 'first-private-test-key');
+  const second = await save('Team testing', 'second-private-test-key');
+  expect(first.id).not.toBe(second.id);
+  expect(await providerKey(bindings, 'connections_user', 'mimo', first.id)).toBe('first-private-test-key');
+  expect(await providerKey(bindings, 'connections_user', 'mimo', second.id)).toBe('second-private-test-key');
+  const secret = await workspace(bindings, 'connections_user', { op: 'provider_secret', provider: 'mimo', connection: first.id });
+  await expect(open(bindings, 'connections_user', 'mimo', secret.sealed, second.id)).rejects.toThrow();
+  await expect(providerKey(bindings, 'connections_user', 'zai', first.id)).rejects.toThrow();
+  const list = await bindings.SELF.fetch('https://yoneda/api/settings', { headers: { cookie } });
+  const text = await list.text();
+  expect(text).toContain('Personal testing'); expect(text).toContain('Team testing');
+  expect(text).not.toContain('private-test-key'); expect(text).not.toContain('ciphertext');
+  expect((await bindings.SELF.fetch(`https://yoneda/api/settings/connections/${first.id}`, { method: 'DELETE', headers: { cookie } })).status).toBe(200);
+  await expect(providerKey(bindings, 'connections_user', 'mimo', first.id)).rejects.toThrow();
+  expect(await providerKey(bindings, 'connections_user', 'mimo', second.id)).toBe('second-private-test-key');
+});

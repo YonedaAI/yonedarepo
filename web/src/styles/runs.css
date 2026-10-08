@@ -1,13 +1,12 @@
 .runs-toolbar,
 .comparison-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  margin: 0 0 16px;
 }
 .runs-toolbar h1 {
   margin: 0;
   font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 6px;
 }
 .runs-toolbar p,
 .fixture-scope {
@@ -15,30 +14,36 @@
   font-size: 13px;
 }
 .fixture-scope {
-  margin: 12px 0 24px;
+  margin: 14px 0 24px;
+  font-size: 11px;
 }
 .run-picker {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 24px 0;
+  margin: 0 0 24px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 .run-picker label {
   font-size: 13px;
   flex-shrink: 0;
 }
 .run-picker select {
-  max-width: 100%;
+  max-width: 750px;
   min-width: 0;
+  flex: 1;
+  font-size: 13px;
 }
 .intent-row h2 {
-  margin: 0;
-  max-width: 75ch;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 500;
+  letter-spacing: -0.4px;
+  margin-bottom: 14px;
 }
 .run-meta {
-  margin: 12px 0 20px;
+  margin: 0 0 22px;
 }
 .run-composer {
   padding: 24px;
@@ -79,12 +84,21 @@
   padding: 0;
   margin: 8px 0 24px;
   border-top: 2px solid #9cb9cb;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 9px;
+  overflow: hidden;
+  gap: 0;
 }
 .workflow-stages li {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  padding: 16px 14px 14px 0;
+  padding: 14px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
 }
 .workflow-stages strong {
   font-size: 13px;
@@ -96,6 +110,7 @@
 .workflow-stages small {
   color: var(--muted);
   line-height: 1.5;
+  font-size: 10px;
 }
 .shared-context {
   padding: 0 0 20px;
@@ -103,8 +118,7 @@
 }
 .shared-context h2,
 .comparison-heading h2 {
-  font-size: 18px;
-  margin: 0;
+  font-size: 17px;
 }
 .shared-context p,
 .recorded-decision p {
@@ -126,27 +140,32 @@
 }
 .recorded-decision {
   margin: 18px 0;
-  padding-left: 16px;
-  border-left: 3px solid #247565;
+  margin-top: 16px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 7px;
 }
 .recorded-decision strong {
   font-size: 13px;
 }
 .review-ready {
   margin: 18px 0;
-  padding: 16px 20px;
-  border: 1px solid #9bbfb6;
-  border-radius: 8px;
-  background: #eaf4f0;
+  padding: 14px 18px;
+  border: 1px solid #cae7db;
+  border-radius: 7px;
+  background: #f0faf5;
+  margin-top: 16px;
+  border-left: 3px solid var(--success);
 }
 .review-ready p {
-  margin: 8px 0 0;
+  margin: 4px 0 0;
   max-width: 80ch;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .comparison-heading {
-  margin: 24px 0 16px;
+  margin: 0 0 16px;
 }
 .candidate-content .strategy-description {
   color: var(--muted);
@@ -172,4 +191,30 @@
   .workflow-stages {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.runs-toolbar p {
+  margin-bottom: 0;
+}
+
+.workflow-stages li:last-child {
+  border-right: 0;
+}
+
+.workflow-stages li strong {
+  font-size: 11px;
+}
+
+.workflow-stages li span {
+  font-size: 11px;
+}
+
+.recorded-decision summary {
+  color: #33455c;
+  font-size: 12px;
+}
+
+.context-link {
+  margin-bottom: 26px;
+  font-size: 12px;
 }

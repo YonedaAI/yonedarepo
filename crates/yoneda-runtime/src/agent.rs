@@ -37,11 +37,17 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             .await
             .map_err(err)?;
     }
-    let mut command = Command::new(if execution["harness"] == "codex" {
-        "codex"
-    } else {
-        "claude"
-    });
+    let harness = field(execution, "harness")?;
+    if !["codex", "claude", "gemini"].contains(&harness) {
+        return Err(err("Unsupported agent harness"));
+    }
+    if harness == "gemini" {
+        // System settings override repository settings. Only the scoped MCP is trusted.
+        std::fs::create_dir_all("/etc/gemini-cli").map_err(err)?;
+        let settings = json!({"security":{"auth":{"selectedType":"gemini-api-key","enforcedType":"gemini-api-key"}},"model":{"name":model,"maxSessionTurns":24},"telemetry":{"enabled":false},"privacy":{"usageStatisticsEnabled":false},"mcp":{"allowed":["yonedarepo"]},"mcpServers":mcp["mcpServers"],"tools":{"exclude":["google_web_search","web_fetch"]}});
+        std::fs::write("/etc/gemini-cli/settings.json", settings.to_string()).map_err(err)?;
+    }
+    let mut command = Command::new(harness);
     untrusted(&mut command, root);
     if execution["harness"] == "codex" {
         command.args([
@@ -54,6 +60,23 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             model,
             &prompt,
         ]);
+    } else if harness == "gemini" {
+        command
+            .env("GEMINI_API_KEY", "scoped-container-proxy")
+            .env("GOOGLE_GEMINI_BASE_URL", "https://gemini.yoneda.internal")
+            .env("GOOGLE_GENAI_API_VERSION", "v1beta")
+            .env("GEMINI_TELEMETRY_ENABLED", "false")
+            .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
+            .args([
+                "--prompt",
+                &prompt,
+                "--model",
+                model,
+                "--output-format",
+                "stream-json",
+                "--approval-mode",
+                "yolo",
+            ]);
     } else {
         for name in [
             "ANTHROPIC_MODEL",

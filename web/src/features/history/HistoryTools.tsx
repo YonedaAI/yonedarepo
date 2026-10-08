@@ -90,44 +90,46 @@ export function HistoryTools({
           <button type="submit">Trace history</button>
         </form>
       </section>
-      <section>
-        <h2>
-          <Activity size={18} />
-          Challenge an assumption
-        </h2>
-        <p>Record a simulated incident without changing what the agent originally asserted.</p>
-        {current ? (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void incident();
-            }}
-          >
-            <label>
-              Recorded assumption
-              <select value={current.id} onChange={(e) => setAssumption(e.target.value)}>
-                {assumptions.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {current.data.metric}
-              <input
-                type="number"
-                value={value}
-                onChange={(e) => setValue(Number(e.target.value))}
-                required
-              />
-            </label>
-            <button type="submit">Record simulated observation</button>
-          </form>
-        ) : (
-          <p className="empty-note">Research has not recorded a bounded assumption yet.</p>
-        )}
-      </section>
+      {current && (
+        <section>
+          <h2>
+            <Activity size={18} />
+            Challenge an assumption
+          </h2>
+          <p>Record a simulated incident without changing what the agent originally asserted.</p>
+          {current ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void incident();
+              }}
+            >
+              <label>
+                Recorded assumption
+                <select value={current.id} onChange={(e) => setAssumption(e.target.value)}>
+                  {assumptions.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                {current.data.metric}
+                <input
+                  type="number"
+                  value={value}
+                  onChange={(e) => setValue(Number(e.target.value))}
+                  required
+                />
+              </label>
+              <button type="submit">Record simulated observation</button>
+            </form>
+          ) : (
+            <p className="empty-note">Research has not recorded a bounded assumption yet.</p>
+          )}
+        </section>
+      )}
       {message && (
         <p role="status" className="history-message">
           {message}

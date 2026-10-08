@@ -20,6 +20,7 @@ export interface Env {
   ANTHROPIC_KEY: { get(): Promise<string> };
   MIMO_KEY?: { get(): Promise<string> };
   ZAI_KEY?: { get(): Promise<string> };
+  GEMINI_KEY?: { get(): Promise<string> };
   VAULT_KEY?: string;
   AUTH_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;

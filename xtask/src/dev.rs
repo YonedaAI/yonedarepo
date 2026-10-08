@@ -1,8 +1,8 @@
 //! Keep platform and untrusted static output on separate local origins.
 use crate::process::Result;
 use tokio::process::Command;
-pub async fn serve() -> Result<()> {
-    let state = std::env::current_dir()?.join(".wrangler/state");
+pub async fn serve(platform_config: &str, sites_config: &str, state_dir: &str) -> Result<()> {
+    let state = std::env::current_dir()?.join(state_dir);
     let state = state.to_str().ok_or("Non-UTF8 state path")?;
     let mut sites = Command::new("pnpm")
         .args([
@@ -10,7 +10,7 @@ pub async fn serve() -> Result<()> {
             "wrangler",
             "dev",
             "-c",
-            "sites/wrangler.jsonc",
+            sites_config,
             "--port",
             "8788",
             "--inspector-port",
@@ -26,7 +26,7 @@ pub async fn serve() -> Result<()> {
             "wrangler",
             "dev",
             "-c",
-            "wrangler.jsonc",
+            platform_config,
             "--port",
             "8787",
             "--persist-to",

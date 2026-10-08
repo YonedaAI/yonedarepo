@@ -18,6 +18,7 @@ export function GraphTools({
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [searched, setSearched] = useState(false);
   async function search(next?: string) {
     setBusy(true);
     setError('');
@@ -25,9 +26,11 @@ export function GraphTools({
       const r = await api<{ items: GraphNode[]; next_cursor: string | null }>(
         `repos/${repo}/context_search?${new URLSearchParams({ query, kind, limit: '25', ...(next ? { cursor: next } : {}) })}`,
       );
-      setItems((previous) => (next ? [...previous, ...r.items] : r.items));
+      const found = next ? [...items, ...r.items] : r.items;
+      setItems(found);
+      setSearched(true);
       setCursor(r.next_cursor);
-      onGraph({ nodes: r.items, edges: [] });
+      onGraph({ nodes: found, edges: [] });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -66,7 +69,9 @@ export function GraphTools({
               'proposed_decision',
               'question',
             ].map((k) => (
-              <option key={k}>{k}</option>
+              <option key={k} value={k}>
+                {k.replaceAll('_', ' ')}
+              </option>
             ))}
           </select>
         </label>
@@ -80,6 +85,10 @@ export function GraphTools({
             onGraph(null);
             setItems([]);
             setCursor(null);
+            setSearched(false);
+            setError('');
+            setQuery('');
+            setKind('');
           }}
         >
           Show full graph
@@ -108,6 +117,9 @@ export function GraphTools({
           </button>
         )}
       </form>
+      {searched && !busy && !items.length && (
+        <p role="status">No matching context. Try another search or show the full graph.</p>
+      )}
       {items.length > 0 && (
         <section className="context-results" aria-label="Context search results">
           {items.map((n) => (

@@ -4,12 +4,15 @@
 @import "@fontsource/ibm-plex-mono/400.css";
 :root {
   font-family: "IBM Plex Sans", sans-serif;
-  color: #142b40;
-  background: #f0f5f8;
+  color: #152436;
+  background: #f6f8fb;
   font-synthesis: none;
-  --line: #d2dfe7;
-  --muted: #587185;
-  --blue: #155c9c;
+  --line: #e1e6ed;
+  --muted: #637286;
+  --blue: #245de8;
+  --surface: #fff;
+  --success: #157f72;
+  font-size: 14px;
 }
 * {
   box-sizing: border-box;
@@ -32,12 +35,13 @@ button {
   background: var(--blue);
   color: #fff;
   padding: 9px 16px;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
   font-weight: 500;
+  min-height: 38px;
 }
 button:hover {
-  filter: brightness(0.94);
+  filter: brightness(0.96);
 }
 button:disabled {
   opacity: 0.45;
@@ -61,7 +65,7 @@ select {
   background: white;
   border-radius: 5px;
   padding: 10px 12px;
-  color: #142b40;
+  color: #152436;
   min-width: 0;
 }
 input:focus-visible,
@@ -104,4 +108,97 @@ p {
   color: var(--muted);
   font-size: 14px;
   line-height: 1.6;
+}
+
+button.quiet {
+  background: #fff;
+  border-color: var(--line);
+  color: #33455c;
+}
+button.text-button {
+  padding: 4px 0;
+  min-height: 30px;
+  color: var(--blue);
+  background: transparent;
+  font-weight: 500;
+}
+button.icon-button {
+  min-width: 36px;
+  min-height: 36px;
+  border: 0;
+}
+button svg,
+a svg {
+  flex-shrink: 0;
+}
+textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+select {
+  max-width: 100%;
+}
+label {
+  font-size: 13px;
+  font-weight: 500;
+}
+summary {
+  cursor: pointer;
+  color: var(--blue);
+  padding: 8px 0;
+}
+summary:focus-visible {
+  outline: 3px solid #87bce7;
+  outline-offset: 2px;
+}
+pre {
+  overflow: auto;
+  font-size: 12px;
+}
+.subtle {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.form-error,
+[role="alert"] {
+  overflow-wrap: anywhere;
+}
+.form-error {
+  border: 1px solid #edc5c5;
+  background: #fff5f4;
+  color: #98382e;
+  padding: 12px;
+  border-radius: 6px;
+}
+.section-heading,
+.page-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.section-heading h3 {
+  margin: 0;
+}
+.skip-link {
+  position: fixed;
+  top: -60px;
+  left: 16px;
+  z-index: 100;
+  background: white;
+  padding: 12px;
+  color: var(--blue);
+}
+.skip-link:focus {
+  top: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
+  }
 }
