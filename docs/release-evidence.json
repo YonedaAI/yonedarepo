@@ -1,0 +1,416 @@
+{
+  "observed_at": "2026-10-08T14:35:29.694988+00:00",
+  "scope": "Real development acceptance, not production readiness",
+  "platform_url": "https://yonedarepo-dev.mlong-f01.workers.dev",
+  "published_site": "https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/",
+  "hosted": {
+    "workspace": "operator Secrets Store; personal BYOK inference not exercised live",
+    "run": {
+      "base": {
+        "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+        "repository": "yoneda-dev/yoneda-garden-live"
+      },
+      "base_version": 0,
+      "context": [
+        "finding:garden-filter-browser-review"
+      ],
+      "context_records": [
+        {
+          "author": "owner",
+          "data": {
+            "authority": "assertion",
+            "intent_id": "intent:garden-a5c8220b-3a7c-4076-9809-a7ab0d687dc5",
+            "links": [],
+            "purpose": "Prevent repeating the failed filter and preserve the reason that this eligible candidate has not been selected.",
+            "statement": "Browser review of candidate 6be50a950 found that selecting Community updates the filter state but leaves all three event cards visible. Automated semantic and anchor checks passed, so those checks alone do not verify interaction behavior."
+          },
+          "id": "finding:garden-filter-browser-review",
+          "kind": "finding",
+          "label": "Browser review of candidate 6be50a950 found that selecting Community updates the filter state but leaves all three event cards visible. Automated semantic and anchor checks passed, so those checks alone do not verify interaction behavior.",
+          "recorded_at": 1791469022233
+        }
+      ],
+      "created_at": 1791469023129,
+      "criteria": [
+        "Usable on mobile and desktop",
+        "Semantic HTML with a title, viewport, main and navigation",
+        "All local anchor links resolve to IDs",
+        "Filter visibly hides nonmatching event cards and restores all",
+        "No external dependencies, fetch, localStorage or network requests",
+        "At least two typed context records for this approach"
+      ],
+      "id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122",
+      "intent": "Build a concise polished Juniper Community Garden static website: story, three plots, volunteer sessions, visit information, and a real local event filter. Two alternative approaches from the same starter. Use relative public assets, no network dependencies or storage; opaque sandbox origin forbids localStorage. Keep implementation small: HTML/CSS/JS in separate files, each under 150 lines; write in chunks under 2000 tokens to fit the model request ceiling. Filtering must visibly hide nonmatching cards, including when card CSS uses display:flex/grid (use [hidden]{display:none!important} or explicit display). RSVP may change an in-memory confirmation only. First read the supplied browser finding. Before finishing, publish one requirement and one alternative via context_publish and link them to this run intent. Implement and run the approved checks, then call execution_complete.",
+      "policy": {
+        "build": {
+          "checks": [
+            {
+              "argv": [
+                "node",
+                "-e",
+                "const fs=require('node:fs');const s=fs.readFileSync('public/index.html','utf8');for(const r of [/<!doctype html>/i,/<html[^>]+lang=/i,/<title>[^<]+<\\/title>/i,/<meta[^>]*viewport/i,/<main[\\s>]/i,/<nav[\\s>]/i])if(!r.test(s))throw Error('Missing semantic HTML: '+r);"
+              ],
+              "name": "html",
+              "timeout_seconds": 10
+            },
+            {
+              "argv": [
+                "node",
+                "-e",
+                "const s=require('node:fs').readFileSync('public/index.html','utf8');const ids=new Set([...s.matchAll(/id=[\\\"']([^\\\"']+)[\\\"']/g)].map(m=>m[1]));for(const m of s.matchAll(/href=[\\\"']#([^\\\"']+)[\\\"']/g))if(!ids.has(m[1]))throw Error('Broken anchor '+m[1]);"
+              ],
+              "name": "links",
+              "timeout_seconds": 10
+            }
+          ],
+          "setup": [],
+          "static_dir": "public"
+        },
+        "environment": "linux-node24-rust1.94-v1",
+        "required_checks": [
+          "html",
+          "links"
+        ],
+        "suite": "commands-v1",
+        "version": "garden-v1"
+      },
+      "status": "accepted"
+    },
+    "executions": [
+      {
+        "base": {
+          "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+          "repository": "yoneda-dev/yoneda-garden-live"
+        },
+        "context": [
+          "finding:garden-filter-browser-review"
+        ],
+        "epoch": 1,
+        "finished_at": 1791469117610,
+        "harness": "codex",
+        "id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1",
+        "model": "gpt-5.6-luna",
+        "provider": "codex",
+        "role": "coding",
+        "run_id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122",
+        "started_at": 1791469024302,
+        "status": "completed",
+        "strategy": "Calm botanical editorial with split CSS/JS and reliable DOM filtering",
+        "transcript": "feb07a05fa174cba83bb3ede71c4151c64b8a768b9913ccc05a082fa81b8dcd0",
+        "transcript_epoch": 1
+      },
+      {
+        "base": {
+          "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+          "repository": "yoneda-dev/yoneda-garden-live"
+        },
+        "context": [
+          "finding:garden-filter-browser-review"
+        ],
+        "epoch": 1,
+        "finished_at": 1791469132042,
+        "harness": "claude",
+        "id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2",
+        "model": "claude-sonnet-4-6",
+        "provider": "claude",
+        "role": "coding",
+        "run_id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122",
+        "started_at": 1791469026395,
+        "status": "completed",
+        "strategy": "Compact vibrant community noticeboard with split CSS/JS and accessible filtering",
+        "transcript": "215aadd29252d6d714a11dd69b825c8bb4733ef14ecebf0cc1acc515ef719fb0",
+        "transcript_epoch": 1
+      }
+    ],
+    "concurrency": {
+      "start_milliseconds": [
+        1791469027700,
+        1791469029254
+      ],
+      "transcript_milliseconds": [
+        1791469116371,
+        1791469130637
+      ],
+      "harness_overlap_milliseconds": 87117,
+      "method": "intersection of harness_running through trusted transcript registration at completed epoch 1"
+    },
+    "candidates": [
+      {
+        "id": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1",
+        "execution": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1",
+        "status": "eligible",
+        "revision": {
+          "commit": "0c44ca70e73bf41fbcf50182f975acd52e262777",
+          "repository": "yoneda-dev/candidate-806ab0d411c38fe9a82da98bd7fc94ed"
+        },
+        "base": {
+          "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+          "repository": "yoneda-dev/yoneda-garden-live"
+        },
+        "paths": [
+          "public/index.html",
+          "public/script.js",
+          "public/styles.css"
+        ],
+        "evaluation": "evaluation:evaluate:candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1:1"
+      },
+      {
+        "id": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1",
+        "execution": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2",
+        "status": "eligible",
+        "revision": {
+          "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+          "repository": "yoneda-dev/candidate-1d095dde36d263039228c25737f2b65c"
+        },
+        "base": {
+          "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+          "repository": "yoneda-dev/yoneda-garden-live"
+        },
+        "paths": [
+          "public/app.js",
+          "public/index.html",
+          "public/style.css"
+        ],
+        "evaluation": "evaluation:evaluate:candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1:1"
+      }
+    ],
+    "evaluations": [
+      {
+        "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1",
+        "checks": [
+          {
+            "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+            "name": "html",
+            "status": "pass"
+          },
+          {
+            "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+            "name": "links",
+            "status": "pass"
+          },
+          {
+            "detail": "Evaluator captured bounded regular static files from this revision",
+            "name": "static_assets",
+            "status": "pass"
+          }
+        ],
+        "deployment": {
+          "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1",
+          "commit": "0c44ca70e73bf41fbcf50182f975acd52e262777",
+          "digest": "64aacb84dff4f110f0c36e2d36f7c9f0c3c62cdfd3e07559cedfe2ea5c3b330b"
+        },
+        "environment": "linux-node24-rust1.94-v1",
+        "evidence": "d0d536bf5d3963598e807c6869b4a04f20d3e11c5e925ead98aca2b665057fec",
+        "id": "evaluation:evaluate:candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1:1",
+        "policy": "garden-v1",
+        "revision": {
+          "commit": "0c44ca70e73bf41fbcf50182f975acd52e262777",
+          "repository": "yoneda-dev/candidate-806ab0d411c38fe9a82da98bd7fc94ed"
+        },
+        "suite": "commands-v1"
+      },
+      {
+        "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1",
+        "checks": [
+          {
+            "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+            "name": "html",
+            "status": "pass"
+          },
+          {
+            "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+            "name": "links",
+            "status": "pass"
+          },
+          {
+            "detail": "Evaluator captured bounded regular static files from this revision",
+            "name": "static_assets",
+            "status": "pass"
+          }
+        ],
+        "deployment": {
+          "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1",
+          "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+          "digest": "1057b799a5f10cb6e999df7c5969e8046b04823d1bb6175213afdadad1928fe8"
+        },
+        "environment": "linux-node24-rust1.94-v1",
+        "evidence": "d0d536bf5d3963598e807c6869b4a04f20d3e11c5e925ead98aca2b665057fec",
+        "id": "evaluation:evaluate:candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1:1",
+        "policy": "garden-v1",
+        "revision": {
+          "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+          "repository": "yoneda-dev/candidate-1d095dde36d263039228c25737f2b65c"
+        },
+        "suite": "commands-v1"
+      }
+    ],
+    "decision": {
+      "alternatives": [
+        {
+          "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-1:1",
+          "reason": "Retain Luna\u2019s polished editorial layout as an alternative. Its May event dates are already past on October 8, 2026; update the dates before considering it for publication."
+        }
+      ],
+      "base": {
+        "commit": "91470de625798365cfc6d8d2d2b2596642b4cd84",
+        "repository": "yoneda-dev/yoneda-garden-live"
+      },
+      "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1",
+      "created_at": 1791469713675,
+      "decision_kind": "human",
+      "fingerprint": "9877c2198ad745186efed63eb2370926eb7f93bc71fdf50ea73ae4ee7c82307b",
+      "id": "decision:def1fec6-d4e5-4c5e-9dbe-e387f35ff3cc",
+      "published_at": 1791469730623,
+      "rationale": "The owner chose Sonnet in the implementation chat after comparing both checked previews. This choice is entered through the product on their behalf. Both filters and local RSVP confirmations worked; Sonnet presents upcoming October/November 2026 events. HTML/anchor checks do not prove real registrations; RSVP is an in-memory demonstration.",
+      "receipt": {
+        "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+        "id": "decision:def1fec6-d4e5-4c5e-9dbe-e387f35ff3cc",
+        "status": "publication_pending",
+        "version": 1
+      },
+      "request_id": "def1fec6-d4e5-4c5e-9dbe-e387f35ff3cc",
+      "run_id": "garden-3e5f9022-9704-4207-a36d-e8af7cea6122",
+      "status": "published",
+      "target": {
+        "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+        "repository": "yoneda-dev/candidate-1d095dde36d263039228c25737f2b65c"
+      }
+    },
+    "canonical_readback": {
+      "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915"
+    },
+    "site": {
+      "candidate": "candidate:capture:garden-3e5f9022-9704-4207-a36d-e8af7cea6122:agent-2:1",
+      "commit": "3e845f1aa36a6c1ed7b15ef620874c12b3d7a915",
+      "digest": "1057b799a5f10cb6e999df7c5969e8046b04823d1bb6175213afdadad1928fe8"
+    },
+    "manifest_sha256": "1057b799a5f10cb6e999df7c5969e8046b04823d1bb6175213afdadad1928fe8",
+    "served_assets": [
+      {
+        "path": "app.js",
+        "bytes": 1235,
+        "sha256": "ca41acc8c96af56848aa8d79774401e9cb1be3d9faaf6b61ccdab07c6733240c",
+        "status": 200
+      },
+      {
+        "path": "index.html",
+        "bytes": 3867,
+        "sha256": "f2cb0ee36f33c648d1c0f07a18f25a9fae9468712e4425722aeb16476b3cebb7",
+        "status": 200
+      },
+      {
+        "path": "style.css",
+        "bytes": 2806,
+        "sha256": "982346c2f933ba4778258b443a0c717ace89b4e37cc144fb55044459f531ed29",
+        "status": 200
+      }
+    ],
+    "browser_checks": {
+      "both_candidates": "Category filters hide nonmatching cards, All restores cards, RSVP changes local confirmation",
+      "sonnet_mobile": "Observed content width equals viewport width 354px under browser 390x844 override",
+      "luna_mobile": "Observed content width equals viewport width 390px under tab-scoped emulation",
+      "limit": "RSVP is memory-only. No registration backend. HTML/anchor evaluator checks alone do not prove browser behavior."
+    }
+  },
+  "external": {
+    "workspace": "new personal username/password account",
+    "first_attempt": "external-c6ffe58867439700b8041fc037c457bc",
+    "first_capture": "8c328b2ede2a337a19bebded3b00f296108b5ffd",
+    "first_selection_kind": "development_verification",
+    "published_commit": "8c328b2ede2a337a19bebded3b00f296108b5ffd",
+    "fresh_attempt": "external-a9f51aed91068bd565e70cf6436b5162",
+    "fresh_capture": "0e9551767036469317baaab2338bb15324a0eeae",
+    "fresh_status": "eligible",
+    "fresh_source_base": "8c328b2ede2a337a19bebded3b00f296108b5ffd",
+    "read_tools": [
+      "repo_context",
+      "context_search",
+      "context_get",
+      "why",
+      "decision",
+      "artifact_get"
+    ],
+    "new_context": [
+      {
+        "id": "context:32b66368-3a35-44b9-8068-a1b1624ba714",
+        "kind": "finding",
+        "label": "The published join section presented a monthly invitation and a Join the club link, but the static page had no connected membership signup; the follow-up now states that signup is not connected and that it collects no email addresses or starts no subscription.",
+        "author": "external-a9f51aed91068bd565e70cf6436b5162",
+        "data": {
+          "authority": "assertion",
+          "intent_id": "intent:run:external-a9f51aed91068bd565e70cf6436b5162",
+          "links": [
+            {
+              "relation": "supersedes",
+              "target": "context:85c8cba6-a89e-4e7f-be0d-f2293baf45ac"
+            }
+          ],
+          "purpose": "Record the observed limitation of the published static membership placeholder.",
+          "statement": "The published join section presented a monthly invitation and a Join the club link, but the static page had no connected membership signup; the follow-up now states that signup is not connected and that it collects no email addresses or starts no subscription."
+        }
+      },
+      {
+        "id": "context:40830165-dc23-4469-9810-920a18c1824a",
+        "kind": "alternative",
+        "label": "Keep a real membership form and destination as later work; for this static revision, use a non-actionable coming-soon status with no email collection and no subscription promise.",
+        "author": "external-a9f51aed91068bd565e70cf6436b5162",
+        "data": {
+          "authority": "assertion",
+          "intent_id": "intent:run:external-a9f51aed91068bd565e70cf6436b5162",
+          "links": [
+            {
+              "relation": "supports",
+              "target": "context:d1992796-a179-465b-80eb-ce09228d45be"
+            }
+          ],
+          "purpose": "Keep the real membership destination as a later product option while making the current static page honest.",
+          "statement": "Keep a real membership form and destination as later work; for this static revision, use a non-actionable coming-soon status with no email collection and no subscription promise."
+        }
+      }
+    ],
+    "publication": "Fresh follow-up remains unpublished for owner review"
+  },
+  "claude_budget": {
+    "currency": "USD",
+    "limit": 20,
+    "reserved_or_charged": 8.141532,
+    "note": "Conservative durable safety accounting, not a provider invoice. No cap increase."
+  },
+  "verification": {
+    "local_gate": "cargo xtask check",
+    "native_mac_tests": 71,
+    "workerd_tests": 35,
+    "node_profile_tests": 1,
+    "linux_root_runtime_tests": 16,
+    "linux_nonroot_runtime_tests": 16,
+    "also": [
+      "rustfmt",
+      "Clippy -D warnings",
+      "actual workers-rs Wasm",
+      "TypeScript",
+      "Biome",
+      "production browser build"
+    ],
+    "review": "One fresh whole-branch review; four Important/Critical findings reproduced RED then fixed GREEN; no deferred minors"
+  },
+  "limits": [
+    "Static relative-path hosting; no arbitrary external networking, service workers or full-stack runtime",
+    "Typed questions are recorded but do not pause/resume attempts interactively",
+    "Hosted personal BYOK inference was not exercised live; account isolation/vault egress covered by workerd tests",
+    "MiMo live returned 402 insufficient balance; ZAI run cancelled without timely completion",
+    "Owner directed Sonnet choice in implementation chat; implementer entered it through the actual website; no claim of independent user browser acceptance"
+  ],
+  "deployment": {
+    "worker_version": "91eead41-0aa6-45e9-a5dc-c2a1a7a29b88",
+    "sites_worker_version": "0ba44dd1-3446-4a51-93d0-5ae5a73533b3",
+    "runtime_image_sha256": "9dd6cb5d099671d4cfca30bfc013fc56d4f7c9ae9a8915723ec1f042f3b3ecde",
+    "runtime_application": "a03b85b8-fac1-4f41-a046-6abe33ff1531",
+    "note": "Successful paid run used preceding runtime image bd2b3b2. Latest runtime differs only in nonroot native-helper handling; root supervisor behavior unchanged, Linux tests passed. No additional paid inference after selection."
+  },
+  "video": {
+    "duration_seconds": 527.833515,
+    "chapters": 10,
+    "narration": "Synthetic macOS Samantha, 150 words/minute",
+    "captures": "Actual served UI and recorded run evidence; edited walkthrough"
+  }
+}
