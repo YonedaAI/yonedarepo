@@ -64,8 +64,9 @@ export function Exploration({
               id: `run-${crypto.randomUUID()}`,
               intent,
               criteria: [
-                'Retry safe methods only',
+                'Retry GET only',
                 'Respect total deadline',
+                'Read README.md before publishing guidance; preserve its CLI contract, including repeating the final supplied status when the status list is exhausted',
                 'Keep the contract deterministic',
               ],
             });
