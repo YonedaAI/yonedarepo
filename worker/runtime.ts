@@ -10,13 +10,19 @@ export function checkLedger(snapshot: Json) {
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (job.payload?.policy?.build && !health.suites?.includes('commands-v1'))
+    throw new Error('Container image does not support general repository runs');
   if (
     job.kind === 'evaluate' &&
-    (health.environment !== job.payload.policy.environment ||
+    ((health.environment !== job.payload.policy.environment &&
+      !health.environments?.includes(job.payload.policy.environment)) ||
       !Array.isArray(health.suites) ||
       !health.suites.includes(job.payload.policy.suite))
   )
     throw new Error(
       'Evaluator image does not support the requested policy; wait for rollout completion',
     );
+}
+export function modelForJob(job: Json, defaults: { codex: string; claude: string }) {
+  return job.model ?? defaults[job.payload.execution?.harness === 'codex' ? 'codex' : 'claude'];
 }

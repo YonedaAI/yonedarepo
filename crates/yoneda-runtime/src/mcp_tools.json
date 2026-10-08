@@ -106,5 +106,113 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "context_publish",
+    "description": "Contribute a typed assertion to the assigned intent. Identity comes from this attempt. Supersede earlier records instead of editing them.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "intent",
+            "requirement",
+            "constraint",
+            "assumption",
+            "finding",
+            "alternative",
+            "proposed_decision",
+            "question"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "intent_id": {
+          "type": "string"
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "supports",
+                  "challenges",
+                  "depends_on",
+                  "supersedes",
+                  "answers",
+                  "motivates"
+                ]
+              },
+              "target": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "relation",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "statement",
+        "purpose",
+        "intent_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_search",
+    "description": "Search repository context and prior alternatives; returns a bounded page and next_cursor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_get",
+    "description": "Read a context or decision node by its exact ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
   }
 ]

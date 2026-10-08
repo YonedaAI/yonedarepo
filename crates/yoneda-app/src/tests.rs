@@ -4,6 +4,8 @@ use serde_json::json;
 
 #[path = "tests/graph_status.rs"]
 mod graph_status;
+#[path = "tests/product_runs.rs"]
+mod product_runs;
 
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {

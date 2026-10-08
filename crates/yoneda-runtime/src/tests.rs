@@ -4,6 +4,71 @@ use crate::*;
 use serde_json::json;
 use tokio::process::Command;
 #[test]
+fn website_prompt_uses_approved_brief_and_context_without_fixture_requirements() {
+    let payload = json!({"execution":{"role":"coding","strategy":"accessible"},"run":{"id":"site","intent":"Build a portfolio website","criteria":["Keyboard navigation"],"context_records":[{"label":"Use semantic HTML"}]},"policy":{"build":{"checks":[{"name":"build","argv":["node","--check","app.js"],"timeout_seconds":30}]}}});
+    let prompt = crate::prompt::prompt(&payload).unwrap();
+    assert!(prompt.contains("Keyboard navigation"));
+    assert!(prompt.contains("Use semantic HTML"));
+    assert!(prompt.contains("context_publish"));
+    assert!(!prompt.contains("retry-client"));
+    assert!(!prompt.contains("upstream_p99_ms"));
+}
+#[tokio::test]
+async fn general_build_runs_checks_and_preserves_failure_and_timeout_observations() {
+    let root = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+    }
+    let profile = serde_json::from_value(json!({"setup":[{"name":"prepare","argv":["/bin/sh","-c","echo ready > ready.txt"],"timeout_seconds":1}],"checks":[{"name":"build","argv":["/bin/sh","-c","test -f ready.txt"],"timeout_seconds":1},{"name":"test","argv":["/bin/sh","-c","exit 7"],"timeout_seconds":1},{"name":"bounded","argv":["/bin/sh","-c","sleep 20"],"timeout_seconds":1}]})).unwrap();
+    let report = crate::evaluation::run_profile(root.path(), &profile)
+        .await
+        .unwrap();
+    assert_eq!(report["setup"][0]["output"]["exit"], 0);
+    assert_eq!(report["commands"][0]["output"]["exit"], 0);
+    assert_eq!(report["commands"][1]["output"]["exit"], 7);
+    assert_eq!(report["commands"][2]["output"]["timeout"], true);
+}
+#[test]
+fn binary_source_roundtrips_without_loss() {
+    let root = tempfile::tempdir().unwrap();
+    let bytes = [0x89, b'P', b'N', b'G', 0, 0xff, 0x80];
+    std::fs::write(root.path().join("image.png"), bytes).unwrap();
+    let exported = export_workspace(root.path()).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    materialize(destination.path(), &exported).unwrap();
+    assert_eq!(
+        std::fs::read(destination.path().join("image.png")).unwrap(),
+        bytes
+    );
+}
+#[tokio::test]
+async fn capture_keeps_validated_files_even_if_candidate_gitignore_excludes_them() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace: Workspace = serde_json::from_value(json!({".gitignore":{"content":"*.png\n"},"logo.png":{"content":"iVBORwD/gA==","encoding":"base64"}})).unwrap();
+    capture(root.path(), None, &workspace, "Binary asset")
+        .await
+        .unwrap();
+    let paths = git(root.path(), &["ls-tree", "-r", "--name-only", "HEAD"])
+        .await
+        .unwrap();
+    assert!(paths.contains("logo.png"));
+}
+#[test]
+fn source_export_preserves_baseline_files_and_excludes_new_ignored_outputs() {
+    let root = tempfile::tempdir().unwrap();
+    let baseline: Workspace = serde_json::from_value(json!({".gitignore":{"content":"dist/\nnode_modules/\n"},"node_modules/owned.txt":{"content":"tracked"},"src/main.js":{"content":"source"}})).unwrap();
+    materialize(root.path(), &baseline).unwrap();
+    std::fs::create_dir_all(root.path().join("dist")).unwrap();
+    std::fs::write(root.path().join("dist/index.html"), "built output").unwrap();
+    std::fs::write(root.path().join("node_modules/generated.txt"), "dependency").unwrap();
+    let result = crate::workspace::export_with_baseline(root.path(), &baseline).unwrap();
+    assert!(result.contains_key("node_modules/owned.txt"));
+    assert!(!result.contains_key("dist/index.html"));
+    assert!(!result.contains_key("node_modules/generated.txt"));
+}
+#[test]
 fn workspace_roundtrips_and_rejects_symlinks() {
     let dir = tempfile::tempdir().unwrap();
     let mut workspace = Workspace::new();
@@ -12,6 +77,7 @@ fn workspace_roundtrips_and_rejects_symlinks() {
         FileEntry {
             content: "fn main() {}\n".into(),
             executable: false,
+            encoding: None,
         },
     );
     materialize(dir.path(), &workspace).unwrap();
@@ -34,6 +100,7 @@ async fn capture_is_deterministic_and_preserves_parent_and_deletions() {
         FileEntry {
             content: "original".into(),
             executable: false,
+            encoding: None,
         },
     )]);
     let first = capture(a.path(), None, &workspace, "Seed").await.unwrap();
@@ -54,6 +121,7 @@ async fn capture_is_deterministic_and_preserves_parent_and_deletions() {
         FileEntry {
             content: "new".into(),
             executable: false,
+            encoding: None,
         },
     )]);
     let result = capture(
@@ -109,6 +177,7 @@ async fn capture_preserves_raw_unicode_and_control_character_paths() {
                 FileEntry {
                     content: "text".into(),
                     executable: false,
+                    encoding: None,
                 },
             )
         })

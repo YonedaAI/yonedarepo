@@ -4,7 +4,11 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const CONTRACT_VERSION: u32 = 1;
+pub mod build;
+pub mod context;
 pub mod retry;
+mod source;
+pub use source::{FileEntry, Workspace};
 pub const MAX_WORKSPACE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_FILES: usize = 500;
 
@@ -48,19 +52,13 @@ pub struct Revision {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct FileEntry {
-    pub content: String,
-    #[serde(default)]
-    pub executable: bool,
-}
-pub type Workspace = BTreeMap<String, FileEntry>;
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Policy {
     pub version: String,
     pub suite: String,
     pub environment: String,
     pub required_checks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build: Option<build::BuildProfile>,
 }
 impl Default for Policy {
     fn default() -> Self {
@@ -69,6 +67,7 @@ impl Default for Policy {
             suite: "retry-contract-v2".into(),
             environment: "rust-1.94.0-evaluator-v2".into(),
             required_checks: vec!["build".into(), "behavior".into()],
+            build: None,
         }
     }
 }
@@ -145,13 +144,13 @@ pub fn validate_workspace(files: &Workspace) -> Result<()> {
     if files.is_empty() || files.len() > MAX_FILES {
         return Err(Error::new(
             "WORKSPACE_LIMIT",
-            "Workspace must contain 1–500 text files",
+            "Workspace must contain 1–500 regular files",
         ));
     }
     let mut size = 0usize;
     for (path, entry) in files {
         validate_path(path)?;
-        size = size.saturating_add(entry.content.len());
+        size = size.saturating_add(entry.bytes()?.len());
         if size > MAX_WORKSPACE_BYTES {
             return Err(Error::new("WORKSPACE_LIMIT", "Workspace exceeds 8 MiB"));
         }

@@ -38,7 +38,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 e["started_at"] = json!(now);
                 e["epoch"] = j["epoch"].clone();
                 let harness = string(&e, "harness")?;
-                if let Some(model) = c["models"][&harness].as_str() {
+                let model = e["model"]
+                    .as_str()
+                    .or_else(|| c["models"][&harness].as_str())
+                    .map(str::to_owned);
+                if let Some(model) = model {
                     if model.is_empty() || model.len() > 128 {
                         return Err(bad("Invalid model identifier"));
                     }

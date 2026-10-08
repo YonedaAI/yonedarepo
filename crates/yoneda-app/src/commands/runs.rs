@@ -19,6 +19,39 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             let id = string(&c, "id")?;
             let intent = string(&c, "intent")?;
+            let general = !r["policy"]["build"].is_null();
+            let criteria = c.get("criteria").cloned().unwrap_or(json!([]));
+            let criteria_array = criteria
+                .as_array()
+                .ok_or_else(|| bad("Criteria must be an array"))?;
+            if criteria_array.len() > 32
+                || criteria_array.iter().any(|v| {
+                    v.as_str()
+                        .is_none_or(|s| s.trim().is_empty() || s.len() > 2048)
+                })
+            {
+                return Err(bad("Criteria must be bounded statements"));
+            }
+            let context = c.get("context").cloned().unwrap_or(json!([]));
+            let references = context
+                .as_array()
+                .ok_or_else(|| bad("Context must be an array"))?;
+            if references.len() > 50 {
+                return Err(bad("At most 50 context records per run"));
+            }
+            let mut records = Vec::new();
+            for reference in references {
+                records.push(get(
+                    db,
+                    "nodes",
+                    reference
+                        .as_str()
+                        .ok_or_else(|| bad("Invalid context ID"))?,
+                )?);
+            }
+            if general {
+                super::scheduling::validate_agents(&c)?;
+            }
             if all(db, "runs")?.len() >= 100 {
                 return Err(Error::new(
                     "REPOSITORY_LIMIT",
@@ -30,7 +63,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let run = json!({"id":id,"intent":intent,"criteria":c.get("criteria").cloned().unwrap_or(json!([])),"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":"researching","created_at":now});
+            let run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now});
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(
@@ -44,7 +77,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             )?;
             node(db, &id, "run", &intent, "platform", now, run.clone())?;
             edge(db, &intent_id, &id, "implements", "owner request")?;
-            execution(db, &run, "claude", "research", "research", json!([]), now)?;
+            if general {
+                super::scheduling::schedule(db, &run, &c["agents"], now)?;
+            } else {
+                execution(db, &run, "claude", "research", "research", json!([]), now)?;
+            }
             event(db, "run.created", now, run.clone())?;
             Ok(run)
         }

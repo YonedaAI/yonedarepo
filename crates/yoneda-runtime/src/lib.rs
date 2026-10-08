@@ -1,13 +1,17 @@
 //! Native isolated execution and MCP transport.
 use serde_json::Value;
 use yoneda_core::Error;
+mod agent;
 mod broker;
+mod evaluation;
 mod git;
 mod jobs;
 mod mcp;
 mod process;
 mod process_guard;
+mod prompt;
 mod secure_fs;
+mod source_filter;
 mod supervisor;
 mod workspace;
 pub use git::{capture, git};
