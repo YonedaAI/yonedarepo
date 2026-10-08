@@ -20,6 +20,8 @@ Cloudflare activates Worker code before a container image rollout completes. Aft
 
 Worker and Durable Object code also propagate separately. Before starting paid exploration, the Worker checks the repository snapshot's artifact-read capability; `LEDGER_UPDATING` means retry after propagation, with no new run created. A successful Worker upload does not prove that an existing Repo DO has adopted its code. Cloudflare documents the [temporary code-version mismatch](https://developers.cloudflare.com/durable-objects/platform/known-issues/#code-updates).
 
+For a deliberate development cutover after active runs have stopped, `pnpm exec wrangler versions deploy VERSION_ID@100% --durable-objects-code-update-mode immediate --yes` promotes the existing tested version with an explicit DO update mode. Confirm the repository capability afterward; promotion success is not the readiness signal. The [Wrangler command reference](https://developers.cloudflare.com/workers/wrangler/commands/workers/#versions-deploy) documents immediate and bounded deferred modes.
+
 For Cloudflare Access, protect the host with an Access policy and configure `ACCESS_TEAM_DOMAIN` (host only) and `ACCESS_AUD`. The Worker verifies JWT issuer, signature and audience. An unverified `cf-access-jwt-assertion` is never sufficient. The browser can then use the Access session and Live DO WebSocket; owner connections use an expiring, signed HttpOnly session cookie. Both support Live DO WebSockets and periodic authoritative snapshot resync.
 
 ## Live workflow and budgets
