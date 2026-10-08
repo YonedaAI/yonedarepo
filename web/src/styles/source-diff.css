@@ -1,3 +1,6 @@
+.source-diff {
+  font-size: 11px;
+}
 .candidate .source-diff,
 .candidate-comparison .source-diff {
   white-space: pre;

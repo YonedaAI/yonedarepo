@@ -1,40 +1,24 @@
-@media (prefers-reduced-motion: reduce) {
-  .spin {
-    animation: none;
-  }
-}
 @media (max-width: 1100px) {
   .rail {
-    width: 205px;
-    padding: 25px 14px;
+    width: 215px;
+    padding-left: 12px;
+    padding-right: 12px;
   }
   .brand {
-    font-size: 16px;
+    font-size: 17px;
   }
-  .brand small {
-    font-size: 9px;
+  .welcome-onboarding {
+    gap: 30px;
+    padding: 48px 28px;
   }
-  .exploration,
-  .history-tools {
-    padding: 26px 24px;
+  .workflow-stages {
+    grid-template-columns: repeat(3, 1fr);
   }
-  .workspace-header {
-    padding: 0 24px;
-  }
-  .candidate-grid {
-    gap: 10px;
-  }
-  .candidate-content {
-    padding: 12px;
-  }
-  .evidence-panel {
-    width: 280px;
-  }
-  .welcome {
-    margin: 70px 30px;
+  .header-actions .published-revision {
+    display: none;
   }
 }
-@media (max-width: 760px) {
+@media (max-width: 800px) {
   .app {
     display: block;
   }
@@ -42,110 +26,166 @@
     position: static;
     width: 100%;
     height: auto;
-    padding: 18px;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
+    padding: 14px 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
   }
-  .repository-list {
-    margin: 0;
+  .mobile-menu {
+    display: inline-flex;
   }
-  .repository-list > p,
-  .rail-empty,
-  .brand small {
+  .rail-content {
     display: none;
   }
-  .repository-list button {
-    margin: 0;
-    width: auto;
+  .rail-open .rail-content {
+    display: flex;
+    padding-top: 24px;
+  }
+  .rail-bottom {
+    padding-top: 16px;
   }
   .workspace-header {
-    height: 60px;
-    padding: 0 18px;
+    height: 56px;
+    padding: 0 20px;
   }
-  .header-actions > span {
+  .workspace-breadcrumb {
+    min-width: 0;
+  }
+  .workspace-breadcrumb > span {
     display: none;
   }
   .workspace-tabs {
-    padding: 0 18px;
+    padding: 0 20px;
     gap: 20px;
+    flex-wrap: wrap;
   }
-  .workspace-tabs > span {
+  .workspace-tabs > button {
+    font-size: 12px;
+    gap: 5px;
+  }
+  .tab-site {
+    margin-left: 0;
+    width: 100%;
+    padding-bottom: 12px;
+  }
+  .welcome-onboarding {
+    grid-template-columns: 1fr;
+    padding: 36px 24px;
+    gap: 24px;
+    min-height: auto;
+    max-width: 540px;
+  }
+  .welcome-story h1 {
+    font-size: 42px;
+  }
+  .welcome-story > p {
+    font-size: 14px;
+  }
+  .welcome-flow {
+    margin: 22px 0;
+  }
+  .welcome-story .welcome-note {
     display: none;
   }
-  .exploration {
-    padding: 24px 18px;
+  .account-panel {
+    padding: 24px;
   }
-  .intent-row h1 {
-    font-size: 22px;
+  .workspace-start {
+    margin: 40px auto;
+    padding: 0 24px;
   }
-  .intent-row > .quiet {
-    font-size: 0;
+  .getting-started {
+    grid-template-columns: 1fr;
+    gap: 24px;
   }
-  .intent-row > .quiet svg {
-    min-width: 16px;
+  .exploration,
+  .graph-section,
+  .history-tools {
+    padding: 24px 20px;
   }
-  .intent-form {
+  .runs-toolbar {
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .runs-toolbar h1 {
+    font-size: 24px;
+  }
+  .runs-toolbar p {
+    font-size: 12px;
+  }
+  .runs-toolbar > button {
+    white-space: nowrap;
+  }
+  .run-picker {
     flex-direction: column;
+    align-items: stretch;
   }
-  .candidate-grid {
+  .intent-row {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .run-meta {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .candidate-grid,
+  .history-tools {
     grid-template-columns: 1fr;
   }
-  .candidate-content {
-    min-height: 0;
-  }
-  .graph-heading {
-    padding: 20px 18px 0;
-  }
   .graph-workspace {
-    display: block;
+    flex-direction: column;
+  }
+  .graph-canvas {
+    height: 520px;
+    flex: auto;
+    width: 100%;
   }
   .evidence-panel {
     width: 100%;
-    max-height: 350px;
+    max-height: 460px;
     border-left: 0;
     border-top: 1px solid var(--line);
   }
-  .history-tools {
-    grid-template-columns: 1fr;
-    padding: 24px 18px;
+  .context-tools label {
+    flex: 1;
+    min-width: 130px;
   }
-  .welcome {
-    margin: 40px 0;
-    padding: 24px;
+  .comparison-heading {
+    align-items: flex-start;
   }
-  .welcome h1 {
-    font-size: 30px;
-  }
-  .auth-form {
-    flex-wrap: wrap;
-    padding: 16px;
-  }
-  .auth-form input {
-    min-width: 160px;
-  }
-  .publication-banner,
-  .error-banner {
-    padding: 14px 18px;
+  .error-banner,
+  .publication-banner {
+    padding: 14px 20px;
   }
 }
-
-@media (max-width: 760px) {
-  .rail {
-    flex-wrap: wrap;
-    gap: 10px;
+@media (max-width: 480px) {
+  .workflow-stages {
+    grid-template-columns: repeat(2, 1fr);
   }
-  .rail-bottom {
-    display: flex;
+  .runs-toolbar {
+    flex-wrap: wrap;
+  }
+  .run-picker select {
     width: 100%;
-    flex-direction: row;
+  }
+  .dialog {
+    width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px);
+  }
+  .dialog-heading,
+  .dialog-body {
+    padding: 18px;
+  }
+  .dialog .run-actions > button {
+    flex: 1 1 100%;
+  }
+  .welcome-flow {
+    gap: 9px;
+  }
+  .welcome-flow span {
+    font-size: 11px;
+    gap: 4px;
+  }
+  .provider-list li {
     flex-wrap: wrap;
-    margin-top: 8px;
-  }
-  .rail-bottom .environment {
-    display: none;
-  }
-  .run-composer .agent-inputs {
-    grid-template-columns: 1fr;
   }
 }

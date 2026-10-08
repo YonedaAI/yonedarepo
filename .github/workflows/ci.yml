@@ -27,3 +27,5 @@ jobs:
         run: cargo xtask check
       - name: Build native execution image
         run: docker build --platform linux/amd64 -f containers/Dockerfile -t yonedarepo-runtime:ci .
+      - name: Verify Gemini CLI and Rust MCP without inference
+        run: docker run --rm --network none -i --entrypoint python3 yonedarepo-runtime:ci - < tests/container/gemini_smoke.py

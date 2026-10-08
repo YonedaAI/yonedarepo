@@ -3,4 +3,9 @@
 @import "./styles/exploration.css";
 @import "./styles/graph.css";
 @import "./styles/history.css";
+@import "./styles/onboarding.css";
+@import "./styles/demo-guide.css";
+@import "./styles/runs.css";
+@import "./styles/source-diff.css";
+@import "./styles/dialog.css";
 @import "./styles/responsive.css";

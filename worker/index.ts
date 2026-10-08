@@ -18,6 +18,7 @@ ExecutionContainer.outboundByHost = {
   ...Object.fromEntries(registries.map((host) => [host, dependencyHandler as OutboundHandler])),
   'yoneda.internal': brokerHandler as OutboundHandler,
   'codex.yoneda.internal': modelHandler('codex') as OutboundHandler,
+  'gemini.yoneda.internal': modelHandler('gemini') as OutboundHandler,
   'claude.yoneda.internal': modelHandler('claude') as OutboundHandler,
   'git.yoneda.internal': gitHandler as OutboundHandler,
 };

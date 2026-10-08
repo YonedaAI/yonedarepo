@@ -10,6 +10,12 @@ export function checkLedger(snapshot: Json) {
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (
+    job.kind === 'agent' &&
+    job.payload?.execution?.harness === 'gemini' &&
+    !health.harnesses?.includes('gemini')
+  )
+    throw new Error('Container image does not support Gemini; wait for rollout completion');
   if (job.payload?.policy?.build && !health.suites?.includes('commands-v1'))
     throw new Error('Container image does not support general repository runs');
   if (

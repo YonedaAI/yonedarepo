@@ -115,33 +115,34 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           <strong>Ready for review</strong>
           <p>
             {reviewable.length} checked approach{reviewable.length === 1 ? ' is' : 'es are'}{' '}
-            eligible. Compare previews, changes and context below, then choose Select approach and
-            record your decision. Publication waits for your selection; agents cannot publish
-            directly.
+            eligible. Review the source and preview, then select an approach to record what ships.
           </p>
         </div>
       )}
-      <div className="shared-context">
-        <h2>Agent-authored context</h2>
-        <p>
-          {shared.length
-            ? `${shared.length} research artifact${shared.length === 1 ? '' : 's'} frozen for the coding agents.`
-            : 'Agents publish typed findings, assumptions, alternatives and questions into the graph below.'}{' '}
-          Agent assertions and external verification remain separate.
-        </p>
-        {shared.map((artifact) => (
-          <SharedResearch key={artifact.id} repo={snapshot.repository.id} artifact={artifact} />
-        ))}
-      </div>
+      {shared.length > 0 && (
+        <div className="shared-context">
+          <h2>Agent-authored context</h2>
+          <p>
+            {shared.length
+              ? `${shared.length} research artifact${shared.length === 1 ? '' : 's'} frozen for the coding agents.`
+              : 'Agents publish typed findings, assumptions, alternatives and questions into the graph below.'}{' '}
+            Agent assertions and external verification remain separate.
+          </p>
+          {shared.map((artifact) => (
+            <SharedResearch key={artifact.id} repo={snapshot.repository.id} artifact={artifact} />
+          ))}
+        </div>
+      )}
       {decision && (
-        <div className="recorded-decision">
+        <details className="recorded-decision">
+          <summary>Recorded shipping decision</summary>
           <strong>
             {decision.decision_kind === 'development_verification'
               ? 'Automated development selection'
               : 'Owner decision'}
           </strong>
           <p>{decision.rationale}</p>
-        </div>
+        </details>
       )}
     </section>
   );

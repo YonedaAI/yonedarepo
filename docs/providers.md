@@ -1,9 +1,9 @@
 # Provider configuration and testing budgets
 
 Users sign in and save their own keys under provider settings. Provider keys are encrypted with
-AES-256-GCM in the personal Workspace DO, with the workspace/provider identity as authenticated
-data. Only the scoped Worker egress adapter decrypts them. Settings responses expose provider,
-model and configuration status. A missing user key never falls back to platform credentials.
+AES-256-GCM in the personal Workspace DO, with the workspace/provider/connection identity as authenticated
+data (v2; existing v1 provider records remain readable). Only the scoped Worker egress adapter decrypts them. Settings responses expose connection ID/name, provider,
+model and configuration status. A workspace can keep up to 32 independent connections, including multiple keys for one provider. Runs freeze connection IDs and models; removal or a model mismatch fails closed. A missing user key never falls back to platform credentials.
 
 The operator's Secrets Store bindings are `Codex`, `Claude`, `MiMo` and `ZAI`. They are available
 only to administrator-owned repositories. All upstream URLs are fixed in the adapter.
@@ -13,11 +13,13 @@ only to administrator-owned repositories. All upstream URLs are fixed in the ada
 | Codex | `gpt-5.6-luna` | OpenAI Responses |
 | Claude | `claude-sonnet-4-6` | Anthropic Messages |
 | MiMo | `mimo-v2.6-flash` | Anthropic compatibility |
+| Gemini | `gemini-3.8-flash` | Native Gemini GenerateContent through Gemini CLI 0.63.0 |
 | ZAI | `glm-4.7-flash` | Anthropic compatibility; key/model entitlement must be verified live |
 
 The MiMo Flash default follows the current [MiMo pricing and model availability](https://mimo.mi.com/docs/pricing).
 Protocol setup: [MiMo Claude Code](https://mimo.mi.com/docs/integration/claudecode),
 [ZAI Claude Code](https://docs.z.ai/devpack/tool/claude).
+Gemini configuration follows the official [CLI proxy and authentication settings](https://geminicli.com/docs/reference/configuration/) and [current API models](https://ai.google.dev/gemini-api/docs/models). Its native CLI/Rust MCP roundtrip is tested with offline fixtures; paid-provider and deployed egress acceptance are separate.
 Configured models are recorded on the execution. No provider or model fallback is automatic.
 
 Claude testing starts with a **USD 20 ceiling**. The administrator's ceiling is shared across

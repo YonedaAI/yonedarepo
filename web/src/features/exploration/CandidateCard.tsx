@@ -14,6 +14,7 @@ export function CandidateCard({
   execution,
   candidate,
   evaluation,
+  decision,
   selected,
   disabled,
   onSelect,
@@ -23,10 +24,13 @@ export function CandidateCard({
   execution?: Record<string, any>;
   candidate?: Record<string, any>;
   evaluation?: Record<string, any>;
+  decision?: Record<string, any>;
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
 }) {
+  const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
+  const published = chosen && decision?.status === 'published';
   const status = candidate?.status ?? execution?.status ?? 'waiting';
   return (
     <article className={`candidate ${selected ? 'focused' : ''}`}>
@@ -36,7 +40,7 @@ export function CandidateCard({
         <span>{execution?.model ?? execution?.harness}</span>
       </div>
       <div className="candidate-content">
-        <p className="strategy-description">{descriptions[strategy]}</p>
+        {descriptions[strategy] && <p className="strategy-description">{descriptions[strategy]}</p>}
         <span className={`status ${status}`}>
           {status === 'eligible' ? (
             <Check size={13} />
@@ -45,7 +49,7 @@ export function CandidateCard({
           ) : ['running', 'capturing', 'evaluating'].includes(status) ? (
             <LoaderCircle className="spin" size={13} />
           ) : null}
-          {status}
+          {published ? 'published' : chosen ? 'selected' : status.replaceAll('_', ' ')}
         </span>
         <p>
           {candidate?.summary ??
@@ -59,12 +63,15 @@ export function CandidateCard({
             <div className="revision">
               <GitCommitHorizontal size={15} />
               <code>{short(candidate.revision.commit)}</code>
-              <span>{candidate.paths.length} paths</span>
+              <span>
+                {candidate.paths.length} {candidate.paths.length === 1 ? 'path' : 'paths'}
+              </span>
             </div>
             <div className="checks">
               {evaluation?.checks.map((check: Record<string, string>) => (
                 <span key={check.name} className={check.status} title={check.detail}>
-                  {check.status === 'pass' ? <Check size={12} /> : <X size={12} />} {check.name}
+                  {check.status === 'pass' ? <Check size={12} /> : <X size={12} />}{' '}
+                  {check.name.replaceAll('_', ' ')}
                 </span>
               ))}
               {!evaluation && <span>Independent checks pending</span>}
@@ -96,7 +103,11 @@ export function CandidateCard({
               disabled={disabled}
               onClick={onSelect}
             >
-              Select approach
+              {published
+                ? 'Published approach'
+                : chosen
+                  ? 'Selected · awaiting publication'
+                  : 'Select approach'}
             </button>
           </>
         )}

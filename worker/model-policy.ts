@@ -1,3 +1,4 @@
+import { prepareGeminiRequest } from './gemini-policy';
 import type { Json } from './types';
 
 const upstreams = {
@@ -8,10 +9,11 @@ const upstreams = {
 };
 export function prepareModelRequest(
   job: Json,
-  harness: 'codex' | 'claude',
+  harness: 'codex' | 'claude' | 'gemini',
   path: string,
   input: Json,
 ) {
+  if (harness === 'gemini') return prepareGeminiRequest(job, path, input);
   const execution = job.payload?.execution;
   const provider = execution?.provider ?? execution?.harness;
   if (job.kind !== 'agent' || execution.harness !== harness || !(provider in upstreams))

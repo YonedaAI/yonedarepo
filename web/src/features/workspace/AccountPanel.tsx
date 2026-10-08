@@ -28,6 +28,23 @@ export function AccountPanel({ onConnected }: { onConnected: () => void }) {
     );
   return (
     <section className="account-panel">
+      <nav className="account-tabs" aria-label="Account access">
+        {(['signup', 'login'] as const).map((m) => (
+          <button
+            type="button"
+            key={m}
+            className={mode === m ? 'selected' : ''}
+            aria-current={mode === m ? 'page' : undefined}
+            disabled={busy}
+            onClick={() => {
+              setMode(m);
+              setError('');
+            }}
+          >
+            {m === 'signup' ? 'Create account' : 'Sign in'}
+          </button>
+        ))}
+      </nav>
       <h2>
         {mode === 'signup'
           ? 'Create your workspace'
@@ -37,6 +54,7 @@ export function AccountPanel({ onConnected }: { onConnected: () => void }) {
       </h2>
       <p>Your repositories, provider keys and context belong to your private workspace.</p>
       <form
+        key={mode}
         onSubmit={async (e) => {
           e.preventDefault();
           const form = e.currentTarget;
@@ -100,12 +118,12 @@ export function AccountPanel({ onConnected }: { onConnected: () => void }) {
         </button>
       </form>
       <div className="run-actions">
-        {(['signup', 'login', 'recover'] as const)
+        {(['recover'] as const)
           .filter((m) => m !== mode)
           .map((m) => (
             <button
               type="button"
-              className="quiet"
+              className="text-button"
               key={m}
               disabled={busy}
               onClick={() => {
@@ -113,7 +131,7 @@ export function AccountPanel({ onConnected }: { onConnected: () => void }) {
                 setError('');
               }}
             >
-              {m === 'signup' ? 'Create account' : m === 'login' ? 'Sign in' : 'Use recovery code'}
+              Use recovery code
             </button>
           ))}
       </div>

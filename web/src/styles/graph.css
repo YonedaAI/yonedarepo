@@ -1,29 +1,19 @@
 .graph-section {
-  border-top: 1px solid var(--line);
-  background: #edf4f8;
+  border-top: 0;
+  background: transparent;
+  padding: 30px 32px;
 }
-.graph-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 36px 0;
-}
-.graph-heading h2 {
-  font-size: 14px;
-}
-.graph-heading p {
-  font-size: 11px;
-}
-.graph-heading .quiet {
-  font-size: 11px;
-  margin-left: 12px;
-}
+
 .graph-workspace {
   display: flex;
   min-height: 390px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
 }
 .graph-canvas {
-  height: 390px;
+  height: clamp(480px, calc(100dvh - 290px), 800px);
   flex: 1;
   min-width: 0;
 }
@@ -70,10 +60,11 @@
   border-left-color: #b77817;
 }
 .graph-section footer {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
-  padding: 14px 36px;
+  padding: 14px 0;
   border-top: 1px solid var(--line);
+  border: 0;
 }
 .graph-empty {
   display: flex;
@@ -99,9 +90,9 @@
 .evidence-panel {
   width: 330px;
   border-left: 1px solid var(--line);
-  background: #f7fafc;
+  background: #fff;
   padding: 22px;
-  max-height: 390px;
+  max-height: clamp(480px, calc(100dvh - 290px), 800px);
   overflow: auto;
 }
 .evidence-panel > div {
@@ -121,4 +112,20 @@
 }
 .evidence-panel pre {
   margin-top: 18px;
+}
+
+.graph-section .context-tools,
+.graph-section .context-results {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.page-heading h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.page-heading p {
+  margin-bottom: 0;
 }

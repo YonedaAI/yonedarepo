@@ -2,6 +2,14 @@ use crate::process::{Result, token};
 use serde_json::{Value, json};
 use yoneda_core::Policy;
 pub(crate) async fn api(url: &str, path: &str, body: Option<Value>) -> Result<Value> {
+    api_authenticated(url, path, body, &token()?).await
+}
+pub(crate) async fn api_authenticated(
+    url: &str,
+    path: &str,
+    body: Option<Value>,
+    secret: &str,
+) -> Result<Value> {
     let mut request = reqwest::Client::new()
         .request(
             if body.is_some() {
@@ -11,7 +19,7 @@ pub(crate) async fn api(url: &str, path: &str, body: Option<Value>) -> Result<Va
             },
             format!("{}/api/{path}", url.trim_end_matches('/')),
         )
-        .bearer_auth(token()?);
+        .bearer_auth(secret);
     if let Some(body) = body {
         request = request.json(&body);
     }

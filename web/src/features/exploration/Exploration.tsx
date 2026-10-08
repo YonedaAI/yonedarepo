@@ -1,5 +1,6 @@
 import { GitCompareArrows, Plus, StopCircle } from 'lucide-react';
 import { useState } from 'react';
+import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { CandidateCard } from './CandidateCard';
@@ -7,18 +8,23 @@ import { CandidateComparison } from './CandidateComparison';
 import { DecisionForm } from './DecisionForm';
 import { RunComposer } from './RunComposer';
 import { RunWorkflow } from './RunWorkflow';
-import '../../styles/runs.css';
-import '../../styles/source-diff.css';
 
 export function Exploration({
   snapshot,
   onChange,
   onError,
+  onProviders,
+  onAgents,
+  onContext,
 }: {
   snapshot: Snapshot;
   onChange: () => Promise<void>;
   onError: (message: string) => void;
+  onProviders: () => void;
+  onAgents: () => void;
+  onContext: () => void;
 }) {
+  const [selectionError, setSelectionError] = useState('');
   const [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState('');
   const [runId, setRunId] = useState('');
@@ -40,7 +46,9 @@ export function Exploration({
       setSelected('');
       return true;
     } catch (e) {
-      onError((e as Error).message);
+      if (action === 'start_run') throw e;
+      if (action === 'accept') setSelectionError((e as Error).message);
+      else onError((e as Error).message);
       return false;
     } finally {
       setBusy(false);
@@ -62,19 +70,25 @@ export function Exploration({
         Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
       </p>
       {composing && (
-        <RunComposer
-          busy={busy}
-          snapshot={snapshot}
-          onClose={() => setComposing(false)}
-          onStart={async (brief) => {
-            const id = `run-${crypto.randomUUID()}`;
-            if (await act('start_run', { id, ...brief })) {
-              setRunId(id);
+        <Dialog title="New development run" onClose={() => setComposing(false)} locked={busy} wide>
+          <RunComposer
+            busy={busy}
+            onProviders={() => {
               setComposing(false);
-              setComparing(false);
-            }
-          }}
-        />
+              onProviders();
+            }}
+            snapshot={snapshot}
+            onClose={() => setComposing(false)}
+            onStart={async (brief) => {
+              const id = `run-${crypto.randomUUID()}`;
+              if (await act('start_run', { id, ...brief })) {
+                setRunId(id);
+                setComposing(false);
+                setComparing(false);
+              }
+            }}
+          />
+        </Dialog>
       )}
       {run ? (
         <>
@@ -91,8 +105,7 @@ export function Exploration({
             >
               {[...snapshot.runs].reverse().map((r) => (
                 <option key={r.id} value={r.id}>
-                  {new Date(r.created_at).toLocaleString()} — {r.status} —{' '}
-                  {short(r.id.replace('run-', ''))}
+                  {r.intent} · {r.status} · {new Date(r.created_at).toLocaleDateString()}
                 </option>
               ))}
             </select>
@@ -123,7 +136,10 @@ export function Exploration({
             )}
           </div>
           <RunWorkflow snapshot={snapshot} run={run} />
-          <div className="comparison-heading">
+          <button type="button" className="text-button context-link" onClick={onContext}>
+            Explore this repository’s context →
+          </button>
+          <div className="comparison-heading" id="approaches">
             <h2>Compare approaches</h2>
             <button
               type="button"
@@ -151,41 +167,73 @@ export function Exploration({
                     execution={execution}
                     candidate={candidate}
                     evaluation={evaluation}
+                    decision={snapshot.decisions.find((d) => d.run_id === run.id)}
                     selected={!!candidate && selected === candidate.id}
                     disabled={
                       candidate?.status !== 'eligible' ||
                       !!repo.pending ||
                       busy ||
                       ['accepted', 'cancelled'].includes(run.status) ||
-                      candidate?.base.commit !== repo.head_commit
+                      candidate?.base.commit !== repo.head_commit ||
+                      evaluation?.policy !== repo.policy?.version
                     }
-                    onSelect={() => setSelected(candidate?.id ?? '')}
+                    onSelect={() => {
+                      setSelectionError('');
+                      setSelected(candidate?.id ?? '');
+                    }}
                   />
                 );
               })}
           </div>
           {comparing && <CandidateComparison key={run.id} candidates={codeCandidates} />}
           {selected && (
-            <DecisionForm
-              key={selected}
-              busy={busy}
-              alternatives={codeCandidates.filter((c) => c.id !== selected)}
+            <Dialog
+              initialFocus="textarea"
+              title="Review shipping decision"
               onClose={() => setSelected('')}
-              onAccept={async (rationale, alternatives) => {
-                await act('accept', {
-                  request_id: crypto.randomUUID(),
-                  candidate: selected,
-                  expected_commit: repo.head_commit,
-                  expected_version: repo.version,
-                  rationale,
-                  alternatives,
-                });
-              }}
-            />
+              locked={busy}
+            >
+              <p className="selection-summary">
+                <strong>{codeCandidates.find((c) => c.id === selected)?.strategy}</strong>
+                <br />
+                Exact revision{' '}
+                <code>{short(candidates.find((c) => c.id === selected)?.revision.commit)}</code>
+              </p>
+              {selectionError && (
+                <p role="alert" className="form-error">
+                  {selectionError}
+                </p>
+              )}
+              <DecisionForm
+                key={selected}
+                busy={busy}
+                alternatives={codeCandidates.filter((c) => c.id !== selected)}
+                onClose={() => setSelected('')}
+                onAccept={async (rationale, alternatives) => {
+                  await act('accept', {
+                    request_id: crypto.randomUUID(),
+                    candidate: selected,
+                    expected_commit: repo.head_commit,
+                    expected_version: repo.version,
+                    rationale,
+                    alternatives,
+                  });
+                }}
+              />
+            </Dialog>
           )}
         </>
       ) : (
-        <p className="empty-note">Create a New run to give the agents a development task.</p>
+        <div className="empty-run">
+          <h2>What will you build next?</h2>
+          <p>
+            Start concurrent agents with a shared brief, or connect your local agent to contribute
+            code and context.
+          </p>
+          <button type="button" className="quiet" onClick={onAgents}>
+            Connect local agent
+          </button>
+        </div>
       )}
     </section>
   );

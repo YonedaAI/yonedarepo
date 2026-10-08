@@ -5,6 +5,8 @@ use crate::{
 pub async fn execute(args: Vec<String>) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("help");
     match command {
+        "cloudflare-configure" => crate::cloudflare::configure(&args),
+        "cloudflare-deploy" => crate::cloudflare_deploy::deploy(&args).await,
         "doctor" => {
             for (program, arguments) in [
                 ("rustc", vec!["--version"]),
@@ -58,19 +60,47 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             ensure_token()?;
             build_wasm()?;
             run("pnpm", &["--dir", "web", "build"])?;
-            run(
-                "pnpm",
+            let target = if args.iter().any(|v| v == "--name") {
+                Some(crate::cloudflare::deployment(&args)?)
+            } else {
+                None
+            };
+            let platform = target
+                .as_ref()
+                .map(|dir| dir.join("platform.json"))
+                .unwrap_or_else(|| "wrangler.jsonc".into());
+            let sites = target
+                .as_ref()
+                .map(|dir| dir.join("sites.json"))
+                .unwrap_or_else(|| "sites/wrangler.jsonc".into());
+            if let Some(dir) = &target {
+                let vars = dir.join(".dev.vars");
+                if !vars.exists() {
+                    std::fs::copy(".dev.vars", &vars)?;
+                    crate::cloudflare::private(&vars, false)?;
+                }
+            }
+            let state_dir = target
+                .map(|dir| dir.join("state").to_string_lossy().into_owned())
+                .unwrap_or_else(|| ".wrangler/state".into());
+            crate::cloudflare::wrangler(
+                &platform,
                 &[
-                    "exec",
-                    "wrangler",
                     "d1",
                     "migrations",
                     "apply",
-                    "yonedarepo-dev-index",
+                    "INDEX",
                     "--local",
+                    "--persist-to",
+                    &state_dir,
                 ],
             )?;
-            crate::dev::serve().await
+            crate::dev::serve(
+                platform.to_str().ok_or("Invalid platform path")?,
+                sites.to_str().ok_or("Invalid sites path")?,
+                &state_dir,
+            )
+            .await
         }
         "deploy" => {
             ensure_token()?;
@@ -121,13 +151,13 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }
     }
 }
-fn build_wasm() -> Result<()> {
+pub(crate) fn build_wasm() -> Result<()> {
     let status = std::process::Command::new("worker-build")
         .arg("--release")
         .current_dir("crates/yoneda-worker")

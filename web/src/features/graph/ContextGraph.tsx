@@ -40,9 +40,15 @@ export function ContextGraph({
   onSelect: (node: GraphNode) => void;
 }) {
   const { nodes, edges, identity } = useMemo(() => {
+    const kinds = [
+      ...columns.filter((kind) => graph.nodes.some((node) => node.kind === kind)),
+      ...new Set(
+        graph.nodes.filter((node) => !columns.includes(node.kind)).map((node) => node.kind),
+      ),
+    ];
     const offsets: Record<string, number> = {};
     const nodes: Node[] = graph.nodes.map((node) => {
-      const col = Math.max(0, columns.indexOf(node.kind));
+      const col = Math.max(0, kinds.indexOf(node.kind));
       const row = offsets[node.kind] ?? 0;
       offsets[node.kind] = row + 1;
       return {
@@ -54,7 +60,7 @@ export function ContextGraph({
         data: {
           label: (
             <>
-              <span className="node-kind">{node.kind}</span>
+              <span className="node-kind">{node.kind.replaceAll('_', ' ')}</span>
               <strong>{node.label}</strong>
             </>
           ),

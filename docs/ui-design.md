@@ -1,7 +1,13 @@
-# Browser design
+# Workspace interface
 
-The primary surface is a branching history of intent, research, candidate code, checks and decisions. Use an ice blue canvas (#f0f5f8), deep navy text (#142b40), blue decisions (#155c9c), muted purple agent work (#6157a4), amber assumptions (#b77817), and green verified checks (#247565).
+The working surface is a repository with three dedicated views: Runs, Context graph and Source history. Provider connections, repository creation, local-agent access, new briefs and shipping review use native dialogs with focus containment and Escape dismissal. The administrator connection lives under Workspace options.
 
-IBM Plex Sans carries navigation and prose; IBM Plex Mono is reserved for commit IDs, source and diffs. A quiet repository rail sits beside a broad working canvas. Candidate approaches align in parallel above a graph; selecting a node opens its evidence beside the canvas. Everything is left aligned except graph controls.
+The visual language uses IBM Plex Sans with Mono reserved for source and revision IDs. White navigation and content surfaces sit on a cool pale canvas (#f6f8fb), with ink (#152436), muted text (#637286), cobalt actions (#245de8) and teal verified states (#157f72). Borders establish grouping; spacing follows a 4/8/16/24/32 scale. There are no invented activity indicators or metrics.
 
-Review against the brief: a conventional metrics dashboard would hide the product's strongest feature. The graph receives the largest continuous area; candidate panels exist because there are three real parallel attempts. No decorative gradients, headline treatments, invented metrics or simulated agent output. State labels distinguish recorded assertions, external checks, selection and publication. Empty state asks the owner to connect and create real work.
+A selected candidate opens review immediately. The dialog names its exact captured revision, requires a rationale and alternative tradeoffs, and retains API errors. Closing it does not select or publish source. A successful selection reserves publication; the UI separately reports Git verification and the published website revision. The browser never treats an agent claim as independent evidence.
+
+Connection names distinguish personal/team keys even when they use the same provider. A run chooses exact connection IDs and configured models for each of 2–4 isolated approaches. The UI offers the five actual provider routes, including the native Gemini harness.
+
+At narrow widths, repository navigation collapses behind a labelled menu, dialogs fit the viewport and forms/cards stack. Every interactive element has a visible focus indicator; motion respects reduced-motion preference. Empty/loading/errors contain next actions. Authentication uses explicit Create account / Sign in tabs and a separate recovery path.
+
+Verification is recorded in docs/ui-workflow-evidence.md. Existing submission video demonstrates the earlier interface and remains historical evidence of its real agent run.

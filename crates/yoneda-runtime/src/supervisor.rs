@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::time::Duration;
 use yoneda_core::Result;
 pub(crate) fn health() -> Value {
-    json!({"protocol":2,"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
+    json!({"protocol":2,"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
 }
 pub async fn serve() -> Result<()> {
     #[cfg(target_os = "linux")]

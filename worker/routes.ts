@@ -5,13 +5,13 @@ import { externalGit } from './external-git';
 import { grantRoute } from './grants';
 import { error, readJson, response, safeId } from './http';
 import { projectRoute } from './projects';
+import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
-import { settingsRoute } from './vault';
 import { workspace } from './workspace';
 
 export async function fetchRequest(req: Request, env: Env): Promise<Response> {
@@ -154,7 +154,10 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         input.agents.some(
           (agent: Json) =>
             !settings.providers.some(
-              (p: Json) => p.provider === agent.provider && p.model === agent.model,
+              (p: Json) =>
+                p.id === (agent.connection ?? agent.provider) &&
+                p.provider === agent.provider &&
+                p.model === agent.model,
             ),
         )
       )

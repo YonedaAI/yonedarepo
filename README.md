@@ -6,9 +6,11 @@ A Context Graph platform for the agentic era. Explore parallel implementations, 
 
 Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Alternatively, connect a local agent through a scoped MCP/Git key; it uses your local agent credentials. The public Garden website is viewable without an account.
 
-![A checked local-agent contribution waiting for owner review](docs/images/ready-for-review.jpg)
+![Reviewing an exact captured revision before publication](docs/images/selection-review.png)
 
 Follow [the website workflow](docs/website-workflow.md) to create an account, connect provider keys, start concurrent agents, compare their changes and publish a checked static website. The older [retry fixture walkthrough](docs/demo.md) remains an operator verification example.
+
+[Current UI and deployment verification](docs/ui-workflow-evidence.md) · [Presenter video script and production brief](docs/video/production-brief.md)
 
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
@@ -28,26 +30,82 @@ Open `http://localhost:8787` and sign up. The sites Worker runs at `http://local
 
 To work on the browser with hot reload, keep Wrangler running and run `pnpm --dir web dev` in another terminal. The Vite server proxies API traffic to Wrangler.
 
-## Run real agents on Cloudflare
+## Deploy to your own Cloudflare account
 
-The committed development configuration targets the project account and namespace. Read [the runbook](docs/runbook.md) before using a different account. Personal provider keys are encrypted in the workspace vault. Operator test keys use Secrets Store bindings `Codex`, `Claude`, `MiMo` and `ZAI`. Egress handlers resolve credentials; containers receive scoped proxies.
+The root Wrangler configs describe our development deployment. Use the commands below to generate separate configs for **your** account; they remove our Secrets Store bindings and replace all resource IDs, queue names, service bindings and website URLs. Rust `xtask` owns the deployment scripts.
 
-```sh
-cargo xtask deploy
-cargo xtask seed-template --url https://YOUR-WORKER.workers.dev
-```
+### One-time manual prerequisites
 
-Use MiMo `mimo-v2.6-flash` or ZAI `glm-4.7-flash` for low cost testing. Codex defaults to `gpt-5.6-luna`; Claude uses `claude-sonnet-4-6` under a durable $20 allowance. The browser shows concurrent approaches, exact captured commits, independent checks and typed context. Review code and previews, then record a selection rationale. Selection, canonical publication and the hosted revision have distinct states.
-
-To connect a local Codex or Claude Code agent, create a repository key in **Connect local agent** and follow [the MCP and Git instructions](docs/remote-mcp.md).
-
-For the legacy retry fixture only, after selection and publication:
+1. Enable Workers Paid, Containers, R2 and Queues in your Cloudflare account, and confirm your account has [Artifacts access](https://developers.cloudflare.com/artifacts/get-started/workers/). Enable a `workers.dev` subdomain under **Workers & Pages → Settings** and record it along with your account ID. Billing/access approvals happen in the dashboard, not in our scripts.
+2. Install Git, the pinned Rust toolchain, Node 24.18, pnpm 11.16, `worker-build` 0.8.7 and Docker. Start Docker. [Container deployments build and upload an image](https://developers.cloudflare.com/containers/get-started/), including on the first deploy.
+3. Clone this repository, run `cargo xtask setup`, then `pnpm exec wrangler login` and `pnpm exec wrangler whoami`. Choose credentials with access to your target account. For CI, use Cloudflare's [Wrangler CI authentication](https://developers.cloudflare.com/workers/wrangler/ci-cd/); keep the API token in your CI secret store.
+4. Create D1 once using a minimal config so this command cannot target our development account. Replace the example account ID and names:
 
 ```sh
-cargo xtask verify-live --url https://YOUR-WORKER.workers.dev
+mkdir -p .local/bootstrap
+cat > .local/bootstrap/wrangler.json <<'JSON'
+{"account_id":"YOUR_32_CHARACTER_ACCOUNT_ID","name":"my-yoneda","compatibility_date":"2026-10-07"}
+JSON
+pnpm exec wrangler d1 create my-yoneda-index --config .local/bootstrap/wrangler.json
 ```
 
-This verifies recorded live evidence and writes an ignored artifact. It does not synthesize agent results or automatically accept code. Simulated incident observations are explicitly labelled in the browser.
+Copy the resulting D1 UUID. If the database already exists, obtain its UUID from **Storage & databases → D1** instead of creating another one.
+
+### Configure and provision
+
+Replace `YOUR_SUBDOMAIN` with the part before `.workers.dev`, and supply the D1 UUID:
+
+```sh
+cargo xtask cloudflare-configure \
+  --name my-yoneda \
+  --account-id YOUR_32_CHARACTER_ACCOUNT_ID \
+  --subdomain YOUR_SUBDOMAIN \
+  --namespace my-yoneda \
+  --database-id YOUR_D1_UUID
+```
+
+Review `.local/deploy/my-yoneda/platform.json` and `sites.json`. Configuration is repeatable for the same identity; it preserves your existing config edits. A different account/namespace/database requires a different deployment name. Artifacts [creates the namespace on the first repository creation](https://developers.cloudflare.com/artifacts/concepts/namespaces/); no namespace-creation command is required.
+
+Create these resources once. Skip any that already exist in your target account:
+
+```sh
+pnpm exec wrangler r2 bucket create my-yoneda-objects --config .local/deploy/my-yoneda/platform.json
+pnpm exec wrangler queues create my-yoneda-dead-letter --config .local/deploy/my-yoneda/platform.json
+pnpm exec wrangler queues create my-yoneda-agent --config .local/deploy/my-yoneda/platform.json
+pnpm exec wrangler queues create my-yoneda-capture --config .local/deploy/my-yoneda/platform.json
+pnpm exec wrangler queues create my-yoneda-evaluate --config .local/deploy/my-yoneda/platform.json
+pnpm exec wrangler queues create my-yoneda-publish --config .local/deploy/my-yoneda/platform.json
+```
+
+### Build, deploy and try it
+
+```sh
+cargo xtask doctor
+cargo xtask check
+cargo xtask cloudflare-deploy --name my-yoneda --dry-run
+cargo xtask cloudflare-deploy --name my-yoneda
+```
+
+The deploy command builds Rust Wasm and the browser, applies forward-only D1 migrations, deploys the platform and container image, deploys the isolated sites Worker, checks platform health, and initializes/readbacks the Artifacts website starter. It configures new `OWNER_TOKEN` and `VAULT_KEY` secrets via a private temporary file, retains existing deployed secrets, and removes the upload file. It starts no paid inference. Run the same deploy command for upgrades; preserve the Durable Object migration history and identities.
+
+Back up `.local/deploy/my-yoneda/owner-token` and `vault-key` privately. Never commit them. Losing the vault key makes existing provider ciphertext unreadable. When deploying from another machine, restore the operator token to the same private path; the script refuses to rotate an existing operator credential. Existing deployed vault keys are retained even when a local copy is absent. Use separate deployment names/resources for staging and production. Custom domains are optional: configure them in the dashboard and update the generated `SITE_ORIGIN` and deployment manifest URLs together.
+
+Open `https://my-yoneda.YOUR_SUBDOMAIN.workers.dev`, create a personal account and save its recovery code. In **Agent providers**, add a named API key connection for MiMo, ZAI, OpenAI/Codex, Anthropic/Claude or Google/Gemini. No operator provider key or Secrets Store setup is required for personal accounts. Add a repository, create a run with 2–4 agents, approve the brief, compare checked previews/diffs, then select an approach and record the shipping decision in its review dialog. See [the complete browser workflow](docs/website-workflow.md).
+
+The sites Worker is `https://my-yoneda-sites.YOUR_SUBDOMAIN.workers.dev`. Initial container provisioning can take several minutes after the Worker URL responds. Inspect `pnpm exec wrangler containers list --config .local/deploy/my-yoneda/platform.json` if a hosted run cannot start. A health response proves the Worker is serving; it does not prove a provider has credit or that an agent run succeeded.
+
+For local development against **your** remote Artifacts namespace:
+
+```sh
+cargo xtask dev --name my-yoneda
+cargo xtask seed-template --url http://localhost:8787
+```
+
+Local DO/D1/R2 state is isolated under `.local/deploy/my-yoneda/state`; the local sites origin is `http://localhost:8788`. Local authentication/vault variables are private and separate from deployed credentials. Artifacts still uses your remote namespace and Cloudflare authentication. `cargo xtask check` works without provider keys or remote inference.
+
+Use low cost MiMo/ZAI models for testing. Codex defaults to `gpt-5.6-luna`, Claude to `claude-sonnet-4-6` under the durable $20 workspace allowance, and Gemini to `gemini-3.8-flash`. These are recorded model choices; no more expensive fallback is selected silently. Gemini's CLI/proxy path has local integration coverage; paid Gemini completion must be verified with a funded user key.
+
+To connect a local agent instead, use **Connect local agent** and follow the scoped MCP/Git instructions shown there and in [the MCP guide](docs/remote-mcp.md). After publication, **Source history** traces the exact revision to its intent, alternatives and decision. **Context graph** is the browsable memory; future agents retrieve it through MCP.
 
 ## Repository
 
