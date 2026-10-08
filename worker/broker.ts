@@ -116,7 +116,17 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         }),
       );
     }
-    if (path === '/evidence') return response(await object(env, String(body.content)));
+    if (path === '/evidence') {
+      const stored = await object(env, String(body.content));
+      // Record before completion: a failed CLI still has owner-readable evidence.
+      if (job.kind === 'agent')
+        await ledger(env, scope.repo_id, {
+          op: 'record_transcript',
+          ...identity,
+          digest: stored.digest,
+        });
+      return response(stored);
+    }
     if (path === '/failed') {
       const result = await ledger(env, scope.repo_id, {
         op: 'fail',

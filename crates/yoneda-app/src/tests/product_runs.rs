@@ -6,6 +6,25 @@ fn product_policy() -> Value {
 fn run_command() -> Value {
     json!({"op":"start_run","id":"site","intent":"Build a portfolio website","criteria":["Works on a phone"],"agents":[{"provider":"mimo","model":"mimo-v2-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}],"context":[]})
 }
+#[test]
+fn failed_harness_retains_scoped_transcript_and_rejects_late_replacement() {
+    let db = repo_with_policy(product_policy());
+    call(&db, run_command()).unwrap();
+    call(&db, json!({"op":"claim","job_id":"job:site:agent-1"})).unwrap();
+    let record = json!({"op":"record_transcript","job_id":"job:site:agent-1","epoch":1,"digest":"e".repeat(64)});
+    call(&db, record.clone()).unwrap();
+    call(&db,json!({"op":"fail","job_id":"job:site:agent-1","epoch":1,"error":"Provider account has no balance","retryable":false})).unwrap();
+    let s = call(&db, json!({"op":"snapshot"})).unwrap();
+    let e = s["executions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["id"] == "site:agent-1")
+        .unwrap();
+    assert_eq!(e["status"], "failed");
+    assert_eq!(e["transcript"], "e".repeat(64));
+    assert_eq!(call(&db, record).unwrap_err().code, "FENCED");
+}
 fn context(id: &str, kind: &str, statement: &str) -> Value {
     json!({"op":"context_publish","record":{"id":id,"kind":kind,"statement":statement,"purpose":"Explain the approach","intent_id":"intent:site","links":[]}})
 }
