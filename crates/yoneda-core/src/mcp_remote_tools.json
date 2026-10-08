@@ -1,0 +1,260 @@
+[
+  {
+    "name": "repo_context",
+    "description": "Read the repository, current source, previous runs, human decisions and context. Canonical Git access is read only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "artifact_get",
+    "description": "Read immutable artifact or evaluation evidence attached to this repository by ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_publish",
+    "description": "Contribute a typed assertion to the assigned intent. Identity comes from this attempt. Supersede earlier records instead of editing them.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "intent",
+            "requirement",
+            "constraint",
+            "assumption",
+            "finding",
+            "alternative",
+            "proposed_decision",
+            "question"
+          ]
+        },
+        "statement": {
+          "type": "string",
+          "maxLength": 8192
+        },
+        "purpose": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "intent_id": {
+          "type": "string"
+        },
+        "links": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "properties": {
+              "relation": {
+                "type": "string",
+                "enum": [
+                  "supports",
+                  "challenges",
+                  "depends_on",
+                  "supersedes",
+                  "answers",
+                  "motivates"
+                ]
+              },
+              "target": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "relation",
+              "target"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "attempt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "statement",
+        "purpose",
+        "intent_id",
+        "attempt_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_search",
+    "description": "Search repository context and prior alternatives; returns a bounded page and next_cursor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "cursor": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_get",
+    "description": "Read a context or decision node by its exact ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "graph",
+    "description": "Expand a bounded neighborhood around a graph node.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "why",
+    "description": "Trace an exact source revision and path to its intent, decisions and alternatives.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "commit",
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "decision",
+    "description": "Read a recorded human decision.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "attempt_begin",
+    "description": "Start a one-hour external contribution from the current published base. Clone git_url, check out base.commit and build locally. No hosted inference is started.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "context": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "request_id",
+        "intent"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "attempt_status",
+    "description": "Read this grant-owned contribution and its frozen context.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "attempt_submit",
+    "description": "Fence contribution writes and submit the observed default-branch HEAD for independent fresh Git capture and evaluation. Human selection is still required.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

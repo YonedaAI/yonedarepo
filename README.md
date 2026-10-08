@@ -33,6 +33,8 @@ cargo xtask seed-template --url https://YOUR-WORKER.workers.dev
 
 Use MiMo `mimo-v2.6-flash` or ZAI `glm-4.7-flash` for low cost testing. Codex defaults to `gpt-5.6-luna`; Claude uses `claude-sonnet-4-6` under a durable $20 allowance. The browser shows concurrent approaches, exact captured commits, independent checks and typed context. Review code and previews, then record a selection rationale. Selection, canonical publication and the hosted revision have distinct states.
 
+To connect a local Codex or Claude Code agent, create a repository key in **Connect local agent** and follow [the MCP and Git instructions](docs/remote-mcp.md).
+
 For the legacy retry fixture only, after selection and publication:
 
 ```sh

@@ -254,6 +254,14 @@ pub(crate) fn execution<S: SqlStore>(
 pub(crate) fn active<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let id = string(c, "job_id")?;
     let j = get(db, "jobs", &id)?;
+    if c.get("_grant").is_some()
+        && (j["external_grant"] != c["_grant"] || j["external_phase"] != "working")
+    {
+        return Err(Error::new(
+            "FENCED",
+            "External attempt identity or write phase changed",
+        ));
+    }
     if j["status"] != "running"
         || number(&j, "epoch")? != number(c, "epoch")?
         || number(&j, "lease_until")? <= now

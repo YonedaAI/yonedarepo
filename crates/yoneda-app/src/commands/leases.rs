@@ -6,6 +6,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         "claim" => {
             let id = string(&c, "job_id")?;
             let mut j = get(db, "jobs", &id)?;
+            if j["external"] == true {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "External attempts cannot launch hosted harnesses",
+                ));
+            }
             if j["status"] == "done" {
                 return Ok(json!({"already_done":true,"id":id}));
             }

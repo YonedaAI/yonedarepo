@@ -49,7 +49,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
       : [
           {
             name: 'Shared brief',
-            value: 'approved',
+            value: run.external ? 'agent requested' : 'approved',
             detail: `${run.context?.length ?? 0} context references`,
           },
         ]),

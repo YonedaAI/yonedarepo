@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod accounts;
 mod budget;
+mod grants;
 mod projects;
 mod providers;
 pub(super) const TABLE: &str = "workspace_records";
@@ -26,6 +27,9 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             }
             "budget_status" | "budget_reserve" | "budget_settle" => {
                 budget::handle(&db, &command, now)
+            }
+            "grants" | "grant_issue" | "grant_check" | "grant_revoke" => {
+                grants::handle(&db, &command, now)
             }
             "projects" | "project_reserve" | "project_update" | "project_get" => {
                 projects::handle(&db, &command, now)

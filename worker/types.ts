@@ -35,7 +35,7 @@ export interface Env {
 }
 export type Principal = {
   workspace: string;
-  role: 'user' | 'admin';
+  role: 'user' | 'admin' | 'agent';
   grant?: { id: string; repo: string; scope: string };
 };
 export type Scope = {
