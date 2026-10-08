@@ -15,13 +15,15 @@ pub(super) fn update<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     {
         return Err(Error::new("HEAD_MOVED", "Repository or policy changed"));
     }
-    let policy =
-        serde_json::to_value(yoneda_core::Policy::default()).map_err(|e| bad(&e.to_string()))?;
-    if c["policy"] != policy {
-        return Err(bad("Only the current supported policy can be installed"));
-    }
+    let typed: yoneda_core::Policy =
+        serde_json::from_value(c["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
+    yoneda_core::build::validate_policy(&typed)?;
+    let policy = serde_json::to_value(typed).map_err(|e| bad(&e.to_string()))?;
     if repository["policy"] == policy {
         return Ok(repository);
+    }
+    if repository["policy"]["version"] == policy["version"] {
+        return Err(bad("Changed policy requires a new version"));
     }
     repository["policy"] = policy.clone();
     save(db, "repository", "repo", &repository)?;

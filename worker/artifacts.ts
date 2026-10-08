@@ -26,16 +26,29 @@ export async function source(env: Env, revision: Json) {
         continue;
       }
       if (!['blob', 'exec'].includes(entry.type))
-        throw new Error('Only regular UTF-8 source files are supported');
+        throw new Error(
+          'Only regular files are supported; symlinks and Git submodules need conversion',
+        );
       const blob = await repo.readBlob(entry.hash);
       if (!blob) throw new Error('Source blob missing');
       bytes += blob.size;
       if (bytes > 8 * 1024 * 1024 || Object.keys(files).length >= 500)
         throw new Error('Source exceeds MVP limit');
-      const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(
-        await blob.arrayBuffer(),
-      );
-      files[path] = { content, executable: entry.type === 'exec' };
+      const data = new Uint8Array(await blob.arrayBuffer());
+      try {
+        const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data);
+        files[path] = { content, executable: entry.type === 'exec' };
+      } catch {
+        // Chunk conversion avoids stack overflow for a large binary asset.
+        let binary = '';
+        for (let offset = 0; offset < data.length; offset += 8192)
+          binary += String.fromCharCode(...data.subarray(offset, offset + 8192));
+        files[path] = {
+          content: btoa(binary),
+          encoding: 'base64',
+          executable: entry.type === 'exec',
+        };
+      }
     }
   }
   await walk(commit.treeHash, '', 0);

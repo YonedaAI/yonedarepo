@@ -2,7 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { authorized } from './auth';
 import { evidence } from './evidence';
 import { error, now, response, safeId } from './http';
-import { checkLedger } from './runtime';
+import { checkLedger, modelForJob } from './runtime';
 import { ownerSession } from './session';
 import { ledger, sha } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
@@ -155,10 +155,10 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             message.ack();
             return;
           }
-          job.model =
-            job.payload.execution?.harness === 'codex'
-              ? this.env.CODEX_MODEL
-              : this.env.CLAUDE_MODEL;
+          job.model = modelForJob(job, {
+            codex: this.env.CODEX_MODEL,
+            claude: this.env.CLAUDE_MODEL,
+          });
           const scope: Scope = {
             repo_id: envelope.repo_id,
             job,

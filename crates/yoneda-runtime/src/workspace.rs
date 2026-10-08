@@ -6,7 +6,7 @@ pub fn materialize(root: &Path, workspace: &Workspace) -> Result<()> {
     for (path, file) in workspace {
         let destination = root.join(path);
         std::fs::create_dir_all(destination.parent().unwrap()).map_err(err)?;
-        std::fs::write(&destination, &file.content).map_err(err)?;
+        std::fs::write(&destination, file.bytes()?).map_err(err)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -21,13 +21,22 @@ pub fn materialize(root: &Path, workspace: &Workspace) -> Result<()> {
 }
 
 pub fn export_workspace(root: &Path) -> Result<Workspace> {
+    export_with_baseline(root, &Workspace::new())
+}
+pub(crate) fn export_with_baseline(root: &Path, baseline: &Workspace) -> Result<Workspace> {
     let mut result = Workspace::new();
+    let mut bytes = 0usize;
+    let mut filter = crate::source_filter::SourceFilter::new(root, baseline)?;
+    let mut filter_error = None;
     for entry in walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|e| {
-            ![".git", "target", "node_modules"]
-                .contains(&e.file_name().to_str().unwrap_or_default())
+        .filter_entry(|entry| match filter.allow(entry) {
+            Ok(allowed) => allowed,
+            Err(error) => {
+                filter_error = Some(error);
+                false
+            }
         })
     {
         let entry = entry.map_err(err)?;
@@ -49,10 +58,17 @@ pub fn export_workspace(root: &Path) -> Result<Workspace> {
             .to_owned();
         yoneda_core::validate_path(&path)?;
         let file = crate::secure_fs::read_regular(root, &path)?;
+        bytes = bytes.saturating_add(file.bytes()?.len());
+        if bytes > yoneda_core::MAX_WORKSPACE_BYTES {
+            return Err(err("Workspace exceeds 8 MiB"));
+        }
         result.insert(path, file);
         if result.len() > yoneda_core::MAX_FILES {
             return Err(err("Too many workspace files"));
         }
+    }
+    if let Some(error) = filter_error {
+        return Err(error);
     }
     yoneda_core::validate_workspace(&result)?;
     Ok(result)

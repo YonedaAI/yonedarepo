@@ -56,17 +56,17 @@ pub(crate) fn read_regular(root: &Path, path: &str) -> Result<FileEntry> {
         if !metadata.is_file() || metadata.len() > yoneda_core::MAX_WORKSPACE_BYTES as u64 {
             return Err(err("Capture requires a bounded regular file"));
         }
-        let mut content = String::new();
+        let mut content = Vec::new();
         file.take(yoneda_core::MAX_WORKSPACE_BYTES as u64 + 1)
-            .read_to_string(&mut content)
+            .read_to_end(&mut content)
             .map_err(err)?;
         if content.len() > yoneda_core::MAX_WORKSPACE_BYTES {
             return Err(err("File grew beyond capture limit"));
         }
-        return Ok(FileEntry {
+        return Ok(FileEntry::from_bytes(
             content,
-            executable: metadata.permissions().mode() & 0o111 != 0,
-        });
+            metadata.permissions().mode() & 0o111 != 0,
+        ));
     }
     Err(err("Empty capture path"))
 }

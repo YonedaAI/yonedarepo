@@ -48,7 +48,7 @@ pub async fn capture(
     std::fs::create_dir_all(root).map_err(err)?;
     git(root, &["init", "-b", "main"]).await?;
     materialize(root, workspace)?;
-    git(root, &["add", "--all"]).await?;
+    git(root, &["add", "--force", "--all"]).await?;
     let tree = git(root, &["write-tree"]).await?;
     let mut command = Command::new("git");
     command

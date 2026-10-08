@@ -22,8 +22,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             let candidate = &j["payload"]["candidate"];
-            let checks =
-                yoneda_core::retry::checks_for_suite(&string(policy, "suite")?, &c["report"])?;
+            let checks = if policy["build"].is_null() {
+                yoneda_core::retry::checks_for_suite(&string(policy, "suite")?, &c["report"])?
+            } else {
+                let typed =
+                    serde_json::from_value(policy.clone()).map_err(|e| bad(&e.to_string()))?;
+                yoneda_core::build::checks_from_report(&typed, &c["report"])?
+            };
             let evidence = hash(&c, "evidence", &[64])?;
             let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence});
             finish(
@@ -115,12 +120,17 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("evaluating");
             save_execution(db, &e, now)?;
+            let run = get(db, "runs", &run_id)?;
+            let policy = run
+                .get("policy")
+                .cloned()
+                .unwrap_or(repo(db)?["policy"].clone());
             job(
                 db,
                 &format!("evaluate:{cid}"),
                 "evaluate",
                 now,
-                json!({"candidate":candidate,"run_id":run_id,"policy":repo(db)?["policy"]}),
+                json!({"candidate":candidate,"run_id":run_id,"policy":policy}),
             )?;
         }
         "evaluate" => {
