@@ -43,7 +43,14 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const decision = snapshot.decisions.find((d) => d.run_id === run.id);
   const shared = snapshot.artifacts.filter((a) => a.producer === research?.id);
   const done = coding.filter((e) => e.finished_at).length;
-  const reviewReady = !decision && run.status === 'ready' && eligible.length > 0;
+  const reviewable = eligible.filter(
+    (c) =>
+      c.base.commit === snapshot.repository.head_commit &&
+      snapshot.evaluations.some(
+        (e) => e.id === c.evaluation && e.policy === snapshot.repository.policy?.version,
+      ),
+  );
+  const reviewReady = !decision && run.status === 'ready' && reviewable.length > 0;
   const stages = [
     ...(research
       ? [{ name: 'Research', value: research.status, detail: research.model }]
@@ -107,9 +114,10 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
         <div className="review-ready" role="status">
           <strong>Ready for review</strong>
           <p>
-            {eligible.length} checked approach{eligible.length === 1 ? ' is' : 'es are'} eligible.
-            Compare previews, changes and context below, then choose Select approach and record your
-            decision. Publication waits for your selection; agents cannot publish directly.
+            {reviewable.length} checked approach{reviewable.length === 1 ? ' is' : 'es are'}{' '}
+            eligible. Compare previews, changes and context below, then choose Select approach and
+            record your decision. Publication waits for your selection; agents cannot publish
+            directly.
           </p>
         </div>
       )}
