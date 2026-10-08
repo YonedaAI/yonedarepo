@@ -19,11 +19,17 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         return response(await ledger(env, scope.repo_id, { op: 'context', ...identity }));
       if (name === 'artifact_get') {
         const artifact = await ledger(env, scope.repo_id, {
-          op: 'get_artifact',
+          op: 'authorize_artifact',
           ...identity,
           id: args.id,
         });
-        return response({ ...artifact, content: await readObject(env, artifact.digest) });
+        const content = await readObject(env, artifact.digest);
+        await ledger(env, scope.repo_id, {
+          op: 'get_artifact',
+          ...identity,
+          id: artifact.id,
+        });
+        return response({ ...artifact, content });
       }
       if (name === 'artifact_publish') {
         if (typeof args.content !== 'string' || args.content.length > 128 * 1024)

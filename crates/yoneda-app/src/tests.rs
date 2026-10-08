@@ -506,3 +506,51 @@ fn automated_fixture_selection_is_not_labelled_as_a_human_decision() {
         .unwrap();
     assert_eq!(selected["evidence"], "automated development verification");
 }
+
+#[test]
+fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
+    let db = repo();
+    start(&db);
+    let research = "job:run-one:research";
+    call(&db, json!({"op":"claim","job_id":research})).unwrap();
+    let uuid = "6cf12bf4-792f-4449-bfe6-d8bbece773f8";
+    call(&db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":format!("artifact:{uuid}"),"digest":"b".repeat(64),"label":"Research","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
+    call(
+        &db,
+        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
+    )
+    .unwrap();
+    let coding = "job:run-one:codex-minimal";
+    call(&db, json!({"op":"claim","job_id":coding})).unwrap();
+    let authorized = call(
+        &db,
+        json!({"op":"authorize_artifact","job_id":coding,"epoch":1,"id":uuid}),
+    )
+    .unwrap();
+    assert_eq!(authorized["id"], format!("artifact:{uuid}"));
+    let before = call(&db, json!({"op":"events","after":0})).unwrap();
+    assert!(
+        !before["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|event| event["kind"] == "artifact.retrieved")
+    );
+    let artifact = call(
+        &db,
+        json!({"op":"get_artifact","job_id":coding,"epoch":1,"id":uuid}),
+    )
+    .unwrap();
+    assert_eq!(artifact["id"], format!("artifact:{uuid}"));
+    assert_eq!(call(&db,json!({"op":"get_artifact","job_id":coding,"epoch":1,"id":"fbc7cadb-e6bc-4e75-bb91-f00cdd612321"})).unwrap_err().code,"FORBIDDEN");
+    let events = call(&db, json!({"op":"events","after":0})).unwrap();
+    assert!(
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "artifact.retrieved"
+                && e["data"]["artifact"] == artifact["id"]
+                && e["data"]["epoch"] == 1)
+    );
+}

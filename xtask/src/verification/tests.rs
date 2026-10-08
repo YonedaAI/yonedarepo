@@ -21,6 +21,7 @@ fn complete_fixture() -> (Value, Vec<Value>, Value) {
         let revision = json!({"repository":"yoneda/fork","commit":"c".repeat(40)});
         s["candidates"].as_array_mut().unwrap().push(json!({"id":format!("candidate-{strategy}"),"execution":strategy,"run_id":"run","revision":revision,"evaluation":strategy}));
         s["evaluations"].as_array_mut().unwrap().push(json!({"id":strategy,"candidate":format!("candidate-{strategy}"),"revision":revision,"policy":policy.version,"suite":policy.suite,"environment":policy.environment,"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":""},{"name":"behavior","status":"pass","detail":""}]}));
+        events.push(json!({"kind":"artifact.retrieved","at":9,"data":{"execution":strategy,"artifact":"shared","epoch":1}}));
         events.push(json!({"kind":"job.progress","at":10+i,"data":{"id":format!("job:{strategy}"),"epoch":1,"progress":{"stage":"harness_running"}}}));
         events
             .push(json!({"kind":"job.completed","at":50,"data":{"id":format!("job:{strategy}"),"epoch":1}}));
@@ -64,7 +65,25 @@ fn overlap_must_belong_to_the_completed_attempt_epochs() {
         execution["epoch"] = json!(2);
     }
     for event in &mut events {
-        event["data"]["epoch"] = json!(1);
+        event["data"]["epoch"] = json!(if event["kind"] == "artifact.retrieved" {
+            2
+        } else {
+            1
+        });
+    }
+    assert!(check(&s, &events, &why).is_err());
+}
+
+#[test]
+fn shared_context_requires_successful_reads_by_each_completed_attempt() {
+    let (s, mut events, why) = complete_fixture();
+    events.retain(|e| e["kind"] != "artifact.retrieved" || e["data"]["execution"] != "defensive");
+    assert!(check(&s, &events, &why).is_err());
+    let (s, mut events, why) = complete_fixture();
+    for event in &mut events {
+        if event["kind"] == "artifact.retrieved" && event["data"]["execution"] == "defensive" {
+            event["data"]["epoch"] = json!(2);
+        }
     }
     assert!(check(&s, &events, &why).is_err());
 }

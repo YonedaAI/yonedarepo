@@ -60,21 +60,42 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             event(db, "artifact.published", now, a.clone())?;
             Ok(a)
         }
-        "get_artifact" => {
+        "authorize_artifact" | "get_artifact" => {
             let j = active(db, &c, now)?;
-            let id = string(&c, "id")?;
+            let requested = string(&c, "id")?;
             let execution = &j["payload"]["execution"];
-            if j["kind"] != "agent"
-                || !execution["context"]
-                    .as_array()
-                    .is_some_and(|a| a.iter().any(|v| v == &json!(id)))
-            {
+            if j["kind"] != "agent" {
                 return Err(Error::new(
                     "FORBIDDEN",
                     "Artifact is outside the frozen execution context",
                 ));
             }
+            // Resolve aliases only against this attempt's frozen allowlist.
+            let id = execution["context"]
+                .as_array()
+                .and_then(|allowed| {
+                    allowed
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .find(|id| *id == requested)
+                        .or_else(|| {
+                            allowed
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .find(|id| id.strip_prefix("artifact:") == Some(requested.as_str()))
+                        })
+                })
+                .ok_or_else(|| {
+                    Error::new(
+                        "FORBIDDEN",
+                        "Artifact is outside the frozen execution context",
+                    )
+                })?
+                .to_owned();
             let a = get(db, "artifacts", &id)?;
+            if c["op"] == "authorize_artifact" {
+                return Ok(a);
+            }
             let eid = string(execution, "id")?;
             edge(
                 db,
@@ -87,7 +108,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 db,
                 "artifact.retrieved",
                 now,
-                json!({"artifact":id,"execution":eid}),
+                json!({"artifact":id,"execution":eid,"epoch":j["epoch"]}),
             )?;
             Ok(a)
         }
