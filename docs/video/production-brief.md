@@ -1,6 +1,6 @@
 # Presenter video production brief
 
-The deliverable is an edited **8:48 product walkthrough**, with a presenter in the owner's likeness, a calm professional tech voice and actual YonedaRepo screen captures. The [final script](presenter-script.md), [plain narration](presenter-narration.txt) and [scene manifest](presenter-scenes.json) are ready for production. The full-length presenter video has not been rendered. Short service-comparison samples are separate from the final edit.
+The deliverable is an edited **8:48 product walkthrough**, with a presenter in the owner's likeness, a calm professional tech voice and actual YonedaRepo screen captures. The [final script](presenter-script.md), [plain narration](presenter-narration.txt) and [scene manifest](presenter-scenes.json) are ready for production. The full-length presenter video has not been rendered. Short service-comparison samples are separate from the final edit. See the [measured service comparison](service-comparison.md) for pilot settings and current results.
 
 ## Creative direction
 
