@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { authorized } from './auth';
 import { evidence } from './evidence';
 import { error, now, response, safeId } from './http';
+import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { ledger, sha } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
@@ -83,6 +84,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
         if (head !== input.commit)
           return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
       }
+      if (action === 'start_run') checkLedger(await ledger(this.env, repo, { op: 'snapshot' }));
       const value = await ledger(this.env, repo, { ...input, op: action });
       if (action === 'cancel_run')
         for (const stop of value.stop) {

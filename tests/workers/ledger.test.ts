@@ -11,7 +11,7 @@ it('commits Rust commands, ordered events and outbox in real DO SQLite, and surv
  await initialize();await ledger(bindings,'retry-test',{op:'start_run',id:'run-test',intent:'Safe retry',criteria:[]});
  const pending=await ledger(bindings,'retry-test',{op:'outbox'});expect(pending.jobs.some((j:{kind:string})=>j.kind==='agent')).toBe(true);
  const stub=bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('retry-test'));await evictDurableObject(stub);
- const snapshot=await ledger(bindings,'retry-test',{op:'snapshot'});expect(snapshot.runs).toHaveLength(1);expect(snapshot.executions).toHaveLength(1);expect(snapshot.seq).toBe(2);
+ const snapshot=await ledger(bindings,'retry-test',{op:'snapshot'});expect(snapshot.runs).toHaveLength(1);expect(snapshot.executions).toHaveLength(1);expect(snapshot.seq).toBe(2);expect(snapshot.capabilities?.artifact_reads).toBe(2);
  const events=await ledger(bindings,'retry-test',{op:'events',after:1});expect(events.events.map((e:{seq:number})=>e.seq)).toEqual([2]);
 });
 it('rolls back failed Rust storage transactions without changing the event sequence',async()=>{
@@ -73,4 +73,11 @@ it('refuses old container protocols and evaluator environments before executing 
  expect(() => checkRuntime('ready' as any,{kind:'agent'})).toThrow();
  expect(() => checkRuntime({protocol:2,environment:'old',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).toThrow();
  expect(() => checkRuntime({protocol:2,environment:'new',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).not.toThrow();
+});
+
+it('refuses old ledger read protocols before starting paid explorations', async () => {
+ const { checkLedger } = await import('../../worker/runtime');
+ expect(() => checkLedger({v:1})).toThrow();
+ expect(() => checkLedger({capabilities:{artifact_reads:1}})).toThrow();
+ expect(() => checkLedger({capabilities:{artifact_reads:2}})).not.toThrow();
 });

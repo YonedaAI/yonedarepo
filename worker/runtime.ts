@@ -1,4 +1,11 @@
 import type { Json } from './types';
+export function checkLedger(snapshot: Json) {
+  if (snapshot?.capabilities?.artifact_reads !== 2)
+    throw Object.assign(
+      new Error('Repository ledger code is still updating; retry after deployment propagation'),
+      { code: 'LEDGER_UPDATING' },
+    );
+}
 // Worker and image deploy separately; refuse incompatible images before model calls.
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
