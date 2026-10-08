@@ -26,6 +26,10 @@ The execution image built and passed **16 Linux runtime tests**. A real pinned G
 
 Workerd coverage verifies independent same-provider connections, list responses without ciphertext/plaintext, connection-bound encryption, provider mismatch rejection and removal isolation. Gemini tests verify the pinned native model path, output bounds, rejected paid server tools/media references, and refusal to run against an old image missing the Gemini harness. Four-agent scheduling tests verify shared source and independently frozen connections/models.
 
+## Public CI
+
+[Public CI run 37813638281](https://github.com/MagnetonIO/yonedarepo/actions/runs/37813638281) passed for public source revision `6ad3746acbbaf66ecf1e6535d27b4a02a46ce090`. It ran the native/Wasm/workerd/browser gate, built the execution image and verified the real Gemini CLI with the offline provider fixture. This is separate from paid Gemini acceptance.
+
 ## Deployment verification
 
 The existing development platform was updated at [yonedarepo-dev.mlong-f01.workers.dev](https://yonedarepo-dev.mlong-f01.workers.dev/). Final platform version: `e636416c-fc58-4448-bd58-a16e24b6af01`. Dialog closure restores focus to the triggering selection button; this was observed after the final deployment. The execution image includes the corrected Gemini trust environment; its SHA-256 is `5bbef45ae017d91ddfd4206bb0d7d147e21d073a53c789a7265641cae416765b`. Later frontend-only deployments retain that image. The sites Worker was unchanged.
