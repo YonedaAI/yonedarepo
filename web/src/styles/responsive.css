@@ -1,0 +1,132 @@
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+@media (max-width: 1100px) {
+  .rail {
+    width: 205px;
+    padding: 25px 14px;
+  }
+  .brand {
+    font-size: 16px;
+  }
+  .brand small {
+    font-size: 9px;
+  }
+  .exploration,
+  .history-tools {
+    padding: 26px 24px;
+  }
+  .workspace-header {
+    padding: 0 24px;
+  }
+  .candidate-grid {
+    gap: 10px;
+  }
+  .candidate-content {
+    padding: 12px;
+  }
+  .evidence-panel {
+    width: 280px;
+  }
+  .welcome {
+    margin: 70px 30px;
+  }
+}
+@media (max-width: 760px) {
+  .app {
+    display: block;
+  }
+  .rail {
+    position: static;
+    width: 100%;
+    height: auto;
+    padding: 18px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .repository-list {
+    margin: 0;
+  }
+  .repository-list > p,
+  .rail-empty,
+  .brand small,
+  .rail-bottom {
+    display: none;
+  }
+  .repository-list button {
+    margin: 0;
+    width: auto;
+  }
+  .workspace-header {
+    height: 60px;
+    padding: 0 18px;
+  }
+  .header-actions > span {
+    display: none;
+  }
+  .workspace-tabs {
+    padding: 0 18px;
+    gap: 20px;
+  }
+  .workspace-tabs > span {
+    display: none;
+  }
+  .exploration {
+    padding: 24px 18px;
+  }
+  .intent-row h1 {
+    font-size: 22px;
+  }
+  .intent-row > .quiet {
+    font-size: 0;
+  }
+  .intent-row > .quiet svg {
+    min-width: 16px;
+  }
+  .intent-form {
+    flex-direction: column;
+  }
+  .candidate-grid {
+    grid-template-columns: 1fr;
+  }
+  .candidate-content {
+    min-height: 0;
+  }
+  .graph-heading {
+    padding: 20px 18px 0;
+  }
+  .graph-workspace {
+    display: block;
+  }
+  .evidence-panel {
+    width: 100%;
+    max-height: 350px;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .history-tools {
+    grid-template-columns: 1fr;
+    padding: 24px 18px;
+  }
+  .welcome {
+    margin: 40px 0;
+    padding: 24px;
+  }
+  .welcome h1 {
+    font-size: 30px;
+  }
+  .auth-form {
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .auth-form input {
+    min-width: 160px;
+  }
+  .publication-banner,
+  .error-banner {
+    padding: 14px 18px;
+  }
+}

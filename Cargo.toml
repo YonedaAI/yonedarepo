@@ -1,0 +1,26 @@
+[workspace]
+members = ["crates/yoneda-core", "crates/yoneda-app", "crates/yoneda-cloudflare", "crates/yoneda-worker", "crates/yoneda-runtime", "xtask"]
+exclude = ["fixtures/retry-client"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.94"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+schemars = "1"
+yoneda-core = { path = "crates/yoneda-core" }
+yoneda-app = { path = "crates/yoneda-app" }
+yoneda-cloudflare = { path = "crates/yoneda-cloudflare" }
+
+[profile.release]
+lto = true
+opt-level = "s"
+# wasm-bindgen requires target_features metadata. Strip debug sections only.
+strip = "debuginfo"

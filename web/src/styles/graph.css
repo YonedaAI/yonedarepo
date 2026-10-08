@@ -1,0 +1,124 @@
+.graph-section {
+  border-top: 1px solid var(--line);
+  background: #edf4f8;
+}
+.graph-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 36px 0;
+}
+.graph-heading h2 {
+  font-size: 14px;
+}
+.graph-heading p {
+  font-size: 11px;
+}
+.graph-heading .quiet {
+  font-size: 11px;
+  margin-left: 12px;
+}
+.graph-workspace {
+  display: flex;
+  min-height: 390px;
+}
+.graph-canvas {
+  height: 390px;
+  flex: 1;
+  min-width: 0;
+}
+.graph-node {
+  width: 205px;
+  background: #fbfdfe;
+  border: 1px solid #c6d7e3;
+  border-left: 3px solid #769db8;
+  box-shadow: none;
+  border-radius: 6px;
+  text-align: left;
+  padding: 10px 12px;
+}
+.node-kind {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.graph-node strong {
+  display: block;
+  max-height: 50px;
+  overflow: hidden;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+}
+.graph-node.kind-assumption {
+  border-left-color: #b77817;
+}
+.graph-node.kind-execution,
+.graph-node.kind-context {
+  border-left-color: #6157a4;
+}
+.graph-node.kind-decision,
+.graph-node.kind-source {
+  border-left-color: #155c9c;
+}
+.graph-node.kind-evaluation {
+  border-left-color: #247565;
+}
+.graph-node.kind-observation {
+  background: #fff7e9;
+  border-left-color: #b77817;
+}
+.graph-section footer {
+  font-size: 10px;
+  color: var(--muted);
+  padding: 14px 36px;
+  border-top: 1px solid var(--line);
+}
+.graph-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--muted);
+}
+.graph-empty h3 {
+  font-size: 18px;
+  font-weight: 400;
+  margin-bottom: 6px;
+}
+.graph-empty p {
+  font-size: 12px;
+}
+.branch-symbol {
+  font-size: 50px;
+  color: #8caec5;
+  margin-bottom: 10px;
+}
+.evidence-panel {
+  width: 330px;
+  border-left: 1px solid var(--line);
+  background: #f7fafc;
+  padding: 22px;
+  max-height: 390px;
+  overflow: auto;
+}
+.evidence-panel > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.evidence-panel h2 {
+  font-size: 18px;
+  line-height: 1.4;
+}
+.evidence-panel time,
+.evidence-author {
+  font-size: 11px;
+  color: var(--muted);
+}
+.evidence-panel pre {
+  margin-top: 18px;
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-dev",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {"enabled": true},
+  "assets": {"directory": "web/dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/health"]},
+  "vars": {"ARTIFACTS_NAMESPACE": "yoneda-dev", "CODEX_MODEL": "gpt-5.6-luna", "CLAUDE_MODEL": "claude-sonnet-4-6"},
+  "services": [{"binding": "SELF", "service": "yonedarepo-dev"}],
+  "secrets_store_secrets": [
+    {"binding": "OPENAI_KEY", "store_id": "3d9115d4fe864c54a792bcb790a763e3", "secret_name": "Codex"},
+    {"binding": "ANTHROPIC_KEY", "store_id": "3d9115d4fe864c54a792bcb790a763e3", "secret_name": "Claude"}
+  ],
+  "artifacts": [{"binding": "ARTIFACTS", "namespace": "yoneda-dev"}],
+  "durable_objects": {"bindings": [
+    {"name": "REPOSITORIES", "class_name": "RepositoryAuthority"},
+    {"name": "LIVE", "class_name": "LiveRoom"},
+    {"name": "EXECUTIONS", "class_name": "ExecutionContainer"}
+  ]},
+  "migrations": [{"tag": "v1", "new_sqlite_classes": ["RepositoryAuthority", "LiveRoom", "ExecutionContainer"]}],
+  "containers": [{"class_name": "ExecutionContainer", "image": "./containers/Dockerfile", "image_build_context": ".", "max_instances": 6, "instance_type": "standard-1"}],
+  "r2_buckets": [{"binding": "OBJECTS", "bucket_name": "yonedarepo-dev-objects"}],
+  "d1_databases": [{"binding": "INDEX", "database_name": "yonedarepo-dev-index", "database_id": "182c0b3e-8f82-4038-9b3e-630b0b5275c5", "migrations_dir": "migrations"}],
+  "queues": {
+    "producers": [
+      {"binding":"AGENT_QUEUE","queue":"yoneda-dev-agent"},
+      {"binding":"CAPTURE_QUEUE","queue":"yoneda-dev-capture"},
+      {"binding":"EVALUATE_QUEUE","queue":"yoneda-dev-evaluate"},
+      {"binding":"PUBLISH_QUEUE","queue":"yoneda-dev-publish"}
+    ],
+    "consumers": [
+      {"queue":"yoneda-dev-agent","max_batch_size":1,"max_retries":3,"dead_letter_queue":"yoneda-dev-dead-letter"},
+      {"queue":"yoneda-dev-capture","max_batch_size":1,"max_retries":3,"dead_letter_queue":"yoneda-dev-dead-letter"},
+      {"queue":"yoneda-dev-evaluate","max_batch_size":1,"max_retries":3,"dead_letter_queue":"yoneda-dev-dead-letter"},
+      {"queue":"yoneda-dev-publish","max_batch_size":1,"max_retries":3,"dead_letter_queue":"yoneda-dev-dead-letter"}
+    ]
+  }
+}

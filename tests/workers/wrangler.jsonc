@@ -1,0 +1,9 @@
+{
+ "name":"yoneda-test","main":"entrypoint.ts","compatibility_date":"2026-10-07","compatibility_flags":["nodejs_compat"],
+ "vars":{"OWNER_TOKEN":"local-test-owner","ARTIFACTS_NAMESPACE":"yoneda-test","CODEX_MODEL":"gpt-5.6-luna","CLAUDE_MODEL":"claude-sonnet-4-6"},
+ "services":[{"binding":"SELF","service":"yoneda-test"}],
+ "durable_objects":{"bindings":[{"name":"REPOSITORIES","class_name":"RepositoryAuthority"},{"name":"LIVE","class_name":"LiveRoom"}]},
+ "migrations":[{"tag":"v1","new_sqlite_classes":["RepositoryAuthority","LiveRoom"]}],
+ "r2_buckets":[{"binding":"OBJECTS","bucket_name":"yoneda-local-test"}],
+ "d1_databases":[{"binding":"INDEX","database_name":"yoneda-test-index","database_id":"00000000-0000-0000-0000-000000000000"}]
+}

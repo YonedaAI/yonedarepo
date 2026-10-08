@@ -1,0 +1,205 @@
+use crate::storage::*;
+use serde_json::{Value, json};
+use yoneda_core::{Error, Result};
+pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
+    match string(&c, "op")?.as_str() {
+        "claim" => {
+            let id = string(&c, "job_id")?;
+            let mut j = get(db, "jobs", &id)?;
+            if j["status"] == "done" {
+                return Ok(json!({"already_done":true,"id":id}));
+            }
+            if j["status"] == "cancelled" || j["status"] == "failed" {
+                return Err(Error::new("FENCED", "Job is terminal"));
+            }
+            if j["status"] == "running" && number(&j, "lease_until")? > now {
+                return Err(Error::new("LEASE_HELD", "Attempt is already running"));
+            }
+            if number(&j, "attempt")? >= 2 || number(&j, "deadline")? <= now {
+                return Err(Error::new("ATTEMPTS_EXHAUSTED", "Job budget exhausted"));
+            }
+            j["attempt"] = json!(number(&j, "attempt")? + 1);
+            j["epoch"] = json!(number(&j, "epoch")? + 1);
+            j["status"] = json!("running");
+            let duration = if j["kind"] == "evaluate" {
+                120_000
+            } else {
+                600_000
+            };
+            j["attempt_deadline"] = json!((now + duration).min(number(&j, "deadline")?));
+            j["lease_until"] = json!((now + 60_000).min(number(&j, "attempt_deadline")?));
+            save(db, "jobs", &id, &j)?;
+            if j["kind"] == "agent" {
+                let eid = string(&j["payload"]["execution"], "id")?;
+                let mut e = get(db, "executions", &eid)?;
+                e["status"] = json!("running");
+                e["started_at"] = json!(now);
+                e["epoch"] = j["epoch"].clone();
+                let harness = string(&e, "harness")?;
+                if let Some(model) = c["models"][&harness].as_str() {
+                    if model.is_empty() || model.len() > 128 {
+                        return Err(bad("Invalid model identifier"));
+                    }
+                    e["model"] = json!(model);
+                    j["model"] = json!(model);
+                    j["payload"]["execution"]["model"] = json!(model);
+                    save(db, "jobs", &id, &j)?;
+                }
+                save(db, "executions", &eid, &e)?;
+                node(
+                    db,
+                    &eid,
+                    "execution",
+                    &format!("{} / {}", string(&e, "harness")?, string(&e, "strategy")?),
+                    "platform",
+                    now,
+                    e,
+                )?;
+            }
+            event(
+                db,
+                "job.started",
+                now,
+                json!({"id":id,"kind":j["kind"],"epoch":j["epoch"]}),
+            )?;
+            Ok(j)
+        }
+        "check_attempt" => {
+            let j = active(db, &c, now)?;
+            Ok(json!({"status":j["status"],"deadline":j["attempt_deadline"]}))
+        }
+        "heartbeat" | "progress" => {
+            let mut j = active(db, &c, now)?;
+            let id = string(&j, "id")?;
+            j["lease_until"] = json!((now + 60_000).min(number(&j, "attempt_deadline")?));
+            if c.get("progress").is_some() {
+                j["progress"] = c["progress"].clone();
+            }
+            save(db, "jobs", &id, &j)?;
+            Ok(json!({"lease_until":j["lease_until"]}))
+        }
+        "fail" => {
+            let mut j = active(db, &c, now)?;
+            let id = string(&j, "id")?;
+            j["status"] = json!(if c["retryable"] == true && number(&j, "attempt")? < 2 {
+                "queued"
+            } else {
+                "failed"
+            });
+            j["error"] = c["error"].clone();
+            j["lease_until"] = json!(0);
+            save(db, "jobs", &id, &j)?;
+            if j["status"] == "queued" {
+                outbox(
+                    db,
+                    &format!("dispatch:{id}:{}", number(&j, "attempt")?),
+                    j["kind"].as_str().unwrap_or("agent"),
+                    json!({"job_id":id}),
+                )?;
+            }
+            reflect_status(db, &j, now)?;
+            event(
+                db,
+                "job.failed",
+                now,
+                json!({"id":id,"status":j["status"],"error":c["error"]}),
+            )?;
+            Ok(j)
+        }
+        "recover" => {
+            let mut recovered = 0;
+            for mut j in all(db, "jobs")? {
+                if (j["status"] == "running" && number(&j, "lease_until")? <= now)
+                    || (j["status"] == "queued" && number(&j, "deadline")? <= now)
+                {
+                    let id = string(&j, "id")?;
+                    j["status"] = json!(if number(&j, "attempt")? < 2
+                        && number(&j, "deadline")? > now
+                    {
+                        "queued"
+                    } else {
+                        "failed"
+                    });
+                    save(db, "jobs", &id, &j)?;
+                    reflect_status(db, &j, now)?;
+                    if j["status"] == "queued" {
+                        outbox(
+                            db,
+                            &format!("dispatch:{id}:{}", number(&j, "attempt")?),
+                            j["kind"].as_str().unwrap_or("agent"),
+                            json!({"job_id":id}),
+                        )?;
+                    }
+                    recovered += 1;
+                    event(
+                        db,
+                        "job.recovered",
+                        now,
+                        json!({"id":id,"status":j["status"]}),
+                    )?;
+                }
+            }
+            Ok(json!({"recovered":recovered}))
+        }
+        _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
+    }
+}
+
+fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
+    let execution = if job["kind"] == "agent" || job["kind"] == "capture" {
+        job["payload"]["execution"]["id"].as_str()
+    } else if job["kind"] == "evaluate" {
+        job["payload"]["candidate"]["execution"].as_str()
+    } else {
+        None
+    };
+    if let Some(id) = execution {
+        let mut e = get(db, "executions", id)?;
+        if job["kind"] == "agent" || job["status"] == "failed" {
+            e["status"] = job["status"].clone();
+        }
+        e["error"] = job
+            .get("error")
+            .cloned()
+            .unwrap_or(json!("Attempt lease expired"));
+        save(db, "executions", id, &e)?;
+        node(
+            db,
+            id,
+            "execution",
+            &format!("{} / {}", string(&e, "harness")?, string(&e, "strategy")?),
+            "platform",
+            now,
+            e.clone(),
+        )?;
+        if job["status"] == "failed" && e["role"] == "research" {
+            let rid = string(&e, "run_id")?;
+            let mut run = get(db, "runs", &rid)?;
+            run["status"] = json!("failed");
+            save(db, "runs", &rid, &run)?;
+        }
+    }
+    if job["kind"] == "publish" && job["status"] == "failed" {
+        let did = string(&job["payload"], "decision_id")?;
+        let mut decision = get(db, "decisions", &did)?;
+        decision["status"] = json!("publication_failed");
+        decision["error"] = job
+            .get("error")
+            .cloned()
+            .unwrap_or(json!("Publisher attempt budget exhausted"));
+        let mut repository = repo(db)?;
+        repository["status"] = json!("blocked");
+        save(db, "repository", "repo", &repository)?;
+        save(db, "decisions", &did, &decision)?;
+        node(
+            db,
+            &did,
+            "decision",
+            decision["rationale"].as_str().unwrap_or("Decision"),
+            "owner",
+            now,
+            decision.clone(),
+        )?;
+    }
+    Ok(())
+}
