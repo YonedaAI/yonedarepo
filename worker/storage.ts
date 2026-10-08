@@ -1,0 +1,41 @@
+import { safeId } from './http';
+import type { Env, Json } from './types';
+export async function sha(content: string) {
+  return [
+    ...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(content))),
+  ]
+    .map((v) => v.toString(16).padStart(2, '0'))
+    .join('');
+}
+export async function object(env: Env, content: string) {
+  if (new TextEncoder().encode(content).length > 8 * 1024 * 1024)
+    throw new Error('Object exceeds 8 MiB');
+  const digest = await sha(content);
+  await env.OBJECTS.put(`sha256/${digest}`, content, {
+    onlyIf: { etagDoesNotMatch: '*' },
+    httpMetadata: { contentType: 'application/json' },
+  });
+  return { digest };
+}
+export async function readObject(env: Env, digest: string) {
+  if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid object digest');
+  const value = await env.OBJECTS.get(`sha256/${digest}`);
+  if (!value) throw new Error('Evidence object is missing');
+  const content = await value.text();
+  if ((await sha(content)) !== digest) throw new Error('Evidence digest mismatch');
+  return content;
+}
+export async function ledger(env: Env, repo: string, command: Json): Promise<Json> {
+  if (!safeId(repo)) throw new Error('Invalid repository ID');
+  const stub = env.REPOSITORIES.get(env.REPOSITORIES.idFromName(repo));
+  const res = await stub.fetch('http://ledger/command', {
+    method: 'POST',
+    body: JSON.stringify(command),
+  });
+  const value = await res.json<Json>();
+  if (!res.ok)
+    throw Object.assign(new Error(value.error?.message ?? 'Ledger rejected request'), {
+      code: value.error?.code,
+    });
+  return value;
+}

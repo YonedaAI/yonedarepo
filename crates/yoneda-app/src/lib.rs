@@ -1,0 +1,19 @@
+//! Transactional application commands shared by native SQLite and Cloudflare DOs.
+use serde_json::Value;
+use yoneda_core::Result;
+mod commands;
+mod storage;
+pub use storage::{SqlStore, migrate};
+/// All ledger commands execute synchronously within the host's storage transaction.
+/// The closure contains no network calls, clocks, or asynchronous work.
+pub fn execute<S: SqlStore>(store: &S, command: Value) -> Result<Value> {
+    migrate(store)?;
+    let owned = store.clone();
+    store.transaction(Box::new(move || commands::dispatch(&owned, command)))
+}
+
+#[cfg(any(test, feature = "native"))]
+pub mod native;
+
+#[cfg(test)]
+mod tests;

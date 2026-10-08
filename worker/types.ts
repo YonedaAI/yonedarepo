@@ -1,0 +1,34 @@
+import type { ExecutionContainer } from './container';
+import type { YonedaEntrypoint } from './entrypoint';
+export type Json = Record<string, any>;
+export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string };
+export interface Env {
+  REPOSITORIES: DurableObjectNamespace;
+  LIVE: DurableObjectNamespace;
+  EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
+  SELF: Service<YonedaEntrypoint>;
+  OBJECTS: R2Bucket;
+  INDEX: D1Database;
+  ARTIFACTS: Artifacts;
+  ASSETS: Fetcher;
+  AGENT_QUEUE: Queue<Envelope>;
+  CAPTURE_QUEUE: Queue<Envelope>;
+  EVALUATE_QUEUE: Queue<Envelope>;
+  PUBLISH_QUEUE: Queue<Envelope>;
+  OPENAI_KEY: { get(): Promise<string> };
+  ANTHROPIC_KEY: { get(): Promise<string> };
+  OWNER_TOKEN?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
+  ARTIFACTS_NAMESPACE: string;
+  CODEX_MODEL: string;
+  CLAUDE_MODEL: string;
+}
+export type Scope = {
+  repo_id: string;
+  job: Json;
+  supervisor: string;
+  fork?: string;
+  model_calls: number;
+  created_at: number;
+};

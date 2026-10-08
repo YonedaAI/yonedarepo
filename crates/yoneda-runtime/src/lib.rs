@@ -1,0 +1,23 @@
+//! Native isolated execution and MCP transport.
+use serde_json::Value;
+use yoneda_core::Error;
+mod broker;
+mod git;
+mod jobs;
+mod mcp;
+mod process;
+mod secure_fs;
+mod supervisor;
+mod workspace;
+pub use git::{capture, git};
+pub use mcp::mcp;
+pub use supervisor::serve;
+pub use workspace::{export_workspace, materialize};
+fn err(e: impl std::fmt::Display) -> Error {
+    Error::new("RUNTIME", e.to_string())
+}
+fn field<'a>(v: &'a Value, k: &str) -> yoneda_core::Result<&'a str> {
+    v[k].as_str().ok_or_else(|| err(format!("Missing {k}")))
+}
+#[cfg(test)]
+mod tests;

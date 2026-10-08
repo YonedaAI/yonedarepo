@@ -1,0 +1,14 @@
+[package]
+name = "yoneda-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+[dependencies]
+yoneda-core.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+axum = "0.8"
+walkdir = "2"
+tempfile = "3"
+libc = "0.2"
