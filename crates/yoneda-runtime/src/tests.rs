@@ -3,6 +3,20 @@ use yoneda_core::{FileEntry, Workspace};
 use crate::*;
 use serde_json::json;
 use tokio::process::Command;
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn supervisor_refuses_jobs_without_owning_the_agent_uid() {
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let error = crate::supervisor::serve().await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("must own the isolated agent UID")
+    );
+}
+
 #[tokio::test]
 async fn claude_child_uses_the_same_output_ceiling_as_the_provider_proxy() {
     let mut child = Command::new("/bin/sh");

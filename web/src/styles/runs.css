@@ -132,6 +132,19 @@
 .recorded-decision strong {
   font-size: 13px;
 }
+.review-ready {
+  margin: 18px 0;
+  padding: 16px 20px;
+  border: 1px solid #9bbfb6;
+  border-radius: 8px;
+  background: #eaf4f0;
+}
+.review-ready p {
+  margin: 8px 0 0;
+  max-width: 80ch;
+  font-size: 13px;
+  line-height: 1.6;
+}
 .comparison-heading {
   margin: 24px 0 16px;
 }
