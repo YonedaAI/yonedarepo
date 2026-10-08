@@ -22,7 +22,7 @@
     {"name": "EXECUTIONS", "class_name": "ExecutionContainer"}
   ]},
   "migrations": [{"tag": "v1", "new_sqlite_classes": ["RepositoryAuthority", "LiveRoom", "ExecutionContainer"]}],
-  "containers": [{"class_name": "ExecutionContainer", "image": "./containers/Dockerfile", "image_build_context": ".", "max_instances": 6, "instance_type": "standard-1"}],
+  "containers": [{"class_name": "ExecutionContainer", "image": "./containers/Dockerfile", "image_build_context": ".", "max_instances": 6, "instance_type": "standard-1", "rollout_step_percentage": [100]}],
   "r2_buckets": [{"binding": "OBJECTS", "bucket_name": "yonedarepo-dev-objects"}],
   "d1_databases": [{"binding": "INDEX", "database_name": "yonedarepo-dev-index", "database_id": "182c0b3e-8f82-4038-9b3e-630b0b5275c5", "migrations_dir": "migrations"}],
   "queues": {

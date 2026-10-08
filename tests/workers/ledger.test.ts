@@ -37,7 +37,7 @@ it('only exposes evidence recorded in the authorized repository',async()=>{
  await initialize(); await ledger(bindings,'retry-test',{op:'start_run',id:'run-test',intent:'Safe retry'});
  const claim=await ledger(bindings,'retry-test',{op:'claim',job_id:'job:run-test:research'});
  const evidence=await object(bindings,'Shared research text');
- await ledger(bindings,'retry-test',{op:'publish_artifact',job_id:claim.id,epoch:claim.epoch,id:'research-a',digest:evidence.digest,label:'Research',kind:'research',metadata:{}});
+ await ledger(bindings,'retry-test',{op:'publish_artifact',job_id:claim.id,epoch:claim.epoch,id:'research-a',digest:evidence.digest,label:'Research',kind:'research',metadata:{assumptions:[{statement:'Upstream p99 stays within 100 ms',metric:'upstream_p99_ms',limit:100,path:'src/main.rs'}]}});
  const request=(digest:string)=>bindings.SELF.fetch(`https://yoneda/api/repos/retry-test/evidence?digest=${digest}`,{headers:{authorization:'Bearer local-test-owner'}});
  const allowed=await request(evidence.digest); expect(allowed.status).toBe(200); expect(await allowed.json()).toEqual({digest:evidence.digest,content:'Shared research text'});
  const other=await object(bindings,'Unrelated private object'); expect((await request(other.digest)).status).toBe(404);
@@ -66,4 +66,11 @@ it('failed initialization does not leave a repeating alarm',async()=>{
  await expect(ledger(bindings,'missing-repo',{op:'snapshot'})).rejects.toThrow();
  const stub=bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('missing-repo'));
  expect(await runInDurableObject(stub,(_instance,state)=>state.storage.getAlarm())).toBeNull();
+});
+
+it('refuses old container protocols and evaluator environments before executing a job', async () => {
+ const { checkRuntime } = await import('../../worker/runtime');
+ expect(() => checkRuntime('ready' as any,{kind:'agent'})).toThrow();
+ expect(() => checkRuntime({protocol:2,environment:'old',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).toThrow();
+ expect(() => checkRuntime({protocol:2,environment:'new',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).not.toThrow();
 });

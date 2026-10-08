@@ -96,3 +96,98 @@ async fn command_completion_stops_background_children() {
         "Child must not outlive its supervised command"
     );
 }
+
+#[tokio::test]
+async fn capture_preserves_raw_unicode_and_control_character_paths() {
+    let root = tempfile::tempdir().unwrap();
+    let names = ["café.rs", "quote\".txt", "tab\t.txt", "line\n.txt"];
+    let workspace = names
+        .iter()
+        .map(|name| {
+            (
+                name.to_string(),
+                FileEntry {
+                    content: "text".into(),
+                    executable: false,
+                },
+            )
+        })
+        .collect();
+    let result = capture(root.path(), None, &workspace, "Paths")
+        .await
+        .unwrap();
+    let actual: std::collections::BTreeSet<_> = result["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(actual, names.into_iter().collect());
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn detached_child_fixture() {
+    let Ok(marker) = std::env::var("YONEDA_TEST_DAEMON") else {
+        return;
+    };
+    let marker = std::ffi::CString::new(marker).unwrap();
+    // The child deliberately leaves its parent's process group and closes all pipes.
+    unsafe {
+        let pid = libc::fork();
+        assert!(pid >= 0);
+        if pid == 0 {
+            libc::setsid();
+            libc::close(0);
+            libc::close(1);
+            libc::close(2);
+            libc::usleep(200_000);
+            let fd = libc::open(marker.as_ptr(), libc::O_WRONLY | libc::O_CREAT, 0o600);
+            if fd >= 0 {
+                libc::write(fd, b"escaped".as_ptr().cast(), 7);
+                libc::close(fd);
+            }
+            libc::_exit(0);
+        }
+    }
+}
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn isolated_uid_barrier_stops_daemonized_descendants() {
+    if unsafe { libc::geteuid() } != 0 {
+        return;
+    } // The Docker build runs this as root on Linux.
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(root.path(), std::fs::Permissions::from_mode(0o777)).unwrap();
+    let marker = root.path().join("daemon");
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    crate::process::untrusted(&mut command, root.path());
+    command
+        .args(["--exact", "tests::detached_child_fixture", "--nocapture"])
+        .env("YONEDA_TEST_DAEMON", &marker);
+    let result = crate::process::bounded_output(&mut command).await.unwrap();
+    assert_eq!(result["exit"], 0, "{result}");
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    assert!(
+        !marker.exists(),
+        "Daemonized child survived the command barrier"
+    );
+}
+
+#[test]
+fn runtime_health_identifies_protocol_and_evaluator_environment() {
+    let health = crate::supervisor::health();
+    assert_eq!(health["protocol"], 2);
+    assert_eq!(
+        health["environment"],
+        yoneda_core::Policy::default().environment
+    );
+    assert!(
+        health["suites"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s == "retry-contract-v2")
+    );
+}

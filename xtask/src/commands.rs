@@ -90,7 +90,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             )?;
             run("pnpm", &["exec", "wrangler", "deploy"])
         }
-        "seed-demo" | "demo" | "verify-live" => {
+        "seed-demo" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args
                 .windows(2)
                 .find(|v| v[0] == "--url")
@@ -100,13 +100,15 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
                 live::seed(url).await
             } else if command == "demo" {
                 live::start(url).await
+            } else if command == "upgrade-policy" {
+                live::upgrade_policy(url).await
             } else {
                 live::verify(url).await
             }
         }
         _ => {
             println!(
-                "cargo xtask <doctor|setup|check|build|dev|deploy|seed-demo|demo|verify-live> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <doctor|setup|check|build|dev|deploy|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }

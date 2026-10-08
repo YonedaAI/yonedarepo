@@ -2,7 +2,7 @@ use crate::{broker::broker, err};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use yoneda_core::Result;
-pub const TOOLS: &str = r#"[{"name":"repo_context","description":"Get this execution's frozen repository and shared research artifact IDs","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},{"name":"artifact_get","description":"Read a shared research artifact by its provided ID","inputSchema":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"],"additionalProperties":false}},{"name":"artifact_publish","description":"Publish a concise research or implementation artifact. Assumptions may include statement, metric, integer limit, and path.","inputSchema":{"type":"object","properties":{"label":{"type":"string"},"kind":{"type":"string"},"content":{"type":"string"},"metadata":{"type":"object"}},"required":["label","kind","content"],"additionalProperties":false}},{"name":"execution_status","description":"Read this execution's current context and status","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},{"name":"execution_complete","description":"Hint that agent work is finished; trusted capture and verification remain independent","inputSchema":{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"],"additionalProperties":false}}]"#;
+pub const TOOLS: &str = include_str!("mcp_tools.json");
 
 pub async fn mcp() -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();

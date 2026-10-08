@@ -36,6 +36,7 @@ export interface Snapshot {
 }
 export interface Graph {
   coverage?: string;
+  truncated?: boolean;
   nodes: GraphNode[];
   edges: GraphEdge[];
 }

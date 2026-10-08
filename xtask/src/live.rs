@@ -78,53 +78,73 @@ pub async fn start(url: &str) -> Result<()> {
 }
 pub async fn verify(url: &str) -> Result<()> {
     let snapshot = api(url, "repos/retry-client/snapshot", None).await?;
-    let executions = snapshot["executions"]
-        .as_array()
-        .ok_or("No execution records")?;
-    let candidates = snapshot["candidates"].as_array().ok_or("No candidates")?;
-    let published = snapshot["decisions"]
-        .as_array()
-        .ok_or("No decisions")?
-        .iter()
-        .find(|d| d["status"] == "published")
-        .ok_or("No verified canonical publication yet")?;
-    if !executions
-        .iter()
-        .any(|e| e["harness"] == "claude" && e["status"] == "completed")
-        || !executions
-            .iter()
-            .any(|e| e["harness"] == "codex" && e["status"] == "completed")
+    let mut events = Vec::new();
+    let mut after = 0;
+    loop {
+        let page = api(
+            url,
+            &format!("repos/retry-client/events?after={after}"),
+            None,
+        )
+        .await?;
+        let page = page["events"].as_array().ok_or("No event replay")?;
+        if page.is_empty() {
+            break;
+        }
+        after = page
+            .last()
+            .and_then(|e| e["seq"].as_u64())
+            .ok_or("Invalid event sequence")?;
+        events.extend(page.iter().cloned());
+        if after >= snapshot["seq"].as_u64().unwrap_or(0) {
+            break;
+        }
+    }
+    let mut why = json!({"coverage":"unknown","nodes":[],"edges":[]});
+    if let Ok((_, candidate)) = crate::verification::selected(&snapshot)
+        && let (Some(commit), Some(path)) = (
+            candidate["revision"]["commit"].as_str(),
+            candidate["paths"]
+                .as_array()
+                .and_then(|v| v.first())
+                .and_then(Value::as_str),
+        )
     {
-        return Err("Both harnesses must complete real executions".into());
+        let query = reqwest::Url::parse_with_params(
+            "https://query.invalid/",
+            [("commit", commit), ("path", path)],
+        )?;
+        why = api(
+            url,
+            &format!(
+                "repos/retry-client/why?{}",
+                query.query().unwrap_or_default()
+            ),
+            None,
+        )
+        .await?;
     }
-    let candidate = candidates
-        .iter()
-        .find(|c| c["id"] == published["candidate"])
-        .ok_or("Selected source is missing")?;
-    let commit = candidate["revision"]["commit"]
-        .as_str()
-        .ok_or("No captured commit")?;
-    let path = candidate["paths"]
-        .as_array()
-        .and_then(|v| v.first())
-        .and_then(Value::as_str)
-        .ok_or("No changed source path")?;
-    let why = api(
-        url,
-        &format!("repos/retry-client/why?commit={commit}&path={path}"),
-        None,
-    )
-    .await?;
-    if why["coverage"] != "recorded" {
-        return Err("Published source has no intentional history".into());
-    }
+    let result = crate::verification::check(&snapshot, &events, &why);
     std::fs::create_dir_all("artifacts")?;
     std::fs::write(
         "artifacts/live-verification.json",
-        serde_json::to_vec_pretty(&json!({"snapshot":snapshot,"why":why}))?,
+        serde_json::to_vec_pretty(
+            &json!({"verification":{"complete":result.is_ok(),"error":result.as_ref().err().map(ToString::to_string)},"snapshot":snapshot,"events":events,"why":why}),
+        )?,
     )?;
+    result?;
     println!(
-        "Verified both real harnesses, a captured source revision, selected evaluation, canonical publication and recorded source history. Evidence: artifacts/live-verification.json"
+        "Verified one complete run: research, three overlapping coding harnesses, shared context, exact captured/evaluated revisions, canonical publication and simulated incident history. Recorded owner selection is not a claim of user approval. Evidence: artifacts/live-verification.json"
+    );
+    Ok(())
+}
+
+pub async fn upgrade_policy(url: &str) -> Result<()> {
+    let snapshot = api(url, "repos/retry-client/snapshot", None).await?;
+    let repo = &snapshot["repository"];
+    api(url,"repos/retry-client/update_policy",Some(json!({"expected_commit":repo["head_commit"],"expected_version":repo["version"],"expected_policy":repo["policy"]["version"],"policy":Policy::default()}))).await?;
+    println!(
+        "Installed current versioned policy; captured candidates will be evaluated again. Historical evidence is retained."
     );
     Ok(())
 }

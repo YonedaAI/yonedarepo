@@ -4,7 +4,7 @@ WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY xtask ./xtask
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/source/target cargo build --locked --release -p yoneda-runtime && cp target/release/yoneda-runtime /yoneda-runtime
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/source/target cargo test --locked -p yoneda-runtime -- --test-threads=1 && cargo build --locked --release -p yoneda-runtime && cp target/release/yoneda-runtime /yoneda-runtime
 
 FROM rust:1.94.0-bookworm@sha256:365468470075493dc4583f47387001854321c5a8583ea9604b297e67f01c5a4f
 COPY --from=node /usr/local/bin/ /usr/local/bin/

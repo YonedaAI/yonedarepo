@@ -1,6 +1,7 @@
 mod commands;
 mod live;
 mod process;
+mod verification;
 use std::path::PathBuf;
 
 #[tokio::main]

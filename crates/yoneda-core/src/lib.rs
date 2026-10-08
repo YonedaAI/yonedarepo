@@ -65,9 +65,9 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
-            version: "retry-v1".into(),
-            suite: "retry-contract-v1".into(),
-            environment: "rust-1.94-evaluator-v1".into(),
+            version: "retry-v2".into(),
+            suite: "retry-contract-v2".into(),
+            environment: "rust-1.94.0-evaluator-v2".into(),
             required_checks: vec!["build".into(), "behavior".into()],
         }
     }

@@ -4,6 +4,11 @@ use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::{Result, Workspace};
 pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
+    Ok(String::from_utf8_lossy(&git_raw(root, args).await?)
+        .trim()
+        .to_owned())
+}
+async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let mut command = Command::new("git");
     command.args([
         "-c",
@@ -30,7 +35,7 @@ pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
     if !output.status.success() {
         return Err(err(String::from_utf8_lossy(&output.stderr)));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    Ok(output.stdout)
 }
 
 /// Trusted capture reconstructs a fresh Git tree. It never opens the agent's .git directory.
@@ -68,14 +73,19 @@ pub async fn capture(
     let commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     git(root, &["update-ref", "refs/heads/main", &commit]).await?;
     let paths = if let Some(base) = base {
-        git(root, &["diff", "--name-only", base, &commit]).await?
+        git_raw(root, &["diff", "--name-only", "-z", base, &commit]).await?
     } else {
-        git(root, &["ls-tree", "-r", "--name-only", &commit]).await?
+        git_raw(root, &["ls-tree", "-r", "--name-only", "-z", &commit]).await?
     };
+    let paths: Vec<String> = paths
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+        .map(|path| String::from_utf8(path.to_vec()).map_err(err))
+        .collect::<Result<_>>()?;
     let diff = if let Some(base) = base {
         git(root, &["diff", "--no-ext-diff", base, &commit]).await?
     } else {
         git(root, &["show", "--format=", "--no-ext-diff", &commit]).await?
     };
-    Ok(json!({"commit":commit,"tree":tree,"paths":paths.lines().collect::<Vec<_>>(),"diff":diff}))
+    Ok(json!({"commit":commit,"tree":tree,"paths":paths,"diff":diff}))
 }
