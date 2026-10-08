@@ -1,8 +1,11 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
 import { evidence } from './evidence';
+import { externalGit } from './external-git';
+import { grantRoute } from './grants';
 import { error, readJson, response, safeId } from './http';
 import { projectRoute } from './projects';
+import { remoteMcp } from './remote-mcp';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
@@ -19,12 +22,17 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       v: 1,
       models: { codex: env.CODEX_MODEL, claude: env.CLAUDE_MODEL },
     });
+  if (url.pathname.startsWith('/mcp/')) return remoteMcp(req, env, url.pathname.split('/')[2]);
+  if (url.pathname.startsWith('/git/'))
+    return externalGit(req, env, url.pathname.split('/').filter(Boolean));
   if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;
     const principal = await authenticate(req, env);
     if (!principal) return error('UNAUTHORIZED', 'Sign in to your workspace', 401);
+    if (principal.role === 'agent')
+      return error('FORBIDDEN', 'Use the scoped MCP and Git endpoints', 403);
     const settings = await settingsRoute(req, env, principal);
     if (settings) return settings;
     if (url.pathname === '/api/budget' && req.method === 'GET')
@@ -97,6 +105,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       await ledger(env, repo, { op: 'snapshot', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    if (action === 'grants') return grantRoute(req, env, principal, repo);
     if (action === 'site' && req.method === 'GET') {
       const s = await ledger(env, repo, { op: 'snapshot' });
       return s.repository.site?.digest && env.SITE_ORIGIN

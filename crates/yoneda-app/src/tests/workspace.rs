@@ -158,3 +158,41 @@ fn project_reservations_validate_policy_and_resume_without_changing_identity() {
         1
     );
 }
+#[test]
+fn repository_grants_are_bounded_hashed_revocable_and_recovery_invalidates_them() {
+    let db = NativeStore::memory().unwrap();
+    signup(&db);
+    call(&db,json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_core::Policy::default()})).unwrap();
+    call(
+        &db,
+        json!({"op":"project_update","id":"repo-one","status":"ready"}),
+    )
+    .unwrap();
+    let grant = json!({"op":"grant_issue","id":"grant-1234567890123456","repo":"repo-one","scope":"contribute","label":"Laptop agent","token_hash":"c".repeat(64),"expires":100000});
+    let issued = call(&db, grant.clone()).unwrap();
+    assert!(issued.get("token_hash").is_none());
+    let check = json!({"op":"grant_check","id":grant["id"],"token_hash":"c".repeat(64)});
+    assert_eq!(call(&db, check.clone()).unwrap()["repo"], "repo-one");
+    let mut expired = check.clone();
+    expired["now"] = json!(100000);
+    assert!(execute_workspace(&db, expired).is_err());
+    let mut wrong = check.clone();
+    wrong["token_hash"] = json!("d".repeat(64));
+    assert!(call(&db, wrong).is_err());
+    let mut admin = grant.clone();
+    admin["scope"] = json!("admin");
+    assert!(call(&db, admin).is_err());
+    call(&db, json!({"op":"grant_revoke","id":grant["id"]})).unwrap();
+    assert!(call(&db, check).is_err());
+    let mut second = grant;
+    second["id"] = json!("grant-2234567890123456");
+    call(&db, second.clone()).unwrap();
+    call(&db,json!({"op":"recover","recovery_hash":"b".repeat(64),"password":"replacement password","salt":"02".repeat(16),"new_recovery_hash":"e".repeat(64)})).unwrap();
+    assert!(
+        call(
+            &db,
+            json!({"op":"grant_check","id":second["id"],"token_hash":"c".repeat(64)})
+        )
+        .is_err()
+    );
+}

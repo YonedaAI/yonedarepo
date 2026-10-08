@@ -1,6 +1,6 @@
 # Runbook
 
-For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
+For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). External agents use [repository-scoped MCP and Git keys](remote-mcp.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
 
 ## Local prerequisites
 

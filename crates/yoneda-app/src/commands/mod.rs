@@ -4,6 +4,7 @@ use yoneda_core::{Error, Result};
 mod acceptance;
 mod completion;
 mod events;
+mod external;
 mod history;
 mod leases;
 mod mcp;
@@ -30,6 +31,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         }
     }
     match string(&c, "op")?.as_str() {
+        "external_begin" | "external_check" | "external_status" | "external_freeze"
+        | "external_bind" | "external_submit" => external::handle(db, c, now),
         "update_policy" => policy::update(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),

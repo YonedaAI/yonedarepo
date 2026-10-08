@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 pub const CONTRACT_VERSION: u32 = 1;
 pub mod build;
 pub mod context;
+/// Remote MCP tool contracts shared with the Worker transport.
+pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub mod retry;
 mod source;
 pub use source::{FileEntry, Workspace};

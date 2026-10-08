@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { accountPrincipal } from './accounts';
+import { grantPrincipal } from './grants';
 import { sessionValid } from './session';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
@@ -9,6 +10,8 @@ export async function authorized(req: Request, env: Env) {
 export async function authenticate(req: Request, env: Env): Promise<Principal | null> {
   const origin = req.headers.get('origin');
   if (origin && origin !== new URL(req.url).origin) return null;
+  if (req.headers.get('authorization')?.startsWith('Bearer yoneda.'))
+    return grantPrincipal(req, env);
   const account = await accountPrincipal(req, env);
   if (account) return account;
   const admin: Principal = { workspace: '_admin', role: 'admin' };

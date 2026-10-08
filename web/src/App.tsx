@@ -7,6 +7,7 @@ import { EvidencePanel } from './features/graph/EvidencePanel';
 import { GraphTools } from './features/graph/GraphTools';
 import { HistoryTools } from './features/history/HistoryTools';
 import { AccountPanel } from './features/workspace/AccountPanel';
+import { AgentConnections } from './features/workspace/AgentConnections';
 import { NewProject } from './features/workspace/NewProject';
 import { ProviderSettings } from './features/workspace/ProviderSettings';
 import { WorkspaceRail } from './features/workspace/WorkspaceRail';
@@ -21,6 +22,7 @@ import type { Graph, GraphNode } from './lib/types';
 export function App() {
   const state = useRepository();
   const [view, setView] = useState<'explore' | 'history'>('explore');
+  const [showAgents, setShowAgents] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProject, setShowProject] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
@@ -44,6 +46,7 @@ export function App() {
       <WorkspaceRail
         state={state}
         showGuide={showGuide}
+        onAgents={() => setShowAgents(!showAgents)}
         onProject={() => setShowProject(true)}
         onSettings={() => setShowSettings(!showSettings)}
         onAuth={() => setShowAuth(!showAuth)}
@@ -81,8 +84,13 @@ export function App() {
             </button>
           </div>
         </header>
-        {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
-        {showProject && (
+        {showAgents && snapshot && (
+          <AgentConnections key={state.id} repo={state.id} onClose={() => setShowAgents(false)} />
+        )}
+        {showSettings && state.authenticated && (
+          <ProviderSettings onClose={() => setShowSettings(false)} />
+        )}
+        {showProject && state.authenticated && (
           <NewProject
             onClose={() => setShowProject(false)}
             onCreated={async (id) => {

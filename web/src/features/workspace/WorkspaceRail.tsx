@@ -5,6 +5,7 @@ export function WorkspaceRail({
   state,
   showGuide,
   onProject,
+  onAgents,
   onSettings,
   onAuth,
   onGuide,
@@ -13,6 +14,7 @@ export function WorkspaceRail({
   state: ReturnType<typeof useRepository>;
   showGuide: boolean;
   onProject: () => void;
+  onAgents: () => void;
   onSettings: () => void;
   onAuth: () => void;
   onGuide: () => void;
@@ -64,6 +66,11 @@ export function WorkspaceRail({
         </span>
         {state.authenticated && (
           <>
+            {state.snapshot && (
+              <button type="button" onClick={onAgents}>
+                Connect local agent
+              </button>
+            )}
             <button type="button" onClick={() => onSettings()}>
               Agent providers
             </button>
