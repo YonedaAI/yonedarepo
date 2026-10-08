@@ -69,7 +69,7 @@ pub async fn seed(url: &str) -> Result<()> {
     Ok(())
 }
 pub async fn start(url: &str) -> Result<()> {
-    let run=api(url,"repos/retry-client/start_run",Some(json!({"id":format!("run-{}",uuid::Uuid::new_v4()),"intent":"Add safe retries for transient upstream failures within a bounded total deadline.","criteria":["Retry GET only","Respect total deadline","Preserve explicit assumptions and tradeoffs"]}))).await?;
+    let run=api(url,"repos/retry-client/start_run",Some(json!({"id":format!("run-{}",uuid::Uuid::new_v4()),"intent":"Add safe retries for transient upstream failures within a bounded total deadline.","criteria":["Retry GET only","Respect total deadline","Read README.md before publishing guidance; preserve its CLI contract, including repeating the final supplied status when the status list is exhausted","Preserve explicit assumptions and tradeoffs"]}))).await?;
     println!(
         "Started real agent exploration {} at {url}. Review and select a candidate in the browser.",
         run["id"]
