@@ -69,10 +69,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     j["status"] = json!("cancelled");
                     j["epoch"] = json!(number(&j, "epoch")? + 1);
                     save(db, "jobs", &jid, &j)?;
-                    if let Some(eid) = j["payload"]["execution"]["id"].as_str() {
+                    if let Some(eid) = j["payload"]["execution"]["id"]
+                        .as_str()
+                        .or_else(|| j["payload"]["candidate"]["execution"].as_str())
+                    {
                         let mut e = get(db, "executions", eid)?;
                         e["status"] = json!("cancelled");
-                        save(db, "executions", eid, &e)?;
+                        save_execution(db, &e, now)?;
+                    }
+                    if let Some(cid) = j["payload"]["candidate"]["id"].as_str() {
+                        let mut candidate = get(db, "candidates", cid)?;
+                        candidate["status"] = json!("cancelled");
+                        save(db, "candidates", cid, &candidate)?;
                     }
                 }
             }

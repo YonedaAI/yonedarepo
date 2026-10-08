@@ -47,16 +47,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     j["payload"]["execution"]["model"] = json!(model);
                     save(db, "jobs", &id, &j)?;
                 }
-                save(db, "executions", &eid, &e)?;
-                node(
-                    db,
-                    &eid,
-                    "execution",
-                    &format!("{} / {}", string(&e, "harness")?, string(&e, "strategy")?),
-                    "platform",
-                    now,
-                    e,
-                )?;
+                save_execution(db, &e, now)?;
             }
             event(
                 db,
@@ -184,16 +175,7 @@ fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
             .get("error")
             .cloned()
             .unwrap_or(json!("Attempt lease expired"));
-        save(db, "executions", id, &e)?;
-        node(
-            db,
-            id,
-            "execution",
-            &format!("{} / {}", string(&e, "harness")?, string(&e, "strategy")?),
-            "platform",
-            now,
-            e.clone(),
-        )?;
+        save_execution(db, &e, now)?;
         if job["status"] == "failed" && e["role"] == "research" {
             let rid = string(&e, "run_id")?;
             let mut run = get(db, "runs", &rid)?;

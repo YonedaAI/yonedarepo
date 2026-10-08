@@ -50,7 +50,6 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             if result.get("transcript").is_some() {
                 e["transcript"] = json!(hash(result, "transcript", &[64])?);
             }
-            save(db, "executions", &eid, &e)?;
             if e["role"] == "research" {
                 let context: Vec<_> = all(db, "artifacts")?
                     .iter()
@@ -81,18 +80,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                     json!({"execution":e,"run_id":run_id,"base":run["base"],"workspace":workspace}),
                 )?;
                 e["status"] = json!("capturing");
-                save(db, "executions", &eid, &e)?;
             }
             save(db, "runs", &run_id, &run)?;
-            node(
-                db,
-                &eid,
-                "execution",
-                &format!("{} / {}", string(&e, "harness")?, string(&e, "strategy")?),
-                "platform",
-                now,
-                e,
-            )?;
+            save_execution(db, &e, now)?;
         }
         "capture" => {
             let cid = string(result, "id")?;
@@ -124,7 +114,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             edge(db, &eid, &cid, "produced_by", "independent source capture")?;
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("evaluating");
-            save(db, "executions", &eid, &e)?;
+            save_execution(db, &e, now)?;
             job(
                 db,
                 &format!("evaluate:{cid}"),
@@ -190,7 +180,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let eid = string(&candidate, "execution")?;
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("completed");
-            save(db, "executions", &eid, &e)?;
+            save_execution(db, &e, now)?;
             let rid = string(&candidate, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
             if run["status"] != "accepted" {

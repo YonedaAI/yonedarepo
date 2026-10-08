@@ -22,6 +22,10 @@ export function App() {
     }
   }, [state.authenticated]);
   const activeGraph = graph ?? { nodes: snapshot?.nodes ?? [], edges: snapshot?.edges ?? [] };
+  const selectedNode = node
+    ? (snapshot?.nodes.find((current) => current.id === node.id) ??
+      activeGraph.nodes.find((current) => current.id === node.id))
+    : null;
   return (
     <div className="app">
       <aside className="rail">
@@ -170,8 +174,12 @@ export function App() {
                 <div className="graph-canvas">
                   <ContextGraph graph={activeGraph} onSelect={setNode} />
                 </div>
-                {node && (
-                  <EvidencePanel repo={state.id} node={node} onClose={() => setNode(null)} />
+                {selectedNode && (
+                  <EvidencePanel
+                    repo={state.id}
+                    node={selectedNode}
+                    onClose={() => setNode(null)}
+                  />
                 )}
               </div>
               <footer>
