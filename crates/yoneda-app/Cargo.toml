@@ -11,6 +11,8 @@ native = ["dep:rusqlite"]
 yoneda-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
+subtle = "2.6.1"
 rusqlite = { version = "0.38", features = ["bundled"], optional = true }
 
 [dev-dependencies]

@@ -90,13 +90,15 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             )?;
             run("pnpm", &["exec", "wrangler", "deploy"])
         }
-        "seed-demo" | "demo" | "verify-live" | "upgrade-policy" => {
+        "seed-template" | "seed-demo" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args
                 .windows(2)
                 .find(|v| v[0] == "--url")
                 .map(|v| v[1].as_str())
                 .unwrap_or("http://127.0.0.1:8787");
-            if command == "seed-demo" {
+            if command == "seed-template" {
+                crate::bootstrap::seed_template(url).await
+            } else if command == "seed-demo" {
                 live::seed(url).await
             } else if command == "demo" {
                 live::start(url).await
@@ -108,7 +110,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <doctor|setup|check|build|dev|deploy|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }

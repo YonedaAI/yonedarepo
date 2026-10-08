@@ -12,7 +12,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             let policy: yoneda_core::Policy =
                 serde_json::from_value(c["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
             yoneda_core::build::validate_policy(&policy)?;
-            let r = json!({"id":id,"name":name,"remote":c["remote"],"head_commit":commit,"published_commit":commit,"version":0,"policy":policy,"pending":null,"status":"ready"});
+            let workspace = c
+                .get("workspace")
+                .and_then(Value::as_str)
+                .unwrap_or("_admin");
+            let r = json!({"id":id,"name":name,"workspace":workspace,"remote":c["remote"],"head_commit":commit,"published_commit":commit,"version":0,"policy":policy,"pending":null,"status":"ready"});
             create(db, "repository", "repo", &r)?;
             node(db, &id, "repository", &name, "owner", now, r.clone())?;
             event(db, "repository.created", now, json!({"id":id}))?;

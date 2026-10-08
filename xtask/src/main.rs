@@ -1,3 +1,4 @@
+mod bootstrap;
 mod commands;
 mod live;
 mod process;

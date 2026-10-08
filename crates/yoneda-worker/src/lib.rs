@@ -2,6 +2,8 @@ use serde_json::{Value, json};
 use worker::*;
 use yoneda_app::{SqlStore, execute};
 use yoneda_cloudflare::CloudStore;
+mod workspace;
+pub use workspace::WorkspaceAuthority;
 
 fn now() -> i64 {
     Date::now().as_millis() as i64

@@ -1,12 +1,17 @@
 import type { OutboundHandler } from '@cloudflare/containers';
-import { error } from './http';
+import { error, readJson } from './http';
+import { prepareModelRequest } from './model-policy';
+import { trackClaudeUsage } from './model-usage';
 import { scopeFor } from './scope';
-import type { Env, Json } from './types';
+import { ledger, sha } from './storage';
+import type { Env } from './types';
+import { providerKey } from './vault';
+import { workspace } from './workspace';
 export const modelHandler =
   (provider: 'codex' | 'claude'): OutboundHandler<Env> =>
   async (req, env, ctx) => {
     try {
-      const { scope, stub } = await scopeFor(env, ctx.containerId);
+      const { scope } = await scopeFor(env, ctx.containerId);
       const job = scope.job;
       if (job.kind !== 'agent' || job.payload.execution.harness !== provider)
         return error('FORBIDDEN', 'Provider outside this attempt scope', 403);
@@ -18,31 +23,43 @@ export const modelHandler =
         ).includes(path)
       )
         return error('FORBIDDEN', 'Provider endpoint not allowed', 403);
-      await stub.modelCall();
-      const text = await req.text();
-      if (new TextEncoder().encode(text).length > 256 * 1024)
-        return error('MODEL_BUDGET', 'Model input exceeds testing budget', 413);
-      const body = JSON.parse(text) as Json;
-      body.model = job.model;
-      if (provider === 'codex') {
-        body.max_output_tokens = Math.min(Number(body.max_output_tokens) || 4096, 4096);
-        delete body.service_tier;
-        body.store = false;
-      } else body.max_tokens = Math.min(Number(body.max_tokens) || 4096, 4096);
+      if (req.method !== 'POST') return error('FORBIDDEN', 'POST required', 403);
+      const prepared = prepareModelRequest(job, provider, path, await readJson(req, 256 * 1024));
+      const snapshot = await ledger(env, scope.repo_id, { op: 'snapshot' });
+      const owner = snapshot.repository.workspace ?? '_admin';
+      const key = await providerKey(env, owner, prepared.provider);
+      const counted = await ledger(env, scope.repo_id, {
+        op: 'reserve_request',
+        job_id: job.id,
+        epoch: job.epoch,
+        kind: 'model',
+      });
+      const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
+      const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
+      if (prepared.reservation)
+        await workspace(env, budgetOwner, {
+          op: 'budget_reserve',
+          id: reservationId,
+          amount: prepared.reservation,
+        });
       const headers = new Headers({ 'content-type': 'application/json' });
-      if (provider === 'codex')
-        headers.set('authorization', `Bearer ${await env.OPENAI_KEY.get()}`);
+      if (prepared.provider !== 'claude') headers.set('authorization', `Bearer ${key}`);
       else {
-        headers.set('x-api-key', await env.ANTHROPIC_KEY.get());
-        headers.set('anthropic-version', '2023-06-01');
-        const beta = req.headers.get('anthropic-beta');
-        if (beta) headers.set('anthropic-beta', beta);
+        headers.set('x-api-key', key);
       }
-      return fetch(
-        `https://${provider === 'codex' ? 'api.openai.com' : 'api.anthropic.com'}${path}`,
-        { method: 'POST', headers, body: JSON.stringify(body) },
-      );
+      if (provider === 'claude') headers.set('anthropic-version', '2023-06-01');
+      const result = await fetch(prepared.url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(prepared.body),
+        redirect: 'manual',
+      });
+      if (result.status >= 300 && result.status < 400)
+        throw new Error('Provider redirected the request; no credentials were forwarded');
+      return prepared.reservation
+        ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
+        : result;
     } catch (e: any) {
-      return error('MODEL_PROXY', e.message, 409);
+      return error(e.code ?? 'MODEL_PROXY', e.message, 409);
     }
   };
