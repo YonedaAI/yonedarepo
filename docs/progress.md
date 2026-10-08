@@ -1,3 +1,7 @@
+# Current product MVP — October 8, 2026
+
+The generic product MVP, account/MCP flows, concurrent hosted run and owner-directed publication are recorded in [release evidence](release-evidence.md). [Submission materials](submission.md) include the public source and video. The dated foundation log below is historical; its pending/deferred statements describe those earlier checks. Product Task 1 repaired its deferred graph-status projection issue. Current known limits are listed in the release evidence.
+
 # Implementation ledger — docs/implementation-plan.md
 
 ## Environment
