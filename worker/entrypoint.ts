@@ -68,7 +68,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
         req.method === 'GET'
           ? ['snapshot', 'events', 'graph', 'why', 'decision']
           : req.method === 'POST'
-            ? ['init', 'start_run', 'accept', 'cancel_run', 'observe']
+            ? ['init', 'start_run', 'accept', 'cancel_run', 'observe', 'update_policy']
             : [];
       if (!allowed.includes(action)) return error('NOT_FOUND', 'Unknown repository operation', 404);
       const input: Json =

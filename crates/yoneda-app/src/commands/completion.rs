@@ -13,10 +13,19 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             let policy = &j["payload"]["policy"];
+            if c["report"]["environment"] != policy["environment"]
+                || c["report"]["suite"] != policy["suite"]
+            {
+                return Err(Error::new(
+                    "ENVIRONMENT_MISMATCH",
+                    "Evaluator runtime or suite does not match the requested policy; wait for container rollout completion",
+                ));
+            }
             let candidate = &j["payload"]["candidate"];
-            let checks = yoneda_core::retry::checks(&c["report"]);
+            let checks =
+                yoneda_core::retry::checks_for_suite(&string(policy, "suite")?, &c["report"])?;
             let evidence = hash(&c, "evidence", &[64])?;
-            let result = json!({"id":format!("evaluation:{}:{}",string(candidate,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence});
+            let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence});
             finish(
                 db,
                 &json!({"job_id":c["job_id"],"epoch":c["epoch"],"result":result}),
@@ -143,22 +152,25 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 return Err(error.clone());
             }
             create(db, "evaluations", &evaluation.id, result)?;
-            candidate["status"] = json!(if validation.is_ok() {
-                "eligible"
-            } else {
-                "rejected"
-            });
-            candidate["evaluation"] = json!(evaluation.id);
-            save(db, "candidates", &candidate_id, &candidate)?;
-            node(
-                db,
-                &candidate_id,
-                "candidate",
-                candidate["summary"].as_str().unwrap_or("Candidate"),
-                "platform_capture",
-                now,
-                candidate.clone(),
-            )?;
+            // A late historical evaluation remains evidence but cannot replace current eligibility.
+            if j["payload"]["policy"] == repo(db)?["policy"] {
+                candidate["status"] = json!(if validation.is_ok() {
+                    "eligible"
+                } else {
+                    "rejected"
+                });
+                candidate["evaluation"] = json!(evaluation.id);
+                save(db, "candidates", &candidate_id, &candidate)?;
+                node(
+                    db,
+                    &candidate_id,
+                    "candidate",
+                    candidate["summary"].as_str().unwrap_or("Candidate"),
+                    "platform_capture",
+                    now,
+                    candidate.clone(),
+                )?;
+            }
             node(
                 db,
                 &evaluation.id,
@@ -237,6 +249,11 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     j["result"] = result.clone();
     j["finished_at"] = json!(now);
     save(db, "jobs", &id, &j)?;
-    event(db, "job.completed", now, json!({"id":id,"kind":j["kind"]}))?;
+    event(
+        db,
+        "job.completed",
+        now,
+        json!({"id":id,"kind":j["kind"],"epoch":j["epoch"]}),
+    )?;
     Ok(json!({"status":"completed","id":id}))
 }

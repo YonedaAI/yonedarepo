@@ -6,6 +6,7 @@ mod git;
 mod jobs;
 mod mcp;
 mod process;
+mod process_guard;
 mod secure_fs;
 mod supervisor;
 mod workspace;

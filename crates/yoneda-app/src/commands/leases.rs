@@ -21,13 +21,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["attempt"] = json!(number(&j, "attempt")? + 1);
             j["epoch"] = json!(number(&j, "epoch")? + 1);
             j["status"] = json!("running");
+            j["runtime_started_at"] = Value::Null;
+            j["progress"] = Value::Null;
             let duration = if j["kind"] == "evaluate" {
                 120_000
             } else {
                 600_000
             };
-            j["attempt_deadline"] = json!((now + duration).min(number(&j, "deadline")?));
-            j["lease_until"] = json!((now + 60_000).min(number(&j, "attempt_deadline")?));
+            j["attempt_deadline"] = json!((now + 120_000 + duration).min(number(&j, "deadline")?));
+            j["lease_until"] = json!((now + 120_000).min(number(&j, "attempt_deadline")?));
             save(db, "jobs", &id, &j)?;
             if j["kind"] == "agent" {
                 let eid = string(&j["payload"]["execution"], "id")?;
@@ -71,9 +73,29 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         "heartbeat" | "progress" => {
             let mut j = active(db, &c, now)?;
             let id = string(&j, "id")?;
-            j["lease_until"] = json!((now + 60_000).min(number(&j, "attempt_deadline")?));
-            if c.get("progress").is_some() {
+            if c["progress"]["stage"] == "container_ready" && j["runtime_started_at"].is_null() {
+                j["runtime_started_at"] = json!(now);
+                let duration = if j["kind"] == "evaluate" {
+                    120_000
+                } else {
+                    600_000
+                };
+                j["attempt_deadline"] = json!((now + duration).min(number(&j, "deadline")?));
+            }
+            let lease = if j["runtime_started_at"].is_null() {
+                (now + 60_000).max(number(&j, "lease_until")?)
+            } else {
+                now + 60_000
+            };
+            j["lease_until"] = json!(lease.min(number(&j, "attempt_deadline")?));
+            if c.get("progress").is_some() && j["progress"] != c["progress"] {
                 j["progress"] = c["progress"].clone();
+                event(
+                    db,
+                    "job.progress",
+                    now,
+                    json!({"id":id,"epoch":j["epoch"],"progress":j["progress"]}),
+                )?;
             }
             save(db, "jobs", &id, &j)?;
             Ok(json!({"lease_until":j["lease_until"]}))
@@ -102,7 +124,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 db,
                 "job.failed",
                 now,
-                json!({"id":id,"status":j["status"],"error":c["error"]}),
+                json!({"id":id,"status":j["status"],"epoch":j["epoch"],"error":c["error"]}),
             )?;
             Ok(j)
         }
@@ -135,7 +157,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                         db,
                         "job.recovered",
                         now,
-                        json!({"id":id,"status":j["status"]}),
+                        json!({"id":id,"status":j["status"],"epoch":j["epoch"]}),
                     )?;
                 }
             }

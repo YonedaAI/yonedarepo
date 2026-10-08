@@ -45,6 +45,7 @@
 }
 .auth-form {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   align-items: center;
   padding: 20px 36px;
@@ -53,6 +54,25 @@
 }
 .auth-form input {
   flex: 1;
+}
+.auth-help {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 12px;
+}
+.token-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+}
+.token-file input {
+  max-width: 260px;
+  font-size: 12px;
+}
+.setup-hint {
+  font-size: 13px;
 }
 .welcome {
   max-width: 800px;

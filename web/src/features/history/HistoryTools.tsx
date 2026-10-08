@@ -32,7 +32,9 @@ export function HistoryTools({
       setMessage(
         graph.coverage === 'unknown'
           ? 'No recorded decision covers this exact revision and path.'
-          : 'Showing recorded context for this source revision.',
+          : graph.truncated
+            ? 'Showing a bounded part of the recorded history. Some connected context is outside this view.'
+            : 'Showing recorded context for this source revision.',
       );
     } catch (e) {
       onError((e as Error).message);

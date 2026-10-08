@@ -53,8 +53,14 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     }
     if (req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
-    if (path === '/heartbeat')
-      return response(await ledger(env, scope.repo_id, { op: 'heartbeat', ...identity }));
+    if (path === '/heartbeat' || path === '/progress')
+      return response(
+        await ledger(env, scope.repo_id, {
+          op: path === '/progress' ? 'progress' : 'heartbeat',
+          progress: body.progress,
+          ...identity,
+        }),
+      );
     if (path === '/source') {
       if (!['agent', 'evaluate'].includes(job.kind))
         return error('FORBIDDEN', 'No source access', 403);

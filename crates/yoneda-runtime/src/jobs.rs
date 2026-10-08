@@ -38,7 +38,7 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
             let execution = &payload["execution"];
             let model = field(job, "model")?;
             let prompt = format!(
-                "You are an isolated YonedaRepo {} agent. Strategy: {}. Intent: {}. Criteria: {}. First call repo_context, then artifact_get for EVERY shared artifact ID. The checkout is the frozen base. {} Publish a concise artifact through artifact_publish with explicit assumptions (statement, metric, integer limit, path). End by calling execution_complete. Do not alter the CLI contract. Use no external packages: cargo build --offline --release --bin retry-client must work. CLI contract: retry-client METHOD COMMA_SEPARATED_STATUSES LATENCY_MS BUDGET_MS MAX_ATTEMPTS emits JSON {{attempts,elapsed_ms,status}}. Retry only GET on 429 or >=500; backoff 10*2^(retry_index-1) ms; include latency and backoff in total deadline; clamp attempts to 1..10; first request always occurs. Existing source intentionally lacks retries. Research assumption to examine: upstream_p99_ms <= 100. Stay concise; finish within the configured deadline.",
+                "You are an isolated YonedaRepo {} agent. Strategy: {}. Intent: {}. Criteria: {}. First call repo_context, then artifact_get for EVERY shared artifact ID. The checkout is the frozen base. {} Publish a concise artifact through artifact_publish with metadata.assumptions as an ARRAY of objects, each with statement (string), metric (string), limit (integer), path (string); research MUST include at least one. For the latency assertion use metric upstream_p99_ms, limit 100, path src/main.rs. End by calling execution_complete. Do not alter the CLI contract. Use no external packages: cargo build --offline --release --bin retry-client must work. CLI contract: retry-client METHOD COMMA_SEPARATED_STATUSES LATENCY_MS BUDGET_MS MAX_ATTEMPTS emits JSON {{attempts,elapsed_ms,status}}. Retry only GET on 429 or >=500; backoff 10*2^(retry_index-1) ms; include latency and backoff in total deadline; clamp attempts to 1..10; first request always occurs. Existing source intentionally lacks retries. Research assumption to examine: upstream_p99_ms <= 100. Stay concise; finish within the configured deadline.",
                 field(execution, "role")?,
                 field(execution, "strategy")?,
                 payload["run"]["intent"],
@@ -100,6 +100,12 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
                     "1.00",
                 ]);
             }
+            broker(
+                "/progress",
+                json!({"progress":{"stage":"harness_running"}}),
+                true,
+            )
+            .await?;
             let output = bounded_output(&mut command).await?;
             let evidence = broker("/evidence", json!({"content":output.to_string()}), true).await?;
             if output["exit"] != 0 {
@@ -172,7 +178,9 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
             let build = bounded_output(&mut command).await?;
             let mut cases = Vec::new();
             if build["exit"] == 0 {
-                for case in yoneda_core::retry::cases() {
+                for case in
+                    yoneda_core::retry::cases_for_suite(field(&job["payload"]["policy"], "suite")?)?
+                {
                     let mut command = Command::new("/work/target/release/retry-client");
                     untrusted(&mut command, &root);
                     command.args([
@@ -193,7 +201,9 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
                     cases.push(json!({"input":case,"exit":output["exit"],"actual":serde_json::from_str::<Value>(output["stdout"].as_str().unwrap_or_default()).unwrap_or(Value::Null),"output":output}));
                 }
             }
-            Ok(json!({"build":build,"cases":cases}))
+            Ok(
+                json!({"build":build,"cases":cases,"environment":crate::supervisor::health()["environment"],"suite":job["payload"]["policy"]["suite"]}),
+            )
         }
         "publish" => {
             git(&root, &["init", "-b", "main"]).await?;

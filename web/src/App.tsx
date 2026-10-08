@@ -1,20 +1,26 @@
 import { ExternalLink, GitBranch, History, KeyRound, Network, RefreshCw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Exploration } from './features/exploration/Exploration';
 import { ContextGraph } from './features/graph/ContextGraph';
 import { EvidencePanel } from './features/graph/EvidencePanel';
 import { HistoryTools } from './features/history/HistoryTools';
+import { OwnerConnection } from './features/workspace/OwnerConnection';
 import { useRepository } from './hooks/useRepository';
-import { connectOwner, disconnectOwner, short } from './lib/api';
+import { short } from './lib/api';
 import type { Graph, GraphNode } from './lib/types';
 export function App() {
   const state = useRepository();
   const [view, setView] = useState<'explore' | 'history'>('explore');
-  const [token, setToken] = useState('');
   const [showAuth, setShowAuth] = useState(false);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [node, setNode] = useState<GraphNode | null>(null);
   const snapshot = state.snapshot;
+  useEffect(() => {
+    if (!state.authenticated) {
+      setGraph(null);
+      setNode(null);
+    }
+  }, [state.authenticated]);
   const activeGraph = graph ?? { nodes: snapshot?.nodes ?? [], edges: snapshot?.edges ?? [] };
   return (
     <div className="app">
@@ -43,7 +49,13 @@ export function App() {
             </button>
           ))}
           {!state.repositories.length && (
-            <span className="rail-empty">No repositories connected</span>
+            <span className="rail-empty">
+              {state.loading
+                ? 'Loading workspace…'
+                : state.authenticated
+                  ? 'No repositories added yet'
+                  : 'Sign in to see your repositories'}
+            </span>
           )}
         </div>
         <div className="rail-bottom">
@@ -90,39 +102,15 @@ export function App() {
           </div>
         </header>
         {showAuth && (
-          <form
-            className="auth-form"
-            onSubmit={(e) => {
-              e.preventDefault();
-              void connectOwner(token)
-                .then(() => {
-                  setToken('');
-                  setShowAuth(false);
-                  void state.discover();
-                })
-                .catch((error) => state.setError(error.message));
+          <OwnerConnection
+            authenticated={state.authenticated}
+            onConnected={() => {
+              setShowAuth(false);
+              void state.discover();
             }}
-          >
-            <label htmlFor="owner-token">Owner token</label>
-            <input
-              id="owner-token"
-              type="password"
-              autoComplete="off"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              required
-            />
-            <button type="submit">Connect</button>
-            <button
-              type="button"
-              className="quiet"
-              onClick={() => {
-                void disconnectOwner().then(() => state.discover());
-              }}
-            >
-              Use Access session
-            </button>
-          </form>
+            onDisconnect={state.clear}
+            onError={state.setError}
+          />
         )}
         {state.error && (
           <div role="alert" className="error-banner">
@@ -205,13 +193,25 @@ export function App() {
             </h1>
             <p>
               {state.loading
-                ? 'Connecting to your workspace…'
-                : 'Connect your owner session, then seed a repository to begin a real exploration.'}
+                ? 'Loading your workspace…'
+                : state.authenticated
+                  ? state.id
+                    ? 'Loading repository…'
+                    : 'Your workspace is connected. Add a repository to begin.'
+                  : 'Sign in to open your repositories. Describe a change, and agents research the code, build alternatives and record the context behind them.'}
             </p>
-            <button type="button" onClick={() => setShowAuth(true)}>
-              <KeyRound size={16} />
-              Connect workspace
-            </button>
+            {!state.authenticated && !state.loading && (
+              <button type="button" onClick={() => setShowAuth(true)}>
+                <KeyRound size={16} />
+                Connect workspace
+              </button>
+            )}
+            {state.authenticated && !state.id && (
+              <p className="setup-hint">
+                For the development fixture, run{' '}
+                <code>cargo xtask seed-demo --url {location.origin}</code>, then refresh.
+              </p>
+            )}
           </section>
         )}
       </main>

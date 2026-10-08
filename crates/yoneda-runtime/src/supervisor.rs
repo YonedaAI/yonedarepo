@@ -2,7 +2,14 @@ use crate::{broker::broker, err, jobs::execute_job};
 use serde_json::{Value, json};
 use std::time::Duration;
 use yoneda_core::Result;
+pub(crate) fn health() -> Value {
+    json!({"protocol":2,"environment":yoneda_core::Policy::default().environment,"suites":["retry-contract-v1","retry-contract-v2"]})
+}
 pub async fn serve() -> Result<()> {
+    #[cfg(target_os = "linux")]
+    if unsafe { libc::geteuid() } != 0 {
+        return Err(err("Container supervisor must own the isolated agent UID"));
+    }
     use axum::{
         Json, Router,
         http::{HeaderMap, StatusCode},
@@ -14,7 +21,7 @@ pub async fn serve() -> Result<()> {
         atomic::{AtomicBool, Ordering},
     };
     let started = Arc::new(AtomicBool::new(false));
-    let app=Router::new().route("/health",get(||async {"ready"})).route("/job",post(move |headers:HeaderMap,Json(job):Json<Value>| {
+    let app=Router::new().route("/health",get(||async {Json(health())})).route("/job",post(move |headers:HeaderMap,Json(job):Json<Value>| {
         let started=started.clone();async move {
             let secret=std::env::var("SUPERVISOR_TOKEN").unwrap_or_default();
             if secret.is_empty() || headers.get("authorization").and_then(|v|v.to_str().ok())!=Some(format!("Bearer {secret}").as_str()) {return (StatusCode::FORBIDDEN,Json(json!({"error":"forbidden"}))).into_response();}

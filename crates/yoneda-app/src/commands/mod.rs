@@ -7,11 +7,13 @@ mod events;
 mod history;
 mod leases;
 mod mcp;
+mod policy;
 mod repository;
 mod runs;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
     match string(&c, "op")?.as_str() {
+        "update_policy" => policy::update(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
         "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
