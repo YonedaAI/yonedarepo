@@ -19,6 +19,19 @@ it('rolls back failed Rust storage transactions without changing the event seque
  await expect(ledger(bindings,'retry-test',{op:'start_run',id:'run-test',intent:'Duplicate'})).rejects.toThrow();
  const snapshot=await ledger(bindings,'retry-test',{op:'snapshot'});expect(snapshot.seq).toBe(2);expect(snapshot.runs).toHaveLength(1);
 });
+it('repairs existing execution graph data with the Rust migration in real DO SQLite',async()=>{
+ await initialize();await ledger(bindings,'retry-test',{op:'start_run',id:'run-test',intent:'Safe retry'});
+ const stub=bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('retry-test'));
+ await runInDurableObject(stub,(_instance,state)=>{
+  state.storage.sql.exec("UPDATE nodes SET payload=json_set(payload,'$.data.status','capturing') WHERE json_extract(payload,'$.kind')='execution'");
+  state.storage.sql.exec('DELETE FROM schema_migrations WHERE version=3');
+ });
+ await evictDurableObject(stub);
+ const snapshot=await ledger(bindings,'retry-test',{op:'snapshot'});
+ const execution=snapshot.executions[0];
+ expect(snapshot.nodes.find((n:{id:string})=>n.id===execution.id).data).toEqual(execution);
+ expect(snapshot.seq).toBe(2);
+});
 it('fences duplicate claims and does not trust caller time',async()=>{
  await initialize();await ledger(bindings,'retry-test',{op:'start_run',id:'run-test',intent:'Safe retry'});
  const claim=await ledger(bindings,'retry-test',{op:'claim',job_id:'job:run-test:research',now:1});expect(claim.lease_until).toBeGreaterThan(Date.now());

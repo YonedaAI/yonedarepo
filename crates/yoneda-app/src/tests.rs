@@ -2,6 +2,9 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
+#[path = "tests/graph_status.rs"]
+mod graph_status;
+
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {
         c["now"] = json!(1000);
@@ -114,7 +117,7 @@ fn research_completion_launches_three_harnesses_with_identical_context() {
     assert!(coding.iter().any(|e| e["harness"] == "codex"));
     assert!(coding.iter().any(|e| e["harness"] == "claude"));
 }
-fn ready(db: &NativeStore) -> Value {
+fn captured(db: &NativeStore) {
     start(db);
     let research = "job:run-one:research";
     call(db, json!({"op":"claim","job_id":research})).unwrap();
@@ -134,6 +137,9 @@ fn ready(db: &NativeStore) -> Value {
     let capture = "capture:run-one:codex-minimal";
     call(db, json!({"op":"claim","job_id":capture})).unwrap();
     call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}})).unwrap();
+}
+fn ready(db: &NativeStore) -> Value {
+    captured(db);
     let eval = "evaluate:candidate-a";
     call(db, json!({"op":"claim","job_id":eval})).unwrap();
     let policy = crate::storage::repo(db).unwrap()["policy"].clone();
@@ -234,7 +240,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4}])
             .as_array()
             .unwrap()
             .clone()
@@ -243,7 +249,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        2
+        4
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();

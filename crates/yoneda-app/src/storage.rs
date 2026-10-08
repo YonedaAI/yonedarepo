@@ -7,12 +7,15 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
+    const SCHEMA_VERSION: i64 = 4;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
         let migrations = [
             (1, include_str!("migrations/0001_ledger.sql")),
             (2, include_str!("migrations/0002_run_index.sql")),
+            (3, include_str!("migrations/0003_execution_graph.sql")),
+            (4, include_str!("migrations/0004_state_graph.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",
@@ -20,7 +23,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
         )?;
         if applied
             .iter()
-            .any(|v| v["version"].as_i64().unwrap_or_default() > 2)
+            .any(|v| v["version"].as_i64().unwrap_or_default() > SCHEMA_VERSION)
         {
             return Err(Error::new(
                 "SCHEMA_TOO_NEW",
@@ -46,7 +49,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
                 &[json!(version), json!(digest)],
             )?;
         }
-        Ok(json!({"version":2}))
+        Ok(json!({"version":SCHEMA_VERSION}))
     }))?;
     Ok(())
 }
@@ -106,6 +109,15 @@ pub(crate) fn all<S: SqlStore>(db: &S, table: &str) -> Result<Vec<Value>> {
 }
 pub(crate) fn save<S: SqlStore>(db: &S, table: &str, id: &str, value: &Value) -> Result<()> {
     db.query(&format!("INSERT INTO {table}(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload"),&[json!(id),json!(value.to_string())])?;
+    let kind = match table {
+        "runs" => Some("run"),
+        "executions" => Some("execution"),
+        "candidates" => Some("candidate"),
+        _ => None,
+    };
+    if let Some(kind) = kind {
+        db.query("UPDATE nodes SET payload=json_set(payload,'$.data',json(?)) WHERE id=? AND json_extract(payload,'$.kind')=?", &[json!(value.to_string()),json!(id),json!(kind)])?;
+    }
     Ok(())
 }
 pub(crate) fn create<S: SqlStore>(db: &S, table: &str, id: &str, value: &Value) -> Result<()> {
@@ -135,6 +147,11 @@ pub(crate) fn node<S: SqlStore>(
         id,
         &json!({"id":id,"kind":kind,"label":label,"author":author,"recorded_at":now,"data":data}),
     )
+}
+/// Update the execution and its graph projection in the caller's transaction.
+pub(crate) fn save_execution<S: SqlStore>(db: &S, execution: &Value, _now: i64) -> Result<()> {
+    let id = string(execution, "id")?;
+    save(db, "executions", &id, execution)
 }
 pub(crate) fn edge<S: SqlStore>(
     db: &S,
