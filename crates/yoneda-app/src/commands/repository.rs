@@ -30,7 +30,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             )?;
             let seq = db.query("SELECT COALESCE(MAX(seq),0) AS seq FROM events", &[])?;
             Ok(
-                json!({"v":1,"capabilities":{"artifact_reads":2},"repository":r,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"seq":seq[0]["seq"]}),
+                json!({"v":1,"capabilities":{"artifact_reads":2,"workspace_authority":1},"repository":r,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"seq":seq[0]["seq"]}),
             )
         }
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),

@@ -116,12 +116,12 @@ impl DurableObject for LiveRoom {
     fn new(state: State, _: Env) -> Self {
         Self { state }
     }
-    async fn fetch(&self, mut req: Request) -> Result<Response> {
+    async fn fetch(&self, req: Request) -> Result<Response> {
         if req.method() == Method::Post {
-            let event: Value = req.json().await?;
-            let message = event.to_string();
+            // Sockets carry wakeups only. Every data read reauthenticates through
+            // the Worker, including after recovery, logout and session expiry.
             for ws in self.state.get_websockets() {
-                let _ = ws.send_with_str(&message);
+                let _ = ws.send_with_str("{\"type\":\"resync\"}");
             }
             return Response::ok("notified");
         }

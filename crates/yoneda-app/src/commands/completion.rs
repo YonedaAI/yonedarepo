@@ -128,11 +128,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("evaluating");
             save_execution(db, &e, now)?;
-            let run = get(db, "runs", &run_id)?;
-            let policy = run
-                .get("policy")
-                .cloned()
-                .unwrap_or(repo(db)?["policy"].clone());
+            // Coding keeps its approved brief, while eligibility must use current
+            // owner policy even if that policy changed before capture existed.
+            let policy = repo(db)?["policy"].clone();
             job(
                 db,
                 &format!("evaluate:{cid}"),
