@@ -1,14 +1,17 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::Result;
+use yoneda_core::{
+    Result,
+    agents::{MAX_ROOT_AGENTS, MIN_ROOT_AGENTS},
+};
 
 pub(super) fn validate_agents(c: &Value) -> Result<()> {
     let agents = c["agents"]
         .as_array()
-        .ok_or_else(|| bad("Choose 2–4 concurrent agents"))?;
-    if !(2..=4).contains(&agents.len()) {
-        return Err(bad("Choose 2–4 concurrent agents"));
+        .ok_or_else(|| bad("Choose 2–6 concurrent agents"))?;
+    if !(MIN_ROOT_AGENTS..=MAX_ROOT_AGENTS).contains(&agents.len()) {
+        return Err(bad("Choose 2–6 concurrent agents"));
     }
     let mut strategies = BTreeSet::new();
     for agent in agents {
@@ -58,7 +61,10 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
         } else {
             "claude"
         };
-        let e = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(|| json!(provider)),"model":agent["model"],"strategy":agent["strategy"],"role":"coding","status":"queued","context":run["context"],"base":run["base"]});
+        let mut e = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(|| json!(provider)),"model":agent["model"],"strategy":agent["strategy"],"role":"coding","status":"queued","context":run["context"],"base":run["base"],"depth":0});
+        if run.get("model_budgets").is_some() {
+            e["budget"] = json!({"provider":provider,"model":agent["model"]});
+        }
         create(db, "executions", &id, &e)?;
         node(
             db,

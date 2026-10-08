@@ -1,10 +1,12 @@
 use crate::storage::*;
 use serde_json::{Value, json};
+use yoneda_core::agents::DelegationPolicy;
 use yoneda_core::{Error, Result};
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "start_run" => {
             let r = repo(db)?;
+            let restart_of = super::restarts::validate(db, &c)?;
             if !r["pending"].is_null() {
                 return Err(Error::new(
                     "PUBLICATION_PENDING",
@@ -52,6 +54,27 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 super::scheduling::validate_agents(&c)?;
             }
+            let model_budgets = super::model_budgets::freeze(&c, general)?;
+            let root_count = if general {
+                c["agents"].as_array().map_or(0, Vec::len)
+            } else {
+                1
+            };
+            let delegation = c
+                .get("delegation")
+                .map(|value| {
+                    serde_json::from_value::<DelegationPolicy>(value.clone())
+                        .map_err(|e| bad(&e.to_string()))
+                })
+                .transpose()?
+                .unwrap_or_else(|| DelegationPolicy::disabled(root_count));
+            delegation.validate(root_count)?;
+            if !general && delegation.enabled {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "Only hosted coding runs may delegate",
+                ));
+            }
             if all(db, "runs")?.len() >= 100 {
                 return Err(Error::new(
                     "REPOSITORY_LIMIT",
@@ -63,7 +86,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0});
+            if let Some(budgets) = model_budgets {
+                run["model_budgets"] = json!(budgets);
+            }
+            if let Some(previous) = &restart_of {
+                run["restart_of"] = json!(previous);
+            }
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(
@@ -77,6 +106,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             )?;
             node(db, &id, "run", &intent, "platform", now, run.clone())?;
             edge(db, &intent_id, &id, "implements", "owner request")?;
+            if let Some(previous) = restart_of {
+                edge(
+                    db,
+                    &previous,
+                    &id,
+                    "restarts",
+                    "owner-approved fresh run on current canonical source",
+                )?;
+            }
             if general {
                 super::scheduling::schedule(db, &run, &c["agents"], now)?;
             } else {
@@ -97,15 +135,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             r["status"] = json!("cancelled");
             save(db, "runs", &id, &r)?;
             let mut stops = Vec::new();
-            for mut j in all(db, "jobs")? {
-                let matches =
-                    j["payload"]["execution"]["run_id"] == id || j["payload"]["run_id"] == id;
-                if matches && (j["status"] == "queued" || j["status"] == "running") {
+            for mut j in run_jobs(db, &id)? {
+                if j["status"] == "queued" || j["status"] == "running" {
                     let jid = string(&j, "id")?;
                     stops.push(json!({"job_id":jid,"epoch":j["epoch"]}));
-                    j["status"] = json!("cancelled");
-                    j["epoch"] = json!(number(&j, "epoch")? + 1);
-                    save(db, "jobs", &jid, &j)?;
+                    cancel_job(db, &mut j, now)?;
                     if let Some(eid) = j["payload"]["execution"]["id"]
                         .as_str()
                         .or_else(|| j["payload"]["candidate"]["execution"].as_str())
@@ -120,6 +154,24 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                         save(db, "candidates", cid, &candidate)?;
                     }
                 }
+            }
+            for mut execution in run_executions(db, &id)? {
+                execution["status"] = json!("cancelled");
+                save_execution(db, &execution, now)?;
+            }
+            let rows = db.query(
+                "SELECT payload FROM candidates WHERE json_extract(payload,'$.run_id')=?",
+                &[json!(id)],
+            )?;
+            for row in rows {
+                let mut candidate: Value = serde_json::from_str(
+                    row["payload"]
+                        .as_str()
+                        .ok_or_else(|| bad("Corrupt candidate"))?,
+                )
+                .map_err(|e| bad(&e.to_string()))?;
+                candidate["status"] = json!("cancelled");
+                save(db, "candidates", &string(&candidate, "id")?, &candidate)?;
             }
             event(db, "run.cancelled", now, json!({"id":id}))?;
             Ok(json!({"status":"cancelled","stop":stops}))

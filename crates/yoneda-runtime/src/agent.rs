@@ -9,6 +9,7 @@ use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
+    let approved_budget = crate::execution_limits::model_budget(job)?;
     let baseline = super::jobs::workspace(job, root).await?;
     #[cfg(target_os = "linux")]
     {
@@ -44,11 +45,12 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
     if harness == "gemini" {
         // System settings override repository settings. Only the scoped MCP is trusted.
         std::fs::create_dir_all("/etc/gemini-cli").map_err(err)?;
-        let settings = json!({"security":{"auth":{"selectedType":"gemini-api-key","enforcedType":"gemini-api-key"}},"model":{"name":model,"maxSessionTurns":24},"telemetry":{"enabled":false},"privacy":{"usageStatisticsEnabled":false},"mcp":{"allowed":["yonedarepo"]},"mcpServers":mcp["mcpServers"],"tools":{"exclude":["google_web_search","web_fetch"]}});
+        let settings = gemini_settings(model, &mcp, approved_budget.as_ref());
         std::fs::write("/etc/gemini-cli/settings.json", settings.to_string()).map_err(err)?;
     }
     let mut command = Command::new(harness);
     untrusted(&mut command, root);
+    configure_output_limit(&mut command, approved_budget.as_ref());
     if execution["harness"] == "codex" {
         command.args([
             "exec",
@@ -86,23 +88,12 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         ] {
             command.env(name, model);
         }
-        command.args([
-            "-p",
-            &prompt,
-            "--model",
+        command.args(claude_arguments(
+            execution,
+            approved_budget.is_some(),
             model,
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--strict-mcp-config",
-            "--mcp-config",
-            "/home/agent/mcp.json",
-            "--setting-sources",
-            "",
-            "--dangerously-skip-permissions",
-            "--max-budget-usd",
-            "1.00",
-        ]);
+            &prompt,
+        ));
     }
     broker(
         "/progress",
@@ -113,10 +104,7 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
     let output = bounded_output(&mut command).await?;
     let evidence = broker("/evidence", json!({"content":output.to_string()}), true).await?;
     if output["exit"] != 0 {
-        return Err(err(format!(
-            "Harness exited {}. Transcript evidence {}",
-            output["exit"], evidence["digest"]
-        )));
+        return Err(crate::harness_error::failure(&output, &evidence));
     }
     if execution["role"] == "research" {
         return Ok(json!({"transcript":evidence["digest"],"model":model}));
@@ -125,3 +113,63 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
     let uploaded = broker("/workspace", json!({"files":files}), true).await?;
     Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
 }
+
+fn gemini_settings(
+    model: &str,
+    mcp: &Value,
+    budget: Option<&yoneda_core::model_budget::ModelBudget>,
+) -> Value {
+    let turns = budget.map_or(24, |budget| budget.max_requests);
+    json!({"security":{"auth":{"selectedType":"gemini-api-key","enforcedType":"gemini-api-key"}},
+        "model":{"name":model,"maxSessionTurns":turns},"telemetry":{"enabled":false},
+        "privacy":{"usageStatisticsEnabled":false},"mcp":{"allowed":["yonedarepo"]},
+        "mcpServers":mcp["mcpServers"],"tools":{"exclude":["google_web_search","web_fetch"]}})
+}
+
+fn configure_output_limit(
+    command: &mut Command,
+    budget: Option<&yoneda_core::model_budget::ModelBudget>,
+) {
+    if let Some(budget) = budget {
+        command.env(
+            "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+            budget.max_output_tokens.to_string(),
+        );
+    }
+}
+
+fn claude_arguments<'a>(
+    execution: &Value,
+    approved_budget: bool,
+    model: &'a str,
+    prompt: &'a str,
+) -> Vec<&'a str> {
+    let mut args = vec![
+        "-p",
+        prompt,
+        "--model",
+        model,
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--strict-mcp-config",
+        "--mcp-config",
+        "/home/agent/mcp.json",
+        "--setting-sources",
+        "",
+        "--dangerously-skip-permissions",
+    ];
+    // Claude Code's dollar estimate uses Anthropic pricing. Third-party models
+    // retain the authoritative request/time/output limits in the scoped proxy.
+    if !approved_budget
+        && (execution["provider"] == "claude"
+            || (execution.get("provider").is_none() && execution["harness"] == "claude"))
+    {
+        args.extend(["--max-budget-usd", "1.00"]);
+    }
+    args
+}
+
+#[cfg(test)]
+#[path = "tests/agent_config.rs"]
+mod tests;
