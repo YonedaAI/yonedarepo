@@ -19,9 +19,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
             leases::handle(db, c, now)
         }
-        "context" | "publish_artifact" | "get_artifact" | "hint_complete" => {
-            mcp::handle(db, c, now)
-        }
+        "context" | "publish_artifact" | "authorize_artifact" | "get_artifact"
+        | "hint_complete" => mcp::handle(db, c, now),
         "outbox" | "outbox_sent" | "events" => events::handle(db, c, now),
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),

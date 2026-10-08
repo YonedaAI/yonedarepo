@@ -25,6 +25,13 @@ pub fn ensure_token() -> Result<()> {
     if !std::path::Path::new(".dev.vars").exists() {
         std::fs::write(".dev.vars", format!("OWNER_TOKEN={value}\n"))?;
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for path in [".local/owner-token", ".dev.vars"] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+        }
+    }
     Ok(())
 }
 pub fn deploy_token() -> Result<()> {

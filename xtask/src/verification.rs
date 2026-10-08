@@ -107,6 +107,16 @@ pub fn check(snapshot: &Value, events: &[Value], why: &Value) -> Result<()> {
             .as_u64()
             .filter(|v| *v > 0)
             .ok_or("Missing completed attempt epoch")?;
+        if context.iter().any(|id| {
+            !events.iter().any(|event| {
+                event["kind"] == "artifact.retrieved"
+                    && event["data"]["execution"] == execution["id"]
+                    && event["data"]["artifact"] == *id
+                    && event["data"]["epoch"] == epoch
+            })
+        }) {
+            return Err("Shared context was delivered but lacks successful reads by each completed coding attempt".into());
+        }
         let start = events
             .iter()
             .find(|e| {
