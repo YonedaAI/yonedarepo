@@ -35,6 +35,14 @@ One fresh whole-branch reviewer found four Critical/Important issues. All four w
 
 Live testing also exposed Claude's CLI requesting a larger output than the proxy allowed, and failed transcripts not being attached to their execution. Both received failing regressions and fixes. Claude now uses the same 4096-token ceiling as the provider proxy and failed attempts retain scoped evidence.
 
+## Public release
+
+The [Apache-2.0 source](https://github.com/MagnetonIO/yonedarepo) was published as a fresh snapshot at `6924369474d25ef1132efd86029a30b0f0eb3b79`. All 71 native Rust tests also passed from that exported snapshot. Private context, credentials, generated output and private Git history were excluded.
+
+The [release](https://github.com/MagnetonIO/yonedarepo/releases/tag/mvp-2026-10-08) includes the 527.833515-second H.264/AAC video, captions, curated browser capture inputs and release evidence. An anonymous download matched the local MP4 byte for byte: SHA-256 `d6acb8f2b851c7c8a0a0537308bb2f354fc8f3c8432b3a1233a5731e5b7a7e6c`. Full video decoding succeeded; narration peak level was -1.3 dBFS. This is technical artifact verification, not audience acceptance.
+
+The disposable one-day contribution key used by both local acceptance clients was revoked after their completion; a subsequent remote MCP request returned HTTP 401. Its checked follow-up remains available to its owner through the website.
+
 ## Cost and practical limits
 
 - Shared durable Claude allowance: **$8.141532 reserved or charged of $20** at the final observed run. This is conservative safety accounting, not a provider invoice. The cap was not raised.

@@ -412,5 +412,17 @@
     "chapters": 10,
     "narration": "Synthetic macOS Samantha, 150 words/minute",
     "captures": "Actual served UI and recorded run evidence; edited walkthrough"
+  },
+  "public_release": {
+    "source_url": "https://github.com/MagnetonIO/yonedarepo",
+    "source_commit": "6924369474d25ef1132efd86029a30b0f0eb3b79",
+    "license": "Apache-2.0",
+    "release_url": "https://github.com/MagnetonIO/yonedarepo/releases/tag/mvp-2026-10-08",
+    "video_url": "https://github.com/MagnetonIO/yonedarepo/releases/download/mvp-2026-10-08/yonedarepo-mvp.mp4",
+    "video_sha256": "d6acb8f2b851c7c8a0a0537308bb2f354fc8f3c8432b3a1233a5731e5b7a7e6c",
+    "anonymous_video_download_verified": true,
+    "exported_snapshot_native_tests": 71,
+    "disposable_mcp_grant_revoked": true,
+    "revoked_mcp_http_status": 401
   }
 }
