@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "note": "Actual captures and editor-created diagrams; supplied private presenter clips. No generated product UI.",
+  "scenes": {
+    "01": [
+      {
+        "kind": "presenter",
+        "file": "opening-synced.mp4",
+        "seconds": 6.7
+      },
+      {
+        "kind": "capture",
+        "file": "release:13-garden-published.jpg",
+        "seconds": 23.3,
+        "label": "Recorded published Garden site"
+      },
+      {
+        "kind": "capture",
+        "file": "release:11-checked-candidates.jpg",
+        "seconds": 14,
+        "label": "Recorded Garden run / two checked alternatives"
+      }
+    ],
+    "02": [
+      {
+        "kind": "capture",
+        "file": "docs/images/workspace-login.png",
+        "seconds": 14,
+        "label": "Current account screen"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/provider-connections.png",
+        "seconds": 20,
+        "label": "Current provider configuration / local draft"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/local-agent-setup.png",
+        "seconds": 16,
+        "label": "Current scoped local-agent setup / no key created"
+      }
+    ],
+    "03": [
+      {
+        "kind": "capture",
+        "file": "docs/images/run-composer.png",
+        "seconds": 24,
+        "label": "Current four-approach composer / draft, not submitted"
+      },
+      {
+        "kind": "capture",
+        "file": "release:11-checked-candidates.jpg",
+        "seconds": 26,
+        "label": "Recorded Garden run / Luna and Sonnet"
+      }
+    ],
+    "04": [
+      {
+        "kind": "diagram",
+        "name": "concurrency",
+        "seconds": 27
+      },
+      {
+        "kind": "capture",
+        "file": "release:11-checked-candidates.jpg",
+        "seconds": 26,
+        "label": "Recorded capture and independent checks"
+      }
+    ],
+    "05": [
+      {
+        "kind": "diagram",
+        "name": "finding",
+        "seconds": 11
+      },
+      {
+        "kind": "capture",
+        "file": "release:09-sonnet-garden.jpg",
+        "seconds": 9,
+        "label": "Recorded Sonnet preview"
+      },
+      {
+        "kind": "capture",
+        "file": "release:08-luna-garden.jpg",
+        "seconds": 9,
+        "label": "Recorded Luna preview"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0000.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0001.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0002.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0003.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0004.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0005.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      },
+      {
+        "kind": "capture",
+        "file": "artifacts/video/interaction/frame-0006.jpg",
+        "seconds": 3,
+        "label": "Actual filter / local RSVP transitions, edited captures"
+      }
+    ],
+    "06": [
+      {
+        "kind": "capture",
+        "file": "docs/images/selection-review.png",
+        "seconds": 18,
+        "label": "Current review dialog / follow-up remains unpublished"
+      },
+      {
+        "kind": "capture",
+        "file": "release:12-published-decision.jpg",
+        "seconds": 14,
+        "label": "Recorded Garden decision / owner-directed choice"
+      },
+      {
+        "kind": "capture",
+        "file": "release:13-garden-published.jpg",
+        "seconds": 14,
+        "label": "Recorded verified Garden publication"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/source-history.png",
+        "seconds": 14,
+        "label": "Current source history / earlier publication unchanged"
+      }
+    ],
+    "07": [
+      {
+        "kind": "capture",
+        "file": "docs/images/context-finding.png",
+        "seconds": 12,
+        "label": "Current typed context / membership finding"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/context-finding.png",
+        "seconds": 14,
+        "crop": [
+          265,
+          166,
+          1328,
+          650
+        ],
+        "label": "Actual context graph / enlarged detail"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/source-history.png",
+        "seconds": 25,
+        "label": "Current exact-revision source history"
+      }
+    ],
+    "08": [
+      {
+        "kind": "diagram",
+        "name": "mcp",
+        "seconds": 19
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/source-diff.png",
+        "seconds": 7,
+        "label": "Current checked follow-up / actual diff, still unpublished"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/source-diff.png",
+        "seconds": 14,
+        "crop": [
+          280,
+          310,
+          1320,
+          610
+        ],
+        "label": "Actual follow-up diff / enlarged detail, still unpublished"
+      },
+      {
+        "kind": "capture",
+        "file": "docs/images/context-finding.png",
+        "seconds": 17,
+        "label": "Recorded context available to a fresh MCP process",
+        "crop": [
+          530,
+          167,
+          1328,
+          650
+        ]
+      }
+    ],
+    "09": [
+      {
+        "kind": "diagram",
+        "name": "architecture",
+        "seconds": 39
+      },
+      {
+        "kind": "diagram",
+        "name": "deployment",
+        "seconds": 26
+      }
+    ],
+    "10": [
+      {
+        "kind": "presenter",
+        "file": "closing-synced.mp4",
+        "seconds": 4.8
+      },
+      {
+        "kind": "capture",
+        "file": "release:13-garden-published.jpg",
+        "seconds": 15.2,
+        "label": "Recorded published Garden website"
+      },
+      {
+        "kind": "diagram",
+        "name": "scope",
+        "seconds": 18
+      },
+      {
+        "kind": "diagram",
+        "name": "links",
+        "seconds": 10
+      }
+    ]
+  }
+}
