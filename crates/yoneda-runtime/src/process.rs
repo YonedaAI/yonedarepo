@@ -18,6 +18,10 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
         .env("ANTHROPIC_API_KEY", "scoped-container-proxy")
         .env("DISABLE_NON_ESSENTIAL_MODEL_CALLS", "1")
         .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+        // Match the proxy ceiling so Claude does not attempt 32K tool writes and
+        // repeatedly continue a response that the upstream can only return at 4K.
+        .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "4096")
+        .env("CLAUDE_CODE_EFFORT_LEVEL", "low")
         .env("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
     #[cfg(target_os = "linux")]
     {
