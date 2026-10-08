@@ -7,7 +7,7 @@ export async function source(env: Env, revision: Json) {
   using repo = await env.ARTIFACTS.get(name);
   const commit = await repo.readCommit(revision.commit);
   if (!commit) throw new Error('Captured commit is missing');
-  const files: Json = {};
+  const files: Json = Object.create(null);
   let bytes = 0;
   async function walk(hash: string, prefix: string, depth: number) {
     if (depth > 20) throw new Error('Source nesting exceeds limit');

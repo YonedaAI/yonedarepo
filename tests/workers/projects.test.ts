@@ -23,3 +23,11 @@ it('resumes provisioning against real DOs after a lost Artifacts fork acknowledg
  const snapshot = await ledger(bindings,'project-one',{op:'snapshot',_workspace:'alice'});expect(snapshot.repository.workspace).toBe('alice');expect(snapshot.repository.published_commit).toBe('c'.repeat(40));
  await expect(ledger(bindings,'project-one',{op:'snapshot',_workspace:'bob'})).rejects.toThrow('another workspace');
 });
+it('preserves regular source files named like JavaScript prototype properties',async()=>{
+ const {source}=await import('../../worker/artifacts');
+ const remote={ [Symbol.dispose](){},readCommit:async()=>({treeHash:'b'.repeat(40)}),readTree:async()=>[{name:'__proto__',type:'blob',hash:'c'.repeat(40)},{name:'constructor',type:'blob',hash:'d'.repeat(40)}],readBlob:async(hash:string)=>new Blob([hash])};
+ const env={...bindings,ARTIFACTS:{get:async()=>remote}} as unknown as Env;
+ const workspace=await source(env,{repository:'yoneda-test/private',commit:'a'.repeat(40)});
+ expect(Object.keys(workspace.files)).toEqual(['__proto__','constructor']);
+ expect(JSON.parse(JSON.stringify(workspace)).files.__proto__.content).toBe('c'.repeat(40));
+});

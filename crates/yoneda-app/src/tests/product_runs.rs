@@ -248,3 +248,22 @@ fn attempt_request_limits_are_durable_fenced_and_capability_specific() {
     call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":16*1024*1024})).unwrap();
     assert!(call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":129*1024*1024})).is_err());
 }
+
+#[test]
+fn capture_after_policy_update_schedules_current_independent_verification() {
+    let db = repo_with_policy(product_policy());
+    call(&db, run_command()).unwrap();
+    call(&db, json!({"op":"claim","job_id":"job:site:agent-1"})).unwrap();
+    let mut next = product_policy();
+    next["version"] = json!("site-v2");
+    call(&db, json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"site-v1","policy":next})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"job:site:agent-1","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    call(&db, json!({"op":"claim","job_id":"capture:site:agent-1"})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":{"id":"site-candidate","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Website","diff":"html"}})).unwrap();
+    let evaluation = call(
+        &db,
+        json!({"op":"claim","job_id":"evaluate:site-candidate"}),
+    )
+    .unwrap();
+    assert_eq!(evaluation["payload"]["policy"]["version"], "site-v2");
+}
