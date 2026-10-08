@@ -1,0 +1,56 @@
+import { env } from 'cloudflare:workers';
+import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
+import { afterEach, expect, it } from 'vitest';
+import { workspace } from '../../worker/workspace';
+import type { Env } from '../../worker/types';
+const bindings = env as unknown as Env;
+afterEach(async () => {await reset();});
+it('stores only encrypted BYOK credentials and never falls back to platform secrets',async()=>{
+ const signup = await bindings.SELF.fetch('https://yoneda/api/auth/signup',{method:'POST',body:JSON.stringify({username:'vault_user',password:'a long test password'})});
+ expect(signup.status).toBe(200);
+ const cookie = (signup.headers.get('set-cookie') ?? '').split(';')[0];
+ const save = await bindings.SELF.fetch('https://yoneda/api/settings/providers/mimo',{method:'POST',headers:{cookie},body:JSON.stringify({key:'test-private-provider-key',model:'mimo-v2-flash'})});
+ expect(save.status).toBe(200);
+ const stub = bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName('account:vault_user'));
+ const stored = await runInDurableObject(stub,(_instance,state)=>[...state.storage.sql.exec('SELECT payload FROM workspace_records')]);
+ expect(JSON.stringify(stored)).not.toContain('test-private-provider-key');
+ const {providerKey,open} = await import('../../worker/vault');
+ expect(await providerKey(bindings,'vault_user','mimo')).toBe('test-private-provider-key');
+ const value = await workspace(bindings,'vault_user',{op:'provider_secret',provider:'mimo'});
+ await expect(open(bindings,'another_user','mimo',value.sealed)).rejects.toThrow();
+ await expect(providerKey(bindings,'vault_user','claude')).rejects.toThrow();
+ const settings = await bindings.SELF.fetch('https://yoneda/api/settings',{headers:{cookie}});
+ const text = await settings.text(); expect(text).toContain('mimo-v2-flash'); expect(text).not.toContain('ciphertext'); expect(text).not.toContain('test-private-provider-key');
+});
+it('shares Claude reservations across durable eviction and refuses requests beyond $20', async()=>{
+ await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'first',amount:19_000_000});
+ const stub = bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName('account:_budget_claude'));
+ await evictDurableObject(stub);
+ await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'first',amount:19_000_000});
+ await expect(workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'parallel',amount:2_000_000})).rejects.toThrow('budget exhausted');
+ expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(19_000_000);
+});
+it('pins MiMo and ZAI upstreams and bounds Claude cost before inference', async()=>{
+ const {prepareModelRequest} = await import('../../worker/model-policy');
+ const job = (provider:string,model:string) => ({kind:'agent',model,payload:{execution:{provider,harness:'claude'}}});
+ const input = {model:'expensive-model',max_tokens:999999,messages:[{role:'user',content:'Hello'}],stream:true};
+ const mimo = prepareModelRequest(job('mimo','mimo-v2-flash'),'claude','/v1/messages',input);
+ expect(mimo.url).toBe('https://api.xiaomimimo.com/anthropic/v1/messages');
+ expect(mimo.body.model).toBe('mimo-v2-flash'); expect(mimo.body.max_tokens).toBe(4096);
+ expect(prepareModelRequest(job('zai','glm-4.7-flash'),'claude','/v1/messages',input).url).toBe('https://api.z.ai/api/anthropic/v1/messages');
+ const claude = prepareModelRequest(job('claude','claude-sonnet-4-6'),'claude','/v1/messages',input);
+ expect(claude.reservation).toBeGreaterThan(4096*15);
+ expect(() => prepareModelRequest(job('claude','claude-opus-4-6'),'claude','/v1/messages',input)).toThrow();
+ expect(() => prepareModelRequest(job('claude','claude-sonnet-4-6'),'claude','/v1/messages',{...input,tools:[{type:'web_search_20250305',name:'web_search'}]})).toThrow();
+});
+it('settles complete Claude usage but keeps incomplete stream reservations charged',async()=>{
+ const {trackClaudeUsage} = await import('../../worker/model-usage');
+ await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'complete',amount:1_000_000});
+ const stream = 'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}\n\ndata: {"type":"message_delta","usage":{"output_tokens":50}}\n\ndata: {"type":"message_stop"}\n\n';
+ const response = trackClaudeUsage(new Response(stream,{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','complete',1_000_000);
+ expect(await response.text()).toBe(stream);
+ expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(2100);
+ await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'unknown',amount:1_000_000});
+ await trackClaudeUsage(new Response(stream.replace('data: {"type":"message_stop"}\n\n',''),{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','unknown',1_000_000).text();
+ expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(1_002_100);
+});

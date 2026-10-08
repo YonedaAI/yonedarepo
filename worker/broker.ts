@@ -94,7 +94,7 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       if (job.kind === 'capture')
         return response(JSON.parse(await readObject(env, job.payload.workspace)));
       if (job.kind === 'agent' && job.payload.execution.role === 'coding')
-        return response(await object(env, JSON.stringify({ files: body.files })));
+        return response(await object(env, JSON.stringify({ files: body.files }), 12 * 1024 * 1024));
       return error('FORBIDDEN', 'No workspace upload access', 403);
     }
     if (path === '/evidence') return response(await object(env, String(body.content)));

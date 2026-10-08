@@ -55,6 +55,14 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             &prompt,
         ]);
     } else {
+        for name in [
+            "ANTHROPIC_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ] {
+            command.env(name, model);
+        }
         command.args([
             "-p",
             &prompt,

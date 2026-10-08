@@ -7,9 +7,9 @@ export async function sha(content: string) {
     .map((v) => v.toString(16).padStart(2, '0'))
     .join('');
 }
-export async function object(env: Env, content: string) {
-  if (new TextEncoder().encode(content).length > 8 * 1024 * 1024)
-    throw new Error('Object exceeds 8 MiB');
+export async function object(env: Env, content: string, limit = 8 * 1024 * 1024) {
+  if (new TextEncoder().encode(content).length > limit)
+    throw new Error('Object exceeds size limit');
   const digest = await sha(content);
   await env.OBJECTS.put(`sha256/${digest}`, content, {
     onlyIf: { etagDoesNotMatch: '*' },

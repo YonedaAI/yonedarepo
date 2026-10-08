@@ -191,3 +191,60 @@ fn build_policy_updates_require_a_new_version_and_preserve_existing_run_policy()
         "app.js"
     );
 }
+
+#[test]
+fn repository_commands_enforce_the_trusted_workspace_scope() {
+    let db = NativeStore::memory().unwrap();
+    call(&db,json!({"op":"init","id":"private","name":"Private","workspace":"alice","remote":{"namespace":"test","name":"private"},"commit":"a".repeat(40),"policy":product_policy()})).unwrap();
+    assert_eq!(
+        call(&db, json!({"op":"snapshot","_workspace":"bob"}))
+            .unwrap_err()
+            .code,
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        call(&db, json!({"op":"snapshot","_workspace":"alice"})).unwrap()["repository"]["workspace"],
+        "alice"
+    );
+    let mut run = run_command();
+    run["_workspace"] = json!("bob");
+    assert!(call(&db, run).is_err());
+    assert_eq!(
+        call(&db, json!({"op":"snapshot","_workspace":"alice"})).unwrap()["runs"],
+        json!([])
+    );
+}
+
+#[test]
+fn attempt_request_limits_are_durable_fenced_and_capability_specific() {
+    let db = repo_with_policy(product_policy());
+    call(&db, run_command()).unwrap();
+    let id = "job:site:agent-1";
+    call(&db, json!({"op":"claim","job_id":id})).unwrap();
+    for n in 1..=24 {
+        let value = call(
+            &db,
+            json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"model"}),
+        )
+        .unwrap();
+        assert_eq!(value["number"], n);
+    }
+    assert_eq!(
+        call(
+            &db.clone(),
+            json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"model"})
+        )
+        .unwrap_err()
+        .code,
+        "RESOURCE_LIMIT"
+    );
+    assert!(
+        call(
+            &db,
+            json!({"op":"reserve_request","job_id":id,"epoch":2,"kind":"dependency","bytes":1024})
+        )
+        .is_err()
+    );
+    call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":16*1024*1024})).unwrap();
+    assert!(call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":129*1024*1024})).is_err());
+}

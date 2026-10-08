@@ -70,12 +70,6 @@ export class ExecutionContainer extends Container<Env> {
     if (!scope) throw new Error('Container has no execution scope');
     return scope;
   }
-  async modelCall() {
-    const scope = await this.scope();
-    if (++scope.model_calls > 24) throw new Error('Model request budget exhausted');
-    await this.ctx.storage.put('scope', scope);
-    return scope;
-  }
   async stop() {
     await this.ctx.storage.put('stopped', true);
     await this.destroy();

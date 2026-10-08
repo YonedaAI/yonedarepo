@@ -62,6 +62,11 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
         "evaluate" => crate::evaluation::execute(job, &root).await,
         "publish" => {
             git(&root, &["init", "-b", "main"]).await?;
+            let branch = job["payload"]["canonical"]["branch"]
+                .as_str()
+                .unwrap_or("main");
+            git(&root, &["check-ref-format", "--branch", branch]).await?;
+            let reference = format!("refs/heads/{branch}");
             let target = field(&job["payload"]["target"], "commit")?;
             let expected = field(&job["payload"]["expected"], "commit")?;
             git(
@@ -71,7 +76,7 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
             .await?;
             git(
                 &root,
-                &["fetch", "http://git.yoneda.internal/canonical", "main"],
+                &["fetch", "http://git.yoneda.internal/canonical", branch],
             )
             .await?;
             let observed = git(&root, &["rev-parse", "FETCH_HEAD"]).await?;
@@ -86,9 +91,9 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
                 &root,
                 &[
                     "push",
-                    &format!("--force-with-lease=refs/heads/main:{expected}"),
+                    &format!("--force-with-lease={reference}:{expected}"),
                     "http://git.yoneda.internal/canonical",
-                    &format!("{target}:refs/heads/main"),
+                    &format!("{target}:{reference}"),
                 ],
             )
             .await?;
@@ -97,7 +102,7 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
                 &[
                     "ls-remote",
                     "http://git.yoneda.internal/canonical",
-                    "refs/heads/main",
+                    &reference,
                 ],
             )
             .await?;

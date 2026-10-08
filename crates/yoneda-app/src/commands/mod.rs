@@ -9,11 +9,25 @@ mod leases;
 mod mcp;
 mod policy;
 mod repository;
+mod resources;
 mod runs;
 mod scheduling;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
+    // This field is set by the authenticated adapter, after discarding caller authority fields.
+    if let Some(workspace) = c["_workspace"].as_str()
+        && workspace != "_admin"
+        && c["op"] != "init"
+    {
+        let repository = crate::storage::repo(db)?;
+        if repository["workspace"].as_str().unwrap_or("_admin") != workspace {
+            return Err(Error::new(
+                "FORBIDDEN",
+                "Repository belongs to another workspace",
+            ));
+        }
+    }
     match string(&c, "op")?.as_str() {
         "update_policy" => policy::update(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),
@@ -28,6 +42,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
+        "reserve_request" => resources::reserve(db, c),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }
 }
