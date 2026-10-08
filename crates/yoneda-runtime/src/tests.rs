@@ -3,6 +3,18 @@ use yoneda_core::{FileEntry, Workspace};
 use crate::*;
 use serde_json::json;
 use tokio::process::Command;
+#[tokio::test]
+async fn claude_child_uses_the_same_output_ceiling_as_the_provider_proxy() {
+    let mut child = Command::new("/bin/sh");
+    crate::process::untrusted(&mut child, std::path::Path::new("/tmp"));
+    child.args([
+        "-c",
+        "printf '%s:%s' \"$CLAUDE_CODE_MAX_OUTPUT_TOKENS\" \"$CLAUDE_CODE_EFFORT_LEVEL\"",
+    ]);
+    let result = child.output().await.unwrap();
+    assert!(result.status.success());
+    assert_eq!(String::from_utf8(result.stdout).unwrap(), "4096:low");
+}
 #[test]
 fn website_prompt_uses_approved_brief_and_context_without_fixture_requirements() {
     let payload = json!({"execution":{"role":"coding","strategy":"accessible"},"run":{"id":"site","intent":"Build a portfolio website","criteria":["Keyboard navigation"],"context_records":[{"label":"Use semantic HTML"}]},"policy":{"build":{"checks":[{"name":"build","argv":["node","--check","app.js"],"timeout_seconds":30}]}}});
