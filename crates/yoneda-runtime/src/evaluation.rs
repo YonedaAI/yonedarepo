@@ -25,6 +25,13 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             .as_ref()
             .ok_or_else(|| err("Missing build profile"))?;
         let mut report = run_profile(root, profile).await?;
+        if let Some(directory) = &profile.static_dir {
+            if let Ok(files) = crate::site::assets(root, directory) {
+                crate::broker::broker("/site", json!({"files":files}), true).await?;
+            } else {
+                report["static_error"] = json!("Static output missing, unsafe or exceeds limits");
+            }
+        }
         report["environment"] = json!(yoneda_core::build::ENVIRONMENT);
         report["suite"] = json!(policy.suite);
         return Ok(report);

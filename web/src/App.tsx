@@ -1,17 +1,30 @@
-import { ExternalLink, GitBranch, History, KeyRound, Network, RefreshCw } from 'lucide-react';
+import { GitBranch, History, Network, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Exploration } from './features/exploration/Exploration';
+import { SiteLink } from './features/exploration/SiteLink';
 import { ContextGraph } from './features/graph/ContextGraph';
 import { EvidencePanel } from './features/graph/EvidencePanel';
+import { GraphTools } from './features/graph/GraphTools';
 import { HistoryTools } from './features/history/HistoryTools';
+import { AccountPanel } from './features/workspace/AccountPanel';
+import { NewProject } from './features/workspace/NewProject';
+import { ProviderSettings } from './features/workspace/ProviderSettings';
+import { WorkspaceRail } from './features/workspace/WorkspaceRail';
+import { api } from './lib/api';
+import './styles/onboarding.css';
+import { DemoGuide } from './features/workspace/DemoGuide';
 import { OwnerConnection } from './features/workspace/OwnerConnection';
+import './styles/demo-guide.css';
 import { useRepository } from './hooks/useRepository';
 import { short } from './lib/api';
 import type { Graph, GraphNode } from './lib/types';
 export function App() {
   const state = useRepository();
   const [view, setView] = useState<'explore' | 'history'>('explore');
+  const [showSettings, setShowSettings] = useState(false);
+  const [showProject, setShowProject] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
   const [graph, setGraph] = useState<Graph | null>(null);
   const [node, setNode] = useState<GraphNode | null>(null);
   const snapshot = state.snapshot;
@@ -28,55 +41,18 @@ export function App() {
     : null;
   return (
     <div className="app">
-      <aside className="rail">
-        <a className="brand" href="/">
-          <span className="brand-glyph">y</span>
-          <span>
-            YonedaRepo<small>Context for what comes next.</small>
-          </span>
-        </a>
-        <div className="repository-list">
-          <p>Repositories</p>
-          {state.repositories.map((repo) => (
-            <button
-              type="button"
-              className={repo.id === state.id ? 'active' : ''}
-              key={repo.id}
-              onClick={() => {
-                state.setId(repo.id);
-                setGraph(null);
-                setNode(null);
-              }}
-            >
-              <GitBranch size={17} />
-              {repo.name}
-            </button>
-          ))}
-          {!state.repositories.length && (
-            <span className="rail-empty">
-              {state.loading
-                ? 'Loading workspace…'
-                : state.authenticated
-                  ? 'No repositories added yet'
-                  : 'Sign in to see your repositories'}
-            </span>
-          )}
-        </div>
-        <div className="rail-bottom">
-          <span className="environment">
-            <i />
-            Development workspace
-          </span>
-          <button type="button" onClick={() => setShowAuth(!showAuth)}>
-            <KeyRound size={16} />
-            Owner connection
-          </button>
-          <a href="https://github.com/cloudflare/artifacts" target="_blank" rel="noreferrer">
-            <ExternalLink size={14} />
-            Built on Cloudflare
-          </a>
-        </div>
-      </aside>
+      <WorkspaceRail
+        state={state}
+        showGuide={showGuide}
+        onProject={() => setShowProject(true)}
+        onSettings={() => setShowSettings(!showSettings)}
+        onAuth={() => setShowAuth(!showAuth)}
+        onGuide={() => setShowGuide(!showGuide)}
+        onRepository={() => {
+          setGraph(null);
+          setNode(null);
+        }}
+      />
       <main>
         <header className="workspace-header">
           <div>
@@ -105,6 +81,18 @@ export function App() {
             </button>
           </div>
         </header>
+        {showSettings && <ProviderSettings onClose={() => setShowSettings(false)} />}
+        {showProject && (
+          <NewProject
+            onClose={() => setShowProject(false)}
+            onCreated={async (id) => {
+              await state.discover();
+              state.setId(id);
+              setShowProject(false);
+            }}
+          />
+        )}
+        {showGuide && <DemoGuide onClose={() => setShowGuide(false)} />}
         {showAuth && (
           <OwnerConnection
             authenticated={state.authenticated}
@@ -126,6 +114,11 @@ export function App() {
         )}
         {snapshot ? (
           <>
+            {snapshot.repository.site && (
+              <div className="publication-banner">
+                <SiteLink repo={state.id} publishedCommit={snapshot.repository.site.commit} />
+              </div>
+            )}
             <nav className="workspace-tabs" aria-label="Repository views">
               <button
                 type="button"
@@ -156,9 +149,19 @@ export function App() {
               </div>
             )}
             {view === 'explore' ? (
-              <Exploration snapshot={snapshot} onChange={state.refresh} onError={state.setError} />
+              <Exploration
+                key={snapshot.repository.id}
+                snapshot={snapshot}
+                onChange={state.refresh}
+                onError={state.setError}
+              />
             ) : (
-              <HistoryTools snapshot={snapshot} onGraph={setGraph} onError={state.setError} />
+              <HistoryTools
+                key={snapshot.repository.id}
+                snapshot={snapshot}
+                onGraph={setGraph}
+                onError={state.setError}
+              />
             )}
             <section className="graph-section">
               <div className="graph-heading">
@@ -170,6 +173,12 @@ export function App() {
                   </button>
                 </p>
               </div>
+              <GraphTools
+                repo={state.id}
+                selected={selectedNode}
+                onGraph={setGraph}
+                onSelect={setNode}
+              />
               <div className="graph-workspace">
                 <div className="graph-canvas">
                   <ContextGraph graph={activeGraph} onSelect={setNode} />
@@ -188,37 +197,67 @@ export function App() {
               </footer>
             </section>
           </>
+        ) : !state.authenticated && !state.loading ? (
+          <section className="welcome-onboarding">
+            <div>
+              <span className="welcome-graph">
+                <GitBranch size={64} strokeWidth={1} />
+                <Network size={42} strokeWidth={1} />
+              </span>
+              <h1>
+                Build together.
+                <br />
+                Keep the why.
+              </h1>
+              <p>
+                Give concurrent agents one shared intent. Compare their code, inspect the context
+                behind it, and choose what ships. Future agents pick up where you left off.
+              </p>
+            </div>
+            <AccountPanel
+              onConnected={() => {
+                void state.discover();
+              }}
+            />
+          </section>
         ) : (
           <section className="welcome">
-            <span className="welcome-graph">
-              <GitBranch size={64} strokeWidth={1} />
-              <Network size={42} strokeWidth={1} />
-            </span>
             <h1>
-              Code remembers what changed.
-              <br />
-              Give it the context to remember why.
+              {state.loading
+                ? 'Opening your workspace…'
+                : state.project
+                  ? state.project.name
+                  : 'Your next project starts here.'}
             </h1>
             <p>
-              {state.loading
-                ? 'Loading your workspace…'
-                : state.authenticated
-                  ? state.id
+              {state.project?.status === 'failed'
+                ? state.project.error
+                : state.project?.status === 'provisioning'
+                  ? 'Provisioning your repository in Cloudflare Artifacts. This page checks for progress automatically.'
+                  : state.id
                     ? 'Loading repository…'
-                    : 'Your workspace is connected. Add a repository to begin.'
-                  : 'Sign in to open your repositories. Describe a change, and agents research the code, build alternatives and record the context behind them.'}
+                    : 'Add a repository, connect your agent providers, then describe what you want to build.'}
             </p>
-            {!state.authenticated && !state.loading && (
-              <button type="button" onClick={() => setShowAuth(true)}>
-                <KeyRound size={16} />
-                Connect workspace
+            {state.project?.status === 'failed' && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await api(`projects/${state.id}/retry`, {});
+                  await state.discover();
+                }}
+              >
+                Retry provisioning
               </button>
             )}
-            {state.authenticated && !state.id && (
-              <p className="setup-hint">
-                For the development fixture, run{' '}
-                <code>cargo xtask seed-demo --url {location.origin}</code>, then refresh.
-              </p>
+            {!state.id && state.authenticated && (
+              <div className="run-actions">
+                <button type="button" onClick={() => setShowProject(true)}>
+                  Add repository
+                </button>
+                <button type="button" className="quiet" onClick={() => setShowSettings(true)}>
+                  Connect providers
+                </button>
+              </div>
             )}
           </section>
         )}

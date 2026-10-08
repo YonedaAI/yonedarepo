@@ -2,6 +2,8 @@
 
 A Context Graph platform for the agentic era. Explore parallel implementations, evaluate captured source independently, and preserve the intent, assumptions, alternatives and human decision behind a published revision.
 
+Follow [the website workflow](docs/website-workflow.md) to create an account, connect provider keys, start concurrent agents, compare their changes and publish a checked static website. The older [retry fixture walkthrough](docs/demo.md) remains an operator verification example.
+
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
 ## Get running
@@ -16,23 +18,22 @@ cargo xtask check
 cargo xtask dev
 ```
 
-Open `http://localhost:8787`. Use the owner connection with the token in `.local/owner-token`; this file is ignored and is never printed by setup. Cloudflare Access can replace the token for deployed browser sessions. The local test gate uses workerd and SQLite without paid inference.
+Open `http://localhost:8787` and sign up. The sites Worker runs at `http://localhost:8788`. Local state stays in `.wrangler/state`; Artifacts requires access to the configured remote development namespace. The local test gate uses workerd and SQLite without paid inference. The private `.local/owner-token` is for operator bootstrap.
 
 To work on the browser with hot reload, keep Wrangler running and run `pnpm --dir web dev` in another terminal. The Vite server proxies API traffic to Wrangler.
 
 ## Run real agents on Cloudflare
 
-The committed development configuration targets the project account and namespace. Read [the runbook](docs/runbook.md) before using a different account. Provider secrets are resolved in Worker egress handlers from Secrets Store bindings `Codex` and `Claude`; they are not copied to containers.
+The committed development configuration targets the project account and namespace. Read [the runbook](docs/runbook.md) before using a different account. Personal provider keys are encrypted in the workspace vault. Operator test keys use Secrets Store bindings `Codex`, `Claude`, `MiMo` and `ZAI`. Egress handlers resolve credentials; containers receive scoped proxies.
 
 ```sh
 cargo xtask deploy
-cargo xtask seed-demo --url https://YOUR-WORKER.workers.dev
-cargo xtask demo --url https://YOUR-WORKER.workers.dev
+cargo xtask seed-template --url https://YOUR-WORKER.workers.dev
 ```
 
-Testing defaults are Codex `gpt-5.6-luna` and Claude `claude-sonnet-4-6`. The browser shows the research step, three parallel approaches, exact captured commits and independent checks. Review code and record a rationale to select a candidate. Selection and verified canonical publication have distinct states.
+Use MiMo `mimo-v2.6-flash` or ZAI `glm-4.7-flash` for low cost testing. Codex defaults to `gpt-5.6-luna`; Claude uses `claude-sonnet-4-6` under a durable $20 allowance. The browser shows concurrent approaches, exact captured commits, independent checks and typed context. Review code and previews, then record a selection rationale. Selection, canonical publication and the hosted revision have distinct states.
 
-After human selection and publication:
+For the legacy retry fixture only, after selection and publication:
 
 ```sh
 cargo xtask verify-live --url https://YOUR-WORKER.workers.dev
@@ -50,6 +51,7 @@ crates/
   yoneda-worker/      Rust Repo and Live Durable Objects
   yoneda-runtime/     Native supervisor, MCP, harnesses, capture and evaluation
 worker/              Focused SDK, transport and authentication adapters
+sites/               Isolated static website Worker
 web/src/             Browser features, components, hooks and feature styles
 containers/          Pinned native runtime image
 migrations/          Forward-only D1 discovery migrations
@@ -62,4 +64,4 @@ context/             Original design material
 
 [Architecture](docs/architecture.md) · [Runbook](docs/runbook.md) · [Engineering standards](AGENTS.md) · [Implementation evidence](docs/progress.md)
 
-Apache-2.0. This is the bounded MVP described in [the implementation contract](docs/implementation-plan.md); generic task DAGs, enterprise tenancy and automatic semantic merges are deferred.
+Apache-2.0. See [the product MVP plan](docs/product-mvp-plan.md) and [foundation contract](docs/implementation-plan.md); generic task DAGs, enterprise tenancy and automatic semantic merges are deferred.

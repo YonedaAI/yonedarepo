@@ -1,0 +1,61 @@
+.candidate .source-diff,
+.candidate-comparison .source-diff {
+  white-space: pre;
+  overflow: auto;
+  overflow-wrap: normal;
+  background: #fff;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+}
+.source-diff span {
+  display: block;
+  width: max-content;
+  min-width: 100%;
+  padding: 0 12px;
+}
+.source-diff .diff-added {
+  background: #e6f3e9;
+  color: #205b36;
+}
+.source-diff .diff-removed {
+  background: #fae8e7;
+  color: #873c39;
+}
+.source-diff .diff-header {
+  background: #e8f1f8;
+  color: #285c82;
+}
+.candidate-comparison {
+  margin-top: 28px;
+}
+.candidate-comparison h2 {
+  font-size: 20px;
+}
+.candidate-comparison p {
+  color: var(--muted);
+  font-size: 13px;
+}
+.comparison-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.comparison-columns label {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-size: 13px;
+}
+.comparison-columns select {
+  flex: 1;
+  min-width: 0;
+}
+.candidate-comparison .source-diff {
+  max-height: 560px;
+}
+@media (max-width: 760px) {
+  .comparison-columns {
+    grid-template-columns: 1fr;
+  }
+}

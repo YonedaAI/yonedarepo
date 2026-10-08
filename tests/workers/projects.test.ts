@@ -14,10 +14,10 @@ it('validates public Git imports without forwarding URL credentials or private h
 it('resumes provisioning against real DOs after a lost Artifacts fork acknowledgment',async()=>{
  await workspace(bindings,'alice',{op:'signup',username:'alice',password:'a long test password',salt:'01'.repeat(16),recovery_hash:'b'.repeat(64),session_hash:'a'.repeat(64)});
  const project = await workspace(bindings,'alice',{op:'project_reserve',id:'project-one',name:'Portfolio',policy:sitePolicy});
- let forked = false; const revoked:string[] = [];
+ let forked = false; let lostRead = false; const revoked:string[] = [];
  // This fake isolates SDK failure handling. Artifacts compatibility is verified separately live.
- const remote = { [Symbol.dispose](){},info:async()=>({defaultBranch:'main'}),log:async()=>[{hash:'c'.repeat(40)}],readCommit:async()=>({treeHash:'d'.repeat(40)}),readTree:async()=>[{name:'README.md',type:'blob',hash:'e'.repeat(40)}],readBlob:async()=>new Blob(['Source']),listTokens:async()=>({tokens:[{id:'lost-initial-token',state:'active'}]}),revokeToken:async(id:string)=>{revoked.push(id);return true;},fork:async()=>{if(!forked){forked=true;throw new Error('Lost acknowledgment');}throw Object.assign(new Error('Already exists'),{code:'ALREADY_EXISTS'});}};
- const env = {...bindings,ARTIFACTS:{get:async()=>remote}} as unknown as Env;
+ const remote = { [Symbol.dispose](){},info:async()=>({defaultBranch:'main'}),log:async()=>[{hash:'c'.repeat(40)}],readCommit:async()=>({treeHash:'d'.repeat(40)}),readTree:async()=>[{name:'README.md',type:'blob',hash:'e'.repeat(40)}],readBlob:async()=>new Blob(['Source']),listTokens:async()=>({tokens:[{id:'lost-initial-token',state:'active'}]}),revokeToken:async(id:string)=>{revoked.push(id);return true;},fork:async()=>{if(!forked){forked=true;throw new Error('Lost acknowledgment');}throw new Error('ArtifactsError: repo already exists: project-one');}};
+ const env = {...bindings,ARTIFACTS:{get:async(name:string)=>{if(name==='project-one' && !lostRead){lostRead=true;throw new Error('Target read temporarily unavailable');}return remote;}}} as unknown as Env;
  const failed = await provisionProject(env,'alice',project);expect(failed.status).toBe('failed');
  const ready = await provisionProject(env,'alice',failed);expect(ready.status).toBe('ready');expect(revoked).toContain('lost-initial-token');
  const snapshot = await ledger(bindings,'project-one',{op:'snapshot',_workspace:'alice'});expect(snapshot.repository.workspace).toBe('alice');expect(snapshot.repository.published_commit).toBe('c'.repeat(40));

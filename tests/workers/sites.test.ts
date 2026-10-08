@@ -1,0 +1,23 @@
+import { env } from 'cloudflare:workers';
+import { reset } from 'cloudflare:test';
+import { afterEach, expect, it } from 'vitest';
+import { serveSite, type SitesEnv } from '../../sites';
+import { authorizePreview, previewLink } from '../../worker/sites';
+import { object } from '../../worker/storage';
+import type { Env } from '../../worker/types';
+const bindings = env as unknown as Env;
+afterEach(reset);
+it('isolates untrusted site assets, binds preview capabilities and preserves publication pointers', async () => {
+ const manifest = {repo:'alice-site', revision:{commit:'a'.repeat(40)},files:{'index.html':{content:'<html>Published</html>'},'logo.png':{content:'/wCA',encoding:'base64'}}};
+ const stored=await object(bindings,JSON.stringify(manifest));
+ const local={...bindings,SITE_ORIGIN:'https://sites.example'};
+ const link=await previewLink(local,'alice-site',{deployment:stored});
+ const siteEnv={OBJECTS:bindings.OBJECTS,PLATFORM:{authorizePreview:(digest:string,token:string)=>authorizePreview(local,digest,token),siteManifest:async()=>({...stored,commit:'a'.repeat(40)})}} as unknown as SitesEnv;
+ const page=await serveSite(new Request(link.url,{headers:{cookie:'yoneda_account=private'}}),siteEnv);
+ expect(page.status).toBe(200);expect(await page.text()).toContain('Published');expect(page.headers.get('content-security-policy')).toContain('sandbox allow-scripts');expect(page.headers.has('set-cookie')).toBe(false);expect(page.headers.get('referrer-policy')).toBe('no-referrer');
+ const binary=await serveSite(new Request(`${link.url}logo.png`),siteEnv);expect([...new Uint8Array(await binary.arrayBuffer())]).toEqual([255,0,128]);
+ expect((await serveSite(new Request(link.url.replace(stored.digest,'b'.repeat(64))),siteEnv)).status).toBe(404);
+ expect((await serveSite(new Request(link.url.replace(/\/$/,'/missing.txt')),siteEnv)).status).toBe(404);
+ const published=await serveSite(new Request('https://sites.example/p/alice-site/'),siteEnv);expect(published.status).toBe(200);expect(published.headers.get('cache-control')).toContain('no-store');
+ await bindings.OBJECTS.put(`sha256/${stored.digest}`,'corrupted'); expect((await serveSite(new Request('https://sites.example/p/alice-site/'),siteEnv)).status).toBe(503);
+});

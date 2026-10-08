@@ -52,8 +52,7 @@
   }
   .repository-list > p,
   .rail-empty,
-  .brand small,
-  .rail-bottom {
+  .brand small {
     display: none;
   }
   .repository-list button {
@@ -128,5 +127,25 @@
   .publication-banner,
   .error-banner {
     padding: 14px 18px;
+  }
+}
+
+@media (max-width: 760px) {
+  .rail {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .rail-bottom {
+    display: flex;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .rail-bottom .environment {
+    display: none;
+  }
+  .run-composer .agent-inputs {
+    grid-template-columns: 1fr;
   }
 }

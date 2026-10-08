@@ -63,7 +63,7 @@
 }
 .candidate-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: 16px;
 }
 .candidate {
@@ -87,7 +87,7 @@
 .candidate-title h2 {
   margin: 0;
   font-size: 14px;
-  text-transform: capitalize;
+  overflow-wrap: anywhere;
 }
 .candidate-title > span:last-child {
   margin-left: auto;
@@ -189,4 +189,16 @@ pre {
   display: flex;
   gap: 12px;
   margin-top: 12px;
+}
+
+.site-link {
+  margin: 12px 0;
+  color: var(--blue);
+  font-size: 13px;
+  text-decoration: underline;
+}
+.decision-form label input {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
 }

@@ -12,6 +12,7 @@ mod repository;
 mod resources;
 mod runs;
 mod scheduling;
+mod sites;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
@@ -42,6 +43,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
+        "register_site" => sites::register(db, c, now),
         "reserve_request" => resources::reserve(db, c),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }

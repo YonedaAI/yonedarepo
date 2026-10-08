@@ -11,7 +11,11 @@ export function HistoryTools({
   onGraph: (graph: Graph) => void;
   onError: (message: string) => void;
 }) {
-  const [path, setPath] = useState('src/main.rs');
+  const [path, setPath] = useState(
+    snapshot.repository.policy?.build?.static_dir
+      ? `${snapshot.repository.policy.build.static_dir}/index.html`
+      : 'src/main.rs',
+  );
   const [commit, setCommit] = useState(snapshot.repository.published_commit);
   const [assumption, setAssumption] = useState('');
   const [value, setValue] = useState(350);

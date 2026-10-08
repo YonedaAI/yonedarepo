@@ -260,3 +260,19 @@ fn runtime_health_identifies_protocol_and_evaluator_environment() {
             .any(|s| s == "retry-contract-v2")
     );
 }
+
+#[test]
+fn static_assets_capture_ignored_outputs_but_reject_symlink_directories() {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(root.path().join("dist")).unwrap();
+    std::fs::write(root.path().join(".gitignore"), "dist/\n").unwrap();
+    std::fs::write(root.path().join("dist/index.html"), "<html>Built</html>").unwrap();
+    std::fs::write(root.path().join("dist/logo.png"), [0xff, 0, 0x80]).unwrap();
+    let files = crate::site::assets(root.path(), "dist").unwrap();
+    assert_eq!(files["logo.png"].bytes().unwrap(), vec![0xff, 0, 0x80]);
+    assert!(crate::site::assets(root.path(), "../dist").is_err());
+    std::os::unix::fs::symlink(root.path().join("dist"), root.path().join("linked")).unwrap();
+    assert!(crate::site::assets(root.path(), "linked").is_err());
+    std::os::unix::fs::symlink("/etc/passwd", root.path().join("dist/secret")).unwrap();
+    assert!(crate::site::assets(root.path(), "dist").is_err());
+}

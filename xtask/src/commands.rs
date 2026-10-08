@@ -46,6 +46,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             build_wasm()?;
             run("pnpm", &["check"])?;
             run("pnpm", &["test"])?;
+            run("pnpm", &["test:runtime"])?;
             run("pnpm", &["--dir", "web", "build"])?;
             Ok(())
         }
@@ -69,7 +70,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
                     "--local",
                 ],
             )?;
-            run("pnpm", &["exec", "wrangler", "dev", "--local"])
+            crate::dev::serve().await
         }
         "deploy" => {
             ensure_token()?;
@@ -88,7 +89,17 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
                     "--remote",
                 ],
             )?;
-            run("pnpm", &["exec", "wrangler", "deploy"])
+            run("pnpm", &["exec", "wrangler", "deploy"])?;
+            run(
+                "pnpm",
+                &[
+                    "exec",
+                    "wrangler",
+                    "deploy",
+                    "--config",
+                    "sites/wrangler.jsonc",
+                ],
+            )
         }
         "seed-template" | "seed-demo" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args

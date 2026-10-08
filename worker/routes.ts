@@ -5,6 +5,7 @@ import { error, readJson, response, safeId } from './http';
 import { projectRoute } from './projects';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
+import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
 import { settingsRoute } from './vault';
@@ -69,7 +70,12 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         using createdRepo = await env.ARTIFACTS.get(name);
         await createdRepo.revokeToken(created.token);
       } catch (e: any) {
-        if (e.code !== 'ALREADY_EXISTS') throw e;
+        try {
+          using existing = await env.ARTIFACTS.get(name);
+          await existing.info();
+        } catch {
+          throw e;
+        }
       }
       using repo = await env.ARTIFACTS.get(name);
       const existing = await repo.log({ ref: 'main', limit: 1 });
@@ -91,6 +97,13 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       await ledger(env, repo, { op: 'snapshot', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    if (action === 'site' && req.method === 'GET') {
+      const s = await ledger(env, repo, { op: 'snapshot' });
+      return s.repository.site?.digest && env.SITE_ORIGIN
+        ? response({ url: `${env.SITE_ORIGIN}/p/${repo}/`, commit: s.repository.site.commit })
+        : error('NOT_FOUND', 'No website has been published', 404);
+    }
+    if (action === 'site_preview' && req.method === 'GET') return siteRoute(env, repo, req);
     if (action === 'evidence' && req.method === 'GET')
       return evidence(env, repo, url.searchParams.get('digest') ?? '');
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {

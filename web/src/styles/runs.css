@@ -1,0 +1,162 @@
+.runs-toolbar,
+.comparison-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.runs-toolbar h1 {
+  margin: 0;
+  font-size: 28px;
+}
+.runs-toolbar p,
+.fixture-scope {
+  color: var(--muted);
+  font-size: 13px;
+}
+.fixture-scope {
+  margin: 12px 0 24px;
+}
+.run-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+}
+.run-picker label {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.run-picker select {
+  max-width: 100%;
+  min-width: 0;
+}
+.intent-row h2 {
+  margin: 0;
+  max-width: 75ch;
+  font-size: 20px;
+  font-weight: 500;
+}
+.run-meta {
+  margin: 12px 0 20px;
+}
+.run-composer {
+  padding: 24px;
+  margin: 20px 0;
+  background: #e3eff8;
+  border: 1px solid #b9d0e1;
+  border-radius: 8px;
+}
+.run-composer h2 {
+  margin-top: 0;
+}
+.run-composer p {
+  max-width: 80ch;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.run-composer label {
+  display: block;
+  margin: 20px 0 8px;
+  font-weight: 500;
+}
+.run-composer textarea {
+  width: 100%;
+  min-height: 90px;
+}
+.run-composer details {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.run-actions {
+  display: flex;
+  gap: 12px;
+}
+.workflow-stages {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 24px;
+  border-top: 2px solid #9cb9cb;
+}
+.workflow-stages li {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 16px 14px 14px 0;
+}
+.workflow-stages strong {
+  font-size: 13px;
+}
+.workflow-stages span {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.workflow-stages small {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.shared-context {
+  padding: 0 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+.shared-context h2,
+.comparison-heading h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.shared-context p,
+.recorded-decision p {
+  max-width: 80ch;
+  line-height: 1.6;
+  font-size: 13px;
+}
+.shared-context summary {
+  cursor: pointer;
+  color: var(--blue);
+  font-size: 13px;
+}
+.shared-context pre {
+  padding: 16px;
+  max-height: 350px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.recorded-decision {
+  margin: 18px 0;
+  padding-left: 16px;
+  border-left: 3px solid #247565;
+}
+.recorded-decision strong {
+  font-size: 13px;
+}
+.comparison-heading {
+  margin: 24px 0 16px;
+}
+.candidate-content .strategy-description {
+  color: var(--muted);
+  margin-top: 0;
+  min-height: 36px;
+}
+@media (max-width: 1100px) {
+  .workflow-stages {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .run-picker {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .runs-toolbar h1 {
+    font-size: 24px;
+  }
+  .runs-toolbar > button {
+    flex-shrink: 0;
+  }
+  .workflow-stages {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

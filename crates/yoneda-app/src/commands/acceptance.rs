@@ -80,6 +80,30 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let revision: yoneda_core::Revision =
         serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
     yoneda_core::validate_evaluation(&evaluation, &cid, &revision, &policy)?;
+    if policy
+        .build
+        .as_ref()
+        .and_then(|b| b.static_dir.as_ref())
+        .is_some()
+    {
+        let stored = get(db, "evaluations", &eid)?;
+        if stored["deployment"]["commit"] != candidate["revision"]["commit"]
+            || stored["deployment"]["digest"].as_str().is_none()
+        {
+            return Err(Error::new(
+                "CHECKS_FAILED",
+                "Static output must be recaptured before publication",
+            ));
+        }
+    }
+
+    if candidate["status"] != "eligible" {
+        return Err(Error::new(
+            "CHECKS_FAILED",
+            "Candidate is not currently eligible",
+        ));
+    }
+
     let rationale = string(c, "rationale")?;
     let did = format!("decision:{request}");
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});

@@ -1,5 +1,6 @@
 mod bootstrap;
 mod commands;
+mod dev;
 mod live;
 mod process;
 mod verification;
