@@ -1,0 +1,115 @@
+.account-panel,
+.workspace-panel {
+  margin: 28px auto;
+  padding: 28px;
+  max-width: 760px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.account-panel {
+  max-width: 480px;
+  margin: 0;
+}
+.account-panel form,
+.workspace-panel form {
+  display: grid;
+  gap: 16px;
+}
+.account-panel label,
+.workspace-panel label,
+.run-composer label {
+  display: grid;
+  gap: 7px;
+}
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.recovery-code {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 18px 0;
+}
+.welcome-onboarding {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) minmax(300px, 480px);
+  align-items: center;
+  gap: 60px;
+  padding: 64px;
+}
+.welcome-onboarding h1 {
+  font-size: clamp(30px, 4vw, 52px);
+}
+.welcome-onboarding p {
+  max-width: 56ch;
+}
+.rail .add-project {
+  margin: 18px 12px;
+}
+.project-state {
+  padding: 50px;
+}
+.context-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.context-tools label {
+  display: grid;
+  gap: 5px;
+}
+.context-results {
+  max-height: 250px;
+  overflow: auto;
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+}
+.context-results button {
+  text-align: left;
+  justify-content: flex-start;
+  color: var(--blue);
+  background: #e6eff5;
+}
+.run-composer .agent-inputs {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+}
+.run-composer pre {
+  white-space: pre-wrap;
+}
+.run-composer .profile-input {
+  min-height: 240px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .welcome-onboarding {
+    grid-template-columns: 1fr;
+    padding: 24px;
+    gap: 20px;
+  }
+  .account-panel,
+  .workspace-panel {
+    margin: 16px;
+    padding: 20px;
+  }
+}
+
+.graph-section .context-tools,
+.graph-section .context-results {
+  margin-left: 36px;
+  margin-right: 36px;
+}
+@media (max-width: 760px) {
+  .graph-section .context-tools,
+  .graph-section .context-results {
+    margin-left: 18px;
+    margin-right: 18px;
+  }
+}

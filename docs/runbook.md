@@ -1,5 +1,7 @@
 # Runbook
 
+For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
+
 ## Local prerequisites
 
 Use Rust from `rust-toolchain.toml`, Node 24, pnpm 11, Docker and `worker-build` 0.8.7. `cargo xtask doctor` checks installed commands and Docker availability. `cargo xtask setup` installs locked JS dependencies and creates an ignored owner token with private file permissions.
@@ -14,7 +16,7 @@ Use Rust from `rust-toolchain.toml`, Node 24, pnpm 11, Docker and `worker-build`
 
 The provisioned resources are `yonedarepo-dev-objects`, `yonedarepo-dev-index`, `yoneda-dev-{agent,capture,evaluate,publish}` and `yoneda-dev-dead-letter`. D1 discovery uses `migrations/`; repository DO schema uses `crates/yoneda-app/src/migrations/`.
 
-Secrets Store names are `Codex` and `Claude`, with Workers service scope. Bindings are `OPENAI_KEY` and `ANTHROPIC_KEY`. Never fetch these values into the shell, browser or model environment. Regular Worker secret `OWNER_TOKEN` protects the owner API in development. `cargo xtask deploy` sets it from the private local token file, applies D1 migrations and deploys the built Worker/container.
+Secrets Store names are `Codex`, `Claude`, `MiMo` and `ZAI`, with Workers service scope. Bindings are `OPENAI_KEY`, `ANTHROPIC_KEY`, `MIMO_KEY` and `ZAI_KEY`. Personal accounts use their encrypted BYOK vault instead. See [vault and budget operation](providers.md). Never fetch these values into the shell, browser or model environment. Regular Worker secret `OWNER_TOKEN` protects the owner API in development. `cargo xtask deploy` sets it from the private local token file, applies D1 migrations and deploys the built Worker/container.
 
 Cloudflare activates Worker code before a container image rollout completes. After an image change, inspect the application's rollout in the Cloudflare dashboard and wait for completion before starting paid demos or installing a policy that needs the new evaluator. `pnpm exec wrangler containers list --json` and `containers info APPLICATION_ID --json` show application version/image and health; a successful deploy command alone proves only that rollout started. For a browser/Worker-only update that does not need a new image, use `pnpm exec wrangler deploy --containers-rollout=none`. Keep protocol changes compatible through the mixed-version window. See [Cloudflare rollout behavior](https://developers.cloudflare.com/containers/configuration/rollouts/).
 
@@ -24,7 +26,7 @@ For a deliberate development cutover after active runs have stopped, `pnpm exec 
 
 For Cloudflare Access, protect the host with an Access policy and configure `ACCESS_TEAM_DOMAIN` (host only) and `ACCESS_AUD`. The Worker verifies JWT issuer, signature and audience. An unverified `cf-access-jwt-assertion` is never sufficient. The browser can then use the Access session and Live DO WebSocket; owner connections use an expiring, signed HttpOnly session cookie. Both support Live DO WebSockets and periodic authoritative snapshot resync.
 
-## Live workflow and budgets
+## Legacy retry fixture workflow
 
 Run `cargo xtask seed-demo --url URL` once. Bootstrap issues a five-minute repository-scoped Git token to the trusted local setup command only; provider keys remain in the Worker. The fixture push establishes a real Artifacts commit before the ledger is initialized. Repeating seed keeps existing source and ledger data.
 
@@ -55,5 +57,7 @@ Each execution container runs one attempt. The root supervisor reserves UID 1000
 A remote publication conflict blocks the repository. Preserve both commits and the decision record; inspect Artifacts HEAD and reconcile explicitly. The MVP does not provide automatic rebase or overwrite. A publisher that exhausts attempts must leave the logical/published split visible for operator recovery.
 
 Migration changes must be additive and appended. Check fresh, repeat and preceding-version upgrades locally, then apply D1 migrations before deploying code that needs them. Do not modify an already-applied SQL file or remove DO class migration history. Roll back code only to versions compatible with the deployed schema.
+
+DO SQL migration 0003 repairs existing execution graph projections from authoritative execution records, preserving node timestamps, events and evaluation evidence. It applies automatically before ledger commands; no D1 or Durable Object class migration is needed. After it applies, older binaries supporting only schema 2 refuse the database, so recovery must use a schema-3-compatible version.
 
 No live run, deployment or acceptance should be inferred from passing local tests. Record actual commands and outcomes in `docs/progress.md`.

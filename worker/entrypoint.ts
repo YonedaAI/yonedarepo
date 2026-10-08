@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { now } from './http';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
+import { authorizePreview } from './sites';
 import { ledger, sha } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
 export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
@@ -9,6 +10,13 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
     return fetchRequest(req, this.env);
   }
 
+  async authorizePreview(digest: string, token: string) {
+    return authorizePreview(this.env, digest, token);
+  }
+  async siteManifest(repo: string): Promise<{ digest: string; commit: string } | null> {
+    const snapshot = await ledger(this.env, repo, { op: 'snapshot' });
+    return snapshot.repository.site ?? null;
+  }
   // Internal service RPC; these methods are not exposed through public fetch routes.
   async deliver(repo: string, entries: Json[]) {
     const delivered: string[] = [];
@@ -87,7 +95,12 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               using target = await this.env.ARTIFACTS.get(name);
               await target.revokeToken(fork.token);
             } catch (e: any) {
-              if (e.code !== 'ALREADY_EXISTS') throw e;
+              try {
+                using existing = await this.env.ARTIFACTS.get(name);
+                await existing.info();
+              } catch {
+                throw e;
+              }
             }
             job.fork = `${this.env.ARTIFACTS_NAMESPACE}/${name}`;
             scope.fork = job.fork;

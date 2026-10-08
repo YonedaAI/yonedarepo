@@ -42,8 +42,16 @@ export function useRepository() {
       setLoading(false);
     }
   }, [fail]);
+  const project = repositories.find((repo) => repo.id === id);
   const refresh = useCallback(async () => {
     if (!id) return;
+    if (project?.status === 'provisioning' || project?.status === 'failed') {
+      if (project.status === 'provisioning') {
+        await api(`projects/${id}`);
+        await discover();
+      }
+      return;
+    }
     const current = generation.current;
     try {
       const result = await api<Snapshot>(`repos/${id}/snapshot`);
@@ -58,7 +66,7 @@ export function useRepository() {
     } catch (e) {
       if (generation.current === current) fail(e);
     }
-  }, [id, fail]);
+  }, [id, fail, project?.status, discover]);
   const setId = useCallback((id: string) => {
     generation.current++;
     setCurrentId(id);
@@ -83,6 +91,7 @@ export function useRepository() {
   }, [id, refresh]);
   return {
     repositories,
+    project,
     id,
     setId,
     snapshot,

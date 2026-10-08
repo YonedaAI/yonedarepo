@@ -27,7 +27,8 @@
     "CLAUDE_MODEL": "claude-sonnet-4-6",
     "MIMO_MODEL": "mimo-v2.6-flash",
     "ZAI_MODEL": "glm-4.7-flash",
-    "STARTER_REPO": "yoneda-website-starter"
+    "STARTER_REPO": "yoneda-website-starter",
+    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev"
   },
   "services": [
     {
@@ -60,7 +61,8 @@
   "artifacts": [
     {
       "binding": "ARTIFACTS",
-      "namespace": "yoneda-dev"
+      "namespace": "yoneda-dev",
+      "remote": true
     }
   ],
   "durable_objects": {

@@ -22,15 +22,23 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             let candidate = &j["payload"]["candidate"];
-            let checks = if policy["build"].is_null() {
+            let mut checks = if policy["build"].is_null() {
                 yoneda_core::retry::checks_for_suite(&string(policy, "suite")?, &c["report"])?
             } else {
                 let typed =
                     serde_json::from_value(policy.clone()).map_err(|e| bad(&e.to_string()))?;
                 yoneda_core::build::checks_from_report(&typed, &c["report"])?
             };
+            if policy["build"]["static_dir"].is_string() {
+                checks.push(yoneda_core::Check {
+                    name: "static_assets".into(),
+                    status: if j["site"].is_null() { "fail" } else { "pass" }.into(),
+                    detail: "Evaluator captured bounded regular static files from this revision"
+                        .into(),
+                });
+            }
             let evidence = hash(&c, "evidence", &[64])?;
-            let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence});
+            let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence,"deployment":j["site"]});
             finish(
                 db,
                 &json!({"job_id":c["job_id"],"epoch":c["epoch"],"result":result}),
@@ -145,7 +153,23 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 serde_json::from_value(candidate["revision"].clone())
                     .map_err(|e| bad(&e.to_string()))?;
             let validation =
-                yoneda_core::validate_evaluation(&evaluation, &candidate_id, &revision, &policy);
+                yoneda_core::validate_evaluation(&evaluation, &candidate_id, &revision, &policy)
+                    .and_then(|()| {
+                        if policy
+                            .build
+                            .as_ref()
+                            .and_then(|b| b.static_dir.as_ref())
+                            .is_some()
+                            && (result["deployment"]["commit"] != candidate["revision"]["commit"]
+                                || result["deployment"]["digest"].as_str().is_none())
+                        {
+                            return Err(Error::new(
+                                "CHECKS_FAILED",
+                                "Static output was not independently captured",
+                            ));
+                        }
+                        Ok(())
+                    });
             if let Err(error) = &validation
                 && error.code != "CHECKS_FAILED"
             {
@@ -215,6 +239,12 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 d["status"] = json!("published");
                 d["published_at"] = json!(now);
                 let candidate = get(db, "candidates", &string(&d, "candidate")?)?;
+                let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
+                if evaluation["deployment"]["commit"] == d["target"]["commit"]
+                    && evaluation["deployment"]["digest"].is_string()
+                {
+                    r["site"] = evaluation["deployment"].clone();
+                }
                 for path in candidate["paths"]
                     .as_array()
                     .into_iter()

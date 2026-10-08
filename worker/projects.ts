@@ -1,30 +1,11 @@
 import { source } from './artifacts';
 import { error, readJson, response, safeId } from './http';
+import { sitePolicy } from './site-policy';
 import { ledger, sha } from './storage';
 import type { Env, Json, Principal } from './types';
 import { workspace } from './workspace';
 
-export const sitePolicy = {
-  version: 'static-v1',
-  suite: 'commands-v1',
-  environment: 'linux-node24-rust1.94-v1',
-  required_checks: ['site'],
-  build: {
-    setup: [],
-    checks: [
-      {
-        name: 'site',
-        argv: [
-          'node',
-          '-e',
-          "const fs=require('node:fs');const html=fs.readFileSync('public/index.html','utf8');if(!/<html[\\s>]/i.test(html)||!/<title[\\s>]/i.test(html)||!/<meta[^>]*viewport/i.test(html))process.exit(1)",
-        ],
-        timeout_seconds: 10,
-      },
-    ],
-    static_dir: 'public',
-  },
-};
+export { sitePolicy } from './site-policy';
 export function importSource(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string' || value.length > 2048)
@@ -59,15 +40,16 @@ export async function provisionProject(env: Env, owner: string, project: Json) {
       using remote = await env.ARTIFACTS.get(id);
       await remote.revokeToken(created.token);
     } catch (e: any) {
-      if (
-        ![
-          'ALREADY_EXISTS',
-          'IMPORT_IN_PROGRESS',
-          'FORK_IN_PROGRESS',
-          'CREATE_IN_PROGRESS',
-        ].includes(e.code)
-      )
-        throw e;
+      // Remote development proxies can lose structured error properties. Recover only
+      // when a read proves this deterministic target exists; otherwise retain the failure.
+      if (!['IMPORT_IN_PROGRESS', 'FORK_IN_PROGRESS', 'CREATE_IN_PROGRESS'].includes(e.code)) {
+        try {
+          using existing = await env.ARTIFACTS.get(id);
+          await existing.info();
+        } catch {
+          throw e;
+        }
+      }
     }
     using remote = await env.ARTIFACTS.get(id);
     // Creation/import acknowledgment can be lost before its initial token is revoked.

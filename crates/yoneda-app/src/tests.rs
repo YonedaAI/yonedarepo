@@ -562,3 +562,5 @@ fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
                 && e["data"]["epoch"] == 1)
     );
 }
+
+mod sites;

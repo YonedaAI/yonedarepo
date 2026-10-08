@@ -1,0 +1,11 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-sites-dev",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "main": "index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yonedarepo-dev-objects" }],
+  "services": [{ "binding": "PLATFORM", "service": "yonedarepo-dev" }],
+  "observability": { "enabled": true }
+}

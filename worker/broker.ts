@@ -97,6 +97,25 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         return response(await object(env, JSON.stringify({ files: body.files }), 12 * 1024 * 1024));
       return error('FORBIDDEN', 'No workspace upload access', 403);
     }
+    if (path === '/site') {
+      if (job.kind !== 'evaluate' || !job.payload.policy.build?.static_dir)
+        return error('FORBIDDEN', 'Only static evaluators capture assets', 403);
+      const manifest = {
+        repo: scope.repo_id,
+        candidate: job.payload.candidate.id,
+        revision: job.payload.candidate.revision,
+        files: body.files,
+      };
+      const stored = await object(env, JSON.stringify(manifest), 12 * 1024 * 1024);
+      return response(
+        await ledger(env, scope.repo_id, {
+          op: 'register_site',
+          ...identity,
+          digest: stored.digest,
+          files: body.files,
+        }),
+      );
+    }
     if (path === '/evidence') return response(await object(env, String(body.content)));
     if (path === '/failed') {
       const result = await ledger(env, scope.repo_id, {

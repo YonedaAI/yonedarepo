@@ -31,6 +31,7 @@ export interface Env {
   MIMO_MODEL?: string;
   ZAI_MODEL?: string;
   STARTER_REPO?: string;
+  SITE_ORIGIN?: string;
 }
 export type Principal = {
   workspace: string;

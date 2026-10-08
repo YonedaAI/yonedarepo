@@ -7,7 +7,7 @@ export async function sha(content: string) {
     .map((v) => v.toString(16).padStart(2, '0'))
     .join('');
 }
-export async function object(env: Env, content: string, limit = 8 * 1024 * 1024) {
+export async function object(env: Pick<Env, 'OBJECTS'>, content: string, limit = 8 * 1024 * 1024) {
   if (new TextEncoder().encode(content).length > limit)
     throw new Error('Object exceeds size limit');
   const digest = await sha(content);
@@ -17,7 +17,7 @@ export async function object(env: Env, content: string, limit = 8 * 1024 * 1024)
   });
   return { digest };
 }
-export async function readObject(env: Env, digest: string) {
+export async function readObject(env: Pick<Env, 'OBJECTS'>, digest: string) {
   if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid object digest');
   const value = await env.OBJECTS.get(`sha256/${digest}`);
   if (!value) throw new Error('Evidence object is missing');

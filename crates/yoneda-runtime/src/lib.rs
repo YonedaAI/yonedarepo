@@ -11,6 +11,7 @@ mod process;
 mod process_guard;
 mod prompt;
 mod secure_fs;
+mod site;
 mod source_filter;
 mod supervisor;
 mod workspace;

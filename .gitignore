@@ -12,3 +12,5 @@
 *.tsbuildinfo
 /.local/
 .DS_Store
+
+**/.wrangler/

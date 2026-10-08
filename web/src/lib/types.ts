@@ -20,7 +20,16 @@ export interface Repository {
   published_commit: string;
   status: string;
   pending: string | null;
+  error?: string;
+  site?: { digest: string; commit: string };
   remote: { namespace: string; name: string };
+  policy?: {
+    suite: string;
+    version: string;
+    environment: string;
+    required_checks: string[];
+    build?: { setup: unknown[]; checks: unknown[]; static_dir?: string };
+  };
 }
 export interface Snapshot {
   repository: Repository;
