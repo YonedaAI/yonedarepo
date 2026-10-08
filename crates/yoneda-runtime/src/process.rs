@@ -25,7 +25,11 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
         .env("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
     #[cfg(target_os = "linux")]
     {
-        command.uid(1000).gid(1000);
+        // The deployed supervisor requires root before accepting jobs. Native
+        // helper tests also run as an ordinary Linux user, which cannot set UID.
+        if unsafe { libc::geteuid() } == 0 {
+            command.uid(1000).gid(1000);
+        }
         // SAFETY: only async-signal-safe prctl runs in the forked child, before exec.
         unsafe {
             command.pre_exec(|| {

@@ -43,6 +43,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const decision = snapshot.decisions.find((d) => d.run_id === run.id);
   const shared = snapshot.artifacts.filter((a) => a.producer === research?.id);
   const done = coding.filter((e) => e.finished_at).length;
+  const reviewReady = !decision && run.status === 'ready' && eligible.length > 0;
   const stages = [
     ...(research
       ? [{ name: 'Research', value: research.status, detail: research.model }]
@@ -70,7 +71,13 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
     },
     {
       name: 'Decision',
-      value: decision ? 'recorded' : run.status === 'cancelled' ? 'cancelled' : 'awaiting owner',
+      value: decision
+        ? 'recorded'
+        : run.status === 'cancelled'
+          ? 'cancelled'
+          : reviewReady
+            ? 'ready for review'
+            : 'waiting for eligible source',
       detail:
         decision?.decision_kind === 'development_verification'
           ? 'Automated fixture verification'
@@ -96,6 +103,16 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           </li>
         ))}
       </ol>
+      {reviewReady && (
+        <div className="review-ready" role="status">
+          <strong>Ready for review</strong>
+          <p>
+            {eligible.length} checked approach{eligible.length === 1 ? ' is' : 'es are'} eligible.
+            Compare previews, changes and context below, then choose Select approach and record your
+            decision. Publication waits for your selection; agents cannot publish directly.
+          </p>
+        </div>
+      )}
       <div className="shared-context">
         <h2>Agent-authored context</h2>
         <p>
