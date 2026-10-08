@@ -30,6 +30,8 @@ Open the browser and connect with the workspace owner token from `.local/owner-t
 
 `publication_pending` means the decision is recorded but canonical Git readback is still pending. `published` is the separate publication receipt. `cargo xtask verify-live --url URL` requires one published run with completed Claude research and all three coding executions, identical research context, actual harness overlap in the completed attempt epochs, captured revisions, evaluations matching current policy, and source history linking a labelled simulated incident to the original assumption and alternatives. It exports `artifacts/live-verification.json` on both success and incomplete verification. A development fixture selection is not human acceptance.
 
+The normal browser selection records a human decision. An owner-controlled fixture test can explicitly send `decision_kind: "development_verification"` with its rationale; the decision and graph then identify automated development verification. Agents have no owner selection capability. `verify-live` reads existing evidence and never selects code itself.
+
 The current policy is `retry-v2`, suite `retry-contract-v2`, environment `rust-1.94.0-evaluator-v2`. It exercises repeated retries, exponential backoff, 429, deadline boundaries, attempt clamps and unsafe methods. Existing repositories retain their original policy until `cargo xtask upgrade-policy --url URL` explicitly installs the current policy using a revision/version check. Captured candidates on the current base receive fresh evaluations; historical evaluations remain available and cannot authorize selection under the new policy.
 
 ## Recovery

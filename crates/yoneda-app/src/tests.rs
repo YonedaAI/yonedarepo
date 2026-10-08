@@ -487,3 +487,22 @@ fn research_assumptions_must_have_a_structured_queryable_contract() {
     publish["metadata"]["assumptions"][0]["limit"] = json!("100");
     assert!(call(&db, publish).is_err());
 }
+
+#[test]
+fn automated_fixture_selection_is_not_labelled_as_a_human_decision() {
+    let db = repo();
+    let mut selection = ready(&db);
+    selection["decision_kind"] = json!("development_verification");
+    selection["rationale"] = json!("Automated development fixture verification; not user approval");
+    let receipt = call(&db, selection).unwrap();
+    let decision = call(&db, json!({"op":"decision","id":receipt["id"]})).unwrap();
+    assert_eq!(decision["decision_kind"], "development_verification");
+    let graph = call(&db, json!({"op":"graph","id":receipt["id"]})).unwrap();
+    let selected = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["relation"] == "selected_by")
+        .unwrap();
+    assert_eq!(selected["evidence"], "automated development verification");
+}
