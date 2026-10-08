@@ -8,6 +8,16 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     }
 }
 fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+    let kind = c["decision_kind"].as_str().unwrap_or("human");
+    let (authorship, comparison, selection) = match kind {
+        "human" => ("owner", "human comparison", "human decision"),
+        "development_verification" => (
+            "owner_automation",
+            "automated development comparison",
+            "automated development verification",
+        ),
+        _ => return Err(bad("Unsupported decision kind")),
+    };
     let request = string(c, "request_id")?;
     let mut input = c.clone();
     input
@@ -73,26 +83,20 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let rationale = string(c, "rationale")?;
     let did = format!("decision:{request}");
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
-    let d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
+    let d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
     create(db, "decisions", &did, &d)?;
     r["head_commit"] = json!(revision.commit);
     r["version"] = receipt["version"].clone();
     r["pending"] = json!(did);
     save(db, "repository", "repo", &r)?;
-    node(db, &did, "decision", &rationale, "owner", now, d.clone())?;
+    node(db, &did, "decision", &rationale, authorship, now, d.clone())?;
     for other in all(db, "candidates")?
         .iter()
         .filter(|v| v["run_id"] == candidate["run_id"])
     {
-        edge(
-            db,
-            &string(other, "id")?,
-            &did,
-            "considered_by",
-            "human comparison",
-        )?;
+        edge(db, &string(other, "id")?, &did, "considered_by", comparison)?;
     }
-    edge(db, &cid, &did, "selected_by", "human decision")?;
+    edge(db, &cid, &did, "selected_by", selection)?;
     for path in candidate["paths"]
         .as_array()
         .into_iter()
