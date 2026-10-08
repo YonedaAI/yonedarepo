@@ -14,6 +14,7 @@ mod resources;
 mod runs;
 mod scheduling;
 mod sites;
+mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
@@ -47,6 +48,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
         "register_site" => sites::register(db, c, now),
+        "record_transcript" => transcripts::record(db, c, now),
         "reserve_request" => resources::reserve(db, c),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }
