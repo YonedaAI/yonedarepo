@@ -1,58 +1,113 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
-import { type Provider, providerNames } from '../workspace/ProviderSettings';
+import type { Provider } from '../workspace/ProviderSettings';
+import { AgentRoster } from './AgentRoster';
+import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLimits';
+import { DelegationSettings } from './DelegationSettings';
+import { ModelBudgetSettings } from './ModelBudgetSettings';
+import { type ModelBudgetDraft, selectedModels, serializeModelBudgets } from './modelBudgets';
+import { RunAdvancedOptions } from './RunAdvancedOptions';
+import { agentConnectionIssue, type InitialRun } from './restartRun';
 export function RunComposer({
   busy,
   snapshot,
   onStart,
   onClose,
   onProviders,
+  initialRun,
 }: {
   busy: boolean;
   snapshot: Snapshot;
   onStart: (body: Record<string, unknown>) => Promise<void>;
   onClose: () => void;
   onProviders: () => void;
+  initialRun?: InitialRun;
 }) {
-  const [intent, setIntent] = useState('');
+  const [source] = useState(initialRun);
+  const [intent, setIntent] = useState(source?.intent ?? '');
   const [criteria, setCriteria] = useState(
-    'Works on mobile and desktop\nKeyboard accessible navigation\nClear content and useful interactions',
+    source?.criteria.join('\n') ??
+      'Works on mobile and desktop\nKeyboard accessible navigation\nClear content and useful interactions',
   );
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [agents, setAgents] = useState([
-    {
-      id: crypto.randomUUID(),
-      connection: '',
-      strategy: 'Small, focused implementation with clear content',
-    },
-    {
-      id: crypto.randomUUID(),
-      connection: '',
-      strategy: 'Explore a different design with accessible interactions',
-    },
-  ]);
-  const [context, setContext] = useState<string[]>([]);
-  const [policy, setPolicy] = useState(JSON.stringify(snapshot.repository.policy?.build, null, 2));
+  const [providersLoading, setProvidersLoading] = useState(true);
+  const [providersError, setProvidersError] = useState('');
+  const [providersRequest, setProvidersRequest] = useState(0);
+  const limits = runAgentLimits(snapshot);
+  const budgetSupport = snapshot.capabilities?.model_budgets === 1;
+  const [budgets, setBudgets] = useState<Record<string, ModelBudgetDraft>>(source?.budgets ?? {});
+  const [agents, setAgents] = useState<AgentDraft[]>(
+    source?.agents ?? [
+      {
+        id: crypto.randomUUID(),
+        connection: '',
+        strategy: 'Small, focused implementation with clear content',
+      },
+      {
+        id: crypto.randomUUID(),
+        connection: '',
+        strategy: 'Explore a different design with accessible interactions',
+      },
+    ],
+  );
+  const [context, setContext] = useState<string[]>(source?.context ?? []);
+  const [policy, setPolicy] = useState(
+    source?.policy ?? JSON.stringify(snapshot.repository.policy?.build, null, 2),
+  );
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
+  const [delegation, setDelegation] = useState<DelegationDraft>(
+    source?.delegation ?? {
+      enabled: false,
+      max_depth: 1,
+      max_executions: 2,
+    },
+  );
+  const models = selectedModels(agents, providers);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
+    let current = true;
+    setProvidersLoading(true);
+    setProvidersError('');
     void api<{ providers: Provider[] }>('settings')
       .then((r) => {
+        if (!current) return;
         setProviders(r.providers);
         setAgents((a) =>
           a.map((v, i) => ({
             ...v,
-            connection: r.providers[i % r.providers.length]?.id ?? '',
+            connection:
+              source || r.providers.some((p) => p.id === v.connection)
+                ? v.connection
+                : (r.providers[i % r.providers.length]?.id ?? ''),
           })),
         );
       })
-      .catch((e) => setError(e.message));
-  }, []);
+      .catch((e) => {
+        if (current) setProvidersError(e.message);
+      })
+      .finally(() => {
+        if (current) setProvidersLoading(false);
+      });
+    return () => {
+      current = false;
+    };
+  }, [providersRequest]);
   async function start() {
     setApproving(true);
     setError('');
     try {
+      if (agents.length < limits.min_root_agents || agents.length > limits.max_root_agents) {
+        throw new Error('The number of agents exceeds this deployment’s current limits.');
+      }
+      if (agents.some((agent) => !providers.some((p) => p.id === agent.connection))) {
+        throw new Error('Choose a configured provider connection for every agent.');
+      }
+      if (agents.some((agent) => agentConnectionIssue(agent, providers))) {
+        throw new Error('Review changed provider connections before approving this restart.');
+      }
+      const modelBudgets = budgetSupport ? serializeModelBudgets(models, budgets) : undefined;
       let current: Repository = snapshot.repository;
       const build = JSON.parse(policy);
       if (JSON.stringify(build) !== JSON.stringify(current.policy?.build)) {
@@ -78,11 +133,26 @@ export function RunComposer({
           .map((c) => c.trim())
           .filter(Boolean),
         context,
+        ...(source ? { restart_of: source.id } : {}),
         agents: agents.map((a) => ({
-          ...a,
+          id: a.id,
+          connection: a.connection,
+          strategy: a.strategy,
           provider: providers.find((p) => p.id === a.connection)?.provider,
           model: providers.find((p) => p.id === a.connection)?.model,
         })),
+        ...(modelBudgets ? { model_budgets: modelBudgets } : {}),
+        ...(limits.max_delegation_depth > 0
+          ? {
+              delegation: {
+                enabled: delegation.enabled,
+                max_depth: delegation.enabled ? delegation.max_depth : 0,
+                max_executions: delegation.enabled
+                  ? Math.max(agents.length, delegation.max_executions)
+                  : agents.length,
+              },
+            }
+          : {}),
       });
     } catch (e) {
       setError((e as Error).message);
@@ -101,10 +171,17 @@ export function RunComposer({
       }}
     >
       <h3>One brief. Independent approaches.</h3>
+      {source && (
+        <p className="restart-notice">
+          Restarting creates a new run from the current published source. The previous run and its
+          failure evidence remain in history. Current repository checks apply. Review connections
+          and limits before approving.
+        </p>
+      )}
       <p>
-        Your agents start concurrently from the same source revision, brief, and selected context.
-        Each works in an isolated workspace. Approval starts paid inference using your provider
-        keys.
+        Your agents share the same source revision, brief, and selected context. Each works in an
+        isolated workspace, with parallel execution as capacity becomes available. Approval starts
+        paid inference using your provider keys.
       </p>
       <label>
         What should they build?
@@ -126,141 +203,45 @@ export function RunComposer({
           disabled={locked}
         />
       </label>
-      <div className="section-heading">
-        <h3>Independent approaches</h3>
-        <button
-          type="button"
-          className="quiet"
-          disabled={locked || agents.length >= 4}
-          onClick={() =>
-            setAgents((all) => [
-              ...all,
-              {
-                id: crypto.randomUUID(),
-                connection: providers[all.length % providers.length]?.id ?? '',
-                strategy: '',
-              },
-            ])
-          }
-        >
-          Add agent
-        </button>
-      </div>
-      <p className="subtle">
-        Run 2–4 agents concurrently. Each needs a distinct approach; providers can be reused.
-      </p>
-      {!providers.length && (
-        <div className="inline-empty">
-          <p>Connect a provider key before starting hosted agents.</p>
-          <button type="button" className="quiet" onClick={onProviders}>
-            Connect provider
-          </button>
-        </div>
-      )}
-      {agents.map((a, i) => (
-        <fieldset className="agent-inputs" key={a.id}>
-          <legend>Agent {i + 1}</legend>
-          <label>
-            Provider connection
-            <select
-              required
-              disabled={locked}
-              value={a.connection}
-              onChange={(e) =>
-                setAgents((all) =>
-                  all.map((v, n) => (n === i ? { ...v, connection: e.target.value } : v)),
-                )
-              }
-            >
-              <option value="">Connect a provider first</option>
-              {providers.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label} · {providerNames[p.provider]} · {p.model}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Approach
-            <input
-              value={a.strategy}
-              onChange={(e) =>
-                setAgents((all) =>
-                  all.map((v, n) => (n === i ? { ...v, strategy: e.target.value } : v)),
-                )
-              }
-              required
-              maxLength={128}
-              disabled={locked}
-            />
-          </label>
-          {agents.length > 2 && (
-            <button
-              type="button"
-              className="text-button"
-              aria-label={`Remove agent ${i + 1}`}
-              disabled={locked}
-              onClick={() => setAgents((all) => all.filter((v) => v.id !== a.id))}
-            >
-              Remove agent
-            </button>
-          )}
-        </fieldset>
-      ))}
-      <details>
-        <summary>Reuse existing context ({context.length} selected)</summary>
-        {snapshot.nodes
-          .filter((n) =>
-            [
-              'intent',
-              'requirement',
-              'constraint',
-              'assumption',
-              'finding',
-              'alternative',
-              'proposed_decision',
-              'question',
-              'decision',
-            ].includes(n.kind),
-          )
-          .map((n) => (
-            <label key={n.id}>
-              <span>
-                <input
-                  type="checkbox"
-                  checked={context.includes(n.id)}
-                  onChange={(e) =>
-                    setContext((all) =>
-                      e.target.checked ? [...all, n.id] : all.filter((id) => id !== n.id),
-                    )
-                  }
-                />{' '}
-                {n.kind}: {n.label}
-              </span>
-            </label>
-          ))}
-      </details>
-      <details>
-        <summary>Build and independent check commands</summary>
-        <p>
-          The default website check only confirms an HTML entrypoint, title and viewport. Add
-          meaningful tests for your project. Commands run in a clean Node 24 / Rust 1.94 / Python
-          standard library environment. Static output is served from static_dir.
-        </p>
-        <label>
-          Approved build profile (JSON)
-          <textarea
-            className="profile-input"
-            value={policy}
-            onChange={(e) => setPolicy(e.target.value)}
-            required
-            disabled={locked}
-          />
-        </label>
-      </details>
+      <AgentRoster
+        agents={agents}
+        providers={providers}
+        loading={providersLoading}
+        error={providersError}
+        limits={limits}
+        locked={locked}
+        onChange={setAgents}
+        onProviders={onProviders}
+        onRetry={() => setProvidersRequest((request) => request + 1)}
+      />
+      <DelegationSettings
+        value={delegation}
+        roots={agents.length}
+        limits={limits}
+        locked={locked}
+        onChange={setDelegation}
+      />
+      <ModelBudgetSettings
+        supported={budgetSupport}
+        models={models}
+        drafts={budgets}
+        locked={locked}
+        onChange={(key, value) => setBudgets((all) => ({ ...all, [key]: value }))}
+      />
+      <RunAdvancedOptions
+        nodes={snapshot.nodes}
+        context={context}
+        policy={policy}
+        locked={locked}
+        onContextChange={setContext}
+        onPolicyChange={setPolicy}
+      />
       {error && <p role="alert">{error}</p>}
       <div className="run-actions">
-        <button type="submit" disabled={locked || !providers.length}>
+        <button
+          type="submit"
+          disabled={locked || providersLoading || !!providersError || !providers.length}
+        >
           {locked ? 'Starting…' : 'Approve brief and start agents'}
         </button>
         <button type="button" className="quiet" disabled={locked} onClick={onClose}>

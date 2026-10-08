@@ -1,6 +1,18 @@
 import type { Json } from './types';
-export function checkLedger(snapshot: Json) {
-  if (snapshot?.capabilities?.artifact_reads !== 2)
+export function checkLedger(snapshot: Json, request?: Json) {
+  const limits = snapshot?.capabilities?.agent_limits;
+  const roots = request?.agents?.length ?? 0;
+  const delegation = request?.delegation;
+  if (
+    snapshot?.capabilities?.artifact_reads !== 2 ||
+    ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
+      snapshot?.capabilities?.model_budgets !== 1) ||
+    (roots > 4 && (!limits || roots > limits.max_root_agents)) ||
+    (delegation?.enabled === true &&
+      (!limits ||
+        delegation.max_depth > limits.max_delegation_depth ||
+        delegation.max_executions > limits.max_run_executions))
+  )
     throw Object.assign(
       new Error('Repository ledger code is still updating; retry after deployment propagation'),
       { code: 'LEDGER_UPDATING' },
@@ -12,12 +24,26 @@ export function checkRuntime(health: Json, job: Json) {
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (
     job.kind === 'agent' &&
+    job.payload?.run?.model_budgets !== undefined &&
+    health.capabilities?.model_budgets !== 1
+  )
+    throw new Error(
+      'Container image does not support approved model budgets; wait for rollout completion',
+    );
+  if (
+    job.kind === 'agent' &&
     job.payload?.execution?.harness === 'gemini' &&
     !health.harnesses?.includes('gemini')
   )
     throw new Error('Container image does not support Gemini; wait for rollout completion');
   if (job.payload?.policy?.build && !health.suites?.includes('commands-v1'))
     throw new Error('Container image does not support general repository runs');
+  if (
+    job.kind === 'agent' &&
+    (job.payload?.run?.delegation?.enabled || job.payload?.execution?.parent_execution) &&
+    health.capabilities?.agent_delegation !== 1
+  )
+    throw new Error('Container image does not support subagents; wait for rollout completion');
   if (
     job.kind === 'evaluate' &&
     ((health.environment !== job.payload.policy.environment &&

@@ -30,7 +30,7 @@ For Cloudflare Access, protect the host with an Access policy and configure `ACC
 
 Run `cargo xtask seed-demo --url URL` once. Bootstrap issues a five-minute repository-scoped Git token to the trusted local setup command only; provider keys remain in the Worker. The fixture push establishes a real Artifacts commit before the ledger is initialized. Repeating seed keeps existing source and ledger data.
 
-`cargo xtask demo --url URL` starts real inference. Defaults are `gpt-5.6-luna` and `claude-sonnet-4-6` in Wrangler variables. Provider handlers force the configured model, restrict endpoints and cap each attempt at 24 model requests, 256 KiB per request and 4096 output tokens per request; Claude CLI also has a $1 attempt budget. Do not silently upgrade a model. Containers are capped at six instances, agents at ten minutes, evaluators at two minutes, and infrastructure attempts at two.
+`cargo xtask demo --url URL` starts real inference. Defaults are `gpt-5.6-luna` and `claude-sonnet-4-6` in Wrangler variables. Legacy fixture executions retain 24 model requests per execution across retries, 256 KiB per request and 4096 output tokens per request; legacy Anthropic CLI runs also retain a $1 estimate. New console runs use their approved per-model budgets. Do not silently upgrade a model. Containers are capped at sixteen instances, agents at ten minutes maximum, evaluators at two minutes, and infrastructure attempts at two.
 
 Open the browser and connect with the workspace owner token from `.local/owner-token` (paste it or choose the token file), or use the configured Cloudflare Access login. Provider keys are different credentials and stay in Secrets Store. Describe the change in Exploration: research agents inspect the repository and publish guidance and assumptions, then three coding agents consume the same frozen context and produce alternatives. Review their source changes and external checks, then select with a rationale. Humans provide intent and judgment; agents author the context.
 
@@ -39,6 +39,29 @@ Open the browser and connect with the workspace owner token from `.local/owner-t
 The normal browser selection records a human decision. An owner-controlled fixture test can explicitly send `decision_kind: "development_verification"` with its rationale; the decision and graph then identify automated development verification. Agents have no owner selection capability. `verify-live` reads existing evidence and never selects code itself.
 
 The current policy is `retry-v2`, suite `retry-contract-v2`, environment `rust-1.94.0-evaluator-v2`. It exercises repeated retries, exponential backoff, 429, deadline boundaries, attempt clamps and unsafe methods. Existing repositories retain their original policy until `cargo xtask upgrade-policy --url URL` explicitly installs the current policy using a revision/version check. Captured candidates on the current base receive fresh evaluations; historical evaluations remain available and cannot authorize selection under the new policy.
+
+## Agent concurrency and delegation
+
+Hosted coding runs accept two to six initial agents. Delegation is explicitly approved with the brief, disabled by default, and frozen for the run: at most 12 total agents through two delegation levels. Infrastructure retries retain their existing two-attempt allowance and do not consume another agent slot. The ledger atomically reserves a shared maximum of 144 model requests across the run, including retries; approved per-model budgets and the Claude workspace ceiling also apply. Agent arguments cannot override child identity, provider, model, source, context or these limits.
+
+Children produce independent alternatives from the frozen base. They are separately captured and evaluated, and no automatic merge occurs. A parent can finish while its children continue; parent expiry, failure or retry fences descendants, their eligible candidates and pending publication. Cancelling the run fences the entire tree. Durable stop requests terminate active descendant containers. An already verified canonical publication remains historical evidence. A fenced pending publisher blocks the repository until its canonical remote is explicitly read back and reconciled.
+
+Deploy both the Worker/Repo DO and the new container image. The snapshot advertises `agent_limits`; the browser retains its earlier four-agent maximum until these limits appear. The Worker refuses six-agent or delegated runs against an older ledger. The supervisor must advertise `capabilities.agent_delegation: 1` before a delegated root or child starts inference. During propagation or image rollout, retry after the compatibility error; do not bypass the guard.
+
+Console budget approvals additionally require `capabilities.model_budgets: 1` in the repository
+snapshot and supervisor health. The Worker rejects older implementations before inference.
+The Repo DO migration adds a durable model-reservation ledger; existing runs keep their legacy
+limits. See [run budget settings and estimate semantics](providers.md#run-budgets-in-the-console).
+
+The checked-in and newly generated portable Wrangler configs set `containers.max_instances` to 16, providing capacity for agents and independent capture/evaluation. Existing generated configs preserve operator edits: update their ceiling explicitly when upgrading. This is an application ceiling, not a promise that every configured agent runs simultaneously; multiple runs and cold starts may queue. See Cloudflare's [container configuration](https://developers.cloudflare.com/containers/reference/wrangler-configuration/). Keep account capacity and provider quotas aligned with this setting. Agents are instructed to finish their own approach without polling for children, so waiting parents do not exhaust capacity.
+
+Native ledger and workerd tests exercise six roots, child creation, concurrent idempotency and limits, fencing, shared requests, evaluation and rollout compatibility without inference. Passing those tests does not establish six overlapping paid harnesses or provider throughput. Record deployed overlap, actual completions, cost and capture/evaluation/publication evidence separately before claiming live scalability.
+
+## Failed provider runs
+
+Choose **Explain failure** on a failed approach to inspect its recorded terminal outcome. The browser displays an allowlisted diagnosis rather than raw provider responses. HTTP 402 means that provider account needs funding; 401/403 indicate credentials or access; 429 indicates quota/rate limits. Review the connection and approve a new run explicitly. Changing a key does not replay a failed paid attempt automatically.
+
+An execution-budget stop is distinct from provider billing. Approved console runs use their frozen model budgets without a hidden CLI $1 allowance. Legacy Anthropic runs retain that CLI estimate; MiMo and ZAI do not use Anthropic pricing. The durable $20 Claude workspace ceiling applies separately. CLI dollar totals are estimates, not third-party invoices; see [Claude Code cost accounting](https://code.claude.com/docs/en/costs#using-the-usage-command). A failed harness does not produce an eligible candidate even if it edited files before stopping. Use **Restart run** to edit the brief and budgets before explicitly approving fresh work; this preserves the failed attempt's evidence.
 
 ## Recovery
 

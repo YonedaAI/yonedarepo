@@ -42,6 +42,17 @@ export interface Snapshot {
   nodes: GraphNode[];
   edges: GraphEdge[];
   seq: number;
+  capabilities?: {
+    agent_limits?: AgentLimits;
+    model_budgets?: number;
+  };
+}
+export interface AgentLimits {
+  min_root_agents: number;
+  max_root_agents: number;
+  max_run_executions: number;
+  max_delegation_depth: number;
+  max_run_model_requests: number;
 }
 export interface Graph {
   coverage?: string;

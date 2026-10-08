@@ -108,7 +108,7 @@
       "class_name": "ExecutionContainer",
       "image": "./containers/Dockerfile",
       "image_build_context": ".",
-      "max_instances": 6,
+      "max_instances": 16,
       "instance_type": "standard-1",
       "rollout_step_percentage": [
         100

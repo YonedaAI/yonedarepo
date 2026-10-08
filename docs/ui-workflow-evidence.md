@@ -45,3 +45,37 @@ These checks prove config generation, bundling, local migration repeatability an
 - Hosted personal BYOK inference still lacks live acceptance; named connection isolation has workerd coverage.
 - The current target is static websites. Full-stack hosting, generic task DAGs, automated semantic merges and clarification that pauses/resumes a run remain future work.
 - The [presenter video package](video/production-brief.md) contains prepared narration and editing directions. Artlist and Higgsfield were authenticated for media-tool inspection; no new avatar video is claimed by this workflow verification.
+
+## Six agents, delegation, model budgets and restart
+
+Later on October 8, 2026, the console added two to six root agents, optional bounded subagents,
+shared per-model budgets, safe provider failure explanations and **Restart run**. Budget cards
+show one optional USD amount; request counts, execution time, response size and pricing are under
+collapsed **Advanced limits**. Brief approval approves configured limits and rates together.
+Restart preserves historical evidence and creates a fresh run using current repository checks.
+
+One combined integration review found two issues: Gemini retained a fixed 24-turn CLI limit,
+and restart could restore older repository checks. Both were corrected with regression coverage.
+`cargo xtask check` then passed **109 native Rust tests, 61 workerd tests and one Node runtime
+test**, plus formatting, Clippy, Wasm, TypeScript, Biome and the production browser build.
+The Linux execution image passed **27 runtime tests**. After the budget presentation was
+simplified, the five affected budget/restart helper tests, TypeScript, Biome and browser build
+passed again. Logs are in ignored `artifacts/scalability`.
+
+The actual locally served app exercised a two-root shared model allowance, usage reservation and
+settlement without upstream inference: **2 / 3 requests** and **$0.002725 / $2**. Cancellation and
+restart created a new linked run at **0 / 3** and **$0 / $2**, while the original retained its usage.
+The simplified restart dialog preserved its hidden limits and accepted an optional dollar amount
+without extra opt-in or pricing approval checkboxes. Local six-root and two-level delegation
+checks are explicitly fixtures, not evidence of six overlapping paid model executions.
+
+The development Worker is deployed as version `dc781201-cff5-4fbc-b942-e326dda73c83`.
+Cloudflare reports execution-container application version **10** as **ready**, with registry
+image SHA-256 `f75b9774e898e2e2eed2ab88cf4fd1795de1b7958e7ef6613ca56740fab21ec1`.
+The final browser-only deployment used `--containers-rollout none` to preserve that image.
+The deployed restart dialog was checked in a separate browser tab without changing the owner's
+existing draft. Its MiMo/ZAI cards showed only optional dollar amounts with Advanced limits
+collapsed. Reading the original run's outcomes showed MiMo's insufficient account balance and
+ZAI's legacy execution-budget stop as distinct diagnoses, without exposing raw transcript text.
+The container ceiling is 16 instances; this does not establish 16 concurrent executions.
+No paid retry, new six-agent live run or new publication was started for these checks.

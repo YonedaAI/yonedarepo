@@ -6,6 +6,8 @@
 @import "./styles/onboarding.css";
 @import "./styles/demo-guide.css";
 @import "./styles/runs.css";
+@import "./styles/agents.css";
+@import "./styles/budgets.css";
 @import "./styles/source-diff.css";
 @import "./styles/dialog.css";
 @import "./styles/responsive.css";

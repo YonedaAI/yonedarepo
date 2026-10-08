@@ -34,6 +34,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
           )
             .bind(repo, JSON.stringify(entry.payload.repository), entry.payload.seq)
             .run();
+        } else if (entry.kind === 'stop') {
+          const name = await sha(`${repo}:${entry.payload.job_id}:${entry.payload.epoch}`);
+          await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).stop();
         } else {
           const queues: Record<string, Queue<Envelope>> = {
             agent: this.env.AGENT_QUEUE,

@@ -57,6 +57,8 @@ Use the same environment prefix for `git -C contribution push origin HEAD:main` 
 
 ## Limits and evidence
 
+Hosted coding attempts additionally receive `delegate_agent` and `delegation_status` through their attempt-scoped MCP server when the owner enables subagents in the run. Identity comes from the active container lease. Children inherit approved provider/model/source/context and produce independently checked alternatives under shared limits. Repository keys for local agents deliberately do not grant paid hosted-agent creation; their contribution workflow above remains separate. See [delegation operation and limits](runbook.md#agent-concurrency-and-delegation).
+
 The remote endpoint implements stateless Streamable HTTP JSON-RPC: POST JSON responses, no persistent sessions or server-initiated SSE stream. Read keys cannot begin attempts or publish context. No MCP tool selects candidates or writes canonical Git. Artifacts credentials are minted briefly inside the trusted Git broker and revoked; they are never returned to a client. In-flight requests may complete after revocation; later requests reauthenticate.
 
 Contributions currently support bounded regular files (500 files, 8 MiB decoded total), including executable bits and base64 binary transfer. Symlinks and submodules must be converted. Expired attempts fail without scheduling paid hosted inference. Local workerd tests cover durable grants, revocation after eviction, cross-repository denial, canonical-write denial, attribution, frozen revision submission and capture handoff. Actual third-party client connections and live Artifacts Git transfer are recorded separately in the release evidence.

@@ -146,7 +146,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       if (head !== input.commit)
         return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
     }
-    if (action === 'start_run') checkLedger(await ledger(env, repo, { op: 'snapshot' }));
+    if (action === 'start_run') checkLedger(await ledger(env, repo, { op: 'snapshot' }), input);
     if (action === 'start_run' && principal.role === 'user') {
       const settings = await workspace(env, principal.workspace, { op: 'settings' });
       if (

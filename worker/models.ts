@@ -1,7 +1,9 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { error, readJson } from './http';
+import { requestUsage } from './model-budget';
 import { prepareModelRequest } from './model-policy';
 import { trackClaudeUsage } from './model-usage';
+import { trackProviderUsage } from './provider-usage';
 import { scopeFor } from './scope';
 import { ledger, sha } from './storage';
 import type { Env } from './types';
@@ -32,15 +34,37 @@ export const modelHandler =
         job_id: job.id,
         epoch: job.epoch,
         kind: 'model',
+        ...requestUsage(prepared.body, provider),
+        count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
       });
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
-      if (prepared.reservation)
-        await workspace(env, budgetOwner, {
-          op: 'budget_reserve',
-          id: reservationId,
-          amount: prepared.reservation,
-        });
+      if (prepared.reservation) {
+        try {
+          await workspace(env, budgetOwner, {
+            op: 'budget_reserve',
+            id: reservationId,
+            amount: prepared.reservation,
+          });
+        } catch (failure) {
+          // No upstream request has been sent. Release only this known-unused run reservation.
+          if (counted.reservation_id) {
+            try {
+              await ledger(env, scope.repo_id, {
+                op: 'settle_model_request',
+                job_id: job.id,
+                epoch: job.epoch,
+                reservation_id: counted.reservation_id,
+                input_tokens: 0,
+                output_tokens: 0,
+              });
+            } catch {
+              /* Retain the reservation if the release cannot be confirmed. */
+            }
+          }
+          throw failure;
+        }
+      }
       const headers = new Headers({ 'content-type': 'application/json' });
       if (prepared.provider === 'gemini') headers.set('x-goog-api-key', key);
       else if (prepared.provider !== 'claude') headers.set('authorization', `Bearer ${key}`);
@@ -56,9 +80,20 @@ export const modelHandler =
       });
       if (result.status >= 300 && result.status < 400)
         throw new Error('Provider redirected the request; no credentials were forwarded');
-      return prepared.reservation
+      const tracked = prepared.reservation
         ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
         : result;
+      return counted.reservation_id
+        ? trackProviderUsage(tracked, provider, (usage) =>
+            ledger(env, scope.repo_id, {
+              op: 'settle_model_request',
+              job_id: job.id,
+              epoch: job.epoch,
+              reservation_id: counted.reservation_id,
+              ...usage,
+            }),
+          )
+        : tracked;
     } catch (e: any) {
       return error(e.code ?? 'MODEL_PROXY', e.message, 409);
     }
