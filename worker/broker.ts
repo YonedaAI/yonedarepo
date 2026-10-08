@@ -17,6 +17,16 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       const name = body.name;
       if (name === 'repo_context' || name === 'execution_status')
         return response(await ledger(env, scope.repo_id, { op: 'context', ...identity }));
+      if (name === 'delegate_agent' || name === 'delegation_status')
+        return response(
+          await ledger(env, scope.repo_id, {
+            op: name,
+            ...(name === 'delegate_agent'
+              ? { request_id: args.request_id, task: args.task, strategy: args.strategy }
+              : {}),
+            ...identity,
+          }),
+        );
       if (['context_publish', 'context_get', 'context_search'].includes(name)) {
         const command: Json =
           name === 'context_publish'

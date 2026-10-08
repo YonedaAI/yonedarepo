@@ -1,4 +1,5 @@
 import { prepareGeminiRequest } from './gemini-policy';
+import { outputCeiling } from './model-budget';
 import type { Json } from './types';
 
 const upstreams = {
@@ -32,6 +33,7 @@ export function prepareModelRequest(
   if (provider === 'claude' && model !== 'claude-sonnet-4-6')
     throw new Error('Claude testing is limited to claude-sonnet-4-6');
   const body = structuredClone(input);
+  const ceiling = outputCeiling(job);
   body.model = model;
   for (const key of [
     'service_tier',
@@ -46,11 +48,23 @@ export function prepareModelRequest(
   if (harness === 'codex') {
     body.max_output_tokens = Math.max(
       1,
-      Math.min(Math.floor(Number(body.max_output_tokens)) || 4096, 4096),
+      Math.min(Math.floor(Number(body.max_output_tokens)) || ceiling, ceiling),
     );
     body.store = false;
     if (body.tools?.some((tool: Json) => !['function', 'custom'].includes(tool.type)))
       throw new Error('Server-side paid tools are unavailable');
+    function validateText(value: unknown) {
+      if (!value || typeof value !== 'object') return;
+      if (Array.isArray(value)) {
+        for (const child of value) validateText(child);
+        return;
+      }
+      const object = value as Json;
+      if (['input_image', 'input_audio', 'input_file', 'video'].includes(object.type))
+        throw new Error('Testing accepts text and local tools only');
+      for (const child of Object.values(object)) validateText(child);
+    }
+    validateText(body);
   } else {
     if (body.tools?.some((tool: Json) => tool.type && tool.type !== 'custom'))
       throw new Error('Server-side paid tools are unavailable');
@@ -66,7 +80,10 @@ export function prepareModelRequest(
       for (const child of Object.values(object)) validate(child);
     }
     validate(body);
-    body.max_tokens = Math.max(1, Math.min(Math.floor(Number(body.max_tokens)) || 4096, 4096));
+    body.max_tokens = Math.max(
+      1,
+      Math.min(Math.floor(Number(body.max_tokens)) || ceiling, ceiling),
+    );
     if (path.endsWith('/count_tokens')) delete body.max_tokens;
   }
   const bytes = new TextEncoder().encode(JSON.stringify(body)).length;

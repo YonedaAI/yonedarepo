@@ -62,9 +62,9 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           },
         ]),
     {
-      name: 'Code in parallel',
+      name: 'Build approaches',
       value: `${done} / ${coding.length} finished`,
-      detail: 'Same source and context',
+      detail: `${coding.filter((e) => e.status === 'queued').length} queued · capacity limited`,
     },
     {
       name: 'Capture source',

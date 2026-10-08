@@ -34,8 +34,38 @@ retain the entire reservation. The ledger reports a charged safety allowance, **
 Reference: [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
 Paid server tools, images, premium tiers and custom upstream URLs are disabled in testing.
 
-Each attempt has a durable limit of 24 model requests, 4,096 output tokens per request and a wall
-deadline. Local checks need no keys and perform no inference. Live checks are explicit.
+## Run budgets in the console
+
+In **New run → Model budgets**, optionally enter a dollar budget for each selected model.
+Leave it blank for no dollar cap. **Advanced limits** contains request counts, response size,
+execution time and pricing. Roots using different connections for the same model, their subagents
+and infrastructure retries share that model's request and dollar allowance. Execution time applies
+to each attempt. The run also has an absolute 144-request ceiling.
+Known models use conservative pricing presets when you enter an amount; custom models require
+owner-entered rates under **Advanced limits**. Approving the run brief approves its configured
+limits and rates together. These settings are frozen with the brief; agents cannot
+raise them. **Restart run** reopens the brief and budgets for approval as a fresh run, preserving the
+original run and its evidence. Finish or cancel active work before restarting it.
+
+The ledger reserves input bytes plus 8,192 tokens of overhead and the permitted output before
+each model request. Complete upstream token usage reconciles that reservation at the approved
+rates; missing/truncated usage retains it. **Reserved estimate** includes these outstanding
+reservations. A request can stop before the displayed allowance is completely consumed because
+its worst-case reservation would not fit. This is an estimate using approved rates, not a provider
+invoice or Cloudflare infrastructure budget. Provider pricing and account balances remain separate.
+
+Presets were checked against official pricing on 2026-10-08: [Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna),
+[MiMo](https://mimo.mi.com/docs/pricing), [Z.AI](https://docs.z.ai/guides/overview/pricing),
+[Gemini](https://ai.google.dev/gemini-api/docs/pricing) and [Sonnet](https://platform.claude.com/docs/en/about-claude/pricing).
+Conservative presets use Luna's cache-write input premium, Gemini's announced higher January 2027
+standard rates, and Sonnet's existing USD 6/30 input/output safety rates. GLM-4.7-Flash is currently
+listed as free; request and time limits still apply. Review the rates when approving a run.
+
+Approved budgeted runs do not inherit the CLI's hidden USD 1 estimate. Older runs without a
+`model_budgets` approval retain their legacy 24 requests per execution across retries,
+4,096 output tokens per response and ten-minute attempt deadline; actual Anthropic legacy runs
+also retain the CLI USD 1 estimate. The durable Claude workspace ceiling remains an additional
+operator limit for all runs. Local checks need no keys and perform no inference. Live checks are explicit.
 An increase to the shared testing ceiling requires a deliberate operator change; it never resets
 when another run begins.
 

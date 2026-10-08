@@ -1,5 +1,7 @@
 import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
 import { short } from '../../lib/api';
+import { ExecutionFailure } from './ExecutionFailure';
+import { executionStatus } from './ExecutionHierarchy';
 import { SiteLink } from './SiteLink';
 import { SourceDiff } from './SourceDiff';
 
@@ -18,6 +20,7 @@ export function CandidateCard({
   selected,
   disabled,
   onSelect,
+  onProviders,
 }: {
   strategy: string;
   repo: string;
@@ -28,18 +31,27 @@ export function CandidateCard({
   selected: boolean;
   disabled: boolean;
   onSelect: () => void;
+  onProviders?: () => void;
 }) {
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
   const published = chosen && decision?.status === 'published';
-  const status = candidate?.status ?? execution?.status ?? 'waiting';
+  const status = execution
+    ? executionStatus(execution, candidate)
+    : (candidate?.status ?? 'waiting');
   return (
-    <article className={`candidate ${selected ? 'focused' : ''}`}>
+    <article
+      className={`candidate ${selected ? 'focused' : ''}`}
+      id={execution ? `approach-${execution.id}` : undefined}
+    >
       <div className="candidate-title">
         <span className="strategy-mark" />
         <h2>{strategy}</h2>
         <span>{execution?.model ?? execution?.harness}</span>
       </div>
       <div className="candidate-content">
+        {execution?.parent_execution && (
+          <p className="strategy-description">Delegated subagent · level {execution.depth ?? 1}</p>
+        )}
         {descriptions[strategy] && <p className="strategy-description">{descriptions[strategy]}</p>}
         <span className={`status ${status}`}>
           {status === 'eligible' ? (
@@ -53,11 +65,24 @@ export function CandidateCard({
         </span>
         <p>
           {candidate?.summary ??
-            (execution
-              ? 'Working from the approved brief and frozen context.'
-              : 'Waiting for an agent.')}
+            (status === 'failed'
+              ? 'This agent stopped before completing its approach.'
+              : status === 'cancelled'
+                ? 'This agent was cancelled and will not continue.'
+                : status === 'queued'
+                  ? 'Queued for an available execution slot.'
+                  : execution
+                    ? 'Working from the approved brief and frozen context.'
+                    : 'Waiting for an agent.')}
         </p>
-        {execution?.error && <p role="alert">{execution.error}</p>}
+        {execution?.status === 'failed' && (
+          <ExecutionFailure
+            key={`${repo}:${execution.id}:${execution.transcript ?? ''}`}
+            repo={repo}
+            execution={execution}
+            onProviders={onProviders}
+          />
+        )}
         {candidate && (
           <>
             <div className="revision">

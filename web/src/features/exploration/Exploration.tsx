@@ -1,4 +1,4 @@
-import { GitCompareArrows, Plus, StopCircle } from 'lucide-react';
+import { GitCompareArrows, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
@@ -6,8 +6,12 @@ import type { Snapshot } from '../../lib/types';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
 import { DecisionForm } from './DecisionForm';
+import { ExecutionHierarchy } from './ExecutionHierarchy';
+import { ModelBudgetUsage } from './ModelBudgetUsage';
 import { RunComposer } from './RunComposer';
+import { RunControls } from './RunControls';
 import { RunWorkflow } from './RunWorkflow';
+import { initialRun } from './restartRun';
 
 export function Exploration({
   snapshot,
@@ -29,10 +33,19 @@ export function Exploration({
   const [selected, setSelected] = useState('');
   const [runId, setRunId] = useState('');
   const [composing, setComposing] = useState(false);
+  const [restartId, setRestartId] = useState('');
   const [comparing, setComparing] = useState(false);
   const repo = snapshot.repository;
   const run = snapshot.runs.find((r) => r.id === runId) ?? snapshot.runs.at(-1);
   const candidates = snapshot.candidates.filter((c) => c.run_id === run?.id);
+  const coding = snapshot.executions.filter((e) => e.run_id === run?.id && e.role === 'coding');
+  const roots = coding.filter((e) => !e.parent_execution).length;
+  const activeAttempts = snapshot.executions.some(
+    (execution) =>
+      execution.run_id === run?.id &&
+      ['queued', 'running', 'capturing', 'evaluating'].includes(execution.status),
+  );
+  const restartSource = snapshot.runs.find((record) => record.id === restartId);
   const codeCandidates: Record<string, any>[] = candidates.map((c) => ({
     ...c,
     strategy: snapshot.executions.find((e) => e.id === c.execution)?.strategy ?? c.summary,
@@ -61,7 +74,14 @@ export function Exploration({
           <h1>Development runs</h1>
           <p>One shared brief. Concurrent agents. A decision you can trace.</p>
         </div>
-        <button type="button" disabled={!canStart} onClick={() => setComposing(true)}>
+        <button
+          type="button"
+          disabled={!canStart}
+          onClick={() => {
+            setRestartId('');
+            setComposing(true);
+          }}
+        >
           <Plus size={17} />
           New run
         </button>
@@ -70,8 +90,15 @@ export function Exploration({
         Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
       </p>
       {composing && (
-        <Dialog title="New development run" onClose={() => setComposing(false)} locked={busy} wide>
+        <Dialog
+          title={restartSource ? 'Restart development run' : 'New development run'}
+          onClose={() => setComposing(false)}
+          locked={busy}
+          wide
+        >
           <RunComposer
+            key={restartSource?.id ?? 'new-run'}
+            initialRun={restartSource ? initialRun(snapshot, restartSource) : undefined}
             busy={busy}
             onProviders={() => {
               setComposing(false);
@@ -84,6 +111,7 @@ export function Exploration({
               if (await act('start_run', { id, ...brief })) {
                 setRunId(id);
                 setComposing(false);
+                setRestartId('');
                 setComparing(false);
               }
             }}
@@ -119,23 +147,43 @@ export function Exploration({
                   Base <code>{short(run.base.commit)}</code>
                 </span>
                 <span>
-                  {snapshot.executions.filter((e) => e.run_id === run.id).length} executions
+                  {roots} root agents · {coding.length - roots} subagents
                 </span>
+                {run.restart_of && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setRunId(run.restart_of);
+                      setSelected('');
+                      setComparing(false);
+                    }}
+                  >
+                    View previous run
+                  </button>
+                )}
               </div>
             </div>
-            {!['accepted', 'cancelled', 'failed'].includes(run.status) && (
-              <button
-                type="button"
-                className="quiet"
-                disabled={busy}
-                onClick={() => void act('cancel_run', { run_id: run.id })}
-              >
-                <StopCircle size={16} />
-                Cancel run
-              </button>
-            )}
+            <RunControls
+              run={run}
+              busy={busy}
+              canStart={canStart}
+              activeAttempts={activeAttempts}
+              hasRoots={roots > 0}
+              supportsRestart={snapshot.capabilities?.model_budgets === 1}
+              onRestart={() => {
+                setRestartId(run.id);
+                setComposing(true);
+              }}
+              onCancel={() => void act('cancel_run', { run_id: run.id })}
+            />
           </div>
+          {activeAttempts && (
+            <p className="subtle">Finish or cancel active attempts to restart this run.</p>
+          )}
           <RunWorkflow snapshot={snapshot} run={run} />
+          <ModelBudgetUsage run={run} />
+          <ExecutionHierarchy snapshot={snapshot} run={run} />
           <button type="button" className="text-button context-link" onClick={onContext}>
             Explore this repository’s context →
           </button>
@@ -153,37 +201,36 @@ export function Exploration({
             </button>
           </div>
           <div className="candidate-grid">
-            {snapshot.executions
-              .filter((e) => e.run_id === run.id && e.role === 'coding')
-              .map((execution) => {
-                const strategy = execution.strategy;
-                const candidate = candidates.find((c) => c.execution === execution?.id);
-                const evaluation = snapshot.evaluations.find((e) => e.id === candidate?.evaluation);
-                return (
-                  <CandidateCard
-                    key={execution.id}
-                    strategy={strategy}
-                    repo={repo.id}
-                    execution={execution}
-                    candidate={candidate}
-                    evaluation={evaluation}
-                    decision={snapshot.decisions.find((d) => d.run_id === run.id)}
-                    selected={!!candidate && selected === candidate.id}
-                    disabled={
-                      candidate?.status !== 'eligible' ||
-                      !!repo.pending ||
-                      busy ||
-                      ['accepted', 'cancelled'].includes(run.status) ||
-                      candidate?.base.commit !== repo.head_commit ||
-                      evaluation?.policy !== repo.policy?.version
-                    }
-                    onSelect={() => {
-                      setSelectionError('');
-                      setSelected(candidate?.id ?? '');
-                    }}
-                  />
-                );
-              })}
+            {coding.map((execution) => {
+              const strategy = execution.strategy;
+              const candidate = candidates.find((c) => c.execution === execution?.id);
+              const evaluation = snapshot.evaluations.find((e) => e.id === candidate?.evaluation);
+              return (
+                <CandidateCard
+                  key={execution.id}
+                  strategy={strategy}
+                  repo={repo.id}
+                  execution={execution}
+                  candidate={candidate}
+                  evaluation={evaluation}
+                  decision={snapshot.decisions.find((d) => d.run_id === run.id)}
+                  selected={!!candidate && selected === candidate.id}
+                  disabled={
+                    candidate?.status !== 'eligible' ||
+                    !!repo.pending ||
+                    busy ||
+                    ['accepted', 'cancelled'].includes(run.status) ||
+                    candidate?.base.commit !== repo.head_commit ||
+                    evaluation?.policy !== repo.policy?.version
+                  }
+                  onSelect={() => {
+                    setSelectionError('');
+                    setSelected(candidate?.id ?? '');
+                  }}
+                  onProviders={onProviders}
+                />
+              );
+            })}
           </div>
           {comparing && <CandidateComparison key={run.id} candidates={codeCandidates} />}
           {selected && (
