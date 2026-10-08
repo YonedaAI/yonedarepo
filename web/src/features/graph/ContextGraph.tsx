@@ -11,6 +11,8 @@ import { useMemo } from 'react';
 import '@xyflow/react/dist/style.css';
 import type { Graph, GraphNode } from '../../lib/types';
 
+const graphFitOptions = { padding: 0.18, minZoom: 0.02, maxZoom: 0.85 };
+
 const columns = [
   'repository',
   'intent',
@@ -31,7 +33,7 @@ export function ContextGraph({
   graph: Graph;
   onSelect: (node: GraphNode) => void;
 }) {
-  const { nodes, edges } = useMemo(() => {
+  const { nodes, edges, identity } = useMemo(() => {
     const offsets: Record<string, number> = {};
     const nodes: Node[] = graph.nodes.map((node) => {
       const col = Math.max(0, columns.indexOf(node.kind));
@@ -64,7 +66,7 @@ export function ContextGraph({
       labelStyle: { fontSize: 10, fill: '#526b7d' },
       labelBgStyle: { fill: '#f0f5f8' },
     }));
-    return { nodes, edges };
+    return { nodes, edges, identity: JSON.stringify(graph.nodes.map((node) => node.id)) };
   }, [graph]);
   if (!nodes.length)
     return (
@@ -76,10 +78,13 @@ export function ContextGraph({
     );
   return (
     <ReactFlow
+      key={identity}
       nodes={nodes}
       edges={edges}
       fitView
-      fitViewOptions={{ padding: 0.18, minZoom: 0.25, maxZoom: 0.85 }}
+      minZoom={graphFitOptions.minZoom}
+      maxZoom={2}
+      fitViewOptions={graphFitOptions}
       nodesDraggable={false}
       onNodeClick={(_, node) => {
         const original = graph.nodes.find((n) => n.id === node.id);
@@ -88,7 +93,7 @@ export function ContextGraph({
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={24} color="#ccdae2" />
-      <Controls showInteractive={false} />
+      <Controls showInteractive={false} fitViewOptions={graphFitOptions} />
     </ReactFlow>
   );
 }
