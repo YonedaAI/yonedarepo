@@ -22,4 +22,4 @@ Use a project-specific test profile: the starter HTML smoke check does not prove
 
 ## Submission checklist
 
-The public Apache-2.0 repository and release assets are published. The 8:48 video was downloaded anonymously and matched its local SHA-256; all 71 native Rust tests passed from the exported source. Running and MCP instructions are included. Competition form submission, any entry agreement, and final creative acceptance are the owner's actions. No competition entry submission is claimed here.
+The public Apache-2.0 repository and release assets are published. The 8:48 video was downloaded anonymously and matched its local SHA-256; all 71 native Rust tests passed from the exported source. [Fresh public CI](https://github.com/MagnetonIO/yonedarepo/actions/runs/37795843377) passed the complete Linux/Wasm/workerd/browser and container gate. Running and MCP instructions are included. Competition form submission, any entry agreement, and final creative acceptance are the owner's actions. No competition entry submission is claimed here.
