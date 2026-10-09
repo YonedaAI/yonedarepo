@@ -4,7 +4,6 @@ import {
   ExternalLink,
   GitBranch,
   KeyRound,
-  LogOut,
   Menu,
   Plus,
   Terminal,
@@ -12,7 +11,6 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import type { useRepository } from '../../hooks/useRepository';
-import { api } from '../../lib/api';
 import type { WorkspacePanel } from './WorkspacePanels';
 
 export function WorkspaceRail({
@@ -110,23 +108,6 @@ export function WorkspaceRail({
               <KeyRound size={16} />
               Administrator access
             </button>
-            {state.authenticated && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    await api('auth/logout', {});
-                    await fetch('/api/session', { method: 'DELETE' });
-                    state.clear();
-                  } catch (error) {
-                    state.setError((error as Error).message);
-                  }
-                }}
-              >
-                <LogOut size={16} />
-                Sign out
-              </button>
-            )}
           </details>
           <span className="environment">
             <i />

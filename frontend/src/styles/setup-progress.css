@@ -1,0 +1,78 @@
+.setup-progress {
+  max-width: 620px;
+  margin: 72px auto;
+  padding: 0 28px;
+}
+.setup-symbol {
+  display: inline-flex;
+  padding: 15px;
+  color: var(--blue);
+  background: #eaf0ff;
+  border-radius: 14px;
+  margin-bottom: 24px;
+}
+.setup-symbol.setup-failed {
+  background: #fff0ed;
+  color: #a33333;
+}
+.setup-progress h1 {
+  font-size: 26px;
+  letter-spacing: -0.6px;
+  overflow-wrap: anywhere;
+}
+.setup-stage {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  margin: 24px 0 16px;
+}
+.setup-stage strong {
+  font-size: 15px;
+}
+.setup-stage p,
+.setup-error p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.setup-timing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 28px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.setup-timing > div {
+  display: flex;
+  gap: 8px;
+}
+.setup-timing dd {
+  margin: 0;
+  color: #152436;
+}
+.setup-error {
+  background: #fff0ed;
+  color: #963333;
+  padding: 14px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.setup-error p {
+  margin: 0 0 6px;
+}
+.setup-error small {
+  font-size: 11px;
+}
+.setup-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}

@@ -62,7 +62,8 @@ export function OwnerConnection({
         </button>
       )}
       <span className="auth-help">
-        Use your workspace owner token. Provider API keys stay in Cloudflare.
+        Deployment administrators use the owner token. To sign in to a personal account, close this
+        dialog and choose Sign in.
       </span>
       {!authenticated && (
         <label className="token-file">

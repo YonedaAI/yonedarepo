@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
+import { AccountPanel } from './AccountPanel';
 import { AgentConnections } from './AgentConnections';
 import { DemoGuide } from './DemoGuide';
 import { NewProject } from './NewProject';
@@ -10,13 +11,21 @@ const ProviderSettings = lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
 
-export type WorkspacePanel = 'agents' | 'providers' | 'project' | 'owner' | 'guide' | null;
+export type WorkspacePanel =
+  | 'agents'
+  | 'providers'
+  | 'project'
+  | 'owner'
+  | 'guide'
+  | 'account'
+  | null;
 const titles = {
   agents: 'Connect a local agent',
   providers: 'Agent providers',
   project: 'Add repository',
   owner: 'Administrator access',
   guide: 'How YonedaRepo works',
+  account: 'Sign in to YonedaRepo',
 };
 
 export function WorkspacePanels({
@@ -31,6 +40,15 @@ export function WorkspacePanels({
   if (!panel) return null;
   return (
     <Dialog key={panel} title={titles[panel]} onClose={onClose} wide={panel === 'guide'}>
+      {panel === 'account' && !state.authenticated && (
+        <AccountPanel
+          initialMode="login"
+          onConnected={() => {
+            onClose();
+            void state.discover();
+          }}
+        />
+      )}
       {panel === 'agents' && state.snapshot && (
         <AgentConnections repo={state.id} onClose={onClose} />
       )}
@@ -52,7 +70,7 @@ export function WorkspacePanels({
       {panel === 'guide' && <DemoGuide onClose={onClose} />}
       {panel === 'owner' && (
         <OwnerConnection
-          authenticated={state.authenticated}
+          authenticated={state.identity?.role === 'admin'}
           onConnected={() => {
             onClose();
             void state.discover();

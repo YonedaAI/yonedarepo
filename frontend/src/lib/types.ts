@@ -1,3 +1,14 @@
+export type AccountIdentity = { role: 'user'; username: string } | { role: 'admin' };
+export type SetupStage =
+  | 'queued'
+  | 'checking_remote'
+  | 'creating'
+  | 'importing'
+  | 'checking_source'
+  | 'initializing'
+  | 'failed'
+  | 'ready';
+
 export interface GraphNode {
   id: string;
   kind: string;
@@ -15,12 +26,17 @@ export interface GraphEdge {
 export interface Repository {
   id: string;
   name: string;
+  created_at?: number;
   version: number;
   head_commit: string;
   published_commit: string;
   status: string;
   pending: string | null;
   error?: string;
+  error_code?: string;
+  stage?: SetupStage;
+  setup_started_at?: number;
+  updated_at?: number;
   site?: { digest: string; commit: string };
   remote: { namespace: string; name: string };
   policy?: {
@@ -31,6 +47,10 @@ export interface Repository {
     build?: { setup: unknown[]; checks: unknown[]; static_dir?: string };
   };
 }
+export type ProjectMetadata = Pick<
+  Repository,
+  'id' | 'name' | 'status' | 'error' | 'error_code' | 'stage' | 'setup_started_at' | 'updated_at'
+>;
 export interface Snapshot {
   repository: Repository;
   runs: Record<string, any>[];

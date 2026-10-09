@@ -61,11 +61,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             if n[0]["n"].as_i64().unwrap_or_default() >= 100 {
                 return Err(bad("Workspace project limit reached"));
             }
-            let p = json!({"id":id,"name":name,"status":"provisioning","created_at":now,"source":source,"policy":c["policy"]});
+            let p = json!({"id":id,"name":name,"status":"provisioning","stage":"queued","setup_started_at":now,"created_at":now,"updated_at":now,"source":source,"policy":c["policy"]});
             create(db, TABLE, &key, &p)?;
             Ok(p)
         }
         "project_get" => get(db, TABLE, &key),
+        "project_dispatch_sent" => super::project_dispatch::sent(db, c, &key, now),
         "project_delete" => {
             let mut p = get(db, TABLE, &key)?;
             if p["status"] != "deleted" {
@@ -78,23 +79,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             Ok(p)
         }
-        "project_update" => {
-            let mut p = get(db, TABLE, &key)?;
-            if p["status"] == "deleted" {
-                return Err(Error::new(
-                    "REPOSITORY_DELETED",
-                    "This repository has been deleted",
-                ));
-            }
-            let status = string(c, "status")?;
-            if !["provisioning", "ready", "failed"].contains(&status.as_str()) {
-                return Err(bad("Invalid project state"));
-            }
-            p["status"] = json!(status);
-            p["error"] = c.get("error").cloned().unwrap_or(Value::Null);
-            put(db, &key, &p)?;
-            Ok(p)
-        }
+        "project_update" | "project_claim" | "project_progress" | "project_retry"
+        | "project_schedule" => super::project_setup::handle(db, c, &key, now),
         _ => Err(bad("Unknown project operation")),
     }
 }

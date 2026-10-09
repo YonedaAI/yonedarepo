@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { api } from '../../lib/api';
-export function AccountPanel({ onConnected }: { onConnected: () => void }) {
-  const [mode, setMode] = useState<'signup' | 'login' | 'recover'>('signup');
+export function AccountPanel({
+  onConnected,
+  initialMode = 'signup',
+}: {
+  onConnected: () => void;
+  initialMode?: 'signup' | 'login';
+}) {
+  const [mode, setMode] = useState<'signup' | 'login' | 'recover'>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [recovery, setRecovery] = useState('');

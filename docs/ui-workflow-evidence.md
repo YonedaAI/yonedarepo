@@ -271,3 +271,58 @@ The draft was cancelled; no run, provider key, shipping decision or publication 
 Ignored evidence: `artifacts/published-continuation/check-final.log`,
 `frontend-check-final.log`, `browser-build-final.log`, `composer-check-final.log`,
 `artifact-continuation-final.log`, `deploy.log` and `update-published-base-live.png`.
+
+## 2026-10-09: Account identity and recoverable repository onboarding
+
+The header now shows the authenticated personal username and account menu, with a separate
+Administrator identity for operator access. Anonymous visitors can open **Sign in** directly.
+Repository discovery obtains identity from the authenticated server principal, including empty
+workspaces; a revoked account session cannot return its former identity.
+
+Setup now reserves an ID, returns promptly and runs through the existing agent queue without
+starting inference or a container. Workspace DO stages, epochs, two-minute claims and durable
+dispatch intent prevent overlapping imports and recover lost queue sends, pending operations
+and abandoned claims. An alarm continues recovery with the browser closed and stops when idle.
+Attempts have a 90-second watchdog; the overall pending deadline is ten minutes. Failed setup
+can retry without replacing its project identity. Browser requests have a 20-second timeout
+and stale responses are fenced; uncertain mutations are not automatically repeated. The setup
+view shows stages, elapsed time, classified errors and retry/status actions.
+
+A read-only investigation found an existing public import whose Artifacts metadata named
+`main`, while its source advertised `master`; only the latter had a commit. This formerly
+returned an endless pending state. New imports explicitly use advertised HEAD, and earlier
+imports recover the actual branch before initialization. This repository was not attributed
+to Givi: the user's clarification said he had only signed up. D1 contains a discovery table,
+not an account directory; the exact affected signup remains unidentified. Empty repositories
+and unsupported source now have explicit failure guidance.
+
+The combined `cargo xtask check` passed Rust formatting/Clippy, **138 native Rust tests**, the
+actual workers-rs Wasm build, TypeScript/Biome (**120 files**), **115 workerd tests**, one Node
+runtime test and the production browser build. The entry chunk is 479.48 kB with no chunk-size
+warning. The combined review's two material findings—stranded queue dispatch and unbounded
+browser requests—were fixed and rechecked. SQL and Cloudflare class migration histories were
+not changed.
+
+Development Worker **`6a7ed5b0-715d-45a9-8c9c-558e3e3fdc4a`** is deployed with immediate DO
+code update mode and `--containers-rollout none`. Existing containers, sites, secret bindings
+and resource identities were preserved.
+
+Live HTTP acceptance on the real Cloudflare deployment verified a fresh signup, empty personal
+workspace identity, login/logout and logout revocation. A new starter became ready on `main`
+at **`40b7170ec643ec0cab48afadaa8acdb2011c94f5`**; a separate public import became ready on
+`master` at **`b0a1ea487c6d7028e491e7558a7a0cfd2243d2ec`**. Their creation responses were HTTP
+202 in 0.622 and 0.334 seconds respectively, followed by queue-driven stages and owner-scoped
+snapshot readback. Repeated creation requests returned the same ready IDs. Only these two
+QA repositories were deleted, and the QA workspace was empty after signing in again. No
+existing user repository or source was changed and no paid model request ran. The isolated QA
+account remains available locally with its credentials in an ignored, permission-restricted file.
+
+The served browser assets contain the account identity and setup/timeout changes. Visual browser
+acceptance was unavailable: the computer-use service returned no connected browser or native
+surface. HTTP acceptance and bundle checks do not establish rendered layout or keyboard
+acceptance; no screenshot success is claimed.
+
+Ignored evidence: `artifacts/account-identity/integration-check.log`,
+`provisioning-deploy.log`, `live-acceptance.json` and `deployed-bundle.json`.
+The source-based architecture is documented separately in
+[current-state architecture](current-state-architecture.md); `architecture.md` remains unchanged.

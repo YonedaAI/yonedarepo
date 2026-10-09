@@ -2,6 +2,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
+import { enqueueProjects, provisionMessage } from './project-provisioning';
 import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
@@ -29,6 +30,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   async deliver(repo: string, entries: Json[]) {
     return deliverOutbox(this.env, repo, entries);
   }
+  async enqueueProjects(owner: string, projects: Json[]) {
+    return enqueueProjects(this.env, owner, projects);
+  }
 
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
@@ -37,6 +41,10 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
         try {
           if (envelope.v !== 1) {
             message.ack();
+            return;
+          }
+          if (envelope.kind === 'provision') {
+            await provisionMessage(this.env, message);
             return;
           }
           const job = await ledger(this.env, envelope.repo_id, {
@@ -65,7 +73,13 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             const name = `candidate-${(await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
             using repo = await this.env.ARTIFACTS.get(canonical);
             try {
-              const fork = await repo.fork(name, { defaultBranchOnly: true });
+              const info = await repo.info();
+              // Older imports can have a valid canonical branch different from the metadata.
+              // Retain that branch in the fork so capture preserves its ancestry.
+              const snapshot = await ledger(this.env, envelope.repo_id, { op: 'snapshot' });
+              const fork = await repo.fork(name, {
+                defaultBranchOnly: snapshot.repository.remote.branch === info.defaultBranch,
+              });
               using target = await this.env.ARTIFACTS.get(name);
               await target.revokeToken(fork.token);
             } catch (e: any) {

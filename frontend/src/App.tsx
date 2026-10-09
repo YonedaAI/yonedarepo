@@ -25,6 +25,14 @@ export function App() {
           repository={state.snapshot?.repository ?? state.project}
           loading={state.loading}
           onDelete={setDeleting}
+          authenticated={state.authenticated}
+          identity={state.identity}
+          onSignIn={() => setPanel('account')}
+          onSignOut={async () => {
+            await state.signOut();
+            setPanel(null);
+          }}
+          onError={state.setError}
           onRefresh={() => {
             void state.discover();
             void state.refresh();

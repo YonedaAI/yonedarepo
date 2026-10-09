@@ -25,13 +25,19 @@ export function NewProject({
       <form
         onSubmit={async (e) => {
           e.preventDefault();
+          if (busy) return;
           const data = new FormData(e.currentTarget);
           setBusy(true);
           setError('');
           try {
+            const name = String(data.get('name') ?? '').trim();
+            if (!name || new TextEncoder().encode(name).length > 100)
+              throw new Error(
+                'Choose a repository name of 1–100 bytes. Use a shorter name if it includes non-ASCII characters.',
+              );
             const result = await api<{ id: string }>('projects', {
               request_id: requestId,
-              name: data.get('name'),
+              name,
               source: data.get('source'),
             });
             await onCreated(result.id);
@@ -44,14 +50,24 @@ export function NewProject({
       >
         <label>
           Repository name
-          <input name="name" required maxLength={120} placeholder="my-website" />
+          <input name="name" required maxLength={100} placeholder="my-website" disabled={busy} />
         </label>
         <label>
           Public Git URL (optional)
-          <input name="source" type="url" placeholder="https://github.com/owner/repository" />
+          <input
+            name="source"
+            type="url"
+            placeholder="https://github.com/owner/repository"
+            disabled={busy}
+            aria-describedby="source-requirements"
+          />
         </label>
+        <p id="source-requirements" className="subtle">
+          Imports must be public and have a commit on their default branch. Empty repositories
+          cannot be imported. Leave the URL blank to start from the website template.
+        </p>
         <button type="submit" disabled={busy}>
-          {busy ? 'Creating repository…' : 'Create repository'}
+          {busy ? 'Requesting repository setup…' : 'Create repository'}
         </button>
       </form>
       {error && <p role="alert">{error}</p>}

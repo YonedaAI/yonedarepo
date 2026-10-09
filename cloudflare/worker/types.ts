@@ -1,7 +1,7 @@
 import type { ExecutionContainer } from './container';
 import type { YonedaEntrypoint } from './entrypoint';
 export type Json = Record<string, any>;
-export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string };
+export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
 export interface Env {
   REPOSITORIES: DurableObjectNamespace;
   WORKSPACES: DurableObjectNamespace;

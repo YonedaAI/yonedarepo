@@ -8,8 +8,8 @@ import {
   Plus,
 } from 'lucide-react';
 import type { useRepository } from '../../hooks/useRepository';
-import { api } from '../../lib/api';
 import { AccountPanel } from './AccountPanel';
+import { SetupProgress } from './SetupProgress';
 
 export function WorkspaceWelcome({
   state,
@@ -20,38 +20,29 @@ export function WorkspaceWelcome({
   onProject: () => void;
   onProviders: () => void;
 }) {
+  if (state.project && ['provisioning', 'failed'].includes(state.project.status))
+    return (
+      <SetupProgress
+        key={state.id}
+        project={state.project}
+        error={state.error}
+        onRetry={state.retrySetup}
+        onRefresh={state.refresh}
+      />
+    );
   if (state.loading || state.id)
     return (
       <section className="workspace-loading" aria-live="polite">
-        {state.project?.status === 'failed' ? (
-          <GitBranch size={28} />
-        ) : (
-          <LoaderCircle size={28} className="spin" />
-        )}
-        <h1>
-          {state.project?.status === 'failed'
-            ? 'Repository setup needs attention'
-            : 'Opening your workspace'}
-        </h1>
-        <p>
-          {state.project?.error ??
-            (state.project?.status === 'provisioning'
-              ? 'Preparing your repository. This page updates automatically.'
-              : 'Loading repositories and recorded context…')}
-        </p>
-        {state.project?.status === 'failed' && (
+        {state.error ? <GitBranch size={28} /> : <LoaderCircle size={28} className="spin" />}
+        <h1>{state.error ? 'Could not open your workspace' : 'Opening your workspace'}</h1>
+        <p>{state.error || 'Loading repositories and recorded context…'}</p>
+        {state.error && (
           <button
             type="button"
-            onClick={async () => {
-              try {
-                await api(`projects/${state.id}/retry`, {});
-                await state.discover();
-              } catch (error) {
-                state.setError((error as Error).message);
-              }
-            }}
+            disabled={state.loading}
+            onClick={() => void (state.id ? state.refresh() : state.discover())}
           >
-            Retry setup
+            Retry connection
           </button>
         )}
       </section>

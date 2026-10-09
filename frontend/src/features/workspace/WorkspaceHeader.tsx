@@ -1,6 +1,7 @@
 import { ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
 import { short } from '../../lib/api';
-import type { Repository } from '../../lib/types';
+import type { AccountIdentity, Repository } from '../../lib/types';
+import { AccountMenu } from './AccountMenu';
 import { RepositoryActions } from './RepositoryActions';
 
 export function WorkspaceHeader({
@@ -8,11 +9,21 @@ export function WorkspaceHeader({
   loading,
   onRefresh,
   onDelete,
+  authenticated,
+  identity,
+  onSignIn,
+  onSignOut,
+  onError,
 }: {
   repository?: Repository;
   loading: boolean;
   onRefresh: () => void;
   onDelete: (repository: Repository) => void;
+  authenticated: boolean;
+  identity: AccountIdentity | null;
+  onSignIn: () => void;
+  onSignOut: () => Promise<void>;
+  onError: (message: string) => void;
 }) {
   return (
     <header className="workspace-header">
@@ -41,6 +52,13 @@ export function WorkspaceHeader({
         >
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
         </button>
+        {authenticated ? (
+          <AccountMenu identity={identity} onSignOut={onSignOut} onError={onError} />
+        ) : (
+          <button type="button" className="quiet" disabled={loading} onClick={onSignIn}>
+            Sign in
+          </button>
+        )}
       </div>
     </header>
   );

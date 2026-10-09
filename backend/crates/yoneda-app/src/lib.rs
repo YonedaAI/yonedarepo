@@ -22,3 +22,7 @@ mod tests;
 #[cfg(test)]
 #[path = "tests/workspace.rs"]
 mod workspace_tests;
+
+#[cfg(test)]
+#[path = "tests/project_setup.rs"]
+mod project_setup_tests;
