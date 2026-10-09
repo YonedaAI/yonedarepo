@@ -1,3 +1,5 @@
+import { runTitle } from './runTitle';
+
 export function RunHistory({
   runs,
   selected,
@@ -13,7 +15,7 @@ export function RunHistory({
       <select id="recorded-run" value={selected} onChange={(event) => onSelect(event.target.value)}>
         {[...runs].reverse().map((run) => (
           <option key={run.id} value={run.id}>
-            {run.intent} · {run.status} · {new Date(run.created_at).toLocaleDateString()}
+            {runTitle(run.intent)} · {run.status} · {new Date(run.created_at).toLocaleDateString()}
           </option>
         ))}
       </select>

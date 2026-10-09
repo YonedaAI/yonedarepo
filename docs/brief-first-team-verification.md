@@ -65,6 +65,8 @@ The completed run recorded 15 GLM requests and 30 MiMo requests, including plann
 
 ## Limits
 
+Subsequent UI heading correction deployed as platform Worker `09b56303-54ea-4293-8520-ec222f049944`, without a container rollout. Run headings and history labels now use a first-sentence title bounded to 90 characters; the full approved brief and criteria remain in a collapsed, keyboard-accessible disclosure. TypeScript, Biome and the frontend production build passed. Served-console acceptance on the completed run measured an 18-pixel, one-line heading and verified exact preservation of the brief and all four criteria when expanded. Screenshot: ignored `artifacts/run-heading-acceptance/compact-heading.png`.
+
 Safe amendments after task activation, external agents joining hosted team tasks, automatic repair escalation and live six-agent capacity acceptance remain later work. Agent plan and handoff explanations remain assertions. Captures identify actual source and independent checks establish only their tested behavior; this acceptance does not establish graph superiority over plain notes or model comprehension.
 
 See [current team workflow](build-together.md), [the earlier explicit-plan acceptance](team-integration-verification.md) and [the separate context usefulness experiment](plans/context-usefulness-pilot.md).

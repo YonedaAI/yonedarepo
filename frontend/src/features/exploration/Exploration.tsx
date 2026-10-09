@@ -6,6 +6,7 @@ import { runCandidates } from '../team/teamView';
 import { DecisionForm } from './DecisionForm';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
+import { RunBrief } from './RunBrief';
 import { RunCandidates } from './RunCandidates';
 import { RunControls } from './RunControls';
 import { RunHistory } from './RunHistory';
@@ -14,6 +15,7 @@ import { RunWorkflow } from './RunWorkflow';
 import { initialRun } from './restartRun';
 import { runHasActiveAttempts } from './runControlState';
 import { hasPublishedWork } from './runDefaults';
+import { runTitle } from './runTitle';
 
 const RunComposer = lazy(() =>
   import('./RunComposer').then((module) => ({ default: module.RunComposer })),
@@ -147,8 +149,8 @@ export function Exploration({
             }}
           />
           <div className="intent-row">
-            <div>
-              <h2>{run.intent}</h2>
+            <div className="run-heading">
+              <h2>{runTitle(run.intent)}</h2>
               <div className="run-meta">
                 <span className={`status ${run.status}`}>
                   {publishedRun ? 'published' : run.status}
@@ -190,6 +192,7 @@ export function Exploration({
               onCancel={() => void act('cancel_run', { run_id: run.id })}
             />
           </div>
+          <RunBrief key={run.id} intent={run.intent} criteria={run.criteria} />
           {publishedRun && !activeAttempts && (
             <p className="subtle">
               This published run is recorded history. Choose Update{' '}
