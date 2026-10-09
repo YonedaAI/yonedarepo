@@ -1,5 +1,5 @@
 import { jwtVerify, SignJWT } from 'jose';
-import { error, response } from './http';
+import { error, response, safeId } from './http';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
 
@@ -29,7 +29,10 @@ export async function authorizePreview(env: Env, digest: string, token: string) 
       algorithms: ['HS256'],
       audience: 'yoneda-site-preview',
     });
-    return payload.digest === digest;
+    if (payload.digest !== digest || typeof payload.repo !== 'string' || !safeId(payload.repo))
+      return false;
+    await ledger(env, payload.repo, { op: 'snapshot' });
+    return true;
   } catch {
     return false;
   }

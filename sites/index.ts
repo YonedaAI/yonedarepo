@@ -25,7 +25,7 @@ export async function serveSite(req: Request, env: SitesEnv): Promise<Response> 
     const body=file.encoding==='base64'? Uint8Array.from(atob(file.content),(c)=>c.charCodeAt(0)):new TextEncoder().encode(file.content);
     return new Response(req.method==='HEAD'?null:body,{headers:{
       'content-type':mime[path.split('.').at(-1) ?? ''] ?? 'application/octet-stream',
-      'cache-control':parts[0]==='v'?'private, max-age=300':'no-store',
+      'cache-control':'no-store',
       'content-security-policy':"sandbox allow-scripts allow-forms; default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; worker-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'",
       'x-content-type-options':'nosniff','referrer-policy':'no-referrer','access-control-allow-origin':'*',
       'permissions-policy':'camera=(), microphone=(), geolocation=()',

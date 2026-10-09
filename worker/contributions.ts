@@ -1,4 +1,5 @@
 import { source } from './artifacts';
+import { cleanupLateRemote } from './repository-deletion';
 import { ledger, object, sha } from './storage';
 import type { Env, Json, Principal } from './types';
 export async function contribution(
@@ -40,9 +41,20 @@ export async function contribution(
         throw e;
       }
     }
-    using target = await env.ARTIFACTS.get(fork);
-    for (const token of (await target.listTokens()).tokens)
-      if (token.state === 'active') await target.revokeToken(token.id);
+    try {
+      using target = await env.ARTIFACTS.get(fork);
+      for (const token of (await target.listTokens()).tokens)
+        if (token.state === 'active') await target.revokeToken(token.id);
+      await command({ op: 'external_check', attempt_id: id });
+    } catch (error) {
+      // A fork can finish after the original deletion cleanup acknowledged an absent name.
+      try {
+        await command({ op: 'external_check', attempt_id: id });
+      } catch (fenced: any) {
+        if (fenced.code === 'REPOSITORY_DELETED') await cleanupLateRemote(env, repo, fork);
+      }
+      throw error;
+    }
     return {
       ...job.payload,
       attempt_id: id,

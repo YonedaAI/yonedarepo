@@ -40,17 +40,24 @@ impl RepositoryAuthority {
             self.state.storage().delete_alarm().await?;
             return Ok(());
         }
-        let snapshot =
-            execute(&db, json!({"op":"snapshot"})).map_err(|e| Error::RustError(e.to_string()))?;
+        let repository = execute(&db, json!({"op":"repository_status"}))
+            .map_err(|e| Error::RustError(e.to_string()))?;
         for _ in 0..8 {
-            let pending = execute(&db, json!({"op":"outbox"}))
+            let mut pending = execute(&db, json!({"op":"outbox"}))
                 .map_err(|e| Error::RustError(e.to_string()))?;
             if pending["jobs"].as_array().is_none_or(|v| v.is_empty()) {
                 break;
             }
+            if repository["status"] == "deleted"
+                && let Some(entries) = pending["jobs"].as_array_mut()
+            {
+                for entry in entries {
+                    entry["repository_deleted"] = json!(true);
+                }
+            }
             let ids = yoneda_cloudflare::deliver(
                 self.env.as_ref(),
-                snapshot["repository"]["id"].as_str().unwrap_or_default(),
+                repository["id"].as_str().unwrap_or_default(),
                 &pending["jobs"].to_string(),
             )
             .await
@@ -70,6 +77,18 @@ impl RepositoryAuthority {
             .map_err(|e| Error::RustError(e.to_string()))?;
         if !active.is_empty() || !pending.is_empty() {
             self.ensure_alarm().await?;
+        } else if repository["status"] == "deleted"
+            && !repository["deletion_remotes"]
+                .as_array()
+                .is_none_or(|names| names.is_empty())
+        {
+            let at = repository["next_cleanup_at"].as_i64().unwrap_or_else(now);
+            self.state
+                .storage()
+                .set_alarm(std::time::Duration::from_millis(
+                    u64::try_from(at.saturating_sub(now()).max(1_000)).unwrap_or(1_000),
+                ))
+                .await?;
         } else {
             self.state.storage().delete_alarm().await?;
         }

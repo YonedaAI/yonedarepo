@@ -86,7 +86,7 @@ it('durably schedules six roots with identical source and policy, preserving eac
   await initialize();
   const run = await start();
   expect(run.execution_count).toBe(6);
-  expect((await state()).capabilities.agent_limits).toEqual({ min_root_agents: 2, max_root_agents: 6, max_run_executions: 12, max_delegation_depth: 2, max_run_model_requests: null });
+  expect((await state()).capabilities.agent_limits).toEqual({ min_root_agents: 1, max_root_agents: 6, max_run_executions: 12, max_delegation_depth: 2, max_run_model_requests: null });
   expect(await pendingAgents()).toHaveLength(6);
   const claims = await Promise.all(agents.map((_, i) => claim(rootJob(i + 1))));
   claims.forEach((job, i) => {
@@ -105,7 +105,7 @@ it('rejects invalid root and delegation limits without leaving executions, graph
   await initialize();
   const before = await state();
   for (const extra of [
-    { agents: agents.slice(0, 1) },
+    { agents: [] },
     { agents: [...agents, { ...agents[0], strategy: 'seventh' }] },
     { delegation: { ...delegation, max_depth: 3 } },
     { delegation: { ...delegation, max_executions: 5 } },

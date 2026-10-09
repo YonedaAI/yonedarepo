@@ -13,6 +13,7 @@ export function checkLedger(snapshot: Json, request?: Json) {
       snapshot?.capabilities?.model_budgets !== 1) ||
     (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
       snapshot?.capabilities?.optional_model_requests !== 1) ||
+    (roots === 1 && limits?.min_root_agents !== 1) ||
     (roots > 4 && (!limits || roots > limits.max_root_agents)) ||
     (delegation?.enabled === true &&
       (!limits ||

@@ -9,9 +9,9 @@ use yoneda_core::{
 pub(super) fn validate_agents(c: &Value) -> Result<()> {
     let agents = c["agents"]
         .as_array()
-        .ok_or_else(|| bad("Choose 2–6 concurrent agents"))?;
+        .ok_or_else(|| bad("Choose 1–6 agents"))?;
     if !(MIN_ROOT_AGENTS..=MAX_ROOT_AGENTS).contains(&agents.len()) {
-        return Err(bad("Choose 2–6 concurrent agents"));
+        return Err(bad("Choose 1–6 agents"));
     }
     let mut strategies = BTreeSet::new();
     for agent in agents {

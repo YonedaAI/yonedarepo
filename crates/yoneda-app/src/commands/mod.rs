@@ -4,6 +4,7 @@ use yoneda_core::{Error, Result};
 mod acceptance;
 mod completion;
 mod delegation;
+mod deletion;
 mod events;
 mod execution_logs;
 mod external;
@@ -23,6 +24,10 @@ mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
+    let op = string(&c, "op")?;
+    if op == "delete_repository" {
+        return deletion::delete(db, &c, now);
+    }
     // This field is set by the authenticated adapter, after discarding caller authority fields.
     if let Some(workspace) = c["_workspace"].as_str()
         && workspace != "_admin"
@@ -36,7 +41,29 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
             ));
         }
     }
+    if let Ok(repository) = crate::storage::repo(db)
+        && repository["status"] == "deleted"
+    {
+        match op.as_str() {
+            "claim" => return Ok(serde_json::json!({"already_done":true,"deleted":true})),
+            "recover" => return deletion::recover(db, now),
+            "repository_status"
+            | "deletion_status"
+            | "retry_deletion_cleanup"
+            | "outbox"
+            | "outbox_sent" => {}
+            _ => {
+                return Err(Error::new(
+                    "REPOSITORY_DELETED",
+                    "This repository has been deleted",
+                ));
+            }
+        }
+    }
     match string(&c, "op")?.as_str() {
+        "repository_status" => crate::storage::repo(db),
+        "deletion_status" => deletion::status(db),
+        "retry_deletion_cleanup" => deletion::retry_cleanup(db, &c),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
         "update_policy" => policy::update(db, c, now),

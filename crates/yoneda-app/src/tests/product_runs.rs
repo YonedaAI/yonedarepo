@@ -155,7 +155,7 @@ fn context_references_are_validated_and_search_has_stable_pages() {
 fn general_runs_reject_missing_checks_or_unbounded_attempts_atomically() {
     let db = repo_with_policy(product_policy());
     let mut c = run_command();
-    c["agents"] = json!([{"provider":"mimo","model":"mimo-v2-flash","strategy":"only"}]);
+    c["agents"] = json!([]);
     assert!(call(&db, c).is_err());
     assert_eq!(
         call(&db, json!({"op":"snapshot"})).unwrap()["runs"],

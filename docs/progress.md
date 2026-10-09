@@ -76,3 +76,9 @@ Fresh review of `0fe6a65..73eeb90`: no Critical findings, six Important findings
 - Final UI deployment: Worker f73a8d4d-66f2-4e5e-b280-fea73adbc3e8, with no container-image change. Deployed Chrome verification showed all 31 history nodes fully inside the 390 px canvas, using 332 px of its height. Selecting the actual simulated incident node opened its evidence panel with upstream_p99_ms=350, limit=100 and simulated=true; Fit View also worked with the panel open.
 - Final implementation gate passed after the graph fix: `cargo xtask check` — 37 native Rust tests, 12 workerd tests, formatting, Clippy warnings denied, Wasm, TypeScript/Biome and Vite production build. The unchanged runtime image retains its eight-test Linux verification. The bounded development MVP is implemented and live fixture verification is complete; human acceptance and production readiness are not claimed.
 - Read-only `cargo xtask verify-live` passed again against the final UI deployment and refreshed artifacts/live-verification.json with complete=true. No additional paid agent run was started.
+
+## 2026-10-08: Repository lifecycle and per-run agents
+
+Repository deletion and editable 1–6-agent run rosters are implemented and deployed. The final combined gate passed 123 native Rust and 88 workerd tests, Wasm, formatting/Clippy, TypeScript/Biome, the Node runtime test and the browser build. Live acceptance deleted an approved disposable starter repository, confirmed its D1 tombstone and absent Artifacts remote, and exercised add/remove in a published-site update draft without starting inference. See [exact versions, evidence and verification limits](ui-workflow-evidence.md#2026-10-08-repository-deletion-and-editable-run-rosters).
+
+- [ ] REPO-001: [group frontend, Rust backend and Cloudflare infrastructure](plans/repository-layout-cleanup.md). Queued at the user's request; no structural move has started.

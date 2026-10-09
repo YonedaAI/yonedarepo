@@ -3,7 +3,7 @@ use crate::{Error, Result};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub const MIN_ROOT_AGENTS: usize = 2;
+pub const MIN_ROOT_AGENTS: usize = 1;
 pub const MAX_ROOT_AGENTS: usize = 6;
 pub const MAX_RUN_EXECUTIONS: usize = 12;
 pub const MAX_DELEGATION_DEPTH: u8 = 2;
