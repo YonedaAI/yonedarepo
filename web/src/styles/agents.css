@@ -6,6 +6,9 @@
 .agent-roster .subtle {
   margin: 0;
 }
+.approach-picker > .subtle {
+  margin-top: 8px;
+}
 .delegation-settings {
   padding: 18px;
   border: 1px solid var(--line);

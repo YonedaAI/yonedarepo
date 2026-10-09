@@ -168,3 +168,18 @@ with an empty request field and **No request cap** placeholder. Screenshots are 
 `artifacts/scalability/zai-default-live.png`, `token-plan-picker-live.png` and
 `optional-caps-live.png`. No saved connection was altered, run restarted or website published
 during browser acceptance.
+
+## Approach presets
+
+Each root agent now has an **Approach** dropdown with eight presets and a **Custom approach**
+option. The selected preset supplies the actual instructions recorded in the approved brief,
+not just a display label. Switching to custom retains those instructions for editing. Adding
+an agent chooses an unused preset, and presets assigned to other agents are disabled.
+
+TypeScript, Biome (**97 files**, no issues) and the production browser build passed. The live
+development Worker, version `c65b291c-32f7-4bae-b688-fc02b4a46ed7`, was checked for preset
+selection, custom editing, six agents with distinct defaults, and restoring a historical
+custom approach through the restart dialog. The screenshot is in ignored
+`artifacts/scalability/approach-picker-live.png`; logs are `check-approaches-final.log`,
+`build-approaches.log` and `deploy-approaches.log`. This browser-only deployment preserved
+the ready runner image above. All browser drafts were cancelled without starting inference.

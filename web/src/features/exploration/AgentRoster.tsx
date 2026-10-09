@@ -1,6 +1,8 @@
 import type { AgentLimits } from '../../lib/types';
 import { type Provider, providerNames } from '../workspace/ProviderSettings';
+import { ApproachPicker } from './ApproachPicker';
 import type { AgentDraft } from './agentLimits';
+import { nextApproach } from './approaches';
 import { agentConnectionIssue } from './restartRun';
 
 export function AgentRoster({
@@ -41,7 +43,7 @@ export function AgentRoster({
               {
                 id: crypto.randomUUID(),
                 connection: providers[agents.length % providers.length]?.id ?? '',
-                strategy: '',
+                strategy: nextApproach(agents.map((agent) => agent.strategy)),
               },
             ])
           }
@@ -109,17 +111,12 @@ export function AgentRoster({
               )}
             </p>
           )}
-          <label>
-            Approach
-            <input
-              value={agent.strategy}
-              onChange={(event) => update(agent.id, { strategy: event.target.value })}
-              required
-              maxLength={128}
-              disabled={locked}
-              placeholder="A different implementation or design to compare"
-            />
-          </label>
+          <ApproachPicker
+            value={agent.strategy}
+            used={agents.filter((other) => other.id !== agent.id).map((other) => other.strategy)}
+            disabled={locked}
+            onChange={(strategy) => update(agent.id, { strategy })}
+          />
           {agents.length > limits.min_root_agents && (
             <button
               type="button"
