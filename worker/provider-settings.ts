@@ -1,9 +1,10 @@
+import { providers } from '../shared/providers';
 import { error, readJson, response } from './http';
+import { type MiMoRouting, mimoRouting, validateMiMoKey } from './mimo-routing';
 import type { Env, Principal } from './types';
 import { seal } from './vault';
 import { workspace } from './workspace';
 
-const providers = ['codex', 'claude', 'mimo', 'zai', 'gemini'];
 export async function settingsRoute(
   req: Request,
   env: Env,
@@ -31,7 +32,8 @@ export async function settingsRoute(
     return error('NOT_FOUND', 'Unknown provider setting', 404);
   const body = await readJson(req);
   const provider = named ? body.provider : connection;
-  if (!providers.includes(provider)) return error('INVALID_INPUT', 'Unknown provider');
+  if (!providers.some((entry) => entry.id === provider))
+    return error('INVALID_INPUT', 'Unknown provider');
   if (
     typeof body.key !== 'string' ||
     body.key.trim().length < 8 ||
@@ -41,6 +43,13 @@ export async function settingsRoute(
     return error('INVALID_INPUT', 'Enter a provider API key');
   if (provider === 'claude' && body.model !== 'claude-sonnet-4-6')
     return error('INVALID_INPUT', 'Claude testing uses claude-sonnet-4-6');
+  let routing: MiMoRouting | undefined;
+  try {
+    routing = mimoRouting(provider, body.routing);
+    validateMiMoKey(provider, body.key.trim(), routing);
+  } catch (failure) {
+    return error('INVALID_INPUT', (failure as Error).message);
+  }
   const id = named ? `connection-${crypto.randomUUID()}` : provider;
   const sealed = await seal(
     env,
@@ -55,6 +64,7 @@ export async function settingsRoute(
       op: 'provider_put',
       provider,
       model: body.model,
+      ...(routing ? { routing } : {}),
       ...(named ? { connection: id, label: body.label } : {}),
       sealed,
     }),

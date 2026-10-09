@@ -8,6 +8,8 @@ pub mod agents;
 pub mod build;
 pub mod context;
 pub mod model_budget;
+pub mod provider_routing;
+pub mod providers;
 /// Remote MCP tool contracts shared with the Worker transport.
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub mod retry;

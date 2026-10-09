@@ -1,0 +1,63 @@
+[
+  {
+    "id": "mimo", "name": "MiMo", "harness": "claude", "protocol": "anthropic_messages",
+    "api_base": "https://api.xiaomimimo.com/anthropic",
+    "auth_header": "api-key", "auth_prefix": "", "secret_binding": "MIMO_KEY",
+    "default_model": "mimo-v2.6-flash", "allow_custom_model": true,
+    "catalog_url": "https://mimo.mi.com/docs/en-US/quick-start/model",
+    "models": [
+      { "id": "mimo-v2.6-flash", "label": "MiMo 2.6 Flash · Default" },
+      { "id": "mimo-v2.6-pro", "label": "MiMo 2.6 Pro" }
+    ],
+    "token_plan_regions": {
+      "cn": "https://token-plan-cn.xiaomimimo.com/anthropic",
+      "sgp": "https://token-plan-sgp.xiaomimimo.com/anthropic",
+      "ams": "https://token-plan-ams.xiaomimimo.com/anthropic"
+    }
+  },
+  {
+    "id": "zai", "name": "ZAI", "harness": "claude", "protocol": "anthropic_messages",
+    "api_base": "https://api.z.ai/api/anthropic",
+    "auth_header": "authorization", "auth_prefix": "Bearer ", "secret_binding": "ZAI_KEY",
+    "default_model": "glm-5.3-flash", "allow_custom_model": true,
+    "catalog_url": "https://docs.z.ai/devpack/latest-model",
+    "models": [
+      { "id": "glm-5.3-flash", "label": "GLM 5.3 Flash · Coding Plan default" },
+      { "id": "glm-5.3", "label": "GLM 5.3 · Coding Plan" }
+    ]
+  },
+  {
+    "id": "codex", "name": "OpenAI / Codex", "harness": "codex", "protocol": "openai_responses",
+    "api_base": "https://api.openai.com",
+    "auth_header": "authorization", "auth_prefix": "Bearer ", "secret_binding": "OPENAI_KEY",
+    "default_model": "gpt-5.6-luna", "allow_custom_model": true,
+    "catalog_url": "https://developers.openai.com/api/docs/models",
+    "models": [
+      { "id": "gpt-5.6-luna", "label": "GPT-5.6 Luna · Default" },
+      { "id": "gpt-6-luna", "label": "GPT-6 Luna" },
+      { "id": "gpt-6.1-sol", "label": "GPT-6.1 Sol" },
+      { "id": "gpt-6-astra", "label": "GPT-6 Astra · Higher cost" }
+    ]
+  },
+  {
+    "id": "claude", "name": "Anthropic / Claude", "harness": "claude", "protocol": "anthropic_messages",
+    "api_base": "https://api.anthropic.com",
+    "auth_header": "x-api-key", "auth_prefix": "", "secret_binding": "ANTHROPIC_KEY",
+    "default_model": "claude-sonnet-4-6", "allow_custom_model": false,
+    "catalog_url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "models": [ { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 · Workspace default" } ]
+  },
+  {
+    "id": "gemini", "name": "Google / Gemini", "harness": "gemini", "protocol": "gemini_generate_content",
+    "api_base": "https://generativelanguage.googleapis.com",
+    "auth_header": "x-goog-api-key", "auth_prefix": "", "secret_binding": "GEMINI_KEY",
+    "default_model": "gemini-3.8-flash", "allow_custom_model": true,
+    "catalog_url": "https://ai.google.dev/gemini-api/docs/models",
+    "models": [
+      { "id": "gemini-3.8-flash", "label": "Gemini 3.8 Flash · Default" },
+      { "id": "gemini-3.7-flash", "label": "Gemini 3.7 Flash" },
+      { "id": "gemini-3.5-flash-lite", "label": "Gemini 3.5 Flash Lite" },
+      { "id": "gemini-3.1-pro-preview", "label": "Gemini 3.1 Pro · Preview" }
+    ]
+  }
+]

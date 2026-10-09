@@ -45,6 +45,7 @@ export interface Snapshot {
   capabilities?: {
     agent_limits?: AgentLimits;
     model_budgets?: number;
+    optional_model_requests?: number;
   };
 }
 export interface AgentLimits {
@@ -52,7 +53,7 @@ export interface AgentLimits {
   max_root_agents: number;
   max_run_executions: number;
   max_delegation_depth: number;
-  max_run_model_requests: number;
+  max_run_model_requests: number | null;
 }
 export interface Graph {
   coverage?: string;

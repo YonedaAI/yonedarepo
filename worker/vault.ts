@@ -1,8 +1,10 @@
 //! Provider keys are encrypted in the workspace DO and decrypted only at scoped egress.
+
+import { providerDefinition } from '../shared/providers';
+import { mimoRouting, validateMiMoKey } from './mimo-routing';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
 
-const providers = ['codex', 'claude', 'mimo', 'zai', 'gemini'];
 async function vaultKey(env: Env) {
   if (!env.VAULT_KEY || !/^[a-f0-9]{64}$/.test(env.VAULT_KEY))
     throw Object.assign(new Error('Provider vault is not configured'), {
@@ -64,21 +66,33 @@ export async function providerKey(
   connection?: string,
   model?: string,
 ) {
-  if (!providers.includes(provider)) throw new Error('Unsupported provider');
+  return (await providerCredentials(env, owner, provider, connection, model)).key;
+}
+
+export async function providerCredentials(
+  env: Env,
+  owner: string,
+  provider: string,
+  connection?: string,
+  model?: string,
+  routing?: Json | null,
+) {
+  const definition = providerDefinition(provider);
   if (owner === '_admin') {
-    const bindings = {
-      codex: env.OPENAI_KEY,
-      claude: env.ANTHROPIC_KEY,
-      mimo: env.MIMO_KEY,
-      zai: env.ZAI_KEY,
-      gemini: env.GEMINI_KEY,
-    };
-    const binding = bindings[provider as keyof typeof bindings];
-    if (!binding)
+    const binding = env[definition.secret_binding as keyof Env];
+    if (
+      !binding ||
+      typeof binding !== 'object' ||
+      !('get' in binding) ||
+      typeof binding.get !== 'function'
+    )
       throw Object.assign(new Error('Provider secret is not configured'), {
         code: 'PROVIDER_MISSING',
       });
-    return binding.get();
+    const key: unknown = await (binding as { get(): Promise<unknown> }).get();
+    if (typeof key !== 'string') throw new Error('Provider secret is not a string');
+    validateMiMoKey(provider, key, routing);
+    return { key, routing: mimoRouting(provider, routing) };
   }
   const value = await workspace(env, owner, {
     op: 'provider_secret',
@@ -87,5 +101,10 @@ export async function providerKey(
   });
   if (model && value.model !== model)
     throw new Error('Provider model changed after run approval; start a new run');
-  return open(env, owner, provider, value.sealed, connection);
+  const savedRoute = mimoRouting(provider, value.routing);
+  if (model && JSON.stringify(savedRoute) !== JSON.stringify(mimoRouting(provider, routing)))
+    throw new Error('Provider routing changed after run approval; start a new run');
+  const key = await open(env, owner, provider, value.sealed, connection);
+  validateMiMoKey(provider, key, savedRoute);
+  return { key, routing: savedRoute };
 }

@@ -44,6 +44,10 @@ it('blocks approved budgets on older ledgers and container images before inferen
   const job = { kind: 'agent', payload: { run: request } };
   expect(() => checkRuntime({ protocol: 2 }, job)).toThrow('budgets');
   expect(() => checkRuntime({ protocol: 2, capabilities: { model_budgets: 1 } }, job)).not.toThrow();
+  const uncapped = { model_budgets: [{ ...budget, max_requests: null }] };
+  expect(() => checkLedger({ capabilities: { artifact_reads: 2, model_budgets: 1 } }, uncapped)).toThrow('updating');
+  expect(() => checkLedger({ capabilities: { artifact_reads: 2, model_budgets: 1, optional_model_requests: 1 } }, uncapped)).not.toThrow();
+  expect(() => checkRuntime({ protocol: 2, capabilities: { model_budgets: 1 } }, { kind: 'agent', payload: { run: uncapped } })).toThrow('optional');
 });
 
 it('reconciles provider usage including caches and reasoning without changing the response', async () => {

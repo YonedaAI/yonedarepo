@@ -238,6 +238,12 @@ fn repository_commands_enforce_the_trusted_workspace_scope() {
 fn attempt_request_limits_are_durable_fenced_and_capability_specific() {
     let db = repo_with_policy(product_policy());
     call(&db, run_command()).unwrap();
+    // Historical runs without explicit budget configuration retain their original limits.
+    db.query(
+        "UPDATE runs SET payload=json_remove(payload,'$.model_budgets','$.request_limits')",
+        &[],
+    )
+    .unwrap();
     let id = "job:site:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     for n in 1..=24 {

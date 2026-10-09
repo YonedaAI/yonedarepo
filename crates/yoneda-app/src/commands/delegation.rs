@@ -84,6 +84,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     if let Some(budget) = parent.get("budget") {
         child["budget"] = budget.clone();
     }
+    if let Some(routing) = parent.get("routing") {
+        child["routing"] = routing.clone();
+    }
     create(db, "executions", &id, &child)?;
     node(
         db,
@@ -176,7 +179,7 @@ fn status<S: SqlStore>(db: &S, parent: &Value, run: &Value) -> Result<Value> {
         json!({"execution":parent,"children":children,"candidates":candidates,"context":context,
         "context_truncated":context_truncated,"delegation":run["delegation"],
         "model_requests":run["model_requests"].as_i64().unwrap_or_default(),
-        "run_model_request_limit":yoneda_core::agents::MAX_RUN_MODEL_REQUESTS,
+        "run_model_request_limit":if run["request_limits"] == "optional-v1" {Value::Null} else {json!(yoneda_core::agents::MAX_RUN_MODEL_REQUESTS)},
         "model_budgets":run.get("model_budgets").cloned().unwrap_or_else(||json!([]))}),
     )
 }

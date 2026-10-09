@@ -17,7 +17,6 @@ export function runAgentLimits(snapshot: Snapshot): AgentLimits {
       limits.max_root_agents,
       limits.max_run_executions,
       limits.max_delegation_depth,
-      limits.max_run_model_requests,
     ].every((value) => Number.isSafeInteger(value)) ||
     limits.min_root_agents !== 2 ||
     limits.max_root_agents < 2 ||
@@ -26,7 +25,8 @@ export function runAgentLimits(snapshot: Snapshot): AgentLimits {
     limits.max_run_executions > 12 ||
     limits.max_delegation_depth < 1 ||
     limits.max_delegation_depth > 2 ||
-    limits.max_run_model_requests < 1
+    (limits.max_run_model_requests !== null &&
+      (!Number.isSafeInteger(limits.max_run_model_requests) || limits.max_run_model_requests < 1))
   ) {
     return legacyLimits;
   }

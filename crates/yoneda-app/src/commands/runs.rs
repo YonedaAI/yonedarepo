@@ -89,6 +89,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0});
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
+                run["request_limits"] = json!("optional-v1");
             }
             if let Some(previous) = &restart_of {
                 run["restart_of"] = json!(previous);

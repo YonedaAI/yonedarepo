@@ -1,4 +1,5 @@
 import type { OutboundHandler } from '@cloudflare/containers';
+import { providerDefinition } from '../shared/providers';
 import { error, readJson } from './http';
 import { requestUsage } from './model-budget';
 import { prepareModelRequest } from './model-policy';
@@ -7,7 +8,7 @@ import { trackProviderUsage } from './provider-usage';
 import { scopeFor } from './scope';
 import { ledger, sha } from './storage';
 import type { Env } from './types';
-import { providerKey } from './vault';
+import { providerCredentials } from './vault';
 import { workspace } from './workspace';
 export const modelHandler =
   (provider: 'codex' | 'claude' | 'gemini'): OutboundHandler<Env> =>
@@ -22,12 +23,13 @@ export const modelHandler =
       const prepared = prepareModelRequest(job, provider, path, await readJson(req, 256 * 1024));
       const snapshot = await ledger(env, scope.repo_id, { op: 'snapshot' });
       const owner = snapshot.repository.workspace ?? '_admin';
-      const key = await providerKey(
+      const { key } = await providerCredentials(
         env,
         owner,
         prepared.provider,
         job.payload.execution.connection,
         job.model,
+        job.payload.execution.routing,
       );
       const counted = await ledger(env, scope.repo_id, {
         op: 'reserve_request',
@@ -66,11 +68,8 @@ export const modelHandler =
         }
       }
       const headers = new Headers({ 'content-type': 'application/json' });
-      if (prepared.provider === 'gemini') headers.set('x-goog-api-key', key);
-      else if (prepared.provider !== 'claude') headers.set('authorization', `Bearer ${key}`);
-      else {
-        headers.set('x-api-key', key);
-      }
+      const definition = providerDefinition(prepared.provider);
+      headers.set(definition.auth_header, definition.auth_prefix + key);
       if (provider === 'claude') headers.set('anthropic-version', '2023-06-01');
       const result = await fetch(prepared.url, {
         method: 'POST',

@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "build": "pnpm --dir web build && (cd crates/yoneda-worker && worker-build --release)",
-    "check": "tsc --noEmit && biome check worker sites web/src",
-    "format": "biome check --write worker sites web/src",
+    "check": "tsc --noEmit && biome check worker sites web/src shared",
+    "format": "biome check --write worker sites web/src shared",
     "test": "vitest run",
     "test:runtime": "node --test tests/runtime/*.test.mjs",
     "deploy": "pnpm build && wrangler deploy"

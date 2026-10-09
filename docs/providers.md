@@ -3,10 +3,11 @@
 Users sign in and save their own keys under provider settings. Provider keys are encrypted with
 AES-256-GCM in the personal Workspace DO, with the workspace/provider/connection identity as authenticated
 data (v2; existing v1 provider records remain readable). Only the scoped Worker egress adapter decrypts them. Settings responses expose connection ID/name, provider,
-model and configuration status. A workspace can keep up to 32 independent connections, including multiple keys for one provider. Runs freeze connection IDs and models; removal or a model mismatch fails closed. A missing user key never falls back to platform credentials.
+model, billing route and configuration status. A workspace can keep up to 32 independent connections, including multiple keys for one provider. Runs freeze connection IDs, models and billing routes; removal or a model/route mismatch fails closed. A missing user key never falls back to platform credentials.
 
 The operator's Secrets Store bindings are `Codex`, `Claude`, `MiMo` and `ZAI`. They are available
-only to administrator-owned repositories. All upstream URLs are fixed in the adapter.
+only to administrator-owned repositories. Upstream URLs and authentication conventions are fixed
+in the shared provider registry, never supplied by a browser or agent.
 
 ### Current upstream routes
 
@@ -14,7 +15,8 @@ only to administrator-owned repositories. All upstream URLs are fixed in the ada
 | --- | --- | --- |
 | OpenAI/Codex | `https://api.openai.com/v1/responses` | OpenAI API key |
 | Anthropic/Claude | `https://api.anthropic.com/v1/messages` | Anthropic API key |
-| MiMo | `https://api.xiaomimimo.com/anthropic/v1/messages` | MiMo key with selected-model access |
+| MiMo API credits | `https://api.xiaomimimo.com/anthropic/v1/messages` | Regular `sk-` API key |
+| MiMo Token Plan | `https://token-plan-{cn,sgp,ams}.xiaomimimo.com/anthropic/v1/messages` | Dedicated `tp-` or `ttp-` key and its assigned region |
 | Google/Gemini | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` or `:streamGenerateContent` | Google AI Studio API key |
 | ZAI | `https://api.z.ai/api/anthropic/v1/messages` | Account access to ZAI's Anthropic-compatible coding endpoint |
 
@@ -31,13 +33,27 @@ before claiming general ZAI API-key support.
 | Claude | `claude-sonnet-4-6` | Anthropic Messages |
 | MiMo | `mimo-v2.6-flash` | Anthropic compatibility |
 | Gemini | `gemini-3.8-flash` | Native Gemini GenerateContent through Gemini CLI 0.63.0 |
-| ZAI | `glm-4.7-flash` | Anthropic compatibility; key/model entitlement must be verified live |
+| ZAI | `glm-5.3-flash` | Anthropic compatibility through the Coding Plan endpoint |
 
 The MiMo Flash default follows the current [MiMo pricing and model availability](https://mimo.mi.com/docs/pricing).
 Protocol setup: [MiMo Claude Code](https://mimo.mi.com/docs/integration/claudecode),
 [ZAI Claude Code](https://docs.z.ai/devpack/tool/claude).
 Gemini configuration follows the official [CLI proxy and authentication settings](https://geminicli.com/docs/reference/configuration/) and [current API models](https://ai.google.dev/gemini-api/docs/models). Its native CLI/Rust MCP roundtrip is tested with offline fixtures; paid-provider and deployed egress acceptance are separate.
 Configured models are recorded on the execution. No provider or model fallback is automatic.
+
+### MiMo billing source
+
+In **Agent providers → Add a connection**, choose **API credits** for a regular `sk-` key, or
+**Token Plan subscription** for a `tp-`/`ttp-` key. For Token Plan, select the region shown on
+your MiMo plan page: China, Singapore or Europe (Amsterdam). MiMo does not currently document a
+US Token Plan endpoint. The console detects a pasted Token Plan key but requires an explicit
+region. A mismatched key type is rejected before saving or sending inference. The saved route
+is frozen into root and child executions; there is no regional or billing fallback.
+See [MiMo's key and endpoint guide](https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access).
+
+ZAI Coding Plan and general API usage bundles are separate products. This connector uses the
+Coding Plan endpoint; saving a key here does not consume a regular API usage bundle. Existing
+connections retain their model IDs; new ZAI connections default to GLM-5.3-Flash.
 
 Claude testing starts with a **USD 20 ceiling**. The administrator's ceiling is shared across
 repositories, concurrent attempts and restarts in a Workspace DO. Personal BYOK workspaces have
@@ -68,11 +84,12 @@ no model output; YonedaRepo still counts the attempted request against the appro
 
 ## Run budgets in the console
 
-In **New run → Model budgets**, optionally enter a dollar budget for each selected model.
-Leave it blank for no dollar cap. **Advanced limits** contains request counts, response size,
-execution time and pricing. Roots using different connections for the same model, their subagents
+In **New run → Model budgets**, optionally enter a request limit or dollar budget for each model.
+Both are blank by default: new hosted runs have no YonedaRepo request or dollar cap unless you
+set one. **Advanced limits** contains response size, execution time and pricing.
+Roots using different connections for the same model, their subagents
 and infrastructure retries share that model's request and dollar allowance. Execution time applies
-to each attempt. The run also has an absolute 144-request ceiling.
+to each attempt. New runs have no hidden 24-request or aggregate 144-request ceiling.
 Known models use conservative pricing presets when you enter an amount; custom models require
 owner-entered rates under **Advanced limits**. Approving the run brief approves its configured
 limits and rates together. These settings are frozen with the brief; agents cannot
@@ -105,6 +122,37 @@ when another run begins.
 `.local/vault-key` securely. Deployment retains an existing Worker `VAULT_KEY`; it does not rotate
 the key on each deploy. A deliberate key rotation needs decrypt/re-encrypt migration before the
 old key is removed. Never put keys in Git, CLI arguments, browser storage or logs.
+
+## Adding a provider
+
+The public descriptor at `crates/yoneda-core/src/providers.json` is the single registry consumed
+by Rust validation/scheduling, `shared/providers.ts`, the browser picker and Worker egress.
+It contains no credentials. For a compatible provider, add one descriptor with a stable ID,
+display name, harness/protocol, HTTPS API base, authentication header/prefix, default model,
+model presets and official catalog URL. Personal BYOK connections then work through the shared
+vault and settings flow; operator credentials additionally need the named Cloudflare binding.
+
+Supported protocols are Anthropic Messages (`claude` harness), OpenAI Responses (`codex` harness)
+and Gemini GenerateContent (`gemini` harness). The API base excludes the protocol paths appended
+by its adapter. OpenAI Chat Completions alone is not Responses-compatible and requires an adapter.
+Provider-specific products belong in small routing adapters, as with `worker/mimo-routing.ts`.
+New protocols also need a request/stream adapter and compatible harness; they are not just an URL.
+
+Run the registry invariants, Worker protocol/scope tests and `cargo xtask check`. Verify actual
+authentication, tools and streaming with an explicitly authorized live check. Unknown pricing
+requires owner-entered rates only when a dollar cap is configured. No provider may change the
+frozen connection, billing product, region or model from an agent-supplied argument.
+
+### Upgrade compatibility
+
+This change adds JSON metadata, not SQL tables or columns. Existing numeric request limits and
+legacy routing remain readable. New runs record `request_limits: "optional-v1"`; `max_requests:
+null` means uncapped. Historical runs retain their original per-model and aggregate limits.
+Deploy the new Rust ledger, Worker and runner image together. Capabilities advertise
+`optional_model_requests: 1`; the Worker refuses old runners before inference. Restarting creates
+a fresh run on the current policy; historical explicitly set limits are shown for editing rather
+than silently erased. To roll back, stop new attempts and restore a compatible ledger/image pair;
+older binaries cannot deserialize new null limits.
 
 The execution image includes pinned Node/Rust tooling, pnpm and Python's standard library.
 Owner-approved setup/check commands run in fresh containers. Dependency egress permits only

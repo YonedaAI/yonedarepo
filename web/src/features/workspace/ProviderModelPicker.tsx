@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { providerDefinition } from '../../../../shared/providers';
 import { modelCatalogUrl, modelOptions } from './providerModels';
 
 const customModel = '__custom_model__';
@@ -18,7 +19,7 @@ export function ProviderModelPicker({
 }) {
   const [custom, setCustom] = useState(false);
   const options = modelOptions(provider, connections, model);
-  const allowCustom = provider !== 'claude';
+  const allowCustom = providerDefinition(provider).allow_custom_model;
   const selected = custom
     ? customModel
     : options.some((option) => option.id === model)
@@ -65,7 +66,7 @@ export function ProviderModelPicker({
       )}
       <small className="provider-model-note">
         {provider === 'zai'
-          ? 'This connector uses ZAI’s Anthropic-compatible endpoint. Check that your account supports the selected model.'
+          ? 'Uses your ZAI Coding Plan subscription. Regular API usage bundles are separate and are not used by this connector.'
           : allowCustom
             ? 'Availability varies by account.'
             : 'This workspace permits Sonnet only.'}

@@ -44,7 +44,10 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
               <div>
                 <dt>Model requests</dt>
                 <dd>
-                  {count(budget.requests)} / {count(budget.max_requests)}
+                  {count(budget.requests)}
+                  {budget.max_requests == null
+                    ? ' · No request cap'
+                    : ` / ${count(budget.max_requests)}`}
                 </dd>
               </div>
               <div>

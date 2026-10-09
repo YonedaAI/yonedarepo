@@ -4,17 +4,33 @@ use std::collections::BTreeSet;
 use yoneda_core::{Error, Result, model_budget::ModelBudget};
 
 pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>>> {
-    let Some(value) = c.get("model_budgets") else {
-        return Ok(None);
-    };
     if !general {
+        if c.get("model_budgets").is_none() {
+            return Ok(None);
+        }
         return Err(Error::new(
             "FORBIDDEN",
             "Model budgets require a hosted coding run",
         ));
     }
+    let agents = c["agents"]
+        .as_array()
+        .ok_or_else(|| bad("Missing scheduled agents"))?;
+    let defaults = agents
+        .iter()
+        .map(|agent| {
+            Ok((
+                (string(agent, "provider")?, string(agent, "model")?),
+                serde_json::json!({"provider":agent["provider"],"model":agent["model"],
+            "max_requests":null,"max_output_tokens":4096,"max_execution_ms":600000,
+            "spend_limit_microusd":null,"pricing":null}),
+            ))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    let defaults = serde_json::json!(defaults.into_values().collect::<Vec<_>>());
     let budgets: Vec<ModelBudget> =
-        serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
+        serde_json::from_value(c.get("model_budgets").unwrap_or(&defaults).clone())
+            .map_err(|e| bad(&e.to_string()))?;
     let mut keys = BTreeSet::new();
     for budget in &budgets {
         budget.validate_configuration()?;

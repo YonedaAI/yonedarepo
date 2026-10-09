@@ -7,6 +7,8 @@ export function checkLedger(snapshot: Json, request?: Json) {
     snapshot?.capabilities?.artifact_reads !== 2 ||
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
+    (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
+      snapshot?.capabilities?.optional_model_requests !== 1) ||
     (roots > 4 && (!limits || roots > limits.max_root_agents)) ||
     (delegation?.enabled === true &&
       (!limits ||
@@ -22,6 +24,13 @@ export function checkLedger(snapshot: Json, request?: Json) {
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (
+    job.payload?.run?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
+    health?.capabilities?.optional_model_requests !== 1
+  )
+    throw new Error(
+      'Container image does not support optional request limits; wait for rollout completion',
+    );
   if (
     job.kind === 'agent' &&
     job.payload?.run?.model_budgets !== undefined &&

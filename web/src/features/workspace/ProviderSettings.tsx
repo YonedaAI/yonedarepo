@@ -1,15 +1,24 @@
 import { Bot, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { billingLabel, ProviderBillingPicker, type ProviderRouting } from './ProviderBillingPicker';
 import { ProviderModelPicker } from './ProviderModelPicker';
 import { defaults, providerNames } from './providerModels';
 
 export { defaults, providerNames } from './providerModels';
-export type Provider = { id: string; label: string; provider: string; model: string };
+export type Provider = {
+  id: string;
+  label: string;
+  provider: string;
+  model: string;
+  routing?: ProviderRouting | null;
+};
 export function ProviderSettings({ onClose }: { onClose: () => void }) {
   const [configured, setConfigured] = useState<Provider[]>([]);
   const [provider, setProvider] = useState('mimo');
   const [model, setModel] = useState(defaults.mimo);
+  const [plan, setPlan] = useState('api_credits');
+  const [region, setRegion] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -46,6 +55,8 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
                 <strong>{p.label}</strong>
                 <small>
                   {providerNames[p.provider]} · <code>{p.model}</code>
+                  {p.provider === 'mimo' && <> · {billingLabel(p.routing)}</>}
+                  {p.provider === 'zai' && ' · Coding Plan'}
                 </small>
               </div>
               <button
@@ -95,6 +106,9 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
               key: data.get('key'),
               provider,
               model,
+              ...(provider === 'mimo'
+                ? { routing: { plan, ...(plan === 'token_plan' ? { region } : {}) } }
+                : {}),
             });
             form.reset();
             await load();
@@ -125,6 +139,8 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
             onChange={(e) => {
               setProvider(e.target.value);
               setModel(defaults[e.target.value]);
+              setPlan('api_credits');
+              setRegion('');
             }}
           >
             {Object.keys(defaults).map((p) => (
@@ -142,16 +158,30 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
           disabled={busy}
           onChange={setModel}
         />
+        {provider === 'mimo' && (
+          <ProviderBillingPicker
+            plan={plan}
+            region={region}
+            disabled={busy}
+            onPlan={setPlan}
+            onRegion={setRegion}
+          />
+        )}
         <label>
           API key
           <input
             type="password"
+            key={provider}
             name="key"
             autoComplete="off"
             required
             minLength={8}
             maxLength={4096}
             disabled={busy}
+            onChange={(event) => {
+              if (provider === 'mimo' && /^(tp-|ttp-)/.test(event.target.value))
+                setPlan('token_plan');
+            }}
           />
         </label>
         <p className="subtle">

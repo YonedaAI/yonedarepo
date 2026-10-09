@@ -31,24 +31,41 @@ function ModelAllowance({
     <fieldset className="model-allowance" disabled={locked}>
       <legend>{providerNames[model.provider] ?? model.provider}</legend>
       <code className="model-name">{model.model}</code>
-      <label className="model-dollar-label">
-        Estimated budget (USD, optional)
-        <span className="model-dollar-input">
-          <span aria-hidden="true">$</span>
+      <div className="budget-controls budget-main-controls">
+        <label className="model-request-label">
+          Request limit (optional)
           <input
             type="number"
-            min="0.000001"
-            step="any"
-            value={value.usd}
-            placeholder="No dollar cap"
-            onChange={(event) => {
-              const next = editDollarBudget(model, value, event.target.value);
-              onChange(next);
-              if (next.usdEnabled && (!next.inputRate || !next.outputRate)) setAdvancedOpen(true);
-            }}
+            min={1}
+            step={1}
+            value={value.requests}
+            placeholder="No request cap"
+            onChange={(event) => change({ requests: event.target.value })}
           />
-        </span>
-      </label>
+        </label>
+        <label className="model-dollar-label">
+          Estimated budget (USD, optional)
+          <span className="model-dollar-input">
+            <span aria-hidden="true">$</span>
+            <input
+              type="number"
+              min="0.000001"
+              step="any"
+              value={value.usd}
+              placeholder="No dollar cap"
+              onChange={(event) => {
+                const next = editDollarBudget(model, value, event.target.value);
+                onChange(next);
+                if (next.usdEnabled && (!next.inputRate || !next.outputRate)) setAdvancedOpen(true);
+              }}
+            />
+          </span>
+        </label>
+      </div>
+      <p className="subtle">
+        One request is one model call. Blank means no YonedaRepo request cap; provider quotas still
+        apply.
+      </p>
       {value.usdEnabled && (
         <p className={missingRates ? 'budget-rate-guidance' : 'subtle'}>
           {missingRates
@@ -60,18 +77,6 @@ function ModelAllowance({
         <summary>Advanced limits</summary>
         <div className="budget-advanced-content">
           <div className="budget-controls">
-            <label>
-              Model requests
-              <input
-                type="number"
-                min={1}
-                max={144}
-                step={1}
-                required
-                value={value.requests}
-                onChange={(event) => change({ requests: event.target.value })}
-              />
-            </label>
             <label>
               Minutes per execution
               <input
@@ -173,8 +178,9 @@ export function ModelBudgetSettings({
       ) : (
         <>
           <p className="subtle">
-            Shared by agents using the same model. Blank means no dollar cap; request and execution
-            limits still apply.
+            Request and dollar caps are optional and off by default. Any limits you set are shared
+            by agents, subagents and retries using the same model. Execution time and response size
+            remain bounded.
           </p>
           {!models.length && <p>Select a provider connection above to configure its budget.</p>}
           {models.map((model) => (

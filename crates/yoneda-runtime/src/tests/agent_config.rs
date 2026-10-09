@@ -97,4 +97,10 @@ fn gemini_turn_budget_uses_approved_request_allowance_and_preserves_legacy_defau
     assert_eq!(configured["model"]["name"], "gemini-3.8-flash");
     assert_eq!(configured["mcp"]["allowed"], json!(["yonedarepo"]));
     assert_eq!(configured["mcpServers"], mcp["mcpServers"]);
+    let mut uncapped = budget;
+    uncapped.max_requests = None;
+    assert_eq!(
+        gemini_settings("gemini-3.8-flash", &mcp, Some(&uncapped))["model"]["maxSessionTurns"],
+        -1
+    );
 }

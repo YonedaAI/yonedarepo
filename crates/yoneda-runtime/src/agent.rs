@@ -119,7 +119,7 @@ fn gemini_settings(
     mcp: &Value,
     budget: Option<&yoneda_core::model_budget::ModelBudget>,
 ) -> Value {
-    let turns = budget.map_or(24, |budget| budget.max_requests);
+    let turns = budget.map_or(24, |budget| budget.max_requests.unwrap_or(-1));
     json!({"security":{"auth":{"selectedType":"gemini-api-key","enforcedType":"gemini-api-key"}},
         "model":{"name":model,"maxSessionTurns":turns},"telemetry":{"enabled":false},
         "privacy":{"usageStatisticsEnabled":false},"mcp":{"allowed":["yonedarepo"]},

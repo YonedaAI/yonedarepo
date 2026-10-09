@@ -192,6 +192,11 @@ fn completed_parent_allows_issued_child_to_finish_and_status_is_scoped() {
 fn aggregate_model_budget_survives_retries_and_blocks_children_atomically() {
     let db = coding_repo();
     run(&db, 6, true, 12);
+    db.query(
+        "UPDATE runs SET payload=json_remove(payload,'$.model_budgets','$.request_limits')",
+        &[],
+    )
+    .unwrap();
     claim(&db, "job:scale:agent-1");
     let child = delegate(&db, "job:scale:agent-1", 1, "first").unwrap();
     for i in 1..=6 {
