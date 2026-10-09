@@ -1,5 +1,11 @@
 import { expect, it } from 'vitest';
-import { transcriptFailureCode } from '../../web/src/features/exploration/providerFailure';
+import { executionFailureCode, transcriptFailureCode } from '../../web/src/features/exploration/providerFailure';
+
+it('recognizes the recorded execution timeout without blaming provider credentials', () => {
+  expect(executionFailureCode({ error: 'Execution deadline exceeded' })).toBe('EXECUTION_TIMEOUT');
+  expect(executionFailureCode({ error: 'EXECUTION_TIMEOUT: Execution deadline exceeded' })).toBe('EXECUTION_TIMEOUT');
+  expect(executionFailureCode({ error: 'User mentioned Execution deadline exceeded' })).toBeUndefined();
+});
 
 const requestMessage = 'This provider/model group exhausted its approved request budget';
 const spendMessage = 'This provider/model group has insufficient approved spend remaining for the conservative request ceiling';

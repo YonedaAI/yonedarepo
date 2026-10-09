@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 
 pub const MAX_SAFE_BUDGET_INTEGER: i64 = 9_007_199_254_740_991;
 pub const MAX_MODEL_INPUT_BYTES: i64 = 256 * 1024;
+/// Owner-approved wall time per execution; queued jobs have a separate wait window.
+pub const MAX_MODEL_EXECUTION_MS: i64 = 1_800_000;
 const TOKEN_OVERHEAD: i64 = 8192;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -52,7 +54,7 @@ impl ModelBudget {
                 .max_requests
                 .is_some_and(|limit| !(1..=MAX_SAFE_BUDGET_INTEGER).contains(&limit))
             || !(256..=4096).contains(&self.max_output_tokens)
-            || !(60_000..=600_000).contains(&self.max_execution_ms)
+            || !(60_000..=MAX_MODEL_EXECUTION_MS).contains(&self.max_execution_ms)
             || self
                 .spend_limit_microusd
                 .is_some_and(|limit| !(1..=MAX_SAFE_BUDGET_INTEGER).contains(&limit))

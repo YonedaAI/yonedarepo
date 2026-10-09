@@ -63,11 +63,12 @@ async fn run(job: Value) {
         Err(_) => {
             tracing::error!(
                 event = "attempt.deadline",
+                error_code = "EXECUTION_TIMEOUT",
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0
             );
             broker(
                 "/failed",
-                json!({"error":"Execution deadline exceeded","retryable":false}),
+                json!({"error":"EXECUTION_TIMEOUT: Execution deadline exceeded","retryable":false}),
                 true,
             )
             .await

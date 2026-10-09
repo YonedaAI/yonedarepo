@@ -28,10 +28,14 @@ Log writes are best effort and cannot fail an otherwise successful model call. A
 
 Historical runs show an honest empty timeline because request telemetry cannot be reconstructed. **Explain failure** still reads their recorded terminal outcome and maps only supported statuses or exact platform errors to safe guidance.
 
+`EXECUTION_TIMEOUT` identifies the approved wall-time limit, separately from provider failures. The browser also recognizes the exact historical `Execution deadline exceeded` outcome. A timeout can follow successful HTTP 200 model responses and may have no harness transcript because the process never finished; its retained request timeline is still available. Review **Restart run → Minutes per execution** (1–30 minutes, default 10). Provider-settings recovery is shown only for diagnosed provider errors.
+
 ## Deployment and local checks
 
 Deploy the Worker bundle containing the new Rust ledger and browser before expecting timeline reads. Existing DOs apply migration 0006 on their next command; no D1 migration, DO class rename, secret replacement or manual SQL is needed. Deploy the rebuilt container for native Rust JSON lifecycle logs. Keep both earlier SQL migrations and Cloudflare DO class migration history intact.
 
 Worker and DO code updates propagate separately for a short period. New commands can briefly receive an unknown-operation response from an older DO. Confirm the new commands against existing objects before declaring the rollout ready; preserve stored data and stable DO identities. See [Cloudflare code update guidance](https://developers.cloudflare.com/durable-objects/platform/known-issues/#code-updates).
+
+Ledger and runtime health advertise their maximum supported execution time. Longer approvals fail closed against older deployments. New jobs separate their dispatch deadline, startup allowance and approved execution duration. The container watchdog renews SDK idle activity only after confirming the attempt remains valid, so background executions can continue beyond the twelve-minute idle setting. See [Cloudflare activity renewal](https://developers.cloudflare.com/containers/api/container-class/#renewactivitytimeout).
 
 `cargo xtask check` requires no paid inference. Logging checks cover v5 upgrade/repeat migration, idempotency, cursor boundaries, attempt fencing, real DO eviction, workspace isolation, private-field exclusion and sink failure. A live provider build is a separate acceptance step.

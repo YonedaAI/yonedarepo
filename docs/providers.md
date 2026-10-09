@@ -93,7 +93,7 @@ no model output; YonedaRepo still counts the attempted request against the appro
 
 In **New run → Model budgets**, optionally enter a request limit or dollar budget for each model.
 Both are blank by default: new hosted runs have no YonedaRepo request or dollar cap unless you
-set one. **Advanced limits** contains response size, execution time and pricing.
+set one. **Minutes per execution** is visible for every model: the default remains 10 minutes, and owners can approve 1–30 minutes. **Advanced limits** contains response size and pricing. A timeout stops work even if provider requests succeed; use Restart run to approve more time or narrow the task.
 Roots using different connections for the same model, their subagents
 and infrastructure retries share that model's request and dollar allowance. Execution time applies
 to each attempt. New runs have no hidden 24-request or aggregate 144-request ceiling.

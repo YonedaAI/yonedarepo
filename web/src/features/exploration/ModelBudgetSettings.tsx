@@ -32,6 +32,18 @@ function ModelAllowance({
       <legend>{providerNames[model.provider] ?? model.provider}</legend>
       <code className="model-name">{model.model}</code>
       <div className="budget-controls budget-main-controls">
+        <label>
+          Minutes per execution
+          <input
+            type="number"
+            min={1}
+            max={30}
+            step="any"
+            required
+            value={value.minutes}
+            onChange={(event) => change({ minutes: event.target.value })}
+          />
+        </label>
         <label className="model-request-label">
           Request limit (optional)
           <input
@@ -77,18 +89,6 @@ function ModelAllowance({
         <summary>Advanced limits</summary>
         <div className="budget-advanced-content">
           <div className="budget-controls">
-            <label>
-              Minutes per execution
-              <input
-                type="number"
-                min={1}
-                max={10}
-                step="any"
-                required
-                value={value.minutes}
-                onChange={(event) => change({ minutes: event.target.value })}
-              />
-            </label>
             <label>
               Output tokens per response
               <input
