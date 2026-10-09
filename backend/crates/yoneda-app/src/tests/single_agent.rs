@@ -1,6 +1,6 @@
 use super::*;
 
-fn policy() -> Value {
+pub(super) fn policy() -> Value {
     json!({"version":"single-v1","suite":"commands-v1",
         "environment":"linux-node24-rust1.94-v1","required_checks":["build"],
         "build":{"checks":[{"name":"build","argv":["node","--check","app.js"],"timeout_seconds":30}],"static_dir":"public"}})
@@ -10,7 +10,7 @@ fn agents() -> Value {
         {"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}])
 }
 // Synthetic capture/evaluator observations verify ledger transitions without inference or Git.
-fn eligible(db: &NativeStore, run: &str, index: usize, commit: &str) -> String {
+pub(super) fn eligible(db: &NativeStore, run: &str, index: usize, commit: &str) -> String {
     let execution = format!("{run}:agent-{index}");
     let agent = format!("job:{execution}");
     call(db, json!({"op":"claim","job_id":agent})).unwrap();
@@ -34,7 +34,7 @@ fn eligible(db: &NativeStore, run: &str, index: usize, commit: &str) -> String {
             "setup":[],"commands":[{"name":"build","output":{"exit":0}}]},"evidence":"e".repeat(64)})).unwrap();
     candidate
 }
-fn publish(db: &NativeStore, candidate: &str, request: &str, commit: &str) {
+pub(super) fn publish(db: &NativeStore, candidate: &str, request: &str, commit: &str) {
     let repository = call(db, json!({"op":"snapshot"})).unwrap()["repository"].clone();
     let receipt = call(
         db,

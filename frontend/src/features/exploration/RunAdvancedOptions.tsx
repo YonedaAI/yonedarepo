@@ -10,6 +10,10 @@ const contextKinds = new Set([
   'proposed_decision',
   'question',
   'decision',
+  'context',
+  'candidate',
+  'evaluation',
+  'execution',
 ]);
 
 export function RunAdvancedOptions({
@@ -27,18 +31,24 @@ export function RunAdvancedOptions({
   onContextChange: (context: string[]) => void;
   onPolicyChange: (policy: string) => void;
 }) {
-  const reusable = nodes.filter((node) => contextKinds.has(node.kind));
+  const reusable = nodes.filter((node) => contextKinds.has(node.kind) || context.includes(node.id));
   return (
     <>
       <details>
         <summary>Reuse existing context ({context.length} selected)</summary>
         {!reusable.length && <p>This repository has no reusable context yet.</p>}
+        {!!reusable.length && (
+          <p>
+            Up to 50 records can be frozen into this brief, including prior artifacts and decisions.
+            Agent findings remain assertions until verified or adopted.
+          </p>
+        )}
         {reusable.map((node) => (
           <label key={node.id}>
             <span>
               <input
                 type="checkbox"
-                disabled={locked}
+                disabled={locked || (context.length >= 50 && !context.includes(node.id))}
                 checked={context.includes(node.id)}
                 onChange={(event) =>
                   onContextChange(

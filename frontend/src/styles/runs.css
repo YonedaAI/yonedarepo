@@ -73,6 +73,17 @@
   margin-top: 16px;
   font-size: 13px;
 }
+.published-run-notice {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--blue);
+  border-radius: 8px;
+  background: #f6f8fb;
+}
+.published-run-notice p {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
 .run-actions {
   display: flex;
   gap: 12px;

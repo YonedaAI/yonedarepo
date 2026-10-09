@@ -16,6 +16,8 @@ mod graph_status;
 mod model_budgets;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
+#[path = "tests/published_continuation.rs"]
+mod published_continuation;
 #[path = "tests/restarts.rs"]
 mod restarts;
 #[path = "tests/single_agent.rs"]

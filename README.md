@@ -17,6 +17,8 @@ See [provider setup and adding a provider](docs/providers.md).
 
 Choose one to six agents for each run: one for a focused change, or several to compare independent approaches. Add, remove or change agents before approving the brief. Optional subagents allow up to 12 agents in total, through two delegation levels. Children inherit their parent's approved provider, model, source and context; each produces a separately captured and evaluated alternative. The owner chooses what ships. See [concurrency and delegation limits](docs/runbook.md#agent-concurrency-and-delegation).
 
+After publication, **Update website** / **Update project** continues the winning approach and model from canonical source. The previous brief, criteria, decision and relevant artifacts/context are carried forward for review. Agent membership and settings remain editable, with fresh usage and current repository checks.
+
 [Current UI and deployment verification](docs/ui-workflow-evidence.md) · [Presenter video script and production brief](docs/video/production-brief.md)
 
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.

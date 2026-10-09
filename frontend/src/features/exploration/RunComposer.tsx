@@ -7,9 +7,11 @@ import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLi
 import { DelegationSettings } from './DelegationSettings';
 import { ModelBudgetSettings } from './ModelBudgetSettings';
 import { type ModelBudgetDraft, selectedModels, serializeModelBudgets } from './modelBudgets';
+import { PublishedRunNotice } from './PublishedRunNotice';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
-import { defaultRunAgents, hasPublishedWebsite } from './runDefaults';
+import { hasPublishedWork } from './runDefaults';
+import { defaultConnections, runDraft } from './runDraft';
 export function RunComposer({
   busy,
   snapshot,
@@ -25,37 +27,24 @@ export function RunComposer({
   onProviders: () => void;
   initialRun?: InitialRun;
 }) {
-  const [source] = useState(initialRun);
-  const [intent, setIntent] = useState(source?.intent ?? '');
-  const [criteria, setCriteria] = useState(
-    source?.criteria.join('\n') ??
-      'Works on mobile and desktop\nKeyboard accessible navigation\nClear content and useful interactions',
-  );
+  const [draft] = useState(() => runDraft(snapshot, initialRun));
+  const [intent, setIntent] = useState(draft.intent);
+  const [criteria, setCriteria] = useState(draft.criteria);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
   const [providersError, setProvidersError] = useState('');
   const [providersRequest, setProvidersRequest] = useState(0);
   const limits = runAgentLimits(snapshot);
   const budgetSupport = snapshot.capabilities?.model_budgets === 1;
-  const [budgets, setBudgets] = useState<Record<string, ModelBudgetDraft>>(source?.budgets ?? {});
-  const [agents, setAgents] = useState<AgentDraft[]>(
-    () => source?.agents ?? defaultRunAgents(snapshot),
-  );
-  const [context, setContext] = useState<string[]>(source?.context ?? []);
-  const [policy, setPolicy] = useState(
-    source?.policy ?? JSON.stringify(snapshot.repository.policy?.build, null, 2),
-  );
+  const [budgets, setBudgets] = useState<Record<string, ModelBudgetDraft>>(draft.budgets);
+  const [agents, setAgents] = useState<AgentDraft[]>(draft.agents);
+  const [context, setContext] = useState<string[]>(draft.context);
+  const [policy, setPolicy] = useState(draft.policy);
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
-  const [delegation, setDelegation] = useState<DelegationDraft>(
-    source?.delegation ?? {
-      enabled: false,
-      max_depth: 1,
-      max_executions: agents.length,
-    },
-  );
+  const [delegation, setDelegation] = useState<DelegationDraft>(draft.delegation);
   const models = selectedModels(agents, providers);
-  const updating = !source && hasPublishedWebsite(snapshot);
+  const updating = !draft.restartOf && hasPublishedWork(snapshot);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
     let current = true;
@@ -65,15 +54,7 @@ export function RunComposer({
       .then((r) => {
         if (!current) return;
         setProviders(r.providers);
-        setAgents((a) =>
-          a.map((v, i) => ({
-            ...v,
-            connection:
-              source || r.providers.some((p) => p.id === v.connection)
-                ? v.connection
-                : (r.providers[i % r.providers.length]?.id ?? ''),
-          })),
-        );
+        setAgents((agents) => defaultConnections(agents, r.providers));
       })
       .catch((e) => {
         if (current) setProvidersError(e.message);
@@ -96,7 +77,7 @@ export function RunComposer({
         throw new Error('Choose a configured provider connection for every agent.');
       }
       if (agents.some((agent) => agentConnectionIssue(agent, providers))) {
-        throw new Error('Review changed provider connections before approving this restart.');
+        throw new Error('Review changed provider connections before approving this run.');
       }
       const modelBudgets = budgetSupport ? serializeModelBudgets(models, budgets) : undefined;
       let current: Repository = snapshot.repository;
@@ -124,7 +105,8 @@ export function RunComposer({
           .map((c) => c.trim())
           .filter(Boolean),
         context,
-        ...(source ? { restart_of: source.id } : {}),
+        ...(draft.restartOf ? { restart_of: draft.restartOf } : {}),
+        ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         agents: agents.map((a) => ({
           id: a.id,
           connection: a.connection,
@@ -161,8 +143,14 @@ export function RunComposer({
         void start();
       }}
     >
-      <h3>{updating ? 'Improve your website' : 'Describe the change'}</h3>
-      {source && (
+      <h3>{updating ? 'What’s next for your project?' : 'Describe the change'}</h3>
+      {updating && (
+        <PublishedRunNotice
+          publication={draft.publication}
+          contextTotal={draft.inheritedContextTotal}
+        />
+      )}
+      {draft.restartOf && (
         <p className="restart-notice">
           Restarting creates a new run from the current canonical source. The previous run and its
           failure evidence remain in history. Current repository checks apply. Review connections

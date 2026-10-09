@@ -228,3 +228,46 @@ On the existing published Field Notes website, the live **Update website** draft
 Evidence under ignored `artifacts/scalability/`: `deletion-and-run-roster-check.log`, `run-roster-browser-build.log`, `deploy-deletion-and-run-roster.log`, `deploy-repository-deletion-sites.log`, `activate-deletion-and-run-roster-immediate.log`, `repository-deleted-live.png`, `repository-deletion-discovery-after.json`, `repository-deletion-artifacts-readback.log`, `single-agent-update-live.png`, `editable-run-agents-live.png` and `published-run-history-live.png`.
 
 Repository layout cleanup is queued separately as [REPO-001](plans/repository-layout-cleanup.md). No directories were moved as part of these behavior fixes.
+
+## 2026-10-08: Published update continuity
+
+Following the repository layout cleanup (`0f390c4`), updates now resolve the exact decision
+matching canonical `published_commit`, instead of resetting to the first preset or copying
+the latest failed/unpublished run. **Update website** / **Update project** restores the winning
+agent's approach, connection and model, criteria and configured model limits, with fresh usage.
+A selected subagent becomes one new root; rejected competitors are not automatically restarted.
+Current repository verification policy remains authoritative. Missing or changed connections
+require an explicit replacement choice.
+
+The editable context selection carries available published-decision, intent, candidate,
+evaluation, execution, artifact and winning-lineage assertion records, bounded to 50. A new
+`continuation_of` field is validated by Rust against a verified decision at the current published
+commit, then frozen into the run with a decision → run **continues** edge. Pending publication,
+stale/missing/non-published decisions and mixed restart/continuation requests cannot schedule
+work. Older ledger binaries are fenced by the `published_continuation` capability. There are no
+SQL schema or DO class migrations, and the existing native prompt/MCP artifact reader consumes
+the frozen context without a runner image change.
+
+Validation: the initial composer regression reproduced the wrong preset/connection. The combined
+`cargo xtask check` passed Rust formatting/Clippy, **134 native Rust tests**, the actual workers-rs
+Wasm build, TypeScript/Biome, **100 workerd tests**, one Node runtime test and the production
+browser build. A final browser extraction/lazy-load change passed affected TypeScript/Biome,
+production build and **15 composer/restart tests**. The browser entry chunk is 472.88 kB and
+has no chunk-size warning. An expanded **12-test** continuation/composer check also verified
+reading a prior published artifact from real workerd R2 through its digest-verifying adapter
+after DO eviction, while refusing an artifact outside the new execution's frozen allowlist.
+Capture, evaluation and publication observations in integration fixtures are explicitly
+synthetic; none of these tests uses paid inference.
+
+Development Worker **`957899d3-a455-42b9-8ebe-6f6d571f9e9d`** is deployed with immediate DO code
+update mode and `--containers-rollout none`. Container builds/updates and sites deployment were
+not part of this change. Live Chrome acceptance opened **one more time → Update website**:
+the published base was **`38a249e8f`**, its original SF cycling brief was shown, **GLM / ZAI /
+glm-5.3-flash** and **Rich interactions** were selected, and eight context records were carried
+forward. The recorded rationale **Easier to use** and original criteria plus a preservation
+criterion appeared. Adding/removing a second draft agent preserved the winner and its context.
+The draft was cancelled; no run, provider key, shipping decision or publication was changed.
+
+Ignored evidence: `artifacts/published-continuation/check-final.log`,
+`frontend-check-final.log`, `browser-build-final.log`, `composer-check-final.log`,
+`artifact-continuation-final.log`, `deploy.log` and `update-published-base-live.png`.

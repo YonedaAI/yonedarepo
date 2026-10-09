@@ -11,6 +11,8 @@ export function checkLedger(snapshot: Json, request?: Json) {
     ) ||
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
+    (request?.continuation_of !== undefined &&
+      snapshot?.capabilities?.published_continuation !== 1) ||
     (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
       snapshot?.capabilities?.optional_model_requests !== 1) ||
     (roots === 1 && limits?.min_root_agents !== 1) ||
