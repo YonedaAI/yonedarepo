@@ -4,6 +4,7 @@ import type { Repository, Snapshot } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
 import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLimits';
+import { approachPresets } from './approaches';
 import { DelegationSettings } from './DelegationSettings';
 import { ModelBudgetSettings } from './ModelBudgetSettings';
 import { type ModelBudgetDraft, selectedModels, serializeModelBudgets } from './modelBudgets';
@@ -42,12 +43,12 @@ export function RunComposer({
       {
         id: crypto.randomUUID(),
         connection: '',
-        strategy: 'Small, focused implementation with clear content',
+        strategy: approachPresets[0].instructions,
       },
       {
         id: crypto.randomUUID(),
         connection: '',
-        strategy: 'Explore a different design with accessible interactions',
+        strategy: approachPresets[1].instructions,
       },
     ],
   );
