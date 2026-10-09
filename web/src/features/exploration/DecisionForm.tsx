@@ -36,12 +36,12 @@ export function DecisionForm({
       />
       {alternatives.map((c) => (
         <label key={c.id}>
-          Why keep {c.strategy ?? c.summary} as an alternative?
+          Why wasn’t “{c.strategy ?? c.summary}” selected?
           <input
             required
             value={reasons[c.id] ?? ''}
             onChange={(e) => setReasons((all) => ({ ...all, [c.id]: e.target.value }))}
-            placeholder="Record its tradeoff or why it was rejected"
+            placeholder="Explain why it wasn’t selected or when it might be useful."
             maxLength={2048}
           />
         </label>

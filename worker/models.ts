@@ -1,20 +1,26 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { providerDefinition } from '../shared/providers';
 import { error, readJson } from './http';
+import { attemptLog, failureCode, providerStatusCode } from './logging';
 import { requestUsage } from './model-budget';
 import { prepareModelRequest } from './model-policy';
 import { trackClaudeUsage } from './model-usage';
 import { trackProviderUsage } from './provider-usage';
 import { scopeFor } from './scope';
 import { ledger, sha } from './storage';
-import type { Env } from './types';
+import type { Env, Scope } from './types';
 import { providerCredentials } from './vault';
 import { workspace } from './workspace';
 export const modelHandler =
   (provider: 'codex' | 'claude' | 'gemini'): OutboundHandler<Env> =>
   async (req, env, ctx) => {
+    const started = Date.now();
+    let attempt: Scope | undefined;
+    let upstream = false;
+    let requestNumber: number | undefined;
     try {
       const { scope } = await scopeFor(env, ctx.containerId);
+      attempt = scope;
       const job = scope.job;
       if (job.kind !== 'agent' || job.payload.execution.harness !== provider)
         return error('FORBIDDEN', 'Provider outside this attempt scope', 403);
@@ -39,6 +45,7 @@ export const modelHandler =
         ...requestUsage(prepared.body, provider),
         count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
       });
+      requestNumber = counted.number;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
       if (prepared.reservation) {
@@ -71,6 +78,8 @@ export const modelHandler =
       const definition = providerDefinition(prepared.provider);
       headers.set(definition.auth_header, definition.auth_prefix + key);
       if (provider === 'claude') headers.set('anthropic-version', '2023-06-01');
+      await attemptLog(env, scope, 'model.request_started', { request_number: requestNumber });
+      upstream = true;
       const result = await fetch(prepared.url, {
         method: 'POST',
         headers,
@@ -79,6 +88,12 @@ export const modelHandler =
       });
       if (result.status >= 300 && result.status < 400)
         throw new Error('Provider redirected the request; no credentials were forwarded');
+      await attemptLog(env, scope, 'model.response_headers', {
+        request_number: requestNumber,
+        http_status: result.status,
+        duration_ms: Date.now() - started,
+        error_code: providerStatusCode(result.status),
+      });
       const tracked = prepared.reservation
         ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
         : result;
@@ -94,6 +109,12 @@ export const modelHandler =
           )
         : tracked;
     } catch (e: any) {
+      if (attempt)
+        await attemptLog(env, attempt, upstream ? 'model.transport_failed' : 'model.rejected', {
+          request_number: requestNumber,
+          duration_ms: Date.now() - started,
+          error_code: upstream ? 'PROVIDER_TRANSPORT' : failureCode(e),
+        });
       return error(e.code ?? 'MODEL_PROXY', e.message, 409);
     }
   };

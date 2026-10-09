@@ -16,10 +16,13 @@ mod secure_fs;
 mod site;
 mod source_filter;
 mod supervisor;
+mod supervisor_task;
+mod telemetry;
 mod workspace;
 pub use git::{capture, git};
 pub use mcp::mcp;
 pub use supervisor::serve;
+pub use telemetry::init_telemetry;
 pub use workspace::{export_workspace, materialize};
 fn err(e: impl std::fmt::Display) -> Error {
     Error::new("RUNTIME", e.to_string())

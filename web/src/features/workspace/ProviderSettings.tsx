@@ -1,24 +1,21 @@
-import { Bot, Plus, Trash2 } from 'lucide-react';
+import { Bot, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { billingLabel, ProviderBillingPicker, type ProviderRouting } from './ProviderBillingPicker';
-import { ProviderModelPicker } from './ProviderModelPicker';
-import { defaults, providerNames } from './providerModels';
+import { billingLabel, type ProviderRouting } from './ProviderBillingPicker';
+import { ProviderConnectionForm } from './ProviderConnectionForm';
+import { providerNames } from './providerModels';
 
-export { defaults, providerNames } from './providerModels';
 export type Provider = {
   id: string;
   label: string;
   provider: string;
   model: string;
   routing?: ProviderRouting | null;
+  version?: number;
 };
 export function ProviderSettings({ onClose }: { onClose: () => void }) {
   const [configured, setConfigured] = useState<Provider[]>([]);
-  const [provider, setProvider] = useState('mimo');
-  const [model, setModel] = useState(defaults.mimo);
-  const [plan, setPlan] = useState('api_credits');
-  const [region, setRegion] = useState('');
+  const [editing, setEditing] = useState<Provider | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -62,6 +59,18 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
               <button
                 type="button"
                 className="icon-button"
+                aria-label={`Edit connection ${p.label}`}
+                disabled={busy}
+                onClick={() => {
+                  setEditing(p);
+                  setMessage('');
+                }}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                type="button"
+                className="icon-button"
                 aria-label={`Remove connection ${p.label}`}
                 disabled={busy}
                 onClick={async () => {
@@ -73,6 +82,7 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
                       method: 'DELETE',
                     });
                     if (!r.ok) throw new Error('Could not remove connection');
+                    if (editing?.id === p.id) setEditing(null);
                     await load();
                     setMessage(
                       'Connection removed. Existing runs using it can no longer make model calls.',
@@ -92,113 +102,24 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
       ) : (
         <p className="inline-empty">No connections yet. Add a key below to start hosted agents.</p>
       )}
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = e.currentTarget;
-          const data = new FormData(form);
-          setBusy(true);
-          setError('');
-          setMessage('');
-          try {
-            await api('settings/connections', {
-              label: data.get('label'),
-              key: data.get('key'),
-              provider,
-              model,
-              ...(provider === 'mimo'
-                ? { routing: { plan, ...(plan === 'token_plan' ? { region } : {}) } }
-                : {}),
-            });
-            form.reset();
-            await load();
-            setMessage('Connection added. Choose it when creating a run.');
-          } catch (e) {
-            setError((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <h3>Add a connection</h3>
-        <label>
-          Connection name
-          <input
-            name="label"
-            placeholder="Personal testing"
-            required
-            maxLength={80}
-            disabled={busy}
-          />
-        </label>
-        <label>
-          Provider
-          <select
-            value={provider}
-            disabled={busy}
-            onChange={(e) => {
-              setProvider(e.target.value);
-              setModel(defaults[e.target.value]);
-              setPlan('api_credits');
-              setRegion('');
-            }}
-          >
-            {Object.keys(defaults).map((p) => (
-              <option key={p} value={p}>
-                {providerNames[p]}
-              </option>
-            ))}
-          </select>
-        </label>
-        <ProviderModelPicker
-          key={provider}
-          provider={provider}
-          model={model}
-          connections={configured}
-          disabled={busy}
-          onChange={setModel}
-        />
-        {provider === 'mimo' && (
-          <ProviderBillingPicker
-            plan={plan}
-            region={region}
-            disabled={busy}
-            onPlan={setPlan}
-            onRegion={setRegion}
-          />
-        )}
-        <label>
-          API key
-          <input
-            type="password"
-            key={provider}
-            name="key"
-            autoComplete="off"
-            required
-            minLength={8}
-            maxLength={4096}
-            disabled={busy}
-            onChange={(event) => {
-              if (provider === 'mimo' && /^(tp-|ttp-)/.test(event.target.value))
-                setPlan('token_plan');
-            }}
-          />
-        </label>
-        <p className="subtle">
-          Hosted runs use your provider billing. Claude uses Sonnet with the existing $20 workspace
-          allowance. Models are recorded with every run.
+      {error && (
+        <p role="alert" className="form-error">
+          {error}
         </p>
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
-        )}
-        {message && <p role="status">{message}</p>}
-        <button type="submit" disabled={busy || loading}>
-          <Plus size={16} />
-          {busy ? 'Saving…' : 'Add connection'}
-        </button>
-      </form>
+      )}
+      {message && <p role="status">{message}</p>}
+      <ProviderConnectionForm
+        key={editing?.id ?? 'new'}
+        editing={editing}
+        connections={configured}
+        disabled={busy || loading}
+        onCancel={() => setEditing(null)}
+        onSaved={async () => {
+          await load();
+          setEditing(null);
+          setMessage('Connection saved. Restart a finished run to use the updated settings.');
+        }}
+      />
     </section>
   );
 }

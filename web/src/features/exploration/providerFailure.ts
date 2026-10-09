@@ -1,6 +1,7 @@
 import { providerNames } from '../workspace/providerModels';
 
 export type ProviderFailureCode =
+  | 'PROVIDER_CONFIGURATION'
   | 'PROVIDER_BALANCE'
   | 'PROVIDER_AUTH'
   | 'PROVIDER_FORBIDDEN'
@@ -14,6 +15,11 @@ export type ProviderFailureCode =
   | 'HARNESS_BUDGET';
 
 const notices: Record<ProviderFailureCode, { title: string; action: string }> = {
+  PROVIDER_CONFIGURATION: {
+    title: 'key and billing settings do not match',
+    action:
+      'Edit the saved connection. A MiMo tp- or ttp- key needs Token Plan and its assigned region. Then use Restart run.',
+  },
   PROVIDER_BALANCE: {
     title: 'account balance is insufficient',
     action:
@@ -120,6 +126,11 @@ function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
   if (typeof result === 'string') {
     const prefix = 'API Error: 409 ';
     const text = result.startsWith(prefix) ? result.slice(prefix.length) : result;
+    if (
+      text === 'This is a Token Plan key. Select Token Plan and its region.' ||
+      text === 'Token Plan requires its dedicated tp- or ttp- key'
+    )
+      return 'PROVIDER_CONFIGURATION';
     if (text === 'This provider/model group exhausted its approved request budget')
       return 'MODEL_REQUEST_LIMIT';
     if (
@@ -135,7 +146,11 @@ function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
   }
   if (!record(body)) return undefined;
   const code = record(body.error) ? body.error.code : body.code;
-  return code === 'MODEL_REQUEST_LIMIT' || code === 'MODEL_SPEND_LIMIT' ? code : undefined;
+  return code === 'MODEL_REQUEST_LIMIT' ||
+    code === 'MODEL_SPEND_LIMIT' ||
+    code === 'PROVIDER_CONFIGURATION'
+    ? code
+    : undefined;
 }
 
 /** Only final structured outcomes and exact broker budget denials are recognized. */

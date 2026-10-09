@@ -183,3 +183,18 @@ custom approach through the restart dialog. The screenshot is in ignored
 `artifacts/scalability/approach-picker-live.png`; logs are `check-approaches-final.log`,
 `build-approaches.log` and `deploy-approaches.log`. This browser-only deployment preserved
 the ready runner image above. All browser drafts were cancelled without starting inference.
+## 2026-10-08: MiMo recovery, retained logs and decision copy
+
+The historical Chicago run's MiMo transcript reported a local HTTP 409: its Token Plan key was configured for API credits. No inference request completed. Connection editing now preserves the encrypted key, applies optimistic version checks, and validates the key against billing source and region. Starting a run also checks legacy connections before creating execution work.
+
+The deployed console successfully saved the existing MiMo connection with Token Plan / Singapore and an empty replacement-key field. An incompatible API credits selection was rejected with actionable guidance. Existing run approvals remain frozen.
+
+Worker version `317dd142-c588-4dbe-b336-716d894332a9` includes the new log viewer and decision wording. The deployed Wasm digest was compared with the local build and matched. An older Workspace DO briefly returned an unknown-operation error during propagation; the subsequent existing-connection save succeeded. No DO identity or stored data was replaced.
+
+Both completed Field Notes approaches expose **View logs**. The live viewer loaded and refreshed an empty historical timeline with the correct Coding Plan label. These runs predate request logging, so this does not establish a populated production inference timeline. Cloudflare tail separately captured a structured `request.rejected` record with `PROVIDER_CONFIGURATION` and HTTP 409; only allowlisted application fields were retained in the local evidence export.
+
+The deployed Linux container image was exercised locally with an explicitly invalid offline job. It emitted correlated JSON `attempt.started`, `attempt.failed` and `attempt.callback_failed` records; neither a private payload marker nor the fixture supervisor token appeared in them. The fixture used no inference and its temporary container was stopped.
+
+The shipping dialog now asks **Why wasn’t “[approach]” selected?**, with **Explain why it wasn’t selected or when it might be useful.** as the placeholder. Browser acceptance opened the dialog and verified the deployed wording without recording a decision or publishing a candidate.
+
+Validation: `cargo xtask doctor` and `cargo xtask check` passed, including Rust formatting/Clippy, 116 native Rust tests, the actual workers-rs Wasm build, TypeScript/Biome, 75 workerd tests, one Node runtime test and the browser production build. The Linux image build also passed 29 runtime tests. Local evidence is under ignored `artifacts/scalability/`: `check-logging-final.log`, `native-json-logging-fixture.json`, `cloudflare-safe-logs.json`, `decision-wording.png`, `mimo-connection-saved.png` and `execution-logs-empty-history.png`.

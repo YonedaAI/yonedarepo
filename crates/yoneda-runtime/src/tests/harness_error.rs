@@ -171,3 +171,15 @@ fn model_budgets_stripped_worker_envelopes_preserve_only_exact_allowlisted_cause
         assert_ne!(wrong_status.code, code);
     }
 }
+
+#[test]
+fn legacy_token_plan_configuration_failure_is_actionable_without_raw_provider_text() {
+    let raw = "API Error: 409 This is a Token Plan key. Select Token Plan and its region.";
+    let error = failure(&output(409, raw), &evidence());
+    assert_eq!(error.code, "PROVIDER_CONFIGURATION");
+    assert!(error.message.contains("connection"));
+    assert_eq!(
+        failure(&output(409, &format!("{raw} private-token")), &evidence()).code,
+        "RUNTIME"
+    );
+}

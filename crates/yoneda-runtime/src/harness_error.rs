@@ -52,15 +52,17 @@ fn terminal_diagnostic(output: &Value) -> Option<(&'static str, &'static str)> {
     }
     if result["api_error_status"] == 409 {
         let body = result["result"].as_str()?.strip_prefix("API Error: 409 ")?;
-        return budget_diagnostic(body);
+        return proxy_diagnostic(body);
     }
     diagnostic(result["api_error_status"].as_u64()?)
 }
 
-fn budget_diagnostic(body: &str) -> Option<(&'static str, &'static str)> {
+fn proxy_diagnostic(body: &str) -> Option<(&'static str, &'static str)> {
     // Some Claude-compatible SDKs replace the JSON error with its message.
     // Match our complete Worker messages, never infer a cause from arbitrary text.
     let code = match body {
+        "This is a Token Plan key. Select Token Plan and its region."
+        | "Token Plan requires its dedicated tp- or ttp- key" => "PROVIDER_CONFIGURATION",
         "This provider/model group exhausted its approved request budget" => "MODEL_REQUEST_LIMIT",
         "This provider/model group has insufficient approved spend remaining for the conservative request ceiling" => {
             "MODEL_SPEND_LIMIT"
@@ -70,11 +72,16 @@ fn budget_diagnostic(body: &str) -> Option<(&'static str, &'static str)> {
             match error["error"]["code"].as_str()? {
                 "MODEL_REQUEST_LIMIT" => "MODEL_REQUEST_LIMIT",
                 "MODEL_SPEND_LIMIT" => "MODEL_SPEND_LIMIT",
+                "PROVIDER_CONFIGURATION" => "PROVIDER_CONFIGURATION",
                 _ => return None,
             }
         }
     };
     match code {
+        "PROVIDER_CONFIGURATION" => Some((
+            "PROVIDER_CONFIGURATION",
+            "The saved provider connection has incompatible key and billing settings. Edit its billing source and region before restarting.",
+        )),
         "MODEL_REQUEST_LIMIT" => Some((
             "MODEL_REQUEST_LIMIT",
             "This provider/model group reached its owner-approved request allowance. Review the run budget before approving a new run.",

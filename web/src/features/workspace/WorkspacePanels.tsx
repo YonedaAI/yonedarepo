@@ -1,10 +1,14 @@
+import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
 import { AgentConnections } from './AgentConnections';
 import { DemoGuide } from './DemoGuide';
 import { NewProject } from './NewProject';
 import { OwnerConnection } from './OwnerConnection';
-import { ProviderSettings } from './ProviderSettings';
+
+const ProviderSettings = lazy(() =>
+  import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
+);
 
 export type WorkspacePanel = 'agents' | 'providers' | 'project' | 'owner' | 'guide' | null;
 const titles = {
@@ -30,7 +34,11 @@ export function WorkspacePanels({
       {panel === 'agents' && state.snapshot && (
         <AgentConnections repo={state.id} onClose={onClose} />
       )}
-      {panel === 'providers' && state.authenticated && <ProviderSettings onClose={onClose} />}
+      {panel === 'providers' && state.authenticated && (
+        <Suspense fallback={<p role="status">Loading connections…</p>}>
+          <ProviderSettings onClose={onClose} />
+        </Suspense>
+      )}
       {panel === 'project' && state.authenticated && (
         <NewProject
           onClose={onClose}

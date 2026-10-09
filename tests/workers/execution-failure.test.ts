@@ -19,6 +19,12 @@ it('explains the exact SDK-stripped terminal request and spend budget errors', (
   expect(transcriptFailureCode(transcript(`API Error: 409 ${spendMessage}`))).toBe('MODEL_SPEND_LIMIT');
 });
 
+it('identifies legacy Token Plan configuration errors without exposing transcript text', () => {
+  const message = 'API Error: 409 This is a Token Plan key. Select Token Plan and its region.';
+  expect(transcriptFailureCode(transcript(message))).toBe('PROVIDER_CONFIGURATION');
+  expect(transcriptFailureCode(transcript(`${message} private detail`))).toBeUndefined();
+});
+
 it('accepts allowlisted JSON budget codes while discarding arbitrary provider messages', () => {
   const result = `API Error: 409 ${JSON.stringify({ error: { code: 'MODEL_SPEND_LIMIT', message: '<script>private provider detail</script>' } })}`;
   expect(transcriptFailureCode(transcript(result))).toBe('MODEL_SPEND_LIMIT');

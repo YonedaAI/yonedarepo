@@ -2,6 +2,7 @@ import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
 import { short } from '../../lib/api';
 import { ExecutionFailure } from './ExecutionFailure';
 import { executionStatus } from './ExecutionHierarchy';
+import { ExecutionLogs } from './ExecutionLogs';
 import { SiteLink } from './SiteLink';
 import { SourceDiff } from './SourceDiff';
 
@@ -83,6 +84,7 @@ export function CandidateCard({
             onProviders={onProviders}
           />
         )}
+        {execution && <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />}
         {candidate && (
           <>
             <div className="revision">

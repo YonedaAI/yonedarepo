@@ -13,3 +13,5 @@ walkdir = "2"
 tempfile = "3"
 libc = "0.2"
 ignore = "0.4.33"
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "std", "registry"] }

@@ -36,7 +36,11 @@ export function validateMiMoKey(provider: string, key: string, routing?: Json | 
   if (!route) return;
   const tokenPlan = /^(tp-|ttp-)/.test(key);
   if (route.plan === 'token_plan' && !tokenPlan)
-    throw new Error('Token Plan requires its dedicated tp- or ttp- key');
+    throw Object.assign(new Error('Token Plan requires its dedicated tp- or ttp- key'), {
+      code: 'PROVIDER_CONFIGURATION',
+    });
   if (route.plan === 'api_credits' && tokenPlan)
-    throw new Error('This is a Token Plan key. Select Token Plan and its region.');
+    throw Object.assign(new Error('This is a Token Plan key. Select Token Plan and its region.'), {
+      code: 'PROVIDER_CONFIGURATION',
+    });
 }

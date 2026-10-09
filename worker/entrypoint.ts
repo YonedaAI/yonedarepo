@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { now } from './http';
+import { attemptLog, failureCode, writeLog } from './logging';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
 import { authorizePreview } from './sites';
@@ -89,6 +90,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             model_calls: 0,
             created_at: now(),
           };
+          await attemptLog(this.env, scope, 'execution.started');
           if (job.kind === 'capture') {
             const canonical = job.payload.base.repository.split('/')[1];
             const name = `candidate-${(await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
@@ -112,6 +114,11 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
           await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
           message.ack();
         } catch (e: any) {
+          writeLog('queue.dispatch_failed', {
+            repo_id: envelope.repo_id,
+            job_id: envelope.job_id,
+            error_code: failureCode(e),
+          });
           if (['LEASE_HELD', 'FENCED', 'ATTEMPTS_EXHAUSTED'].includes(e.code)) message.ack();
           else message.retry({ delaySeconds: 20 });
         }

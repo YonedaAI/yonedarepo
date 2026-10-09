@@ -22,9 +22,8 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "signup" | "login" | "session" | "logout" | "recover" => {
                 accounts::handle(&db, &command, now)
             }
-            "settings" | "provider_put" | "provider_delete" | "provider_secret" => {
-                providers::handle(&db, &command, now)
-            }
+            "settings" | "provider_put" | "provider_update" | "provider_delete"
+            | "provider_secret" => providers::handle(&db, &command, now),
             "budget_status" | "budget_reserve" | "budget_settle" => {
                 budget::handle(&db, &command, now)
             }

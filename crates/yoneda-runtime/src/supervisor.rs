@@ -1,6 +1,5 @@
-use crate::{broker::broker, err, jobs::execute_job};
+use crate::err;
 use serde_json::{Value, json};
-use std::time::Duration;
 use yoneda_core::Result;
 pub(crate) fn health() -> Value {
     json!({"protocol":2,"capabilities":{"agent_delegation":1,"model_budgets":1,"optional_model_requests":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
@@ -21,28 +20,29 @@ pub async fn serve() -> Result<()> {
         atomic::{AtomicBool, Ordering},
     };
     let started = Arc::new(AtomicBool::new(false));
-    let app=Router::new().route("/health",get(||async {Json(health())})).route("/job",post(move |headers:HeaderMap,Json(job):Json<Value>| {
-        let started=started.clone();async move {
-            let secret=std::env::var("SUPERVISOR_TOKEN").unwrap_or_default();
-            if secret.is_empty() || headers.get("authorization").and_then(|v|v.to_str().ok())!=Some(format!("Bearer {secret}").as_str()) {return (StatusCode::FORBIDDEN,Json(json!({"error":"forbidden"}))).into_response();}
-            if !started.swap(true,Ordering::SeqCst) {
-                tokio::spawn(async move {
-                    let heartbeat=tokio::spawn(async {
-                        loop {tokio::time::sleep(Duration::from_secs(20)).await;
-                            if broker("/heartbeat",json!({}),true).await.is_err() {std::process::exit(2);}
-                        }
-                    });
-                    let result=match crate::execution_limits::timeout_ms(&job) {
-                        Ok(timeout)=>tokio::time::timeout(Duration::from_millis(timeout),execute_job(&job)).await,
-                        Err(error)=>Ok(Err(error)),
-                    };
-                    let report=match result {Ok(Ok(value))=>broker("/complete",value,true).await,Ok(Err(error))=>broker("/failed",json!({"error":error.to_string(),"retryable":job["kind"]!="agent"}),true).await,Err(_)=>broker("/failed",json!({"error":"Execution deadline exceeded","retryable":false}),true).await};
-                    heartbeat.abort();if let Err(e)=report {eprintln!("Callback failed: {e}");}
-                });
-            }
-            (StatusCode::ACCEPTED,Json(json!({"status":"started"}))).into_response()
-        }
-    })).layer(axum::extract::DefaultBodyLimit::max(1024*1024));
+    let app = Router::new()
+        .route("/health", get(|| async { Json(health()) }))
+        .route(
+            "/job",
+            post(move |headers: HeaderMap, Json(job): Json<Value>| {
+                let started = started.clone();
+                async move {
+                    let secret = std::env::var("SUPERVISOR_TOKEN").unwrap_or_default();
+                    if secret.is_empty()
+                        || headers.get("authorization").and_then(|v| v.to_str().ok())
+                            != Some(format!("Bearer {secret}").as_str())
+                    {
+                        return (StatusCode::FORBIDDEN, Json(json!({"error":"forbidden"})))
+                            .into_response();
+                    }
+                    if !started.swap(true, Ordering::SeqCst) {
+                        crate::supervisor_task::spawn(job);
+                    }
+                    (StatusCode::ACCEPTED, Json(json!({"status":"started"}))).into_response()
+                }
+            }),
+        )
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024));
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
         .await
         .map_err(err)?;

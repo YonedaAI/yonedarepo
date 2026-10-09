@@ -1,4 +1,4 @@
-import { providerNames } from '../workspace/ProviderSettings';
+import { providerNames } from '../workspace/providerModels';
 import { formatBudgetUsd, type ModelBudget } from './modelBudgets';
 
 function recordedBudget(value: unknown): value is ModelBudget {

@@ -6,6 +6,8 @@ use serde_json::json;
 mod context_intent;
 #[path = "tests/delegation.rs"]
 mod delegation;
+#[path = "tests/execution_logs.rs"]
+mod execution_logs;
 #[path = "tests/graph_status.rs"]
 mod graph_status;
 #[path = "tests/model_budgets.rs"]
@@ -250,7 +252,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6}])
             .as_array()
             .unwrap()
             .clone()
@@ -259,7 +261,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        5
+        6
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();

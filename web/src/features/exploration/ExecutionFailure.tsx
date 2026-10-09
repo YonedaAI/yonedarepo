@@ -75,7 +75,7 @@ export function ExecutionFailure({
       <small>
         {budgetReached
           ? 'Use Restart run to review your limits and approve another attempt.'
-          : 'After updating your connection, use New run to approve another attempt.'}
+          : 'After updating your connection, use Restart run to approve another attempt.'}
       </small>
     </section>
   );
