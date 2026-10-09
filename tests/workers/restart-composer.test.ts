@@ -109,3 +109,13 @@ it('requires manual advanced rates for an unknown model dollar budget', () => {
   expect(budget.pricing?.input_microusd_per_million).toBe(100_000);
   expect(budget.pricing?.output_microusd_per_million).toBe(200_000);
 });
+
+it('defaults to no request or dollar cap and preserves an uncapped restart', () => {
+  const [model] = selectedModels(initialRun(snapshot, oldRun).agents, providers);
+  const [budget] = serializeModelBudgets([model], {});
+  expect(budget.max_requests).toBeNull();
+  expect(budget.spend_limit_microusd).toBeNull();
+  const draft = initialRun(snapshot, { ...oldRun, model_budgets: [budget] });
+  expect(draft.budgets[model.key].requests).toBe('');
+  expect(serializeModelBudgets([model], draft.budgets)[0].max_requests).toBeNull();
+});

@@ -118,3 +118,53 @@ Wrangler published runner image SHA-256
 Cloudflare reported application version **11** as **ready**, and a separate application read
 confirmed that image digest. This is image deployment evidence; no new paid agent execution
 was started to exercise it.
+
+## Provider registry, subscription routing and optional request limits
+
+Later on October 8, the public provider registry became the shared source for Rust validation
+and scheduling, Worker endpoint/authentication configuration, and browser model presets. The
+[provider guide](providers.md#adding-a-provider) describes adding compatible providers and the
+separate adapter work required for a new protocol. New ZAI connections now default to
+**GLM 5.3 Flash**, with GLM 5.3 also offered for Coding Plan accounts. Existing connections keep
+their recorded model IDs.
+
+MiMo settings distinguish **API credits** from **Token Plan subscription**, with an explicit
+China, Singapore or Amsterdam region. Dedicated Token Plan keys cannot be saved against the
+API-credits route. Routes come from the saved owner connection, are frozen for roots and
+subagents, and reject changes after approval. Tests cover encrypted storage, fixed upstreams,
+key-type rejection, browser route tampering and inherited subagent routing. There is no
+automatic regional fallback. ZAI remains a Coding Plan connector; general API bundles are a
+different product and route.
+
+New hosted runs have optional request and dollar caps, both blank by default. Execution time,
+response size and the existing Claude workspace ceiling remain bounded. A regression test
+allows 150 reservations in a new uncapped run while historical runs retain their recorded
+limits. New ledger/runner capability checks reject incompatible old binaries before inference.
+No SQL schema change was required; additive JSON metadata and rollback ordering are documented
+in the provider guide.
+
+`cargo xtask doctor` and the combined `cargo xtask check` passed: **112 native Rust tests,
+71 workerd tests and one Node runtime test**, plus formatting, Clippy, Wasm, TypeScript and the
+production browser build. The final targeted routing/budget/restart check passed **13 tests**;
+the final Biome check reported no issues. The Linux runner image passed **28 runtime tests**.
+Logs are in ignored `artifacts/scalability/check-token-plan.log`, `token-plan-targeted.log`
+and `deploy-token-plan.log`.
+
+Explicitly authorized tiny coding probes with the supplied credentials returned **HTTP 200**
+for MiMo's Singapore Token Plan endpoint (`mimo-v2.6-flash`, 20 input/10 output tokens) and
+ZAI's Coding Plan endpoint (`glm-5.3-flash`, 23 input/13 output tokens). The MiMo key was rejected
+by the China endpoint. Credentials were entered through hidden terminal input, not command
+arguments, logs or repository files, and were not saved into the personal workspace. These
+non-streaming probes establish authentication and small-response inference only; tool calling,
+streaming and a complete paid agent build were not exercised.
+
+The development Worker is deployed as version `8910f38e-4b52-4ec2-bf9b-4a8645f5f2d6`.
+The runner image has registry SHA-256
+`41ec07b5d4e10c32b8f9551608448a115688cfcdeb34e5010cd34f7442b85916`.
+Cloudflare reports container application version **12** as **ready**; a separate application
+read confirmed that image digest. The configuration-only final Worker deployment preserved it.
+Live browser checks confirmed the ZAI default, MiMo plan/region picker, and a new-run composer
+with an empty request field and **No request cap** placeholder. Screenshots are in ignored
+`artifacts/scalability/zai-default-live.png`, `token-plan-picker-live.png` and
+`optional-caps-live.png`. No saved connection was altered, run restarted or website published
+during browser acceptance.

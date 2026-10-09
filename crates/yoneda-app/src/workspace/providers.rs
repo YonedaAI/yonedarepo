@@ -14,7 +14,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     .ok_or_else(|| bad("Corrupt provider"))?,
             )
             .map_err(|e| bad(&e.to_string()))?;
-            providers.push(json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"configured":true,"updated_at":p["updated_at"]}));
+            providers.push(json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"routing":p["routing"],"configured":true,"updated_at":p["updated_at"]}));
         }
         return Ok(json!({"providers":providers}));
     }
@@ -34,9 +34,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     match string(c, "op")?.as_str() {
         "provider_put" => {
             let provider = string(c, "provider")?;
-            if !["codex", "claude", "mimo", "zai", "gemini"].contains(&provider.as_str()) {
-                return Err(bad("Unknown provider"));
-            }
+            yoneda_core::providers::provider(&provider)?;
             let label = c["label"].as_str().unwrap_or(&provider).trim();
             if label.is_empty() || label.len() > 80 || label.chars().any(char::is_control) {
                 return Err(bad("Invalid connection label"));
@@ -53,6 +51,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 return Err(bad("Workspace supports up to 32 provider connections"));
             }
             let model = string(c, "model")?;
+            yoneda_core::providers::validate_model(&provider, &model)?;
             if model.len() > 128
                 || !model
                     .bytes()
@@ -64,14 +63,22 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             string(&c["sealed"], "iv")?;
             string(&c["sealed"], "ciphertext")?;
+            let routing = if let Some(value) = c.get("routing").filter(|v| !v.is_null()) {
+                let route: yoneda_core::provider_routing::ProviderRouting =
+                    serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
+                route.validate(&provider)?;
+                serde_json::to_value(route).map_err(|e| bad(&e.to_string()))?
+            } else {
+                Value::Null
+            };
             put(
                 db,
                 &id,
-                &json!({"id":connection,"label":label,"provider":provider,"model":model,"sealed":c["sealed"],"updated_at":now}),
+                &json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"sealed":c["sealed"],"updated_at":now}),
             )?;
             audit(db, "provider.updated", now, json!({"provider":provider}))?;
             Ok(
-                json!({"id":connection,"label":label,"provider":provider,"model":model,"configured":true}),
+                json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"configured":true}),
             )
         }
         "provider_secret" => {

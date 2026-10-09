@@ -34,16 +34,19 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
     let total = used
         .checked_add(1)
         .ok_or_else(|| bad("Run model request overflow"))?;
-    if total > MAX_RUN_MODEL_REQUESTS {
+    let legacy = run["request_limits"] != "optional-v1";
+    if legacy && total > MAX_RUN_MODEL_REQUESTS {
         return Err(Error::new(
             "RESOURCE_LIMIT",
             "Shared run model request limit reached",
         ));
     }
-    let mut response =
-        json!({"number":request_number,"run_number":total,"run_limit":MAX_RUN_MODEL_REQUESTS});
+    let mut response = json!({"number":request_number,"run_number":total,"run_limit":if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
     if let Some((index, mut budget)) = group {
-        if budget.requests >= budget.max_requests {
+        if budget
+            .max_requests
+            .is_some_and(|limit| budget.requests >= limit)
+        {
             return Err(Error::new(
                 "MODEL_REQUEST_LIMIT",
                 "This provider/model group exhausted its approved request budget",

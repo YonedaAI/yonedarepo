@@ -1,13 +1,8 @@
+import { providerDefinition } from '../shared/providers';
 import { prepareGeminiRequest } from './gemini-policy';
+import { mimoUpstream } from './mimo-routing';
 import { outputCeiling } from './model-budget';
 import type { Json } from './types';
-
-const upstreams = {
-  codex: 'https://api.openai.com',
-  claude: 'https://api.anthropic.com',
-  mimo: 'https://api.xiaomimimo.com/anthropic',
-  zai: 'https://api.z.ai/api/anthropic',
-};
 export function prepareModelRequest(
   job: Json,
   harness: 'codex' | 'claude' | 'gemini',
@@ -17,7 +12,8 @@ export function prepareModelRequest(
   if (harness === 'gemini') return prepareGeminiRequest(job, path, input);
   const execution = job.payload?.execution;
   const provider = execution?.provider ?? execution?.harness;
-  if (job.kind !== 'agent' || execution.harness !== harness || !(provider in upstreams))
+  const definition = providerDefinition(provider);
+  if (job.kind !== 'agent' || execution.harness !== harness || definition.harness !== harness)
     throw new Error('Provider outside attempt scope');
   if (
     !(
@@ -25,13 +21,11 @@ export function prepareModelRequest(
     ).includes(path)
   )
     throw new Error('Provider endpoint not allowed');
-  if ((provider === 'codex') !== (harness === 'codex'))
-    throw new Error('Provider protocol mismatch');
   const model = job.model;
   if (typeof model !== 'string' || !model || model.length > 128)
     throw new Error('Configured model required');
-  if (provider === 'claude' && model !== 'claude-sonnet-4-6')
-    throw new Error('Claude testing is limited to claude-sonnet-4-6');
+  if (!definition.allow_custom_model && !definition.models.some((entry) => entry.id === model))
+    throw new Error('Model is not permitted for this provider');
   const body = structuredClone(input);
   const ceiling = outputCeiling(job);
   body.model = model;
@@ -96,8 +90,8 @@ export function prepareModelRequest(
       ? (bytes + 8192) * 6 + body.max_tokens * 30
       : 0;
   return {
-    provider: provider as keyof typeof upstreams,
-    url: upstreams[provider as keyof typeof upstreams] + path,
+    provider,
+    url: (provider === 'mimo' ? mimoUpstream(execution.routing) : definition.api_base) + path,
     body,
     reservation,
   };

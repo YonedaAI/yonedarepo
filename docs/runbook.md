@@ -50,6 +50,9 @@ Deploy both the Worker/Repo DO and the new container image. The snapshot adverti
 
 Console budget approvals additionally require `capabilities.model_budgets: 1` in the repository
 snapshot and supervisor health. The Worker rejects older implementations before inference.
+Uncapped requests additionally require `capabilities.optional_model_requests: 1` in both.
+New hosted runs record an explicit optional-limit policy and have no default request/dollar cap;
+time and response limits remain. Existing runs retain their recorded historical limits.
 The Repo DO migration adds a durable model-reservation ledger; existing runs keep their legacy
 limits. See [run budget settings and estimate semantics](providers.md#run-budgets-in-the-console).
 

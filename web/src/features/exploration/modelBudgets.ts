@@ -29,7 +29,7 @@ export interface ModelPricing {
 export interface ModelBudgetConfig {
   provider: string;
   model: string;
-  max_requests: number;
+  max_requests: number | null;
   max_output_tokens: number;
   max_execution_ms: number;
   spend_limit_microusd: number | null;
@@ -135,9 +135,9 @@ export function modelPricingSuggestion(provider: string, model: string) {
   return known[`${provider}:${model}`];
 }
 
-export function defaultModelBudget(group: SelectedModel): ModelBudgetDraft {
+export function defaultModelBudget(_group: SelectedModel): ModelBudgetDraft {
   return {
-    requests: String(Math.min(144, group.roots * 24)),
+    requests: '',
     minutes: '10',
     outputTokens: '4096',
     usdEnabled: false,
@@ -210,7 +210,9 @@ export function serializeModelBudgets(
     return {
       provider: model.provider,
       model: model.model,
-      max_requests: integer(draft.requests, 1, 144, `${model.model} request allowance`),
+      max_requests: draft.requests.trim()
+        ? integer(draft.requests, 1, Number.MAX_SAFE_INTEGER, `${model.model} request limit`)
+        : null,
       max_output_tokens: integer(draft.outputTokens, 256, 4096, `${model.model} output tokens`),
       max_execution_ms: executionMilliseconds(draft.minutes),
       spend_limit_microusd: draft.usdEnabled

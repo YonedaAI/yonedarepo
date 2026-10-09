@@ -76,8 +76,8 @@ export function DelegationSettings({
           </div>
           <p className="subtle">
             The total includes {roots} root agents. Children inherit their parent’s provider and
-            model. The run shares a {limits.max_run_model_requests}-request ceiling; delegation can
-            increase provider charges within that limit.
+            model and billing source. Subagents share any request or dollar limits you set for that
+            model and can increase provider usage.
           </p>
           {value.max_executions <= roots && (
             <p className="subtle">Increase the total above {roots} to leave room for subagents.</p>

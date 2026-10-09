@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { evictDurableObject, reset } from 'cloudflare:test';
+import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { ledger, object, readObject } from '../../worker/storage';
 import type { Env, Json } from '../../worker/types';
@@ -86,7 +86,7 @@ it('durably schedules six roots with identical source and policy, preserving eac
   await initialize();
   const run = await start();
   expect(run.execution_count).toBe(6);
-  expect((await state()).capabilities.agent_limits).toEqual({ min_root_agents: 2, max_root_agents: 6, max_run_executions: 12, max_delegation_depth: 2, max_run_model_requests: 144 });
+  expect((await state()).capabilities.agent_limits).toEqual({ min_root_agents: 2, max_root_agents: 6, max_run_executions: 12, max_delegation_depth: 2, max_run_model_requests: null });
   expect(await pendingAgents()).toHaveLength(6);
   const claims = await Promise.all(agents.map((_, i) => claim(rootJob(i + 1))));
   claims.forEach((job, i) => {
@@ -306,9 +306,12 @@ it('cannot select an already eligible descendant after its parent fails', async 
   expect(before.decisions).toHaveLength(0);
 });
 
-it('enforces the aggregate run model budget durably across roots and descendants without paid inference', async () => {
+it('preserves historical aggregate limits across roots and descendants without paid inference', async () => {
   await initialize();
   await start();
+  await runInDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo)), (_instance, state) => {
+    state.storage.sql.exec("UPDATE runs SET payload=json_remove(payload,'$.model_budgets','$.request_limits')");
+  });
   const roots = await Promise.all(agents.map((_, i) => claim(rootJob(i + 1))));
   const child = await claim((await delegate(roots[0])).job_id);
   // Reservations exercise real SQLite counters. No provider or container is called.

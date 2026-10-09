@@ -10,6 +10,11 @@ Sign up with a username/password, save the recovery code, connect your own provi
 
 Follow [the website workflow](docs/website-workflow.md) to create an account, connect provider keys, start concurrent agents, compare their changes and publish a checked static website. The older [retry fixture walkthrough](docs/demo.md) remains an operator verification example.
 
+MiMo connections support **API credits** or **Token Plan**, with an explicit plan region. ZAI
+connections use the Coding Plan endpoint and default to **GLM-5.3-Flash**. New hosted runs have
+no request or dollar cap unless you set one; provider quotas and execution limits still apply.
+See [provider setup and adding a provider](docs/providers.md).
+
 Start two to six independent agents on the same brief. Optional subagents allow up to 12 agents in total, through two delegation levels. Children inherit their parent's approved provider, model, source and context; each produces a separately captured and evaluated alternative. The owner chooses what ships. See [concurrency and delegation limits](docs/runbook.md#agent-concurrency-and-delegation).
 
 [Current UI and deployment verification](docs/ui-workflow-evidence.md) · [Presenter video script and production brief](docs/video/production-brief.md)

@@ -166,6 +166,14 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
           'Choose agents with the models configured in your provider settings',
           409,
         );
+      for (const agent of input.agents) {
+        const connection = settings.providers.find(
+          (p: Json) => p.id === (agent.connection ?? agent.provider),
+        );
+        // Product and region come from the owner's saved connection, never browser/model claims.
+        delete agent.routing;
+        if (connection.routing != null) agent.routing = connection.routing;
+      }
     }
     // Authority fields are assigned here; model/browser JSON cannot become an internal attempt.
     for (const key of ['job_id', 'epoch', '_workspace', 'actor', 'author', 'workspace'])

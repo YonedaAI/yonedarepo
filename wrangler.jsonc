@@ -28,7 +28,7 @@
     "CODEX_MODEL": "gpt-5.6-luna",
     "CLAUDE_MODEL": "claude-sonnet-4-6",
     "MIMO_MODEL": "mimo-v2.6-flash",
-    "ZAI_MODEL": "glm-4.7-flash",
+    "ZAI_MODEL": "glm-5.3-flash",
     "STARTER_REPO": "yoneda-website-starter",
     "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev"
   },

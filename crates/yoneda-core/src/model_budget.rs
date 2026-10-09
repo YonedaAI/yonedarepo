@@ -27,7 +27,8 @@ pub enum PricingSource {
 pub struct ModelBudget {
     pub provider: String,
     pub model: String,
-    pub max_requests: i64,
+    /// None means no request cap; provider quotas and execution limits still apply.
+    pub max_requests: Option<i64>,
     pub max_output_tokens: i64,
     pub max_execution_ms: i64,
     pub spend_limit_microusd: Option<i64>,
@@ -40,14 +41,16 @@ pub struct ModelBudget {
 impl ModelBudget {
     pub fn validate_configuration(&self) -> Result<()> {
         let valid_rate = |rate| (0..=MAX_SAFE_BUDGET_INTEGER).contains(&rate);
-        if !["codex", "claude", "mimo", "zai", "gemini"].contains(&self.provider.as_str())
+        if crate::providers::validate_model(&self.provider, &self.model).is_err()
             || self.model.is_empty()
             || self.model.len() > 128
             || !self
                 .model
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-._/".contains(&b))
-            || !(1..=144).contains(&self.max_requests)
+            || self
+                .max_requests
+                .is_some_and(|limit| !(1..=MAX_SAFE_BUDGET_INTEGER).contains(&limit))
             || !(256..=4096).contains(&self.max_output_tokens)
             || !(60_000..=600_000).contains(&self.max_execution_ms)
             || self

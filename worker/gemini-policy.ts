@@ -1,11 +1,13 @@
+import { providerDefinition } from '../shared/providers';
 import { outputCeiling } from './model-budget';
 import type { Json } from './types';
 
 /** Gemini uses its native GenerateContent protocol, never the Anthropic adapter. */
 export function prepareGeminiRequest(job: Json, path: string, input: Json) {
+  const definition = providerDefinition(job.payload?.execution?.provider);
   if (
     job.kind !== 'agent' ||
-    job.payload?.execution?.provider !== 'gemini' ||
+    definition.protocol !== 'gemini_generate_content' ||
     job.payload.execution.harness !== 'gemini'
   )
     throw new Error('Provider outside attempt scope');
@@ -57,8 +59,8 @@ export function prepareGeminiRequest(job: Json, path: string, input: Json) {
   if (new TextEncoder().encode(JSON.stringify(body)).length > 256 * 1024)
     throw new Error('Model input exceeds 256 KiB testing limit');
   return {
-    provider: 'gemini' as const,
-    url: `https://generativelanguage.googleapis.com/v1beta/models/${job.model}:${match[1]}${match[1] === 'streamGenerateContent' ? '?alt=sse' : ''}`,
+    provider: definition.id,
+    url: `${definition.api_base}/v1beta/models/${job.model}:${match[1]}${match[1] === 'streamGenerateContent' ? '?alt=sse' : ''}`,
     body,
     reservation: 0,
   };

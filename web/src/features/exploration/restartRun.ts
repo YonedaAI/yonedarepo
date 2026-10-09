@@ -58,7 +58,7 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
         roots: rootCount,
         connections: 0,
       }),
-      requests: String(budget.max_requests),
+      requests: budget.max_requests == null ? '' : String(budget.max_requests),
       minutes: String(budget.max_execution_ms / 60_000),
       outputTokens: String(budget.max_output_tokens),
       usdEnabled: budget.spend_limit_microusd != null,

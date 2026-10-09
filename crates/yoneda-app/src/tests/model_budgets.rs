@@ -45,7 +45,7 @@ fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
                     command["model_budgets"][0].clone()
                 ])
             }
-            5 => command["model_budgets"][0]["max_requests"] = json!(145),
+            5 => command["model_budgets"][0]["max_requests"] = json!(0),
             6 => command["model_budgets"][0]["max_output_tokens"] = json!(4097),
             7 => command["model_budgets"][0]["max_execution_ms"] = json!(59999),
             8 => command["model_budgets"][0]["spend_limit_microusd"] = json!(1),
@@ -158,7 +158,7 @@ fn model_budgets_replace_hidden_per_job_limit_and_enforce_output_ceiling() {
 }
 
 #[test]
-fn model_budgets_distinct_groups_still_share_the_run_request_maximum() {
+fn historical_model_budgets_distinct_groups_still_share_the_run_request_maximum() {
     let (db, mut command) = configured();
     command["agents"][1]["model"] = json!("second-model");
     command["model_budgets"][0]["max_requests"] = json!(144);
@@ -170,6 +170,12 @@ fn model_budgets_distinct_groups_still_share_the_run_request_maximum() {
         .push(second);
     call(&db, command).unwrap();
     let first = "job:budgeted:agent-1";
+    // Recreate a pre-optional-policy run; its recorded ceiling must not change on upgrade.
+    db.query(
+        "UPDATE runs SET payload=json_remove(payload,'$.request_limits')",
+        &[],
+    )
+    .unwrap();
     let second = "job:budgeted:agent-2";
     claim(&db, first, 1000);
     claim(&db, second, 1000);
@@ -184,6 +190,20 @@ fn model_budgets_distinct_groups_still_share_the_run_request_maximum() {
     assert_eq!(run["model_requests"], 144);
     assert_eq!(run["model_budgets"][0]["requests"], 100);
     assert_eq!(run["model_budgets"][1]["requests"], 44);
+}
+
+#[test]
+fn new_runs_default_to_no_request_cap_and_continue_past_old_limits() {
+    let (db, mut command) = configured();
+    command.as_object_mut().unwrap().remove("model_budgets");
+    call(&db, command).unwrap();
+    let root = "job:budgeted:agent-1";
+    claim(&db, root, 1000);
+    for number in 1..=150 {
+        assert_eq!(reserve(&db, root, 1).unwrap()["number"], number);
+    }
+    assert_eq!(budget(&db)["max_requests"], Value::Null);
+    assert_eq!(budget(&db)["requests"], 150);
 }
 
 #[test]

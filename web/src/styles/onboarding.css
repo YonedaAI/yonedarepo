@@ -211,7 +211,8 @@
   margin-top: 4px;
   color: var(--muted);
 }
-.provider-model-picker {
+.provider-model-picker,
+.provider-billing-picker {
   display: grid;
   gap: 10px;
 }
