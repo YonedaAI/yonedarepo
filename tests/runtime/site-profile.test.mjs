@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { sitePolicy } from '../../worker/site-policy.ts';
+import { sitePolicy } from '../../cloudflare/worker/site-policy.ts';
 test('starter check accepts standard HTML attributes and rejects missing viewport', () => {
  const root=mkdtempSync(join(tmpdir(),'yoneda-site-'));
  try {

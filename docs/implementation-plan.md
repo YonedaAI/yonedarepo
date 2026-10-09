@@ -33,4 +33,4 @@ Defaults: one owner workspace, Access-protected mutations, three parallel coding
 
 ## Follow-up tasks
 
-- [ ] [REPO-001: separate frontend, backend and Cloudflare infrastructure](plans/repository-layout-cleanup.md). Queued after the current deletion and per-run agent fixes; directory moves are not part of those fixes.
+- [x] [REPO-001: separate frontend, backend and Cloudflare infrastructure](plans/repository-layout-cleanup.md). Implemented with fresh-source, Linux container, local startup and portable dry-run verification; resource identities and migration history preserved.

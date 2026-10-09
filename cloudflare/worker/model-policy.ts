@@ -1,4 +1,4 @@
-import { providerDefinition } from '../shared/providers';
+import { providerDefinition } from '../../shared/providers';
 import { prepareGeminiRequest } from './gemini-policy';
 import { mimoUpstream } from './mimo-routing';
 import { outputCeiling } from './model-budget';

@@ -1,11 +1,11 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { serveSite, type SitesEnv } from '../../sites';
-import { authorizePreview, previewLink } from '../../worker/sites';
-import { ledger, object } from '../../worker/storage';
-import { sitePolicy } from '../../worker/site-policy';
-import type { Env } from '../../worker/types';
+import { serveSite, type SitesEnv } from '../../cloudflare/sites';
+import { authorizePreview, previewLink } from '../../cloudflare/worker/sites';
+import { ledger, object } from '../../cloudflare/worker/storage';
+import { sitePolicy } from '../../cloudflare/worker/site-policy';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings = env as unknown as Env;
 afterEach(reset);
 it('isolates untrusted site assets, binds preview capabilities and preserves publication pointers', async () => {

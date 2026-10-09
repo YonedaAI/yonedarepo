@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { executionFailureCode, transcriptFailureCode } from '../../web/src/features/exploration/providerFailure';
+import { executionFailureCode, transcriptFailureCode } from '../../frontend/src/features/exploration/providerFailure';
 
 it('recognizes the recorded execution timeout without blaming provider credentials', () => {
   expect(executionFailureCode({ error: 'Execution deadline exceeded' })).toBe('EXECUTION_TIMEOUT');

@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { workspace } from '../../worker/workspace';
-import type { Env } from '../../worker/types';
+import { workspace } from '../../cloudflare/worker/workspace';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings = env as unknown as Env;
 afterEach(async () => {await reset();});
 it('stores only encrypted BYOK credentials and never falls back to platform secrets',async()=>{
@@ -14,7 +14,7 @@ it('stores only encrypted BYOK credentials and never falls back to platform secr
  const stub = bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName('account:vault_user'));
  const stored = await runInDurableObject(stub,(_instance,state)=>[...state.storage.sql.exec('SELECT payload FROM workspace_records')]);
  expect(JSON.stringify(stored)).not.toContain('test-private-provider-key');
- const {providerKey,open} = await import('../../worker/vault');
+ const {providerKey,open} = await import('../../cloudflare/worker/vault');
  expect(await providerKey(bindings,'vault_user','mimo')).toBe('test-private-provider-key');
  const value = await workspace(bindings,'vault_user',{op:'provider_secret',provider:'mimo'});
  await expect(open(bindings,'another_user','mimo',value.sealed)).rejects.toThrow();
@@ -31,7 +31,7 @@ it('shares Claude reservations across durable eviction and refuses requests beyo
  expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(19_000_000);
 });
 it('pins MiMo and ZAI upstreams and bounds Claude cost before inference', async()=>{
- const {prepareModelRequest} = await import('../../worker/model-policy');
+ const {prepareModelRequest} = await import('../../cloudflare/worker/model-policy');
  const job = (provider:string,model:string) => ({kind:'agent',model,payload:{execution:{provider,harness:'claude'}}});
  const input = {model:'expensive-model',max_tokens:999999,messages:[{role:'user',content:'Hello'}],stream:true};
  const mimo = prepareModelRequest(job('mimo','mimo-v2-flash'),'claude','/v1/messages',input);
@@ -44,7 +44,7 @@ it('pins MiMo and ZAI upstreams and bounds Claude cost before inference', async(
  expect(() => prepareModelRequest(job('claude','claude-sonnet-4-6'),'claude','/v1/messages',{...input,tools:[{type:'web_search_20250305',name:'web_search'}]})).toThrow();
 });
 it('settles complete Claude usage but keeps incomplete stream reservations charged',async()=>{
- const {trackClaudeUsage} = await import('../../worker/model-usage');
+ const {trackClaudeUsage} = await import('../../cloudflare/worker/model-usage');
  await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'complete',amount:1_000_000});
  const stream = 'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}\n\ndata: {"type":"message_delta","usage":{"output_tokens":50}}\n\ndata: {"type":"message_stop"}\n\n';
  const response = trackClaudeUsage(new Response(stream,{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','complete',1_000_000);

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { ledger } from '../../worker/storage';
-import type { Env } from '../../worker/types';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env } from '../../cloudflare/worker/types';
 it('fails closed before private reads or mutations against an older unscoped Repo DO',async()=>{
  const commands:any[]=[];
  const env={REPOSITORIES:{idFromName:(id:string)=>id,get:()=>({fetch:async(_url:string,options:any)=>{const c=JSON.parse(options.body);commands.push(c);return Response.json({capabilities:{artifact_reads:2},repository:{id:'legacy',workspace:'alice'},nodes:[{label:'private context'}]});}})}} as unknown as Env;
@@ -16,7 +16,7 @@ it('checks returned workspace ownership even when a Repo DO advertises scope cap
  expect(commands.map(c=>c.op)).toEqual(['snapshot']);
 });
 it('blocks public HTTP reads and mutations before an older DO sees untrusted commands',async()=>{
- const {env}=await import('cloudflare:workers');const {workspace}=await import('../../worker/workspace');const {sha}=await import('../../worker/storage');const {fetchRequest}=await import('../../worker/routes');
+ const {env}=await import('cloudflare:workers');const {workspace}=await import('../../cloudflare/worker/workspace');const {sha}=await import('../../cloudflare/worker/storage');const {fetchRequest}=await import('../../cloudflare/worker/routes');
  const bindings=env as unknown as Env;const token='a'.repeat(64);await workspace(bindings,'rollout_user',{op:'signup',username:'rollout_user',password:'a long test password',salt:'01'.repeat(16),recovery_hash:'b'.repeat(64),session_hash:await sha(token)});
  const commands:any[]=[];const old={...bindings,REPOSITORIES:{idFromName:(id:string)=>id,get:()=>({fetch:async(_url:string,options:any)=>{const c=JSON.parse(options.body);commands.push(c);return Response.json({capabilities:{artifact_reads:2},repository:{id:'legacy'},nodes:[{label:'private context'}]});}})}} as unknown as Env;
  for(const method of ['GET','POST']) {

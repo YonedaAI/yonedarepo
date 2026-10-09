@@ -1,4 +1,4 @@
-import { providers } from '../shared/providers';
+import { providers } from '../../shared/providers';
 import { error, readJson, response } from './http';
 import { type MiMoRouting, mimoRouting, validateMiMoKey } from './mimo-routing';
 import type { Env, Principal } from './types';

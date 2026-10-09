@@ -1,4 +1,4 @@
-import tools from '../crates/yoneda-core/src/mcp_remote_tools.json';
+import tools from '../../backend/crates/yoneda-core/src/mcp_remote_tools.json';
 import { contribution } from './contributions';
 import { grantPrincipal } from './grants';
 import { error, readJson, response, safeId } from './http';

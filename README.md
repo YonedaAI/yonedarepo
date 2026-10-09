@@ -35,11 +35,11 @@ cargo xtask dev
 
 Open `http://localhost:8787` and sign up. The sites Worker runs at `http://localhost:8788`. Local state stays in `.wrangler/state`; Artifacts requires access to the configured remote development namespace. The local test gate uses workerd and SQLite without paid inference. The private `.local/owner-token` is for operator bootstrap.
 
-To work on the browser with hot reload, keep Wrangler running and run `pnpm --dir web dev` in another terminal. The Vite server proxies API traffic to Wrangler.
+To work on the browser with hot reload, keep Wrangler running and run `pnpm --dir frontend dev` in another terminal. The Vite server proxies API traffic to Wrangler.
 
 ## Deploy to your own Cloudflare account
 
-The root Wrangler configs describe our development deployment. Use the commands below to generate separate configs for **your** account; they remove our Secrets Store bindings and replace all resource IDs, queue names, service bindings and website URLs. Rust `xtask` owns the deployment scripts.
+The `cloudflare/wrangler*.jsonc` configs describe our development deployment. Use the commands below to generate separate configs for **your** account; they remove our Secrets Store bindings and replace all resource IDs, queue names, service bindings and website URLs. Rust `xtask` owns the deployment scripts.
 
 ### One-time manual prerequisites
 
@@ -121,23 +121,31 @@ To connect a local agent instead, use **Connect local agent** and follow the sco
 ## Repository
 
 ```text
-crates/
-  yoneda-core/        Contracts, evidence and policy validation
-  yoneda-app/         Transactional commands, graph and versioned DO migrations
-  yoneda-cloudflare/  Rust SDK interoperability
-  yoneda-worker/      Rust Repo and Live Durable Objects
-  yoneda-runtime/     Native supervisor, MCP, harnesses, capture and evaluation
-worker/              Focused SDK, transport and authentication adapters
-sites/               Isolated static website Worker
-web/src/             Browser features, components, hooks and feature styles
-containers/          Pinned native runtime image
-migrations/          Forward-only D1 discovery migrations
-fixtures/            Small source repositories used in demonstrations
-tests/workers/       Real workerd integration tests without inference
-xtask/               Reproducible developer commands
-docs/                Architecture, runbook and implementation evidence
-context/             Original design material
+frontend/                      Browser features, components, styles and Vite config
+backend/crates/
+  yoneda-core/                 Contracts, evidence and pure policy validation
+  yoneda-app/                  Transactional commands, graph and DO migrations
+  yoneda-cloudflare/           Rust SDK interoperability
+  yoneda-worker/               Rust Repo and Live Durable Objects
+  yoneda-runtime/              Native supervisor, MCP, capture and evaluation
+cloudflare/
+  worker/                      Thin SDK, transport and authentication adapters
+  sites/                       Isolated static website Worker
+  containers/                  Pinned native runtime image
+  migrations/                  Forward-only D1 discovery migrations
+  wrangler*.jsonc              Platform and sites environment configuration
+shared/                        Shared contracts backed by the Rust registry
+xtask/                         Reproducible developer and deployment commands
+tests/                         Cross-boundary workerd, runtime and container tests
+fixtures/                      Small source repositories for tests/demonstrations
+docs/                          Architecture, operations and verification evidence
+context/                       Original design material
+tools/                         Video and public-export utilities
 ```
+
+Workspace manifests, lockfiles, the pinned toolchain and shared tooling stay at the root. Generated output (`target/`, `node_modules/`, `frontend/dist/`, Wasm `build/`), local state and diagnostic artifacts stay ignored.
+
+After upgrading from the previous layout, run `cargo xtask setup`. It privately copies an existing root `.dev.vars` to `cloudflare/.dev.vars` if the new file is absent; existing credentials and `.wrangler/state` are preserved. For a named deployment, repeat your original `cloudflare-configure` command to update known legacy source paths while preserving resource identities and custom settings. Run raw Wrangler operations with `--config cloudflare/wrangler.jsonc` (or the named config); the root scripts and `xtask` supply it automatically.
 
 [Architecture](docs/architecture.md) · [Runbook](docs/runbook.md) · [Engineering standards](AGENTS.md) · [Implementation evidence](docs/progress.md)
 

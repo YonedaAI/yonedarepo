@@ -1,10 +1,10 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach,expect,it } from 'vitest';
-import { importSource,provisionProject,sitePolicy } from '../../worker/projects';
-import { workspace } from '../../worker/workspace';
-import { ledger } from '../../worker/storage';
-import type { Env } from '../../worker/types';
+import { importSource,provisionProject,sitePolicy } from '../../cloudflare/worker/projects';
+import { workspace } from '../../cloudflare/worker/workspace';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings = env as unknown as Env;
 afterEach(async()=>{await reset();});
 it('validates public Git imports without forwarding URL credentials or private hosts',()=>{
@@ -24,7 +24,7 @@ it('resumes provisioning against real DOs after a lost Artifacts fork acknowledg
  await expect(ledger(bindings,'project-one',{op:'snapshot',_workspace:'bob'})).rejects.toThrow('another workspace');
 });
 it('preserves regular source files named like JavaScript prototype properties',async()=>{
- const {source}=await import('../../worker/artifacts');
+ const {source}=await import('../../cloudflare/worker/artifacts');
  const remote={ [Symbol.dispose](){},readCommit:async()=>({treeHash:'b'.repeat(40)}),readTree:async()=>[{name:'__proto__',type:'blob',hash:'c'.repeat(40)},{name:'constructor',type:'blob',hash:'d'.repeat(40)}],readBlob:async(hash:string)=>new Blob([hash])};
  const env={...bindings,ARTIFACTS:{get:async()=>remote}} as unknown as Env;
  const workspace=await source(env,{repository:'yoneda-test/private',commit:'a'.repeat(40)});

@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { ledger, object, readObject } from '../../worker/storage';
-import type { Env, Json } from '../../worker/types';
+import { ledger, object, readObject } from '../../cloudflare/worker/storage';
+import type { Env, Json } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 const repo = 'delegation-test';
@@ -59,7 +59,7 @@ async function assertUnchanged(before: Json) {
 }
 
 it('rejects six-agent and delegated runs during ledger rollout while preserving ordinary older-ledger runs', async () => {
-  const { checkLedger } = await import('../../worker/runtime');
+  const { checkLedger } = await import('../../cloudflare/worker/runtime');
   const old = { capabilities: { artifact_reads: 2 } };
   expect(() => checkLedger(old, { agents: agents.slice(0, 4) })).not.toThrow();
   expect(() => checkLedger(old, { agents })).toThrow('updating');
@@ -70,7 +70,7 @@ it('rejects six-agent and delegated runs during ledger rollout while preserving 
 });
 
 it('requires delegation-capable container images for delegated roots and children before model calls', async () => {
-  const { checkRuntime } = await import('../../worker/runtime');
+  const { checkRuntime } = await import('../../cloudflare/worker/runtime');
   const health = { protocol: 2, suites: ['commands-v1'] };
   const ordinary = { kind: 'agent', payload: { execution: { harness: 'claude' }, policy, run: {} } };
   expect(() => checkRuntime(health, ordinary)).not.toThrow();

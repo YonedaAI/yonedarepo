@@ -26,6 +26,12 @@ flowchart TD
   Outbox --> Live
 ```
 
+## Source boundaries
+
+`frontend/` contains the browser. `backend/crates/` contains Rust contracts, the shared transactional application, binding interoperability, Durable Objects and native runtime. `cloudflare/` groups thin TypeScript SDK adapters, isolated site serving, the runtime Dockerfile, D1 migrations and Wrangler configuration. The provider descriptor in `backend/crates/yoneda-core` is consumed through `shared/`; it remains the single registry.
+
+Root Cargo/pnpm workspaces and `xtask/` coordinate these boundaries. Cross-boundary integration tests live in `tests/`. DO schema migrations remain beside the authoritative Rust application; Cloudflare D1 migrations and DO class configuration retain their separate histories. Moving files does not change resource identities or deployed state. See [the directory map and setup](../README.md#repository).
+
 ## Authority and storage
 
 A repository is the unit of serialization. Its SQLite-backed DO owns intent, runs, executions, jobs, graph entities, evaluations, human decisions, logical HEAD and the publication reservation. Each command runs synchronously inside `transactionSync`; no external I/O occurs there. Events and the outbox are written in the same transaction. Alarms recover leases and drain outbox entries. D1 and Live DO never authorize a selection.
@@ -38,7 +44,7 @@ The workspace authority owns username/password accounts, hashed sessions, recove
 
 ## Execution and evidence
 
-The product run starts two to four independent coding approaches with the same approved brief, base, policy and selected typed context. Provider/model choices are recorded per execution. Standard records include intent, requirement, constraint, assumption, finding, alternative, proposed decision and question. Immutable records can support, challenge, depend on or supersede prior records. Agent-authored statements remain assertions. Questions currently record context; interactive pause/answer/resume is deferred.
+The product run starts one to six owner-configured coding approaches with the same approved brief, base, policy and selected typed context. Provider/model choices are recorded per execution. Standard records include intent, requirement, constraint, assumption, finding, alternative, proposed decision and question. Immutable records can support, challenge, depend on or supersede prior records. Agent-authored statements remain assertions. Questions currently record context; interactive pause/answer/resume is deferred.
 
 The older retry fixture retains its research-then-three-coders DAG for bounded verification. All receive identical frozen research artifact IDs. `provided_to` records delivery; `retrieved_by` records an actual MCP read. Neither alone proves causal influence. The generic website run does not inherit this fixture's retry requirements.
 

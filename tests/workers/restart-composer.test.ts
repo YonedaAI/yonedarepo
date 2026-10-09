@@ -5,9 +5,9 @@ import {
   editModelPricing,
   selectedModels,
   serializeModelBudgets,
-} from '../../web/src/features/exploration/modelBudgets';
-import { agentConnectionIssue, initialRun } from '../../web/src/features/exploration/restartRun';
-import type { Snapshot } from '../../web/src/lib/types';
+} from '../../frontend/src/features/exploration/modelBudgets';
+import { agentConnectionIssue, initialRun } from '../../frontend/src/features/exploration/restartRun';
+import type { Snapshot } from '../../frontend/src/lib/types';
 
 const weakBuild = { setup: [], checks: [{ name: 'site', argv: ['true'] }] };
 const currentBuild = {

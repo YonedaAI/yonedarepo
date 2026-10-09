@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach,expect,it } from 'vitest';
-import type { Env } from '../../worker/types';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings=env as unknown as Env;
 afterEach(reset);
 it('sends payload-free refresh signals so revoked sessions cannot read future context',async()=>{

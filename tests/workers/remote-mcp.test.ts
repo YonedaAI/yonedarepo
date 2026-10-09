@@ -1,13 +1,13 @@
 import { env } from 'cloudflare:workers';
 import { reset, evictDurableObject } from 'cloudflare:test';
 import { afterEach,expect,it } from 'vitest';
-import { ledger,sha } from '../../worker/storage';
-import { workspace } from '../../worker/workspace';
-import { remoteMcp } from '../../worker/remote-mcp';
-import { externalGit } from '../../worker/external-git';
-import { readObject } from '../../worker/storage';
-import { sitePolicy } from '../../worker/site-policy';
-import type { Env } from '../../worker/types';
+import { ledger,sha } from '../../cloudflare/worker/storage';
+import { workspace } from '../../cloudflare/worker/workspace';
+import { remoteMcp } from '../../cloudflare/worker/remote-mcp';
+import { externalGit } from '../../cloudflare/worker/external-git';
+import { readObject } from '../../cloudflare/worker/storage';
+import { sitePolicy } from '../../cloudflare/worker/site-policy';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings=env as unknown as Env;
 afterEach(reset);
 async function setup(scope='contribute') {

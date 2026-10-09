@@ -1,13 +1,13 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { ledger } from '../../worker/storage';
-import type { Env } from '../../worker/types';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
 it('refuses a previous image for a general agent run and preserves the configured provider model', async () => {
-  const {checkRuntime, modelForJob} = await import('../../worker/runtime');
+  const {checkRuntime, modelForJob} = await import('../../cloudflare/worker/runtime');
   const job = {kind:'agent', model:'mimo-v2-flash', payload:{policy:{build:{checks:[]}},execution:{harness:'claude'}}};
   expect(() => checkRuntime({protocol:2,suites:['retry-contract-v2']},job)).toThrow();
   expect(() => checkRuntime({protocol:2,suites:['commands-v1']},job)).not.toThrow();
