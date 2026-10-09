@@ -6,6 +6,8 @@ use serde_json::json;
 mod context_intent;
 #[path = "tests/delegation.rs"]
 mod delegation;
+#[path = "tests/deletion.rs"]
+mod deletion;
 #[path = "tests/execution_logs.rs"]
 mod execution_logs;
 #[path = "tests/graph_status.rs"]
@@ -16,6 +18,8 @@ mod model_budgets;
 mod product_runs;
 #[path = "tests/restarts.rs"]
 mod restarts;
+#[path = "tests/single_agent.rs"]
+mod single_agent;
 
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {

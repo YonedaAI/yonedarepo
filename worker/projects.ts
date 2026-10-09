@@ -1,5 +1,6 @@
 import { source } from './artifacts';
 import { error, readJson, response, safeId } from './http';
+import { cleanupLateRemote } from './repository-deletion';
 import { sitePolicy } from './site-policy';
 import { ledger, sha } from './storage';
 import type { Env, Json, Principal } from './types';
@@ -26,6 +27,11 @@ export function importSource(value: unknown) {
 }
 export async function provisionProject(env: Env, owner: string, project: Json) {
   const id = project.id;
+  const current = await workspace(env, owner, { op: 'project_get', id });
+  if (current.status === 'deleted')
+    throw Object.assign(new Error('This repository has been deleted'), {
+      code: 'REPOSITORY_DELETED',
+    });
   try {
     try {
       const created = project.source
@@ -81,6 +87,13 @@ export async function provisionProject(env: Env, owner: string, project: Json) {
     }
     return workspace(env, owner, { op: 'project_update', id, status: 'ready' });
   } catch (e: any) {
+    const current = await workspace(env, owner, { op: 'project_get', id });
+    if (current.status === 'deleted' || e.code === 'REPOSITORY_DELETED') {
+      await cleanupLateRemote(env, id, id);
+      throw Object.assign(new Error('This repository has been deleted'), {
+        code: 'REPOSITORY_DELETED',
+      });
+    }
     const pending = ['IMPORT_IN_PROGRESS', 'FORK_IN_PROGRESS', 'CREATE_IN_PROGRESS'].includes(
       e.code,
     );
@@ -125,6 +138,8 @@ export async function projectRoute(
       (parts[3] === 'retry' && req.method === 'POST'))
   ) {
     const project = await workspace(env, principal.workspace, { op: 'project_get', id: parts[2] });
+    if (project.status === 'deleted')
+      return error('REPOSITORY_DELETED', 'This repository has been deleted', 410);
     return response(
       project.status === 'provisioning' || parts[3] === 'retry'
         ? await provisionProject(env, principal.workspace, project)

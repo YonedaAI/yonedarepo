@@ -4,7 +4,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     account(db)?;
     if c["op"] == "projects" {
         let rows = db.query(
-            "SELECT payload FROM workspace_records WHERE id LIKE 'project:%' ORDER BY id LIMIT 100",
+            "SELECT payload FROM workspace_records WHERE id LIKE 'project:%' AND json_extract(payload,'$.status')!='deleted' ORDER BY id LIMIT 100",
             &[],
         )?;
         let projects = rows
@@ -40,6 +40,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             yoneda_core::build::validate_policy(&policy)?;
             let source = c.get("source").cloned().unwrap_or(Value::Null);
             if let Ok(existing) = get(db, TABLE, &key) {
+                if existing["status"] == "deleted" {
+                    return Err(Error::new(
+                        "REPOSITORY_DELETED",
+                        "This repository has been deleted",
+                    ));
+                }
                 if existing["name"] != name
                     || existing["source"] != source
                     || existing["policy"] != c["policy"]
@@ -49,7 +55,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 return Ok(existing);
             }
             let n = db.query(
-                "SELECT COUNT(*) AS n FROM workspace_records WHERE id LIKE 'project:%'",
+                "SELECT COUNT(*) AS n FROM workspace_records WHERE id LIKE 'project:%' AND json_extract(payload,'$.status')!='deleted'",
                 &[],
             )?;
             if n[0]["n"].as_i64().unwrap_or_default() >= 100 {
@@ -60,8 +66,26 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             Ok(p)
         }
         "project_get" => get(db, TABLE, &key),
+        "project_delete" => {
+            let mut p = get(db, TABLE, &key)?;
+            if p["status"] != "deleted" {
+                p["status"] = json!("deleted");
+                p["deleted_at"] = json!(now);
+                p["error"] = Value::Null;
+                put(db, &key, &p)?;
+                db.query("UPDATE workspace_records SET payload=json_set(payload,'$.revoked',json('true')) WHERE id LIKE 'grant:%' AND json_extract(payload,'$.repo')=?", &[json!(id)])?;
+                audit(db, "project.deleted", now, json!({"id":id}))?;
+            }
+            Ok(p)
+        }
         "project_update" => {
             let mut p = get(db, TABLE, &key)?;
+            if p["status"] == "deleted" {
+                return Err(Error::new(
+                    "REPOSITORY_DELETED",
+                    "This repository has been deleted",
+                ));
+            }
             let status = string(c, "status")?;
             if !["provisioning", "ready", "failed"].contains(&status.as_str()) {
                 return Err(bad("Invalid project state"));

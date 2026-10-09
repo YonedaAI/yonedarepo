@@ -27,7 +27,7 @@ export async function readObject(env: Pick<Env, 'OBJECTS'>, digest: string) {
 }
 export async function ledger(env: Env, repo: string, command: Json): Promise<Json> {
   if (!safeId(repo)) throw new Error('Invalid repository ID');
-  if (command._workspace && command.op !== 'init') {
+  if (command._workspace && !['init', 'delete_repository'].includes(command.op)) {
     // Old DO binaries ignore unknown scope fields. Prove code adoption and compare
     // immutable ownership before sending any scoped read or mutation across versions.
     const snapshot = await ledger(env, repo, { op: 'snapshot' });

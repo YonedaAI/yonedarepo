@@ -30,3 +30,7 @@ The approved design is a Context Graph and agent control plane above Cloudflare 
 Show research → three overlapping Codex/Claude attempts → immutable captured commits → clean checks → human decision → verified canonical publication → a simulated incident traversing the original assumption and rejected alternatives. Verify duplicate delivery, restart recovery, stale HEAD/version, idempotency misuse, expired completion, unsafe source paths, forbidden artifact access, publication acknowledgment loss, graph coverage, and event reconnect.
 
 Defaults: one owner workspace, Access-protected mutations, three parallel coding attempts, ten-minute execution deadline, two-minute evaluation deadline, two infrastructure attempts. Defer semantic merge, automatic rebase, generic DAG authoring, enterprise tenancy, and automated garbage collection.
+
+## Follow-up tasks
+
+- [ ] [REPO-001: separate frontend, backend and Cloudflare infrastructure](plans/repository-layout-cleanup.md). Queued after the current deletion and per-run agent fixes; directory moves are not part of those fixes.

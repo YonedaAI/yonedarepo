@@ -1,4 +1,4 @@
-import { GitCompareArrows, Plus } from 'lucide-react';
+import { GitCompareArrows } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
@@ -10,8 +10,10 @@ import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
 import { RunComposer } from './RunComposer';
 import { RunControls } from './RunControls';
+import { RunToolbar } from './RunToolbar';
 import { RunWorkflow } from './RunWorkflow';
 import { initialRun } from './restartRun';
+import { hasPublishedWebsite } from './runDefaults';
 
 export function Exploration({
   snapshot,
@@ -37,6 +39,9 @@ export function Exploration({
   const [comparing, setComparing] = useState(false);
   const repo = snapshot.repository;
   const run = snapshot.runs.find((r) => r.id === runId) ?? snapshot.runs.at(-1);
+  const publishedRun = snapshot.decisions.some(
+    (d) => d.run_id === run?.id && d.status === 'published',
+  );
   const candidates = snapshot.candidates.filter((c) => c.run_id === run?.id);
   const coding = snapshot.executions.filter((e) => e.run_id === run?.id && e.role === 'coding');
   const roots = coding.filter((e) => !e.parent_execution).length;
@@ -69,29 +74,23 @@ export function Exploration({
   }
   return (
     <section className="exploration">
-      <div className="runs-toolbar">
-        <div>
-          <h1>Development runs</h1>
-          <p>One shared brief. Concurrent agents. A decision you can trace.</p>
-        </div>
-        <button
-          type="button"
-          disabled={!canStart}
-          onClick={() => {
-            setRestartId('');
-            setComposing(true);
-          }}
-        >
-          <Plus size={17} />
-          New run
-        </button>
-      </div>
-      <p className="fixture-scope">
-        Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
-      </p>
+      <RunToolbar
+        snapshot={snapshot}
+        canStart={canStart}
+        onNewRun={() => {
+          setRestartId('');
+          setComposing(true);
+        }}
+      />
       {composing && (
         <Dialog
-          title={restartSource ? 'Restart development run' : 'New development run'}
+          title={
+            restartSource
+              ? 'Restart development run'
+              : hasPublishedWebsite(snapshot)
+                ? 'Update website'
+                : 'New development run'
+          }
           onClose={() => setComposing(false)}
           locked={busy}
           wide
@@ -142,7 +141,9 @@ export function Exploration({
             <div>
               <h2>{run.intent}</h2>
               <div className="run-meta">
-                <span className={`status ${run.status}`}>{run.status}</span>
+                <span className={`status ${run.status}`}>
+                  {publishedRun ? 'published' : run.status}
+                </span>
                 <span>
                   Base <code>{short(run.base.commit)}</code>
                 </span>
@@ -178,6 +179,11 @@ export function Exploration({
               onCancel={() => void act('cancel_run', { run_id: run.id })}
             />
           </div>
+          {publishedRun && !activeAttempts && (
+            <p className="subtle">
+              This published run is recorded history. Choose Update website to start a fresh change.
+            </p>
+          )}
           {activeAttempts && (
             <p className="subtle">Finish or cancel active attempts to restart this run.</p>
           )}
@@ -188,17 +194,19 @@ export function Exploration({
             Explore this repository’s context →
           </button>
           <div className="comparison-heading" id="approaches">
-            <h2>Compare approaches</h2>
-            <button
-              type="button"
-              className="quiet"
-              disabled={candidates.length < 2}
-              aria-expanded={comparing}
-              onClick={() => setComparing(!comparing)}
-            >
-              <GitCompareArrows size={17} />
-              {comparing ? 'Close comparison' : 'Compare changes'}
-            </button>
+            <h2>{coding.length === 1 ? 'Review change' : 'Compare approaches'}</h2>
+            {coding.length > 1 && (
+              <button
+                type="button"
+                className="quiet"
+                disabled={candidates.length < 2}
+                aria-expanded={comparing}
+                onClick={() => setComparing(!comparing)}
+              >
+                <GitCompareArrows size={17} />
+                {comparing ? 'Close comparison' : 'Compare changes'}
+              </button>
+            )}
           </div>
           <div className="candidate-grid">
             {coding.map((execution) => {

@@ -8,6 +8,7 @@ import { failureCode, writeLog } from './logging';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
+import { deleteRepository } from './repository-deletion';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
@@ -55,7 +56,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         return response({ repositories: value.projects });
       }
       const result = await env.INDEX.prepare(
-        "SELECT id,payload,seq FROM repositories WHERE COALESCE(json_extract(payload,'$.workspace'),'_admin')=? ORDER BY id LIMIT 100",
+        "SELECT id,payload,seq FROM repositories WHERE COALESCE(json_extract(payload,'$.workspace'),'_admin')=? AND COALESCE(json_extract(payload,'$.status'),'ready')!='deleted' ORDER BY id LIMIT 100",
       )
         .bind(principal.workspace)
         .all();
@@ -103,6 +104,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     const repo = parts[2];
     const action = parts[3] ?? 'snapshot';
     if (parts[1] !== 'repos' || !safeId(repo)) return error('NOT_FOUND', 'Unknown API route', 404);
+    if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
+      return await deleteRepository(req, env, principal, repo);
     if (action !== 'init')
       await ledger(env, repo, { op: 'snapshot', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
@@ -220,13 +223,13 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     const repo = url.pathname.split('/')[3];
     writeLog('request.rejected', {
       ...(url.pathname.startsWith('/api/repos/') && safeId(repo) ? { repo_id: repo } : {}),
-      http_status: e.code === 'FORBIDDEN' ? 403 : 409,
+      http_status: e.code === 'FORBIDDEN' ? 403 : e.code === 'REPOSITORY_DELETED' ? 410 : 409,
       error_code: failureCode(e),
     });
     return error(
       e.code ?? 'REQUEST_FAILED',
       e.message ?? 'Request failed',
-      e.code === 'FORBIDDEN' ? 403 : 409,
+      e.code === 'FORBIDDEN' ? 403 : e.code === 'REPOSITORY_DELETED' ? 410 : 409,
     );
   }
 }

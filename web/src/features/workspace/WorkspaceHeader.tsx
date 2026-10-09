@@ -1,15 +1,18 @@
 import { ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
 import { short } from '../../lib/api';
 import type { Repository } from '../../lib/types';
+import { RepositoryActions } from './RepositoryActions';
 
 export function WorkspaceHeader({
   repository,
   loading,
   onRefresh,
+  onDelete,
 }: {
   repository?: Repository;
   loading: boolean;
   onRefresh: () => void;
+  onDelete: (repository: Repository) => void;
 }) {
   return (
     <header className="workspace-header">
@@ -22,12 +25,13 @@ export function WorkspaceHeader({
         </strong>
       </div>
       <div className="header-actions">
-        {repository && (
+        {repository?.published_commit && (
           <span className="published-revision" title="Canonical published source revision">
             <i />
             Published <code>{short(repository.published_commit)}</code>
           </span>
         )}
+        {repository && <RepositoryActions repository={repository} onDelete={onDelete} />}
         <button
           type="button"
           className="icon-button"

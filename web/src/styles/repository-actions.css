@@ -1,0 +1,75 @@
+.repository-actions {
+  position: relative;
+}
+.repository-actions > summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+}
+.repository-actions > summary::-webkit-details-marker {
+  display: none;
+}
+.repository-actions > summary:hover,
+.repository-actions[open] > summary {
+  background: #f3f6fa;
+}
+.repository-actions > summary:focus-visible {
+  outline: 3px solid #87bce7;
+  outline-offset: 2px;
+}
+.repository-action-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 210px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 28px #12243b18;
+  z-index: 5;
+}
+.repository-action-menu button {
+  width: 100%;
+  justify-content: flex-start;
+  background: transparent;
+  color: #9b3434;
+  font-size: 12px;
+}
+.repository-action-menu button:hover {
+  background: #fff3f1;
+}
+.danger-button {
+  background: #a93232;
+}
+.delete-repository-form > p {
+  font-size: 13px;
+  line-height: 1.7;
+}
+.delete-repository-form .subtle {
+  color: var(--muted);
+  font-size: 12px;
+}
+.delete-repository-form label {
+  font-size: 13px;
+}
+.delete-repository-form .run-actions {
+  justify-content: flex-end;
+}
+.workspace-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 32px;
+  background: #eef8f2;
+  border-bottom: 1px solid #cee8d9;
+  color: #247565;
+  font-size: 13px;
+}

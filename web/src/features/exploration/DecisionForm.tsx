@@ -55,7 +55,7 @@ export function DecisionForm({
           Record decision and publish
         </button>
         <button type="button" className="quiet" disabled={busy} onClick={onClose}>
-          Keep comparing
+          {alternatives.length ? 'Keep comparing' : 'Continue reviewing'}
         </button>
       </div>
     </form>

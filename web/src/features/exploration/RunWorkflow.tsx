@@ -43,6 +43,8 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const decision = snapshot.decisions.find((d) => d.run_id === run.id);
   const shared = snapshot.artifacts.filter((a) => a.producer === research?.id);
   const done = coding.filter((e) => e.finished_at).length;
+  const queued = coding.filter((e) => e.status === 'queued').length;
+  const historical = ['accepted', 'cancelled', 'failed'].includes(run.status);
   const reviewable = eligible.filter(
     (c) =>
       c.base.commit === snapshot.repository.head_commit &&
@@ -62,9 +64,18 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           },
         ]),
     {
-      name: 'Build approaches',
+      name: coding.length === 1 ? 'Build approach' : 'Build approaches',
       value: `${done} / ${coding.length} finished`,
-      detail: `${coding.filter((e) => e.status === 'queued').length} queued · capacity limited`,
+      detail:
+        queued > 0
+          ? `${queued} queued · capacity limited`
+          : historical
+            ? 'Recorded execution history'
+            : coding.length > 0 && done === coding.length
+              ? 'All agents finished'
+              : coding.length > 0
+                ? 'Execution in progress'
+                : 'Waiting for agents',
     },
     {
       name: 'Capture source',

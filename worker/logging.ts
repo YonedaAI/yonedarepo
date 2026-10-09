@@ -35,6 +35,7 @@ const codes = new Set([
   'FENCED',
   'RUNTIME',
   'EXECUTION_TIMEOUT',
+  'REPOSITORY_DELETED',
   'MODEL_PROXY',
   'UNKNOWN',
 ]);

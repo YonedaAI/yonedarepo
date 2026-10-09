@@ -9,13 +9,18 @@ export function useRepository() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
+  const selectedId = useRef('');
+  const deletedIds = useRef(new Set<string>());
   const clear = useCallback(() => {
     generation.current++;
+    selectedId.current = '';
+    deletedIds.current.clear();
     setAuthenticated(false);
     setRepositories([]);
     setCurrentId('');
     setSnapshot(null);
     setError('');
+    setLoading(false);
   }, []);
   const fail = useCallback(
     (e: unknown) => {
@@ -30,32 +35,40 @@ export function useRepository() {
     try {
       const result = await api<{ repositories: Repository[] }>('repositories');
       if (generation.current !== current) return;
-      setAuthenticated(true);
-      setRepositories(result.repositories);
-      setCurrentId((id) =>
-        result.repositories.some((repo) => repo.id === id) ? id : result.repositories[0]?.id || '',
+      const available = result.repositories.filter(
+        (repo) => repo.status !== 'deleted' && !deletedIds.current.has(repo.id),
       );
+      setAuthenticated(true);
+      setRepositories(available);
+      const next = available.some((repo) => repo.id === selectedId.current)
+        ? selectedId.current
+        : (available[0]?.id ?? '');
+      if (next !== selectedId.current) setSnapshot(null);
+      selectedId.current = next;
+      setCurrentId(next);
       setError('');
     } catch (e) {
       if (generation.current === current) fail(e);
     } finally {
-      setLoading(false);
+      if (generation.current === current) setLoading(false);
     }
   }, [fail]);
   const project = repositories.find((repo) => repo.id === id);
   const refresh = useCallback(async () => {
-    if (!id) return;
-    if (project?.status === 'provisioning' || project?.status === 'failed') {
-      if (project.status === 'provisioning') {
-        await api(`projects/${id}`);
-        await discover();
-      }
-      return;
-    }
+    if (!id || id !== selectedId.current || deletedIds.current.has(id)) return;
     const current = generation.current;
+    const stillCurrent = () =>
+      generation.current === current && id === selectedId.current && !deletedIds.current.has(id);
     try {
+      if (project?.status === 'provisioning' || project?.status === 'failed') {
+        if (project.status === 'provisioning') {
+          await api(`projects/${id}`);
+          if (stillCurrent()) await discover();
+        }
+        return;
+      }
       const result = await api<Snapshot>(`repos/${id}/snapshot`);
-      if (generation.current !== current) return;
+      if (!stillCurrent() || result.repository.id !== id) return;
       result.runs.sort((a, b) => a.created_at - b.created_at);
       setSnapshot((previous) =>
         previous && previous.repository.id === result.repository.id && previous.seq > result.seq
@@ -64,13 +77,50 @@ export function useRepository() {
       );
       setError('');
     } catch (e) {
-      if (generation.current === current) fail(e);
+      if (!stillCurrent()) return;
+      if (e instanceof ApiError && e.code === 'REPOSITORY_DELETED') {
+        deletedIds.current.add(id);
+        generation.current++;
+        selectedId.current = '';
+        setCurrentId('');
+        setSnapshot(null);
+        setRepositories((previous) => previous.filter((repo) => repo.id !== id));
+        setError('');
+        await discover();
+      } else fail(e);
     }
   }, [id, fail, project?.status, discover]);
   const setId = useCallback((id: string) => {
+    if (deletedIds.current.has(id)) return;
     generation.current++;
+    selectedId.current = id;
     setCurrentId(id);
+    setSnapshot(null);
+    setError('');
+    setLoading(false);
   }, []);
+  const deleteRepository = useCallback(
+    async (repository: Repository, confirmName: string) => {
+      const result = await api<{ status: string; cleanup_pending: boolean }>(
+        `repos/${encodeURIComponent(repository.id)}/delete_repository`,
+        { confirm_name: confirmName },
+      );
+      if (result.status !== 'deleted') throw new Error('Repository deletion was not confirmed.');
+      deletedIds.current.add(repository.id);
+      generation.current++;
+      const remaining = repositories.filter((repo) => !deletedIds.current.has(repo.id));
+      setRepositories(remaining);
+      if (selectedId.current === repository.id) {
+        selectedId.current = remaining[0]?.id ?? '';
+        setCurrentId(selectedId.current);
+        setSnapshot(null);
+      }
+      setError('');
+      await discover();
+      return { cleanup_pending: result.cleanup_pending !== false };
+    },
+    [repositories, discover],
+  );
   useEffect(() => {
     void discover();
   }, [discover]);
@@ -94,7 +144,7 @@ export function useRepository() {
     project,
     id,
     setId,
-    snapshot,
+    snapshot: snapshot?.repository.id === id && !deletedIds.current.has(id) ? snapshot : null,
     authenticated,
     error,
     setError,
@@ -102,5 +152,6 @@ export function useRepository() {
     discover,
     refresh,
     clear,
+    deleteRepository,
   };
 }

@@ -3,11 +3,13 @@ import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { serveSite, type SitesEnv } from '../../sites';
 import { authorizePreview, previewLink } from '../../worker/sites';
-import { object } from '../../worker/storage';
+import { ledger, object } from '../../worker/storage';
+import { sitePolicy } from '../../worker/site-policy';
 import type { Env } from '../../worker/types';
 const bindings = env as unknown as Env;
 afterEach(reset);
 it('isolates untrusted site assets, binds preview capabilities and preserves publication pointers', async () => {
+ await ledger(bindings,'alice-site',{op:'init',id:'alice-site',name:'Alice site',remote:{namespace:'yoneda-test',name:'alice-site'},commit:'a'.repeat(40),policy:sitePolicy});
  const manifest = {repo:'alice-site', revision:{commit:'a'.repeat(40)},files:{'index.html':{content:'<html>Published</html>'},'logo.png':{content:'/wCA',encoding:'base64'}}};
  const stored=await object(bindings,JSON.stringify(manifest));
  const local={...bindings,SITE_ORIGIN:'https://sites.example'};
