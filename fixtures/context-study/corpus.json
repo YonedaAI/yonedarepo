@@ -1,0 +1,32 @@
+[
+  {
+    "id": "context:privacy",
+    "kind": "constraint",
+    "statement": "RSVP must remain a local confirmation. Never store attendee names or email addresses in persistent browser storage, and do not claim that a booking or subscription was created.",
+    "purpose": "Approved privacy and honesty contract from the previous release.",
+    "author": "synthetic:prior-agent",
+    "created_at": "2026-10-01T12:00:00Z",
+    "provenance": "synthetic benchmark corpus, not real user acceptance",
+    "links": []
+  },
+  {
+    "id": "context:past-events",
+    "kind": "requirement",
+    "statement": "Event search excludes past events, matches both title and category case-insensitively, and preserves source order.",
+    "purpose": "Earlier usability finding accepted for this site.",
+    "author": "synthetic:prior-agent",
+    "created_at": "2026-10-01T12:00:00Z",
+    "provenance": "synthetic benchmark corpus, not real user acceptance",
+    "links": []
+  },
+  {
+    "id": "context:capacity",
+    "kind": "constraint",
+    "statement": "An event at capacity cannot accept another RSVP. Return ok:false and a clear full/capacity message. Available RSVP returns ok:true and says it is a local confirmation.",
+    "purpose": "Earlier capacity finding must survive later edits.",
+    "author": "synthetic:prior-agent",
+    "created_at": "2026-10-01T12:00:00Z",
+    "provenance": "synthetic benchmark corpus, not real user acceptance",
+    "links": []
+  }
+]

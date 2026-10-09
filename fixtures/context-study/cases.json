@@ -1,0 +1,36 @@
+[
+  {
+    "id": "website_update",
+    "brief": "Add useful event search and RSVP confirmation to the existing community events website. Preserve its module API and wire the browser interactions.",
+    "executions": 2,
+    "criteria": [
+      "Search and RSVP work through the published page."
+    ],
+    "strategies": [
+      "Implement a clear and usable solution.",
+      "Implement a compact and accessible solution."
+    ]
+  },
+  {
+    "id": "delegation",
+    "brief": "Improve the community events website. Implement search in your own approach; delegate a separate RSVP implementation with delegate_agent exactly once. Before delegating, publish any relevant constraints you discover as a finding so the child can retrieve them. The child is a separately checked candidate; no automatic merge is expected.",
+    "executions": 2,
+    "criteria": [
+      "Root implements search; child implements RSVP."
+    ],
+    "strategies": [
+      "Implement search and delegate RSVP."
+    ]
+  },
+  {
+    "id": "local_continuation",
+    "brief": "Continue the existing community events website with working RSVP confirmation. Preserve its module API and wire the browser interactions.",
+    "executions": 1,
+    "criteria": [
+      "RSVP works through the published page."
+    ],
+    "strategies": [
+      "Continue the current implementation."
+    ]
+  }
+]
