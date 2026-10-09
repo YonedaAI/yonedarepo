@@ -7,22 +7,13 @@ const LIFETIME: i64 = 7 * 24 * 60 * 60 * 1000;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match string(c, "op")?.as_str() {
         "signup" => {
-            let username = string(c, "username")?;
-            if !(3..=32).contains(&username.len())
-                || !username
-                    .as_bytes()
-                    .first()
-                    .is_some_and(u8::is_ascii_lowercase)
-                || !username
-                    .bytes()
-                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-            {
-                return Err(bad(
-                    "Username must be 3–32 lowercase letters, digits or underscores, starting with a letter",
-                ));
-            }
+            let username =
+                yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
             if get(db, TABLE, "account").is_ok() {
-                return Err(Error::new("ALREADY_EXISTS", "Username unavailable"));
+                return Err(Error::new(
+                    "ALREADY_EXISTS",
+                    "Username or email unavailable",
+                ));
             }
             let verifier = verifier(c)?;
             let a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});

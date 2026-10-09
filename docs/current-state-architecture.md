@@ -137,6 +137,14 @@ Setup claims have a
 two-minute lease and epoch; an attempt has a 90-second watchdog, and repeated pending work
 stops after ten minutes. Failed setup can retry with the same repository identity.
 
+Accounts accept a username or practical ASCII email as the registered identifier, trimmed and
+case-insensitive. Email dots and plus tags are preserved. Encoded cookie/MCP segments prevent
+email punctuation from becoming protocol separators; legacy username sessions and grants keep
+their original format. The Rust core owns validation and shared contract cases check browser
+and Worker parity. Existing usernames do not acquire an email alias automatically. Email
+ownership verification and email-based password reset are not implemented; recovery uses the
+one-time saved code.
+
 Imports resolve the public Git remote's advertised HEAD and explicitly supply its branch to
 Artifacts. Existing imports with incorrect default-branch metadata recover the actual source
 branch before initialization. Empty or unsupported source produces an actionable error.

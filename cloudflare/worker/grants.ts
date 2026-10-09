@@ -1,3 +1,4 @@
+import { decodeAccountIdentifier, encodeAccountIdentifier } from '../../shared/account';
 import { randomToken } from './accounts';
 import { error, readJson, response, safeId } from './http';
 import { ledger, sha } from './storage';
@@ -7,21 +8,17 @@ export async function grantPrincipal(req: Request, env: Env): Promise<Principal 
   const raw = req.headers.get('authorization')?.replace(/^Bearer /, '');
   if (!raw?.startsWith('yoneda.')) return null;
   const parts = raw.split('.');
-  if (
-    parts.length !== 4 ||
-    !/^[a-z][a-z0-9_]{2,31}$/.test(parts[1]) ||
-    !safeId(parts[2]) ||
-    !/^[a-f0-9]{64}$/.test(parts[3])
-  )
-    return null;
+  if (parts.length !== 4 || !safeId(parts[2]) || !/^[a-f0-9]{64}$/.test(parts[3])) return null;
+  const owner = decodeAccountIdentifier(parts[1]);
+  if (!owner) return null;
   try {
-    const grant = await workspace(env, parts[1], {
+    const grant = await workspace(env, owner, {
       op: 'grant_check',
       id: parts[2],
       token_hash: await sha(parts[3]),
     });
     return {
-      workspace: parts[1],
+      workspace: owner,
       role: 'agent',
       grant: { id: grant.id, repo: grant.repo, scope: grant.scope },
     };
@@ -61,7 +58,7 @@ export async function grantRoute(req: Request, env: Env, principal: Principal, r
   });
   return response({
     ...grant,
-    token: `yoneda.${principal.workspace}.${id}.${secret}`,
+    token: `yoneda.${encodeAccountIdentifier(principal.workspace)}.${id}.${secret}`,
     mcp_url: `${new URL(req.url).origin}/mcp/${repo}`,
   });
 }

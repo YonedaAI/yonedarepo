@@ -1,3 +1,9 @@
+import {
+  ACCOUNT_IDENTIFIER_HELP,
+  decodeAccountIdentifier,
+  encodeAccountIdentifier,
+  normalizeAccountIdentifier,
+} from '../../shared/account';
 import { error, readJson, response } from './http';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
@@ -10,10 +16,9 @@ export function randomToken(bytes = 32) {
     .join('');
 }
 export function username(value: unknown) {
-  if (typeof value !== 'string') throw new Error('Username required');
-  const name = value.trim().toLowerCase();
-  if (!/^[a-z][a-z0-9_]{2,31}$/.test(name))
-    throw new Error('Use 3–32 letters, digits or underscores, starting with a letter');
+  if (typeof value !== 'string') throw new Error('Username or email required');
+  const name = normalizeAccountIdentifier(value);
+  if (!name) throw new Error(ACCOUNT_IDENTIFIER_HELP);
   return name;
 }
 function cookie(req: Request, value = '') {
@@ -26,8 +31,12 @@ function sessionValue(req: Request) {
     .map((v) => v.trim())
     .find((v) => v.startsWith(`${cookieName}=`))
     ?.slice(cookieName.length + 1);
-  if (!raw || !/^[a-z][a-z0-9_]{2,31}\.[a-f0-9]{64}$/.test(raw)) return null;
-  const [name, token] = raw.split('.');
+  if (!raw) return null;
+  const parts = raw.split('.');
+  if (parts.length !== 2 || !/^[a-f0-9]{64}$/.test(parts[1])) return null;
+  const name = decodeAccountIdentifier(parts[0]);
+  if (!name) return null;
+  const token = parts[1];
   return { name, token };
 }
 export async function accountPrincipal(req: Request, env: Env): Promise<Principal | null> {
@@ -107,7 +116,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           401,
         );
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
-      if (action !== 'recover') result.headers.set('set-cookie', cookie(req, `${name}.${token}`));
+      if (action !== 'recover')
+        result.headers.set('set-cookie', cookie(req, `${encodeAccountIdentifier(name)}.${token}`));
       else result.headers.set('set-cookie', cookie(req));
     } else return error('NOT_FOUND', 'Unknown authentication route', 404);
     result.headers.set('cache-control', 'no-store');

@@ -1,3 +1,4 @@
+import { isCanonicalAccountIdentifier } from '../../shared/account';
 import { source } from './artifacts';
 import { safeId } from './http';
 import { writeLog } from './logging';
@@ -154,7 +155,7 @@ export async function scheduleProject(env: Env, owner: string, project: Json, de
 
 export async function provisionMessage(env: Env, message: Message<Envelope>) {
   const body = message.body;
-  if (!body.workspace || !/^[a-z][a-z0-9_]{2,31}$/.test(body.workspace)) {
+  if (!body.workspace || !isCanonicalAccountIdentifier(body.workspace)) {
     message.ack();
     return;
   }
@@ -177,7 +178,7 @@ export async function provisionMessage(env: Env, message: Message<Envelope>) {
 
 export async function enqueueProjects(env: Env, owner: string, projects: Json[]) {
   const delivered: string[] = [];
-  if (!/^[a-z][a-z0-9_]{2,31}$/.test(owner)) return delivered;
+  if (!isCanonicalAccountIdentifier(owner)) return delivered;
   for (const project of projects) {
     if (!safeId(project.id)) continue;
     try {
