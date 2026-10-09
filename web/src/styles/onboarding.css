@@ -211,3 +211,16 @@
   margin-top: 4px;
   color: var(--muted);
 }
+.provider-model-picker {
+  display: grid;
+  gap: 10px;
+}
+.provider-model-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.provider-model-note a {
+  color: var(--blue);
+  text-decoration: underline;
+}

@@ -1,21 +1,11 @@
 import { Bot, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { ProviderModelPicker } from './ProviderModelPicker';
+import { defaults, providerNames } from './providerModels';
+
+export { defaults, providerNames } from './providerModels';
 export type Provider = { id: string; label: string; provider: string; model: string };
-export const defaults: Record<string, string> = {
-  mimo: 'mimo-v2.6-flash',
-  zai: 'glm-4.7-flash',
-  codex: 'gpt-5.6-luna',
-  claude: 'claude-sonnet-4-6',
-  gemini: 'gemini-3.8-flash',
-};
-export const providerNames: Record<string, string> = {
-  mimo: 'MiMo',
-  zai: 'ZAI',
-  codex: 'OpenAI / Codex',
-  claude: 'Anthropic / Claude',
-  gemini: 'Google / Gemini',
-};
 export function ProviderSettings({ onClose }: { onClose: () => void }) {
   const [configured, setConfigured] = useState<Provider[]>([]);
   const [provider, setProvider] = useState('mimo');
@@ -144,18 +134,14 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </label>
-        <label>
-          Model
-          <input
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-            required
-            maxLength={128}
-            pattern="[A-Za-z0-9._/-]+"
-            readOnly={provider === 'claude'}
-            disabled={busy}
-          />
-        </label>
+        <ProviderModelPicker
+          key={provider}
+          provider={provider}
+          model={model}
+          connections={configured}
+          disabled={busy}
+          onChange={setModel}
+        />
         <label>
           API key
           <input

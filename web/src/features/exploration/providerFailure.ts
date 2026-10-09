@@ -1,4 +1,4 @@
-import { providerNames } from '../workspace/ProviderSettings';
+import { providerNames } from '../workspace/providerModels';
 
 export type ProviderFailureCode =
   | 'PROVIDER_BALANCE'
@@ -31,7 +31,7 @@ const notices: Record<ProviderFailureCode, { title: string; action: string }> = 
   PROVIDER_RATE_LIMIT: {
     title: 'rate limit was reached',
     action:
-      'Wait for the provider allowance to reset or choose another connection, then start a new run.',
+      'Check provider rate/concurrency limits and model access, or choose another connection before restarting.',
   },
   PROVIDER_UNAVAILABLE: {
     title: 'service is temporarily unavailable',
@@ -51,17 +51,17 @@ const notices: Record<ProviderFailureCode, { title: string; action: string }> = 
   },
   MODEL_REQUEST_LIMIT: {
     title: 'model request allowance was reached',
-    action: 'Restart with a larger approved request allowance or a smaller brief.',
+    action: 'Use Restart run to raise the approved request allowance or reduce the brief.',
   },
   MODEL_SPEND_LIMIT: {
     title: 'estimated model allowance was reached',
     action:
-      'Review the approved pricing and remaining allowance. Restart with a larger allowance or a smaller task; the next request must fit its worst-case reservation.',
+      'Review the approved pricing and remaining allowance. Use Restart run with a larger allowance or a smaller task; the next request must fit its worst-case reservation.',
   },
   HARNESS_BUDGET: {
     title: 'execution budget was reached',
     action:
-      'The agent stopped at its execution budget. No candidate was captured. Start a smaller run or choose another approved connection.',
+      'The agent stopped at its execution budget. No candidate was captured. Use Restart run with a smaller task or another approved connection.',
   },
 };
 
@@ -115,7 +115,30 @@ function statusCode(status: unknown): ProviderFailureCode | undefined {
   return undefined;
 }
 
-/** Read only the final structured result; free text and intermediate tool output are not causes. */
+function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
+  let body: unknown = result;
+  if (typeof result === 'string') {
+    const prefix = 'API Error: 409 ';
+    const text = result.startsWith(prefix) ? result.slice(prefix.length) : result;
+    if (text === 'This provider/model group exhausted its approved request budget')
+      return 'MODEL_REQUEST_LIMIT';
+    if (
+      text ===
+      'This provider/model group has insufficient approved spend remaining for the conservative request ceiling'
+    )
+      return 'MODEL_SPEND_LIMIT';
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+  }
+  if (!record(body)) return undefined;
+  const code = record(body.error) ? body.error.code : body.code;
+  return code === 'MODEL_REQUEST_LIMIT' || code === 'MODEL_SPEND_LIMIT' ? code : undefined;
+}
+
+/** Only final structured outcomes and exact broker budget denials are recognized. */
 export function transcriptFailureCode(content: unknown): ProviderFailureCode | undefined {
   if (typeof content !== 'string' || content.length > 2_000_000) return undefined;
   let transcript: unknown;
@@ -141,9 +164,10 @@ export function transcriptFailureCode(content: unknown): ProviderFailureCode | u
     if (!record(row) || row.type !== 'result') continue;
     if (row.is_error === true && row.terminal_reason === 'budget_exhausted')
       return 'HARNESS_BUDGET';
-    return row.is_error === true && row.terminal_reason === 'api_error'
-      ? statusCode(row.api_error_status)
-      : undefined;
+    if (row.is_error !== true || row.terminal_reason !== 'api_error') return undefined;
+    return row.api_error_status === 409
+      ? terminalBudgetCode(row.result)
+      : statusCode(row.api_error_status);
   }
   return undefined;
 }

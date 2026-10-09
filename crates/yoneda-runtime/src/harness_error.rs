@@ -52,20 +52,39 @@ fn terminal_diagnostic(output: &Value) -> Option<(&'static str, &'static str)> {
     }
     if result["api_error_status"] == 409 {
         let body = result["result"].as_str()?.strip_prefix("API Error: 409 ")?;
-        let error: Value = serde_json::from_str(body.trim()).ok()?;
-        return match error["error"]["code"].as_str()? {
-            "MODEL_REQUEST_LIMIT" => Some((
-                "MODEL_REQUEST_LIMIT",
-                "This provider/model group reached its owner-approved request allowance. Review the run budget before approving a new run.",
-            )),
-            "MODEL_SPEND_LIMIT" => Some((
-                "MODEL_SPEND_LIMIT",
-                "This provider/model group has insufficient approved spend remaining for the next request. Review its usage and budget before approving a new run.",
-            )),
-            _ => None,
-        };
+        return budget_diagnostic(body);
     }
     diagnostic(result["api_error_status"].as_u64()?)
+}
+
+fn budget_diagnostic(body: &str) -> Option<(&'static str, &'static str)> {
+    // Some Claude-compatible SDKs replace the JSON error with its message.
+    // Match our complete Worker messages, never infer a cause from arbitrary text.
+    let code = match body {
+        "This provider/model group exhausted its approved request budget" => "MODEL_REQUEST_LIMIT",
+        "This provider/model group has insufficient approved spend remaining for the conservative request ceiling" => {
+            "MODEL_SPEND_LIMIT"
+        }
+        _ => {
+            let error: Value = serde_json::from_str(body.trim()).ok()?;
+            match error["error"]["code"].as_str()? {
+                "MODEL_REQUEST_LIMIT" => "MODEL_REQUEST_LIMIT",
+                "MODEL_SPEND_LIMIT" => "MODEL_SPEND_LIMIT",
+                _ => return None,
+            }
+        }
+    };
+    match code {
+        "MODEL_REQUEST_LIMIT" => Some((
+            "MODEL_REQUEST_LIMIT",
+            "This provider/model group reached its owner-approved request allowance. Review the run budget before approving a new run.",
+        )),
+        "MODEL_SPEND_LIMIT" => Some((
+            "MODEL_SPEND_LIMIT",
+            "This provider/model group has insufficient approved spend remaining for the next request. Review its usage and budget before approving a new run.",
+        )),
+        _ => None,
+    }
 }
 
 fn diagnostic(status: u64) -> Option<(&'static str, &'static str)> {

@@ -83,10 +83,46 @@ export function modelPricingSuggestion(provider: string, model: string) {
       note: 'MiMo overseas real-time rates apply; cache writes are currently free. Review your endpoint and account pricing before approving.',
       url: 'https://mimo.mi.com/docs/pricing',
     },
+    'mimo:mimo-v2.6-pro': {
+      input: '0.435',
+      output: '0.87',
+      note: 'MiMo overseas real-time rates apply. Review your endpoint and account pricing before approving.',
+      url: 'https://mimo.mi.com/docs/pricing',
+    },
     'zai:glm-4.7-flash': {
       input: '0',
       output: '0',
       note: 'This model is currently listed as free. Pricing can change; request, time and output caps still apply.',
+      url: 'https://docs.z.ai/guides/overview/pricing',
+    },
+    'zai:glm-4.5-flash': {
+      input: '0',
+      output: '0',
+      note: 'The catalog currently lists this model as free. Confirm your account and endpoint support it; pricing can change.',
+      url: 'https://docs.z.ai/guides/overview/pricing',
+    },
+    'zai:glm-4.7-flashx': {
+      input: '0.07',
+      output: '0.4',
+      note: 'ZAI catalog rates apply. Confirm your Anthropic-compatible account supports this model.',
+      url: 'https://docs.z.ai/guides/overview/pricing',
+    },
+    'zai:glm-4.7': {
+      input: '0.6',
+      output: '2.2',
+      note: 'ZAI catalog rates apply. Confirm your Anthropic-compatible account supports this model.',
+      url: 'https://docs.z.ai/guides/overview/pricing',
+    },
+    'zai:glm-5.3-flash': {
+      input: '0.15',
+      output: '0.5',
+      note: 'ZAI catalog rates apply. Confirm your account and endpoint billing before approving.',
+      url: 'https://docs.z.ai/guides/overview/pricing',
+    },
+    'zai:glm-5.3': {
+      input: '1.4',
+      output: '4.4',
+      note: 'ZAI catalog rates apply. Confirm your account and endpoint billing before approving.',
       url: 'https://docs.z.ai/guides/overview/pricing',
     },
     'gemini:gemini-3.8-flash': {

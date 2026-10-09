@@ -79,3 +79,42 @@ collapsed. Reading the original run's outcomes showed MiMo's insufficient accoun
 ZAI's legacy execution-budget stop as distinct diagnoses, without exposing raw transcript text.
 The container ceiling is 16 instances; this does not establish 16 concurrent executions.
 No paid retry, new six-agent live run or new publication was started for these checks.
+
+## Provider model selection and recorded failure diagnosis
+
+The console now offers provider-specific model dropdowns for MiMo, ZAI, OpenAI/Codex,
+Anthropic/Claude and Google/Gemini. Custom IDs and previously saved custom models remain
+available where provider policy permits them; Claude remains Sonnet-only. Defaults are
+unchanged. Published catalogs supply the presets, not a live entitlement check of a user's key.
+ZAI's connector explains its Anthropic-compatible endpoint and links account model support.
+
+Inspection of the latest failed personal run established two distinct outcomes. MiMo reached
+its approved **24-request** allowance after approximately seven minutes. The CLI replaced the
+Worker's JSON error envelope with its message, which the original diagnostic parser missed.
+Native and browser diagnostics now recognize only the complete allowlisted terminal budget
+messages, with regression coverage for altered text, wrong status and nonterminal output.
+ZAI returned **HTTP 429, business code 1302**, before successful model output; its CLI retries
+used **11 request slots**. The owner confirmed the dashboard key was saved in that connection;
+personal runs resolve the frozen connection and do not fall back to platform secrets. The
+response does not establish insufficient account balance or explain the dashboard's
+"Not used" indicator. Provider account/model access still needs successful live acceptance.
+The usage panel now states that requests include retries and provider rejections.
+
+One combined source review and `cargo xtask check` passed **110 native Rust tests, 68 workerd
+tests and one Node runtime test**, with rustfmt, Clippy, Wasm, TypeScript, Biome and production
+browser build. The Linux execution image passed **28 runtime tests** and built successfully.
+Logs are in ignored `artifacts/scalability/check-provider-fix.log` and
+`container-provider-fix.log`.
+
+Development Worker version `049dc3e9-679b-442e-81d3-e0be956c410b` is active. In a separate live
+browser tab, all five provider lists preserved their defaults, custom entry worked, and
+**Explain failure** on the existing MiMo execution identified its request allowance and
+directed the owner to **Restart run**. Screenshots are in ignored
+`artifacts/scalability/provider-model-picker-live.png` and `provider-failure-fixed-live.png`.
+No key was saved, no run was restarted and no paid inference was initiated for these checks.
+
+Wrangler published runner image SHA-256
+`2bb47dadd4f3dfd5c4419c546061502b89e4938f10d102056acb0ed2c198442f`. After its rollout,
+Cloudflare reported application version **11** as **ready**, and a separate application read
+confirmed that image digest. This is image deployment evidence; no new paid agent execution
+was started to exercise it.
