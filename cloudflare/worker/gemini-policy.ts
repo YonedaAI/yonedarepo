@@ -1,4 +1,4 @@
-import { providerDefinition } from '../shared/providers';
+import { providerDefinition } from '../../shared/providers';
 import { outputCeiling } from './model-budget';
 import type { Json } from './types';
 

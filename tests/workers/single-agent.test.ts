@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { checkLedger } from '../../worker/runtime';
-import { ledger, object } from '../../worker/storage';
-import type { Env, Json } from '../../worker/types';
+import { checkLedger } from '../../cloudflare/worker/runtime';
+import { ledger, object } from '../../cloudflare/worker/storage';
+import type { Env, Json } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 const repo = 'single-agent-test';

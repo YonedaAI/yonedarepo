@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { prepareModelRequest } from '../../worker/model-policy';
-import { checkRuntime } from '../../worker/runtime';
+import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
+import { checkRuntime } from '../../cloudflare/worker/runtime';
 const job = { kind: 'agent', model: 'gemini-3.8-flash', payload: { execution: { harness: 'gemini', provider: 'gemini' } } };
 it('pins Gemini model and API host, bounds output and blocks paid server tools and media', () => {
   const prepare = (body: object, path = '/v1beta/models/expensive:streamGenerateContent') => prepareModelRequest(job, 'gemini', path, body);

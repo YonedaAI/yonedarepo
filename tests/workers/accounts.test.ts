@@ -1,8 +1,8 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { ledger } from '../../worker/storage';
-import type { Env } from '../../worker/types';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env } from '../../cloudflare/worker/types';
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
 const request = (path: string, body?: unknown, cookie?: string) => bindings.SELF.fetch(`https://yoneda/api/${path}`, {method:body ? 'POST' : 'GET',headers:{...(body ? {'content-type':'application/json'} : {}),...(cookie ? {cookie} : {})},...(body ? {body:JSON.stringify(body)} : {})});

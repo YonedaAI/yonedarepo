@@ -1,4 +1,4 @@
-import { providerDefinition } from '../shared/providers';
+import { providerDefinition } from '../../shared/providers';
 import type { Json } from './types';
 
 export type MiMoRegion = 'cn' | 'sgp' | 'ams';

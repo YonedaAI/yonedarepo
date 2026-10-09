@@ -1,14 +1,14 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { fetchRequest } from '../../worker/routes';
-import { deliverOutbox } from '../../worker/outbox-delivery';
-import { deliverDeletion } from '../../worker/repository-deletion';
-import { provisionProject } from '../../worker/projects';
-import { authorizePreview, previewLink } from '../../worker/sites';
-import { ledger, sha } from '../../worker/storage';
-import { workspace } from '../../worker/workspace';
-import type { Env, Json } from '../../worker/types';
+import { fetchRequest } from '../../cloudflare/worker/routes';
+import { deliverOutbox } from '../../cloudflare/worker/outbox-delivery';
+import { deliverDeletion } from '../../cloudflare/worker/repository-deletion';
+import { provisionProject } from '../../cloudflare/worker/projects';
+import { authorizePreview, previewLink } from '../../cloudflare/worker/sites';
+import { ledger, sha } from '../../cloudflare/worker/storage';
+import { workspace } from '../../cloudflare/worker/workspace';
+import type { Env, Json } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 const policy = {version:'retry-v1',suite:'retry-contract-v1',environment:'rust-1.94-evaluator-v1',required_checks:['build','behavior']};

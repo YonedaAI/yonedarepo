@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/yoneda-core", "crates/yoneda-app", "crates/yoneda-cloudflare", "crates/yoneda-worker", "crates/yoneda-runtime", "xtask"]
+members = ["backend/crates/yoneda-core", "backend/crates/yoneda-app", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "xtask"]
 exclude = ["fixtures/retry-client"]
 resolver = "2"
 
@@ -15,9 +15,9 @@ serde_json = "1"
 sha2 = "0.10"
 thiserror = "2"
 schemars = "1"
-yoneda-core = { path = "crates/yoneda-core" }
-yoneda-app = { path = "crates/yoneda-app" }
-yoneda-cloudflare = { path = "crates/yoneda-cloudflare" }
+yoneda-core = { path = "backend/crates/yoneda-core" }
+yoneda-app = { path = "backend/crates/yoneda-app" }
+yoneda-cloudflare = { path = "backend/crates/yoneda-cloudflare" }
 
 [profile.release]
 lto = true

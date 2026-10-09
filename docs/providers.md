@@ -132,7 +132,7 @@ old key is removed. Never put keys in Git, CLI arguments, browser storage or log
 
 ## Adding a provider
 
-The public descriptor at `crates/yoneda-core/src/providers.json` is the single registry consumed
+The public descriptor at `backend/crates/yoneda-core/src/providers.json` is the single registry consumed
 by Rust validation/scheduling, `shared/providers.ts`, the browser picker and Worker egress.
 It contains no credentials. For a compatible provider, add one descriptor with a stable ID,
 display name, harness/protocol, HTTPS API base, authentication header/prefix, default model,
@@ -142,7 +142,7 @@ vault and settings flow; operator credentials additionally need the named Cloudf
 Supported protocols are Anthropic Messages (`claude` harness), OpenAI Responses (`codex` harness)
 and Gemini GenerateContent (`gemini` harness). The API base excludes the protocol paths appended
 by its adapter. OpenAI Chat Completions alone is not Responses-compatible and requires an adapter.
-Provider-specific products belong in small routing adapters, as with `worker/mimo-routing.ts`.
+Provider-specific products belong in small routing adapters, as with `cloudflare/worker/mimo-routing.ts`.
 New protocols also need a request/stream adapter and compatible harness; they are not just an URL.
 
 Run the registry invariants, Worker protocol/scope tests and `cargo xtask check`. Verify actual

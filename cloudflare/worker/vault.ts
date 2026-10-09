@@ -1,6 +1,6 @@
 //! Provider keys are encrypted in the workspace DO and decrypted only at scoped egress.
 
-import { providerDefinition } from '../shared/providers';
+import { providerDefinition } from '../../shared/providers';
 import { mimoRouting, validateMiMoKey } from './mimo-routing';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';

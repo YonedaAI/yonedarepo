@@ -11,60 +11,21 @@ pub fn token() -> Result<String> {
     Ok(std::fs::read_to_string(".local/owner-token")?.trim().into())
 }
 pub fn ensure_token() -> Result<()> {
-    std::fs::create_dir_all(".local")?;
-    if !std::path::Path::new(".local/owner-token").exists() {
-        let value = format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4());
-        std::fs::write(".local/owner-token", &value)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(".local/owner-token", std::fs::Permissions::from_mode(0o600))?;
-        }
-    }
-    let value = token()?;
-    if !std::path::Path::new(".dev.vars").exists() {
-        std::fs::write(".dev.vars", format!("OWNER_TOKEN={value}\n"))?;
-    }
-    let mut vars = std::fs::read_to_string(".dev.vars")?;
-    if !std::path::Path::new(".local/vault-key").exists() {
-        let existing = vars
-            .lines()
-            .find_map(|line| line.strip_prefix("VAULT_KEY="));
-        let key = existing.map(str::to_owned).unwrap_or_else(|| {
-            format!(
-                "{}{}",
-                uuid::Uuid::new_v4().simple(),
-                uuid::Uuid::new_v4().simple()
-            )
-        });
-        if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("VAULT_KEY must contain 64 hexadecimal characters".into());
-        }
-        std::fs::write(".local/vault-key", key)?;
-    }
-    if !vars.lines().any(|line| line.starts_with("VAULT_KEY=")) {
-        if !vars.ends_with('\n') {
-            vars.push('\n');
-        }
-        vars.push_str(&format!(
-            "VAULT_KEY={}\n",
-            std::fs::read_to_string(".local/vault-key")?.trim()
-        ));
-        std::fs::write(".dev.vars", vars)?;
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        for path in [".local/owner-token", ".local/vault-key", ".dev.vars"] {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-        }
-    }
-    Ok(())
+    crate::local_config::ensure(std::path::Path::new("."))
 }
 pub fn deploy_token() -> Result<()> {
     put_secret("OWNER_TOKEN", &token()?)?;
     let existing = Command::new("pnpm")
-        .args(["exec", "wrangler", "secret", "list", "--format", "json"])
+        .args([
+            "exec",
+            "wrangler",
+            "secret",
+            "list",
+            "--format",
+            "json",
+            "--config",
+            crate::layout::PLATFORM_CONFIG,
+        ])
         .output()?;
     if !existing.status.success() {
         return Err("Cannot verify deployed vault key; refusing to rotate it".into());
@@ -87,7 +48,15 @@ pub fn deploy_token() -> Result<()> {
 }
 fn put_secret(name: &str, value: &str) -> Result<()> {
     let mut child = Command::new("pnpm")
-        .args(["exec", "wrangler", "secret", "put", name])
+        .args([
+            "exec",
+            "wrangler",
+            "secret",
+            "put",
+            name,
+            "--config",
+            crate::layout::PLATFORM_CONFIG,
+        ])
         .stdin(Stdio::piped())
         .spawn()?;
     use std::io::Write;

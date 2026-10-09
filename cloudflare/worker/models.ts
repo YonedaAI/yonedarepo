@@ -1,5 +1,5 @@
 import type { OutboundHandler } from '@cloudflare/containers';
-import { providerDefinition } from '../shared/providers';
+import { providerDefinition } from '../../shared/providers';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
 import { requestUsage } from './model-budget';

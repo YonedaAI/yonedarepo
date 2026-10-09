@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import type { Env } from '../../worker/types';
-import { open, providerKey } from '../../worker/vault';
-import { workspace } from '../../worker/workspace';
+import type { Env } from '../../cloudflare/worker/types';
+import { open, providerKey } from '../../cloudflare/worker/vault';
+import { workspace } from '../../cloudflare/worker/workspace';
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
 it('keeps same-provider connections independent, authenticated and bound to their identity', async () => {

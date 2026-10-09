@@ -42,30 +42,14 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
     let manifest = json!({"name":name,"account_id":account,"namespace":namespace,"database_id":database,"platform_url":format!("https://{name}.{subdomain}.workers.dev"),"sites_url":format!("https://{name}-sites.{subdomain}.workers.dev")});
     std::fs::create_dir_all(&dir)?;
     private(&dir, true)?;
-    let manifest_path = dir.join("deployment.json");
-    if manifest_path.exists()
-        && serde_json::from_slice::<Value>(&std::fs::read(&manifest_path)?)? != manifest
-    {
-        return Err(
-            "Deployment identity differs from saved configuration; choose another --name".into(),
-        );
-    }
-    let template: Value = serde_json::from_slice(&std::fs::read("wrangler.jsonc")?)?;
-    let (platform, sites) = configs(template, &manifest);
-    for (filename, value) in [
-        ("deployment.json", manifest),
-        ("platform.json", platform),
-        ("sites.json", sites),
-    ] {
-        let path = dir.join(filename);
-        // Preserve reviewed local configuration changes on repeat setup.
-        if !path.exists() {
-            std::fs::write(path, serde_json::to_vec_pretty(&value)?)?;
-        }
-    }
+    let template: Value = serde_json::from_slice(&std::fs::read(crate::layout::PLATFORM_CONFIG)?)?;
+    save_configs(&dir, &manifest, template)?;
     println!(
         "Configuration saved in {}. Review it before deployment.",
         dir.display()
+    );
+    println!(
+        "Known legacy source paths were upgraded; custom paths and saved resource identities were retained. Review custom source paths manually if they refer to the previous layout."
     );
     println!(
         "One-time resources (skip resources that already exist):\npnpm exec wrangler r2 bucket create {name}-objects --config {0}/platform.json\npnpm exec wrangler d1 create {name}-index --config {0}/platform.json",
@@ -82,13 +66,101 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
     );
     Ok(())
 }
+fn save_configs(dir: &Path, manifest: &Value, template: Value) -> Result<()> {
+    let manifest_path = dir.join("deployment.json");
+    if manifest_path.exists()
+        && serde_json::from_slice::<Value>(&std::fs::read(&manifest_path)?)? != *manifest
+    {
+        return Err(
+            "Deployment identity differs from saved configuration; choose another --name".into(),
+        );
+    }
+    let (platform, sites) = configs(template, manifest);
+    for (filename, value) in [
+        ("deployment.json", manifest.clone()),
+        ("platform.json", platform),
+        ("sites.json", sites),
+    ] {
+        let path = dir.join(filename);
+        if path.exists() {
+            if filename == "deployment.json" {
+                continue;
+            }
+            let mut saved: Value = serde_json::from_slice(&std::fs::read(&path)?).map_err(|error| {
+                format!("Cannot upgrade {}: {error}. Retain its identities and manually update source paths for the frontend/backend/cloudflare layout.", path.display())
+            })?;
+            if upgrade_paths(&mut saved, filename == "sites.json") {
+                std::fs::write(&path, serde_json::to_vec_pretty(&saved)?)?;
+            }
+        } else {
+            std::fs::write(&path, serde_json::to_vec_pretty(&value)?)?;
+        }
+    }
+    Ok(())
+}
+fn upgrade_paths(config: &mut Value, sites: bool) -> bool {
+    let mut changed = replace_path(
+        config,
+        "/main",
+        if sites {
+            "../../../sites/index.ts"
+        } else {
+            "../../../worker/index.ts"
+        },
+        if sites {
+            "../../../cloudflare/sites/index.ts"
+        } else {
+            "../../../cloudflare/worker/index.ts"
+        },
+    );
+    if !sites {
+        changed |= replace_path(
+            config,
+            "/assets/directory",
+            "../../../web/dist",
+            "../../../frontend/dist",
+        );
+        if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut) {
+            for container in containers {
+                changed |= replace_path(
+                    container,
+                    "/image",
+                    "../../../containers/Dockerfile",
+                    "../../../cloudflare/containers/Dockerfile",
+                );
+            }
+        }
+        if let Some(databases) = config.get_mut("d1_databases").and_then(Value::as_array_mut) {
+            for database in databases {
+                changed |= replace_path(
+                    database,
+                    "/migrations_dir",
+                    "../../../migrations",
+                    "../../../cloudflare/migrations",
+                );
+            }
+        }
+    }
+    changed
+}
+fn replace_path(config: &mut Value, pointer: &str, old: &str, new: &str) -> bool {
+    if let Some(value) = config
+        .pointer_mut(pointer)
+        .filter(|value| value.as_str() == Some(old))
+    {
+        *value = json!(new);
+        true
+    } else {
+        false
+    }
+}
 fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
     let name = m["name"].as_str().unwrap_or_default();
     platform["name"] = m["name"].clone();
     platform["account_id"] = m["account_id"].clone();
-    platform["main"] = json!("../../../worker/index.ts");
+    platform["main"] = json!("../../../cloudflare/worker/index.ts");
     platform["$schema"] = json!("../../../node_modules/wrangler/config-schema.json");
-    platform["assets"]["directory"] = json!("../../../web/dist");
+    platform["assets"]["directory"] = json!("../../../frontend/dist");
     platform["vars"]["ARTIFACTS_NAMESPACE"] = m["namespace"].clone();
     platform["vars"]["SITE_ORIGIN"] = m["sites_url"].clone();
     platform["services"][0]["service"] = m["name"].clone();
@@ -96,10 +168,10 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
         .as_object_mut()
         .map(|p| p.remove("secrets_store_secrets"));
     platform["artifacts"][0]["namespace"] = m["namespace"].clone();
-    platform["containers"][0]["image"] = json!("../../../containers/Dockerfile");
+    platform["containers"][0]["image"] = json!("../../../cloudflare/containers/Dockerfile");
     platform["containers"][0]["image_build_context"] = json!("../../..");
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
-    platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../migrations"});
+    platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
     for (index, suffix) in ["agent", "capture", "evaluate", "publish"]
         .iter()
         .enumerate()
@@ -110,7 +182,7 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
         platform["queues"]["consumers"][index]["dead_letter_queue"] =
             json!(format!("{name}-dead-letter"));
     }
-    let sites = json!({"$schema":"../../../node_modules/wrangler/config-schema.json","name":format!("{name}-sites"),"account_id":m["account_id"],"main":"../../../sites/index.ts","compatibility_date":platform["compatibility_date"],"compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":false,"observability":{"enabled":true},"r2_buckets":[{"binding":"OBJECTS","bucket_name":format!("{name}-objects")}],"services":[{"binding":"PLATFORM","service":name}]});
+    let sites = json!({"$schema":"../../../node_modules/wrangler/config-schema.json","name":format!("{name}-sites"),"account_id":m["account_id"],"main":"../../../cloudflare/sites/index.ts","compatibility_date":platform["compatibility_date"],"compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":false,"observability":{"enabled":true},"r2_buckets":[{"binding":"OBJECTS","bucket_name":format!("{name}-objects")}],"services":[{"binding":"PLATFORM","service":name}]});
     (platform, sites)
 }
 pub(crate) fn private(path: &Path, directory: bool) -> Result<()> {
@@ -135,30 +207,5 @@ pub(crate) fn deployment(args: &[String]) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn portable_configuration_replaces_every_foreign_identity_and_preserves_do_history() {
-        let template: Value = serde_json::from_str(include_str!("../../wrangler.jsonc")).unwrap();
-        let migrations = template["migrations"].clone();
-        let manifest = json!({"name":"my-platform","account_id":"a".repeat(32),"namespace":"my-namespace","database_id":"b".repeat(32),"sites_url":"https://my-platform-sites.mine.workers.dev"});
-        let (platform, sites) = configs(template, &manifest);
-        let text = format!("{platform}{sites}");
-        for foreign in [
-            "f011d0ee",
-            "182c0b3e",
-            "3d9115d4",
-            "yoneda-dev",
-            "yonedarepo-dev",
-            "mlong-f01",
-        ] {
-            assert!(!text.contains(foreign), "retained {foreign}");
-        }
-        assert_eq!(platform["migrations"], migrations);
-        assert_eq!(platform["d1_databases"][0]["binding"], "INDEX");
-        assert_eq!(sites["services"][0]["service"], platform["name"]);
-        assert!(platform.get("secrets_store_secrets").is_none());
-        assert!(!slug("../prod"));
-        assert!(!slug("a;curl"));
-    }
-}
+#[path = "cloudflare/tests.rs"]
+mod tests;

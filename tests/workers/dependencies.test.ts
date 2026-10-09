@@ -1,6 +1,6 @@
 import {expect,it} from 'vitest';
 it('allows only read-only registry downloads with credentials removed',async()=>{
- const {dependencyRequest} = await import('../../worker/dependencies');
+ const {dependencyRequest} = await import('../../cloudflare/worker/dependencies');
  const job = {kind:'evaluate'};
  const result = dependencyRequest(new Request('https://registry.npmjs.org/react/-/react-19.0.0.tgz',{headers:{authorization:'secret',cookie:'private'}}),job);
  expect(result.url).toBe('https://registry.npmjs.org/react/-/react-19.0.0.tgz');

@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { defaults, modelOptions } from '../../web/src/features/workspace/providerModels';
+import { defaults, modelOptions } from '../../frontend/src/features/workspace/providerModels';
 
 it('keeps the cost-sensitive default selected while preserving saved custom models', () => {
   const saved = [{ provider: 'codex', model: 'account-specific-model' }];

@@ -1,11 +1,11 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { prepareModelRequest } from '../../worker/model-policy';
-import { trackProviderUsage } from '../../worker/provider-usage';
-import { checkLedger, checkRuntime } from '../../worker/runtime';
-import { ledger } from '../../worker/storage';
-import type { Env, Json } from '../../worker/types';
+import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
+import { trackProviderUsage } from '../../cloudflare/worker/provider-usage';
+import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env, Json } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });

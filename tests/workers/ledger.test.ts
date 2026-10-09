@@ -1,9 +1,9 @@
 import {env} from 'cloudflare:workers';
 import {evictDurableObject,reset,runInDurableObject} from 'cloudflare:test';
 import {afterEach,expect,it} from 'vitest';
-import {ledger,object,readObject} from '../../worker/storage';
-import {authorized} from '../../worker/auth';
-import type {Env} from '../../worker/types';
+import {ledger,object,readObject} from '../../cloudflare/worker/storage';
+import {authorized} from '../../cloudflare/worker/auth';
+import type {Env} from '../../cloudflare/worker/types';
 const bindings=env as unknown as Env;
 afterEach(async()=>{await reset()});
 async function initialize(){return ledger(bindings,'retry-test',{op:'init',id:'retry-test',name:'Retry client',remote:{namespace:'yoneda-test',name:'retry'},commit:'a'.repeat(40),policy:{version:'retry-v1',suite:'retry-contract-v1',environment:'rust-1.94-evaluator-v1',required_checks:['build','behavior']}})}
@@ -82,14 +82,14 @@ it('failed initialization does not leave a repeating alarm',async()=>{
 });
 
 it('refuses old container protocols and evaluator environments before executing a job', async () => {
- const { checkRuntime } = await import('../../worker/runtime');
+ const { checkRuntime } = await import('../../cloudflare/worker/runtime');
  expect(() => checkRuntime('ready' as any,{kind:'agent'})).toThrow();
  expect(() => checkRuntime({protocol:2,environment:'old',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).toThrow();
  expect(() => checkRuntime({protocol:2,environment:'new',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).not.toThrow();
 });
 
 it('refuses old ledger read protocols before starting paid explorations', async () => {
- const { checkLedger } = await import('../../worker/runtime');
+ const { checkLedger } = await import('../../cloudflare/worker/runtime');
  expect(() => checkLedger({v:1})).toThrow();
  expect(() => checkLedger({capabilities:{artifact_reads:1}})).toThrow();
  expect(() => checkLedger({capabilities:{artifact_reads:2}})).not.toThrow();

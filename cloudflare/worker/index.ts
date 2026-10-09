@@ -10,7 +10,7 @@ export {
   LiveRoom,
   RepositoryAuthority,
   WorkspaceAuthority,
-} from '../crates/yoneda-worker/build/worker/shim.mjs';
+} from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 export { YonedaEntrypoint as default } from './entrypoint';
 export { ExecutionContainer };
 

@@ -1,4 +1,4 @@
-import manifest from '../crates/yoneda-core/src/providers.json';
+import manifest from '../backend/crates/yoneda-core/src/providers.json';
 
 export type Harness = 'claude' | 'codex' | 'gemini';
 export interface ModelOption {

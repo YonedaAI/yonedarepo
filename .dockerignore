@@ -3,10 +3,13 @@
 **/build
 .git
 .wrangler
+**/.wrangler
 .local
 .superpowers
 .dev.vars
+**/.dev.vars
 .env*
+**/.env*
 artifacts
 context
-web
+frontend

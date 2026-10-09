@@ -43,7 +43,7 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
         }
     }
     crate::commands::build_wasm()?;
-    run("pnpm", &["--dir", "web", "build"])?;
+    run("pnpm", &["--dir", crate::layout::FRONTEND, "build"])?;
     if args.iter().any(|v| v == "--dry-run") {
         wrangler(
             &platform,

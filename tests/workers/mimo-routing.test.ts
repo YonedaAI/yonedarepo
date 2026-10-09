@@ -1,12 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { prepareModelRequest } from '../../worker/model-policy';
-import type { Env } from '../../worker/types';
-import { providerCredentials } from '../../worker/vault';
-import { ledger } from '../../worker/storage';
-import { seal } from '../../worker/vault';
-import { workspace } from '../../worker/workspace';
+import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
+import type { Env } from '../../cloudflare/worker/types';
+import { providerCredentials } from '../../cloudflare/worker/vault';
+import { ledger } from '../../cloudflare/worker/storage';
+import { seal } from '../../cloudflare/worker/vault';
+import { workspace } from '../../cloudflare/worker/workspace';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });

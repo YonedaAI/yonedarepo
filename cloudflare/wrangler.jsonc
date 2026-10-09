@@ -1,5 +1,5 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
+  "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "yonedarepo-dev",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
   "main": "worker/index.ts",
@@ -13,7 +13,7 @@
     "enabled": true
   },
   "assets": {
-    "directory": "web/dist",
+    "directory": "../frontend/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": [
@@ -107,7 +107,7 @@
     {
       "class_name": "ExecutionContainer",
       "image": "./containers/Dockerfile",
-      "image_build_context": ".",
+      "image_build_context": "..",
       "max_instances": 16,
       "instance_type": "standard-1",
       "rollout_step_percentage": [

@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
-import { attemptLog } from '../../worker/logging';
-import { ledger } from '../../worker/storage';
-import type { Env, Scope } from '../../worker/types';
+import { attemptLog } from '../../cloudflare/worker/logging';
+import { ledger } from '../../cloudflare/worker/storage';
+import type { Env, Scope } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { vi.restoreAllMocks(); await reset(); });
