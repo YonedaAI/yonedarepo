@@ -1,11 +1,11 @@
-import { source } from './artifacts';
 import { error, readJson, response, safeId } from './http';
-import { cleanupLateRemote } from './repository-deletion';
+import { scheduleProject } from './project-provisioning';
 import { sitePolicy } from './site-policy';
-import { ledger, sha } from './storage';
-import type { Env, Json, Principal } from './types';
+import { sha } from './storage';
+import type { Env, Principal } from './types';
 import { workspace } from './workspace';
 
+export { provisionProject } from './project-provisioning';
 export { sitePolicy } from './site-policy';
 export function importSource(value: unknown) {
   if (value === undefined || value === null || value === '') return null;
@@ -24,86 +24,6 @@ export function importSource(value: unknown) {
   )
     throw new Error('Import a public HTTPS repository from GitHub, GitLab, Codeberg or Bitbucket');
   return url.href;
-}
-export async function provisionProject(env: Env, owner: string, project: Json) {
-  const id = project.id;
-  const current = await workspace(env, owner, { op: 'project_get', id });
-  if (current.status === 'deleted')
-    throw Object.assign(new Error('This repository has been deleted'), {
-      code: 'REPOSITORY_DELETED',
-    });
-  try {
-    try {
-      const created = project.source
-        ? await env.ARTIFACTS.import({
-            source: { url: project.source },
-            target: { name: id, opts: { description: 'YonedaRepo project' } },
-          })
-        : await (async () => {
-            using starter = await env.ARTIFACTS.get(env.STARTER_REPO ?? 'yoneda-website-starter');
-            return starter.fork(id, { defaultBranchOnly: true });
-          })();
-      using remote = await env.ARTIFACTS.get(id);
-      await remote.revokeToken(created.token);
-    } catch (e: any) {
-      // Remote development proxies can lose structured error properties. Recover only
-      // when a read proves this deterministic target exists; otherwise retain the failure.
-      if (!['IMPORT_IN_PROGRESS', 'FORK_IN_PROGRESS', 'CREATE_IN_PROGRESS'].includes(e.code)) {
-        try {
-          using existing = await env.ARTIFACTS.get(id);
-          await existing.info();
-        } catch {
-          throw e;
-        }
-      }
-    }
-    using remote = await env.ARTIFACTS.get(id);
-    // Creation/import acknowledgment can be lost before its initial token is revoked.
-    // While provisioning, clients have no Git grants; revoke any surviving initial capability.
-    for (const token of (await remote.listTokens()).tokens)
-      if (token.state === 'active') await remote.revokeToken(token.id);
-    const info = await remote.info();
-    const head = (await remote.log({ ref: info.defaultBranch, limit: 1 }))[0]?.hash;
-    if (!head)
-      throw Object.assign(new Error('Source is still being provisioned'), {
-        code: 'IMPORT_IN_PROGRESS',
-      });
-    // Fail explicitly on unsupported paths/layouts before scheduling paid agents.
-    await source(env, { repository: `${env.ARTIFACTS_NAMESPACE}/${id}`, commit: head });
-    try {
-      await ledger(env, id, {
-        op: 'init',
-        id,
-        name: project.name,
-        workspace: owner,
-        commit: head,
-        remote: { namespace: env.ARTIFACTS_NAMESPACE, name: id, branch: info.defaultBranch },
-        policy: project.policy,
-      });
-    } catch (e: any) {
-      if (e.code !== 'ALREADY_EXISTS') throw e;
-      const existing = await ledger(env, id, { op: 'snapshot', _workspace: owner });
-      if (existing.repository.remote.name !== id) throw new Error('Repository identity mismatch');
-    }
-    return workspace(env, owner, { op: 'project_update', id, status: 'ready' });
-  } catch (e: any) {
-    const current = await workspace(env, owner, { op: 'project_get', id });
-    if (current.status === 'deleted' || e.code === 'REPOSITORY_DELETED') {
-      await cleanupLateRemote(env, id, id);
-      throw Object.assign(new Error('This repository has been deleted'), {
-        code: 'REPOSITORY_DELETED',
-      });
-    }
-    const pending = ['IMPORT_IN_PROGRESS', 'FORK_IN_PROGRESS', 'CREATE_IN_PROGRESS'].includes(
-      e.code,
-    );
-    return workspace(env, owner, {
-      op: 'project_update',
-      id,
-      status: pending ? 'provisioning' : 'failed',
-      error: pending ? null : String(e.message ?? 'Provisioning failed').slice(0, 1000),
-    });
-  }
 }
 export async function projectRoute(
   req: Request,
@@ -126,11 +46,8 @@ export async function projectRoute(
       source: importSource(body.source),
       policy: body.policy ?? sitePolicy,
     });
-    const result =
-      project.status === 'ready'
-        ? project
-        : await provisionProject(env, principal.workspace, project);
-    return response(result, result.status === 'ready' ? 200 : 202);
+    await scheduleProject(env, principal.workspace, project);
+    return response(project, project.status === 'ready' ? 200 : 202);
   }
   if (
     safeId(parts[2]) &&
@@ -140,11 +57,23 @@ export async function projectRoute(
     const project = await workspace(env, principal.workspace, { op: 'project_get', id: parts[2] });
     if (project.status === 'deleted')
       return error('REPOSITORY_DELETED', 'This repository has been deleted', 410);
-    return response(
-      project.status === 'provisioning' || parts[3] === 'retry'
-        ? await provisionProject(env, principal.workspace, project)
-        : project,
-    );
+    if (parts[3] === 'retry') {
+      const retry = await workspace(env, principal.workspace, {
+        op: 'project_retry',
+        id: project.id,
+      });
+      await scheduleProject(env, principal.workspace, retry);
+      return response(retry, retry.status === 'ready' ? 200 : 202);
+    }
+    if (project.status === 'provisioning' && !project.stage) {
+      const recovery = await workspace(env, principal.workspace, {
+        op: 'project_schedule',
+        id: project.id,
+      });
+      if (recovery.schedule) await scheduleProject(env, principal.workspace, recovery);
+      return response(recovery);
+    }
+    return response(project);
   }
   return error('NOT_FOUND', 'Unknown project route', 404);
 }

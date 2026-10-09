@@ -38,6 +38,14 @@ const codes = new Set([
   'REPOSITORY_DELETED',
   'MODEL_PROXY',
   'UNKNOWN',
+  'SETUP_FAILED',
+  'SETUP_TIMEOUT',
+  'EMPTY_REPOSITORY',
+  'NOT_FOUND',
+  'INVALID_URL',
+  'REMOTE_AUTH_REQUIRED',
+  'UPSTREAM_UNAVAILABLE',
+  'MEMORY_LIMIT',
 ]);
 export function failureCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
@@ -72,6 +80,7 @@ export function writeLog(
     model?: string;
     billing_source?: string;
     region?: string;
+    stage?: string;
   } = {},
 ) {
   const record: Record<string, string | number> = { service: 'yonedarepo', event };
@@ -84,6 +93,7 @@ export function writeLog(
     'model',
     'billing_source',
     'region',
+    'stage',
   ] as const) {
     const value = fields[key];
     if (typeof value === 'string') record[key] = value.slice(0, 256);

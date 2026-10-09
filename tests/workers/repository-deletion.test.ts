@@ -166,7 +166,7 @@ it('re-arms canonical cleanup when provisioning finishes after deletion',async()
     await ledger(bindings,project.id,{op:'outbox_sent',id:cleanup.id});
     remoteReady=true;return {token:'fixture'};
   },revokeToken:async()=>true,listTokens:async()=>({tokens:[]}),info:async()=>({defaultBranch:'main'}),log:async()=>[{hash:'a'.repeat(40)}],readCommit:async()=>({treeHash:'b'.repeat(40)}),readTree:async()=>[],readBlob:async()=>new Blob()};
-  const sdk={...bindings,ARTIFACTS:{get:async()=>remote}} as unknown as Env;
+  const sdk={...bindings,ARTIFACTS:{get:async(name:string)=>{if(name===project.id&&!remoteReady)throw Object.assign(new Error('Target does not exist'),{code:'NOT_FOUND'});return remote;}}} as unknown as Env;
   await expect(provisionProject(sdk,'alice',project)).rejects.toThrow('deleted');
   expect(remoteReady).toBe(true);
   expect((await ledger(bindings,project.id,{op:'outbox'})).jobs.some((entry:Json)=>entry.kind==='delete_artifact'&&entry.payload.name===project.id)).toBe(true);

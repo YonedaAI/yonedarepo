@@ -1,0 +1,108 @@
+.account-menu {
+  position: relative;
+  flex: none;
+}
+.account-menu > summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  list-style: none;
+  color: #152436;
+}
+.account-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.account-menu > summary:hover,
+.account-menu[open] > summary {
+  background: #f3f6fa;
+}
+.account-menu > summary:focus-visible {
+  outline: 3px solid #87bce7;
+  outline-offset: 2px;
+}
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dbe5fc;
+  border-radius: 50%;
+  background: #edf3ff;
+  color: #244da1;
+  font-size: 13px;
+  font-weight: 600;
+  flex: none;
+}
+.account-label {
+  display: grid;
+  min-width: 0;
+}
+.account-label strong {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 500;
+}
+.account-label small,
+.account-dropdown small {
+  color: var(--muted);
+  font-size: 10px;
+}
+.account-dropdown {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  width: min(260px, calc(100vw - 40px));
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 28px #12243b18;
+}
+.account-dropdown p {
+  display: grid;
+  gap: 3px;
+  padding: 8px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+}
+.account-dropdown strong {
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  color: #152436;
+}
+.account-dropdown button {
+  width: 100%;
+  justify-content: flex-start;
+  background: transparent;
+  color: #526175;
+  font-size: 12px;
+}
+.account-dropdown button:hover {
+  background: #f3f6fa;
+}
+.workspace-breadcrumb {
+  min-width: 0;
+}
+.header-actions {
+  flex: none;
+}
+@media (max-width: 800px) {
+  .account-label strong {
+    max-width: 100px;
+  }
+  .account-label small {
+    display: none;
+  }
+  .account-menu > summary {
+    gap: 6px;
+    padding: 4px;
+  }
+}

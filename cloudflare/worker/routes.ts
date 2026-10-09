@@ -51,9 +51,13 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         ? ownerSession(req, env)
         : error('FORBIDDEN', 'Administrator connection required', 403);
     if (url.pathname === '/api/repositories' && req.method === 'GET') {
+      const identity =
+        principal.role === 'user'
+          ? { role: 'user', username: principal.workspace }
+          : { role: 'admin' };
       if (principal.role === 'user') {
         const value = await workspace(env, principal.workspace, { op: 'projects' });
-        return response({ repositories: value.projects });
+        return response({ repositories: value.projects, identity });
       }
       const result = await env.INDEX.prepare(
         "SELECT id,payload,seq FROM repositories WHERE COALESCE(json_extract(payload,'$.workspace'),'_admin')=? AND COALESCE(json_extract(payload,'$.status'),'ready')!='deleted' ORDER BY id LIMIT 100",
@@ -62,6 +66,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         .all();
       return response({
         repositories: result.results.map((r: any) => ({ ...JSON.parse(r.payload), seq: r.seq })),
+        identity,
       });
     }
     if (url.pathname === '/api/bootstrap' && req.method === 'POST') {

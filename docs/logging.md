@@ -6,7 +6,9 @@ This follows the official [tracing subscriber guidance](https://docs.rs/tracing-
 
 ## Cloudflare operational logs
 
-The TypeScript egress and transport adapters emit JSON objects with allowlisted fields. Search by `event`, `repo_id`, `run_id`, `execution_id`, `job_id`, `epoch`, `provider`, `model`, `billing_source`, `region`, `request_number`, `http_status` and `error_code`. Rust container lifecycle records use attempt spans containing the job, execution, run and epoch.
+The TypeScript egress and transport adapters emit JSON objects with allowlisted fields. Search by `event`, `repo_id`, `run_id`, `execution_id`, `job_id`, `epoch`, `provider`, `model`, `billing_source`, `region`, `request_number`, `http_status`, `stage` and `error_code`. Rust container lifecycle records use attempt spans containing the job, execution, run and epoch.
+
+Repository onboarding emits `project.setup_progress`, `project.setup_waiting`, `project.setup_ready`, `project.setup_failed` and `project.dispatch_failed`. Filter by `repo_id` to follow creation/import, source validation and initialization. These records contain stages, epochs, elapsed time and classified errors; passwords, Git capabilities, source contents and raw SDK exception text are excluded. The Workspace DO retains setup status and dispatch intent separately from log retention, so losing operational logs does not strand setup.
 
 In Cloudflare, open **Workers & Pages → your Worker → Observability**. `observability.enabled` is already true in the development and generated deployment configs and applies to container logs. Cloudflare recommends structured JSON because its fields are indexed. Operational retention is currently three days on Workers Free and seven days on Workers Paid; container logs are retained seven days. See [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/) and [Container logs](https://developers.cloudflare.com/containers/faq/#how-do-container-logs-work).
 

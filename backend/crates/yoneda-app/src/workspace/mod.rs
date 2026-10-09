@@ -5,6 +5,8 @@ use yoneda_core::{Error, Result};
 mod accounts;
 mod budget;
 mod grants;
+mod project_dispatch;
+mod project_setup;
 mod projects;
 mod providers;
 pub(super) const TABLE: &str = "workspace_records";
@@ -30,8 +32,17 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "grants" | "grant_issue" | "grant_check" | "grant_revoke" => {
                 grants::handle(&db, &command, now)
             }
-            "projects" | "project_reserve" | "project_update" | "project_get"
-            | "project_delete" => projects::handle(&db, &command, now),
+            "project_dispatches" => project_dispatch::pending(&db, now),
+            "projects"
+            | "project_reserve"
+            | "project_update"
+            | "project_get"
+            | "project_delete"
+            | "project_claim"
+            | "project_progress"
+            | "project_retry"
+            | "project_schedule"
+            | "project_dispatch_sent" => projects::handle(&db, &command, now),
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
         }
     }))
