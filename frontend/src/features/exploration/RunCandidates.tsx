@@ -57,8 +57,9 @@ export function RunCandidates({
       </div>
       {team && !executions.length && (
         <p role="status" className="inline-empty">
-          The integrated candidate appears after every required specialist output is captured.
-          Review task progress above.
+          {run.status === 'planning'
+            ? 'The team plan is being prepared from your brief. A final integrated result follows the task work and independent checks.'
+            : 'The integrated candidate appears after every required specialist output is captured. Review task progress above.'}
         </p>
       )}
       {team &&

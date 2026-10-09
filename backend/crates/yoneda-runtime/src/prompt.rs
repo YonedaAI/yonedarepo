@@ -2,6 +2,9 @@ use crate::field;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
+    if payload["team_planning"] == true {
+        return crate::team_planning::prompt(payload);
+    }
     let execution = &payload["execution"];
     if execution["team_task"].is_string() {
         return crate::team_prompt::prompt(payload);

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_TEAM_TASKS: usize = 16;
-pub const MAX_TEAM_EXECUTIONS: usize = MAX_TEAM_TASKS + 1;
+pub const MAX_TEAM_EXECUTIONS: usize = MAX_TEAM_TASKS + 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -29,12 +29,12 @@ pub struct TeamTask {
 impl TeamPlan {
     pub fn validate(&self, agents: usize) -> Result<()> {
         if self.version != 1
-            || !(3..=crate::agents::MAX_ROOT_AGENTS).contains(&agents)
+            || !(1..=crate::agents::MAX_ROOT_AGENTS).contains(&agents)
             || self.integrator_agent >= agents
-            || !(2..=MAX_TEAM_TASKS).contains(&self.tasks.len())
+            || !(1..=MAX_TEAM_TASKS).contains(&self.tasks.len())
         {
             return Err(invalid(
-                "A team needs 2–16 tasks, at least two specialists and a designated integrator",
+                "A team needs 1–16 tasks and a designated integrator from its 1–6 configured agents",
             ));
         }
         bounded(&self.contract, 16384, "team contract")?;
@@ -51,10 +51,9 @@ impl TeamPlan {
                     .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
                 || !ids.insert(task.id.clone())
                 || task.agent >= agents
-                || task.agent == self.integrator_agent
             {
                 return Err(invalid(
-                    "Task IDs must be unique and safe; specialist assignments cannot name the integrator",
+                    "Task IDs must be unique and safe, with assignments from the configured roster",
                 ));
             }
             bounded(&task.title, 128, "task title")?;

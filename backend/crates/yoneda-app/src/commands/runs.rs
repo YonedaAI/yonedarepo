@@ -56,7 +56,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 super::scheduling::validate_agents(&c)?;
             }
             let team = super::team::freeze(&c, general)?;
-            if team.is_some() && r.get("context_study").is_some() {
+            let collaborate = c["mode"] == "collaborate";
+            let automatic = collaborate && team.is_none();
+            if collaborate && r.get("context_study").is_some() {
                 return Err(Error::new(
                     "FORBIDDEN",
                     "Controlled context trials do not support team mode",
@@ -94,9 +96,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if team.is_some() {"collaborate"} else {"compare"}});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if automatic {"planning"} else if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
             if general {
                 run["agents"] = c["agents"].clone();
+            }
+            if automatic {
+                run["team_planning"] = json!("automatic");
+                run["execution_count"] = json!(1);
             }
             if let Some(plan) = &team {
                 run["team_plan"] = json!(plan);
@@ -146,7 +152,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 )?;
             }
             if general {
-                if team.is_some() {
+                if automatic {
+                    super::team::start_planner(db, &run, now)?;
+                } else if team.is_some() {
                     super::team::start(db, &run, now)?;
                 } else {
                     super::scheduling::schedule(db, &run, &c["agents"], now)?;

@@ -155,8 +155,11 @@ The UI displays elapsed time, stage, errors and retry controls. Browser API requ
 Initial setup events go to
 Cloudflare Workers Logs without passwords, Git capabilities or source contents.
 
-The comparison flow is below. [Build together](build-together.md) adds a frozen task DAG,
-disjoint specialist write scopes, captured handoffs and deterministic Rust source assembly.
+The comparison flow is below. [Build together](build-together.md) starts with brief-driven
+read-only planning on the first selected connection, or an optional manual plan. Its scoped
+proposal is an agent assertion; trusted unchanged-source completion and ledger validation freeze
+the task DAG before work starts. One to six selected agents can share worker and integrator roles.
+Disjoint specialist write scopes, captured handoffs and deterministic Rust source assembly apply.
 Only its final integration receives independent evaluation and owner publication; intermediate
 source never becomes a selectable candidate. Repo DO migration 8 stores this team state.
 
@@ -218,6 +221,6 @@ See [README setup and deployment](../README.md), [runbook](runbook.md),
 [provider configuration](providers.md), [MCP guide](remote-mcp.md) and
 [logging](logging.md) for operational details.
 
-Generic task DAGs, automatic semantic merges, interactive question/answer/resume and hosting
+Cross-run task graphs, automatic semantic merges, interactive question/answer/resume and hosting
 arbitrary application backends are outside the current MVP. Current publication serves static
 website output.

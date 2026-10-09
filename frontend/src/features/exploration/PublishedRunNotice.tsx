@@ -12,7 +12,7 @@ export function PublishedRunNotice({
     return (
       <p className="restart-notice">
         The previous approval details are unavailable. Your agent will preserve the current source
-        and design. Choose a connection and review the approach before starting.
+        and design. Choose your agents and review the brief before starting.
       </p>
     );
   }
@@ -27,16 +27,20 @@ export function PublishedRunNotice({
         {Math.min(contextTotal, 50)} context records carried forward
       </p>
       <details>
-        <summary>Published approach and decision</summary>
+        <summary>
+          Published {publication.run.mode === 'collaborate' ? 'team result' : 'approach'} and
+          decision
+        </summary>
         <p>{publication.execution?.strategy ?? 'No hosted agent approach was recorded.'}</p>
         <p>{publication.decision.rationale}</p>
       </details>
       <p>
-        {publication.execution?.model
-          ? 'The winning approach, criteria and model limits are prefilled for review.'
-          : 'The published brief, criteria and context are prefilled. Choose a provider for this update; no hosted model was recorded.'}{' '}
-        Edit the settings below or add agents to compare alternatives. Current repository checks
-        apply.
+        {publication.run.mode === 'collaborate'
+          ? 'The published source, approved context, criteria and model limits are carried forward. The new brief gets a new task plan unless you opt into a manual plan.'
+          : publication.execution?.model
+            ? 'The winning approach, criteria and model limits are prefilled for review.'
+            : 'The published brief, criteria and context are prefilled. Choose a provider for this update; no hosted model was recorded.'}{' '}
+        Edit the brief and agent roster below. Current repository checks apply.
       </p>
       {contextTotal > 50 && (
         <p>

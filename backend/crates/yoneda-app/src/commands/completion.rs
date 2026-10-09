@@ -63,7 +63,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             if result.get("transcript").is_some() {
                 e["transcript"] = json!(hash(result, "transcript", &[64])?);
             }
-            if e["role"] == "research" {
+            if super::team::finish_planner(db, &j, result, &mut run, now)? {
+                // A successful read-only planner freezes a validated DAG; it creates no source capture.
+            } else if e["role"] == "research" {
                 let context: Vec<_> = all(db, "artifacts")?
                     .iter()
                     .filter(|a| a["producer"] == eid)

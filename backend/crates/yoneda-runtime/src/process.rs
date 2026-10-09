@@ -1,5 +1,5 @@
 use crate::{broker::broker_url, err};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::{path::Path, process::Stdio};
 use tokio::process::Command;
 use yoneda_core::Result;
@@ -44,6 +44,14 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
 }
 
 pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
+    captured_output(command, &crate::agent_transcript::Transcript::default()).await
+}
+
+pub(crate) async fn captured_output(
+    command: &mut Command,
+    transcript: &crate::agent_transcript::Transcript,
+) -> Result<Value> {
+    use crate::agent_transcript::Channel;
     use tokio::io::AsyncReadExt;
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(unix)]
@@ -54,18 +62,20 @@ pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
     let _group = ProcessGroup(
         i32::try_from(child.id().ok_or_else(|| err("Child has no process ID"))?).map_err(err)?,
     );
-    async fn read(mut stream: impl tokio::io::AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
-        let mut output = Vec::new();
+    async fn read(
+        mut stream: impl tokio::io::AsyncRead + Unpin,
+        transcript: &crate::agent_transcript::Transcript,
+        channel: Channel,
+    ) -> std::io::Result<()> {
         let mut buffer = [0u8; 8192];
         loop {
             let count = stream.read(&mut buffer).await?;
             if count == 0 {
                 break;
             }
-            let keep = count.min((2 * 1024 * 1024usize).saturating_sub(output.len()));
-            output.extend_from_slice(&buffer[..keep]);
+            transcript.append(channel, &buffer[..count])?;
         }
-        Ok(output)
+        Ok(())
     }
     let out = child
         .stdout
@@ -75,7 +85,11 @@ pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
         .stderr
         .take()
         .ok_or_else(|| err("Missing child stderr pipe"))?;
-    let (out, errors, status) = tokio::join!(read(out), read(errors), child.wait());
+    let (out, errors, status) = tokio::join!(
+        read(out, transcript, Channel::Stdout),
+        read(errors, transcript, Channel::Stderr),
+        child.wait()
+    );
     let status = status.map_err(err)?;
     #[cfg(unix)]
     let signal = {
@@ -88,9 +102,9 @@ pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
     #[cfg(unix)]
     drop(_group);
     processes.finish()?;
-    Ok(
-        json!({"exit":status.code().unwrap_or(-1),"signal":signal,"stdout":String::from_utf8_lossy(&out.map_err(err)?),"stderr":String::from_utf8_lossy(&errors.map_err(err)?)}),
-    )
+    out.map_err(err)?;
+    errors.map_err(err)?;
+    transcript.output(Some(status.code().unwrap_or(-1)), signal)
 }
 
 // Dropping the future on timeout also stops descendants that outlive their CLI parent.

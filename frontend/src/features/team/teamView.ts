@@ -17,13 +17,25 @@ export function dependencyBlockers(task: TeamRecord, tasks: TeamRecord[]) {
     (id: string) => tasks.find((other) => other.task_id === id)?.status !== 'complete',
   );
 }
+export function teamAgentBusy(task: TeamRecord, tasks: TeamRecord[]) {
+  return (
+    Number.isSafeInteger(task.agent) &&
+    tasks.some(
+      (other) =>
+        other.task_id !== task.task_id &&
+        other.agent === task.agent &&
+        ['queued', 'running', 'capturing', 'evaluating'].includes(other.status),
+    )
+  );
+}
 export function canRetryTeamTask(task: TeamRecord, tasks: TeamRecord[], run: TeamRecord) {
   if (
     task.status !== 'failed' ||
     ['accepted', 'cancelled'].includes(run.status) ||
     !Number.isSafeInteger(task.epoch) ||
     !Number.isSafeInteger(task.revision) ||
-    task.revision >= 3
+    task.revision >= 3 ||
+    teamAgentBusy(task, tasks)
   )
     return false;
   const descendants = new Set([task.task_id]);

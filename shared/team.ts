@@ -1,4 +1,4 @@
-/** Frozen owner-approved plan. Indexes refer to the submitted run agent roster. */
+/** Frozen validated implementation plan. Indexes refer to the submitted run agent roster. */
 export interface TeamPlan {
   version: 1;
   contract: string;

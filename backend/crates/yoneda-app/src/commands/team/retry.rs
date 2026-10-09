@@ -30,6 +30,14 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let mut descendants = BTreeSet::from([local.clone()]);
     let tasks = rows(db, "team_tasks", &rid)?;
+    if tasks.iter().any(|other| {
+        other["id"] != id && other["agent"] == task["agent"] && scheduling::holds_slot(other)
+    }) {
+        return Err(Error::new(
+            "AGENT_BUSY",
+            "Wait for this agent's current source task and capture before retrying an earlier task",
+        ));
+    }
     for _ in 0..tasks.len() {
         for t in &tasks {
             if t["depends_on"]

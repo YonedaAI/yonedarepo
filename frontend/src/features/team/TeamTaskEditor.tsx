@@ -64,7 +64,7 @@ export function TeamTaskEditor({
           required
           disabled={locked}
           rows={2}
-          placeholder={'public/search.mjs\npublic/search/'}
+          placeholder={'public/component.mjs\npublic/components/'}
           onChange={(e) => patch({ writePaths: e.target.value })}
         />
       </label>
@@ -96,7 +96,7 @@ export function TeamTaskEditor({
       <button
         type="button"
         className="text-button"
-        disabled={locked || tasks.length <= 2}
+        disabled={locked}
         onClick={onRemove}
         aria-label={`Remove task ${task.title || task.id}`}
       >

@@ -38,7 +38,7 @@ export function RunModePicker({
         />
         <span>
           <strong>Build together</strong>
-          <small>Complementary tasks. One integrated result.</small>
+          <small>Agents plan complementary work from your brief. One integrated result.</small>
         </span>
       </label>
       {!supported && (

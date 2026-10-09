@@ -22,30 +22,30 @@ export const pathsFromText = (value: string) =>
     .filter(Boolean);
 export function seedTeam(agents: AgentDraft[]): TeamDraft {
   return {
-    contract:
-      'Search exports filterEvents(events, query, now) from public/search.mjs. RSVP exports rsvp(event, identity, storage) from public/rsvp.mjs. Both modules preserve existing data and remain independent. The integrator connects both modules to the existing UI and checks the complete journey.',
-    integratorId: agents[2]?.id ?? '',
-    integrationPaths: 'public/index.html\npublic/styles.css',
+    contract: '',
+    integratorId: agents[0]?.id ?? '',
+    integrationPaths: '',
     tasks: [
       {
-        id: 'event-search',
-        title: 'Event search',
-        instructions:
-          'Implement accessible event filtering, including clear empty results. Follow the shared API contract.',
+        id: 'task-1',
+        title: '',
+        instructions: '',
         agentId: agents[0]?.id ?? '',
         dependsOn: [],
-        writePaths: 'public/search.mjs',
-      },
-      {
-        id: 'event-rsvp',
-        title: 'RSVP flow',
-        instructions:
-          'Implement RSVP validation and clear confirmation, preserving privacy and capacity rules. Follow the shared API contract.',
-        agentId: agents[1]?.id ?? '',
-        dependsOn: [],
-        writePaths: 'public/rsvp.mjs',
+        writePaths: '',
       },
     ],
+  };
+}
+export function removeTeamTask(team: TeamDraft, id: string): TeamDraft {
+  return {
+    ...team,
+    tasks: team.tasks
+      .filter((task) => task.id !== id)
+      .map((task) => ({
+        ...task,
+        dependsOn: task.dependsOn.filter((dependency) => dependency !== id),
+      })),
   };
 }
 export function restoreTeam(plan: TeamPlan | undefined, agents: AgentDraft[]): TeamDraft {
@@ -103,15 +103,12 @@ function validatePaths(paths: string[], label: string) {
     );
 }
 export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
-  if (agents.length < 3)
-    throw new Error(
-      'Build together needs at least two specialist agents and a separate integrator.',
-    );
+  if (!agents.length) throw new Error('Choose at least one agent for this run.');
+  if (!team.tasks.length) throw new Error('Add at least one worker task to the advanced plan.');
   if (!team.contract.trim()) throw new Error('Describe the shared interface contract.');
   if (new TextEncoder().encode(team.contract).length > 16384 || team.contract.includes('\0'))
     throw new Error('Keep the shared contract under 16,384 bytes and omit null characters.');
-  if (team.tasks.length < 2 || team.tasks.length > 16)
-    throw new Error('A team plan needs 2–16 complementary worker tasks.');
+  if (team.tasks.length > 16) throw new Error('A team plan supports up to 16 worker tasks.');
   const integrator = agents.findIndex((agent) => agent.id === team.integratorId);
   if (integrator < 0) throw new Error('Choose the final integrator.');
   const taskIds = new Set(team.tasks.map((task) => task.id));
@@ -119,10 +116,6 @@ export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
   const tasks = team.tasks.map((task) => {
     const agent = agents.findIndex((item) => item.id === task.agentId);
     if (agent < 0) throw new Error(`Choose an agent for ${task.title || task.id}.`);
-    if (agent === integrator)
-      throw new Error(
-        'Assign worker tasks to specialist agents, separate from the final integrator.',
-      );
     if (!/^[a-zA-Z0-9_-]{1,64}$/.test(task.id) || task.id === 'integrate')
       throw new Error(
         'Task IDs must use letters, numbers, hyphens or underscores, and cannot be integrate.',
@@ -187,4 +180,20 @@ export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
 }
 export function runMode(value: unknown): RunMode {
   return value === 'collaborate' ? value : 'compare';
+}
+/** The automatic path must not validate or send hidden manual fields. */
+export function teamSubmission(
+  mode: RunMode,
+  manual: boolean,
+  team: TeamDraft,
+  agents: AgentDraft[],
+  automaticSupported: boolean,
+): { team?: TeamPlan } {
+  if (mode !== 'collaborate') return {};
+  if (manual) return { team: serializeTeam(team, agents) };
+  if (!automaticSupported)
+    throw new Error(
+      'Automatic team planning is unavailable on this deployment. Enable Advanced task plan or update the backend.',
+    );
+  return {};
 }

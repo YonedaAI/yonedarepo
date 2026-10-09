@@ -1,5 +1,7 @@
 # Hosted team integration verification — 2026-10-09
 
+This document records the earlier explicit-plan release. The later brief-first workflow and its separate evidence are in [brief-first verification](brief-first-team-verification.md).
+
 The explicit-plan **Build together** MVP is implemented and deployed to development. Two real provider-backed specialists worked concurrently on separate modules; a third agent retrieved their captured handoffs, integrated their exact source, and produced one independently checked revision. Automated development publication completed with canonical Git readback. This is a disposable acceptance project, not a human product selection or competition submission.
 
 ## Combined integration gate

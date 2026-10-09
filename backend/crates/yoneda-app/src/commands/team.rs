@@ -5,6 +5,8 @@ use yoneda_core::{Error, Result, team::TeamPlan};
 mod capture;
 mod evidence;
 mod inputs;
+mod planning;
+mod proposals;
 mod retry;
 mod scheduling;
 mod tools;
@@ -16,7 +18,7 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<TeamPlan>> {
         .transpose()?
         .unwrap_or("compare");
     match mode {
-        "compare" if c.get("team").is_none() => Ok(None),
+        "compare" if c.get("team").is_none_or(Value::is_null) => Ok(None),
         "compare" => Err(bad("Team configuration requires Build together mode")),
         "collaborate" => {
             if !general || c["delegation"]["enabled"] == true {
@@ -24,6 +26,9 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<TeamPlan>> {
                     "FORBIDDEN",
                     "Teams require hosted coding and cannot create independent comparison subagents",
                 ));
+            }
+            if c.get("team").is_none_or(Value::is_null) {
+                return Ok(None);
             }
             let plan: TeamPlan =
                 serde_json::from_value(c["team"].clone()).map_err(|e| bad(&e.to_string()))?;
@@ -37,7 +42,9 @@ pub(super) fn start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     scheduling::start(db, run, now)
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
-    if c["op"] == "retry_team_task" {
+    if c["op"] == "team_plan_propose" {
+        planning::propose(db, &c, now)
+    } else if c["op"] == "retry_team_task" {
         retry::retry(db, &c, now)
     } else {
         tools::handle(db, &c, now)
@@ -83,7 +90,7 @@ pub(super) fn reflect<S: SqlStore>(
     now: i64,
 ) -> Result<()> {
     let Some(id) = e["team_task"].as_str() else {
-        return Ok(());
+        return planning::reflect(db, e, status, now);
     };
     let mut task = get(db, "team_tasks", id)?;
     task["status"] = json!(status);
@@ -105,7 +112,12 @@ pub(super) fn reflect<S: SqlStore>(
         "team.task_status",
         now,
         json!({"task_id":id,"status":status,"epoch":task["epoch"]}),
-    )
+    )?;
+    if status == "failed" {
+        let run = get(db, "runs", &string(e, "run_id")?)?;
+        scheduling::wake(db, &run, now)?;
+    }
+    Ok(())
 }
 pub(super) fn cancelled<S: SqlStore>(db: &S, run_id: &str, now: i64) -> Result<()> {
     for task in rows(db, "team_tasks", run_id)? {
@@ -175,4 +187,17 @@ pub(super) fn citation_sources<S: SqlStore>(
     checked: &[Value],
 ) -> Result<Vec<Value>> {
     evidence::sources(db, execution, epoch, checked)
+}
+
+pub(super) fn start_planner<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
+    planning::start(db, run, now)
+}
+pub(super) fn finish_planner<S: SqlStore>(
+    db: &S,
+    job: &Value,
+    result: &Value,
+    run: &mut Value,
+    now: i64,
+) -> Result<bool> {
+    planning::finish(db, job, result, run, now)
 }

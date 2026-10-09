@@ -3,8 +3,8 @@ import type { RunMode } from '../../../../shared/team';
 import { api, short } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
 import { RunModePicker } from '../team/RunModePicker';
-import { TeamPlanEditor } from '../team/TeamPlanEditor';
-import { reconcileTeam, seedTeam, serializeTeam } from '../team/teamDraft';
+import { TeamPlanOptions } from '../team/TeamPlanOptions';
+import { reconcileTeam, seedTeam, teamSubmission } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
 import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLimits';
@@ -44,8 +44,9 @@ export function RunComposer({
   const [agents, setAgents] = useState<AgentDraft[]>(draft.agents);
   const [mode, setMode] = useState<RunMode>(draft.mode);
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
-  const [hasTeamDraft, setHasTeamDraft] = useState(!!draft.team);
+  const [manualTeam, setManualTeam] = useState(false);
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
+  const automaticSupport = snapshot.capabilities?.team_planning === 1;
   const [context, setContext] = useState<string[]>(draft.context);
   const [policy, setPolicy] = useState(draft.policy);
   const [error, setError] = useState('');
@@ -58,19 +59,6 @@ export function RunComposer({
     setTeam((current) => reconcileTeam(current, next));
   }
   function changeMode(next: RunMode) {
-    if (next === 'collaborate' && !hasTeamDraft) {
-      const roster = [...agents];
-      // The editable example has three roles; provider and model choices remain configurable.
-      while (roster.length < Math.min(3, limits.max_root_agents))
-        roster.push({
-          id: crypto.randomUUID(),
-          connection: providers[roster.length % providers.length]?.id ?? '',
-          strategy: 'Team participant',
-        });
-      setAgents(roster);
-      setTeam(seedTeam(roster));
-      setHasTeamDraft(true);
-    }
     setMode(next);
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
@@ -100,8 +88,11 @@ export function RunComposer({
     try {
       if (mode === 'collaborate' && !teamSupport)
         throw new Error('This deployment does not support team runs yet.');
-      const teamPlan = mode === 'collaborate' ? serializeTeam(team, agents) : undefined;
-      if (agents.length < limits.min_root_agents || agents.length > limits.max_root_agents) {
+      const teamBody = teamSubmission(mode, manualTeam, team, agents, automaticSupport);
+      if (
+        agents.length < (mode === 'collaborate' ? 1 : limits.min_root_agents) ||
+        agents.length > limits.max_root_agents
+      ) {
         throw new Error('The number of agents exceeds this deployment’s current limits.');
       }
       if (agents.some((agent) => !providers.some((p) => p.id === agent.connection))) {
@@ -131,7 +122,7 @@ export function RunComposer({
       }
       await onStart({
         mode,
-        ...(teamPlan ? { team: teamPlan } : {}),
+        ...teamBody,
         intent: intent.trim(),
         criteria: criteria
           .split('\n')
@@ -192,11 +183,17 @@ export function RunComposer({
         </p>
       )}
       <p>
-        {agents.length === 1
-          ? 'Your agent works in an isolated workspace with the approved brief and selected context.'
-          : 'Your agents share one source revision, brief and selected context. Each works in an isolated workspace as capacity becomes available.'}{' '}
+        {mode === 'collaborate'
+          ? 'Your agents plan and build complementary parts of the same project in isolated workspaces.'
+          : agents.length === 1
+            ? 'Your agent works in an isolated workspace with the approved brief and selected context.'
+            : 'Your agents share one source revision, brief and selected context. Each works in an isolated workspace as capacity becomes available.'}{' '}
         Independent checks and your shipping decision still apply. Approval starts paid inference
         using your provider keys.
+      </p>
+      <p className="subtle">
+        Publication currently hosts static frontend output. Backend services and databases require a
+        separate deployment.
       </p>
       <p className="subtle">
         Starting source: <code>{short(snapshot.repository.head_commit)}</code> · current canonical
@@ -240,7 +237,17 @@ export function RunComposer({
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
       {mode === 'collaborate' ? (
-        <TeamPlanEditor value={team} agents={agents} locked={locked} onChange={setTeam} />
+        <TeamPlanOptions
+          manual={manualTeam}
+          onManualChange={setManualTeam}
+          value={team}
+          agents={agents}
+          locked={locked}
+          automaticSupported={automaticSupport}
+          previous={draft.previousTeamPlan}
+          previousAutomatic={draft.previousAutomatic}
+          onChange={setTeam}
+        />
       ) : (
         <DelegationSettings
           value={delegation}

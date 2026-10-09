@@ -1,14 +1,15 @@
 use crate::{
+    agent_transcript::Transcript,
     broker::broker,
     err, field,
-    process::{bounded_output, untrusted},
+    process::{captured_output, untrusted},
     workspace::export_with_baseline,
 };
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::Result;
-pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
+pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     let approved_budget = crate::execution_limits::model_budget(job)?;
     let baseline = super::jobs::workspace(job, root).await?;
     #[cfg(target_os = "linux")]
@@ -101,8 +102,9 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         true,
     )
     .await?;
-    let output = bounded_output(&mut command).await?;
+    let output = captured_output(&mut command, transcript).await?;
     let evidence = broker("/evidence", json!({"content":output.to_string()}), true).await?;
+    transcript.mark_recorded()?;
     if output["exit"] != 0 {
         return Err(crate::harness_error::failure(&output, &evidence));
     }
@@ -110,6 +112,12 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         return Ok(json!({"transcript":evidence["digest"],"model":model}));
     }
     let files = export_with_baseline(root, &baseline)?;
+    if payload["team_planning"] == true {
+        crate::team_workspace::validate_read_only(&baseline, &files)?;
+        return Ok(
+            json!({"planning":true,"source_unchanged":true,"transcript":evidence["digest"],"model":model}),
+        );
+    }
     if let Some(scope) = payload.get("team_owned_paths") {
         crate::team_workspace::validate_changes(&baseline, &files, scope)?;
     }

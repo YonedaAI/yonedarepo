@@ -12,6 +12,7 @@ import { RunHistory } from './RunHistory';
 import { RunToolbar } from './RunToolbar';
 import { RunWorkflow } from './RunWorkflow';
 import { initialRun } from './restartRun';
+import { runHasActiveAttempts } from './runControlState';
 import { hasPublishedWork } from './runDefaults';
 
 const RunComposer = lazy(() =>
@@ -57,11 +58,7 @@ export function Exploration({
   const coding = snapshot.executions.filter((e) => e.run_id === run?.id && e.role === 'coding');
   const roots = coding.filter((e) => !e.parent_execution).length;
   const team = run?.mode === 'collaborate';
-  const activeAttempts = snapshot.executions.some(
-    (execution) =>
-      execution.run_id === run?.id &&
-      ['queued', 'running', 'capturing', 'evaluating'].includes(execution.status),
-  );
+  const activeAttempts = runHasActiveAttempts(snapshot, run);
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
   const previousRun =
     run?.restart_of ??

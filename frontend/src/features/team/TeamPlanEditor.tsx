@@ -1,6 +1,6 @@
 import type { AgentDraft } from '../exploration/agentLimits';
 import { TeamTaskEditor } from './TeamTaskEditor';
-import type { TeamDraft, TeamTaskDraft } from './teamDraft';
+import { removeTeamTask, type TeamDraft, type TeamTaskDraft } from './teamDraft';
 export function TeamPlanEditor({
   value,
   agents,
@@ -44,9 +44,8 @@ export function TeamPlanEditor({
         </button>
       </div>
       <p className="subtle">
-        Start with the editable event search / RSVP example, or describe your own tasks and
-        interface. Ready tasks run concurrently when capacity allows. Dependencies wait without
-        occupying a container.
+        Define tasks, interfaces and source ownership yourself. Ready tasks can run concurrently.
+        One agent can handle multiple tasks and final integration in sequence.
       </p>
       <label>
         Shared interface contract
@@ -67,20 +66,16 @@ export function TeamPlanEditor({
             agents={agents}
             locked={locked}
             onChange={update}
-            onRemove={() =>
-              onChange({
-                ...value,
-                tasks: value.tasks
-                  .filter((item) => item.id !== task.id)
-                  .map((item) => ({
-                    ...item,
-                    dependsOn: item.dependsOn.filter((id) => id !== task.id),
-                  })),
-              })
-            }
+            onRemove={() => onChange(removeTeamTask(value, task.id))}
           />
         ))}
       </div>
+      {!value.tasks.length && (
+        <p className="inline-empty">
+          No tasks in this draft. Add a task, or turn off Advanced task plan to let an agent plan
+          the work.
+        </p>
+      )}
       <fieldset className="team-integration-editor">
         <legend>Final integration</legend>
         <label>

@@ -83,6 +83,18 @@ pub(crate) fn validate_changes(
     Ok(())
 }
 
+/// Planning may inspect the checkout, but cannot hand off modified source.
+pub(crate) fn validate_read_only(before: &Workspace, after: &Workspace) -> Result<()> {
+    validate_workspace(after)?;
+    if !changed(before, after)?.is_empty() {
+        return Err(Error::new(
+            "PLANNING_SOURCE_CHANGED",
+            "The planner changed source; no plan or source can be activated from this attempt",
+        ));
+    }
+    Ok(())
+}
+
 fn changed(before: &Workspace, after: &Workspace) -> Result<Vec<String>> {
     let paths: BTreeSet<_> = before.keys().chain(after.keys()).collect();
     let mut result = Vec::new();

@@ -62,7 +62,7 @@ async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     let budget = crate::execution_limits::model_budget(&job)
         .unwrap()
         .unwrap();
-    assert_eq!(crate::execution_limits::timeout_ms(&job).unwrap(), 55000);
+    assert_eq!(crate::execution_limits::timeout_ms(&job).unwrap(), 50000);
     let mut command = Command::new("/bin/sh");
     untrusted(&mut command, std::path::Path::new("/tmp"));
     configure_output_limit(&mut command, Some(&budget));
@@ -73,7 +73,7 @@ async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     job["payload"]["run"]["model_budgets"][0]["max_execution_ms"] = json!(1_800_000);
     assert_eq!(
         crate::execution_limits::timeout_ms(&job).unwrap(),
-        1_795_000
+        1_790_000
     );
     job["payload"]["execution"]["budget"]["model"] = json!("another-model");
     assert_eq!(

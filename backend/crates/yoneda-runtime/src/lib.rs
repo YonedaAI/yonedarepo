@@ -2,6 +2,7 @@
 use serde_json::Value;
 use yoneda_core::Error;
 mod agent;
+mod agent_transcript;
 mod broker;
 mod evaluation;
 mod execution_limits;
@@ -17,6 +18,7 @@ mod site;
 mod source_filter;
 mod supervisor;
 mod supervisor_task;
+mod team_planning;
 mod team_prompt;
 mod team_source;
 mod team_workspace;
