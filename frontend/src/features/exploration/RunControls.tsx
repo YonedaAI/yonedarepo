@@ -1,4 +1,5 @@
 import { RotateCcw, StopCircle } from 'lucide-react';
+import { canCancelRun } from './runControlState';
 
 export function RunControls({
   run,
@@ -37,7 +38,7 @@ export function RunControls({
         <RotateCcw size={16} />
         Restart run
       </button>
-      {!['accepted', 'cancelled', 'failed'].includes(run.status) && (
+      {canCancelRun(run, activeAttempts) && (
         <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
           <StopCircle size={16} />
           Cancel run

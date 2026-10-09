@@ -1,12 +1,14 @@
 import { safeId } from './http';
 import type { Env, Json } from './types';
-export async function source(env: Env, revision: Json) {
+export async function source(env: Env, revision: Json, expectedTree?: string) {
   const [namespace, name, extra] = String(revision.repository).split('/');
   if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !safeId(name))
     throw new Error('Revision is outside this namespace');
   using repo = await env.ARTIFACTS.get(name);
   const commit = await repo.readCommit(revision.commit);
   if (!commit) throw new Error('Captured commit is missing');
+  if (expectedTree !== undefined && commit.treeHash !== expectedTree)
+    throw new Error('Captured source tree differs from the frozen manifest');
   const files: Json = Object.create(null);
   let bytes = 0;
   async function walk(hash: string, prefix: string, depth: number) {

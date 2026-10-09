@@ -89,7 +89,7 @@ pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             save(db, "jobs", &job_id, &job)?;
         }
     }
-    for table in ["runs", "executions", "candidates"] {
+    for table in ["runs", "executions", "candidates", "team_tasks"] {
         db.query(&format!("UPDATE {table} SET payload=json_set(payload,'$.status','cancelled') WHERE json_extract(payload,'$.status') NOT IN ('accepted','published','done','failed','cancelled')"), &[])?;
     }
     repository["version"] = json!(

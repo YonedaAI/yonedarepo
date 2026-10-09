@@ -1,6 +1,6 @@
 # YonedaRepo
 
-A Context Graph platform for the agentic era. Explore parallel implementations, evaluate captured source independently, and preserve the intent, assumptions, alternatives and human decision behind a published revision.
+A Context Graph platform for the agentic era. Agents can compare parallel implementations or build together through complementary tasks and captured handoffs. Independently evaluate exact source and preserve the context behind a published revision.
 
 [Try the development platform](https://yonedarepo-dev.mlong-f01.workers.dev/) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/) · [Video and submission](docs/submission.md) · [Verified release evidence](docs/release-evidence.md)
 
@@ -15,7 +15,7 @@ connections use the Coding Plan endpoint and default to **GLM-5.3-Flash**. New h
 no request or dollar cap unless you set one; provider quotas and execution limits still apply.
 See [provider setup and adding a provider](docs/providers.md).
 
-Choose one to six agents for each run: one for a focused change, or several to compare independent approaches. Add, remove or change agents before approving the brief. Optional subagents allow up to 12 agents in total, through two delegation levels. Children inherit their parent's approved provider, model, source and context; each produces a separately captured and evaluated alternative. The owner chooses what ships. See [concurrency and delegation limits](docs/runbook.md#agent-concurrency-and-delegation).
+Choose one to six agents for each run: one for a focused change, several to compare independent approaches, or a **Build together** team with complementary tasks and one integrator. Add, remove or change agents before approving the brief. [Build together](docs/build-together.md) captures specialist outputs, assembles their exact revisions, and checks one integrated candidate. In comparison mode, optional subagents allow up to 12 agents in total through two delegation levels; each produces a separately captured and evaluated alternative. The owner chooses what ships. See [concurrency and delegation limits](docs/runbook.md#agent-concurrency-and-delegation).
 
 After publication, **Update website** / **Update project** continues the winning approach and model from canonical source. The previous brief, criteria, decision and relevant artifacts/context are carried forward for review. Agent membership and settings remain editable, with fresh usage and current repository checks.
 

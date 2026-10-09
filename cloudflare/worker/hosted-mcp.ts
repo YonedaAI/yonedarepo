@@ -17,6 +17,17 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
     response(await contextResponse(env, scope.repo_id, identity, name, value));
   if (name === 'repo_context' || name === 'execution_status')
     return finish(await command({ op: 'context' }));
+  if (name === 'team_context' || name === 'integration_request')
+    return finish(await command({ op: name }));
+  if (name === 'task_handoff')
+    return finish(
+      await command({
+        op: name,
+        summary: args.summary,
+        interface_contract: args.interface_contract,
+        references: args.references ?? [],
+      }),
+    );
   if (name === 'context_usage')
     return finish(
       await command({

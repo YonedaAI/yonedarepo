@@ -10,6 +10,8 @@ const tracked = new Set([
   'why',
   'decision',
   'artifact_get',
+  'team_context',
+  'integration_request',
 ]);
 
 /** Record only records actually present in the sanitized successful response. */
@@ -42,6 +44,7 @@ export async function contextResponse(
     'plain_notes',
     'decisions',
     'runs',
+    'handoffs',
   ])
     if (Array.isArray(result[key])) for (const record of result[key]) add(record);
   if (tool === 'repo_context') {
@@ -53,6 +56,11 @@ export async function contextResponse(
     for (const run of runs)
       if (Array.isArray(run?.context_records))
         for (const record of run.context_records) add(record);
+  }
+  if (tool === 'team_context' || tool === 'integration_request') {
+    add(result.run);
+    add(result.execution);
+    add(result.manifest_record);
   }
   await ledger(env, repo, {
     ...identity,

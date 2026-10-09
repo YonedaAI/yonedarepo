@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import type { ContextUsage } from '../../shared/context_usage';
 import { contextUsageMetric, contextUsagePath, isContextUsage } from '../../frontend/src/features/context-usage/contextUsageView';
+import { captureCheckNote, captureLabel } from '../../frontend/src/features/context-usage/contextCaptureView';
 
 const usage: ContextUsage = {
   version: 1, run_id: 'run', coverage: { status: 'unavailable', reason: 'Historical access was not tracked', activated_at: 0 },
@@ -54,4 +55,17 @@ it('accepts exact ledger capture and evaluation identifiers and rejects malforme
   expect(isContextUsage({ ...recorded, citations: [{ ...citation, targets: [null] }] }, 'run')).toBe(false);
   expect(isContextUsage({ ...recorded, checked: [{ ...evaluation, revision: null }] }, 'run')).toBe(false);
   expect(isContextUsage({ ...usage, citations_truncated: 'false' }, 'run')).toBe(false);
+});
+
+it('preserves intermediate capture versus exact integrated revision checks', () => {
+  const intermediate = { id: 'handoff:search', capture_job_id: 'capture:search', revision: { repository: 'task', commit: 'worker' }, capture_kind: 'task_contribution' as const, evaluation: null };
+  const integrated = { id: 'combined', capture_job_id: 'capture:integrate', revision: { repository: 'final', commit: 'combined' }, capture_kind: 'integration' as const, source_handoff: intermediate.id, evaluation: { candidate_id: 'combined', execution_id: 'integrator', evaluation_id: 'checks', revision: { repository: 'final', commit: 'combined' }, evidence: 'digest', policy: 'policy', checks: [], authority: 'checked_revision' as const } };
+  const citation = { record_id: 'assertion', seq: 1, at: 1, epoch: 1, execution_id: 'search', authority: 'assertion' as const, targets: [], candidates: [intermediate, integrated] };
+  expect(isContextUsage({ ...usage, citations: [citation] }, 'run')).toBe(true);
+  expect(captureLabel(intermediate)).toBe('Intermediate task source');
+  expect(captureLabel(integrated)).toBe('Integrated captured revision');
+  expect(captureCheckNote(intermediate, [intermediate])).toContain('Awaiting combined');
+  expect(captureCheckNote(intermediate, [intermediate, integrated])).toContain('no separate evaluator');
+  expect(captureCheckNote(intermediate, [intermediate, { ...integrated, source_handoff: 'unrelated' }])).toContain('Awaiting combined');
+  expect(isContextUsage({ ...usage, citations: [{ ...citation, candidates: [{ ...intermediate, capture_kind: 'verified_assertion' }] }] }, 'run')).toBe(false);
 });

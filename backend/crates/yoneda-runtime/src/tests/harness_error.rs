@@ -11,6 +11,23 @@ fn evidence() -> Value {
 }
 
 #[test]
+fn signal_evidence_is_distinct_from_shell_exit_143_and_not_a_provider_diagnosis() {
+    let signal = failure(
+        &json!({"exit":-1,"signal":15,"stdout":"private raw text"}),
+        &evidence(),
+    );
+    assert!(signal.message.contains("signal 15"));
+    assert_eq!(signal.code, "RUNTIME");
+    let exit = failure(
+        &json!({"exit":143,"signal":null,"stdout":"private raw text"}),
+        &evidence(),
+    );
+    assert!(exit.message.contains("exited 143"));
+    assert!(!exit.message.contains("signal"));
+    assert!(!exit.message.contains("private"));
+}
+
+#[test]
 fn provider_error_402_reports_billing_cause_and_keeps_transcript_without_raw_text() {
     let error = failure(
         &output(

@@ -46,6 +46,8 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         "graph",
         "why",
         "decision",
+        "team_context",
+        "integration_request",
     ]
     .contains(&tool.as_str())
     {

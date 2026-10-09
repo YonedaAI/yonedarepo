@@ -53,6 +53,10 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
       ),
   );
   const reviewReady = !decision && run.status === 'ready' && reviewable.length > 0;
+  const team = run.mode === 'collaborate';
+  const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
+  const specialists = tasks.filter((task) => task.role !== 'integrator');
+  const integrator = tasks.find((task) => task.role === 'integrator');
   const stages = [
     ...(research
       ? [{ name: 'Research', value: research.status, detail: research.model }]
@@ -64,10 +68,13 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           },
         ]),
     {
-      name: coding.length === 1 ? 'Build approach' : 'Build approaches',
-      value: `${done} / ${coding.length} finished`,
-      detail:
-        queued > 0
+      name: team ? 'Specialist tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
+      value: team
+        ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
+        : `${done} / ${coding.length} finished`,
+      detail: team
+        ? 'Complementary source scopes'
+        : queued > 0
           ? `${queued} queued · capacity limited`
           : historical
             ? 'Recorded execution history'
@@ -78,9 +85,11 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
                 : 'Waiting for agents',
     },
     {
-      name: 'Capture source',
-      value: `${candidates.length} / ${coding.length} captured`,
-      detail: 'Exact fork commits',
+      name: team ? 'Integration' : 'Capture source',
+      value: team
+        ? (integrator?.status ?? 'waiting for task inputs')
+        : `${candidates.length} / ${coding.length} captured`,
+      detail: team ? 'One combined source revision' : 'Exact fork commits',
     },
     {
       name: 'Independent checks',
@@ -125,8 +134,9 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
         <div className="review-ready" role="status">
           <strong>Ready for review</strong>
           <p>
-            {reviewable.length} checked approach{reviewable.length === 1 ? ' is' : 'es are'}{' '}
-            eligible. Review the source and preview, then select an approach to record what ships.
+            {team
+              ? 'The integrated result is independently checked and eligible. Review its source, included task revisions and preview, then record what ships.'
+              : `${reviewable.length} checked approach${reviewable.length === 1 ? ' is' : 'es are'} eligible. Review the source and preview, then select an approach to record what ships.`}
           </p>
         </div>
       )}

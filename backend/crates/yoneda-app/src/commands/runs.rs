@@ -55,6 +55,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 super::scheduling::validate_agents(&c)?;
             }
+            let team = super::team::freeze(&c, general)?;
+            if team.is_some() && r.get("context_study").is_some() {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "Controlled context trials do not support team mode",
+                ));
+            }
             let model_budgets = super::model_budgets::freeze(&c, general)?;
             let root_count = if general {
                 c["agents"].as_array().map_or(0, Vec::len)
@@ -87,7 +94,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if team.is_some() {"collaborate"} else {"compare"}});
+            if general {
+                run["agents"] = c["agents"].clone();
+            }
+            if let Some(plan) = &team {
+                run["team_plan"] = json!(plan);
+                run["team_plan_revision"] = json!(1);
+                run["execution_count"] = json!(plan.tasks.len() + 1);
+            }
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
                 run["request_limits"] = json!("optional-v1");
@@ -131,7 +146,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 )?;
             }
             if general {
-                super::scheduling::schedule(db, &run, &c["agents"], now)?;
+                if team.is_some() {
+                    super::team::start(db, &run, now)?;
+                } else {
+                    super::scheduling::schedule(db, &run, &c["agents"], now)?;
+                }
             } else {
                 execution(db, &run, "claude", "research", "research", json!([]), now)?;
             }
@@ -187,6 +206,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .map_err(|e| bad(&e.to_string()))?;
                 candidate["status"] = json!("cancelled");
                 save(db, "candidates", &string(&candidate, "id")?, &candidate)?;
+            }
+            if r["mode"] == "collaborate" {
+                super::team::cancelled(db, &id, now)?;
             }
             event(db, "run.cancelled", now, json!({"id":id}))?;
             Ok(json!({"status":"cancelled","stop":stops}))

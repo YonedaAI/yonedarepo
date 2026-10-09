@@ -1,5 +1,27 @@
 # Runbook
 
+## Team runs and container rollout
+
+[Build together](build-together.md) uses explicit complementary tasks and a designated integrator.
+Configure the roster, contract, dependencies and write paths in the console. Capture unlocks
+dependent tasks; only the integrated result receives the combined independent checks and shipping
+decision. Failed tasks offer bounded retry when downstream inputs have not started.
+
+Wrangler returning a successful Worker deployment does **not** establish that the new container
+image is serving. Before a paid acceptance run, inspect the application with the relevant config:
+
+```sh
+pnpm exec wrangler containers list --json --config cloudflare/wrangler.jsonc
+pnpm exec wrangler containers info APPLICATION_ID --config cloudflare/wrangler.jsonc
+```
+
+For a portable deployment use `.local/deploy/NAME/platform.json`. Wait until the image is the
+newly uploaded digest, the active rollout is absent and the application reports healthy instances
+without startup errors. Record the digest and version with acceptance evidence. New collaborative
+jobs also require runtime capability `collaborative_runs: 1`; older images stop before inference.
+If work was attempted during rollout, inspect its error and retry the failed team tasks after the
+rollout finishes. Container stop observations are available in Cloudflare Workers Logs.
+
 For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). External agents use [repository-scoped MCP and Git keys](remote-mcp.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
 
 For request failures, open the approach's **View logs**. For platform diagnostics, search the Worker's **Cloudflare Observability** logs by execution/job ID. Rust emits JSON using `tracing`; retained per-agent history lives in Repo DO SQLite. See [logging and retention](logging.md). Existing MiMo connections can be corrected through **Agent providers → Edit connection** without replacing their encrypted keys.

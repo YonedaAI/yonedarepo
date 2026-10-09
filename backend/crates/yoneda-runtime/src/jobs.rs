@@ -8,10 +8,8 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use yoneda_core::{Result, Workspace};
 pub(crate) async fn workspace(job: &Value, root: &Path) -> Result<Workspace> {
-    let result = broker("/source", json!({}), true).await?;
-    let files: Workspace = serde_json::from_value(result["files"].clone()).map_err(err)?;
+    let files = crate::team_source::load(job).await?;
     materialize(root, &files)?;
-    let _ = job;
     Ok(files)
 }
 
@@ -23,6 +21,10 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
         "capture" => {
             let data = broker("/workspace", json!({}), true).await?;
             let files: Workspace = serde_json::from_value(data["files"].clone()).map_err(err)?;
+            if let Some(scope) = job["payload"].get("team_owned_paths") {
+                let before = crate::team_source::load(job).await?;
+                crate::team_workspace::validate_changes(&before, &files, scope)?;
+            }
             git(&root, &["init", "-b", "main"]).await?;
             git(
                 &root,
@@ -57,6 +59,9 @@ pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
                     .as_str()
                     .unwrap_or("Candidate")
             ));
+            if let Some(digest) = job["payload"].get("integration_digest") {
+                result["integration_digest"] = digest.clone();
+            }
             Ok(result)
         }
         "evaluate" => crate::evaluation::execute(job, &root).await,

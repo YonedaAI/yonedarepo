@@ -64,6 +64,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         ));
     }
     let run = get(db, "runs", &string(&candidate, "run_id")?)?;
+    super::team::validate_candidate(db, &run, &candidate)?;
     if run["status"] == "cancelled" {
         return Err(Error::new("FENCED", "Run was cancelled"));
     }

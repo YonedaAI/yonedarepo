@@ -22,6 +22,7 @@ export function CandidateCard({
   disabled,
   onSelect,
   onProviders,
+  team = false,
 }: {
   strategy: string;
   repo: string;
@@ -33,6 +34,7 @@ export function CandidateCard({
   disabled: boolean;
   onSelect: () => void;
   onProviders?: () => void;
+  team?: boolean;
 }) {
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
   const published = chosen && decision?.status === 'published';
@@ -67,13 +69,17 @@ export function CandidateCard({
         <p>
           {candidate?.summary ??
             (status === 'failed'
-              ? 'This agent stopped before completing its approach.'
+              ? team
+                ? 'Integration stopped before producing a complete result.'
+                : 'This agent stopped before completing its approach.'
               : status === 'cancelled'
                 ? 'This agent was cancelled and will not continue.'
                 : status === 'queued'
                   ? 'Queued for an available execution slot.'
                   : execution
-                    ? 'Working from the approved brief and frozen context.'
+                    ? team
+                      ? 'Combining exact captured worker outputs under the approved shared contract.'
+                      : 'Working from the approved brief and frozen context.'
                     : 'Waiting for an agent.')}
         </p>
         {execution?.status === 'failed' && (
@@ -131,10 +137,14 @@ export function CandidateCard({
               onClick={onSelect}
             >
               {published
-                ? 'Published approach'
+                ? team
+                  ? 'Published integrated result'
+                  : 'Published approach'
                 : chosen
                   ? 'Selected · awaiting publication'
-                  : 'Select approach'}
+                  : team
+                    ? 'Review integrated result'
+                    : 'Select approach'}
             </button>
           </>
         )}

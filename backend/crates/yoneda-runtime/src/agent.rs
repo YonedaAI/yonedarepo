@@ -110,6 +110,9 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         return Ok(json!({"transcript":evidence["digest"],"model":model}));
     }
     let files = export_with_baseline(root, &baseline)?;
+    if let Some(scope) = payload.get("team_owned_paths") {
+        crate::team_workspace::validate_changes(&baseline, &files, scope)?;
+    }
     let uploaded = broker("/workspace", json!({"files":files}), true).await?;
     Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
 }

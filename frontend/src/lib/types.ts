@@ -62,11 +62,14 @@ export interface Snapshot {
   nodes: GraphNode[];
   edges: GraphEdge[];
   seq: number;
+  team_tasks?: Record<string, any>[];
+  team_handoffs?: Record<string, any>[];
   capabilities?: {
     agent_limits?: AgentLimits;
     model_budgets?: number;
     optional_model_requests?: number;
     published_continuation?: number;
+    collaborative_runs?: number;
   };
 }
 export interface AgentLimits {
