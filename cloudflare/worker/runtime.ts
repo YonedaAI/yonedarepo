@@ -12,6 +12,9 @@ export function checkLedger(snapshot: Json, request?: Json) {
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
     (request?.mode === 'collaborate' && snapshot?.capabilities?.collaborative_runs !== 1) ||
+    (request?.mode === 'collaborate' &&
+      request?.team == null &&
+      snapshot?.capabilities?.team_planning !== 1) ||
     (request?.continuation_of !== undefined &&
       snapshot?.capabilities?.published_continuation !== 1) ||
     (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
@@ -32,6 +35,8 @@ export function checkLedger(snapshot: Json, request?: Json) {
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (job.payload?.team_planning === true && health.capabilities?.team_planning !== 1)
+    throw new Error('Container image does not support team planning; wait for rollout completion');
   if (job.payload?.execution?.team_task && health.capabilities?.collaborative_runs !== 1)
     throw new Error(
       'Container image does not support collaborative source assembly; wait for rollout completion',

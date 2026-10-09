@@ -8,6 +8,7 @@ import {
   dependencyBlockers,
   type TeamRecord,
   taskError,
+  teamAgentBusy,
   teamOwner,
 } from './teamView';
 export function TeamTaskCard({
@@ -66,7 +67,9 @@ export function TeamTaskCard({
         <p role="status">
           {blockers.length
             ? `Waiting for ${blockers.map(label).join(', ')}.`
-            : 'Waiting for the scheduler to make this task ready.'}
+            : teamAgentBusy(task, tasks)
+              ? 'Waiting for this agent’s current task and source capture.'
+              : 'Waiting for the scheduler to make this task ready.'}
         </p>
       )}
       {task.status === 'queued' && (
@@ -133,7 +136,9 @@ export function TeamTaskCard({
           <p>
             {task.revision >= 3
               ? 'This task exhausted its three approved attempts. Start a fresh run to continue.'
-              : 'A retry requires a fresh run because dependent work already started or this attempt version is unavailable.'}
+              : teamAgentBusy(task, tasks)
+                ? 'Retry is available after this agent’s current task and source capture finish.'
+                : 'A retry requires a fresh run because dependent work already started or this attempt version is unavailable.'}
           </p>
         ))}
     </li>

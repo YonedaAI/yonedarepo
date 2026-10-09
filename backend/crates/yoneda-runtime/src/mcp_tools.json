@@ -330,5 +330,117 @@
       "properties": {},
       "additionalProperties": false
     }
+  },
+  {
+    "name": "team_plan_propose",
+    "description": "The assigned read-only planner proposes a complete complementary plan for the actual brief and frozen roster. Do not probe with placeholders. Rust validates scopes, references, graph and assignments. Before planning finishes, refine a draft by passing its current returned ID as expected_proposal. Each version is immutable; identical retries do not replace the active draft. At most eight versions per attempt. Activation waits for successful unchanged-source planner completion; this does not claim capture, checks or publication.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "version": {
+              "type": "integer",
+              "enum": [
+                1
+              ]
+            },
+            "contract": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 16384
+            },
+            "integrator_agent": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "integration_paths": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 513
+              }
+            },
+            "tasks": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "instructions": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "agent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5
+                  },
+                  "depends_on": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "write_paths": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 513
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "title",
+                  "instructions",
+                  "agent",
+                  "depends_on",
+                  "write_paths"
+                ]
+              }
+            }
+          },
+          "required": [
+            "version",
+            "contract",
+            "integrator_agent",
+            "integration_paths",
+            "tasks"
+          ]
+        },
+        "expected_proposal": {
+          "type": "string",
+          "description": "Current active draft ID returned by team_plan_propose or planner team_context. Required to replace a different draft before completion; omit on initial proposal."
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "additionalProperties": false
+    }
   }
 ]

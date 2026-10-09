@@ -43,6 +43,22 @@
 .team-plan-editor {
   margin: 24px 0;
 }
+.team-plan-options {
+  margin: 22px 0;
+}
+.run-composer .team-plan-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  margin: 16px 0 8px;
+}
+.team-plan-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+}
 .team-task-editors {
   display: grid;
   gap: 18px;
@@ -170,6 +186,21 @@
   padding: 12px 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
+}
+.team-planning-progress {
+  padding: 16px;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f7f9fc;
+}
+.team-planning-progress p {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.team-planning-progress .team-task-error {
+  color: #9b4848;
 }
 .team-contract summary {
   cursor: pointer;

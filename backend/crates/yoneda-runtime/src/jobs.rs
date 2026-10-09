@@ -13,11 +13,14 @@ pub(crate) async fn workspace(job: &Value, root: &Path) -> Result<Workspace> {
     Ok(files)
 }
 
-pub(crate) async fn execute_job(job: &Value) -> Result<Value> {
+pub(crate) async fn execute_job(
+    job: &Value,
+    transcript: &crate::agent_transcript::Transcript,
+) -> Result<Value> {
     let root = PathBuf::from("/work/repo");
     std::fs::create_dir_all(&root).map_err(err)?;
     match field(job, "kind")? {
-        "agent" => crate::agent::execute(job, &root).await,
+        "agent" => crate::agent::execute(job, &root, transcript).await,
         "capture" => {
             let data = broker("/workspace", json!({}), true).await?;
             let files: Workspace = serde_json::from_value(data["files"].clone()).map_err(err)?;

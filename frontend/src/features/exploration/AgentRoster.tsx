@@ -55,14 +55,20 @@ export function AgentRoster({
         </button>
       </div>
       <p className="subtle">
-        {agents.length} of {limits.max_root_agents} {team ? 'team' : 'root'} agents · minimum{' '}
-        {team ? 3 : limits.min_root_agents}.
-        {team
-          ? ' Assign agents to complementary tasks and final integration below.'
-          : limits.min_root_agents === 1
-            ? ' Use one agent for a focused change, or add agents to compare approaches.'
-            : ' Give each agent a distinct approach.'}{' '}
-        Provider connections can be reused. Work runs as capacity becomes available.
+        {team ? (
+          <>
+            {agents.length} of {limits.max_root_agents} agents. Add or remove connections for this
+            run.
+          </>
+        ) : (
+          <>
+            {agents.length} of {limits.max_root_agents} root agents · minimum{' '}
+            {limits.min_root_agents}.
+            {limits.min_root_agents === 1
+              ? ' Use one agent for a focused change, or add agents to compare approaches.'
+              : ' Give each agent a distinct approach.'}
+          </>
+        )}
       </p>
       {loading ? (
         <p role="status">Loading provider connections…</p>
@@ -132,12 +138,12 @@ export function AgentRoster({
           <button
             type="button"
             className="text-button"
-            aria-label={`Remove root agent ${index + 1}`}
-            disabled={locked || agents.length <= (team ? 3 : limits.min_root_agents)}
+            aria-label={`Remove ${team ? 'agent' : 'root agent'} ${index + 1}`}
+            disabled={locked || agents.length <= (team ? 1 : limits.min_root_agents)}
             title={
-              agents.length <= (team ? 3 : limits.min_root_agents)
+              agents.length <= (team ? 1 : limits.min_root_agents)
                 ? team
-                  ? 'A team requires two specialists and a separate integrator.'
+                  ? 'Keep at least one agent to plan and build this run.'
                   : `This deployment requires at least ${limits.min_root_agents} agent${limits.min_root_agents === 1 ? '' : 's'}.`
                 : undefined
             }
@@ -145,11 +151,6 @@ export function AgentRoster({
           >
             Remove agent
           </button>
-          {team && (
-            <p className="subtle">
-              Removing this agent clears its task assignments. Choose replacements before starting.
-            </p>
-          )}
         </fieldset>
       ))}
     </section>

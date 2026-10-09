@@ -17,6 +17,7 @@ export interface InitialRun {
   budgets: Record<string, ModelBudgetDraft>;
   mode?: RunMode;
   team?: TeamPlan;
+  teamPlanning?: string;
 }
 
 export function agentConnectionIssue(agent: AgentDraft, providers: Provider[]) {
@@ -69,6 +70,7 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
     budgets,
     mode: runMode(run.mode),
     team: run.team_plan,
+    teamPlanning: run.team_planning,
   };
 }
 

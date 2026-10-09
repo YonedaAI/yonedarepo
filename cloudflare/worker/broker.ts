@@ -14,7 +14,8 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     const path = new URL(req.url).pathname;
     const identity = { job_id: job.id, epoch: job.epoch };
     const body = await req.json<Json>();
-    if (path === '/mcp') return hostedMcp(env, scope, body);
+    // Await inside this boundary so ledger rejections reach the agent as typed JSON.
+    if (path === '/mcp') return await hostedMcp(env, scope, body);
     if (req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
     if (path === '/heartbeat' || path === '/progress')

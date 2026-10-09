@@ -3,6 +3,9 @@ use super::*;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let job = active(db, c, now)?;
     let execution = &job["payload"]["execution"];
+    if c["op"] == "team_context" && execution["team_role"] == "planner" {
+        return super::planning::context(db, c, now);
+    }
     if job["kind"] != "agent" || job["external"] == true || execution["team_task"].is_null() {
         return Err(Error::new(
             "FORBIDDEN",

@@ -1,6 +1,6 @@
 # Collaborative agent runs
 
-Status: staged plan. The explicit-plan hosted MVP is implemented; see [current behavior and limits](build-together.md). Automatic coordinator planning, plan amendments, repair delegation and external team participation remain future stages. Validation and deployment evidence is recorded separately.
+Status: staged plan. The hosted MVP supports brief-driven read-only planning and an optional explicit plan; see [current behavior and limits](build-together.md). Plan amendments, repair delegation and external team participation remain future stages. Validation and deployment evidence is recorded separately.
 
 This fits the competition's explicit interest in coordination, conflicts and preservation of why changes happened. [Cloudflare's brief](https://blog.cloudflare.com/next-git-platform-on-cloudflare/) requires concurrent agents and invites new workflows above Workers and Artifacts. A team producing one integrated result is our product interpretation of that opportunity, not a claim about judging outcomes.
 
@@ -83,7 +83,7 @@ Replace competing candidate cards with a single integration view: included task 
 
 ## Demonstration and acceptance
 
-Start with a small deliverable: two configurable specialists and one integrator. One implements event search, one implements RSVP, and the integrator connects both to a single site. Let the owner or an agent submit a validated three-task plan initially; autonomous decomposition, larger task graphs and external participants follow after this works. Agent counts, providers and roles remain run configuration, not hardcoded model assignments.
+The initial demonstration used two specialists for event search and RSVP, with a third integrator. That example is historical evidence, not a run preset. Current runs derive complementary tasks from the actual brief, selected roster and source. One to six agents are configurable, and a worker may also integrate; external participants and plan amendments remain later stages.
 
 ```mermaid
 flowchart LR

@@ -589,3 +589,6 @@ mod sites;
 mod team;
 
 mod external;
+
+#[path = "tests/team_planning.rs"]
+mod team_planning;

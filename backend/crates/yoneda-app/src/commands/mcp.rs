@@ -122,7 +122,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["completion_hint"] = c.get("summary").cloned().unwrap_or(json!(""));
             let id = string(&j, "id")?;
             save(db, "jobs", &id, &j)?;
-            Ok(json!({"status":"capture_requested","authoritative":false}))
+            Ok(
+                json!({"status":if j["payload"]["team_planning"] == true {"planning_completion_hint"} else {"capture_requested"},"authoritative":false}),
+            )
         }
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
     }

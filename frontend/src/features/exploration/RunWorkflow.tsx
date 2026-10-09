@@ -57,20 +57,30 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
   const specialists = tasks.filter((task) => task.role !== 'integrator');
   const integrator = tasks.find((task) => task.role === 'integrator');
+  const planner = executions.find((execution) => execution.team_role === 'planner');
   const stages = [
     ...(research
       ? [{ name: 'Research', value: research.status, detail: research.model }]
       : [
           {
-            name: 'Shared brief',
-            value: run.external ? 'agent requested' : 'approved',
+            name: team && run.team_planning === 'automatic' ? 'Brief and planning' : 'Shared brief',
+            value:
+              team && run.team_planning === 'automatic'
+                ? run.team_plan
+                  ? 'plan validated'
+                  : (planner?.status ?? run.status)
+                : run.external
+                  ? 'agent requested'
+                  : 'approved',
             detail: `${run.context?.length ?? 0} context references`,
           },
         ]),
     {
       name: team ? 'Specialist tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
       value: team
-        ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
+        ? specialists.length
+          ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
+          : 'waiting for plan'
         : `${done} / ${coding.length} finished`,
       detail: team
         ? 'Complementary source scopes'

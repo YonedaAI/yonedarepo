@@ -70,6 +70,7 @@ export interface Snapshot {
     optional_model_requests?: number;
     published_continuation?: number;
     collaborative_runs?: number;
+    team_planning?: number;
   };
 }
 export interface AgentLimits {

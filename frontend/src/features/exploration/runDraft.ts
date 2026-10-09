@@ -29,6 +29,9 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     publication && criteria.length < 32
       ? [...new Set([...criteria, preservePublishedCriteria])]
       : criteria;
+  const previousTeamPlan = source?.team ?? publication?.run.team_plan;
+  const previousAutomatic =
+    (source?.teamPlanning ?? publication?.run.team_planning) === 'automatic';
   return {
     restartOf: source?.id,
     publication,
@@ -37,9 +40,11 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     criteria: approvedCriteria.join('\n'),
     agents,
     mode,
+    previousTeamPlan,
+    previousAutomatic,
     team:
-      mode === 'collaborate'
-        ? restoreTeam(source?.team ?? publication?.run.team_plan, agents)
+      mode === 'collaborate' && !previousAutomatic && previousTeamPlan
+        ? restoreTeam(previousTeamPlan, agents)
         : undefined,
     context: source?.context ?? inheritedContext.ids,
     budgets: source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),

@@ -54,9 +54,26 @@ pub(super) fn wake<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     if run["status"] == "cancelled" || run["status"] == "accepted" {
         return Ok(());
     }
-    for task in rows(db, "team_tasks", &string(run, "id")?)? {
-        if task["status"] == "blocked" && inputs::ready(db, run, &task)? {
+    let tasks = rows(db, "team_tasks", &string(run, "id")?)?;
+    let mut reserved: BTreeSet<u64> = tasks
+        .iter()
+        .filter(|task| holds_slot(task))
+        .map(|task| {
+            task["agent"]
+                .as_u64()
+                .ok_or_else(|| bad("Invalid team agent slot"))
+        })
+        .collect::<Result<_>>()?;
+    for task in tasks {
+        let agent = task["agent"]
+            .as_u64()
+            .ok_or_else(|| bad("Invalid team agent slot"))?;
+        if task["status"] == "blocked"
+            && !reserved.contains(&agent)
+            && inputs::ready(db, run, &task)?
+        {
             schedule(db, run, task, now)?;
+            reserved.insert(agent);
         }
     }
     Ok(())
@@ -163,4 +180,12 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
     task["integration_digest"] = payload["integration_digest"].clone();
     save(db, "team_tasks", &id, &task)?;
     event(db, "team.task_scheduled", now, task)
+}
+
+/// Reservation begins at durable dispatch and survives harness finish until trusted capture.
+pub(super) fn holds_slot(task: &Value) -> bool {
+    matches!(
+        task["status"].as_str(),
+        Some("queued" | "running" | "capturing" | "evaluating")
+    )
 }

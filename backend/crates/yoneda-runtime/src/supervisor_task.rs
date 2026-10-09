@@ -1,5 +1,5 @@
 //! Attempt lifecycle instrumentation never records job payloads or raw errors.
-use crate::{broker::broker, jobs::execute_job};
+use crate::{agent_transcript::Transcript, broker::broker, jobs::execute_job};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tracing::Instrument;
@@ -23,6 +23,7 @@ pub(crate) fn spawn(job: Value) {
 
 async fn run(job: Value) {
     let started = Instant::now();
+    let transcript = Transcript::default();
     tracing::info!(event = "attempt.started");
     let heartbeat = tokio::spawn(
         async {
@@ -38,7 +39,11 @@ async fn run(job: Value) {
     );
     let result = match crate::execution_limits::timeout_ms(&job) {
         Ok(timeout) => {
-            tokio::time::timeout(Duration::from_millis(timeout), execute_job(&job)).await
+            tokio::time::timeout(
+                Duration::from_millis(timeout),
+                execute_job(&job, &transcript),
+            )
+            .await
         }
         Err(error) => Ok(Err(error)),
     };
@@ -66,16 +71,46 @@ async fn run(job: Value) {
                 error_code = "EXECUTION_TIMEOUT",
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0
             );
-            broker(
-                "/failed",
-                json!({"error":"EXECUTION_TIMEOUT: Execution deadline exceeded","retryable":false}),
-                true,
-            )
-            .await
+            report_deadline((job["kind"] == "agent").then_some(&transcript), broker).await
         }
     };
     heartbeat.abort();
     if let Err(error) = report {
         tracing::error!(event = "attempt.callback_failed", error_code = %error.code);
     }
+}
+
+/// Timeout has already dropped the harness and its process guards. Evidence must be attached
+/// while the original attempt is still active, before failure makes it terminal.
+pub(crate) async fn report_deadline<F, Fut>(
+    transcript: Option<&Transcript>,
+    mut report: F,
+) -> yoneda_core::Result<Value>
+where
+    F: FnMut(&'static str, Value, bool) -> Fut,
+    Fut: std::future::Future<Output = yoneda_core::Result<Value>>,
+{
+    if let Some(transcript) = transcript
+        && !transcript.is_recorded()?
+    {
+        let evidence = transcript.partial_timeout()?;
+        let result = tokio::time::timeout(
+            Duration::from_secs(2),
+            report("/evidence", json!({"content":evidence.to_string()}), true),
+        )
+        .await;
+        match result {
+            Ok(Ok(_)) => transcript.mark_recorded()?,
+            Ok(Err(error)) => {
+                tracing::error!(event = "attempt.partial_evidence_failed", error_code = %error.code)
+            }
+            Err(_) => tracing::error!(event = "attempt.partial_evidence_timeout"),
+        }
+    }
+    report(
+        "/failed",
+        json!({"error":"EXECUTION_TIMEOUT: Execution deadline exceeded","retryable":false}),
+        true,
+    )
+    .await
 }

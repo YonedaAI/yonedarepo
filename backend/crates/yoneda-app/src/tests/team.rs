@@ -162,14 +162,20 @@ fn handoffs_are_replayed_assertions_and_cannot_complete_tasks() {
 }
 #[test]
 fn invalid_dags_and_scopes_roll_back_run_creation() {
-    for mutation in ["cycle", "overlap", "prefix-file", "integrator", "missing"] {
+    for mutation in [
+        "cycle",
+        "overlap",
+        "prefix-file",
+        "out-of-roster",
+        "missing",
+    ] {
         let db = team_repo();
         let mut c = request();
         match mutation {
             "cycle" => c["team"]["tasks"][0]["depends_on"] = json!(["summary"]),
             "overlap" => c["team"]["tasks"][0]["write_paths"] = json!(["public/"]),
             "prefix-file" => c["team"]["tasks"][0]["write_paths"] = json!(["public"]),
-            "integrator" => c["team"]["tasks"][0]["agent"] = json!(2),
+            "out-of-roster" => c["team"]["tasks"][0]["agent"] = json!(3),
             _ => c["team"]["tasks"][0]["depends_on"] = json!(["absent"]),
         }
         assert!(call(&db, c).is_err(), "{mutation}");
@@ -346,13 +352,14 @@ fn sixteen_team_tasks_schedule_with_a_separate_integrator_and_study_mode_fails_c
     let mut c = request();
     c["team"]["tasks"]=json!((0..16).map(|i|json!({"id":format!("task-{i}"),"title":format!("Task {i}"),"instructions":"Implement assigned module","agent":i%2,"depends_on":[],"write_paths":[format!("src/module_{i}.rs")]})).collect::<Vec<_>>());
     call(&db, c).unwrap();
-    assert_eq!(snapshot(&db)["executions"].as_array().unwrap().len(), 16);
+    assert_eq!(snapshot(&db)["executions"].as_array().unwrap().len(), 2);
+    assert_eq!(snapshot(&db)["team_tasks"].as_array().unwrap().len(), 17);
     assert_eq!(
         call(&db, json!({"op":"context_usage","run_id":"team"})).unwrap()["assigned"]
             .as_array()
             .unwrap()
             .len(),
-        16
+        2
     );
     assert_eq!(task(&db, "integrate")["status"], "blocked");
     call(&db, json!({"op":"cancel_run","run_id":"team"})).unwrap();

@@ -19,6 +19,10 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
     return finish(await command({ op: 'context' }));
   if (name === 'team_context' || name === 'integration_request')
     return finish(await command({ op: name }));
+  if (name === 'team_plan_propose')
+    return finish(
+      await command({ op: name, plan: args.plan, expected_proposal: args.expected_proposal }),
+    );
   if (name === 'task_handoff')
     return finish(
       await command({

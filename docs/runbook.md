@@ -2,8 +2,10 @@
 
 ## Team runs and container rollout
 
-[Build together](build-together.md) uses explicit complementary tasks and a designated integrator.
-Configure the roster, contract, dependencies and write paths in the console. Capture unlocks
+[Build together](build-together.md) starts from a brief and one to six selected agents.
+The first selected agent plans read-only; the ledger validates and freezes complementary work.
+Use **Advanced task plan** only to specify your own contract, dependencies and write paths.
+A selected worker can also perform later integration. Capture unlocks
 dependent tasks; only the integrated result receives the combined independent checks and shipping
 decision. Failed tasks offer bounded retry when downstream inputs have not started.
 
@@ -18,7 +20,8 @@ pnpm exec wrangler containers info APPLICATION_ID --config cloudflare/wrangler.j
 For a portable deployment use `.local/deploy/NAME/platform.json`. Wait until the image is the
 newly uploaded digest, the active rollout is absent and the application reports healthy instances
 without startup errors. Record the digest and version with acceptance evidence. New collaborative
-jobs also require runtime capability `collaborative_runs: 1`; older images stop before inference.
+jobs require runtime capability `collaborative_runs: 1`; automatic planning also requires
+`team_planning: 1` on the ledger and runtime. Older versions stop before inference.
 If work was attempted during rollout, inspect its error and retry the failed team tasks after the
 rollout finishes. Container stop observations are available in Cloudflare Workers Logs.
 
@@ -101,6 +104,8 @@ An execution-budget stop is distinct from provider billing. Approved console run
 Repo DO alarms recover expired leases and retry durable outbox work. Queue redelivery is expected. Late callbacks are fenced. Check the current snapshot and execution errors before restarting work. The dead-letter queue is diagnostic transport evidence; the Repo DO job record remains authoritative.
 
 Cold container startup has a separate two-minute lease; the normal runtime budget begins when the supervisor port is ready. Startup stages and harness start are recorded as events. Launch errors become retryable job errors, rather than disappearing until lease expiry. Heartbeats extend running leases only within the attempt deadline.
+
+Agent harnesses reserve the last ten seconds of an explicitly configured execution window for process cleanup and failure reporting. On timeout, the supervisor retains up to 2 MiB each of stdout and stderr in private memory, terminates the process group, then attempts a partial transcript upload through the owner-scoped evidence endpoint before recording failure. That upload is capped at two seconds; heartbeats remain active until failure reporting finishes. An already acknowledged transcript stays immutable. Cancelled, stale or expired attempts cannot attach evidence or extend their deadline. Raw transcript content is kept out of console and structured logs.
 
 Before launching work, the Worker checks the supervisor's protocol and evaluator environment/suite support. Incompatible images fail before inference. Evaluation reports also identify their actual environment, which the ledger matches against policy. A rejected environment or protocol during deployment calls for waiting for the image rollout, rather than treating the candidate source as defective.
 

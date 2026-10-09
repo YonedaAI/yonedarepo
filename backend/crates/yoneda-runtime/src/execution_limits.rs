@@ -39,7 +39,14 @@ pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     let Some(budget) = model_budget(job)? else {
         return Ok(570_000);
     };
-    // Leave time to record failure evidence before the authoritative lease expires.
-    u64::try_from(budget.max_execution_ms - 5_000)
+    // Agent cleanup may consume two seconds; retain an unchanged absolute deadline while
+    // reserving ten seconds for process termination, a two-second evidence upload and failure.
+    // Other job kinds retain their existing five-second callback window.
+    let report_window = if job["kind"] == "agent" {
+        10_000
+    } else {
+        5_000
+    };
+    u64::try_from(budget.max_execution_ms - report_window)
         .map_err(|_| Error::new("INVALID_INPUT", "Invalid model execution duration"))
 }
