@@ -326,3 +326,35 @@ Ignored evidence: `artifacts/account-identity/integration-check.log`,
 `provisioning-deploy.log`, `live-acceptance.json` and `deployed-bundle.json`.
 The source-based architecture is documented separately in
 [current-state architecture](current-state-architecture.md); `architecture.md` remains unchanged.
+
+## 2026-10-09: Username or email accounts
+
+Signup, sign-in and recovery now accept usernames or practical ASCII email identifiers. The
+browser's username-only pattern was removed. Rust owns canonical validation; browser/Worker
+validation uses the same contract cases. Surrounding whitespace and letter case normalize to
+one identity, while dots and plus tags remain distinct. Existing username workspaces, cookies
+and MCP keys keep their identifiers and formats. An email is not an automatic alias for an
+existing username account, and no email ownership verification or recovery mail is claimed.
+
+Session cookies and MCP key segments encode email punctuation, keeping their dot separators
+unambiguous. Both queue consumption and Workspace alarm dispatch accept canonical email owners.
+Invalid identifiers, reserved operator identities and malformed/ambiguous encoded segments
+remain rejected. Recovery revokes old sessions and MCP keys.
+
+The regression reproduced **three failures** before the fix. The combined `cargo xtask check`
+passed Rust formatting/Clippy, **140 native Rust tests**, the actual Wasm build,
+TypeScript/Biome (**121 files**), **120 workerd tests**, one Node runtime test and the production
+browser build. The final form helper copy also passed formatting and a fresh TypeScript/build.
+Combined review found no material blocker. No SQL or DO class migration was needed.
+
+Development Worker **`6ed1a165-01c4-4c4d-a4da-4cf9e64f345b`** is deployed with immediate DO code
+update mode and no container rollout. Live HTTP acceptance used an isolated `example.test`
+account: mixed-case/whitespace signup, authenticated email identity, queued starter setup,
+owner-scoped snapshot, a read-only MCP key, recovery invalidation, login with the new password
+and logout all passed. Project creation returned HTTP 202 in **0.472 seconds**, then reached
+ready on `main`. Only its QA repository was deleted. Existing users, credentials and projects
+were unchanged; no paid inference ran. QA credentials remain in an ignored private local file.
+
+Ignored evidence: `artifacts/account-identity/email-regression-before.log`, `email-check.log`,
+`email-browser-build.log`, `email-deploy.log` and `email-live.json`. Visual browser acceptance
+remains separately unverified because browser control is unavailable.

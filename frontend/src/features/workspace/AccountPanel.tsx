@@ -1,4 +1,8 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import {
+  isValidAccountIdentifier,
+  MAX_ACCOUNT_IDENTIFIER_LENGTH,
+} from '../../../../shared/account';
 import { api } from '../../lib/api';
 export function AccountPanel({
   onConnected,
@@ -12,6 +16,7 @@ export function AccountPanel({
   const [error, setError] = useState('');
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
+  const identifierHelp = useId();
   if (recovery)
     return (
       <section className="account-panel">
@@ -68,6 +73,9 @@ export function AccountPanel({
           setBusy(true);
           setError('');
           try {
+            const identifier = data.get('username');
+            if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
+              throw new Error('Enter a valid username or email address.');
             const result = await api<{ recovery_code?: string }>(
               `auth/${mode}`,
               Object.fromEntries(data),
@@ -85,15 +93,24 @@ export function AccountPanel({
         }}
       >
         <label>
-          Username
+          Username or email
           <input
             name="username"
             required
             autoComplete="username"
-            pattern="[A-Za-z][A-Za-z0-9_]{2,31}"
-            placeholder="your_name"
+            maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            aria-describedby={identifierHelp}
+            placeholder="your_name or you@example.com"
           />
         </label>
+        <p id={identifierHelp}>
+          {mode === 'signup'
+            ? 'Choose a username or use your email address.'
+            : 'Enter the username or email you registered with.'}
+        </p>
         {mode === 'recover' && (
           <label>
             Recovery code
