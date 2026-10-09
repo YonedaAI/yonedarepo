@@ -248,10 +248,36 @@
   },
   {
     "name": "delegation_status",
-    "description": "Read this execution's direct children, their captured candidates and typed context, current shared provider/model request and spend allowances, approved output/time limits, and the 144-request run maximum. This does not approve or merge their source.",
+    "description": "Read this execution's direct children, their captured candidates and typed context, current shared provider/model request and spend allowances, approved output/time limits. This does not approve or merge their source.",
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "context_usage",
+    "description": "Query structured recorded context delivery, retrieval, explicit citations, captured revisions and independent check results for this run. Counts describe evidence coverage, not whether an agent understood a record. This query does not record itself.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "execution_id": {
+          "type": "string"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
       "additionalProperties": false
     }
   }

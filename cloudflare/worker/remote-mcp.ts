@@ -1,9 +1,14 @@
 import tools from '../../backend/crates/yoneda-core/src/mcp_remote_tools.json';
-import { contribution } from './contributions';
 import { grantPrincipal } from './grants';
 import { error, readJson, response, safeId } from './http';
-import { ledger, readObject } from './storage';
-import type { Env, Json, Principal } from './types';
+import { remoteTool } from './remote-tools';
+import { ledger } from './storage';
+import type { Env, Json } from './types';
+
+const versions = ['2025-06-18', '2025-03-26'];
+const sessionHeader = 'Mcp-Session-Id';
+
+/** JSON Streamable HTTP with optional legacy stateless requests; sessions never replace grants. */
 export async function remoteMcp(req: Request, env: Env, repo: string): Promise<Response> {
   if (!safeId(repo)) return error('NOT_FOUND', 'Unknown repository', 404);
   const principal = await grantPrincipal(req, env);
@@ -12,39 +17,87 @@ export async function remoteMcp(req: Request, env: Env, repo: string): Promise<R
     return error('FORBIDDEN', 'Unexpected MCP origin', 403);
   if (principal.grant?.repo !== repo)
     return error('FORBIDDEN', 'Key belongs to another repository', 403);
-  if (req.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
+  const identity = { _workspace: principal.workspace, _grant: principal.grant.id };
+  const command = (input: Json) => ledger(env, repo, { ...input, ...identity });
+  const sessionId = req.headers.get(sessionHeader);
+  const protocol = req.headers.get('MCP-Protocol-Version');
+  if (protocol && !versions.includes(protocol))
+    return error('INVALID_PROTOCOL_VERSION', 'Unsupported MCP protocol version', 400);
   try {
+    if (sessionId !== null) {
+      if (!/^[a-f0-9-]{36}$/.test(sessionId))
+        return error('SESSION_NOT_FOUND', 'MCP session is no longer available', 404);
+      const session = await command({ op: 'context_session_get', session_id: sessionId });
+      if (protocol && session.protocol_version && protocol !== session.protocol_version)
+        return error(
+          'INVALID_PROTOCOL_VERSION',
+          'MCP protocol version differs from this session',
+          400,
+        );
+    }
+    if (req.method === 'DELETE') {
+      if (!sessionId) return error('SESSION_REQUIRED', 'MCP session header required', 400);
+      await command({ op: 'context_session_end', session_id: sessionId });
+      return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
+    }
+    // This endpoint does not offer a server-initiated SSE stream.
+    if (req.method !== 'POST')
+      return new Response(null, { status: 405, headers: { Allow: 'POST, DELETE' } });
     const body = await readJson(req, 256 * 1024);
-    if (body.jsonrpc !== '2.0' || typeof body.method !== 'string')
+    if (
+      body.jsonrpc !== '2.0' ||
+      (body.id !== undefined && body.id !== null && !['string', 'number'].includes(typeof body.id))
+    )
       throw new Error('Invalid JSON-RPC message');
+    if (typeof body.method !== 'string') {
+      if (body.id !== undefined && ('result' in body || 'error' in body))
+        return new Response(null, { status: 202 });
+      throw new Error('Invalid JSON-RPC message');
+    }
     if (body.id === undefined) return new Response(null, { status: 202 });
     let result: Json;
-    if (body.method === 'initialize')
+    let issuedSession: string | undefined;
+    if (body.method === 'initialize') {
+      if (sessionId)
+        return error('INVALID_REQUEST', 'Initialize a new session without a session header', 400);
+      const protocolVersion = versions.includes(body.params?.protocolVersion)
+        ? body.params.protocolVersion
+        : versions[0];
+      issuedSession = crypto.randomUUID();
+      const expires = principal.grant.expires;
+      if (!Number.isSafeInteger(expires) || (expires ?? 0) <= Date.now())
+        return error('UNAUTHORIZED', 'Repository agent key has expired', 401);
+      await command({
+        op: 'context_session_begin',
+        session_id: issuedSession,
+        expires_at: Math.min(expires as number, Date.now() + 24 * 60 * 60 * 1000),
+        protocol_version: protocolVersion,
+      });
       result = {
-        protocolVersion: ['2025-06-18', '2025-03-26'].includes(body.params?.protocolVersion)
-          ? body.params.protocolVersion
-          : '2025-06-18',
+        protocolVersion,
         capabilities: { tools: {} },
-        serverInfo: { name: 'yonedarepo', version: '0.2.0' },
+        serverInfo: { name: 'yonedarepo', version: '0.3.0' },
       };
-    else if (body.method === 'ping') result = {};
+    } else if (body.method === 'ping') result = {};
     else if (body.method === 'tools/list') result = { tools };
     else if (body.method === 'tools/call') {
       try {
         const args = body.params?.arguments ?? {};
         if (!args || typeof args !== 'object' || Array.isArray(args))
           throw new Error('Tool arguments must be an object');
-        const value = await callTool(
+        const value = await remoteTool(
           env,
           principal,
           repo,
           body.params?.name,
           args,
           new URL(req.url).origin,
+          sessionId ?? undefined,
         );
         result = { content: [{ type: 'text', text: JSON.stringify(value) }] };
-      } catch (e) {
-        result = { isError: true, content: [{ type: 'text', text: (e as Error).message }] };
+      } catch (e: any) {
+        if (e.code === 'SESSION_NOT_FOUND') throw e;
+        result = { isError: true, content: [{ type: 'text', text: e.message }] };
       }
     } else
       return response({
@@ -52,87 +105,12 @@ export async function remoteMcp(req: Request, env: Env, repo: string): Promise<R
         id: body.id,
         error: { code: -32601, message: 'Unknown MCP method' },
       });
-    return response({ jsonrpc: '2.0', id: body.id, result });
-  } catch (e) {
-    return response(
-      { jsonrpc: '2.0', id: null, error: { code: -32600, message: (e as Error).message } },
-      400,
-    );
+    const reply = response({ jsonrpc: '2.0', id: body.id, result });
+    if (issuedSession) reply.headers.set(sessionHeader, issuedSession);
+    return reply;
+  } catch (e: any) {
+    if (e.code === 'SESSION_NOT_FOUND')
+      return error('SESSION_NOT_FOUND', 'MCP session is no longer available', 404);
+    return response({ jsonrpc: '2.0', id: null, error: { code: -32600, message: e.message } }, 400);
   }
-}
-async function callTool(
-  env: Env,
-  principal: Principal,
-  repo: string,
-  name: string,
-  args: Json,
-  origin: string,
-): Promise<Json> {
-  const command = (input: Json) =>
-    ledger(env, repo, { ...input, _workspace: principal.workspace, _grant: principal.grant?.id });
-  if (name === 'repo_context') {
-    const s = await command({ op: 'snapshot' });
-    return {
-      repository: s.repository,
-      runs: s.runs.slice(-10),
-      decisions: s.decisions.slice(-10),
-      context: s.nodes
-        .filter((n: Json) =>
-          [
-            'intent',
-            'requirement',
-            'constraint',
-            'assumption',
-            'finding',
-            'alternative',
-            'proposed_decision',
-            'question',
-          ].includes(n.kind),
-        )
-        .slice(-50),
-      git_url: `${origin}/git/${repo}/source`,
-    };
-  }
-  if (['context_search', 'context_get', 'graph', 'why', 'decision'].includes(name))
-    return command({
-      op: name,
-      id: args.id,
-      query: args.query,
-      kind: args.kind,
-      limit: args.limit,
-      cursor: args.cursor,
-      depth: args.depth,
-      commit: args.commit,
-      path: args.path,
-    });
-  if (['attempt_begin', 'attempt_status', 'attempt_submit'].includes(name))
-    return contribution(env, principal, repo, name, args, origin);
-  if (name === 'context_publish') {
-    if (principal.grant?.scope !== 'contribute')
-      throw new Error('A contribution grant is required');
-    const job = await command({ op: 'external_check', attempt_id: args.attempt_id });
-    return command({
-      op: 'context_publish',
-      job_id: job.id,
-      epoch: job.epoch,
-      record: {
-        id: `context:${crypto.randomUUID()}`,
-        kind: args.kind,
-        statement: args.statement,
-        purpose: args.purpose,
-        intent_id: args.intent_id,
-        links: args.links ?? [],
-      },
-    });
-  }
-  if (name === 'artifact_get') {
-    const s = await command({ op: 'snapshot' });
-    const a =
-      s.artifacts.find((a: Json) => a.id === args.id) ??
-      s.evaluations.find((e: Json) => e.id === args.id);
-    if (!a) throw new Error('Artifact or evaluation is not attached to this repository');
-    const digest = a.digest ?? a.evidence;
-    return { ...a, content: await readObject(env, digest) };
-  }
-  throw new Error('Tool is unavailable; agents cannot select or publish canonical source');
 }

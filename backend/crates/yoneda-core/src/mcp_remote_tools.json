@@ -137,6 +137,35 @@
     }
   },
   {
+    "name": "context_usage",
+    "description": "Read machine-readable context delivery evidence for a repository run. Assigned inputs, search results, opened records, explicit citations and exact revision checks are distinct. Delivery does not prove model use; historical gaps are explicit. This query does not create access receipts.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "run_id": {
+          "type": "string"
+        },
+        "execution_id": {
+          "type": "string"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "graph",
     "description": "Expand a bounded neighborhood around a graph node.",
     "inputSchema": {

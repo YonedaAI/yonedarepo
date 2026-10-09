@@ -87,7 +87,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1});
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
                 run["request_limits"] = json!("optional-v1");
@@ -98,6 +98,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if let Some(decision) = &continuation_of {
                 run["continuation_of"] = json!(decision);
             }
+            super::study::apply(&mut run, super::study::freeze(db, &r)?);
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(

@@ -3,6 +3,7 @@ import { lazy, Suspense, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { ContextUsagePanel } from '../context-usage/ContextUsagePanel';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
 import { DecisionForm } from './DecisionForm';
@@ -192,6 +193,7 @@ export function Exploration({
             <p className="subtle">Finish or cancel active attempts to restart this run.</p>
           )}
           <RunWorkflow snapshot={snapshot} run={run} />
+          <ContextUsagePanel key={run.id} snapshot={snapshot} run={run} />
           <ModelBudgetUsage run={run} />
           <ExecutionHierarchy snapshot={snapshot} run={run} />
           <button type="button" className="text-button context-link" onClick={onContext}>

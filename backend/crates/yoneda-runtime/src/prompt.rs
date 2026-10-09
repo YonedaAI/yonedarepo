@@ -20,7 +20,7 @@ pub(crate) fn prompt(payload: &Value) -> Result<String> {
         };
         let delegation = if payload["run"]["delegation"]["enabled"] == true {
             format!(
-                " The owner permits bounded delegation: {}. Use delegate_agent only for useful independent work, with a stable request_id; the child inherits your provider, model, source and context. All agents share the run maximum of 144 model requests. delegation_status shows your children, their evidence and current model-group allowances. Do not wait in a polling loop for children: finish your own approach while children are checked separately. Only the owner can select what ships.",
+                " The owner permits bounded delegation: {}. Use delegate_agent only for useful independent work, with a stable request_id; the child inherits your provider, model, source and context. delegation_status shows your children, their evidence and current model-group allowances. Do not wait in a polling loop for children: finish your own approach while children are checked separately. Only the owner can select what ships.",
                 payload["run"]["delegation"]
             )
         } else {
@@ -31,7 +31,7 @@ pub(crate) fn prompt(payload: &Value) -> Result<String> {
             field(execution, "strategy")?,
             payload["run"]["intent"],
             payload["run"]["criteria"],
-            payload["run"]["context_records"],
+            initial_context(&payload["run"])?,
             payload["policy"]["build"],
             field(&payload["run"], "id")?,
             output_tokens,
@@ -52,4 +52,14 @@ pub(crate) fn prompt(payload: &Value) -> Result<String> {
             "Implement the intent in the source files. Different approaches should be visible in code and explanations."
         }
     ))
+}
+
+fn initial_context(run: &Value) -> Result<Value> {
+    if let Some(config) = run.get("context_study") {
+        let study: yoneda_core::context_study::ContextStudy =
+            serde_json::from_value(config.clone()).map_err(crate::err)?;
+        study.validate()?;
+        return Ok(study.initial_context());
+    }
+    Ok(run["context_records"].clone())
 }

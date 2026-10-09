@@ -4,6 +4,12 @@ use serde_json::json;
 
 #[path = "tests/context_intent.rs"]
 mod context_intent;
+#[path = "tests/context_sessions.rs"]
+mod context_sessions;
+#[path = "tests/context_study.rs"]
+mod context_study;
+#[path = "tests/context_usage.rs"]
+mod context_usage;
 #[path = "tests/delegation.rs"]
 mod delegation;
 #[path = "tests/deletion.rs"]
@@ -258,7 +264,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7}])
             .as_array()
             .unwrap()
             .clone()
@@ -267,7 +273,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        6
+        7
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();

@@ -20,7 +20,7 @@ export async function grantPrincipal(req: Request, env: Env): Promise<Principal 
     return {
       workspace: owner,
       role: 'agent',
-      grant: { id: grant.id, repo: grant.repo, scope: grant.scope },
+      grant: { id: grant.id, repo: grant.repo, scope: grant.scope, expires: grant.expires },
     };
   } catch {
     return null;
