@@ -1,0 +1,6 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Community events</title></head><body><main><h1>Community events</h1><label>Search events <input id="search" type="search"></label><ul id="events"></ul><p id="confirmation" role="status"></p></main><script type="module">
+import {filterEvents,rsvp} from './events.mjs';
+const events=[{id:'walk',title:'River walk',category:'outdoors',startsAt:'2026-11-01T16:00:00Z',capacity:10,attendees:2}];
+const search=document.querySelector('#search'),list=document.querySelector('#events');
+function render(){list.replaceChildren();for(const event of filterEvents(events,search.value,new Date().toISOString())){const li=document.createElement('li'),button=document.createElement('button');button.textContent=`Join ${event.title}`;button.onclick=()=>{document.querySelector('#confirmation').textContent=rsvp(event,{},localStorage).message};li.append(button);list.append(li)}}search.addEventListener('input',render);render();
+</script></body></html>

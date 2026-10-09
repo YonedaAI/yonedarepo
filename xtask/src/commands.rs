@@ -6,6 +6,7 @@ use crate::{
 pub async fn execute(args: Vec<String>) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("help");
     match command {
+        "context-study" => crate::context_study::execute(&args).await,
         "cloudflare-configure" => crate::cloudflare::configure(&args),
         "cloudflare-deploy" => crate::cloudflare_deploy::deploy(&args).await,
         "doctor" => {
@@ -130,7 +131,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }

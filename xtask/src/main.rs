@@ -2,6 +2,7 @@ mod bootstrap;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
+mod context_study;
 mod dev;
 mod layout;
 mod live;
