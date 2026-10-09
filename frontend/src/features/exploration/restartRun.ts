@@ -44,12 +44,33 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
       expectedModel: execution.model,
       fromPreviousRun: true,
     }));
+  const budgets = restoreModelBudgets(run, agents);
+  return {
+    id: run.id,
+    intent: run.intent ?? '',
+    criteria: run.criteria ?? [],
+    context: run.context ?? [],
+    agents,
+    // Historical policy is evidence; restarting must preserve the repository's current checks.
+    policy: JSON.stringify(snapshot.repository.policy?.build, null, 2),
+    delegation: run.delegation
+      ? { ...run.delegation, max_depth: Math.max(1, run.delegation.max_depth ?? 1) }
+      : { enabled: false, max_depth: 1, max_executions: agents.length },
+    budgets,
+  };
+}
+
+export function restoreModelBudgets(
+  run: Record<string, any>,
+  agents: AgentDraft[],
+): Record<string, ModelBudgetDraft> {
   const budgets: Record<string, ModelBudgetDraft> = {};
   for (const budget of (run.model_budgets ?? []) as ModelBudgetConfig[]) {
     const key = JSON.stringify([budget.provider, budget.model]);
     const rootCount = agents.filter(
       (agent) => agent.expectedProvider === budget.provider && agent.expectedModel === budget.model,
     ).length;
+    if (!rootCount) continue;
     budgets[key] = {
       ...defaultModelBudget({
         key,
@@ -73,17 +94,5 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
       ratesApproved: budget.pricing?.source === 'owner-approved conservative rates',
     };
   }
-  return {
-    id: run.id,
-    intent: run.intent ?? '',
-    criteria: run.criteria ?? [],
-    context: run.context ?? [],
-    agents,
-    // Historical policy is evidence; restarting must preserve the repository's current checks.
-    policy: JSON.stringify(snapshot.repository.policy?.build, null, 2),
-    delegation: run.delegation
-      ? { ...run.delegation, max_depth: Math.max(1, run.delegation.max_depth ?? 1) }
-      : { enabled: false, max_depth: 1, max_executions: agents.length },
-    budgets,
-  };
+  return budgets;
 }

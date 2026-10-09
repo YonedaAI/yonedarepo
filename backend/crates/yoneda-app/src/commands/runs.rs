@@ -6,7 +6,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "start_run" => {
             let r = repo(db)?;
-            let restart_of = super::restarts::validate(db, &c)?;
             if !r["pending"].is_null() {
                 return Err(Error::new(
                     "PUBLICATION_PENDING",
@@ -19,6 +18,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "Resolve remote divergence before starting work",
                 ));
             }
+            let continuation_of = super::continuations::validate(db, &c, &r)?;
+            let restart_of = super::restarts::validate(db, &c)?;
             let id = string(&c, "id")?;
             let intent = string(&c, "intent")?;
             let general = !r["policy"]["build"].is_null();
@@ -94,6 +95,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if let Some(previous) = &restart_of {
                 run["restart_of"] = json!(previous);
             }
+            if let Some(decision) = &continuation_of {
+                run["continuation_of"] = json!(decision);
+            }
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(
@@ -114,6 +118,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     &id,
                     "restarts",
                     "owner-approved fresh run on current canonical source",
+                )?;
+            }
+            if let Some(decision) = continuation_of {
+                edge(
+                    db,
+                    &decision,
+                    &id,
+                    "continues",
+                    "owner-approved update from the published decision",
                 )?;
             }
             if general {

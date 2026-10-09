@@ -1,5 +1,5 @@
 import { GitCompareArrows } from 'lucide-react';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
@@ -8,12 +8,16 @@ import { CandidateComparison } from './CandidateComparison';
 import { DecisionForm } from './DecisionForm';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
-import { RunComposer } from './RunComposer';
 import { RunControls } from './RunControls';
+import { RunHistory } from './RunHistory';
 import { RunToolbar } from './RunToolbar';
 import { RunWorkflow } from './RunWorkflow';
 import { initialRun } from './restartRun';
-import { hasPublishedWebsite } from './runDefaults';
+import { hasPublishedWork } from './runDefaults';
+
+const RunComposer = lazy(() =>
+  import('./RunComposer').then((module) => ({ default: module.RunComposer })),
+);
 
 export function Exploration({
   snapshot,
@@ -51,6 +55,9 @@ export function Exploration({
       ['queued', 'running', 'capturing', 'evaluating'].includes(execution.status),
   );
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
+  const previousRun =
+    run?.restart_of ??
+    snapshot.decisions.find((decision) => decision.id === run?.continuation_of)?.run_id;
   const codeCandidates: Record<string, any>[] = candidates.map((c) => ({
     ...c,
     strategy: snapshot.executions.find((e) => e.id === c.execution)?.strategy ?? c.summary,
@@ -87,56 +94,51 @@ export function Exploration({
           title={
             restartSource
               ? 'Restart development run'
-              : hasPublishedWebsite(snapshot)
-                ? 'Update website'
+              : hasPublishedWork(snapshot)
+                ? repo.site
+                  ? 'Update website'
+                  : 'Update project'
                 : 'New development run'
           }
           onClose={() => setComposing(false)}
           locked={busy}
           wide
         >
-          <RunComposer
-            key={restartSource?.id ?? 'new-run'}
-            initialRun={restartSource ? initialRun(snapshot, restartSource) : undefined}
-            busy={busy}
-            onProviders={() => {
-              setComposing(false);
-              onProviders();
-            }}
-            snapshot={snapshot}
-            onClose={() => setComposing(false)}
-            onStart={async (brief) => {
-              const id = `run-${crypto.randomUUID()}`;
-              if (await act('start_run', { id, ...brief })) {
-                setRunId(id);
+          <Suspense fallback={<p role="status">Loading run settings…</p>}>
+            <RunComposer
+              key={restartSource?.id ?? 'new-run'}
+              initialRun={restartSource ? initialRun(snapshot, restartSource) : undefined}
+              busy={busy}
+              onProviders={() => {
                 setComposing(false);
-                setRestartId('');
-                setComparing(false);
-              }
-            }}
-          />
+                onProviders();
+              }}
+              snapshot={snapshot}
+              onClose={() => setComposing(false)}
+              onStart={async (brief) => {
+                const id = `run-${crypto.randomUUID()}`;
+                if (await act('start_run', { id, ...brief })) {
+                  setRunId(id);
+                  setComposing(false);
+                  setRestartId('');
+                  setComparing(false);
+                }
+              }}
+            />
+          </Suspense>
         </Dialog>
       )}
       {run ? (
         <>
-          <div className="run-picker">
-            <label htmlFor="recorded-run">Run history</label>
-            <select
-              id="recorded-run"
-              value={run.id}
-              onChange={(e) => {
-                setRunId(e.target.value);
-                setSelected('');
-                setComparing(false);
-              }}
-            >
-              {[...snapshot.runs].reverse().map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.intent} · {r.status} · {new Date(r.created_at).toLocaleDateString()}
-                </option>
-              ))}
-            </select>
-          </div>
+          <RunHistory
+            runs={snapshot.runs}
+            selected={run.id}
+            onSelect={(id) => {
+              setRunId(id);
+              setSelected('');
+              setComparing(false);
+            }}
+          />
           <div className="intent-row">
             <div>
               <h2>{run.intent}</h2>
@@ -150,17 +152,17 @@ export function Exploration({
                 <span>
                   {roots} root agents · {coding.length - roots} subagents
                 </span>
-                {run.restart_of && (
+                {previousRun && (
                   <button
                     type="button"
                     className="text-button"
                     onClick={() => {
-                      setRunId(run.restart_of);
+                      setRunId(previousRun);
                       setSelected('');
                       setComparing(false);
                     }}
                   >
-                    View previous run
+                    {run.continuation_of ? 'View published base' : 'View previous run'}
                   </button>
                 )}
               </div>
@@ -181,7 +183,9 @@ export function Exploration({
           </div>
           {publishedRun && !activeAttempts && (
             <p className="subtle">
-              This published run is recorded history. Choose Update website to start a fresh change.
+              This published run is recorded history. Choose Update{' '}
+              {repo.site ? 'website' : 'project'} to continue from the published approach and
+              context.
             </p>
           )}
           {activeAttempts && (

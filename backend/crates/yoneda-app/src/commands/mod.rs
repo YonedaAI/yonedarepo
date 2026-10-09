@@ -3,6 +3,7 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
 mod completion;
+mod continuations;
 mod delegation;
 mod deletion;
 mod events;

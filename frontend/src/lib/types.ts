@@ -46,6 +46,7 @@ export interface Snapshot {
     agent_limits?: AgentLimits;
     model_budgets?: number;
     optional_model_requests?: number;
+    published_continuation?: number;
   };
 }
 export interface AgentLimits {
