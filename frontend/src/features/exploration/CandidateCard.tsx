@@ -20,6 +20,7 @@ export function CandidateCard({
   decision,
   selected,
   disabled,
+  disabledReason,
   onSelect,
   onProviders,
   team = false,
@@ -32,6 +33,7 @@ export function CandidateCard({
   decision?: Record<string, any>;
   selected: boolean;
   disabled: boolean;
+  disabledReason?: string;
   onSelect: () => void;
   onProviders?: () => void;
   team?: boolean;
@@ -45,6 +47,7 @@ export function CandidateCard({
     <article
       className={`candidate ${selected ? 'focused' : ''}`}
       id={execution ? `approach-${execution.id}` : undefined}
+      tabIndex={-1}
     >
       <div className="candidate-title">
         <span className="strategy-mark" />
@@ -66,22 +69,45 @@ export function CandidateCard({
           ) : null}
           {published ? 'published' : chosen ? 'selected' : status.replaceAll('_', ' ')}
         </span>
-        <p>
-          {candidate?.summary ??
-            (status === 'failed'
-              ? team
-                ? 'Integration stopped before producing a complete result.'
-                : 'This agent stopped before completing its approach.'
-              : status === 'cancelled'
-                ? 'This agent was cancelled and will not continue.'
-                : status === 'queued'
-                  ? 'Queued for an available execution slot.'
-                  : execution
-                    ? team
-                      ? 'Combining exact captured worker outputs under the approved shared contract.'
-                      : 'Working from the approved brief and frozen context.'
-                    : 'Waiting for an agent.')}
-        </p>
+        {(!team || candidate?.summary !== 'Integrate the team result approach') && (
+          <p>
+            {candidate?.summary ??
+              (status === 'failed'
+                ? team
+                  ? 'Integration stopped before producing a complete result.'
+                  : 'This agent stopped before completing its approach.'
+                : status === 'cancelled'
+                  ? 'This agent was cancelled and will not continue.'
+                  : status === 'queued'
+                    ? 'Queued for an available execution slot.'
+                    : execution
+                      ? team
+                        ? 'Combining exact captured worker outputs under the approved shared contract.'
+                        : 'Working from the approved brief and frozen context.'
+                      : 'Waiting for an agent.')}
+          </p>
+        )}
+        {candidate && (
+          <div className="candidate-action-row">
+            {!decision && (
+              <button
+                type="button"
+                className="quiet candidate-review"
+                disabled={disabled}
+                onClick={onSelect}
+              >
+                {team ? 'Review result' : 'Review approach'}
+              </button>
+            )}
+            {evaluation?.deployment?.digest && <SiteLink repo={repo} evaluation={evaluation.id} />}
+            {execution && (
+              <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />
+            )}
+          </div>
+        )}
+        {candidate && !decision && disabledReason && (
+          <p className="selection-blocker">{disabledReason}</p>
+        )}
         {execution?.status === 'failed' && (
           <ExecutionFailure
             key={`${repo}:${execution.id}:${execution.transcript ?? ''}`}
@@ -90,7 +116,9 @@ export function CandidateCard({
             onProviders={onProviders}
           />
         )}
-        {execution && <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />}
+        {execution && !candidate && (
+          <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />
+        )}
         {candidate && (
           <>
             <div className="revision">
@@ -125,27 +153,10 @@ export function CandidateCard({
                 <p>Waiting for independent verification of this captured revision.</p>
               )}
             </details>
-            {evaluation?.deployment?.digest && <SiteLink repo={repo} evaluation={evaluation.id} />}
             <details>
               <summary>Review changes</summary>
               <SourceDiff diff={candidate.diff} />
             </details>
-            <button
-              type="button"
-              className="select-candidate"
-              disabled={disabled}
-              onClick={onSelect}
-            >
-              {published
-                ? team
-                  ? 'Published integrated result'
-                  : 'Published approach'
-                : chosen
-                  ? 'Selected · awaiting publication'
-                  : team
-                    ? 'Review integrated result'
-                    : 'Select approach'}
-            </button>
           </>
         )}
       </div>

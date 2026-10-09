@@ -23,11 +23,16 @@ export function RunToolbar({
           <h1>Development runs</h1>
           <p>
             {supportsSingle
-              ? 'Build with one agent or compare independent approaches. Decide what ships.'
+              ? 'Build together or compare approaches. Review and decide what ships.'
               : 'Compare independent approaches. Decide what ships.'}
           </p>
         </div>
-        <button type="button" disabled={!canStart} onClick={onNewRun}>
+        <button
+          type="button"
+          className={snapshot.runs.length ? 'quiet' : undefined}
+          disabled={!canStart}
+          onClick={onNewRun}
+        >
           <Plus size={17} />
           {updating ? (repo.site ? 'Update website' : 'Update project') : 'New run'}
         </button>
@@ -44,9 +49,6 @@ export function RunToolbar({
           )}
         </p>
       )}
-      <p className="fixture-scope">
-        Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
-      </p>
     </>
   );
 }

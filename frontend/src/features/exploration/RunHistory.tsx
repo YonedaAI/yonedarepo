@@ -1,11 +1,13 @@
+import type { Snapshot } from '../../lib/types';
+import { runAttention } from './runReviewState';
 import { runTitle } from './runTitle';
 
 export function RunHistory({
-  runs,
+  snapshot,
   selected,
   onSelect,
 }: {
-  runs: Record<string, any>[];
+  snapshot: Snapshot;
   selected: string;
   onSelect: (id: string) => void;
 }) {
@@ -13,9 +15,10 @@ export function RunHistory({
     <div className="run-picker">
       <label htmlFor="recorded-run">Run history</label>
       <select id="recorded-run" value={selected} onChange={(event) => onSelect(event.target.value)}>
-        {[...runs].reverse().map((run) => (
+        {[...snapshot.runs].reverse().map((run) => (
           <option key={run.id} value={run.id}>
-            {runTitle(run.intent)} · {run.status} · {new Date(run.created_at).toLocaleDateString()}
+            {runTitle(run.intent)} · {runAttention(snapshot, run).title.toLowerCase()} ·{' '}
+            {new Date(run.created_at).toLocaleDateString()}
           </option>
         ))}
       </select>

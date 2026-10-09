@@ -39,6 +39,7 @@ export function TeamTaskCard({
     <li
       className={`team-task-card ${task.role === 'integrator' ? 'integrator' : ''}`}
       id={`team-task-${task.task_id}`}
+      tabIndex={-1}
     >
       <div className="team-task-summary">
         <div>

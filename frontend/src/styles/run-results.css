@@ -1,0 +1,234 @@
+.exploration .runs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.exploration .run-picker {
+  margin-bottom: 20px;
+  padding: 12px 0;
+  border-top: 0;
+}
+.exploration .run-meta {
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.run-attention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 20px;
+  margin-bottom: 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid #a3afbd;
+  border-radius: 7px;
+}
+.attention-review {
+  border-color: #c6d7f9;
+  border-left-color: var(--blue);
+  background: #f2f6ff;
+}
+.attention-blocked {
+  border-color: #e7d0a0;
+  border-left-color: #956119;
+  background: #fff9ee;
+}
+.attention-published {
+  border-left-color: var(--success);
+  background: #f0faf5;
+}
+.attention-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+.attention-message > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: #526b7d;
+}
+.attention-review .attention-message > svg {
+  color: var(--blue);
+}
+.attention-blocked .attention-message > svg {
+  color: #885713;
+}
+.attention-published .attention-message > svg {
+  color: var(--success);
+}
+.attention-message h3 {
+  margin: 0 0 5px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.attention-message p {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.attention-message small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.attention-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.attention-actions > button {
+  min-height: 42px;
+}
+.attention-actions .site-link {
+  margin: 0;
+}
+.attention-actions .site-link a {
+  max-width: 32ch;
+  line-height: 1.4;
+}
+.pending-reviews {
+  padding: 12px 16px;
+  border-left: 3px solid var(--blue);
+  background: #edf3ff;
+  margin: 16px 0;
+  font-size: 12px;
+}
+.pending-reviews ul {
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.pending-reviews button {
+  text-align: left;
+  justify-content: flex-start;
+}
+.run-tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 20px;
+  overflow-x: auto;
+}
+.run-tabs [role="tab"] {
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  padding: 12px 0;
+  min-height: 44px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+.run-tabs [aria-selected="true"] {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+}
+.run-tabs [role="tab"]:focus-visible {
+  outline-offset: -3px;
+}
+.run-tab-panel:focus-visible,
+.candidate:focus-visible,
+.team-task-card:focus-visible {
+  outline: 3px solid #87bce7;
+  outline-offset: 3px;
+}
+.run-tab-panel[hidden] {
+  display: none;
+}
+.run-tab-panel .candidate-content {
+  padding: 16px 18px;
+}
+.run-tab-panel .candidate-content > p {
+  margin: 10px 0;
+}
+.candidate-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.candidate-action-row .site-link {
+  margin: 0;
+}
+.candidate-action-row .execution-log-trigger {
+  margin: 0;
+}
+.candidate-action-row button {
+  min-height: 40px;
+}
+.run-tab-panel .candidate details {
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.run-tab-panel .candidate summary {
+  padding: 12px 0;
+}
+.candidate-content .selection-blocker {
+  font-size: 12px;
+  color: #885713;
+}
+.run-detail-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.run-detail-controls h3 {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.run-tab-panel .run-detail-controls p {
+  font-size: 12px;
+  margin-bottom: 0;
+  max-width: 65ch;
+}
+.run-tab-panel .team-contract {
+  margin-top: 16px;
+}
+.run-tab-panel .execution-detail > button {
+  text-align: left;
+  justify-content: flex-start;
+}
+@media (max-width: 1100px) {
+  .run-attention {
+    gap: 16px;
+    align-items: flex-start;
+  }
+  .attention-actions {
+    max-width: 220px;
+  }
+}
+@media (max-width: 760px) {
+  .exploration .runs-toolbar {
+    align-items: flex-start;
+  }
+  .run-attention {
+    flex-direction: column;
+    padding: 16px;
+    gap: 16px;
+  }
+  .attention-actions {
+    max-width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .run-tabs {
+    gap: 22px;
+  }
+  .run-detail-controls {
+    flex-direction: column;
+  }
+}
