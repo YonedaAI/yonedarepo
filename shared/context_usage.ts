@@ -42,6 +42,8 @@ export interface ContextCitation {
     capture_job_id: string;
     revision: ContextRevision;
     evaluation: ContextEvaluation | null;
+    capture_kind?: 'task_contribution' | 'integration' | null;
+    source_handoff?: string | null;
   }[];
 }
 

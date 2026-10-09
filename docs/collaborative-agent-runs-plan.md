@@ -1,6 +1,6 @@
 # Collaborative agent runs
 
-Status: proposed implementation plan. Team execution described here is not implemented by this document. It is separate from the context usage and branding work currently in progress.
+Status: staged plan. The explicit-plan hosted MVP is implemented; see [current behavior and limits](build-together.md). Automatic coordinator planning, plan amendments, repair delegation and external team participation remain future stages. Validation and deployment evidence is recorded separately.
 
 This fits the competition's explicit interest in coordination, conflicts and preservation of why changes happened. [Cloudflare's brief](https://blog.cloudflare.com/next-git-platform-on-cloudflare/) requires concurrent agents and invites new workflows above Workers and Artifacts. A team producing one integrated result is our product interpretation of that opportunity, not a claim about judging outcomes.
 

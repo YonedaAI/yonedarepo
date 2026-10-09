@@ -17,6 +17,7 @@ pub mod providers;
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub mod retry;
 mod source;
+pub mod team;
 pub use source::{FileEntry, Workspace};
 pub const MAX_WORKSPACE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_FILES: usize = 500;

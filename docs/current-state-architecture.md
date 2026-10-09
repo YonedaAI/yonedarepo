@@ -155,8 +155,13 @@ The UI displays elapsed time, stage, errors and retry controls. Browser API requ
 Initial setup events go to
 Cloudflare Workers Logs without passwords, Git capabilities or source contents.
 
+The comparison flow is below. [Build together](build-together.md) adds a frozen task DAG,
+disjoint specialist write scopes, captured handoffs and deterministic Rust source assembly.
+Only its final integration receives independent evaluation and owner publication; intermediate
+source never becomes a selectable candidate. Repo DO migration 8 stores this team state.
+
 1. The owner approves a brief, source base, context, agent roster and model limits.
-2. Agents work independently from the same frozen base and publish typed context through MCP.
+2. In comparison mode, agents work independently from the same frozen base and publish typed context through MCP.
 3. A separate capture job validates regular files and constructs fresh candidate Git objects.
 4. A clean evaluator checks the exact captured revision against the approved policy.
 5. The owner compares eligible candidates and records a shipping decision and alternatives.

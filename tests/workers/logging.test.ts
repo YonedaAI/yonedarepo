@@ -1,11 +1,18 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
-import { attemptLog } from '../../cloudflare/worker/logging';
+import { attemptLog, writeLog } from '../../cloudflare/worker/logging';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Scope } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
+it('logs only allowlisted lifecycle observations, without raw payloads or errors', () => {
+  const output = vi.spyOn(console, 'info').mockImplementation(() => {});
+  const safe = writeLog('container.stopped', { job_id: 'known-job', epoch: 2, exit_code: 143, stop_reason: 'runtime_signal', payload: { token: 'private-token' }, error: 'private-error' } as any);
+  expect(safe).toMatchObject({ job_id: 'known-job', exit_code: 143, stop_reason: 'runtime_signal' });
+  expect(JSON.stringify(output.mock.calls)).not.toContain('private-');
+  expect(writeLog('container.stopped', { stop_reason: 'private-secret' })).not.toHaveProperty('stop_reason');
+});
 afterEach(async () => { vi.restoreAllMocks(); await reset(); });
 async function fixture(): Promise<Scope> {
   const repo = 'logging-fixture';

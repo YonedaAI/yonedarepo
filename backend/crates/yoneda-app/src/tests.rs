@@ -264,7 +264,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7},{"version":8}])
             .as_array()
             .unwrap()
             .clone()
@@ -273,7 +273,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        7
+        8
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();
@@ -586,5 +586,6 @@ fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
 }
 
 mod sites;
+mod team;
 
 mod external;

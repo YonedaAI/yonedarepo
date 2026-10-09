@@ -90,6 +90,16 @@ pub struct CitationCandidate {
     pub revision: Revision,
     pub capture_job_id: String,
     pub evaluation: Option<CheckedRevision>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capture_kind: Option<CaptureKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_handoff: Option<String>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureKind {
+    TaskContribution,
+    Integration,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CitationEntry {

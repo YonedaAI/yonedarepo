@@ -1,4 +1,6 @@
 import type { Snapshot } from '../../lib/types';
+import { teamAgents } from '../team/teamAgents';
+import { restoreTeam, runMode } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import type { AgentDraft } from './agentLimits';
 import { preservePublishedCriteria, publishedContext, publishedRun } from './publishedRun';
@@ -11,7 +13,12 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
   const inheritedContext = publication
     ? publishedContext(snapshot, publication)
     : { ids: [], total: 0 };
-  const agents = source?.agents ?? defaultRunAgents(snapshot);
+  const mode = runMode(source?.mode ?? publication?.run.mode);
+  const agents =
+    source?.agents ??
+    (publication?.run.mode === 'collaborate'
+      ? teamAgents(snapshot, publication.run)
+      : defaultRunAgents(snapshot));
   const criteria: string[] = source?.criteria ??
     publication?.run.criteria ?? [
       'Works on mobile and desktop',
@@ -29,6 +36,11 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     intent: source?.intent ?? '',
     criteria: approvedCriteria.join('\n'),
     agents,
+    mode,
+    team:
+      mode === 'collaborate'
+        ? restoreTeam(source?.team ?? publication?.run.team_plan, agents)
+        : undefined,
     context: source?.context ?? inheritedContext.ids,
     budgets: source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),
     policy: source?.policy ?? JSON.stringify(snapshot.repository.policy?.build, null, 2),

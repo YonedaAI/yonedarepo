@@ -16,6 +16,7 @@ export function AgentRoster({
   onChange,
   onProviders,
   onRetry,
+  team = false,
 }: {
   agents: AgentDraft[];
   providers: Provider[];
@@ -26,6 +27,7 @@ export function AgentRoster({
   onChange: (agents: AgentDraft[]) => void;
   onProviders: () => void;
   onRetry: () => void;
+  team?: boolean;
 }) {
   function update(id: string, patch: Partial<AgentDraft>) {
     onChange(agents.map((agent) => (agent.id === id ? { ...agent, ...patch } : agent)));
@@ -33,7 +35,7 @@ export function AgentRoster({
   return (
     <section className="agent-roster" aria-labelledby="agent-roster-heading">
       <div className="section-heading">
-        <h3 id="agent-roster-heading">Agents and approaches</h3>
+        <h3 id="agent-roster-heading">{team ? 'Team agents' : 'Agents and approaches'}</h3>
         <button
           type="button"
           className="quiet"
@@ -53,10 +55,13 @@ export function AgentRoster({
         </button>
       </div>
       <p className="subtle">
-        {agents.length} of {limits.max_root_agents} root agents · minimum {limits.min_root_agents}.
-        {limits.min_root_agents === 1
-          ? ' Use one agent for a focused change, or add agents to compare approaches.'
-          : ' Give each agent a distinct approach.'}{' '}
+        {agents.length} of {limits.max_root_agents} {team ? 'team' : 'root'} agents · minimum{' '}
+        {team ? 3 : limits.min_root_agents}.
+        {team
+          ? ' Assign agents to complementary tasks and final integration below.'
+          : limits.min_root_agents === 1
+            ? ' Use one agent for a focused change, or add agents to compare approaches.'
+            : ' Give each agent a distinct approach.'}{' '}
         Provider connections can be reused. Work runs as capacity becomes available.
       </p>
       {loading ? (
@@ -78,7 +83,9 @@ export function AgentRoster({
       ) : null}
       {agents.map((agent, index) => (
         <fieldset className="agent-inputs" key={agent.id}>
-          <legend>Root agent {index + 1}</legend>
+          <legend>
+            {team ? 'Agent' : 'Root agent'} {index + 1}
+          </legend>
           <label>
             Provider connection
             <select
@@ -114,26 +121,35 @@ export function AgentRoster({
               )}
             </p>
           )}
-          <ApproachPicker
-            value={agent.strategy}
-            used={agents.filter((other) => other.id !== agent.id).map((other) => other.strategy)}
-            disabled={locked}
-            onChange={(strategy) => update(agent.id, { strategy })}
-          />
+          {!team && (
+            <ApproachPicker
+              value={agent.strategy}
+              used={agents.filter((other) => other.id !== agent.id).map((other) => other.strategy)}
+              disabled={locked}
+              onChange={(strategy) => update(agent.id, { strategy })}
+            />
+          )}
           <button
             type="button"
             className="text-button"
             aria-label={`Remove root agent ${index + 1}`}
-            disabled={locked || agents.length <= limits.min_root_agents}
+            disabled={locked || agents.length <= (team ? 3 : limits.min_root_agents)}
             title={
-              agents.length <= limits.min_root_agents
-                ? `This deployment requires at least ${limits.min_root_agents} agent${limits.min_root_agents === 1 ? '' : 's'}.`
+              agents.length <= (team ? 3 : limits.min_root_agents)
+                ? team
+                  ? 'A team requires two specialists and a separate integrator.'
+                  : `This deployment requires at least ${limits.min_root_agents} agent${limits.min_root_agents === 1 ? '' : 's'}.`
                 : undefined
             }
             onClick={() => onChange(agents.filter((value) => value.id !== agent.id))}
           >
             Remove agent
           </button>
+          {team && (
+            <p className="subtle">
+              Removing this agent clears its task assignments. Choose replacements before starting.
+            </p>
+          )}
         </fieldset>
       ))}
     </section>

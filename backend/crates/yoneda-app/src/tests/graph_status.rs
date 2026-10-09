@@ -94,7 +94,7 @@ fn migration_repairs_old_execution_nodes_without_changing_evidence() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        7
+        8
     );
 }
 

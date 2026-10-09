@@ -4,9 +4,15 @@ use std::collections::BTreeSet;
 use yoneda_core::agents::{MAX_DELEGATION_DEPTH, MAX_RUN_EXECUTIONS};
 
 pub(crate) fn run_executions<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> {
+    let run = get(db, "runs", run_id)?;
+    let limit = if run["mode"] == "collaborate" {
+        yoneda_core::team::MAX_TEAM_EXECUTIONS
+    } else {
+        MAX_RUN_EXECUTIONS
+    };
     let rows = db.query("SELECT payload FROM executions WHERE json_extract(payload,'$.run_id')=? ORDER BY id LIMIT ?",
-        &[json!(run_id), json!(MAX_RUN_EXECUTIONS + 1)])?;
-    if rows.len() > MAX_RUN_EXECUTIONS {
+        &[json!(run_id), json!(limit + 1)])?;
+    if rows.len() > limit {
         return Err(Error::new(
             "RESOURCE_LIMIT",
             "Run execution ledger exceeds its bound",

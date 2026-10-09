@@ -21,6 +21,15 @@ pub(crate) fn failure(output: &Value, evidence: &Value) -> Error {
         .as_i64()
         .filter(|exit| (-1..=255).contains(exit));
     let exit = exit.map_or_else(|| "unknown".into(), |exit| exit.to_string());
+    if let Some(signal) = output["signal"]
+        .as_i64()
+        .filter(|signal| (1..=64).contains(signal))
+    {
+        return Error::new(
+            "RUNTIME",
+            format!("Harness terminated by signal {signal}. {evidence_note}"),
+        );
+    }
     Error::new("RUNTIME", format!("Harness exited {exit}. {evidence_note}"))
 }
 

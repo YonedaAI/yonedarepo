@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
+import type { RunMode } from '../../../../shared/team';
 import { api, short } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
+import { RunModePicker } from '../team/RunModePicker';
+import { TeamPlanEditor } from '../team/TeamPlanEditor';
+import { reconcileTeam, seedTeam, serializeTeam } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
 import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLimits';
@@ -38,6 +42,10 @@ export function RunComposer({
   const budgetSupport = snapshot.capabilities?.model_budgets === 1;
   const [budgets, setBudgets] = useState<Record<string, ModelBudgetDraft>>(draft.budgets);
   const [agents, setAgents] = useState<AgentDraft[]>(draft.agents);
+  const [mode, setMode] = useState<RunMode>(draft.mode);
+  const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
+  const [hasTeamDraft, setHasTeamDraft] = useState(!!draft.team);
+  const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
   const [context, setContext] = useState<string[]>(draft.context);
   const [policy, setPolicy] = useState(draft.policy);
   const [error, setError] = useState('');
@@ -45,6 +53,26 @@ export function RunComposer({
   const [delegation, setDelegation] = useState<DelegationDraft>(draft.delegation);
   const models = selectedModels(agents, providers);
   const updating = !draft.restartOf && hasPublishedWork(snapshot);
+  function changeAgents(next: AgentDraft[]) {
+    setAgents(next);
+    setTeam((current) => reconcileTeam(current, next));
+  }
+  function changeMode(next: RunMode) {
+    if (next === 'collaborate' && !hasTeamDraft) {
+      const roster = [...agents];
+      // The editable example has three roles; provider and model choices remain configurable.
+      while (roster.length < Math.min(3, limits.max_root_agents))
+        roster.push({
+          id: crypto.randomUUID(),
+          connection: providers[roster.length % providers.length]?.id ?? '',
+          strategy: 'Team participant',
+        });
+      setAgents(roster);
+      setTeam(seedTeam(roster));
+      setHasTeamDraft(true);
+    }
+    setMode(next);
+  }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
     let current = true;
@@ -70,6 +98,9 @@ export function RunComposer({
     setApproving(true);
     setError('');
     try {
+      if (mode === 'collaborate' && !teamSupport)
+        throw new Error('This deployment does not support team runs yet.');
+      const teamPlan = mode === 'collaborate' ? serializeTeam(team, agents) : undefined;
       if (agents.length < limits.min_root_agents || agents.length > limits.max_root_agents) {
         throw new Error('The number of agents exceeds this deployment’s current limits.');
       }
@@ -99,6 +130,8 @@ export function RunComposer({
         });
       }
       await onStart({
+        mode,
+        ...(teamPlan ? { team: teamPlan } : {}),
         intent: intent.trim(),
         criteria: criteria
           .split('\n')
@@ -110,7 +143,7 @@ export function RunComposer({
         agents: agents.map((a) => ({
           id: a.id,
           connection: a.connection,
-          strategy: a.strategy,
+          strategy: mode === 'collaborate' ? 'Team participant' : a.strategy,
           provider: providers.find((p) => p.id === a.connection)?.provider,
           model: providers.find((p) => p.id === a.connection)?.model,
         })),
@@ -118,11 +151,12 @@ export function RunComposer({
         ...(limits.max_delegation_depth > 0
           ? {
               delegation: {
-                enabled: delegation.enabled,
-                max_depth: delegation.enabled ? delegation.max_depth : 0,
-                max_executions: delegation.enabled
-                  ? Math.max(agents.length, delegation.max_executions)
-                  : agents.length,
+                enabled: mode === 'compare' && delegation.enabled,
+                max_depth: mode === 'compare' && delegation.enabled ? delegation.max_depth : 0,
+                max_executions:
+                  mode === 'compare' && delegation.enabled
+                    ? Math.max(agents.length, delegation.max_executions)
+                    : agents.length,
               },
             }
           : {}),
@@ -192,24 +226,30 @@ export function RunComposer({
           disabled={locked}
         />
       </label>
+      <RunModePicker value={mode} supported={teamSupport} locked={locked} onChange={changeMode} />
       <AgentRoster
+        team={mode === 'collaborate'}
         agents={agents}
         providers={providers}
         loading={providersLoading}
         error={providersError}
         limits={limits}
         locked={locked}
-        onChange={setAgents}
+        onChange={changeAgents}
         onProviders={onProviders}
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
-      <DelegationSettings
-        value={delegation}
-        roots={agents.length}
-        limits={limits}
-        locked={locked}
-        onChange={setDelegation}
-      />
+      {mode === 'collaborate' ? (
+        <TeamPlanEditor value={team} agents={agents} locked={locked} onChange={setTeam} />
+      ) : (
+        <DelegationSettings
+          value={delegation}
+          roots={agents.length}
+          limits={limits}
+          locked={locked}
+          onChange={setDelegation}
+        />
+      )}
       <ModelBudgetSettings
         supported={budgetSupport}
         models={models}

@@ -13,7 +13,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 7;
+    const SCHEMA_VERSION: i64 = 8;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -25,6 +25,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (5, include_str!("migrations/0005_model_reservations.sql")),
             (6, include_str!("migrations/0006_execution_logs.sql")),
             (7, include_str!("migrations/0007_context_access.sql")),
+            (8, include_str!("migrations/0008_team_runs.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",
@@ -118,10 +119,14 @@ pub(crate) fn all<S: SqlStore>(db: &S, table: &str) -> Result<Vec<Value>> {
 }
 pub(crate) fn save<S: SqlStore>(db: &S, table: &str, id: &str, value: &Value) -> Result<()> {
     db.query(&format!("INSERT INTO {table}(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload"),&[json!(id),json!(value.to_string())])?;
+    if table == "team_tasks" {
+        db.query("UPDATE nodes SET payload=json_set(payload,'$.data',json(?)) WHERE id=? AND json_extract(payload,'$.kind')='team_task'", &[json!(value.to_string()),json!(format!("team-task:{id}"))])?;
+    }
     let kind = match table {
         "runs" => Some("run"),
         "executions" => Some("execution"),
         "candidates" => Some("candidate"),
+
         _ => None,
     };
     if let Some(kind) = kind {

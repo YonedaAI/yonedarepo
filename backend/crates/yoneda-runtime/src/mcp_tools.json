@@ -280,5 +280,55 @@
       },
       "additionalProperties": false
     }
+  },
+  {
+    "name": "team_context",
+    "description": "Read your assigned team task, shared contract and exact captured dependency handoffs. Source is already assembled. Identity comes from the active attempt.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "task_handoff",
+    "description": "Record an assertion describing your completed task and actual interface. Cite exact prior record IDs you used. This does not complete source capture or independently check your changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "interface_contract": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "references": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "summary",
+        "interface_contract",
+        "references"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "integration_request",
+    "description": "For the designated integrator only: read the immutable manifest of exact captured specialist revisions required in the final integrated candidate. This does not publish source.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
   }
 ]

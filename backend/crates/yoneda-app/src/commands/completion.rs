@@ -85,60 +85,21 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 run["status"] = json!("exploring");
             } else {
                 let workspace = hash(result, "workspace", &[64])?;
-                job(
-                    db,
-                    &format!("capture:{eid}"),
-                    "capture",
-                    now,
-                    json!({"execution":e,"run_id":run_id,"base":run["base"],"workspace":workspace}),
-                )?;
+                let mut payload =
+                    json!({"execution":e,"run_id":run_id,"base":run["base"],"workspace":workspace});
+                super::team::capture_payload(db, &j, &mut payload, now)?;
+                let capture_id = if e["team_task_revision"].as_i64().is_some_and(|r| r > 1) {
+                    format!("capture:{eid}:r{}", number(&e, "team_task_revision")?)
+                } else {
+                    format!("capture:{eid}")
+                };
+                job(db, &capture_id, "capture", now, payload)?;
                 e["status"] = json!("capturing");
             }
             save(db, "runs", &run_id, &run)?;
             save_execution(db, &e, now)?;
         }
-        "capture" => {
-            let cid = string(result, "id")?;
-            let execution = &j["payload"]["execution"];
-            let eid = string(execution, "id")?;
-            let run_id = string(execution, "run_id")?;
-            hash(&result["revision"], "commit", &[40, 64])?;
-            string(&result["revision"], "repository")?;
-            hash(result, "tree", &[40, 64])?;
-            let paths = result["paths"]
-                .as_array()
-                .ok_or_else(|| bad("Capture must enumerate changed paths"))?;
-            for path in paths {
-                yoneda_core::validate_path(
-                    path.as_str().ok_or_else(|| bad("Invalid changed path"))?,
-                )?;
-            }
-            let candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"diff":result["diff"],"summary":result["summary"],"status":"evaluating"});
-            create(db, "candidates", &cid, &candidate)?;
-            node(
-                db,
-                &cid,
-                "candidate",
-                result["summary"].as_str().unwrap_or("Candidate"),
-                "platform_capture",
-                now,
-                candidate.clone(),
-            )?;
-            edge(db, &eid, &cid, "produced_by", "independent source capture")?;
-            let mut e = get(db, "executions", &eid)?;
-            e["status"] = json!("evaluating");
-            save_execution(db, &e, now)?;
-            // Coding keeps its approved brief, while eligibility must use current
-            // owner policy even if that policy changed before capture existed.
-            let policy = repo(db)?["policy"].clone();
-            job(
-                db,
-                &format!("evaluate:{cid}"),
-                "evaluate",
-                now,
-                json!({"candidate":candidate,"run_id":run_id,"policy":policy}),
-            )?;
-        }
+        "capture" => super::capture_completion::complete(db, &j, result, now)?,
         "evaluate" => {
             let candidate_id = string(&j["payload"]["candidate"], "id")?;
             let mut candidate = get(db, "candidates", &candidate_id)?;
@@ -219,6 +180,17 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 run["status"] = json!("ready");
             }
             save(db, "runs", &rid, &run)?;
+            super::team::reflect(
+                db,
+                &e,
+                if validation.is_ok() {
+                    "complete"
+                } else {
+                    "failed"
+                },
+                e["epoch"].clone(),
+                now,
+            )?;
         }
         "publish" => {
             let did = string(&j["payload"], "decision_id")?;

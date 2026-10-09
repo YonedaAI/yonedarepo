@@ -42,7 +42,7 @@ pub(super) fn validate_agents(c: &Value) -> Result<()> {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-._/".contains(&b))
             || strategy.len() > 128
-            || !strategies.insert(strategy)
+            || (c["mode"] != "collaborate" && !strategies.insert(strategy))
         {
             return Err(bad("Invalid provider, model or duplicate strategy"));
         }

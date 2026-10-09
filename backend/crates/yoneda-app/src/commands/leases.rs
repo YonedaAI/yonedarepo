@@ -67,6 +67,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     save(db, "jobs", &id, &j)?;
                 }
                 save_execution(db, &e, now)?;
+                super::team::reflect(db, &e, "running", j["epoch"].clone(), now)?;
             }
             event(
                 db,
@@ -201,6 +202,15 @@ fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
             .cloned()
             .unwrap_or(json!("Attempt lease expired"));
         save_execution(db, &e, now)?;
+        if !e["team_task"].is_null() && (job["kind"] == "agent" || job["status"] == "failed") {
+            super::team::reflect(
+                db,
+                &e,
+                job["status"].as_str().unwrap_or("failed"),
+                e["epoch"].clone(),
+                now,
+            )?;
+        }
         if job["kind"] == "agent" || job["status"] == "failed" {
             fence_descendants(db, job, now)?;
         }

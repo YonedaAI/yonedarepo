@@ -5,6 +5,7 @@ import { error, response } from './http';
 import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
 import { ledger, object, readObject } from './storage';
+import { teamAttemptSource } from './team-source';
 import type { Env, Json } from './types';
 export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
   try {
@@ -25,15 +26,23 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         }),
       );
     if (path === '/source') {
-      if (!['agent', 'evaluate'].includes(job.kind))
+      if (
+        !['agent', 'evaluate'].includes(job.kind) &&
+        !(job.kind === 'capture' && job.payload.execution?.team_task)
+      )
         return error('FORBIDDEN', 'No source access', 403);
       return response(
         await source(
           env,
-          job.kind === 'evaluate' ? job.payload.candidate.revision : job.payload.execution.base,
+          job.kind === 'evaluate'
+            ? job.payload.candidate.revision
+            : job.kind === 'capture'
+              ? job.payload.base
+              : job.payload.execution.base,
         ),
       );
     }
+    if (path === '/team_source') return response(await teamAttemptSource(env, job, body.index));
     if (path === '/workspace') {
       if (job.kind === 'capture')
         return response(JSON.parse(await readObject(env, job.payload.workspace)));

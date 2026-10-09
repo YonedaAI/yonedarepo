@@ -1,14 +1,12 @@
-import { GitCompareArrows } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
-import { ContextUsagePanel } from '../context-usage/ContextUsagePanel';
-import { CandidateCard } from './CandidateCard';
-import { CandidateComparison } from './CandidateComparison';
+import { runCandidates } from '../team/teamView';
 import { DecisionForm } from './DecisionForm';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
+import { RunCandidates } from './RunCandidates';
 import { RunControls } from './RunControls';
 import { RunHistory } from './RunHistory';
 import { RunToolbar } from './RunToolbar';
@@ -18,6 +16,14 @@ import { hasPublishedWork } from './runDefaults';
 
 const RunComposer = lazy(() =>
   import('./RunComposer').then((module) => ({ default: module.RunComposer })),
+);
+const TeamWorkflow = lazy(() =>
+  import('../team/TeamWorkflow').then((module) => ({ default: module.TeamWorkflow })),
+);
+const ContextUsagePanel = lazy(() =>
+  import('../context-usage/ContextUsagePanel').then((module) => ({
+    default: module.ContextUsagePanel,
+  })),
 );
 
 export function Exploration({
@@ -47,9 +53,10 @@ export function Exploration({
   const publishedRun = snapshot.decisions.some(
     (d) => d.run_id === run?.id && d.status === 'published',
   );
-  const candidates = snapshot.candidates.filter((c) => c.run_id === run?.id);
+  const candidates = runCandidates(snapshot, run);
   const coding = snapshot.executions.filter((e) => e.run_id === run?.id && e.role === 'coding');
   const roots = coding.filter((e) => !e.parent_execution).length;
+  const team = run?.mode === 'collaborate';
   const activeAttempts = snapshot.executions.some(
     (execution) =>
       execution.run_id === run?.id &&
@@ -61,7 +68,9 @@ export function Exploration({
     snapshot.decisions.find((decision) => decision.id === run?.continuation_of)?.run_id;
   const codeCandidates: Record<string, any>[] = candidates.map((c) => ({
     ...c,
-    strategy: snapshot.executions.find((e) => e.id === c.execution)?.strategy ?? c.summary,
+    strategy: team
+      ? 'Integrated team result'
+      : (snapshot.executions.find((e) => e.id === c.execution)?.strategy ?? c.summary),
   }));
   const canStart = !busy && !repo.pending && repo.status === 'ready';
   async function act(action: string, body: unknown): Promise<boolean> {
@@ -151,7 +160,9 @@ export function Exploration({
                   Base <code>{short(run.base.commit)}</code>
                 </span>
                 <span>
-                  {roots} root agents · {coding.length - roots} subagents
+                  {team
+                    ? `${run.agents?.length ?? roots} team agents · Build together`
+                    : `${roots} root agents · ${coding.length - roots} subagents`}
                 </span>
                 {previousRun && (
                   <button
@@ -173,7 +184,7 @@ export function Exploration({
               busy={busy}
               canStart={canStart}
               activeAttempts={activeAttempts}
-              hasRoots={roots > 0}
+              hasRoots={roots > 0 || (team && !!run.agents?.length)}
               supportsRestart={snapshot.capabilities?.model_budgets === 1}
               onRestart={() => {
                 setRestartId(run.id);
@@ -193,60 +204,47 @@ export function Exploration({
             <p className="subtle">Finish or cancel active attempts to restart this run.</p>
           )}
           <RunWorkflow snapshot={snapshot} run={run} />
-          <ContextUsagePanel key={run.id} snapshot={snapshot} run={run} />
+          <Suspense fallback={<p role="status">Loading context evidence…</p>}>
+            <ContextUsagePanel key={run.id} snapshot={snapshot} run={run} />
+          </Suspense>
           <ModelBudgetUsage run={run} />
-          <ExecutionHierarchy snapshot={snapshot} run={run} />
+          {team ? (
+            <Suspense fallback={<p role="status">Loading team tasks…</p>}>
+              <TeamWorkflow
+                snapshot={snapshot}
+                run={run}
+                busy={busy}
+                onProviders={onProviders}
+                onRetry={(task) =>
+                  void act('retry_team_task', {
+                    run_id: run.id,
+                    task_id: task.task_id,
+                    expected_epoch: task.epoch,
+                    expected_revision: task.revision,
+                  })
+                }
+              />
+            </Suspense>
+          ) : (
+            <ExecutionHierarchy snapshot={snapshot} run={run} />
+          )}
           <button type="button" className="text-button context-link" onClick={onContext}>
             Explore this repository’s context →
           </button>
-          <div className="comparison-heading" id="approaches">
-            <h2>{coding.length === 1 ? 'Review change' : 'Compare approaches'}</h2>
-            {coding.length > 1 && (
-              <button
-                type="button"
-                className="quiet"
-                disabled={candidates.length < 2}
-                aria-expanded={comparing}
-                onClick={() => setComparing(!comparing)}
-              >
-                <GitCompareArrows size={17} />
-                {comparing ? 'Close comparison' : 'Compare changes'}
-              </button>
-            )}
-          </div>
-          <div className="candidate-grid">
-            {coding.map((execution) => {
-              const strategy = execution.strategy;
-              const candidate = candidates.find((c) => c.execution === execution?.id);
-              const evaluation = snapshot.evaluations.find((e) => e.id === candidate?.evaluation);
-              return (
-                <CandidateCard
-                  key={execution.id}
-                  strategy={strategy}
-                  repo={repo.id}
-                  execution={execution}
-                  candidate={candidate}
-                  evaluation={evaluation}
-                  decision={snapshot.decisions.find((d) => d.run_id === run.id)}
-                  selected={!!candidate && selected === candidate.id}
-                  disabled={
-                    candidate?.status !== 'eligible' ||
-                    !!repo.pending ||
-                    busy ||
-                    ['accepted', 'cancelled'].includes(run.status) ||
-                    candidate?.base.commit !== repo.head_commit ||
-                    evaluation?.policy !== repo.policy?.version
-                  }
-                  onSelect={() => {
-                    setSelectionError('');
-                    setSelected(candidate?.id ?? '');
-                  }}
-                  onProviders={onProviders}
-                />
-              );
-            })}
-          </div>
-          {comparing && <CandidateComparison key={run.id} candidates={codeCandidates} />}
+          <RunCandidates
+            snapshot={snapshot}
+            run={run}
+            selected={selected}
+            busy={busy}
+            comparing={comparing}
+            candidates={codeCandidates}
+            onCompare={() => setComparing(!comparing)}
+            onSelect={(id) => {
+              setSelectionError('');
+              setSelected(id);
+            }}
+            onProviders={onProviders}
+          />
           {selected && (
             <Dialog
               initialFocus="textarea"

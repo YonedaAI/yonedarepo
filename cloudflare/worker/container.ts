@@ -1,5 +1,6 @@
 import { Container } from '@cloudflare/containers';
 import { now } from './http';
+import { writeLog } from './logging';
 import { checkRuntime } from './runtime';
 import { ledger } from './storage';
 import type { Env, Json, Scope } from './types';
@@ -61,6 +62,7 @@ export class ExecutionContainer extends Container<Env> {
           error: `Container boot failed: ${(error as Error).message}`,
         });
       } catch {}
+      await this.ctx.storage.put('stop_reason', 'boot_failed');
       await this.stop();
       throw error;
     }
@@ -71,11 +73,35 @@ export class ExecutionContainer extends Container<Env> {
     return scope;
   }
   async stop() {
+    await this.lifecycle(
+      'container.stop_requested',
+      (await this.ctx.storage.get<string>('stop_reason')) ?? 'requested',
+    );
     await this.ctx.storage.put('stopped', true);
     await this.destroy();
   }
   async scheduleStop() {
+    await this.ctx.storage.put('stop_reason', 'completion');
     await this.schedule(2, 'stop');
+  }
+  override async onStop(params: { exitCode: number; reason: 'exit' | 'runtime_signal' }) {
+    await this.lifecycle('container.stopped', params.reason, params.exitCode);
+  }
+  override async onActivityExpired() {
+    await this.ctx.storage.put('stop_reason', 'inactivity');
+    await this.stop();
+  }
+  private async lifecycle(event: string, reason: string, exitCode?: number) {
+    const scope = await this.ctx.storage.get<Scope>('scope');
+    writeLog(event, {
+      repo_id: scope?.repo_id,
+      job_id: scope?.job.id,
+      epoch: scope?.job.epoch,
+      execution_id: scope?.job.payload?.execution?.id,
+      run_id: scope?.job.payload?.execution?.run_id,
+      stop_reason: reason,
+      exit_code: exitCode,
+    });
   }
   async watchdog() {
     if (await this.ctx.storage.get('stopped')) return;
@@ -87,6 +113,7 @@ export class ExecutionContainer extends Container<Env> {
         epoch: scope.job.epoch,
       });
     } catch {
+      await this.ctx.storage.put('stop_reason', 'lease_invalid');
       await this.stop();
       return;
     }
@@ -98,6 +125,7 @@ export class ExecutionContainer extends Container<Env> {
         await this.schedule(15, 'watchdog');
         return;
       }
+      await this.ctx.storage.put('stop_reason', 'launch_timeout');
       await this.stop();
       return;
     }

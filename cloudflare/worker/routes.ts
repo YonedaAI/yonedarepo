@@ -14,6 +14,7 @@ import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
+import { teamTaskSource } from './team-source';
 import type { Env, Json } from './types';
 import { providerCredentials } from './vault';
 import { websiteAssets } from './website-metadata';
@@ -129,6 +130,13 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       return evidence(env, repo, url.searchParams.get('digest') ?? '');
     if (action === 'candidate_source' && req.method === 'GET')
       return candidateSource(env, repo, url.searchParams.get('id') ?? '');
+    if (action === 'team_source' && req.method === 'GET')
+      return teamTaskSource(
+        env,
+        repo,
+        url.searchParams.get('run_id') ?? '',
+        url.searchParams.get('task_id') ?? '',
+      );
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       await ledger(env, repo, { op: 'snapshot' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
@@ -156,6 +164,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
               'update_policy',
               'context_publish',
               'configure_context_study',
+              'retry_team_task',
             ]
           : [];
     if (!allowed.includes(action)) return error('NOT_FOUND', 'Unknown repository operation', 404);

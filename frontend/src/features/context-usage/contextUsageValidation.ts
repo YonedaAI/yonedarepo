@@ -41,6 +41,10 @@ function candidate(value: unknown) {
     object(value) &&
     text(value.id) &&
     text(value.capture_job_id) &&
+    (value.capture_kind === undefined ||
+      value.capture_kind === null ||
+      ['task_contribution', 'integration'].includes(String(value.capture_kind))) &&
+    (value.source_handoff === undefined || nullableText(value.source_handoff)) &&
     revision(value.revision) &&
     (value.evaluation === null || evaluation(value.evaluation))
   );

@@ -1,4 +1,5 @@
 import type { ContextCitation, ContextTarget } from '../../../../shared/context_usage';
+import { captureCheckNote, captureLabel } from './contextCaptureView';
 
 export function ContextChain({
   target,
@@ -72,7 +73,7 @@ export function ContextChain({
           )}
           {citation.candidates.map((candidate) => (
             <li key={candidate.id}>
-              <strong>Captured revision</strong>
+              <strong>{captureLabel(candidate)}</strong>
               <code>{candidate.id}</code>
               {candidate.capture_job_id && (
                 <small>
@@ -83,6 +84,11 @@ export function ContextChain({
                 Repository <code>{candidate.revision.repository}</code>
               </small>
               <code>{candidate.revision.commit}</code>
+              {candidate.source_handoff && (
+                <small>
+                  Included handoff <code>{candidate.source_handoff}</code>
+                </small>
+              )}
               {candidate.evaluation ? (
                 <div className="context-revision-check">
                   <strong>Independent revision checks</strong>
@@ -108,7 +114,7 @@ export function ContextChain({
                   </p>
                 </div>
               ) : (
-                <small>Independent evaluation pending or unavailable.</small>
+                <small>{captureCheckNote(candidate, citation.candidates)}</small>
               )}
             </li>
           ))}

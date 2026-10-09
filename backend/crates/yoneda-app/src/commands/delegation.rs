@@ -18,6 +18,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let parent = get(db, "executions", &parent_id)?;
     let run_id = string(&parent, "run_id")?;
     let mut run = get(db, "runs", &run_id)?;
+    if run["mode"] == "collaborate" {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Team tasks do not create comparison subagents",
+        ));
+    }
     if parent["role"] != "coding" || run["policy"]["build"].is_null() || run["external"] == true {
         return Err(Error::new(
             "FORBIDDEN",

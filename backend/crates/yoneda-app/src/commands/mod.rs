@@ -2,6 +2,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
+mod capture_completion;
 mod completion;
 mod context_access;
 mod context_evidence;
@@ -26,6 +27,7 @@ mod runs;
 mod scheduling;
 mod sites;
 mod study;
+mod team;
 mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
@@ -78,6 +80,9 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "init" | "snapshot" => repository::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
         "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
+        "team_context" | "task_handoff" | "integration_request" | "retry_team_task" => {
+            team::handle(db, c, now)
+        }
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),
         "context_usage" => context_usage::read(db, c, now),

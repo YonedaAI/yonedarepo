@@ -3,6 +3,9 @@ use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
     let execution = &payload["execution"];
+    if execution["team_task"].is_string() {
+        return crate::team_prompt::prompt(payload);
+    }
     if !payload["policy"]["build"].is_null() {
         let model_budget = crate::execution_limits::model_budget(&json!({"payload":payload}))?;
         let output_tokens = model_budget

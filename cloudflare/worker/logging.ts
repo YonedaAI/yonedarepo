@@ -10,6 +10,8 @@ export type LogStage =
   | 'execution.completion_received'
   | 'execution.failure_received';
 type Fields = {
+  exit_code?: number;
+  stop_reason?: string;
   http_status?: number;
   duration_ms?: number;
   request_number?: number;
@@ -98,10 +100,30 @@ export function writeLog(
     const value = fields[key];
     if (typeof value === 'string') record[key] = value.slice(0, 256);
   }
-  for (const key of ['http_status', 'duration_ms', 'request_number', 'epoch'] as const) {
+  for (const key of [
+    'http_status',
+    'duration_ms',
+    'request_number',
+    'epoch',
+    'exit_code',
+  ] as const) {
     const value = fields[key];
     if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) record[key] = value;
   }
+  if (
+    fields.stop_reason &&
+    [
+      'exit',
+      'runtime_signal',
+      'inactivity',
+      'completion',
+      'requested',
+      'boot_failed',
+      'lease_invalid',
+      'launch_timeout',
+    ].includes(fields.stop_reason)
+  )
+    record.stop_reason = fields.stop_reason;
   if (fields.error_code) record.error_code = failureCode({ code: fields.error_code });
   if (record.error_code || Number(record.http_status) >= 400) console.warn(record);
   else console.info(record);

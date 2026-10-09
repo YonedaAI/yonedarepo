@@ -51,7 +51,9 @@ pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
     let mut processes = crate::process_guard::AgentProcesses::prepare()?;
     let mut child = command.spawn().map_err(err)?;
     #[cfg(unix)]
-    let _group = ProcessGroup(child.id().ok_or_else(|| err("Child has no process ID"))? as i32);
+    let _group = ProcessGroup(
+        i32::try_from(child.id().ok_or_else(|| err("Child has no process ID"))?).map_err(err)?,
+    );
     async fn read(mut stream: impl tokio::io::AsyncRead + Unpin) -> std::io::Result<Vec<u8>> {
         let mut output = Vec::new();
         let mut buffer = [0u8; 8192];
@@ -65,14 +67,29 @@ pub(crate) async fn bounded_output(command: &mut Command) -> Result<Value> {
         }
         Ok(output)
     }
-    let out = child.stdout.take().unwrap();
-    let errors = child.stderr.take().unwrap();
+    let out = child
+        .stdout
+        .take()
+        .ok_or_else(|| err("Missing child stdout pipe"))?;
+    let errors = child
+        .stderr
+        .take()
+        .ok_or_else(|| err("Missing child stderr pipe"))?;
     let (out, errors, status) = tokio::join!(read(out), read(errors), child.wait());
+    let status = status.map_err(err)?;
+    #[cfg(unix)]
+    let signal = {
+        use std::os::unix::process::ExitStatusExt;
+        status.signal()
+    };
+    #[cfg(not(unix))]
+    let signal: Option<i32> = None;
+    tracing::info!(exit_code = status.code(), signal, "agent process finished");
     #[cfg(unix)]
     drop(_group);
     processes.finish()?;
     Ok(
-        json!({"exit":status.map_err(err)?.code().unwrap_or(-1),"stdout":String::from_utf8_lossy(&out.map_err(err)?),"stderr":String::from_utf8_lossy(&errors.map_err(err)?)}),
+        json!({"exit":status.code().unwrap_or(-1),"signal":signal,"stdout":String::from_utf8_lossy(&out.map_err(err)?),"stderr":String::from_utf8_lossy(&errors.map_err(err)?)}),
     )
 }
 

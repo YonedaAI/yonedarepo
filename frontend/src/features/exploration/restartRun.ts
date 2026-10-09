@@ -1,4 +1,7 @@
+import type { RunMode, TeamPlan } from '../../../../shared/team';
 import type { Snapshot } from '../../lib/types';
+import { teamAgents } from '../team/teamAgents';
+import { runMode } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import type { AgentDraft, DelegationDraft } from './agentLimits';
 import { defaultModelBudget, type ModelBudgetConfig, type ModelBudgetDraft } from './modelBudgets';
@@ -12,6 +15,8 @@ export interface InitialRun {
   policy: string;
   delegation: DelegationDraft;
   budgets: Record<string, ModelBudgetDraft>;
+  mode?: RunMode;
+  team?: TeamPlan;
 }
 
 export function agentConnectionIssue(agent: AgentDraft, providers: Provider[]) {
@@ -31,19 +36,24 @@ export function agentConnectionIssue(agent: AgentDraft, providers: Provider[]) {
 }
 
 export function initialRun(snapshot: Snapshot, run: Record<string, any>): InitialRun {
-  const agents = snapshot.executions
-    .filter(
-      (execution) =>
-        execution.run_id === run.id && execution.role === 'coding' && !execution.parent_execution,
-    )
-    .map((execution) => ({
-      id: crypto.randomUUID(),
-      connection: execution.connection ?? '',
-      strategy: execution.strategy ?? '',
-      expectedProvider: execution.provider,
-      expectedModel: execution.model,
-      fromPreviousRun: true,
-    }));
+  const agents =
+    run.mode === 'collaborate'
+      ? teamAgents(snapshot, run)
+      : snapshot.executions
+          .filter(
+            (execution) =>
+              execution.run_id === run.id &&
+              execution.role === 'coding' &&
+              !execution.parent_execution,
+          )
+          .map((execution) => ({
+            id: crypto.randomUUID(),
+            connection: execution.connection ?? '',
+            strategy: execution.strategy ?? '',
+            expectedProvider: execution.provider,
+            expectedModel: execution.model,
+            fromPreviousRun: true,
+          }));
   const budgets = restoreModelBudgets(run, agents);
   return {
     id: run.id,
@@ -57,6 +67,8 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
       ? { ...run.delegation, max_depth: Math.max(1, run.delegation.max_depth ?? 1) }
       : { enabled: false, max_depth: 1, max_executions: agents.length },
     budgets,
+    mode: runMode(run.mode),
+    team: run.team_plan,
   };
 }
 
