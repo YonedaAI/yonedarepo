@@ -194,8 +194,8 @@ function microusd(value: string, positive: boolean, label: string) {
 
 function executionMilliseconds(value: string) {
   const minutes = Number(value);
-  if (!value.trim() || !Number.isFinite(minutes) || minutes < 1 || minutes > 10)
-    throw new Error('Execution time must be from 1 to 10 minutes.');
+  if (!value.trim() || !Number.isFinite(minutes) || minutes < 1 || minutes > 30)
+    throw new Error('Execution time must be from 1 to 30 minutes.');
   return Math.round(minutes * 60_000);
 }
 

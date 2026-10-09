@@ -39,7 +39,11 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         "routing":execution["routing"]});
     for (key, min, max) in [
         ("http_status", 100, 599),
-        ("duration_ms", 0, 1_200_000),
+        (
+            "duration_ms",
+            0,
+            yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,
+        ),
         ("request_number", 1, i64::MAX),
     ] {
         if let Some(value) = c.get(key) {
@@ -73,6 +77,7 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "RESOURCE_LIMIT",
                     "FENCED",
                     "RUNTIME",
+                    "EXECUTION_TIMEOUT",
                     "MODEL_PROXY",
                     "UNKNOWN",
                 ]

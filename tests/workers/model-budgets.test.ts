@@ -17,6 +17,16 @@ const budget = {
     output_microusd_per_million: 5000000, source: 'owner-approved conservative rates' },
 };
 
+it('fences longer execution limits during ledger and image rollout', () => {
+  const request = { model_budgets: [{ ...budget, max_execution_ms: 1800000 }] };
+  const capabilities = { artifact_reads: 2, model_budgets: 1 };
+  expect(() => checkLedger({ capabilities }, request)).toThrow('updating');
+  expect(() => checkLedger({ capabilities: { ...capabilities, max_execution_ms: 1800000 } }, request)).not.toThrow();
+  const job = { kind: 'agent', payload: { run: request } };
+  expect(() => checkRuntime({ protocol: 2, capabilities }, job)).toThrow('execution time');
+  expect(() => checkRuntime({ protocol: 2, capabilities: { ...capabilities, max_execution_ms: 1800000 } }, job)).not.toThrow();
+});
+
 it('caps all five model protocols at the approved response allowance and fails closed on missing approval', () => {
   for (const provider of ['claude', 'mimo', 'zai', 'codex', 'gemini']) {
     const harness = ['codex', 'gemini'].includes(provider) ? provider : 'claude';

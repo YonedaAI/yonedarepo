@@ -34,6 +34,7 @@ const codes = new Set([
   'RESOURCE_LIMIT',
   'FENCED',
   'RUNTIME',
+  'EXECUTION_TIMEOUT',
   'MODEL_PROXY',
   'UNKNOWN',
 ]);

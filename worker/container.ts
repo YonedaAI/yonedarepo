@@ -90,6 +90,9 @@ export class ExecutionContainer extends Container<Env> {
       await this.stop();
       return;
     }
+    // Background supervisor work has no incoming requests to renew SDK activity.
+    // Keep it awake only while its authoritative lease and deadline remain valid.
+    this.renewActivityTimeout();
     if (!(await this.ctx.storage.get('launched'))) {
       if (now() - scope.created_at < 120_000) {
         await this.schedule(15, 'watchdog');

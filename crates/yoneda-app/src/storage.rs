@@ -1,6 +1,8 @@
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod jobs;
 mod lineage;
+pub(crate) use jobs::job;
 pub(crate) use lineage::{
     cancel_job, check_lineage, descendant_ids, fence_descendants, run_executions, run_jobs,
 };
@@ -197,21 +199,6 @@ pub(crate) fn event<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> R
     outbox(db, &format!("live:{seq}"), "live", payload.clone())?;
     outbox(db, &format!("index:{seq}"), "index", payload)?;
     Ok(())
-}
-pub(crate) fn job<S: SqlStore>(
-    db: &S,
-    id: &str,
-    kind: &str,
-    now: i64,
-    payload: Value,
-) -> Result<()> {
-    create(
-        db,
-        "jobs",
-        id,
-        &json!({"id":id,"kind":kind,"status":"queued","attempt":0,"epoch":0,"lease_until":0,"deadline":now+1_200_000,"payload":payload}),
-    )?;
-    outbox(db, &format!("dispatch:{id}:0"), kind, json!({"job_id":id}))
 }
 pub(crate) fn execution<S: SqlStore>(
     db: &S,

@@ -31,6 +31,55 @@ fn priced(command: &mut Value, limit: i64) {
 }
 
 #[test]
+fn model_budgets_long_execution_survives_queue_delay_and_fences_at_approved_deadline() {
+    let (db, mut command) = configured();
+    command["model_budgets"][0]["max_execution_ms"] = json!(1_800_000);
+    call(&db, command).unwrap();
+    let root = "job:budgeted:agent-1";
+    let claimed = claim(&db, root, 601_000);
+    assert_eq!(claimed["attempt_deadline"], 2_521_000);
+    call(
+        &db,
+        json!({"op":"progress","job_id":root,"epoch":1,"now":602_000,
+        "progress":{"stage":"container_ready"}}),
+    )
+    .unwrap();
+    for now in (650_000..2_402_000).step_by(50_000) {
+        call(
+            &db,
+            json!({"op":"heartbeat","job_id":root,"epoch":1,"now":now}),
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":2_401_999})
+        )
+        .unwrap()["deadline"],
+        2_402_000
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":2_402_000})
+        )
+        .unwrap_err()
+        .code,
+        "FENCED"
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"claim","job_id":"job:budgeted:agent-2","now":1_201_000})
+        )
+        .unwrap_err()
+        .code,
+        "ATTEMPTS_EXHAUSTED"
+    );
+}
+
+#[test]
 fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
     for case in 0..12 {
         let (db, mut command) = configured();

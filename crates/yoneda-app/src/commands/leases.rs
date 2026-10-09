@@ -21,7 +21,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if j["status"] == "running" && number(&j, "lease_until")? > now {
                 return Err(Error::new("LEASE_HELD", "Attempt is already running"));
             }
-            if number(&j, "attempt")? >= 2 || number(&j, "deadline")? <= now {
+            if number(&j, "attempt")? >= 2
+                || number(&j, "deadline")? <= now
+                || (j["attempt"] == 0
+                    && j["dispatch_deadline"]
+                        .as_i64()
+                        .is_some_and(|deadline| deadline <= now))
+            {
                 return Err(Error::new("ATTEMPTS_EXHAUSTED", "Job budget exhausted"));
             }
             check_lineage(db, &j, now)?;

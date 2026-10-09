@@ -1,6 +1,7 @@
 import { providerNames } from '../workspace/providerModels';
 
 export type ProviderFailureCode =
+  | 'EXECUTION_TIMEOUT'
   | 'PROVIDER_CONFIGURATION'
   | 'PROVIDER_BALANCE'
   | 'PROVIDER_AUTH'
@@ -15,6 +16,11 @@ export type ProviderFailureCode =
   | 'HARNESS_BUDGET';
 
 const notices: Record<ProviderFailureCode, { title: string; action: string }> = {
+  EXECUTION_TIMEOUT: {
+    title: 'reached the execution time limit',
+    action:
+      'Use Restart run to allow more execution time or narrow the task. Set the time limit for this model in the run settings.',
+  },
   PROVIDER_CONFIGURATION: {
     title: 'key and billing settings do not match',
     action:
@@ -82,6 +88,7 @@ export function providerFailureCode(value: unknown): ProviderFailureCode | undef
 }
 
 export function executionFailureCode(execution: Record<string, any>) {
+  if (execution.error === 'Execution deadline exceeded') return 'EXECUTION_TIMEOUT';
   const explicit = providerFailureCode(execution.error_code);
   if (explicit) return explicit;
   const prefix =

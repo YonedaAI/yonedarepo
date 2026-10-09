@@ -70,6 +70,11 @@ async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     let output = command.output().await.unwrap();
     assert!(output.status.success());
     assert_eq!(String::from_utf8(output.stdout).unwrap(), "512");
+    job["payload"]["run"]["model_budgets"][0]["max_execution_ms"] = json!(1_800_000);
+    assert_eq!(
+        crate::execution_limits::timeout_ms(&job).unwrap(),
+        1_795_000
+    );
     job["payload"]["execution"]["budget"]["model"] = json!("another-model");
     assert_eq!(
         crate::execution_limits::model_budget(&job)

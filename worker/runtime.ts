@@ -5,6 +5,10 @@ export function checkLedger(snapshot: Json, request?: Json) {
   const delegation = request?.delegation;
   if (
     snapshot?.capabilities?.artifact_reads !== 2 ||
+    request?.model_budgets?.some(
+      (budget: Json) =>
+        budget.max_execution_ms > (snapshot?.capabilities?.max_execution_ms ?? 600_000),
+    ) ||
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
     (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
@@ -24,6 +28,15 @@ export function checkLedger(snapshot: Json, request?: Json) {
 export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (
+    job.payload?.run?.model_budgets?.some(
+      (budget: Json) =>
+        budget.max_execution_ms > (health?.capabilities?.max_execution_ms ?? 600_000),
+    )
+  )
+    throw new Error(
+      'Container image does not support the approved execution time; wait for rollout completion',
+    );
   if (
     job.payload?.run?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
     health?.capabilities?.optional_model_requests !== 1

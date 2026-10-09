@@ -141,7 +141,12 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     if (path === '/failed') {
       await attemptLog(env, scope, 'execution.failure_received', {
         error_code: failureCode({
-          code: typeof body.error === 'string' ? body.error.split(':')[0] : undefined,
+          code:
+            body.error === 'Execution deadline exceeded'
+              ? 'EXECUTION_TIMEOUT'
+              : typeof body.error === 'string'
+                ? body.error.split(':')[0]
+                : undefined,
         }),
       });
       const result = await ledger(env, scope.repo_id, {
