@@ -160,15 +160,6 @@ pre {
   background: #edf3f6;
   padding: 12px;
 }
-.select-candidate {
-  width: 100%;
-  background: #fff;
-  color: var(--blue);
-  border-color: var(--line);
-  font-size: 12px;
-  margin-top: 16px;
-  min-height: 40px;
-}
 .decision-form {
   background: #e3eff8;
   padding: 22px;
@@ -200,11 +191,6 @@ pre {
   display: block;
   width: 100%;
   margin-top: 8px;
-}
-
-.select-candidate:hover:enabled {
-  background: #edf3ff;
-  border-color: #b2c8fa;
 }
 
 .site-link a {

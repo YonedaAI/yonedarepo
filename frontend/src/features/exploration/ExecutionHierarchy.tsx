@@ -35,7 +35,15 @@ function orderedExecutions(executions: Execution[]) {
   return { ordered, byId };
 }
 
-export function ExecutionHierarchy({ snapshot, run }: { snapshot: Snapshot; run: Execution }) {
+export function ExecutionHierarchy({
+  snapshot,
+  run,
+  onInspect,
+}: {
+  snapshot: Snapshot;
+  run: Execution;
+  onInspect: (id: string) => void;
+}) {
   const executions = snapshot.executions.filter(
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
@@ -84,9 +92,13 @@ export function ExecutionHierarchy({ snapshot, run }: { snapshot: Snapshot; run:
                   {execution.parent_execution ? <CornerDownRight size={17} /> : <Bot size={17} />}
                 </span>
                 <div className="execution-detail">
-                  <a href={`#approach-${execution.id}`}>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => onInspect(execution.id)}
+                  >
                     {execution.strategy || execution.task || 'Independent approach'}
-                  </a>
+                  </button>
                   <small>
                     {execution.parent_execution
                       ? `Subagent · delegated by ${parent?.strategy || short(execution.parent_execution)}`

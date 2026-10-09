@@ -8,14 +8,9 @@
   font-weight: 600;
   margin-bottom: 6px;
 }
-.runs-toolbar p,
-.fixture-scope {
+.runs-toolbar p {
   color: var(--muted);
   font-size: 13px;
-}
-.fixture-scope {
-  margin: 14px 0 24px;
-  font-size: 11px;
 }
 .run-picker {
   display: flex;
@@ -187,21 +182,6 @@
 }
 .recorded-decision strong {
   font-size: 13px;
-}
-.review-ready {
-  margin: 18px 0;
-  padding: 14px 18px;
-  border: 1px solid #cae7db;
-  border-radius: 7px;
-  background: #f0faf5;
-  margin-top: 16px;
-  border-left: 3px solid var(--success);
-}
-.review-ready p {
-  margin: 4px 0 0;
-  max-width: 80ch;
-  font-size: 12px;
-  line-height: 1.6;
 }
 .comparison-heading {
   margin: 0 0 16px;

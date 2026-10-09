@@ -1,11 +1,13 @@
 import { useState } from 'react';
 export function DecisionForm({
   busy,
+  blocked = false,
   alternatives,
   onAccept,
   onClose,
 }: {
   busy: boolean;
+  blocked?: boolean;
   alternatives: Record<string, any>[];
   onAccept: (
     rationale: string,
@@ -26,7 +28,7 @@ export function DecisionForm({
         );
       }}
     >
-      <label htmlFor="rationale">Why choose this approach?</label>
+      <label htmlFor="rationale">Why publish this result?</label>
       <textarea
         id="rationale"
         value={rationale}
@@ -51,7 +53,7 @@ export function DecisionForm({
         assets are available.
       </p>
       <div>
-        <button type="submit" disabled={busy || !rationale.trim()}>
+        <button type="submit" disabled={busy || blocked || !rationale.trim()}>
           Record decision and publish
         </button>
         <button type="button" className="quiet" disabled={busy} onClick={onClose}>

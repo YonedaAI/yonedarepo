@@ -1,6 +1,12 @@
 import { short } from '../../lib/api';
 import type { TeamRecord } from './teamView';
-export function IntegrationInputs({ candidate }: { candidate: TeamRecord }) {
+export function IntegrationInputs({
+  candidate,
+  onInspectTask,
+}: {
+  candidate: TeamRecord;
+  onInspectTask: (id: string) => void;
+}) {
   const manifest = candidate.integration_manifest;
   if (!manifest)
     return (
@@ -19,8 +25,14 @@ export function IntegrationInputs({ candidate }: { candidate: TeamRecord }) {
       <ul>
         {(manifest.inputs ?? []).map((input: TeamRecord) => (
           <li key={input.task_id}>
-            <a href={`#team-task-${input.task_id}`}>{input.task_id}</a> · task version{' '}
-            {input.task_revision} · <code>{short(input.revision?.commit)}</code> ·{' '}
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onInspectTask(input.task_id)}
+            >
+              {input.task_id}
+            </button>{' '}
+            · task version {input.task_revision} · <code>{short(input.revision?.commit)}</code> ·{' '}
             {(input.paths ?? []).length} changed paths
           </li>
         ))}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { reviewableCandidates } from './runReviewState';
 
 function SharedResearch({ repo, artifact }: { repo: string; artifact: Record<string, any> }) {
   const [open, setOpen] = useState(false);
@@ -45,13 +46,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const done = coding.filter((e) => e.finished_at).length;
   const queued = coding.filter((e) => e.status === 'queued').length;
   const historical = ['accepted', 'cancelled', 'failed'].includes(run.status);
-  const reviewable = eligible.filter(
-    (c) =>
-      c.base.commit === snapshot.repository.head_commit &&
-      snapshot.evaluations.some(
-        (e) => e.id === c.evaluation && e.policy === snapshot.repository.policy?.version,
-      ),
-  );
+  const reviewable = reviewableCandidates(snapshot, run);
   const reviewReady = !decision && run.status === 'ready' && reviewable.length > 0;
   const team = run.mode === 'collaborate';
   const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
@@ -140,16 +135,6 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           </li>
         ))}
       </ol>
-      {reviewReady && (
-        <div className="review-ready" role="status">
-          <strong>Ready for review</strong>
-          <p>
-            {team
-              ? 'The integrated result is independently checked and eligible. Review its source, included task revisions and preview, then record what ships.'
-              : `${reviewable.length} checked approach${reviewable.length === 1 ? ' is' : 'es are'} eligible. Review the source and preview, then select an approach to record what ships.`}
-          </p>
-        </div>
-      )}
       {shared.length > 0 && (
         <div className="shared-context">
           <h2>Agent-authored context</h2>
@@ -165,7 +150,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
         </div>
       )}
       {decision && (
-        <details className="recorded-decision">
+        <details className="recorded-decision" id="recorded-shipping-decision" open tabIndex={-1}>
           <summary>Recorded shipping decision</summary>
           <strong>
             {decision.decision_kind === 'development_verification'
@@ -173,6 +158,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
               : 'Owner decision'}
           </strong>
           <p>{decision.rationale}</p>
+          {decision.error && <p role="alert">{decision.error}</p>}
         </details>
       )}
     </section>
