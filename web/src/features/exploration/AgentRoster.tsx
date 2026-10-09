@@ -1,5 +1,6 @@
 import type { AgentLimits } from '../../lib/types';
-import { type Provider, providerNames } from '../workspace/ProviderSettings';
+import type { Provider } from '../workspace/ProviderSettings';
+import { providerNames } from '../workspace/providerModels';
 import { ApproachPicker } from './ApproachPicker';
 import type { AgentDraft } from './agentLimits';
 import { nextApproach } from './approaches';

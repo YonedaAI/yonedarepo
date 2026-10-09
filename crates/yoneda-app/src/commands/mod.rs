@@ -5,6 +5,7 @@ mod acceptance;
 mod completion;
 mod delegation;
 mod events;
+mod execution_logs;
 mod external;
 mod history;
 mod leases;
@@ -54,6 +55,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "accept" => acceptance::handle(db, c, now),
         "register_site" => sites::register(db, c, now),
         "record_transcript" => transcripts::record(db, c, now),
+        "record_execution_log" => execution_logs::record(db, c, now),
+        "execution_logs" => execution_logs::read(db, c),
         "reserve_request" => resources::reserve(db, c),
         "settle_model_request" => model_reservations::settle(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),

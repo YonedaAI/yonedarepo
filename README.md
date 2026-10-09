@@ -101,6 +101,8 @@ Open `https://my-yoneda.YOUR_SUBDOMAIN.workers.dev`, create a personal account a
 
 The sites Worker is `https://my-yoneda-sites.YOUR_SUBDOMAIN.workers.dev`. Initial container provisioning can take several minutes after the Worker URL responds. Inspect `pnpm exec wrangler containers list --config .local/deploy/my-yoneda/platform.json` if a hosted run cannot start. A health response proves the Worker is serving; it does not prove a provider has credit or that an agent run succeeded.
 
+Use **Agent providers → Edit connection** to change a model or billing route without reentering a key. Each approach has **View logs** for retained request diagnostics. Operators can search structured Worker and Rust container logs in **Cloudflare → Observability**. See [logging, storage and retention](docs/logging.md).
+
 For local development against **your** remote Artifacts namespace:
 
 ```sh

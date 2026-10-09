@@ -1,0 +1,60 @@
+.execution-log-trigger,
+.execution-log-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.execution-log-meta {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.execution-log-meta span,
+.execution-log-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.execution-log-meta code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.execution-log-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+}
+.execution-log-heading h3 {
+  font-size: 14px;
+}
+.execution-log-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 20px;
+}
+.execution-log-list li {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  font-size: 12px;
+}
+.execution-log-list time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.execution-log-list li > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.execution-log-list code {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.execution-log-list .log-error strong,
+.execution-log-list .log-error code {
+  color: #a33e36;
+}

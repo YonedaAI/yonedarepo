@@ -5,6 +5,8 @@ import { prepareModelRequest } from '../../worker/model-policy';
 import type { Env } from '../../worker/types';
 import { providerCredentials } from '../../worker/vault';
 import { ledger } from '../../worker/storage';
+import { seal } from '../../worker/vault';
+import { workspace } from '../../worker/workspace';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
@@ -24,6 +26,39 @@ it('pins Token Plan requests to the approved region and rejects arbitrary destin
     { plan: 'token_plan', region: 'sgp', url: 'https://attacker.invalid' }]) {
     expect(() => prepareModelRequest(job(route), 'claude', '/v1/messages', {})).toThrow();
   }
+});
+
+it('blocks a legacy Token Plan key on the API route before scheduling and repairs it without replacing the secret', async () => {
+  const owner = 'legacy_plan_user';
+  const signup = await bindings.SELF.fetch('https://yoneda/api/auth/signup', { method: 'POST',
+    body: JSON.stringify({ username: owner, password: 'a long test password' }) });
+  const cookie = (signup.headers.get('set-cookie') ?? '').split(';')[0];
+  const sealed = await seal(bindings, owner, 'mimo', 'tp-legacy-offline-fixture');
+  const saved = await workspace(bindings, owner, { op: 'provider_put', provider: 'mimo',
+    model: 'mimo-v2.6-flash', sealed });
+  const repo = 'legacy-plan-fixture';
+  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Legacy plan', workspace: owner,
+    commit: 'a'.repeat(40), remote: { namespace: 'test', name: repo },
+    policy: { version: 'v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+      required_checks: ['syntax'], build: { checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] } } });
+  const start = () => bindings.SELF.fetch(`https://yoneda/api/repos/${repo}/start_run`, {
+    method: 'POST', headers: { cookie }, body: JSON.stringify({ id: 'repaired', intent: 'Build a site',
+      agents: ['minimal', 'accessible'].map(strategy => ({ strategy, provider: 'mimo', model: 'mimo-v2.6-flash' })) }),
+  });
+  const blocked = await start();
+  expect(blocked.status).toBe(409);
+  expect(await blocked.text()).toContain('Token Plan');
+  expect((await ledger(bindings, repo, { op: 'snapshot' })).executions).toEqual([]);
+  const update = () => bindings.SELF.fetch('https://yoneda/api/settings/connections/mimo', {
+    method: 'POST', headers: { cookie }, body: JSON.stringify({ expected_version: saved.version ?? 0, routing }),
+  });
+  expect((await update()).status).toBe(200);
+  const secret = await workspace(bindings, owner, { op: 'provider_secret', connection: 'mimo' });
+  expect(secret.sealed).toEqual(sealed);
+  expect(secret.routing).toEqual(routing);
+  expect((await update()).status).toBe(409);
+  expect((await start()).status).toBe(200);
+  expect((await ledger(bindings, repo, { op: 'snapshot' })).executions.every((e: any) => e.routing.region === 'sgp')).toBe(true);
 });
 
 it('stores only encrypted plan keys, exposes the route and fences changed routing', async () => {

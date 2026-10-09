@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { providerNames } from '../workspace/ProviderSettings';
+import { providerNames } from '../workspace/providerModels';
 import {
   defaultModelBudget,
   editDollarBudget,

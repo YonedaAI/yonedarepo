@@ -4,6 +4,7 @@ import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
 import { error, readJson, response, safeId } from './http';
+import { failureCode, writeLog } from './logging';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
@@ -12,6 +13,7 @@ import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
+import { providerCredentials } from './vault';
 import { workspace } from './workspace';
 
 export async function fetchRequest(req: Request, env: Env): Promise<Response> {
@@ -121,7 +123,16 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     }
     const allowed =
       req.method === 'GET'
-        ? ['snapshot', 'events', 'graph', 'why', 'decision', 'context_search', 'context_get']
+        ? [
+            'snapshot',
+            'events',
+            'graph',
+            'why',
+            'decision',
+            'context_search',
+            'context_get',
+            'execution_logs',
+          ]
         : req.method === 'POST'
           ? [
               'init',
@@ -174,6 +185,21 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         delete agent.routing;
         if (connection.routing != null) agent.routing = connection.routing;
       }
+      // Check the stored key/plan before committing any paid work, including legacy connections.
+      const checked = new Set<string>();
+      for (const agent of input.agents) {
+        const id = agent.connection ?? agent.provider;
+        if (checked.has(id)) continue;
+        await providerCredentials(
+          env,
+          principal.workspace,
+          agent.provider,
+          id,
+          agent.model,
+          agent.routing,
+        );
+        checked.add(id);
+      }
     }
     // Authority fields are assigned here; model/browser JSON cannot become an internal attempt.
     for (const key of ['job_id', 'epoch', '_workspace', 'actor', 'author', 'workspace'])
@@ -191,6 +217,12 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       }
     return response(value);
   } catch (e: any) {
+    const repo = url.pathname.split('/')[3];
+    writeLog('request.rejected', {
+      ...(url.pathname.startsWith('/api/repos/') && safeId(repo) ? { repo_id: repo } : {}),
+      http_status: e.code === 'FORBIDDEN' ? 403 : 409,
+      error_code: failureCode(e),
+    });
     return error(
       e.code ?? 'REQUEST_FAILED',
       e.message ?? 'Request failed',

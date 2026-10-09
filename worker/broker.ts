@@ -1,6 +1,7 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { source } from './artifacts';
 import { error, response } from './http';
+import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
 import { ledger, object, readObject } from './storage';
 import type { Env, Json } from './types';
@@ -138,6 +139,11 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       return response(stored);
     }
     if (path === '/failed') {
+      await attemptLog(env, scope, 'execution.failure_received', {
+        error_code: failureCode({
+          code: typeof body.error === 'string' ? body.error.split(':')[0] : undefined,
+        }),
+      });
       const result = await ledger(env, scope.repo_id, {
         op: 'fail',
         ...identity,
@@ -166,6 +172,7 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         )
           return error('INVALID_CAPTURE', 'Captured commit identity or parent mismatch', 409);
       }
+      await attemptLog(env, scope, 'execution.completion_received');
       const result = await ledger(env, scope.repo_id, command);
       await stub.scheduleStop();
       return response(result);

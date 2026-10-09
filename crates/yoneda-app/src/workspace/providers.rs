@@ -14,7 +14,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     .ok_or_else(|| bad("Corrupt provider"))?,
             )
             .map_err(|e| bad(&e.to_string()))?;
-            providers.push(json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"routing":p["routing"],"configured":true,"updated_at":p["updated_at"]}));
+            providers.push(json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"routing":p["routing"],"configured":true,"updated_at":p["updated_at"],"version":p["version"].as_i64().unwrap_or(0)}));
         }
         return Ok(json!({"providers":providers}));
     }
@@ -32,6 +32,24 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     }
     let id = format!("provider:{connection}");
     match string(c, "op")?.as_str() {
+        "provider_update" => {
+            let old = get(db, TABLE, &id)?;
+            if c["expected_version"].as_i64() != Some(old["version"].as_i64().unwrap_or(0)) {
+                return Err(Error::new(
+                    "STALE_CONNECTION",
+                    "Connection changed; reopen its settings before saving",
+                ));
+            }
+            let mut next = old.clone();
+            for field in ["label", "model", "routing", "sealed"] {
+                if let Some(value) = c.get(field) {
+                    next[field] = value.clone();
+                }
+            }
+            next["op"] = json!("provider_put");
+            next["connection"] = json!(connection);
+            handle(db, &next, now)
+        }
         "provider_put" => {
             let provider = string(c, "provider")?;
             yoneda_core::providers::provider(&provider)?;
@@ -71,14 +89,20 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             } else {
                 Value::Null
             };
+            let version = get(db, TABLE, &id)
+                .ok()
+                .and_then(|p| p["version"].as_i64())
+                .unwrap_or(0)
+                .checked_add(1)
+                .ok_or_else(|| bad("Connection version overflow"))?;
             put(
                 db,
                 &id,
-                &json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"sealed":c["sealed"],"updated_at":now}),
+                &json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"sealed":c["sealed"],"updated_at":now,"version":version}),
             )?;
             audit(db, "provider.updated", now, json!({"provider":provider}))?;
             Ok(
-                json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"configured":true}),
+                json!({"id":connection,"label":label,"provider":provider,"model":model,"routing":routing,"configured":true,"version":version}),
             )
         }
         "provider_secret" => {

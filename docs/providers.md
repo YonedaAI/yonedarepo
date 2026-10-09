@@ -51,6 +51,13 @@ region. A mismatched key type is rejected before saving or sending inference. Th
 is frozen into root and child executions; there is no regional or billing fallback.
 See [MiMo's key and endpoint guide](https://mimo.mi.com/docs/en-US/tokenplan/Token%20Plan/quick-access).
 
+Existing connections can be corrected with **Edit connection**. Leave the API key blank to retain
+its encrypted value; saving checks the stored key against the chosen billing source. Concurrent
+edits use a configuration version and stale saves are rejected. Starting a hosted run also checks
+stored key/route compatibility before creating executions or dispatching work, including older
+connections saved before billing routes were exposed. Changes apply to freshly approved runs;
+historical evidence and frozen routes are preserved. See [logging and diagnostics](logging.md).
+
 ZAI Coding Plan and general API usage bundles are separate products. This connector uses the
 Coding Plan endpoint; saving a key here does not consume a regular API usage bundle. Existing
 connections retain their model IDs; new ZAI connections default to GLM-5.3-Flash.
