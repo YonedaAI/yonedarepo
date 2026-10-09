@@ -8,6 +8,23 @@ model and configuration status. A workspace can keep up to 32 independent connec
 The operator's Secrets Store bindings are `Codex`, `Claude`, `MiMo` and `ZAI`. They are available
 only to administrator-owned repositories. All upstream URLs are fixed in the adapter.
 
+### Current upstream routes
+
+| Provider | Upstream request | Account requirement |
+| --- | --- | --- |
+| OpenAI/Codex | `https://api.openai.com/v1/responses` | OpenAI API key |
+| Anthropic/Claude | `https://api.anthropic.com/v1/messages` | Anthropic API key |
+| MiMo | `https://api.xiaomimimo.com/anthropic/v1/messages` | MiMo key with selected-model access |
+| Google/Gemini | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent` or `:streamGenerateContent` | Google AI Studio API key |
+| ZAI | `https://api.z.ai/api/anthropic/v1/messages` | Account access to ZAI's Anthropic-compatible coding endpoint |
+
+ZAI's [regular API](https://docs.z.ai/api-reference/introduction) documents
+`https://api.z.ai/api/paas/v4/chat/completions`, which uses a different protocol from the
+[Coding Plan endpoint](https://docs.z.ai/devpack/tool/others) above. The current connector
+does not offer a separate regular-API route. A published model ID or a saved key does not
+establish access to the configured endpoint. This is an integration limitation to resolve
+before claiming general ZAI API-key support.
+
 | Provider | Testing model | Protocol |
 | --- | --- | --- |
 | Codex | `gpt-5.6-luna` | OpenAI Responses |
@@ -33,6 +50,21 @@ output rate. Completed provider usage settles at those conservative rates; incom
 retain the entire reservation. The ledger reports a charged safety allowance, **not an invoice**.
 Reference: [Anthropic pricing](https://platform.claude.com/docs/en/about-claude/pricing).
 Paid server tools, images, premium tiers and custom upstream URLs are disabled in testing.
+
+## Choosing a model
+
+**Agent providers → Model** offers provider-specific presets and a custom model entry for
+providers that permit it. Presets are taken from the provider's published catalog; they are not a
+live check of a key's access. Changing the picker does not alter existing connections or runs.
+Claude remains limited to the configured Sonnet testing policy.
+
+ZAI currently uses its [Anthropic-compatible coding endpoint](https://docs.z.ai/devpack/tool/others).
+Its general API catalog and Coding Plan have different model access rules; check the
+[model switching guide](https://docs.z.ai/devpack/latest-model) for your account. Selecting a model
+does not fund an account or increase its provider limits. ZAI documents HTTP 429 business code
+1302 as a request rate limit, 1113 as insufficient balance, and 1305 as temporary overload in
+its [error reference](https://docs.z.ai/api-reference/api-code). A rate-limited request can produce
+no model output; YonedaRepo still counts the attempted request against the approved allowance.
 
 ## Run budgets in the console
 

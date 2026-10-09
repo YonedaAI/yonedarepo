@@ -32,7 +32,8 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
       <p>
         Shared across all connections, root agents, subagents and retries using the same provider
         and model. Estimates settle when complete usage is available; pending or unknown usage keeps
-        its reservation. Provider invoices can differ.
+        its reservation. Requests include retries and provider rejections. Provider invoices can
+        differ.
       </p>
       <div className="budget-usage-grid">
         {budgets.map((budget: ModelBudget) => (

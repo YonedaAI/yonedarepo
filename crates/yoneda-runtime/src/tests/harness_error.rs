@@ -139,3 +139,35 @@ fn model_budgets_proxy_errors_use_only_known_codes_in_terminal_api_envelopes() {
         assert!(!error.message.contains("private"));
     }
 }
+
+#[test]
+fn model_budgets_stripped_worker_envelopes_preserve_only_exact_allowlisted_causes() {
+    for (code, message) in [
+        (
+            "MODEL_REQUEST_LIMIT",
+            "This provider/model group exhausted its approved request budget",
+        ),
+        (
+            "MODEL_SPEND_LIMIT",
+            "This provider/model group has insufficient approved spend remaining for the conservative request ceiling",
+        ),
+    ] {
+        let raw = format!("API Error: 409 {message}");
+        let error = failure(&output(409, &raw), &evidence());
+        assert_eq!(error.code, code);
+        assert!(error.message.contains(&"a".repeat(64)));
+        assert!(!error.message.contains("private-stderr-token"));
+        for altered in [
+            format!("{raw}; Bearer private-token"),
+            format!("API Error: 409 prefix {message}"),
+            format!("API Error: 409 {message}."),
+            format!("MODEL_REQUEST_LIMIT {message}"),
+        ] {
+            let safe = failure(&output(409, &altered), &evidence());
+            assert_eq!(safe.code, "RUNTIME");
+            assert!(!safe.message.contains("private-token"));
+        }
+        let wrong_status = failure(&output(400, &raw), &evidence());
+        assert_ne!(wrong_status.code, code);
+    }
+}

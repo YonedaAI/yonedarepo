@@ -22,6 +22,9 @@ export function ExecutionFailure({
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
   const code = executionFailureCode(execution) ?? diagnosis;
+  const budgetReached = ['MODEL_REQUEST_LIMIT', 'MODEL_SPEND_LIMIT', 'HARNESS_BUDGET'].includes(
+    code ?? '',
+  );
   const notice = providerFailureNotice(execution, code);
   const transcript = typeof execution.transcript === 'string' ? execution.transcript : '';
   async function explain() {
@@ -69,7 +72,11 @@ export function ExecutionFailure({
           </button>
         )}
       </div>
-      <small>After updating your connection, use New run to approve another attempt.</small>
+      <small>
+        {budgetReached
+          ? 'Use Restart run to review your limits and approve another attempt.'
+          : 'After updating your connection, use New run to approve another attempt.'}
+      </small>
     </section>
   );
 }
