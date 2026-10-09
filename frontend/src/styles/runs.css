@@ -37,10 +37,38 @@
   font-size: 13px;
 }
 .intent-row h2 {
-  font-size: 22px;
-  font-weight: 500;
-  letter-spacing: -0.4px;
-  margin-bottom: 14px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  margin-bottom: 10px;
+}
+.run-heading {
+  flex: 1;
+  min-width: 0;
+}
+.run-brief {
+  margin-bottom: 22px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.run-brief summary {
+  cursor: pointer;
+  color: var(--blue);
+  width: fit-content;
+}
+.run-brief p {
+  max-width: 90ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.run-brief h3 {
+  font-size: 13px;
+  margin: 16px 0 8px;
+}
+.run-brief ul {
+  margin: 0;
+  padding-left: 20px;
 }
 .run-meta {
   margin: 0 0 22px;
