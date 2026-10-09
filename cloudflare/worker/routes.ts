@@ -1,5 +1,6 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
+import { candidateSource } from './candidate-source';
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
@@ -15,6 +16,7 @@ import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
 import { providerCredentials } from './vault';
+import { websiteAssets } from './website-metadata';
 import { workspace } from './workspace';
 
 export async function fetchRequest(req: Request, env: Env): Promise<Response> {
@@ -28,7 +30,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
   if (url.pathname.startsWith('/mcp/')) return remoteMcp(req, env, url.pathname.split('/')[2]);
   if (url.pathname.startsWith('/git/'))
     return externalGit(req, env, url.pathname.split('/').filter(Boolean));
-  if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(req);
+  if (!url.pathname.startsWith('/api/')) return websiteAssets(req, env);
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;
@@ -125,6 +127,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (action === 'site_preview' && req.method === 'GET') return siteRoute(env, repo, req);
     if (action === 'evidence' && req.method === 'GET')
       return evidence(env, repo, url.searchParams.get('digest') ?? '');
+    if (action === 'candidate_source' && req.method === 'GET')
+      return candidateSource(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       await ledger(env, repo, { op: 'snapshot' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
@@ -139,6 +143,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
             'decision',
             'context_search',
             'context_get',
+            'context_usage',
             'execution_logs',
           ]
         : req.method === 'POST'
@@ -150,12 +155,18 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
               'observe',
               'update_policy',
               'context_publish',
+              'configure_context_study',
             ]
           : [];
     if (!allowed.includes(action)) return error('NOT_FOUND', 'Unknown repository operation', 404);
     const input: Json =
       req.method === 'GET' ? Object.fromEntries(url.searchParams) : await readJson(req, 256 * 1024);
-    for (const key of ['after', 'depth', 'limit'])
+    for (const key of [
+      'after',
+      'depth',
+      'limit',
+      ...(action === 'context_usage' ? ['cursor', 'epoch'] : []),
+    ])
       if (input[key] !== undefined) input[key] = Number(input[key]);
     if (action === 'init') {
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
@@ -210,7 +221,16 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       }
     }
     // Authority fields are assigned here; model/browser JSON cannot become an internal attempt.
-    for (const key of ['job_id', 'epoch', '_workspace', 'actor', 'author', 'workspace'])
+    for (const key of [
+      'job_id',
+      ...(action === 'context_usage' ? [] : ['epoch']),
+      '_workspace',
+      '_grant',
+      'session_id',
+      'actor',
+      'author',
+      'workspace',
+    ])
       delete input[key];
     const value = await ledger(env, repo, {
       ...input,

@@ -32,6 +32,22 @@ export function checkRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (
+    job.kind === 'agent' &&
+    job.payload?.run?.context_usage_version === 1 &&
+    health.capabilities?.context_usage !== 1
+  )
+    throw new Error(
+      'Container image does not support context evidence; wait for rollout completion',
+    );
+  if (
+    job.kind === 'agent' &&
+    job.payload?.run?.context_study !== undefined &&
+    health.capabilities?.context_study !== 1
+  )
+    throw new Error(
+      'Container image does not support context study isolation; wait for rollout completion',
+    );
+  if (
     job.payload?.run?.model_budgets?.some(
       (budget: Json) =>
         budget.max_execution_ms > (health?.capabilities?.max_execution_ms ?? 600_000),

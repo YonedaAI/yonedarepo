@@ -95,6 +95,7 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 "Attempt ID belongs to another request",
             ));
         }
+        super::context_sessions::bind(db, c, &existing, now)?;
         return Ok(existing);
     }
     let r = repo(db)?;
@@ -138,7 +139,8 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let rid = format!("run:{id}");
     let base = json!({"repository":format!("{}/{}",string(&r["remote"],"namespace")?,string(&r["remote"],"name")?),"commit":r["published_commit"]});
-    let run = json!({"id":rid,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":base,"base_version":r["version"],"status":"exploring","created_at":now,"external":true});
+    let mut run = json!({"id":rid,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":base,"base_version":r["version"],"status":"exploring","created_at":now,"external":true,"context_usage_version":1});
+    super::study::apply(&mut run, super::study::freeze(db, &r)?);
     create(db, "runs", &rid, &run)?;
     node(
         db,
@@ -171,6 +173,7 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     edge(db, &rid, &id, "depends_on", "external contribution")?;
     let job = json!({"id":jid,"kind":"agent","status":"running","external":true,"external_grant":grant,"external_fork":string(c,"fork")?,"external_phase":"working","fingerprint":fingerprint,"attempt":2,"epoch":1,"lease_until":now+3_600_000,"attempt_deadline":now+3_600_000,"deadline":now+3_600_000,"payload":{"execution":execution,"run":run,"policy":r["policy"]}});
     create(db, "jobs", &jid, &job)?;
+    super::context_sessions::bind(db, c, &job, now)?;
     event(
         db,
         "contribution.started",

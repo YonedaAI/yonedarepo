@@ -33,11 +33,12 @@ export interface Env {
   ZAI_MODEL?: string;
   STARTER_REPO?: string;
   SITE_ORIGIN?: string;
+  PUBLIC_APP_ORIGIN?: string;
 }
 export type Principal = {
   workspace: string;
   role: 'user' | 'admin' | 'agent';
-  grant?: { id: string; repo: string; scope: string };
+  grant?: { id: string; repo: string; scope: string; expires?: number };
 };
 export type Scope = {
   repo_id: string;

@@ -363,7 +363,7 @@ fn model_budgets_migration_upgrades_version_four_and_is_repeatable() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        6
+        7
     );
     assert!(
         db.query("SELECT id FROM model_reservations", &[])

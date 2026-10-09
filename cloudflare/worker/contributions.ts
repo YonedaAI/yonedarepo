@@ -9,11 +9,17 @@ export async function contribution(
   name: string,
   args: Json,
   origin: string,
+  sessionId?: string,
 ) {
   const grant = principal.grant;
   if (grant?.scope !== 'contribute') throw new Error('A contribution grant is required');
   const command = (input: Json) =>
-    ledger(env, repo, { ...input, _workspace: principal.workspace, _grant: grant.id });
+    ledger(env, repo, {
+      ...input,
+      _workspace: principal.workspace,
+      _grant: grant.id,
+      ...(sessionId ? { session_id: sessionId } : {}),
+    });
   if (name === 'attempt_begin') {
     if (typeof args.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(args.request_id))
       throw new Error('Use a stable request UUID');

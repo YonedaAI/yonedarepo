@@ -3,6 +3,8 @@ use yoneda_core::{FileEntry, Workspace};
 use crate::*;
 use serde_json::json;
 use tokio::process::Command;
+#[path = "tests/context_study_prompt.rs"]
+mod context_study_prompt;
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn supervisor_refuses_jobs_without_owning_the_agent_uid() {
@@ -274,6 +276,8 @@ async fn isolated_uid_barrier_stops_daemonized_descendants() {
 fn runtime_health_identifies_protocol_and_evaluator_environment() {
     let health = crate::supervisor::health();
     assert_eq!(health["protocol"], 2);
+    assert_eq!(health["capabilities"]["context_usage"], 1);
+    assert_eq!(health["capabilities"]["context_study"], 1);
     assert_eq!(
         health["environment"],
         yoneda_core::Policy::default().environment

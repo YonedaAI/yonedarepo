@@ -13,7 +13,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 6;
+    const SCHEMA_VERSION: i64 = 7;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -24,6 +24,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (4, include_str!("migrations/0004_state_graph.sql")),
             (5, include_str!("migrations/0005_model_reservations.sql")),
             (6, include_str!("migrations/0006_execution_logs.sql")),
+            (7, include_str!("migrations/0007_context_access.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",

@@ -3,6 +3,10 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
 mod completion;
+mod context_access;
+mod context_evidence;
+mod context_sessions;
+mod context_usage;
 mod continuations;
 mod delegation;
 mod deletion;
@@ -21,6 +25,7 @@ mod restarts;
 mod runs;
 mod scheduling;
 mod sites;
+mod study;
 mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
@@ -61,6 +66,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
             }
         }
     }
+    context_access::activation(db, now)?;
     match string(&c, "op")?.as_str() {
         "repository_status" => crate::storage::repo(db),
         "deletion_status" => deletion::status(db),
@@ -68,10 +74,16 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
         "update_policy" => policy::update(db, c, now),
+        "configure_context_study" => study::configure(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
         "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
+        "record_context_access" => context_access::record(db, c, now),
+        "context_usage" => context_usage::read(db, c, now),
+        "context_session_begin" | "context_session_get" | "context_session_end" => {
+            context_sessions::handle(db, c, now)
+        }
         "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
             leases::handle(db, c, now)
         }

@@ -1,0 +1,231 @@
+.context-usage {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 22px;
+  margin: 24px 0;
+}
+.context-usage-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+.context-usage h2 {
+  margin: 0 0 7px;
+  font-size: 17px;
+}
+.context-usage h3 {
+  margin: 24px 0 8px;
+  font-size: 14px;
+}
+.context-usage h4 {
+  font-size: 13px;
+}
+.context-usage-heading p,
+.context-usage-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.context-usage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 18px 0;
+}
+.context-usage-filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.context-usage-filters select {
+  max-width: 440px;
+}
+.context-usage-filters input {
+  width: 155px;
+}
+.context-coverage {
+  border-left: 3px solid var(--blue);
+  padding: 12px 15px;
+  background: #f5f8ff;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.context-coverage p {
+  margin: 6px 0 0;
+  line-height: 1.6;
+}
+.context-coverage-partial,
+.context-coverage-unavailable {
+  border-color: #a88937;
+  background: #fffbef;
+}
+.context-usage-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0 10px;
+}
+.context-usage-metrics > div {
+  border: 1px solid var(--line);
+  padding: 14px;
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.context-usage-metrics dt {
+  font-size: 12px;
+  font-weight: 500;
+}
+.context-usage-metrics dd {
+  font-size: 27px;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+.context-usage-metrics small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.context-usage-rows {
+  padding: 0;
+  list-style: none;
+  margin: 16px 0;
+}
+.context-usage-rows > li {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+}
+.context-usage-rows summary {
+  cursor: pointer;
+  font-size: 12px;
+}
+.context-usage-rows summary strong {
+  margin: 0 12px;
+}
+.context-usage-rows :where(summary) span,
+.context-usage-rows time {
+  color: var(--muted);
+}
+.context-call-meta {
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  margin: 15px 0;
+}
+.context-call-meta code,
+.context-chain code {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.context-record {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: #f6f8fb;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.context-record span,
+.context-record small {
+  color: var(--muted);
+}
+.context-chain {
+  margin: 14px 0;
+}
+.context-lineage {
+  margin: 14px 0 20px 9px;
+  border-left: 2px solid #dbe5fc;
+  padding: 0 0 0 22px;
+  list-style: none;
+}
+.context-lineage > li {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 18px;
+  font-size: 12px;
+}
+.context-lineage small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.context-revision-check {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 14px;
+  margin-top: 8px;
+}
+.context-revision-check ul {
+  margin: 5px 0;
+  padding: 0;
+  list-style: none;
+}
+.context-revision-check li {
+  padding: 8px 0;
+}
+.context-revision-check p {
+  font-size: 11px;
+  margin: 5px 0;
+  line-height: 1.6;
+}
+.context-lineage-group {
+  border-top: 1px solid var(--line);
+  padding: 14px 0;
+  font-size: 12px;
+}
+.context-lineage-group > summary {
+  cursor: pointer;
+  color: var(--blue);
+}
+.context-usage-empty {
+  font-size: 12px;
+  padding: 16px;
+  background: #f6f8fb;
+  border-radius: 6px;
+}
+.context-usage-error {
+  color: #963333;
+  background: #fff0ed;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.context-usage-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--muted);
+}
+@media (max-width: 1000px) {
+  .context-usage-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .context-usage {
+    padding: 16px;
+  }
+  .context-usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .context-usage-heading {
+    flex-wrap: wrap;
+  }
+  .context-usage-filters select {
+    max-width: 100%;
+  }
+  .context-usage-rows summary {
+    display: grid;
+    gap: 7px;
+  }
+  .context-usage-rows summary strong {
+    margin: 0;
+  }
+}
