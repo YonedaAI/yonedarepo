@@ -6,6 +6,7 @@ const reads = new Set([
   'repository_overview',
   'runs_page',
   'run_detail',
+  'run_graph_page',
   'events',
   'graph',
   'why',
@@ -46,7 +47,12 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     'watermark',
     ...(action === 'context_usage' ? ['cursor', 'epoch'] : []),
   ])
-    if (input[key] !== undefined) input[key] = Number(input[key]);
+    if (input[key] !== undefined) {
+      const value = Number(input[key]);
+      if (!Number.isSafeInteger(value))
+        throw Object.assign(new Error(`Invalid integer ${key}`), { code: 'INVALID_INPUT' });
+      input[key] = value;
+    }
   // Browser JSON and query parameters cannot acquire attempt or adapter authority.
   for (const key of [
     'job_id',

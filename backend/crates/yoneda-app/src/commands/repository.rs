@@ -82,6 +82,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             value["seq"] = json!(seq);
             Ok(value)
         }
+        "candidate_record" => get(db, "candidates", &string(&c, "id")?),
         "run_graph_page" => {
             let limit = match c.get("limit") {
                 Some(v) => v
