@@ -1,3 +1,12 @@
+import type {
+  CandidateDiffPageContract,
+  ConflictStatusContract,
+  FileProvenanceContract,
+  RepositoryOverviewContract,
+  RunGraphPageContract,
+  RunsPageContract,
+} from '../../../shared/provenance';
+
 export type AccountIdentity =
   | { role: 'user'; username: string; reviewer?: boolean }
   | { role: 'admin' };
@@ -64,6 +73,8 @@ export interface Snapshot {
   nodes: GraphNode[];
   edges: GraphEdge[];
   seq: number;
+  watermark?: number;
+  graph_paged?: boolean;
   team_tasks?: Record<string, any>[];
   team_handoffs?: Record<string, any>[];
   capabilities?: {
@@ -88,3 +99,16 @@ export interface Graph {
   nodes: GraphNode[];
   edges: GraphEdge[];
 }
+export type RepositoryOverview = Omit<RepositoryOverviewContract, 'repository'> & {
+  repository: Repository;
+};
+export type RunsPage = RunsPageContract;
+export type RunGraphPage = RunGraphPageContract;
+export type CandidateDiffPage = CandidateDiffPageContract;
+/** A run detail stays Snapshot-compatible and contains only data scoped to that run. */
+export interface RunDetail extends Omit<Snapshot, 'runs'> {
+  runs: [Record<string, any>];
+  watermark?: number;
+}
+export type ConflictStatus = ConflictStatusContract;
+export type FileProvenanceView = FileProvenanceContract;

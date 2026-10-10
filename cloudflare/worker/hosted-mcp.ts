@@ -1,6 +1,7 @@
 import { contextResponse } from './context-access';
 import { guardContextAccess } from './context-policy';
-import { error, response } from './http';
+import { error, response, safeId } from './http';
+import { validateFilePathAssertions } from './provenance';
 import { ledger, object, readObject } from './storage';
 import type { Env, Json, Scope } from './types';
 
@@ -53,9 +54,33 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
       }),
     );
   if (['context_publish', 'context_get', 'context_search'].includes(name)) {
+    let checkedFilePaths: string[] | undefined;
+    if (name === 'context_publish' && args.file_paths !== undefined) {
+      const base = job.payload.execution?.base;
+      const [namespace, repository, extra] = String(base?.repository ?? '').split('/');
+      if (
+        extra ||
+        namespace !== env.ARTIFACTS_NAMESPACE ||
+        !safeId(repository) ||
+        typeof base?.commit !== 'string'
+      )
+        return error(
+          'INVALID_INPUT',
+          'File path assertions need the assigned source revision',
+          400,
+        );
+      using source = await env.ARTIFACTS.get(repository);
+      checkedFilePaths = await validateFilePathAssertions(source, base.commit, args.file_paths);
+    }
     const input: Json =
       name === 'context_publish'
-        ? { record: { ...args, id: `context:${crypto.randomUUID()}` } }
+        ? {
+            record: {
+              ...args,
+              ...(checkedFilePaths ? { file_paths: checkedFilePaths } : {}),
+              id: `context:${crypto.randomUUID()}`,
+            },
+          }
         : {
             id: args.id,
             query: args.query,

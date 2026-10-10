@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../lib/api';
-import type { AccountIdentity, ProjectMetadata, Repository, Snapshot } from '../lib/types';
+import type {
+  AccountIdentity,
+  ProjectMetadata,
+  Repository,
+  RepositoryOverview,
+  RunDetail,
+  RunsPage,
+  Snapshot,
+} from '../lib/types';
+import { mergeRunDetails } from './repositorySnapshot';
+
 export function useRepository() {
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [id, setCurrentId] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const snapshotRef = useRef<Snapshot | null>(snapshot);
+  snapshotRef.current = snapshot;
   const [authenticated, setAuthenticated] = useState(false);
   const [identity, setIdentity] = useState<AccountIdentity | null>(null);
   const [actionError, setActionError] = useState('');
@@ -94,13 +106,47 @@ export function useRepository() {
           }
           return;
         }
-        const result = await api<Snapshot>(`repos/${id}/snapshot`);
-        if (!stillCurrent() || result.repository.id !== id) return;
-        result.runs.sort((a, b) => a.created_at - b.created_at);
+        const currentSnapshot = snapshotRef.current;
+        if (!currentSnapshot || currentSnapshot.repository.id !== id) {
+          const initial = await api<Snapshot>(`repos/${id}/snapshot`);
+          if (!stillCurrent() || initial.repository.id !== id) return;
+          setSnapshot(initial);
+          setRepositories((previous) =>
+            previous.map((repo) => (repo.id === id ? { ...repo, ...initial.repository } : repo)),
+          );
+          setPollError('');
+          return;
+        }
+        const [overview, page] = await Promise.all([
+          api<RepositoryOverview>(`repos/${id}/overview`),
+          api<RunsPage>(`repos/${id}/runs?limit=25`),
+        ]);
+        if (!stillCurrent() || overview.repository.id !== id) return;
+        setRepositories((previous) =>
+          previous.map((repo) => (repo.id === id ? { ...repo, ...overview.repository } : repo)),
+        );
+        const terminal = new Set([
+          'complete',
+          'completed',
+          'failed',
+          'cancelled',
+          'canceled',
+          'stopped',
+        ]);
+        const runIds = new Set<string>();
+        if (typeof page.items[0]?.id === 'string') runIds.add(page.items[0].id);
+        for (const execution of currentSnapshot.executions) {
+          if (execution.run_id && !terminal.has(execution.status)) runIds.add(execution.run_id);
+        }
+        const details = await Promise.all(
+          [...runIds].map((runId) =>
+            api<RunDetail>(`repos/${id}/runs/${encodeURIComponent(runId)}`),
+          ),
+        );
+        if (!stillCurrent()) return;
+        const next = mergeRunDetails(currentSnapshot, details, overview);
         setSnapshot((previous) =>
-          previous && previous.repository.id === result.repository.id && previous.seq > result.seq
-            ? previous
-            : result,
+          previous && previous.repository.id === id && previous.seq > next.seq ? previous : next,
         );
         setPollError('');
       } catch (e) {

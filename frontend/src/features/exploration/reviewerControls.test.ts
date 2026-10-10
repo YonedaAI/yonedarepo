@@ -114,6 +114,7 @@ describe('reviewer run permissions', () => {
       run: { id: 'run', status: 'failed' },
       busy: false,
       onRetry: noop,
+      onRepair: noop,
       onProviders: noop,
       reviewer: true,
     };
@@ -170,6 +171,7 @@ describe('reviewer run permissions', () => {
       onRestart: noop,
       onCancel: noop,
       onRetry: noop,
+      onRepairTask: noop,
       onAccept: async () => true,
       onProviders: noop,
       onContext: noop,

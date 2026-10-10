@@ -19,6 +19,7 @@ export function TeamTaskCard({
   snapshot,
   busy,
   onRetry,
+  onRepair,
   onProviders,
 }: {
   reviewer?: boolean;
@@ -28,6 +29,7 @@ export function TeamTaskCard({
   snapshot: Snapshot;
   busy: boolean;
   onRetry: (task: TeamRecord) => void;
+  onRepair: (task: TeamRecord) => void;
   onProviders?: () => void;
 }) {
   const execution = snapshot.executions.find((item) => item.id === task.execution_id);
@@ -78,6 +80,13 @@ export function TeamTaskCard({
       {task.status === 'queued' && (
         <p role="status">Ready inputs are frozen. Waiting for execution capacity.</p>
       )}
+      {execution?.progress && task.status === 'running' && (
+        <p role="status" aria-live="polite">
+          {typeof execution.progress === 'string'
+            ? execution.progress
+            : execution.progress.stage?.replaceAll('_', ' ') || 'Task progress recorded'}
+        </p>
+      )}
       {task.status === 'failed' && (
         <p className="team-task-error" role="alert">
           {error ||
@@ -94,6 +103,18 @@ export function TeamTaskCard({
           {task.output.paths?.length ?? 0} changed paths
         </p>
       )}
+      {!reviewer &&
+        task.output &&
+        task.output.revision?.commit !== snapshot.repository.head_commit && (
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy || task.status === 'running'}
+            onClick={() => onRepair(task)}
+          >
+            Repair task from current revision
+          </button>
+        )}
       <details>
         <summary>Task scope and handoffs</summary>
         <p>{task.instructions}</p>

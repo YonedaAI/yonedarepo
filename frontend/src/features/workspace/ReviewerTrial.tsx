@@ -47,11 +47,16 @@ export function ReviewerTrial({
       active = false;
     };
   }, [loadStatus]);
+  useEffect(() => {
+    if (!activeTrial) return;
+    const timer = setInterval(() => void loadStatus(), 5000);
+    return () => clearInterval(timer);
+  }, [activeTrial, loadStatus]);
   return (
     <section className="workspace-notice" aria-label="Funded reviewer trial">
       <div>
         <strong>Reviewer sandbox</strong>
-        <p>
+        <p aria-live="polite">
           Two agents build a bilingual trail guide together. Up to $5 per trial
           {remaining === null ? '' : ` · $${remaining.toFixed(2)} shared allowance remaining`}.
           Review and publish the checked result here.
@@ -97,6 +102,14 @@ export function ReviewerTrial({
               : activeTrial
                 ? 'Resume trial'
                 : 'Run prepared example'}
+      </button>
+      <button
+        type="button"
+        className="text-button"
+        disabled={loading || busy}
+        onClick={() => void loadStatus()}
+      >
+        Refresh allowance and trial status
       </button>
     </section>
   );

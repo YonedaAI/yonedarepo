@@ -1,7 +1,8 @@
 import { Activity, Search } from 'lucide-react';
 import { useState } from 'react';
 import { api } from '../../lib/api';
-import type { Graph, Snapshot } from '../../lib/types';
+import type { Graph, RunGraphPage, Snapshot } from '../../lib/types';
+import { PagedRunHistory } from './PagedRunHistory';
 export function HistoryTools({
   reviewer = false,
   snapshot,
@@ -22,6 +23,9 @@ export function HistoryTools({
   const [assumption, setAssumption] = useState('');
   const [value, setValue] = useState(350);
   const [message, setMessage] = useState('');
+  const [provenance, setProvenance] = useState<any | null>(null);
+  const [contextCursor, setContextCursor] = useState<string | null>(null);
+  const [contextGraph, setContextGraph] = useState<Graph>({ nodes: [], edges: [] });
   const assumptions = snapshot.nodes.filter(
     (n) =>
       n.kind === 'assumption' &&
@@ -34,7 +38,10 @@ export function HistoryTools({
       const graph = await api<Graph>(
         `repos/${snapshot.repository.id}/why?${new URLSearchParams({ commit, path })}`,
       );
-      onGraph(graph);
+      setProvenance(graph);
+      setContextCursor(null);
+      setContextGraph({ nodes: [], edges: [] });
+      if (graph.nodes?.length) onGraph(graph);
       setMessage(
         graph.coverage === 'unknown'
           ? 'No recorded decision covers this exact revision and path.'
@@ -61,6 +68,38 @@ export function HistoryTools({
       );
       onGraph(graph);
       setMessage(`Simulated observation recorded: ${result.status.replaceAll('_', ' ')}.`);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
+  async function loadContextGraph(next = false) {
+    const runId = provenance?.lineage?.[0]?.run_id;
+    if (!runId) return;
+    try {
+      const query = new URLSearchParams({ run_id: runId, limit: '250' });
+      const cursor = next ? contextCursor : null;
+      if (cursor) query.set('cursor', cursor);
+      const page = await api<RunGraphPage>(
+        `repos/${snapshot.repository.id}/run_graph_page?${query}`,
+      );
+      const nodes = new Map(contextGraph.nodes.map((node) => [node.id, node]));
+      for (const item of page.nodes)
+        nodes.set(String(item.id), item as unknown as Graph['nodes'][number]);
+      const edges = new Map(
+        contextGraph.edges.map((edge) => [`${edge.source}:${edge.target}:${edge.relation}`, edge]),
+      );
+      for (const item of page.edges) {
+        const edge = item as unknown as Graph['edges'][number];
+        edges.set(`${edge.source}:${edge.target}:${edge.relation}`, edge);
+      }
+      const graph = {
+        nodes: [...nodes.values()],
+        edges: [...edges.values()],
+        truncated: page.has_more,
+      };
+      setContextGraph(graph);
+      setContextCursor(page.has_more && page.next_cursor ? page.next_cursor : null);
+      onGraph(graph);
     } catch (e) {
       onError((e as Error).message);
     }
@@ -137,6 +176,61 @@ export function HistoryTools({
           {message}
         </p>
       )}
+      {provenance && provenance.coverage === 'recorded' && (
+        <section aria-label="File provenance" className="file-provenance">
+          <h3>{provenance.status === 'deleted' ? 'Recorded deletion' : 'Recorded file lineage'}</h3>
+          <p>
+            Trusted capture receipts for <code>{path}</code> at <code>{commit}</code>.
+          </p>
+          <ol>
+            {provenance.lineage.map((receipt: any) => (
+              <li key={receipt.id}>
+                <strong>{receipt.change}</strong> ·{' '}
+                {receipt.capture_kind?.replaceAll('_', ' ') ||
+                  receipt.candidate_summary ||
+                  receipt.candidate}
+                {receipt.old_path && (
+                  <>
+                    {' '}
+                    · renamed from <code>{receipt.old_path}</code>
+                  </>
+                )}
+                <p>
+                  Execution <code>{receipt.execution_id}</code>, attempt {receipt.execution_epoch},
+                  capture lease {receipt.capture_epoch}; blobs{' '}
+                  <code>{receipt.old_blob || 'none'}</code> →{' '}
+                  <code>{receipt.new_blob || 'deleted'}</code>.
+                </p>
+              </li>
+            ))}
+          </ol>
+          {provenance.decisions?.map((decision: any) => (
+            <p key={decision.id}>Owner decision: {decision.rationale || decision.status}</p>
+          ))}
+          {!!provenance.rejected_alternatives?.length && (
+            <details>
+              <summary>Rejected alternatives and reasons</summary>
+              <ul>
+                {provenance.rejected_alternatives.map((item: any) => (
+                  <li key={`${item.decision}:${item.candidate}`}>{item.reason}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {provenance.lineage?.[0]?.run_id && (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => void loadContextGraph(!!contextCursor)}
+            >
+              {contextCursor
+                ? 'Load more intent and assertion context'
+                : 'Load intent and assertion context'}
+            </button>
+          )}
+        </section>
+      )}
+      <PagedRunHistory repo={snapshot.repository.id} onGraph={onGraph} />
     </div>
   );
 }

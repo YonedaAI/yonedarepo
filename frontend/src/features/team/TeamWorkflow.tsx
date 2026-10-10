@@ -8,6 +8,7 @@ export function TeamWorkflow({
   run,
   busy,
   onRetry,
+  onRepair,
   onProviders,
 }: {
   reviewer?: boolean;
@@ -15,6 +16,7 @@ export function TeamWorkflow({
   run: TeamRecord;
   busy: boolean;
   onRetry: (task: TeamRecord) => void;
+  onRepair: (task: TeamRecord) => void;
   onProviders?: () => void;
 }) {
   const tasks = teamTasks(snapshot, run);
@@ -61,6 +63,7 @@ export function TeamWorkflow({
               snapshot={snapshot}
               busy={busy}
               onRetry={onRetry}
+              onRepair={onRepair}
               onProviders={reviewer ? undefined : onProviders}
             />
           ))}
