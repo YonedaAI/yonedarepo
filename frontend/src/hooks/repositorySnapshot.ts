@@ -1,6 +1,30 @@
-import type { RepositoryOverview, RunDetail, Snapshot } from '../lib/types';
+import type { RepositoryOverview, RunDetail, RunsPage, Snapshot } from '../lib/types';
 
 const ACTIVE_RUN_STATES = new Set(['planning', 'researching', 'exploring']);
+
+export class RequestedRunNotFoundError extends Error {
+  constructor(runId: string) {
+    super(`Run "${runId}" was not found in this repository history.`);
+    this.name = 'RequestedRunNotFoundError';
+  }
+}
+
+export async function findRunInPages(
+  runId: string,
+  firstPage: RunsPage,
+  loadPage: (cursor: string) => Promise<RunsPage>,
+): Promise<Record<string, any>> {
+  let page = firstPage;
+  const visited = new Set<string>();
+  while (true) {
+    const match = page.items.find((item) => item.id === runId);
+    if (match) return match;
+    const cursor = page.has_more ? page.next_cursor : null;
+    if (!cursor || visited.has(cursor)) throw new RequestedRunNotFoundError(runId);
+    visited.add(cursor);
+    page = await loadPage(cursor);
+  }
+}
 
 export function scopedRunIds(
   pageItems: Record<string, any>[],

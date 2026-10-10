@@ -52,6 +52,26 @@ const snapshot: Snapshot = {
 };
 const noop = () => {};
 describe('reviewer run permissions', () => {
+  it('keeps an unresolved deep link on its requested run instead of showing the newest result', () => {
+    const html = renderToStaticMarkup(
+      createElement(Exploration, {
+        snapshot: { ...snapshot, runs: [{ id: 'reviewer-e5', intent: 'Latest failed trial' }] },
+        reviewer: true,
+        onChange: async () => {},
+        onError: noop,
+        onProviders: noop,
+        onAgents: noop,
+        onContext: noop,
+        onSelectedRun: noop,
+        initialRunId: 'reviewer-f07',
+        requestedRunError: 'Run "reviewer-f07" was not found in this repository history.',
+      }),
+    );
+    expect(html).toContain('reviewer-f07');
+    expect(html).toContain('was not found in this repository history');
+    expect(html).not.toContain('Latest failed trial');
+  });
+
   it('keeps an empty reviewer workspace focused on funded trials without contribution setup', () => {
     const props = {
       snapshot,

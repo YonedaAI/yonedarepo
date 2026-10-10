@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { RepositoryOverview, RunDetail, Snapshot } from '../lib/types';
-import { emptySnapshot, mergeRunDetails, scopedRunIds } from './repositorySnapshot';
+import { emptySnapshot, findRunInPages, mergeRunDetails, scopedRunIds } from './repositorySnapshot';
 
 describe('scoped snapshot refresh', () => {
+  it('finds a deep-linked run on older history pages and reports missing runs explicitly', async () => {
+    const pages = [
+      { items: [{ id: 'newest' }], next_cursor: 'older-1', watermark: 8, has_more: true },
+      { items: [{ id: 'middle' }], next_cursor: 'older-2', watermark: 8, has_more: true },
+      { items: [{ id: 'checked-old-result' }], next_cursor: null, watermark: 8, has_more: false },
+    ];
+    const loadPage = async (cursor: string) => pages[cursor === 'older-1' ? 1 : 2];
+
+    await expect(findRunInPages('checked-old-result', pages[0], loadPage)).resolves.toEqual({
+      id: 'checked-old-result',
+    });
+    await expect(findRunInPages('absent-run', pages[0], loadPage)).rejects.toThrow(
+      'Run "absent-run" was not found in this repository history.',
+    );
+  });
+
   it('hydrates the newest run and active run states without polling completed history', () => {
     expect(
       scopedRunIds(
