@@ -43,11 +43,13 @@ export function HistoryTools({
       setContextGraph({ nodes: [], edges: [] });
       if (graph.nodes?.length) onGraph(graph);
       setMessage(
-        graph.coverage === 'unknown'
-          ? 'No recorded decision covers this exact revision and path.'
-          : graph.truncated
-            ? 'Showing a bounded part of the recorded history. Some connected context is outside this view.'
-            : 'Showing recorded context for this source revision.',
+        graph.coverage === 'unknown' && graph.truncated
+          ? 'The bounded receipt scan reached its limit, so lineage is unknown in this view.'
+          : graph.coverage === 'unknown'
+            ? 'No recorded decision covers this exact revision and path.'
+            : graph.truncated
+              ? 'Showing a bounded part of the recorded history. Some connected context is outside this view.'
+              : 'Showing recorded context for this source revision.',
       );
     } catch (e) {
       onError((e as Error).message);
@@ -76,7 +78,7 @@ export function HistoryTools({
     const runId = provenance?.lineage?.[0]?.run_id;
     if (!runId) return;
     try {
-      const query = new URLSearchParams({ run_id: runId, limit: '250' });
+      const query = new URLSearchParams({ run_id: runId, limit: '200' });
       const cursor = next ? contextCursor : null;
       if (cursor) query.set('cursor', cursor);
       const page = await api<RunGraphPage>(

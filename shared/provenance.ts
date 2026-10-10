@@ -22,7 +22,8 @@ export interface CandidateDiffPageContract {
   diff: string;
   next_cursor: string | null;
   has_more: boolean;
-  watermark: number;
+  /** Stable digest of the captured diff used as the page snapshot token. */
+  watermark: string;
 }
 export interface ConflictStatusContract {
   conflicts: {

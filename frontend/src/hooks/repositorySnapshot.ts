@@ -1,5 +1,38 @@
 import type { RepositoryOverview, RunDetail, Snapshot } from '../lib/types';
 
+const ACTIVE_RUN_STATES = new Set(['planning', 'researching', 'exploring']);
+
+export function scopedRunIds(
+  pageItems: Record<string, any>[],
+  currentRuns: Record<string, any>[] = [],
+): string[] {
+  const ids = new Set<string>();
+  if (typeof pageItems[0]?.id === 'string') ids.add(pageItems[0].id);
+  for (const run of [...pageItems, ...currentRuns])
+    if (ACTIVE_RUN_STATES.has(run.status) && typeof run.id === 'string') ids.add(run.id);
+  return [...ids];
+}
+
+export function emptySnapshot(overview: RepositoryOverview): Snapshot {
+  return {
+    repository: overview.repository,
+    runs: [],
+    executions: [],
+    candidates: [],
+    evaluations: [],
+    decisions: [],
+    artifacts: [],
+    nodes: [],
+    edges: [],
+    seq: overview.watermark,
+    watermark: overview.watermark,
+    graph_paged: true,
+    capabilities: overview.capabilities as Snapshot['capabilities'],
+    team_tasks: [],
+    team_handoffs: [],
+  };
+}
+
 function mergeRows(before: Record<string, any>[], after: Record<string, any>[]) {
   const rows = new Map(before.map((row) => [row.id, row]));
   for (const row of after) rows.set(row.id, row);
