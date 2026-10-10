@@ -93,13 +93,14 @@ export async function reviewerTrialStatus(env: Env, owner: string) {
   let policy = await workspace(env, owner, { op: 'reviewer_status' });
   const repo = policy.repo_id;
   if (policy.active_trial) {
-    const snapshot = await ledger(env, repo, { op: 'snapshot', _workspace: owner });
-    const run = snapshot.runs.find((r: Json) => r.id === policy.active_trial);
-    const active = snapshot.executions.some(
-      (e: Json) =>
-        e.run_id === policy.active_trial &&
-        ['queued', 'running', 'capturing', 'evaluating'].includes(e.status),
-    );
+    const detail = await runDetailIfPresent(env, repo, owner, policy.active_trial);
+    const run = detail?.runs?.find((r: Json) => r.id === policy.active_trial);
+    const active =
+      detail?.executions?.some(
+        (e: Json) =>
+          e.run_id === policy.active_trial &&
+          ['queued', 'running', 'capturing', 'evaluating'].includes(e.status),
+      ) ?? false;
     if (run && !active && !['planning', 'integrating'].includes(run.status)) {
       await workspace(env, owner, { op: 'reviewer_trial_complete', id: policy.active_trial });
       policy = await workspace(env, owner, { op: 'reviewer_status' });
@@ -128,17 +129,16 @@ export async function resumeTrial(env: Env, owner: string) {
 }
 
 async function ensureTrialStarted(env: Env, owner: string, repo: string, id: string) {
-  const snapshot = await ledger(env, repo, { op: 'snapshot', _workspace: owner });
-  const existing = snapshot.runs.find((r: Json) => r.id === id);
+  const repository = await ledger(env, repo, { op: 'repository_status', _workspace: owner });
+  const existing = await runDetailIfPresent(env, repo, owner, id);
   if (!existing) {
     const approval = trialRequest(id);
-    checkLedger(snapshot, approval);
+    checkLedger({ capabilities: repository.capabilities }, approval);
     try {
       await ledger(env, repo, { ...approval, op: 'start_run', _workspace: owner });
     } catch (failure) {
       // A lost acknowledgement may have committed. Verify before reporting failure.
-      const updated = await ledger(env, repo, { op: 'snapshot', _workspace: owner });
-      if (!updated.runs.some((r: Json) => r.id === id)) throw failure;
+      if (!(await runDetailIfPresent(env, repo, owner, id))) throw failure;
     }
   }
   return {
@@ -146,4 +146,19 @@ async function ensureTrialStarted(env: Env, owner: string, repo: string, id: str
     run_id: id,
     url: `/?repo=${encodeURIComponent(repo)}&run=${encodeURIComponent(id)}`,
   };
+}
+
+async function runDetailIfPresent(
+  env: Env,
+  repo: string,
+  owner: string,
+  id: string,
+): Promise<Json | null> {
+  try {
+    return await ledger(env, repo, { op: 'run_detail', run_id: id, _workspace: owner });
+  } catch (failure) {
+    const error = failure as Error & { code?: string };
+    if (error.code === 'NOT_FOUND' && error.message === `Unknown runs ${id}`) return null;
+    throw failure;
+  }
 }

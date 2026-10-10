@@ -60,11 +60,19 @@ it('preserves a failed start reservation across reload and resumes the exact ID 
 it('resumes after a lost committed acknowledgement and failed readback without duplicate events or jobs', async () => {
   const f = await readyReviewer('resume_lostack');
   let lost = false;
+  let failReadback = false;
+  const operations: string[] = [];
   const failing = intercept(f.scoped, async (command, commit) => {
-    if (lost && command.op === 'snapshot') throw new Error('Simulated unavailable acknowledgement readback');
+    operations.push(String(command.op));
+    if (command.op === 'snapshot') throw new Error('Reviewer hot path must not read a full snapshot');
+    if (failReadback && command.op === 'run_detail') {
+      failReadback = false;
+      throw new Error('Simulated unavailable acknowledgement readback');
+    }
     const response = await commit();
     if (command.op === 'start_run' && response.ok) {
       lost = true;
+      failReadback = true;
       await response.body?.cancel();
       throw new Error('Simulated lost committed start_run acknowledgement');
     }
@@ -73,20 +81,54 @@ it('resumes after a lost committed acknowledgement and failed readback without d
   const first = await api(failing, '/api/reviewer/trial', f.cookie, { request_id: 'lost-ack-resume-12345678' });
   expect(first.status).toBe(409);
   expect(lost).toBe(true);
+  expect(operations).toContain('run_detail');
+  expect(operations).toContain('repository_status');
+  expect(operations).not.toContain('snapshot');
+  expect((await api(failing, '/api/reviewer', f.cookie)).status).toBe(200);
   const before = await ledger(bindings, f.repo, { op: 'snapshot' });
   const outbox = await ledger(bindings, f.repo, { op: 'outbox' });
   expect(before.runs).toHaveLength(1);
   expect(before.executions).toHaveLength(2);
   await reload(f.owner, f.repo);
-  const responses = await Promise.all([1, 2, 3].map(() => api(f.scoped, '/api/reviewer/resume', f.cookie, {})));
+  const responses = await Promise.all([1, 2, 3].map(() => api(failing, '/api/reviewer/resume', f.cookie, {})));
   expect(responses.map(r => r.status)).toEqual([200, 200, 200]);
   for (const r of responses) expect(await r.json()).toMatchObject({ run_id: before.runs[0].id });
+  const replay = await api(failing, '/api/reviewer/trial', f.cookie, { request_id: 'lost-ack-resume-12345678' });
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toMatchObject({ run_id: before.runs[0].id });
+  expect(operations).not.toContain('snapshot');
   const after = await ledger(bindings, f.repo, { op: 'snapshot' });
   expect(after.seq).toBe(before.seq);
   expect(after.runs).toEqual(before.runs);
   expect(after.executions).toEqual(before.executions);
   expect(outbox.jobs.filter((job: Json) => job.kind === 'agent')).toHaveLength(2);
   expect(await ledger(bindings, f.repo, { op: 'outbox' })).toEqual(outbox);
+});
+
+it('does not treat unknown run-detail operations or authorization failures as a missing run', async () => {
+  const f = await readyReviewer('resume_detail_errors');
+  let detailFailure = {
+    code: 'NOT_FOUND',
+    message: 'Unknown repository operation',
+  };
+  const scoped = intercept(f.scoped, async (command, commit) => {
+    if (command.op === 'snapshot') throw new Error('Reviewer hot path must not read a full snapshot');
+    if (command.op === 'run_detail')
+      return Response.json({ error: detailFailure }, { status: 409 });
+    return commit();
+  });
+  const unknown = await api(scoped, '/api/reviewer/trial', f.cookie, {
+    request_id: 'detail-unknown-op-12345678',
+  });
+  expect(unknown.status).toBe(409);
+  expect(await unknown.json()).toMatchObject({ error: detailFailure });
+
+  detailFailure = { code: 'FORBIDDEN', message: 'Repository belongs to another workspace' };
+  const unauthorized = await api(scoped, '/api/reviewer/trial', f.cookie, {
+    request_id: 'detail-forbidden-12345678',
+  });
+  expect(unauthorized.status).toBe(403);
+  expect(await unauthorized.json()).toMatchObject({ error: detailFailure });
 });
 
 it('keeps the active slot while an original start is in flight and concurrent resumes create one run', async () => {
