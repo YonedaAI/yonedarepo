@@ -9,7 +9,12 @@ pub(crate) fn broker_url(path: &str) -> String {
     )
 }
 pub(crate) async fn broker(path: &str, body: Value, supervisor: bool) -> Result<Value> {
-    let mut request = reqwest::Client::new().post(broker_url(path)).json(&body);
+    let mut request = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(err)?
+        .post(broker_url(path))
+        .json(&body);
     if supervisor {
         request = request.header(
             "authorization",

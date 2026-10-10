@@ -13,5 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && npm install -g pnpm@11.16.0 @openai/codex@0.161.0 @anthropic-ai/claude-code@2.1.293 @google/gemini-cli@0.63.0 \
     && useradd --uid 1000 --create-home agent && mkdir -p /work /home/agent/.cargo && chmod 700 /root
 COPY --from=build /yoneda-runtime /usr/local/bin/yoneda-runtime
+COPY --chmod=755 cloudflare/containers/start-runtime.sh /usr/local/bin/start-runtime
 EXPOSE 8080
-ENTRYPOINT ["/usr/local/bin/yoneda-runtime"]
+ENTRYPOINT ["/usr/local/bin/start-runtime"]

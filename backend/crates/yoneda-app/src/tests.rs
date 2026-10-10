@@ -24,6 +24,8 @@ mod model_budgets;
 mod product_runs;
 #[path = "tests/published_continuation.rs"]
 mod published_continuation;
+#[path = "tests/reliability.rs"]
+mod reliability;
 #[path = "tests/restarts.rs"]
 mod restarts;
 #[path = "tests/single_agent.rs"]

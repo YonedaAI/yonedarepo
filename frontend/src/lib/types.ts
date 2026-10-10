@@ -1,4 +1,6 @@
-export type AccountIdentity = { role: 'user'; username: string } | { role: 'admin' };
+export type AccountIdentity =
+  | { role: 'user'; username: string; reviewer?: boolean }
+  | { role: 'admin' };
 export type SetupStage =
   | 'queued'
   | 'checking_remote'

@@ -1,6 +1,6 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
-import { candidateSource } from './candidate-source';
+import { candidateDetail, candidateSource, hydrateOwnerSnapshot } from './candidate-source';
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
@@ -10,6 +10,8 @@ import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
 import { deleteRepository } from './repository-deletion';
+import { resynchronize } from './repository-recovery';
+import { reviewerGuard, reviewerRoute } from './reviewer';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
@@ -26,6 +28,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     return response({
       service: 'yonedarepo',
       v: 1,
+      revision: env.BUILD_REVISION ?? 'development',
       models: { codex: env.CODEX_MODEL, claude: env.CLAUDE_MODEL },
     });
   if (url.pathname.startsWith('/mcp/')) return remoteMcp(req, env, url.pathname.split('/')[2]);
@@ -39,6 +42,10 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (!principal) return error('UNAUTHORIZED', 'Sign in to your workspace', 401);
     if (principal.role === 'agent')
       return error('FORBIDDEN', 'Use the scoped MCP and Git endpoints', 403);
+    const restricted = await reviewerGuard(req, env, principal);
+    if (restricted) return restricted;
+    const reviewer = await reviewerRoute(req, env, principal);
+    if (reviewer) return reviewer;
     const settings = await settingsRoute(req, env, principal);
     if (settings) return settings;
     if (url.pathname === '/api/budget' && req.method === 'GET')
@@ -56,7 +63,11 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (url.pathname === '/api/repositories' && req.method === 'GET') {
       const identity =
         principal.role === 'user'
-          ? { role: 'user', username: principal.workspace }
+          ? {
+              role: 'user',
+              username: principal.workspace,
+              ...(principal.reviewer ? { reviewer: true } : {}),
+            }
           : { role: 'admin' };
       if (principal.role === 'user') {
         const value = await workspace(env, principal.workspace, { op: 'projects' });
@@ -115,23 +126,27 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
       return await deleteRepository(req, env, principal, repo);
     if (action !== 'init')
-      await ledger(env, repo, { op: 'snapshot', _workspace: principal.workspace });
+      await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    if (action === 'resync_repository' && req.method === 'POST')
+      return await resynchronize(req, env, principal, repo);
     if (action === 'grants') return grantRoute(req, env, principal, repo);
     if (action === 'site' && req.method === 'GET') {
-      const s = await ledger(env, repo, { op: 'snapshot' });
-      return s.repository.site?.digest && env.SITE_ORIGIN
-        ? response({ url: `${env.SITE_ORIGIN}/p/${repo}/`, commit: s.repository.site.commit })
+      const s = await ledger(env, repo, { op: 'repository_status' });
+      return s.site?.digest && env.SITE_ORIGIN
+        ? response({ url: `${env.SITE_ORIGIN}/p/${repo}/`, commit: s.site.commit })
         : error('NOT_FOUND', 'No website has been published', 404);
     }
-    if (action === 'site_preview' && req.method === 'GET') return siteRoute(env, repo, req);
+    if (action === 'site_preview' && req.method === 'GET') return await siteRoute(env, repo, req);
     if (action === 'evidence' && req.method === 'GET')
-      return evidence(env, repo, url.searchParams.get('digest') ?? '');
+      return await evidence(env, repo, url.searchParams.get('digest') ?? '');
+    if (action === 'candidate' && req.method === 'GET')
+      return await candidateDetail(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'candidate_source' && req.method === 'GET')
-      return candidateSource(env, repo, url.searchParams.get('id') ?? '');
+      return await candidateSource(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'team_source' && req.method === 'GET')
-      return teamTaskSource(
+      return await teamTaskSource(
         env,
         repo,
         url.searchParams.get('run_id') ?? '',
@@ -252,7 +267,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);
         await env.EXECUTIONS.get(env.EXECUTIONS.idFromName(name)).stop();
       }
-    return response(value);
+    return response(action === 'snapshot' ? await hydrateOwnerSnapshot(env, value) : value);
   } catch (e: any) {
     const repo = url.pathname.split('/')[3];
     writeLog('request.rejected', {

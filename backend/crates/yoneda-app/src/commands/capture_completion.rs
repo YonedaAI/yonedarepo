@@ -19,7 +19,12 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     if super::team::captured(db, j, result, now)? {
         return Ok(());
     }
-    let mut candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"diff":result["diff"],"summary":result["summary"],"status":"evaluating","capture_job":j["id"]});
+    let mut candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"summary":result["summary"],"status":"evaluating","capture_job":j["id"]});
+    // Hosted capture stores the diff in R2 before submitting this digest. Legacy
+    // native completion fixtures may omit it; inline source never enters the candidate/job.
+    if result.get("diff_digest").is_some() {
+        candidate["diff_digest"] = json!(hash(result, "diff_digest", &[64])?.to_ascii_lowercase());
+    }
     if let Some(manifest) = j["payload"].get("integration_manifest") {
         candidate["integration_manifest"] = manifest.clone();
         candidate["integration_digest"] = j["payload"]["integration_digest"].clone();
@@ -49,4 +54,45 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         json!({"candidate":candidate,"run_id":run_id,"policy":policy}),
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::NativeStore;
+
+    #[test]
+    fn megabyte_capture_diff_does_not_expand_evaluator_job_or_candidate_ledger() {
+        let db = NativeStore::memory().unwrap();
+        crate::execute(
+            &db,
+            json!({"op":"init","now":1000,"id":"transport","name":"Transport fixture",
+            "remote":{"namespace":"test","name":"transport"},"commit":"a".repeat(40),
+            "policy":yoneda_core::Policy::default()}),
+        )
+        .unwrap();
+        let execution = json!({"id":"execution","run_id":"run","status":"capturing"});
+        create(&db, "executions", "execution", &execution).unwrap();
+        let job = json!({"id":"capture","payload":{"execution":execution,"base":{"repository":"test/transport","commit":"a".repeat(40)}}});
+        let diff = "x".repeat(1024 * 1024 + 1);
+        let digest = yoneda_core::digest(diff.as_bytes());
+        let result = json!({"id":"candidate","revision":{"repository":"test/fork","commit":"b".repeat(40)},
+            "tree":"c".repeat(40),"paths":["large.txt"],"diff":diff,"diff_digest":digest,"summary":"Large candidate"});
+        complete(&db, &job, &result, 1000).unwrap();
+        let candidate = get(&db, "candidates", "candidate").unwrap();
+        let evaluator = get(&db, "jobs", "evaluate:candidate").unwrap();
+        assert!(
+            evaluator.to_string().len() < 1024 * 1024,
+            "Evaluator job exceeds supervisor 1 MiB body limit"
+        );
+        assert!(
+            candidate.get("diff").is_none(),
+            "Candidate ledger must contain only the immutable pointer"
+        );
+        assert_eq!(candidate["diff_digest"], digest);
+        assert_eq!(
+            evaluator["payload"]["candidate"]["revision"],
+            result["revision"]
+        );
+    }
 }

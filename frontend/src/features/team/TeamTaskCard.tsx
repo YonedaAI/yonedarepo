@@ -15,18 +15,20 @@ export function TeamTaskCard({
   task,
   tasks,
   run,
+  reviewer = false,
   snapshot,
   busy,
   onRetry,
   onProviders,
 }: {
+  reviewer?: boolean;
   task: TeamRecord;
   tasks: TeamRecord[];
   run: TeamRecord;
   snapshot: Snapshot;
   busy: boolean;
   onRetry: (task: TeamRecord) => void;
-  onProviders: () => void;
+  onProviders?: () => void;
 }) {
   const execution = snapshot.executions.find((item) => item.id === task.execution_id);
   const handoffs = (snapshot.team_handoffs ?? []).filter(
@@ -117,13 +119,14 @@ export function TeamTaskCard({
         <ExecutionLogs
           repo={snapshot.repository.id}
           execution={execution}
-          onProviders={onProviders}
+          onProviders={reviewer ? undefined : onProviders}
         />
       )}
       {task.status === 'complete' && task.output && (
         <TeamSource repo={snapshot.repository.id} run={run.id} task={task} />
       )}
-      {task.status === 'failed' &&
+      {!reviewer &&
+        task.status === 'failed' &&
         (canRetryTeamTask(task, tasks, run) ? (
           <button
             type="button"

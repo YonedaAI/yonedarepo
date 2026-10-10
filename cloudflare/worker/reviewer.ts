@@ -1,0 +1,97 @@
+import { username } from './accounts';
+import { error, readJson, response } from './http';
+import { scheduleProject } from './project-provisioning';
+import { reviewerPolicy } from './reviewer-policy';
+import { resumeTrial, startTrial } from './reviewer-trial';
+import { sha } from './storage';
+import type { Env, Principal } from './types';
+import { providerCredentials, seal } from './vault';
+import { workspace } from './workspace';
+
+export async function reviewerRoute(req: Request, env: Env, principal: Principal) {
+  const path = new URL(req.url).pathname;
+  if (path.startsWith('/api/admin/reviewer/')) {
+    if (principal.role !== 'admin') return error('FORBIDDEN', 'Administrator required', 403);
+    const body = await readJson(req);
+    const owner = username(body.username);
+    if (path.endsWith('/revoke') && req.method === 'POST')
+      return response(await workspace(env, owner, { op: 'reviewer_revoke' }));
+    if (!path.endsWith('/provision') || req.method !== 'POST')
+      return error('NOT_FOUND', 'Unknown reviewer operation', 404);
+    const repo = `reviewer-${(await sha(owner)).slice(0, 24)}`;
+    const expires = Date.UTC(2026, 9, 23);
+    const policy = await workspace(env, owner, {
+      op: 'reviewer_configure',
+      repo_id: repo,
+      expires,
+    });
+    for (const [provider, model] of [
+      ['codex', 'gpt-5.6-luna'],
+      ['claude', 'claude-sonnet-4-6'],
+    ]) {
+      const connection = `reviewer-${provider}`;
+      const { key } = await providerCredentials(env, '_admin', provider);
+      await workspace(env, owner, {
+        op: 'provider_put',
+        provider,
+        model,
+        connection,
+        label: `Funded ${provider}`,
+        sealed: await seal(env, owner, provider, key, connection),
+      });
+    }
+    const project = await workspace(env, owner, {
+      op: 'project_reserve',
+      id: repo,
+      name: 'Reviewer sandbox',
+      source: null,
+      policy: reviewerPolicy,
+    });
+    await scheduleProject(env, owner, project);
+    return response({
+      username: owner,
+      repo_id: repo,
+      expires: policy.expires,
+      budget_microusd: policy.limit_microusd,
+      status: project.status,
+    });
+  }
+  if (!path.startsWith('/api/reviewer')) return null;
+  if (!principal.reviewer) return error('FORBIDDEN', 'Reviewer account required', 403);
+  const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
+  if (path === '/api/reviewer' && req.method === 'GET') {
+    return response({
+      ...policy,
+      budget: await workspace(env, principal.workspace, { op: 'budget_status' }),
+      project: await workspace(env, principal.workspace, { op: 'project_get', id: policy.repo_id }),
+    });
+  }
+  if (path === '/api/reviewer/trial' && req.method === 'POST') {
+    const body = await readJson(req);
+    if (typeof body.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(body.request_id))
+      return error('INVALID_INPUT', 'A stable request ID is required');
+    return response(await startTrial(env, principal.workspace, body.request_id));
+  }
+  if (path === '/api/reviewer/resume' && req.method === 'POST')
+    return response(await resumeTrial(env, principal.workspace));
+  return error('NOT_FOUND', 'Unknown reviewer route', 404);
+}
+
+/** Restrict reviewer mutations at the server before any generic owner route runs. */
+export async function reviewerGuard(req: Request, env: Env, principal: Principal) {
+  if (!principal.reviewer) return null;
+  const path = new URL(req.url).pathname;
+  const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
+  if (policy.revoked || policy.expires <= Date.now())
+    return error('UNAUTHORIZED', 'Reviewer access expired', 401);
+  if (path.startsWith('/api/reviewer')) return null;
+  if (req.method === 'GET') return null;
+  const parts = path.split('/').filter(Boolean);
+  if (
+    parts[1] === 'repos' &&
+    parts[2] === policy.repo_id &&
+    ['accept', 'cancel_run', 'resync_repository'].includes(parts[3])
+  )
+    return null;
+  return error('FORBIDDEN', 'Reviewer access permits funded trials and sandbox review only', 403);
+}

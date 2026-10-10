@@ -19,8 +19,8 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   }
   async siteManifest(repo: string): Promise<{ digest: string; commit: string } | null> {
     try {
-      const snapshot = await ledger(this.env, repo, { op: 'snapshot' });
-      return snapshot.repository.site ?? null;
+      const repository = await ledger(this.env, repo, { op: 'repository_status' });
+      return repository.site ?? null;
     } catch (error: any) {
       if (['REPOSITORY_DELETED', 'NOT_FOUND'].includes(error.code)) return null;
       throw error;
@@ -52,6 +52,12 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             job_id: envelope.job_id,
             models: { codex: this.env.CODEX_MODEL, claude: this.env.CLAUDE_MODEL },
           });
+          if (job.deferred) {
+            message.retry({
+              delaySeconds: Math.max(1, Math.ceil((job.not_before - now()) / 1000)),
+            });
+            return;
+          }
           if (job.already_done) {
             message.ack();
             return;
@@ -76,9 +82,11 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               const info = await repo.info();
               // Older imports can have a valid canonical branch different from the metadata.
               // Retain that branch in the fork so capture preserves its ancestry.
-              const snapshot = await ledger(this.env, envelope.repo_id, { op: 'snapshot' });
+              const repository = await ledger(this.env, envelope.repo_id, {
+                op: 'repository_status',
+              });
               const fork = await repo.fork(name, {
-                defaultBranchOnly: snapshot.repository.remote.branch === info.defaultBranch,
+                defaultBranchOnly: repository.remote.branch === info.defaultBranch,
               });
               using target = await this.env.ARTIFACTS.get(name);
               await target.revokeToken(fork.token);

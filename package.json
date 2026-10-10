@@ -9,7 +9,8 @@
     "format": "biome check --write cloudflare/worker cloudflare/sites frontend/src shared",
     "test": "vitest run --config tests/workers/vitest.config.ts",
     "test:runtime": "node --test tests/runtime/*.test.mjs",
-    "deploy": "cargo xtask deploy"
+    "deploy": "cargo xtask deploy",
+    "test:frontend": "vitest run --config tests/frontend/vitest.config.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",

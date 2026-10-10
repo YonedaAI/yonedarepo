@@ -12,6 +12,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         return Err(bad("Invalid reservation amount"));
     }
     if c["op"] == "budget_reserve" {
+        if !super::reviewer::valid(db, now)? {
+            return Err(Error::new(
+                "REVIEWER_EXPIRED",
+                "Reviewer inference access expired",
+            ));
+        }
         if let Ok(existing) = get(db, TABLE, &id) {
             if existing["reserved"] != amount {
                 return Err(bad("Reservation key reused for different amount"));
@@ -24,7 +30,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         if charged > number(&budget, "limit")? {
             return Err(Error::new(
                 "BUDGET_EXHAUSTED",
-                "Claude testing budget exhausted; an explicit limit increase is required",
+                "Workspace inference budget exhausted",
             ));
         }
         let reservation = json!({"reserved":amount,"charged":amount,"status":"reserved","at":now});

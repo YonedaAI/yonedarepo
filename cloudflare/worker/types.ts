@@ -34,10 +34,12 @@ export interface Env {
   STARTER_REPO?: string;
   SITE_ORIGIN?: string;
   PUBLIC_APP_ORIGIN?: string;
+  BUILD_REVISION?: string;
 }
 export type Principal = {
   workspace: string;
   role: 'user' | 'admin' | 'agent';
+  reviewer?: boolean;
   grant?: { id: string; repo: string; scope: string; expires?: number };
 };
 export type Scope = {

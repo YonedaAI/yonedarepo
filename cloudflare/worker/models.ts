@@ -27,8 +27,20 @@ export const modelHandler =
       const path = new URL(req.url).pathname;
       if (req.method !== 'POST') return error('FORBIDDEN', 'POST required', 403);
       const prepared = prepareModelRequest(job, provider, path, await readJson(req, 256 * 1024));
-      const snapshot = await ledger(env, scope.repo_id, { op: 'snapshot' });
-      const owner = snapshot.repository.workspace ?? '_admin';
+      const repository = await ledger(env, scope.repo_id, { op: 'repository_status' });
+      const owner = repository.workspace ?? '_admin';
+      const trialPolicy =
+        owner === '_admin' ? null : await workspace(env, owner, { op: 'reviewer_status' });
+      const reviewer = Boolean(trialPolicy?.repo_id);
+      if (
+        reviewer &&
+        (trialPolicy?.revoked ||
+          trialPolicy?.expires <= Date.now() ||
+          trialPolicy?.repo_id !== scope.repo_id)
+      )
+        throw Object.assign(new Error('Reviewer inference access expired or outside sandbox'), {
+          code: 'REVIEWER_EXPIRED',
+        });
       const { key } = await providerCredentials(
         env,
         owner,
@@ -48,12 +60,15 @@ export const modelHandler =
       requestNumber = counted.number;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
-      if (prepared.reservation) {
+      const ceiling = reviewer ? counted.reservation_microusd : prepared.reservation;
+      if (reviewer && !Number.isSafeInteger(ceiling))
+        throw new Error('Reviewer inference requires a priced run reservation');
+      if (ceiling !== undefined) {
         try {
           await workspace(env, budgetOwner, {
             op: 'budget_reserve',
             id: reservationId,
-            amount: prepared.reservation,
+            amount: ceiling,
           });
         } catch (failure) {
           // No upstream request has been sent. Release only this known-unused run reservation.
@@ -94,19 +109,27 @@ export const modelHandler =
         duration_ms: Date.now() - started,
         error_code: providerStatusCode(result.status),
       });
-      const tracked = prepared.reservation
-        ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
-        : result;
+      const tracked =
+        prepared.reservation && !reviewer
+          ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
+          : result;
       return counted.reservation_id
-        ? trackProviderUsage(tracked, provider, (usage) =>
-            ledger(env, scope.repo_id, {
+        ? trackProviderUsage(tracked, provider, async (usage) => {
+            const settled = await ledger(env, scope.repo_id, {
               op: 'settle_model_request',
               job_id: job.id,
               epoch: job.epoch,
               reservation_id: counted.reservation_id,
               ...usage,
-            }),
-          )
+            });
+            if (reviewer)
+              await workspace(env, owner, {
+                op: 'budget_settle',
+                id: reservationId,
+                amount: settled.charged_microusd,
+              });
+            return settled;
+          })
         : tracked;
     } catch (e: any) {
       if (attempt)

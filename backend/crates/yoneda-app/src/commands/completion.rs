@@ -206,32 +206,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 d["status"] = json!("publication_conflict");
                 d["observed"] = result.clone();
             } else {
-                r["published_commit"] = result["commit"].clone();
-                r["pending"] = Value::Null;
-                d["status"] = json!("published");
-                d["published_at"] = json!(now);
-                let candidate = get(db, "candidates", &string(&d, "candidate")?)?;
-                let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
-                if evaluation["deployment"]["commit"] == d["target"]["commit"]
-                    && evaluation["deployment"]["digest"].is_string()
-                {
-                    r["site"] = evaluation["deployment"].clone();
-                }
-                for path in candidate["paths"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                {
-                    let anchor = format!("source:{}:{path}", string(&d["target"], "commit")?);
-                    edge(
-                        db,
-                        &did,
-                        &anchor,
-                        "published_as",
-                        "canonical Git HEAD independently read back",
-                    )?;
-                }
+                record_publication(db, &mut r, &mut d, now)?;
             }
             save(db, "repository", "repo", &r)?;
             save(db, "decisions", &did, &d)?;
@@ -258,4 +233,44 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         json!({"id":id,"kind":j["kind"],"epoch":j["epoch"]}),
     )?;
     Ok(json!({"status":"completed","id":id}))
+}
+
+/// Record independently observed canonical publication, including its graph and site projection.
+pub(super) fn record_publication<S: SqlStore>(
+    db: &S,
+    repository: &mut Value,
+    decision: &mut Value,
+    now: i64,
+) -> Result<()> {
+    let did = string(decision, "id")?;
+    let commit = string(&decision["target"], "commit")?;
+    repository["head_commit"] = json!(commit);
+    repository["published_commit"] = json!(commit);
+    repository["pending"] = Value::Null;
+    repository["status"] = json!("ready");
+    repository["site"] = Value::Null;
+    decision["status"] = json!("published");
+    decision["published_at"] = json!(now);
+    let candidate = get(db, "candidates", &string(decision, "candidate")?)?;
+    let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
+    if evaluation["deployment"]["commit"] == commit
+        && evaluation["deployment"]["digest"].is_string()
+    {
+        repository["site"] = evaluation["deployment"].clone();
+    }
+    for path in candidate["paths"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        edge(
+            db,
+            &did,
+            &format!("source:{commit}:{path}"),
+            "published_as",
+            "canonical Git HEAD independently read back",
+        )?;
+    }
+    Ok(())
 }

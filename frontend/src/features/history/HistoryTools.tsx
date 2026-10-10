@@ -3,10 +3,12 @@ import { useState } from 'react';
 import { api } from '../../lib/api';
 import type { Graph, Snapshot } from '../../lib/types';
 export function HistoryTools({
+  reviewer = false,
   snapshot,
   onGraph,
   onError,
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   onGraph: (graph: Graph) => void;
   onError: (message: string) => void;
@@ -90,7 +92,7 @@ export function HistoryTools({
           <button type="submit">Trace history</button>
         </form>
       </section>
-      {current && (
+      {current && !reviewer && (
         <section>
           <h2>
             <Activity size={18} />

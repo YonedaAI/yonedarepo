@@ -51,6 +51,23 @@ fn execution_id(job: &Value) -> Option<&str> {
 }
 
 pub(crate) fn check_lineage<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
+    if job["kind"] == "publish" {
+        // Selection transfers this immutable revision to owner publication authority.
+        // Only the ledger-issued publisher may bypass live agent ancestry checks.
+        let did = string(&job["payload"], "decision_id")?;
+        let decision = get(db, "decisions", &did)?;
+        let repository = repo(db)?;
+        if job["id"] != format!("publish:{did}")
+            || decision["status"] != "publication_pending"
+            || repository["pending"] != did
+            || repository["head_commit"] != decision["target"]["commit"]
+            || job["payload"]["target"] != decision["target"]
+            || job["payload"]["expected"] != decision["base"]
+        {
+            return Err(Error::new("FENCED", "Publication reservation changed"));
+        }
+        return Ok(());
+    }
     let Some(id) = execution_id(job) else {
         return Ok(());
     };
@@ -107,7 +124,7 @@ pub(crate) fn fence_descendants<S: SqlStore>(db: &S, job: &Value, now: i64) -> R
         save_execution(db, &e, now)?;
     }
     for mut child in run_jobs(db, &run_id)? {
-        if execution_id(&child).is_some_and(|id| ids.contains(id)) {
+        if child["kind"] != "publish" && execution_id(&child).is_some_and(|id| ids.contains(id)) {
             cancel_job(db, &mut child, now)?;
         }
     }
@@ -123,6 +140,16 @@ pub(crate) fn fence_descendants<S: SqlStore>(db: &S, job: &Value, now: i64) -> R
         )
         .map_err(|e| bad(&e.to_string()))?;
         if c["execution"].as_str().is_some_and(|id| ids.contains(id)) {
+            // Keep selected captures as immutable decision evidence even if their producer fails.
+            if !db
+                .query(
+                    "SELECT id FROM decisions WHERE json_extract(payload,'$.candidate')=? LIMIT 1",
+                    &[c["id"].clone()],
+                )?
+                .is_empty()
+            {
+                continue;
+            }
             c["status"] = json!("cancelled");
             save(db, "candidates", &string(&c, "id")?, &c)?;
         }

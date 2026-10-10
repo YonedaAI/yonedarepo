@@ -442,5 +442,14 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "peer_status",
+    "description": "Inspect declared work, dependencies and current status of peers in this run. Candidate source is not returned. Use before choosing work or reporting a handoff.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
   }
 ]

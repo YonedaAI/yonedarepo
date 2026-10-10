@@ -103,7 +103,7 @@ export function GraphTools({
               try {
                 onGraph(
                   await api<Graph>(
-                    `repos/${repo}/graph?${new URLSearchParams({ id: selected.id, depth: '3' })}`,
+                    `repos/${repo}/graph?${new URLSearchParams({ id: selected.id, depth: '1' })}`,
                   ),
                 );
               } catch (e) {
@@ -113,7 +113,7 @@ export function GraphTools({
               }
             }}
           >
-            Expand selected context
+            Expand one neighboring step
           </button>
         )}
       </form>

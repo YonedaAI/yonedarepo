@@ -19,7 +19,9 @@ mod leases;
 mod mcp;
 mod model_budgets;
 mod model_reservations;
+mod peers;
 mod policy;
+mod recovery;
 mod repository;
 mod resources;
 mod restarts;
@@ -70,11 +72,17 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     }
     context_access::activation(db, now)?;
     match string(&c, "op")?.as_str() {
-        "repository_status" => crate::storage::repo(db),
+        "repository_status" => {
+            let mut r = crate::storage::repo(db)?;
+            r["capabilities"] = serde_json::json!({"workspace_authority":1});
+            Ok(r)
+        }
+        "resync_repository" | "defer_job" => recovery::handle(db, &c, now),
         "deletion_status" => deletion::status(db),
         "retry_deletion_cleanup" => deletion::retry_cleanup(db, &c),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
+        "peer_status" => peers::read(db, &c, now),
         "update_policy" => policy::update(db, c, now),
         "configure_context_study" => study::configure(db, c, now),
         "init" | "snapshot" => repository::handle(db, c, now),

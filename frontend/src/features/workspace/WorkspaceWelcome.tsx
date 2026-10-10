@@ -9,13 +9,16 @@ import {
 } from 'lucide-react';
 import type { useRepository } from '../../hooks/useRepository';
 import { AccountPanel } from './AccountPanel';
+import { ReviewerAccess } from './ReviewerAccess';
 import { SetupProgress } from './SetupProgress';
 
 export function WorkspaceWelcome({
+  reviewer = false,
   state,
   onProject,
   onProviders,
 }: {
+  reviewer?: boolean;
   state: ReturnType<typeof useRepository>;
   onProject: () => void;
   onProviders: () => void;
@@ -23,6 +26,7 @@ export function WorkspaceWelcome({
   if (state.project && ['provisioning', 'failed'].includes(state.project.status))
     return (
       <SetupProgress
+        reviewer={reviewer}
         key={state.id}
         project={state.project}
         error={state.error}
@@ -81,11 +85,25 @@ export function WorkspaceWelcome({
           </div>
           <p className="welcome-note">Bring your agent. Give the next one a head start.</p>
         </div>
-        <AccountPanel
-          onConnected={() => {
-            void state.discover();
-          }}
-        />
+        <div>
+          <ReviewerAccess
+            onConnected={() => {
+              void state.discover();
+            }}
+          />
+          <AccountPanel
+            onConnected={() => {
+              void state.discover();
+            }}
+          />
+        </div>
+      </section>
+    );
+  if (reviewer)
+    return (
+      <section className="workspace-start">
+        <h1>Your reviewer sandbox</h1>
+        <p>Your funded sandbox will appear here when it is ready.</p>
       </section>
     );
   return (

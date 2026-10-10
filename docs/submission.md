@@ -4,22 +4,24 @@ YonedaRepo treats a development run as a shared intent and a set of concurrent a
 
 - **Video:** [narrated product walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/mvp-2026-10-08/yonedarepo-mvp.mp4). Edited actual browser captures and live evidence; synthetic narration. See [script and production notes](demo-video.md).
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0.
-- **Try it:** [development platform](https://yonedarepo-dev.mlong-f01.workers.dev/). Create an account, connect your own provider key, create a repository and approve a two-agent run. Paid inference uses your provider account.
+- **Try it:** [hosted platform](https://yonedarepo-dev.mlong-f01.workers.dev/). Choose **Have a reviewer access key?** and enter the privately supplied key. Funded provider connections and a sandbox are prepared; choose **Run prepared example**. From the submitted source, `node tools/reviewer.mjs` starts the same example without installing dependencies.
 - **Immediate public example:** [Juniper Garden](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/), built by concurrent Luna/Sonnet agents and published after an owner-directed selection.
 - **Run locally:** [README](../README.md#get-running) and [runbook](runbook.md). The local gate needs no inference keys; local Artifacts access requires Cloudflare authentication and configured resources.
 - **Connect your existing agent:** [remote MCP and Git setup](remote-mcp.md), using a revocable repository-scoped key from the website.
 - **Evidence and limits:** [release verification](release-evidence.md) and [machine-readable record](release-evidence.json).
 
-## Five-minute hands-on path
+## Reviewer hands-on path
 
-1. Sign up and save the one-time recovery code privately.
-2. Connect a provider key under **Agent providers**, or use **Connect local agent** for your own local coding agent.
-3. Add a website-template repository. Choose **New run** and ask for a small static site, such as an accessible event page. Give two approaches the same goal. Review and approve the brief and independent check commands.
-4. Watch concurrent progress, inspect captured code and previews, and explore typed context. When the run is **Ready for review**, select an eligible approach and record a reason and alternative tradeoffs.
-5. Wait for verified canonical publication, then open the published site. Use **Intentional history** to trace its code to intent and evidence. A fresh MCP client can recover that context and submit another checked contribution.
+1. Enter the reviewer access key. The sandbox opens with configured agents and recorded runs.
+2. Choose **Run prepared example** or run `node tools/reviewer.mjs` from the source checkout. The command asks for the same key privately. One trial may run at a time; each trial is limited to $5 within a shared $50 allowance.
+3. Watch the two specialists' activity and captured handoffs, then review the integrated exact revision and independent checks.
+4. Open **Evidence trail** to read intent, assertions, trusted capture, checks and the owner's rationale at normal text size. **Explore graph** provides the optional relationship view.
+5. Select an eligible candidate, record the decision and wait for verified publication. Reviewer publication affects only the sandbox. A failed or conflicting publish can be reconciled using **Recover repository**, which reads the actual canonical Git HEAD and retains the failed decision as history.
 
 Use a project-specific test profile: the starter HTML smoke check does not prove all browser interactions or product requirements. Hosted sites are isolated relative-path static output; full-stack applications and external API calls require a future deployment profile.
 
 ## Submission checklist
+
+The linked Oct 8 video and CI below are historical evidence and predate the reviewer-flow changes. Current source, deployment, live reviewer acceptance and replacement video must be checked separately before entry. No competition form submission is claimed.
 
 The public Apache-2.0 repository and release assets are published. The 8:48 video was downloaded anonymously and matched its local SHA-256; all 71 native Rust tests passed from the exported source. [Fresh public CI](https://github.com/MagnetonIO/yonedarepo/actions/runs/37795843377) passed the complete Linux/Wasm/workerd/browser and container gate. Running and MCP instructions are included. Competition form submission, any entry agreement, and final creative acceptance are the owner's actions. No competition entry submission is claimed here.

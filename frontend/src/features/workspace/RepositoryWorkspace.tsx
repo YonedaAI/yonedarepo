@@ -9,17 +9,20 @@ import { HistoryTools } from '../history/HistoryTools';
 import type { WorkspacePanel } from './WorkspacePanels';
 
 export function RepositoryWorkspace({
+  reviewer = false,
   snapshot,
   onChange,
   onError,
   onPanel,
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   onChange: () => Promise<void>;
   onError: (message: string) => void;
   onPanel: (panel: WorkspacePanel) => void;
 }) {
   const [view, setView] = useState('runs');
+  const [evidenceRun, setEvidenceRun] = useState('');
   const [history, setHistory] = useState<Graph | null>(null);
   const repo = snapshot.repository;
   return (
@@ -27,7 +30,7 @@ export function RepositoryWorkspace({
       <nav className="workspace-tabs" aria-label="Repository views">
         {[
           { id: 'runs', label: 'Runs', Icon: GitCompareArrows },
-          { id: 'graph', label: 'Context graph', Icon: Network },
+          { id: 'graph', label: 'Evidence trail', Icon: Network },
           { id: 'history', label: 'Source history', Icon: GitBranch },
         ].map(({ id, label, Icon }) => (
           <button
@@ -57,18 +60,29 @@ export function RepositoryWorkspace({
       )}
       {view === 'runs' && (
         <Exploration
+          reviewer={reviewer}
           snapshot={snapshot}
           onChange={onChange}
           onError={onError}
           onProviders={() => onPanel('providers')}
           onAgents={() => onPanel('agents')}
-          onContext={() => setView('graph')}
+          onSelectedRun={setEvidenceRun}
+          initialRunId={evidenceRun}
+          onContext={(id) => {
+            setEvidenceRun(id);
+            setView('graph');
+          }}
         />
       )}
-      {view === 'graph' && <GraphWorkspace snapshot={snapshot} />}
+      {view === 'graph' && <GraphWorkspace snapshot={snapshot} runId={evidenceRun || undefined} />}
       {view === 'history' && (
         <>
-          <HistoryTools snapshot={snapshot} onGraph={setHistory} onError={onError} />
+          <HistoryTools
+            reviewer={reviewer}
+            snapshot={snapshot}
+            onGraph={setHistory}
+            onError={onError}
+          />
           {history && (
             <GraphWorkspace snapshot={snapshot} initialGraph={history} title="Revision context" />
           )}

@@ -30,11 +30,13 @@ const stages: Record<SetupStage, { label: string; detail: string }> = {
 };
 
 export function SetupProgress({
+  reviewer = false,
   project,
   error,
   onRetry,
   onRefresh,
 }: {
+  reviewer?: boolean;
   project: Repository;
   error: string;
   onRetry: () => Promise<void>;
@@ -128,7 +130,7 @@ export function SetupProgress({
         </p>
       )}
       <div className="setup-actions">
-        {(failed || stalled) && (
+        {!reviewer && (failed || stalled) && (
           <button type="button" disabled={busy} onClick={() => void act(onRetry)}>
             {busy ? 'Retrying…' : 'Retry setup'}
           </button>

@@ -5,6 +5,7 @@ import { AccountMenu } from './AccountMenu';
 import { RepositoryActions } from './RepositoryActions';
 
 export function WorkspaceHeader({
+  reviewer = false,
   repository,
   loading,
   onRefresh,
@@ -15,6 +16,7 @@ export function WorkspaceHeader({
   onSignOut,
   onError,
 }: {
+  reviewer?: boolean;
   repository?: Repository;
   loading: boolean;
   onRefresh: () => void;
@@ -42,7 +44,9 @@ export function WorkspaceHeader({
             Published <code>{short(repository.published_commit)}</code>
           </span>
         )}
-        {repository && <RepositoryActions repository={repository} onDelete={onDelete} />}
+        {repository && !reviewer && (
+          <RepositoryActions repository={repository} onDelete={onDelete} />
+        )}
         <button
           type="button"
           className="icon-button"

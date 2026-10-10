@@ -8,7 +8,7 @@ export function TeamPlanning({
 }: {
   snapshot: Snapshot;
   run: TeamRecord;
-  onProviders: () => void;
+  onProviders?: () => void;
 }) {
   if (run.team_planning !== 'automatic') return null;
   const planner = snapshot.executions.find(

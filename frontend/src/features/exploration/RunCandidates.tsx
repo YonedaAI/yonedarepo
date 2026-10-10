@@ -26,7 +26,7 @@ export function RunCandidates({
   candidates: Record<string, any>[];
   onCompare: () => void;
   onSelect: (id: string) => void;
-  onProviders: () => void;
+  onProviders?: () => void;
   onInspectTask: (id: string) => void;
 }) {
   const team = run.mode === 'collaborate';

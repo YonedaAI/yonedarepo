@@ -11,7 +11,7 @@ import { useMemo } from 'react';
 import '@xyflow/react/dist/style.css';
 import type { Graph, GraphNode } from '../../lib/types';
 
-const graphFitOptions = { padding: 0.18, minZoom: 0.02, maxZoom: 0.85 };
+const graphFitOptions = { padding: 0.18, minZoom: 0.15, maxZoom: 1 };
 
 const columns = [
   'repository',
@@ -35,11 +35,13 @@ const columns = [
 export function ContextGraph({
   graph,
   onSelect,
+  selectedId,
 }: {
   graph: Graph;
+  selectedId?: string;
   onSelect: (node: GraphNode) => void;
 }) {
-  const { nodes, edges, identity } = useMemo(() => {
+  const { nodes, edges } = useMemo(() => {
     const kinds = [
       ...columns.filter((kind) => graph.nodes.some((node) => node.kind === kind)),
       ...new Set(
@@ -53,16 +55,23 @@ export function ContextGraph({
       offsets[node.kind] = row + 1;
       return {
         id: node.id,
+        selected: node.id === selectedId,
+        ariaLabel: `${node.kind.replaceAll('_', ' ')}: ${node.label}`,
         position: { x: col * 245, y: row * 118 + (col % 2) * 25 },
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
         className: `graph-node kind-${node.kind}`,
         data: {
           label: (
-            <>
+            <button
+              type="button"
+              className="graph-record-button"
+              aria-label={`Read evidence: ${node.label}`}
+              onClick={() => onSelect(node)}
+            >
               <span className="node-kind">{node.kind.replaceAll('_', ' ')}</span>
               <strong>{node.label}</strong>
-            </>
+            </button>
           ),
         },
       };
@@ -71,15 +80,19 @@ export function ContextGraph({
       id: `${index}:${edge.source}:${edge.target}`,
       source: edge.source,
       target: edge.target,
-      label: edge.relation.replaceAll('_', ' '),
+      label:
+        edge.source === selectedId || edge.target === selectedId
+          ? edge.relation.replaceAll('_', ' ')
+          : undefined,
+      animated: false,
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
       style: { stroke: edge.relation === 'challenges' ? '#b77817' : '#8da5b6' },
       labelStyle: { fontSize: 10, fill: '#526b7d' },
       labelBgStyle: { fill: '#f0f5f8' },
     }));
-    return { nodes, edges, identity: JSON.stringify(graph.nodes.map((node) => node.id)) };
-  }, [graph]);
+    return { nodes, edges };
+  }, [graph, selectedId, onSelect]);
   if (!nodes.length)
     return (
       <div className="graph-empty">
@@ -90,14 +103,16 @@ export function ContextGraph({
     );
   return (
     <ReactFlow
-      key={identity}
       nodes={nodes}
       edges={edges}
       fitView
       minZoom={graphFitOptions.minZoom}
       maxZoom={2}
       fitViewOptions={graphFitOptions}
+      nodesFocusable={false}
+      edgesFocusable={false}
       nodesDraggable={false}
+      nodesConnectable={false}
       onNodeClick={(_, node) => {
         const original = graph.nodes.find((n) => n.id === node.id);
         if (original) onSelect(original);

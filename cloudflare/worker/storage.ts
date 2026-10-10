@@ -30,16 +30,15 @@ export async function ledger(env: Env, repo: string, command: Json): Promise<Jso
   if (command._workspace && !['init', 'delete_repository'].includes(command.op)) {
     // Old DO binaries ignore unknown scope fields. Prove code adoption and compare
     // immutable ownership before sending any scoped read or mutation across versions.
-    const snapshot = await ledger(env, repo, { op: 'snapshot' });
-    if (snapshot.capabilities?.workspace_authority !== 1)
+    const status = await ledger(env, repo, { op: 'repository_status' });
+    if (status.capabilities?.workspace_authority !== 1)
       throw Object.assign(new Error('Repository ledger code is still updating; retry shortly'), {
         code: 'LEDGER_UPDATING',
       });
-    if ((snapshot.repository.workspace ?? '_admin') !== command._workspace)
+    if ((status.workspace ?? '_admin') !== command._workspace)
       throw Object.assign(new Error('Repository belongs to another workspace'), {
         code: 'FORBIDDEN',
       });
-    if (command.op === 'snapshot') return snapshot;
   }
   const stub = env.REPOSITORIES.get(env.REPOSITORIES.idFromName(repo));
   const res = await stub.fetch('http://ledger/command', {

@@ -4,7 +4,7 @@ export function DemoGuide({ onClose }: { onClose: () => void }) {
   return (
     <section className="demo-guide" aria-labelledby="demo-guide-title">
       <div className="demo-guide-heading">
-        <h2 id="demo-guide-title">Try the existing demo first</h2>
+        <h2 id="demo-guide-title">Review a run from intent to publication</h2>
         <button
           type="button"
           className="icon-button"
@@ -14,47 +14,55 @@ export function DemoGuide({ onClose }: { onClose: () => void }) {
           <X size={18} />
         </button>
       </div>
-      <p>The populated Retry client demo is ready to browse. Viewing it starts no agent runs.</p>
+      <p>
+        Choose an available repository and browse its recorded work. Reading evidence starts no
+        agent runs.
+      </p>
       <ol>
         <li>
-          <strong>Connect your workspace.</strong> Open Owner connection and choose your owner token
-          file, or paste the workspace owner token and click Connect. Provider API keys are separate
-          and stay in Cloudflare.
+          <strong>Find the review that needs attention.</strong> Open Runs. Choose the run in
+          history and read its status. A checked result awaits a separate shipping decision.
         </li>
         <li>
-          <strong>Compare the code.</strong> Select Retry client, then Exploration. Open Review
-          changes on each approach and check its build and behavior results. The existing run is
-          already accepted, so its Select approach buttons are disabled.
+          <strong>Inspect the exact result.</strong> In Results, open Review changes and Check
+          details. Compare approaches when multiple results exist. A preview shows the checked
+          candidate; it does not confirm publication.
         </li>
         <li>
-          <strong>Find the reason.</strong> Open Intentional history. Keep the published commit and
-          path <code>src/main.rs</code>, then click Trace history. Use Fit View and click graph
-          nodes to inspect the intent, shared research, alternatives, checks and recorded decision.
+          <strong>Read the evidence trail.</strong> Open Evidence trail, or use Read this run’s
+          evidence trail in Context usage. Follow intent, agent contributions and captured handoffs,
+          captured revisions, independent checks, decision rationale and reasons for rejecting
+          alternatives, then publication status. Explore graph is available for relationships; it
+          starts with a bounded run neighborhood.
         </li>
         <li>
-          <strong>Inspect the incident.</strong> Find the recorded observation in the history graph.
-          Its details label it simulated and link it to the original research assumption. You can
-          optionally record another simulated observation; this adds history without running agents.
+          <strong>Understand agent progress.</strong> Agent activity includes the recorded event
+          timeline with elapsed times, task handoffs and execution logs. Run details contains the
+          brief, recorded decision and controls. Cancel run asks you to confirm before stopping
+          work.
+        </li>
+        <li>
+          <strong>Handle changed source.</strong> A stale result cannot be selected. Repair on
+          current revision opens a new run using the previous brief and current source. Review
+          settings and approve fresh work; the earlier capture is retained.
         </li>
       </ol>
       <details>
-        <summary>Run a fresh exploration with real agents</summary>
+        <summary>Start new work or make a shipping decision</summary>
         <p>
-          This uses paid model inference. In Exploration, click New run, leave the sample retry
-          intent and click Start run. Research runs first; minimal, defensive and maintainable then
-          work from the same research. Wait for captured commits and independent build and behavior
-          checks.
+          Use New run or Update project to prepare a brief, connections and limits. Approval starts
+          paid model inference. Wait for trusted source capture and independent checks before
+          reviewing a result.
         </p>
         <p>
-          Review changes, select an eligible approach and explain Why choose this approach? Click
-          Record decision and publish. The publication banner separates the selected commit from the
-          published commit until verification finishes. Then trace the new published commit in
-          Intentional history.
+          Review result or Review approach opens the shipping decision. Record why you chose it and
+          why you rejected alternatives, then Record decision and publish. Selection and publication
+          stay separate until canonical Git verification finishes.
         </p>
       </details>
       <p>
-        What to test: can you understand the alternatives, find their checks, and trace the chosen
-        code back to its reason? Start with browsing; a fresh run is optional.
+        Older runs, failures and simulated observations remain evidence. Read their labels and
+        recorded status; they do not establish a new successful publication.
       </p>
     </section>
   );
