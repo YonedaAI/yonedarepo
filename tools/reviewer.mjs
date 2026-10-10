@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Reviewer credentials remain in memory and never enter argv, URLs or disk.
 import { randomUUID } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { findCheckedRun, readRun } from './reviewer-client.mjs';
 
@@ -31,9 +33,52 @@ function keyPrompt() {
     process.stdin.on('data', data);
   });
 }
+function usage() {
+  return `Usage: node tools/reviewer.mjs [--help] [--new] [--checked] [--no-open] [--key-file <path>]
+
+Options:
+  --help             Show this help without signing in.
+  --key-file <path>  Read a reviewer key from a private file (raw key or access.json).
+  --checked          Open the latest recorded checked run; never start/resume a trial.
+  --no-open          Print the review URL without launching a browser.
+  --new              Explicitly approve a new funded trial (up to $5).`;
+}
+function parseArgs(args) {
+  const options = { help: false, newTrial: false, checkedOnly: false, openBrowser: true, keyFile: '' };
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === '--help' || argument === '-h') options.help = true;
+    else if (argument === '--new') options.newTrial = true;
+    else if (argument === '--checked') options.checkedOnly = true;
+    else if (argument === '--no-open') options.openBrowser = false;
+    else if (argument === '--key-file') {
+      const path = args[++index];
+      if (!path || path.startsWith('--')) throw new Error('--key-file requires a path.');
+      options.keyFile = path;
+    } else throw new Error(usage());
+  }
+  if (options.help && args.length !== 1) throw new Error('--help cannot be combined with other options.');
+  if (options.checkedOnly && options.newTrial)
+    throw new Error('--checked and --new are mutually exclusive.');
+  return options;
+}
+async function keyFromFile(path) {
+  const file = resolve(path);
+  const metadata = await stat(file);
+  if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0)
+    throw new Error('Reviewer key file must be private (owner read/write only).');
+  const content = await readFile(file, 'utf8');
+  let record;
+  try { record = JSON.parse(content); } catch { record = null; }
+  const key = typeof record?.password === 'string' ? record.password : content.trim();
+  if (!key || key.length > 128) throw new Error('Reviewer key file is empty or invalid.');
+  return { key, username: typeof record?.username === 'string' ? record.username : 'reviewer' };
+}
 async function main() {
-  if (process.argv.slice(2).some(arg => arg !== '--new')) throw new Error('Usage: node tools/reviewer.mjs [--new]');
-  let key = await keyPrompt();
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) { console.log(usage()); return; }
+  const credentials = options.keyFile ? await keyFromFile(options.keyFile) : { key: await keyPrompt(), username: 'reviewer' };
+  let key = credentials.key;
   let cookie = '';
   async function api(path, body) {
     const r = await fetch(`${origin}/api/${path}`, {
@@ -47,17 +92,26 @@ async function main() {
     if (path === 'auth/login') cookie=(r.headers.get('set-cookie') ?? '').split(';')[0];
     return value;
   }
-  await api('auth/login',{username:'reviewer',password:key}); key='';
+  try {
+    await api('auth/login',{username:credentials.username,password:key});
+  } finally {
+    key='';
+    credentials.key='';
+  }
   const policy=await api('reviewer');
   console.log(`Signed in. Funded allowance remaining: $${((policy.budget.limit-policy.budget.charged)/1000000).toFixed(2)}.`);
   if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
   let trial;
-  if (!policy.active_trial && !process.argv.includes('--new')) {
+  if (options.checkedOnly || (!policy.active_trial && !options.newTrial)) {
     const recorded=await findCheckedRun(api,policy.repo_id);
     if(recorded) {
       trial={repo_id:policy.repo_id,run_id:recorded.id,
         url:`/?repo=${encodeURIComponent(policy.repo_id)}&run=${encodeURIComponent(recorded.id)}`};
-      console.log('Opening the recorded checked example. Use --new only to approve another funded trial.');
+      console.log(options.checkedOnly
+        ? 'Read-only mode: using a recorded checked run; no trial will be started.'
+        : 'Opening the recorded checked example. Use --new only to approve another funded trial.');
+    } else if (options.checkedOnly) {
+      throw new Error('No recorded checked run is available. --checked never starts or resumes a trial.');
     }
     else throw new Error('No checked example is available yet. Use --new to approve a funded trial (up to $5).');
   }
@@ -73,9 +127,12 @@ async function main() {
   }
   if (!trial) throw new Error('Trial response unavailable. Check the hosted app before starting another trial.');
   const url=new URL(trial.url,origin).href;
-  console.log(`Run: ${trial.run_id}\nReview: ${url}\nSign in as reviewer using the same access key in the browser.`);
+  console.log(`Run: ${trial.run_id}\nReview: ${url}`);
   const opener=process.platform==='darwin' ? ['open',[url]] : process.platform==='win32' ? ['cmd',['/c','start','',url]] : ['xdg-open',[url]];
-  const child=spawn(opener[0],opener[1],{stdio:'ignore'}); child.on('error',()=>{}); child.unref();
+  if (options.openBrowser) {
+    const child=spawn(opener[0],opener[1],{stdio:'ignore'}); child.on('error',()=>{}); child.unref();
+    console.log('Review browser opened. Sign in as reviewer using the same access key.');
+  } else console.log('Browser not opened (--no-open). Open the review URL and sign in separately.');
   let previous='';
   for (let n=0;n<240;n++) {
     const snapshot=await readRun(api,trial.repo_id,trial.run_id);
