@@ -89,6 +89,7 @@ const inventory = {
       id: 'conflict-1',
       kind: 'unresolved_conflict',
       candidate_id: 'candidate-1',
+      status: 'unresolved',
       head_commit: 'head-7',
       expected_version: 7,
       conflict_paths: ['src/a.rs'],
@@ -182,5 +183,68 @@ describe('backend conflict inventory normalization and repair actions', () => {
     expect(html).toContain('Refresh candidate using existing trial approval');
     expect(html).toContain('Resolve using existing trial approval');
     expect(html).toContain('existing reviewer approval and shared trial allowance');
+  });
+
+  it('shows lifecycle references, offers refresh for failed or stale records, and briefs only unresolved', async () => {
+    const lifecycle = {
+      conflicts: [
+        {
+          id: 'clean-1',
+          candidate_id: 'candidate-old',
+          status: 'clean',
+          refreshed_candidate_id: 'candidate-new',
+        },
+        { id: 'failed-1', candidate_id: 'candidate-failed', status: 'failed' },
+        { id: 'stale-1', candidate_id: 'candidate-stale-record', status: 'stale' },
+        { id: 'unresolved-1', candidate_id: 'candidate-open', status: 'unresolved' },
+      ],
+      overlaps: [],
+      seq: 5,
+    };
+    apiMock.mockResolvedValueOnce(lifecycle);
+    let tree = render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    tree = render();
+    const html = renderToStaticMarkup(tree);
+    expect(html).toContain('Lifecycle status: clean.');
+    expect(html).toContain('Refreshed candidate: <code>candidate-new</code>');
+    expect(html).toContain('Lifecycle status: failed.');
+    expect(html).toContain('Lifecycle status: stale.');
+    expect((html.match(/Owner brief for the scoped resolver/g) ?? []).length).toBe(1);
+    expect((html.match(/>Refresh candidate</g) ?? []).length).toBe(2);
+  });
+
+  it('polls active lifecycle records in the background and stops after a terminal status', async () => {
+    const setInterval = vi.spyOn(globalThis, 'setInterval').mockReturnValue(123);
+    const clearInterval = vi.spyOn(globalThis, 'clearInterval');
+    hooks.states[0] = {
+      records: [{ key: 'conflict:1', status: 'refreshing', conflict_paths: [] }],
+      overlaps: [],
+      seq: 1,
+    };
+    apiMock.mockResolvedValue({ conflicts: [], overlaps: [], seq: 2 });
+    render();
+    const pollingEffect = hooks.effects.at(-1);
+    const cleanup = pollingEffect?.() as (() => void) | undefined;
+    expect(setInterval).toHaveBeenCalledTimes(1);
+    expect(setInterval.mock.calls[0][1]).toBe(2000);
+    const poll = setInterval.mock.calls[0][0] as () => void;
+    poll();
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledWith('repos/repo/conflict_status'));
+    cleanup?.();
+    expect(clearInterval).toHaveBeenCalledWith(123);
+
+    hooks.states[0] = {
+      records: [{ key: 'conflict:1', status: 'clean', conflict_paths: [] }],
+      overlaps: [],
+      seq: 2,
+    };
+    render();
+    const terminalEffect = hooks.effects.at(-1);
+    expect(terminalEffect?.()).toBeUndefined();
+    expect(setInterval).toHaveBeenCalledTimes(1);
+    setInterval.mockRestore();
+    clearInterval.mockRestore();
   });
 });

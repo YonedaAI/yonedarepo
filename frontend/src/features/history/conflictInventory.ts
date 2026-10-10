@@ -2,9 +2,11 @@ import type { ConflictStatusContract } from '../../../../shared/provenance';
 
 export interface ConflictInventoryItem {
   key: string;
-  kind: 'stale_candidate' | 'unresolved_conflict';
+  kind: 'stale_candidate' | 'unresolved_conflict' | 'refresh_record';
   candidate_id: string;
   conflict_id?: string;
+  refreshed_candidate_id?: string;
+  resolver_candidate_id?: string;
   head_commit?: string;
   expected_version?: number;
   conflict_paths: string[];
@@ -44,14 +46,21 @@ export function normalizeConflictInventory(raw: unknown): ConflictInventoryView 
     if (!row || typeof row.candidate_id !== 'string' || !row.candidate_id) continue;
     const stale = row.kind === 'stale_candidate';
     if (!stale && (typeof row.id !== 'string' || !row.id)) continue;
+    const unresolved = !stale && row.status === 'unresolved';
     const headCommit = [row.head_commit, row.expected_head, row.expected_commit].find(
       (value): value is string => typeof value === 'string',
     );
     const item: ConflictInventoryItem = {
       key: stale ? `candidate:${row.candidate_id}` : `conflict:${row.id}`,
-      kind: stale ? 'stale_candidate' : 'unresolved_conflict',
+      kind: stale ? 'stale_candidate' : unresolved ? 'unresolved_conflict' : 'refresh_record',
       candidate_id: row.candidate_id,
       ...(!stale ? { conflict_id: row.id } : {}),
+      ...(typeof row.refreshed_candidate_id === 'string'
+        ? { refreshed_candidate_id: row.refreshed_candidate_id }
+        : {}),
+      ...(typeof row.resolver_candidate_id === 'string'
+        ? { resolver_candidate_id: row.resolver_candidate_id }
+        : {}),
       ...(headCommit ? { head_commit: headCommit } : {}),
       ...(typeof row.expected_version === 'number'
         ? { expected_version: row.expected_version }

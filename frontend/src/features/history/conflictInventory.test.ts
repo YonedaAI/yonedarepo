@@ -15,6 +15,7 @@ describe('conflict inventory boundary', () => {
           id: 'conflict-1',
           kind: 'unresolved_conflict',
           candidate_id: 'candidate-1',
+          status: 'unresolved',
           head_commit: 'head',
           expected_version: 4,
           conflict_paths: ['src/b'],
@@ -61,5 +62,41 @@ describe('conflict inventory boundary', () => {
       candidate_id: 'candidate-2',
     });
     expect(normalized.seq).toBe(7);
+  });
+
+  it('keeps non-unresolved lifecycle records distinct and retains candidate references', () => {
+    const normalized = normalizeConflictInventory({
+      conflicts: [
+        { id: 'refreshing', candidate_id: 'base-a', status: 'refreshing' },
+        {
+          id: 'clean',
+          candidate_id: 'base-b',
+          status: 'clean',
+          refreshed_candidate_id: 'candidate-new',
+        },
+        { id: 'resolving', candidate_id: 'base-c', status: 'resolving' },
+        {
+          id: 'checking',
+          candidate_id: 'base-d',
+          status: 'evaluating',
+          resolver_candidate_id: 'candidate-check',
+        },
+        { id: 'stale', candidate_id: 'base-e', status: 'stale' },
+        { id: 'failed', candidate_id: 'base-f', status: 'failed' },
+        { id: 'open', candidate_id: 'base-g', status: 'unresolved' },
+      ],
+      overlaps: [],
+    });
+    expect(normalized.records.map(({ kind, status }) => [kind, status])).toEqual([
+      ['refresh_record', 'refreshing'],
+      ['refresh_record', 'clean'],
+      ['refresh_record', 'resolving'],
+      ['refresh_record', 'evaluating'],
+      ['refresh_record', 'stale'],
+      ['refresh_record', 'failed'],
+      ['unresolved_conflict', 'unresolved'],
+    ]);
+    expect(normalized.records[1]).toMatchObject({ refreshed_candidate_id: 'candidate-new' });
+    expect(normalized.records[3]).toMatchObject({ resolver_candidate_id: 'candidate-check' });
   });
 });
