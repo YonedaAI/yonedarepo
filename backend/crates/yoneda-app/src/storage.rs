@@ -1,7 +1,12 @@
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod history;
 mod jobs;
 mod lineage;
+pub(crate) use history::{
+    active_run_count, checked_watermark, external_run_count, prune_outbox_payloads,
+    repository_overview, run_detail, run_graph_page, run_page,
+};
 pub(crate) use jobs::job;
 pub(crate) use lineage::{
     cancel_job, check_lineage, descendant_ids, fence_descendants, run_executions, run_jobs,
@@ -13,7 +18,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 8;
+    const SCHEMA_VERSION: i64 = 9;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -26,6 +31,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (6, include_str!("migrations/0006_execution_logs.sql")),
             (7, include_str!("migrations/0007_context_access.sql")),
             (8, include_str!("migrations/0008_team_runs.sql")),
+            (9, include_str!("migrations/0009_history_archive.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",
@@ -102,20 +108,17 @@ pub(crate) fn get<S: SqlStore>(db: &S, table: &str, id: &str) -> Result<Value> {
     .map_err(|e| Error::new("DATABASE", e.to_string()))
 }
 pub(crate) fn all<S: SqlStore>(db: &S, table: &str) -> Result<Vec<Value>> {
-    db.query(
-        &format!("SELECT payload FROM {table} ORDER BY id LIMIT 2000"),
-        &[],
-    )?
-    .iter()
-    .map(|r| {
-        serde_json::from_str(
-            r["payload"]
-                .as_str()
-                .ok_or_else(|| bad("Corrupt payload"))?,
-        )
-        .map_err(|e| Error::new("DATABASE", e.to_string()))
-    })
-    .collect()
+    db.query(&format!("SELECT payload FROM {table} ORDER BY id"), &[])?
+        .iter()
+        .map(|r| {
+            serde_json::from_str(
+                r["payload"]
+                    .as_str()
+                    .ok_or_else(|| bad("Corrupt payload"))?,
+            )
+            .map_err(|e| Error::new("DATABASE", e.to_string()))
+        })
+        .collect()
 }
 pub(crate) fn save<S: SqlStore>(db: &S, table: &str, id: &str, value: &Value) -> Result<()> {
     db.query(&format!("INSERT INTO {table}(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload"),&[json!(id),json!(value.to_string())])?;
@@ -183,12 +186,13 @@ pub(crate) fn edge<S: SqlStore>(
             json!(evidence),
         ],
     )?;
+    db.query("INSERT OR IGNORE INTO edge_history(source,target,relation,seq) SELECT ?,?,?,COALESCE(MAX(seq),0)+1 FROM events", &[json!(source),json!(target),json!(relation)])?;
     Ok(())
 }
 pub(crate) fn outbox<S: SqlStore>(db: &S, id: &str, kind: &str, payload: Value) -> Result<()> {
     db.query(
-        "INSERT OR IGNORE INTO outbox(id,kind,payload) VALUES(?,?,?)",
-        &[json!(id), json!(kind), json!(payload.to_string())],
+        "INSERT OR IGNORE INTO outbox(id,kind,payload,created_at) VALUES(?,?,?,COALESCE(json_extract(?,'$.event.at'),(SELECT MAX(at) FROM events),0))",
+        &[json!(id), json!(kind), json!(payload.to_string()),json!(payload.to_string())],
     )?;
     Ok(())
 }
@@ -200,6 +204,21 @@ pub(crate) fn event<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> R
     let seq = rows[0]["seq"]
         .as_i64()
         .ok_or_else(|| bad("Event sequence missing"))?;
+    if kind == "run.created" {
+        if let Some(run_id) = data["id"].as_str() {
+            db.query(
+                "INSERT OR IGNORE INTO run_history(run_id,seq,created_at) SELECT id,?,CAST(json_extract(payload,'$.created_at') AS INTEGER) FROM runs WHERE id=?",
+                &[json!(seq),json!(run_id)],
+            )?;
+        }
+    } else if kind == "contribution.started"
+        && let Some(execution_id) = data["execution"].as_str()
+    {
+        db.query(
+            "INSERT OR IGNORE INTO run_history(run_id,seq,created_at) SELECT r.id,?,CAST(json_extract(r.payload,'$.created_at') AS INTEGER) FROM runs r JOIN executions e ON json_extract(e.payload,'$.run_id')=r.id WHERE e.id=?",
+            &[json!(seq),json!(execution_id)],
+        )?;
+    }
     let r = repo(db)?;
     let payload = json!({"repo_id":r["id"],"seq":seq,"event":{"seq":seq,"kind":kind,"at":now,"data":data},"repository":r});
     outbox(db, &format!("live:{seq}"), "live", payload.clone())?;

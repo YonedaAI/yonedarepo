@@ -2,6 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+const MAX_ACTIVE_WORK_RUNS: i64 = 6;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let op = string(&c, "op")?;
     if op == "external_begin" {
@@ -105,8 +106,13 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "Repository is not ready for a contribution",
         ));
     }
-    if all(db, "runs")?.len() >= 100 {
-        return Err(bad("Repository run limit reached"));
+    if active_run_count(db)? >= MAX_ACTIVE_WORK_RUNS
+        || external_run_count(db)? >= MAX_ACTIVE_WORK_RUNS
+    {
+        return Err(Error::new(
+            "ACTIVE_RUN_LIMIT",
+            "Repository or external contributor active run limit reached",
+        ));
     }
     let intent = string(c, "intent")?;
     let context = c.get("context").cloned().unwrap_or(json!([]));
