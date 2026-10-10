@@ -20,6 +20,7 @@ import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import { teamTaskSource } from './team-source';
+import { approveTestPolicy } from './test-policy';
 import type { Env, Json } from './types';
 import { providerCredentials } from './vault';
 import { websiteAssets } from './website-metadata';
@@ -142,6 +143,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
     if (action === 'resync_repository' && req.method === 'POST')
       return await resynchronize(req, env, principal, repo);
+    if (action === 'approve_test_bundle' && req.method === 'POST')
+      return await approveTestPolicy(req, env, principal, repo);
     if (action === 'grants') return grantRoute(req, env, principal, repo);
     if (action === 'site' && req.method === 'GET') {
       const s = await ledger(env, repo, { op: 'repository_status' });
