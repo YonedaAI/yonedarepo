@@ -4,6 +4,8 @@ export function capacityUnavailable(error: unknown) {
   return (
     message.includes(
       'there is no container instance that can be provided to this durable object',
-    ) || message.includes('you are requesting too many containers per second')
+    ) ||
+    message.startsWith('maximum number of running container instances exceeded.') ||
+    message.includes('you are requesting too many containers per second')
   );
 }
