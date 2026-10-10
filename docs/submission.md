@@ -4,7 +4,7 @@ YonedaRepo treats a development run as a shared intent and a set of concurrent a
 
 - **Video:** [narrated product walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/mvp-2026-10-08/yonedarepo-mvp.mp4). Edited actual browser captures and live evidence; synthetic narration. See [script and production notes](demo-video.md).
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0.
-- **Try it:** [hosted platform](https://yonedarepo-dev.mlong-f01.workers.dev/). Choose **Have a reviewer access key?** and enter the privately supplied key. Funded provider connections and a sandbox are prepared; choose **Run prepared example**. From the submitted source, `node tools/reviewer.mjs` starts the same example without installing dependencies.
+- **Try it:** [hosted platform](https://yonedarepo.com/). Choose **Have a reviewer access key?** and enter the privately supplied key. Funded provider connections and a sandbox are prepared; choose **Run prepared example**. From the submitted source, `node tools/reviewer.mjs` starts the same example without installing dependencies.
 - **Immediate public example:** [Juniper Garden](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/), built by concurrent Luna/Sonnet agents and published after an owner-directed selection.
 - **Run locally:** [README](../README.md#get-running) and [runbook](runbook.md). The local gate needs no inference keys; local Artifacts access requires Cloudflare authentication and configured resources.
 - **Connect your existing agent:** [remote MCP and Git setup](remote-mcp.md), using a revocable repository-scoped key from the website.

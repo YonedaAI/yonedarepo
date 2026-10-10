@@ -2,7 +2,7 @@ import { username } from './accounts';
 import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
 import { reviewerPolicy } from './reviewer-policy';
-import { resumeTrial, startTrial } from './reviewer-trial';
+import { resumeTrial, reviewerTrialStatus, startTrial } from './reviewer-trial';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { providerCredentials, seal } from './vault';
@@ -61,7 +61,7 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
   const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
   if (path === '/api/reviewer' && req.method === 'GET') {
     return response({
-      ...policy,
+      ...(await reviewerTrialStatus(env, principal.workspace)),
       budget: await workspace(env, principal.workspace, { op: 'budget_status' }),
       project: await workspace(env, principal.workspace, { op: 'project_get', id: policy.repo_id }),
     });

@@ -78,6 +78,25 @@ export function prepareModelRequest(
       1,
       Math.min(Math.floor(Number(body.max_tokens)) || ceiling, ceiling),
     );
+    if (provider === 'claude') {
+      // The proxy sends no beta headers. Claude Code 2.1.293 requests the
+      // beta-only "updates" display even in adaptive mode; use stable summaries.
+      if (body.thinking?.display === 'updates') body.thinking.display = 'summarized';
+      if (body.thinking?.type === 'enabled') {
+        const budget = body.thinking.budget_tokens;
+        if (!Number.isSafeInteger(budget) || budget < 1024)
+          throw new Error('Manual thinking requires an integer budget of at least 1024 tokens');
+        // count_tokens has no output allowance and must retain its thinking config.
+        if (path === '/v1/messages') {
+          // Without the interleaved-thinking beta, the budget must be strictly
+          // below max_tokens. Never raise the owner's cap to make room for it.
+          body.thinking =
+            body.max_tokens > 1024
+              ? { ...body.thinking, budget_tokens: Math.min(budget, body.max_tokens - 1) }
+              : { type: 'disabled' };
+        }
+      }
+    }
     if (path.endsWith('/count_tokens')) delete body.max_tokens;
   }
   const bytes = new TextEncoder().encode(JSON.stringify(body)).length;

@@ -37,7 +37,7 @@ export function trialRequest(id: string) {
         max_requests: 24,
         max_output_tokens: 4096,
         max_execution_ms: 600000,
-        spend_limit_microusd: 2500000,
+        spend_limit_microusd: 200000,
         pricing: {
           input_microusd_per_million: 250000,
           output_microusd_per_million: 1200000,
@@ -50,7 +50,7 @@ export function trialRequest(id: string) {
         max_requests: 24,
         max_output_tokens: 4096,
         max_execution_ms: 600000,
-        spend_limit_microusd: 2500000,
+        spend_limit_microusd: 4800000,
         pricing: {
           input_microusd_per_million: 6000000,
           output_microusd_per_million: 30000000,
@@ -87,7 +87,8 @@ export function trialRequest(id: string) {
     },
   };
 }
-export async function startTrial(env: Env, owner: string, requestId: string) {
+/** Release a finished trial without refunding spend or deleting its evidence. */
+export async function reviewerTrialStatus(env: Env, owner: string) {
   let policy = await workspace(env, owner, { op: 'reviewer_status' });
   const repo = policy.repo_id;
   if (policy.active_trial) {
@@ -103,8 +104,13 @@ export async function startTrial(env: Env, owner: string, requestId: string) {
       policy = await workspace(env, owner, { op: 'reviewer_status' });
     }
   }
+  return policy;
+}
+
+export async function startTrial(env: Env, owner: string, requestId: string) {
+  const policy = await reviewerTrialStatus(env, owner);
   const trial = await workspace(env, owner, { op: 'reviewer_trial', id: `reviewer-${requestId}` });
-  return ensureTrialStarted(env, owner, repo, trial.id);
+  return ensureTrialStarted(env, owner, policy.repo_id, trial.id);
 }
 
 /** Resume the durable reservation, even if start_run has not committed yet. */

@@ -83,3 +83,25 @@ export function activityLabel(event: ActivityEvent) {
   };
   return names[event.kind] ?? event.kind.replaceAll('.', ' · ').replaceAll('_', ' ');
 }
+
+/** Terminal records without a finish timestamp use their recorded stop event, never wall time. */
+export function executionElapsed(
+  execution: Record<string, any>,
+  events: ActivityEvent[],
+  snapshot: Snapshot,
+  runId: string,
+  now: number,
+): number | null {
+  const start = execution.started_at ?? execution.created_at;
+  if (typeof start !== 'number') return null;
+  if (typeof execution.finished_at === 'number') return execution.finished_at - start;
+  if (!['failed', 'cancelled', 'completed', 'fenced'].includes(execution.status))
+    return now - start;
+  const stopped = events.filter(
+    (event) =>
+      (['job.failed', 'job.completed'].includes(event.kind) &&
+        eventExecution(event, snapshot, runId)?.id === execution.id) ||
+      (event.kind === 'run.cancelled' && event.data.id === runId),
+  );
+  return stopped.length ? Math.max(...stopped.map((event) => event.at)) - start : null;
+}

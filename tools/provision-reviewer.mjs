@@ -2,7 +2,7 @@
 // Operator-only bootstrap. Never prints credentials or recovery data.
 import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises';
-const origin='https://yonedarepo-dev.mlong-f01.workers.dev';
+const origin='https://yonedarepo.com';
 const directory=new URL('../.local/reviewer/',import.meta.url);
 const file=new URL('access.json',directory);
 await mkdir(directory,{recursive:true,mode:0o700});
@@ -23,4 +23,7 @@ try {
 } catch(error) {if(error.code!=='ALREADY_EXISTS') throw error; await request('auth/login',{username:access.username,password:access.password});}
 const provisioned=await request('admin/reviewer/provision',{username:access.username},true);
 access={...access,...provisioned}; await writeFile(file,JSON.stringify(access,null,2),{mode:0o600});
-console.log(`Reviewer account configured; sandbox ${provisioned.status}. Private access details saved in .local/reviewer/access.json (0600). No paid trial started.`);
+const handoff=new URL('reviewer-access.txt',directory);
+await writeFile(handoff,`YonedaRepo reviewer access\n\nOpen: ${origin}\nChoose: Have a reviewer access key?\nAccess key: ${access.password}\n\nChoose Run prepared example, or from the source checkout run:\nnode tools/reviewer.mjs\n\nNo signup, provider key or local deployment is needed.\nShared allowance: $50; up to $5 per trial; one active trial.\nAccess expires: ${new Date(provisioned.expires).toISOString()}\nSource: https://github.com/MagnetonIO/yonedarepo\n`,{mode:0o600});
+await chmod(handoff,0o600);
+console.log(`Reviewer account configured; sandbox ${provisioned.status}. Forwardable access card saved in .local/reviewer/reviewer-access.txt (0600); operator recovery data stays in access.json. No paid trial started.`);

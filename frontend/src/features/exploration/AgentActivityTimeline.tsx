@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { Snapshot } from '../../lib/types';
 import { RecordedContent } from '../graph/EvidenceFields';
-import { activityLabel, elapsedTime, eventExecution, eventInRun } from './activityView';
+import {
+  activityLabel,
+  elapsedTime,
+  eventExecution,
+  eventInRun,
+  executionElapsed,
+} from './activityView';
 import { useActivityEvents } from './useActivityEvents';
 
 export function AgentActivityTimeline({
@@ -52,14 +58,12 @@ export function AgentActivityTimeline({
       </label>
       <ul className="agent-elapsed" aria-label="Agent elapsed times">
         {executions.map((execution) => {
-          const start = execution.started_at ?? execution.created_at;
+          const elapsed = executionElapsed(execution, relevant, snapshot, run.id, now);
           return (
             <li key={execution.id}>
               <strong>{execution.strategy || execution.team_role || execution.role}</strong> ·{' '}
               {execution.status.replaceAll('_', ' ')} ·{' '}
-              {typeof start === 'number'
-                ? `${elapsedTime((execution.finished_at ?? now) - start)} elapsed`
-                : 'Start time not recorded'}
+              {elapsed !== null ? `${elapsedTime(elapsed)} elapsed` : 'Duration not recorded'}
             </li>
           );
         })}

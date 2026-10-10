@@ -153,3 +153,18 @@ it('resumes only the authenticated workspace and rejects expired or revoked revi
   expect((await api(bob.scoped, '/api/reviewer/resume', bob.cookie, {})).status).toBe(401);
   for (const f of [alice, bob]) expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toHaveLength(0);
 });
+
+it('releases only terminal trial slots when status reloads, retaining history and spend', async () => {
+  const f = await readyReviewer('resume_terminal');
+  const response = await api(f.scoped, '/api/reviewer/trial', f.cookie, { request_id: 'terminal-slot-12345678' });
+  const trial = await response.json<Json>();
+  expect((await (await api(f.scoped, '/api/reviewer', f.cookie)).json<Json>()).active_trial).toBe(trial.run_id);
+  await ledger(f.scoped, f.repo, { op: 'cancel_run', run_id: trial.run_id });
+  const budget = await workspace(bindings, f.owner, { op: 'budget_status' });
+  const reloaded = await (await api(f.scoped, '/api/reviewer', f.cookie)).json<Json>();
+  expect(reloaded.active_trial).toBeNull();
+  expect(reloaded.budget).toEqual(budget);
+  const snapshot = await ledger(bindings, f.repo, { op: 'snapshot' });
+  expect(snapshot.runs).toHaveLength(1);
+  expect(snapshot.runs[0].status).toBe('cancelled');
+});

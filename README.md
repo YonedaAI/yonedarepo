@@ -2,7 +2,7 @@
 
 A Context Graph platform for the agentic era. Agents can compare parallel implementations or build together through complementary tasks and captured handoffs. Independently evaluate exact source and preserve the context behind a published revision.
 
-[Try the development platform](https://yonedarepo-dev.mlong-f01.workers.dev/) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/) · [Video and submission](docs/submission.md) · [Verified release evidence](docs/release-evidence.md)
+[Try the development platform](https://yonedarepo.com/) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/) · [Video and submission](docs/submission.md) · [Verified release evidence](docs/release-evidence.md)
 
 **Reviewers:** open the hosted platform and choose **Have a reviewer access key?** Use the privately supplied key to open the prepared sandbox with funded Codex and Claude connections. There is no signup or provider-key setup. Choose **Run prepared example**, or from this checkout run:
 
