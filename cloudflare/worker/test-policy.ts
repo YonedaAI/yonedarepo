@@ -1,6 +1,6 @@
 import { readJson, response } from './http';
 import { ledger, object } from './storage';
-import { testBundle } from './test-bundle';
+import { canonicalBundle, testBundle } from './test-bundle';
 import type { Env, Json, Principal, Scope } from './types';
 
 function canonical(value: unknown): string {
@@ -21,24 +21,18 @@ export async function approveTestPolicy(
   repo: string,
 ) {
   const body = await readJson(req, 8 * 1024 * 1024);
+  const current = await ledger(env, repo, {
+    op: 'repository_status',
+    _workspace: principal.workspace,
+  });
   if (!body.files || typeof body.files !== 'object' || Array.isArray(body.files))
     throw Object.assign(new Error('Supply the immutable test files'), { code: 'INVALID_INPUT' });
-  // Match Rust Workspace's BTreeMap and FileEntry field ordering exactly.
-  const content = `{${Object.keys(body.files)
-    .sort()
-    .map((path) => {
-      const file = body.files[path];
-      return `${JSON.stringify(path)}:${JSON.stringify({
-        content: file.content,
-        executable: file.executable,
-        ...(file.encoding ? { encoding: file.encoding } : {}),
-      })}`;
-    })
-    .join(',')}}`;
-  const { digest } = await object(env, content);
+  const { encoded } = canonicalBundle(body.files);
+  const { digest } = await object(env, encoded);
   const policy = structuredClone(body.policy);
   if (!policy?.build)
     throw Object.assign(new Error('Supply a build policy'), { code: 'INVALID_INPUT' });
+  policy.build.setup ??= [];
   policy.build.test_bundle = { digest, protected_paths: body.protected_paths ?? [] };
   const validationScope: Scope = {
     repo_id: repo,
@@ -49,10 +43,6 @@ export async function approveTestPolicy(
   };
   await testBundle(env, validationScope, digest);
   const input = body;
-  const current = await ledger(env, repo, {
-    op: 'repository_status',
-    _workspace: principal.workspace,
-  });
   if (
     current.head_commit === input.expected_commit &&
     current.version === input.expected_version &&
