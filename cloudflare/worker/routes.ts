@@ -124,7 +124,15 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     }
     const parts = url.pathname.split('/').filter(Boolean);
     const repo = parts[2];
-    const action = parts[3] ?? 'snapshot';
+    const requestedAction = parts[3] ?? 'snapshot';
+    const action =
+      req.method === 'GET' && requestedAction === 'overview'
+        ? 'repository_overview'
+        : req.method === 'GET' && requestedAction === 'runs'
+          ? parts[4]
+            ? 'run_detail'
+            : 'runs_page'
+          : requestedAction;
     if (parts[1] !== 'repos' || !safeId(repo)) return error('NOT_FOUND', 'Unknown API route', 404);
     if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
       return await deleteRepository(req, env, principal, repo);
@@ -174,6 +182,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
     const input = await ownerCommandInput(req, action);
+    if (action === 'run_detail' && requestedAction === 'runs')
+      input.run_id = decodeURIComponent(parts[4]);
     if (action === 'init') {
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
         return error('INVALID_INPUT', 'Repository identity mismatch');

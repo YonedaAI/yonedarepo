@@ -34,7 +34,10 @@ export class ExecutionContainer extends Container<Env> {
       try {
         runtime = await health.json<Json>();
       } catch {
-        throw new Error('Previous container image is still serving; wait for rollout completion');
+        throw Object.assign(
+          new Error('Previous container image is still serving; wait for rollout completion'),
+          { code: 'RUNTIME_UPDATING' },
+        );
       }
       checkRuntime(runtime, scope.job);
       await ledger(this.env, scope.repo_id, {
@@ -59,13 +62,15 @@ export class ExecutionContainer extends Container<Env> {
     } catch (error) {
       try {
         await ledger(this.env, scope.repo_id, {
-          ...(!runtimeStarted && capacityUnavailable(error)
-            ? { op: 'defer_job', reason: 'container_capacity' }
-            : {
-                op: 'fail',
-                retryable: true,
-                error: `Container boot failed: ${(error as Error).message}`,
-              }),
+          ...((error as { code?: string }).code === 'RUNTIME_UPDATING'
+            ? { op: 'defer_job', reason: 'runtime_rollout' }
+            : !runtimeStarted && capacityUnavailable(error)
+              ? { op: 'defer_job', reason: 'container_capacity' }
+              : {
+                  op: 'fail',
+                  retryable: true,
+                  error: `Container boot failed: ${(error as Error).message}`,
+                }),
           job_id: scope.job.id,
           epoch: scope.job.epoch,
         });
