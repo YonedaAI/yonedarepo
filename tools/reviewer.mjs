@@ -30,6 +30,7 @@ function keyPrompt() {
   });
 }
 async function main() {
+  if (process.argv.slice(2).some(arg => arg !== '--new')) throw new Error('Usage: node tools/reviewer.mjs [--new]');
   let key = await keyPrompt();
   let cookie = '';
   async function api(path, body) {
@@ -48,11 +49,21 @@ async function main() {
   const policy=await api('reviewer');
   console.log(`Signed in. Funded allowance remaining: $${((policy.budget.limit-policy.budget.charged)/1000000).toFixed(2)}.`);
   if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
-  const request_id=policy.active_trial?.replace(/^reviewer-/, '') ?? randomUUID();
-  console.log(policy.active_trial ? 'Resuming the recorded reviewer trial.' : 'Starting the prepared Build Together trial (up to $5).');
   let trial;
+  if (!policy.active_trial && !process.argv.includes('--new')) {
+    const snapshot=await api(`repos/${policy.repo_id}/snapshot`);
+    const recorded=snapshot.runs.filter(run=>['ready','accepted'].includes(run.status))
+      .sort((a,b)=>(b.created_at??0)-(a.created_at??0))[0];
+    if(recorded) {
+      trial={repo_id:policy.repo_id,run_id:recorded.id,
+        url:`/?repo=${encodeURIComponent(policy.repo_id)}&run=${encodeURIComponent(recorded.id)}`};
+      console.log('Opening the recorded checked example. Use --new only to approve another funded trial.');
+    }
+  }
+  const request_id=policy.active_trial?.replace(/^reviewer-/, '') ?? randomUUID();
+  if (!trial) console.log(policy.active_trial ? 'Resuming the recorded reviewer trial.' : 'Starting the prepared Build Together trial (up to $5).');
   // Recover a lost acknowledgement using the SAME request ID, never a new paid trial.
-  for (let attempt=0;attempt<3;attempt++) {
+  for (let attempt=0;!trial && attempt<3;attempt++) {
     try { trial=await api('reviewer/trial',{request_id}); break; }
     catch (error) {
       if (error.code || attempt===2) throw error;
