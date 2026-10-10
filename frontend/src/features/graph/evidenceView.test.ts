@@ -102,6 +102,11 @@ describe('review evidence scope', () => {
     ).toBe('Trusted source capture');
     expect(
       authorityLabel(
+        node('superseded', 'team_handoff', { authority: 'superseded' }, 'platform_capture'),
+      ),
+    ).toBe('Superseded source capture');
+    expect(
+      authorityLabel(
         node('decision', 'decision', { decision_kind: 'development_verification' }, 'owner'),
       ),
     ).toBe('Automated fixture decision');
