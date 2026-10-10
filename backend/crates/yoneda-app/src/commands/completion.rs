@@ -251,6 +251,7 @@ pub(super) fn record_publication<S: SqlStore>(
     repository["site"] = Value::Null;
     decision["status"] = json!("published");
     decision["published_at"] = json!(now);
+    super::history::link_file_provenance_to_publication(db, decision, &commit)?;
     let candidate = get(db, "candidates", &string(decision, "candidate")?)?;
     let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
     if evaluation["deployment"]["commit"] == commit

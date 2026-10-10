@@ -213,6 +213,23 @@ fn capacity_defer_rejects_unknown_failure_or_started_runtime_without_refund() {
 }
 
 #[test]
+fn rollout_defer_preserves_attempt_before_execution_and_rejects_after_start() {
+    let db = repo();
+    start(&db);
+    let id = "job:run-one:research";
+    call(&db, json!({"op":"claim","job_id":id})).unwrap();
+    let deferred = call(
+        &db,
+        json!({"op":"defer_job","job_id":id,"epoch":1,"reason":"runtime_rollout"}),
+    )
+    .unwrap();
+    assert_eq!(deferred["attempt"], 0);
+    let next = call(&db, json!({"op":"claim","job_id":id,"now":6000})).unwrap();
+    call(&db, json!({"op":"progress","job_id":id,"epoch":next["epoch"],"now":6000,"progress":{"stage":"container_ready"}})).unwrap();
+    assert_eq!(call(&db, json!({"op":"defer_job","job_id":id,"epoch":next["epoch"],"now":6000,"reason":"runtime_rollout"})).unwrap_err().code,"INVALID_STATE");
+}
+
+#[test]
 fn resync_without_pending_fences_orphaned_publishers_and_does_not_reblock() {
     let db = repo();
     blocked(&db, false);

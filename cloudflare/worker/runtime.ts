@@ -33,6 +33,13 @@ export function checkLedger(snapshot: Json, request?: Json) {
 }
 // Worker and image deploy separately; refuse incompatible images before model calls.
 export function checkRuntime(health: Json, job: Json) {
+  try {
+    compatibleRuntime(health, job);
+  } catch (failure) {
+    throw Object.assign(failure as Error, { code: 'RUNTIME_UPDATING' });
+  }
+}
+function compatibleRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (job.payload?.team_planning === true && health.capabilities?.team_planning !== 1)

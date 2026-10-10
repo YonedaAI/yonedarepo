@@ -16,6 +16,9 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     for path in paths {
         yoneda_core::validate_path(path.as_str().ok_or_else(|| bad("Invalid changed path"))?)?;
     }
+    if result.get("file_provenance").is_some() {
+        super::history::capture_file_provenance(db, j, result, now)?;
+    }
     if super::team::captured(db, j, result, now)? {
         return Ok(());
     }

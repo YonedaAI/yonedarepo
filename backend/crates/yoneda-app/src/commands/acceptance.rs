@@ -115,6 +115,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
     let d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
     create(db, "decisions", &did, &d)?;
+    super::history::link_file_provenance_to_decision(db, &d, now)?;
     r["head_commit"] = json!(revision.commit);
     r["version"] = receipt["version"].clone();
     r["pending"] = json!(did);

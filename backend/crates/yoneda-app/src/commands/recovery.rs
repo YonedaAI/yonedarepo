@@ -136,9 +136,9 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "External attempts cannot defer hosted dispatch",
         ));
     }
-    if c["reason"] != "container_capacity" {
+    if c["reason"] != "container_capacity" && c["reason"] != "runtime_rollout" {
         return Err(bad(
-            "Only known container_capacity failures can defer a job",
+            "Only known capacity or runtime rollout failures can defer a job",
         ));
     }
     if !job["runtime_started_at"].is_null() {
@@ -176,7 +176,11 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     job["progress"] = Value::Null;
     job["not_before"] = json!(not_before);
     job["defer_count"] = json!(count);
-    job["error"] = json!("Container capacity unavailable before execution");
+    job["error"] = json!(if c["reason"] == "runtime_rollout" {
+        "Container image updating before execution"
+    } else {
+        "Container capacity unavailable before execution"
+    });
     save(db, "jobs", &id, &job)?;
     super::leases::reflect_status(db, &job, now)?;
     outbox(
@@ -195,7 +199,7 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         db,
         "job.deferred",
         now,
-        json!({"id":id,"epoch":job["epoch"],"refunded_epoch":epoch,"reason":"container_capacity","not_before":not_before}),
+        json!({"id":id,"epoch":job["epoch"],"refunded_epoch":epoch,"reason":c["reason"],"not_before":not_before}),
     )?;
     Ok(job)
 }

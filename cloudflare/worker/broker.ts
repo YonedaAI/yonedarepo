@@ -5,6 +5,7 @@ import { CANDIDATE_DIFF_LIMIT } from './evidence';
 import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
+import { captureFileProvenance } from './provenance';
 import { scopeFor } from './scope';
 import { ledger, object, readObject } from './storage';
 import { teamAttemptSource } from './team-source';
@@ -140,11 +141,34 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         // Only the container-derived capture capability can create this binding, after
         // checking the freshly pushed commit. Never accept a caller-provided R2 digest.
         const stored = await object(env, body.diff, CANDIDATE_DIFF_LIMIT);
-        const { diff: _diff, diff_digest: _claimedDigest, ...metadata } = body;
+        const fileProvenance = await captureFileProvenance(
+          captured,
+          job.payload.base.commit,
+          body.revision.commit,
+        );
+        const paths = [
+          ...new Set(
+            fileProvenance.flatMap((file) =>
+              [file.path, file.old_path].filter((path): path is string => typeof path === 'string'),
+            ),
+          ),
+        ];
+        const {
+          diff: _diff,
+          diff_digest: _claimedDigest,
+          file_provenance: _claimedFiles,
+          paths: _claimedPaths,
+          ...metadata
+        } = body;
         command = {
           op: 'finish',
           ...identity,
-          result: { ...metadata, diff_digest: stored.digest },
+          result: {
+            ...metadata,
+            paths,
+            file_provenance: fileProvenance,
+            diff_digest: stored.digest,
+          },
         };
       }
       await attemptLog(env, scope, 'execution.completion_received');
