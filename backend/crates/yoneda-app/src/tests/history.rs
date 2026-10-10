@@ -1,6 +1,6 @@
 use super::*;
 use crate::storage::{
-    edge, event, get, node, prune_outbox_payloads, run_detail, run_graph_page, run_page,
+    edge, event, get, node, prune_outbox_payloads, run_detail, run_graph_page, run_page, save,
 };
 #[path = "../commands/archive.rs"]
 mod archive_command;
@@ -116,13 +116,13 @@ fn history_pages_have_no_holes_and_hold_their_sequence_watermark() {
 #[test]
 fn archive_commit_replay_and_corruption_keep_audited_receipt() {
     let db = repo();
-    let mut run = start(&db);
-    let id = run["id"].as_str().unwrap().to_owned();
-    run["status"] = json!("accepted");
-    run["created_at"] = json!(1);
+    let mut run_payload = start(&db);
+    let id = run_payload["id"].as_str().unwrap().to_owned();
+    run_payload["status"] = json!("accepted");
+    run_payload["created_at"] = json!(1);
     db.query(
         "UPDATE runs SET payload=? WHERE id=?",
-        &[json!(run.to_string()), json!(id)],
+        &[json!(run_payload.to_string()), json!(id)],
     )
     .unwrap();
     db.query("UPDATE jobs SET payload=json_set(payload,'$.status','cancelled') WHERE json_extract(payload,'$.payload.execution.run_id')=?", &[json!(id)]).unwrap();
@@ -134,6 +134,35 @@ fn archive_commit_replay_and_corruption_keep_audited_receipt() {
     .unwrap();
     let job = &prepared["job"];
     let digest = job["digest"].as_str().unwrap();
+    let bundle_json = prepared["bundle_json"].as_str().unwrap();
+    assert_eq!(yoneda_core::digest(bundle_json.as_bytes()), digest);
+    let bundle: Value = serde_json::from_str(bundle_json).unwrap();
+    for mutable in ["repository", "archive", "capabilities", "seq", "watermark"] {
+        assert!(
+            bundle.get(mutable).is_none(),
+            "mutable archive field: {mutable}"
+        );
+    }
+    let mut repository = get(&db, "repository", "repo").unwrap();
+    repository["head_commit"] = json!("f".repeat(40));
+    repository["version"] = json!(7);
+    repository["policy"]["version"] = json!("new-policy");
+    save(&db, "repository", "repo", &repository).unwrap();
+    let mut current_run = get(&db, "runs", &id).unwrap();
+    current_run["status"] = json!("ready");
+    save(&db, "runs", &id, &current_run).unwrap();
+    call(&db, run("unrelated-after-prepare", 50)).unwrap();
+    let replay = archive_command::handle(
+        &db,
+        json!({"op":"archive_prepare","run_id":id}),
+        40 * 24 * 60 * 60 * 1000,
+    )
+    .unwrap();
+    assert_eq!(replay["bundle_json"], bundle_json);
+    assert_eq!(
+        serde_json::from_str::<Value>(bundle_json).unwrap()["run"]["status"],
+        "accepted"
+    );
     assert_eq!(archive_command::handle(&db,json!({"op":"archive_commit","job_id":job["id"],"digest":"0".repeat(64),"receipt_id":"bad"}),40*24*60*60*1000).unwrap_err().code,"ARCHIVE_DIGEST_MISMATCH");
     let commit = json!({"op":"archive_commit","job_id":job["id"],"digest":digest,"verified_digest":digest,"receipt_id":"receipt-1"});
     let receipt = archive_command::handle(&db, commit.clone(), 40 * 24 * 60 * 60 * 1000).unwrap();
@@ -452,8 +481,10 @@ fn archive_interruption_replay_compacts_only_after_verified_ack_and_retains_refe
     let first = archive_command::handle(&db, prepare.clone(), 40 * 24 * 60 * 60 * 1000).unwrap();
     let retried = archive_command::handle(&db, prepare, 40 * 24 * 60 * 60 * 1000).unwrap();
     assert_eq!(first["job"]["digest"], retried["job"]["digest"]);
+    db.query("INSERT INTO execution_logs(event_id,execution_id,at,data) VALUES('after-prepare-log','run-one:research',10,'{\"stage\":\"execution.finished\"}')", &[]).unwrap();
+    let bundle: Value = serde_json::from_str(first["bundle_json"].as_str().unwrap()).unwrap();
     assert!(
-        first["bundle"]["execution_logs"]
+        bundle["execution_logs"]
             .as_array()
             .unwrap()
             .iter()
@@ -495,6 +526,17 @@ fn archive_interruption_replay_compacts_only_after_verified_ack_and_retains_refe
         .unwrap();
     assert_eq!(log[0]["data_pruned"], 1);
     assert_eq!(log[0]["data"], "{}");
+    let post_prepare_log = db
+        .query(
+            "SELECT data,data_pruned FROM execution_logs WHERE event_id='after-prepare-log'",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(post_prepare_log[0]["data_pruned"], 0);
+    assert_eq!(
+        post_prepare_log[0]["data"],
+        "{\"stage\":\"execution.finished\"}"
+    );
     assert_eq!(
         get(&db, "candidates", "candidate-archive").unwrap()["diff_digest"],
         "a".repeat(64)
