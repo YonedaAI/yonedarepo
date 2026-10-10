@@ -11,7 +11,7 @@ import { useMemo } from 'react';
 import '@xyflow/react/dist/style.css';
 import type { Graph, GraphNode } from '../../lib/types';
 
-const graphFitOptions = { padding: 0.18, minZoom: 0.15, maxZoom: 1 };
+const graphFitOptions = { padding: 0.18, minZoom: 0.75, maxZoom: 1 };
 
 const columns = [
   'repository',
@@ -109,6 +109,9 @@ export function ContextGraph({
       minZoom={graphFitOptions.minZoom}
       maxZoom={2}
       fitViewOptions={graphFitOptions}
+      zoomOnScroll={false}
+      zoomOnDoubleClick={false}
+      preventScrolling={false}
       nodesFocusable={false}
       edgesFocusable={false}
       nodesDraggable={false}

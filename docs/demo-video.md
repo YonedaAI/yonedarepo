@@ -1,5 +1,13 @@
 # Demonstration video production
 
+The current reviewer walkthrough is a **6:00 captioned edit of actual October 10 browser captures**, showing the funded reviewer account, Build together, capture/check evidence and readable context trail. It has no narration and is explicitly labelled as an edited sequence, not a continuous live recording. The older narrated videos below remain historical material. The current walkthrough is reproduced with:
+
+```sh
+python3 tools/render-reviewer-demo.py --captures PATH_TO_CURRENT_CAPTURES --output .local/reviewer-video
+```
+
+The renderer uses [the current scene manifest](reviewer-demo-scenes.json), checks the five-to-ten-minute duration, embeds captions and chapters, and needs Pillow plus ffmpeg/ffprobe only for optional video production. Reviewer credentials, transcripts and signed preview URLs are omitted from public captures.
+
 For a presenter in the owner's likeness with a professional tech voice, use the new [8:48 presenter script](video/presenter-script.md), [scene manifest](video/presenter-scenes.json) and [Artlist/Higgsfield production brief](video/production-brief.md). A styled office presenter pilot and all ten owner-voice narration takes have been generated. The owner accepted the more expressive replacement voice. Revision 3 has rendered locally with synchronized presenter passages, embedded captions and ten chapters; decode, timing and browser checks passed. They remain private for owner review; short pilots are separate from the final video. See the production brief for offline assembly commands. The released video described below remains the historical walkthrough.
 
 The release MP4 runs **8 minutes 48 seconds** (527.8 seconds) and is an edited walkthrough of actual served browser captures, recorded runtime concurrency, revision/check evidence and MCP continuation. Narration is synthetic (macOS Samantha). The video does not present still captures as a continuous live recording. The owner-directed selection provenance and unexercised personal BYOK inference are stated in the narration.

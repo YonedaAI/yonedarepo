@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphNode, Snapshot } from '../../lib/types';
-import { authorityLabel, initialNeighborhood, runEvidenceGraph } from './evidenceView';
+import {
+  authorityLabel,
+  focusedNeighborhood,
+  initialNeighborhood,
+  runEvidenceGraph,
+} from './evidenceView';
 
 function node(id: string, kind: string, data = {}, author = 'platform'): GraphNode {
   return { id, kind, data, author, label: id, recorded_at: 1000 };
@@ -50,6 +55,13 @@ function fixture(): Snapshot {
   };
 }
 describe('review evidence scope', () => {
+  it('focuses immediate relationships without pulling in a neighboring record’s unrelated history', () => {
+    const graph = fixture();
+    const focused = focusedNeighborhood(graph, 'agent');
+    expect(focused.nodes.map((item) => item.id)).toEqual(['shared', 'agent']);
+    expect(focused.edges.map((edge) => edge.target)).toEqual(['agent']);
+    expect(focusedNeighborhood(graph, 'missing').nodes).toEqual([]);
+  });
   it('includes selected run captures, checks, decision and cited context without older runs through shared context', () => {
     const graph = runEvidenceGraph(fixture(), 'current');
     expect(graph.nodes.map((item) => item.id)).toEqual([

@@ -3,7 +3,7 @@ import type { Graph, GraphNode, Snapshot } from '../../lib/types';
 import { ContextGraph } from './ContextGraph';
 import { EvidencePanel } from './EvidencePanel';
 import { EvidenceTrail } from './EvidenceTrail';
-import { initialNeighborhood, runEvidenceGraph } from './evidenceView';
+import { focusedNeighborhood, initialNeighborhood, runEvidenceGraph } from './evidenceView';
 import { GraphTools } from './GraphTools';
 
 export function GraphWorkspace({
@@ -41,6 +41,7 @@ export function GraphWorkspace({
   const selected =
     active.nodes.find((node) => node.id === nodeId) ??
     snapshot.nodes.find((node) => node.id === nodeId);
+  const displayed = nodeId ? focusedNeighborhood(active, nodeId) : active;
   function select(node: GraphNode) {
     setNodeId(node.id);
   }
@@ -113,26 +114,32 @@ export function GraphWorkspace({
             selected={selected}
             onGraph={(graph) => {
               setCustomGraph(graph);
+              setNodeId('');
               if (!graph) setFull(true);
             }}
             onSelect={select}
           />
           <div className="graph-scope">
             <p>
-              {full
-                ? 'Full repository graph'
-                : customGraph
-                  ? 'Search or expanded context'
-                  : 'Initial run neighborhood'}{' '}
-              · {active.nodes.length} records{active.truncated ? ' · more records available' : ''}
+              {nodeId
+                ? 'Selected record and immediate relationships'
+                : full
+                  ? 'Full repository graph'
+                  : customGraph
+                    ? 'Search or expanded context'
+                    : 'Initial run neighborhood'}{' '}
+              · {displayed.nodes.length} records
+              {displayed.truncated ? ' · more records available' : ''}
+              {' · Drag to pan; use +/− to zoom.'}
             </p>
-            {(full || customGraph) && (
+            {(full || customGraph || nodeId) && (
               <button
                 type="button"
                 className="text-button"
                 onClick={() => {
                   setFull(false);
                   setCustomGraph(null);
+                  setNodeId('');
                 }}
               >
                 Return to run neighborhood
@@ -141,7 +148,12 @@ export function GraphWorkspace({
           </div>
           <div className="graph-workspace">
             <div className="graph-canvas">
-              <ContextGraph graph={active} selectedId={nodeId} onSelect={select} />
+              <ContextGraph
+                key={displayed.nodes.map((node) => node.id).join('|')}
+                graph={displayed}
+                selectedId={nodeId}
+                onSelect={select}
+              />
             </div>
             {selected && (
               <EvidencePanel

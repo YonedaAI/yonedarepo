@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-10-10",
+  "implementation_revision": "7352d95",
+  "platform": "https://yonedarepo.com",
+  "additional_frontend_domain": "https://www.yonedarepo.com",
+  "repo_id": "reviewer-2d70999ae1805e4bcef9b4ab",
+  "run_id": "reviewer-f0ca6e5e-ccc6-4f13-9fd6-c083fbb817c3",
+  "run_status": "ready",
+  "candidate_id": "candidate:capture:reviewer-f0ca6e5e-ccc6-4f13-9fd6-c083fbb817c3:task:integrate:1",
+  "candidate_revision": {
+    "commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+    "repository": "yoneda-dev/candidate-ffa7bbb29df3df5b48064b9c6cad88d5"
+  },
+  "policy": "reviewer-v2",
+  "suite": "commands-v1",
+  "environment": "linux-node24-rust1.94-v1",
+  "checks": [
+    {
+      "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+      "name": "site",
+      "status": "pass"
+    },
+    {
+      "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+      "name": "trail-module",
+      "status": "pass"
+    },
+    {
+      "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+      "name": "bilingual",
+      "status": "pass"
+    },
+    {
+      "detail": "Clean evaluator exit: Some(0); setup succeeded: true",
+      "name": "registry-egress",
+      "status": "pass"
+    },
+    {
+      "detail": "Evaluator captured bounded regular static files from this revision",
+      "name": "static_assets",
+      "status": "pass"
+    }
+  ],
+  "deployment_manifest": {
+    "candidate": "candidate:capture:reviewer-f0ca6e5e-ccc6-4f13-9fd6-c083fbb817c3:task:integrate:1",
+    "commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+    "digest": "077e83560de36bd0ef6f6cb396ec41820a4fb8595c1e87059e2677da53854785"
+  },
+  "specialist_job_overlap_ms": 53074,
+  "overlap_measurement": "Intersection of the two specialist ledger started_at/finished_at intervals, including job startup. Not a throughput benchmark.",
+  "budget": {
+    "trial_ceiling_microusd": 5000000,
+    "trial_conservative_charged_microusd": 2675924,
+    "shared_conservative_charged_microusd": 8000287,
+    "shared_limit_microusd": 50000000,
+    "actual_provider_bill": "not measured",
+    "reevaluation_inference_charge_microusd": 0
+  },
+  "local_gate": {
+    "command": "cargo xtask check",
+    "native_rust_tests": 213,
+    "workerd_tests": 247,
+    "node_frontend_and_profile_tests": 30,
+    "result": "passed"
+  },
+  "human_decision": "pending; no decision submitted by this walkthrough",
+  "canonical_published_revision": "40b7170ec643ec0cab48afadaa8acdb2011c94f5",
+  "previous_trial_evidence": "Failed and cancelled trials retained. The first v1 evaluation of this exact revision failed a browser-global fixture check; v2 corrects that fixture and retains all contract assertions. Both evaluations remain recorded."
+}
