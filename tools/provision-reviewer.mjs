@@ -22,7 +22,7 @@ try {
  await writeFile(file,JSON.stringify(access,null,2),{mode:0o600});
 } catch(error) {if(error.code!=='ALREADY_EXISTS') throw error; await request('auth/login',{username:access.username,password:access.password});}
 const provisioned=await request('admin/reviewer/provision',{username:access.username},true);
-access={...access,...provisioned}; await writeFile(file,JSON.stringify(access,null,2),{mode:0o600});
+access={...access,origin,...provisioned}; await writeFile(file,JSON.stringify(access,null,2),{mode:0o600});
 const handoff=new URL('reviewer-access.txt',directory);
 await writeFile(handoff,`YonedaRepo reviewer access\n\nOpen: ${origin}\nChoose: Have a reviewer access key?\nAccess key: ${access.password}\n\nChoose Run prepared example, or from the source checkout run:\nnode tools/reviewer.mjs\n\nNo signup, provider key or local deployment is needed.\nShared allowance: $50; up to $5 per trial; one active trial.\nAccess expires: ${new Date(provisioned.expires).toISOString()}\nSource: https://github.com/MagnetonIO/yonedarepo\n`,{mode:0o600});
 await chmod(handoff,0o600);
