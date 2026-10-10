@@ -88,11 +88,11 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     }
     let serialized = data.to_string();
     let existing = db.query(
-        "SELECT seq,data FROM execution_logs WHERE event_id=?",
+        "SELECT seq,data,data_pruned FROM execution_logs WHERE event_id=?",
         &[json!(id)],
     )?;
     if let Some(row) = existing.first() {
-        if row["data"].as_str() != Some(serialized.as_str()) {
+        if row["data_pruned"] != 1 && row["data"].as_str() != Some(serialized.as_str()) {
             return Err(Error::new("IDEMPOTENCY_CONFLICT", "Log event is immutable"));
         }
         return Ok(json!({"seq":row["seq"]}));

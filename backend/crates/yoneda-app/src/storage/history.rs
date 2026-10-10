@@ -124,8 +124,19 @@ pub(crate) fn run_detail<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
     let team_tasks = scoped("team_tasks")?;
     let team_handoffs = scoped("team_handoffs")?;
     let artifacts = scoped("artifacts")?;
+    let archive = db.query(
+        "SELECT payload FROM archive_index WHERE run_id=?",
+        &[json!(id)],
+    )?;
+    let archive = archive
+        .first()
+        .map(|row| {
+            serde_json::from_str::<Value>(row["payload"].as_str().unwrap_or_default())
+                .map_err(|e| bad(&e.to_string()))
+        })
+        .transpose()?;
     Ok(
-        json!({"v":1,"repository":repo(db)?,"run":run,"runs":[run],"executions":executions,"candidates":candidates,"evaluations":evaluations,"decisions":decisions,"team_tasks":team_tasks,"team_handoffs":team_handoffs,"artifacts":artifacts,"nodes":[],"edges":[],"graph_paged":true,"source_diffs":"digest_only"}),
+        json!({"v":1,"repository":repo(db)?,"run":run,"runs":[run],"executions":executions,"candidates":candidates,"evaluations":evaluations,"decisions":decisions,"team_tasks":team_tasks,"team_handoffs":team_handoffs,"artifacts":artifacts,"nodes":[],"edges":[],"graph_paged":true,"source_diffs":"digest_only","archive":archive}),
     )
 }
 

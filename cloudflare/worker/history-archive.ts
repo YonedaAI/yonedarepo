@@ -28,6 +28,7 @@ export async function archiveDueHistory(env: Env, repo: string, now = Date.now()
       op: 'archive_commit',
       job_id: job.id,
       digest: job.digest,
+      verified_digest: actual,
       receipt_id: `archive-receipt:${run_id}:${job.digest}`,
       now,
     });
@@ -45,4 +46,25 @@ export async function archivedHistoryDetail(env: Env, repo: string, run_id: stri
   if ((await digest(body)) !== index.digest)
     throw new Error('Archived history failed digest verification');
   return JSON.parse(body) as Json;
+}
+
+/** Preserve the run_detail contract while hydrating compacted history from verified R2 bytes. */
+export async function historyDetail(env: Env, repo: string, run_id: string): Promise<Json> {
+  const hot = await ledger(env, repo, { op: 'run_detail', run_id });
+  if (!hot.archive) return hot;
+  const archived = await archivedHistoryDetail(env, repo, run_id);
+  if (
+    JSON.stringify(archived.run) !== JSON.stringify(hot.run) ||
+    !Array.isArray(archived.runs) ||
+    archived.runs.length !== 1 ||
+    archived.runs[0].id !== run_id ||
+    !Array.isArray(archived.executions) ||
+    archived.executions.some((item) => item.run_id !== run_id)
+  ) {
+    throw new Error('Archived detail does not match the requested run');
+  }
+  archived.archive = hot.archive;
+  archived.capabilities = hot.capabilities;
+  archived.seq = hot.seq;
+  return archived;
 }
