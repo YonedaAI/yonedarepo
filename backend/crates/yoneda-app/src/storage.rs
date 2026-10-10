@@ -18,7 +18,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 9;
+    const SCHEMA_VERSION: i64 = 10;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -32,6 +32,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (7, include_str!("migrations/0007_context_access.sql")),
             (8, include_str!("migrations/0008_team_runs.sql")),
             (9, include_str!("migrations/0009_history_archive.sql")),
+            (10, include_str!("migrations/0010_archive_compaction.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",

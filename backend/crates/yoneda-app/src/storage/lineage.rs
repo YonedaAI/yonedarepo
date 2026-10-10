@@ -163,7 +163,7 @@ pub(crate) fn fence_descendants<S: SqlStore>(db: &S, job: &Value, now: i64) -> R
 }
 
 pub(crate) fn run_jobs<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> {
-    db.query("SELECT payload FROM jobs WHERE json_extract(payload,'$.payload.execution.run_id')=? OR json_extract(payload,'$.payload.run_id')=? OR json_extract(payload,'$.payload.candidate.run_id')=? OR (json_extract(payload,'$.kind')='publish' AND json_extract(payload,'$.payload.decision_id') IN (SELECT id FROM decisions WHERE json_extract(payload,'$.run_id')=?)) ORDER BY id",
+    db.query("SELECT payload FROM jobs WHERE id IN (SELECT id FROM jobs WHERE json_extract(payload,'$.payload.execution.run_id')=? UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.run_id')=? UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.candidate.run_id')=? UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.decision_id') IN (SELECT id FROM decisions WHERE json_extract(payload,'$.run_id')=?)) ORDER BY id",
         &[json!(run_id),json!(run_id),json!(run_id),json!(run_id)])?.iter().map(|row| {
         serde_json::from_str(row["payload"].as_str().ok_or_else(|| bad("Corrupt job"))?)
             .map_err(|e| bad(&e.to_string()))
