@@ -150,6 +150,9 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         )?;
     }
     let mut payload = json!({"execution":execution,"run":run,"policy":run["policy"],"team_inputs":team_inputs,"team_owned_paths":task["write_paths"],"team_write_paths":write});
+    if let Some(transport) = run.get("workspace_transport") {
+        payload["workspace_transport"] = transport.clone();
+    }
     if task["role"] == "integrator" {
         let manifest = inputs::manifest(db, run)?;
         let digest = yoneda_core::fingerprint(&manifest)?;
