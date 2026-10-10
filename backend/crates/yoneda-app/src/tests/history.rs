@@ -1,6 +1,6 @@
 use super::*;
 use crate::storage::{
-    edge, event, get, prune_outbox_payloads, run_detail, run_graph_page, run_page,
+    edge, event, get, node, prune_outbox_payloads, run_detail, run_graph_page, run_page,
 };
 #[path = "../commands/archive.rs"]
 mod archive_command;
@@ -221,6 +221,133 @@ fn run_detail_and_graph_pages_are_scoped_and_stable() {
 }
 
 #[test]
+fn run_detail_and_graph_scope_actual_evaluation_and_producer_execution_artifact_shapes() {
+    let db = repo();
+    let created = start(&db);
+    let run_id = created["id"].as_str().unwrap();
+    let execution_id = "run-one:research";
+    db.query("INSERT INTO candidates(id,payload) VALUES('candidate-actual',?)", &[json!(json!({"id":"candidate-actual","run_id":run_id,"execution":execution_id,"status":"evaluated"}).to_string())]).unwrap();
+    let evaluation = yoneda_core::Evaluation {
+        id: "evaluation-actual".into(),
+        candidate: "candidate-actual".into(),
+        revision: yoneda_core::Revision {
+            repository: "example/project".into(),
+            commit: "a".repeat(40),
+        },
+        policy: "policy-v1".into(),
+        suite: "suite-v1".into(),
+        environment: "environment-v1".into(),
+        checks: vec![],
+        evidence: "b".repeat(64),
+    };
+    let evaluation = serde_json::to_value(evaluation).unwrap();
+    db.query(
+        "INSERT INTO evaluations(id,payload) VALUES(?,?)",
+        &[json!(evaluation["id"]), json!(evaluation.to_string())],
+    )
+    .unwrap();
+    node(
+        &db,
+        "evaluation-actual",
+        "evaluation",
+        "Evaluation",
+        "platform",
+        10,
+        evaluation,
+    )
+    .unwrap();
+    let claim = call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    let actual_artifact = call(&db, json!({"op":"publish_artifact","job_id":claim["id"],"epoch":claim["epoch"],"id":"artifact-actual","digest":"c".repeat(64),"label":"Research note","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays bounded","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
+    assert_eq!(actual_artifact["producer"], execution_id);
+    let nested = json!({"id":"artifact-nested","producer":{"execution":execution_id},"kind":"research","label":"Legacy producer shape","digest":"d".repeat(64)});
+    db.query(
+        "INSERT INTO artifacts(id,payload) VALUES('artifact-nested',?)",
+        &[json!(nested.to_string())],
+    )
+    .unwrap();
+    node(
+        &db,
+        "artifact-nested",
+        "context",
+        "Legacy producer shape",
+        "agent_assertion",
+        11,
+        nested,
+    )
+    .unwrap();
+    edge(
+        &db,
+        "evaluation-actual",
+        run_id,
+        "checks",
+        "evaluation provenance",
+    )
+    .unwrap();
+    edge(
+        &db,
+        "artifact-nested",
+        run_id,
+        "produced_by",
+        "nested execution provenance",
+    )
+    .unwrap();
+    event(&db, "history.provenance-test", 12, json!({})).unwrap();
+
+    let detail = run_detail(&db, run_id).unwrap();
+    assert_eq!(
+        detail["evaluations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["evaluation-actual"]
+    );
+    let artifact_ids = detail["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        artifact_ids,
+        ["artifact-actual", "artifact-nested"].into_iter().collect()
+    );
+    let graph = run_graph_page(&db, run_id, None, 50, None).unwrap();
+    let sources = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["source"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(sources.contains("evaluation-actual"));
+    assert!(sources.contains("artifact-nested"));
+}
+
+#[test]
+fn external_contribution_started_event_populates_run_history_without_run_created() {
+    let db = repo();
+    let contribution = call(&db, json!({"op":"external_begin","id":"external-history","_grant":"history-grant","fork":"test/history","intent":"Check external history","criteria":[]})).unwrap();
+    let run_id = contribution["payload"]["execution"]["run_id"]
+        .as_str()
+        .unwrap();
+    let event = db.query("SELECT seq FROM events WHERE kind='contribution.started' AND json_extract(data,'$.execution')='external-history'", &[]).unwrap();
+    assert_eq!(event.len(), 1);
+    let history = db
+        .query(
+            "SELECT run_id,seq FROM run_history WHERE run_id=?",
+            &[json!(run_id)],
+        )
+        .unwrap();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history[0]["seq"], event[0]["seq"]);
+    assert_eq!(
+        run_page(&db, None, 50, None).unwrap()["items"][0]["id"],
+        run_id
+    );
+}
+
+#[test]
 fn hot_lineage_reads_use_run_scoped_job_indexes() {
     let db = repo();
     let plan = db.query("EXPLAIN QUERY PLAN SELECT payload FROM jobs WHERE id IN (SELECT id FROM jobs WHERE json_extract(payload,'$.payload.execution.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.candidate.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.decision_id') IN (SELECT id FROM decisions WHERE json_extract(payload,'$.run_id')='run-one')) ORDER BY id", &[]).unwrap();
@@ -229,10 +356,29 @@ fn hot_lineage_reads_use_run_scoped_job_indexes() {
     assert!(plan.contains("jobs_by_run"), "{plan}");
     assert!(plan.contains("jobs_by_candidate_run"), "{plan}");
     assert!(plan.contains("jobs_by_decision"), "{plan}");
+    let plan = db.query("EXPLAIN QUERY PLAN SELECT e.payload FROM candidates c CROSS JOIN evaluations e INDEXED BY evaluations_by_candidate WHERE json_extract(c.payload,'$.run_id')='run-one' AND json_extract(e.payload,'$.candidate')=c.id", &[]).unwrap();
+    let plan = json!(plan).to_string();
+    assert!(plan.contains("candidates_by_run"), "{plan}");
+    assert!(plan.contains("evaluations_by_candidate"), "{plan}");
+    for (path, index) in [
+        ("$.run_id", "artifacts_by_run"),
+        ("$.producer", "artifacts_by_producer"),
+        ("$.producer.execution", "artifacts_by_producer_execution"),
+        (
+            "$.producer.execution.id",
+            "artifacts_by_producer_execution_id",
+        ),
+    ] {
+        let sql = format!(
+            "EXPLAIN QUERY PLAN SELECT id FROM artifacts WHERE json_extract(payload,'{path}') IN ('run-one:research')"
+        );
+        let plan = json!(db.query(&sql, &[]).unwrap()).to_string();
+        assert!(plan.contains(index), "{plan}");
+    }
 }
 
 #[test]
-fn migration_ten_upgrades_a_real_v8_schema_and_repeats_cleanly() {
+fn migration_eleven_upgrades_a_real_v8_schema_and_repeats_cleanly() {
     let db = NativeStore::memory().unwrap();
     db.query(
         "CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
@@ -264,10 +410,11 @@ fn migration_ten_upgrades_a_real_v8_schema_and_repeats_cleanly() {
     assert_eq!(
         db.query("SELECT MAX(version) AS version FROM schema_migrations", &[])
             .unwrap()[0]["version"],
-        10
+        11
     );
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('outbox') WHERE name IN ('created_at','payload_pruned')",&[]).unwrap()[0]["count"],2);
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('execution_logs') WHERE name='data_pruned'", &[]).unwrap()[0]["count"], 1);
+    assert_eq!(db.query("SELECT COUNT(*) AS count FROM sqlite_master WHERE type='index' AND name IN ('evaluations_by_candidate','artifacts_by_producer','artifacts_by_producer_execution','artifacts_by_producer_execution_id')", &[]).unwrap()[0]["count"], 4);
 }
 
 #[test]

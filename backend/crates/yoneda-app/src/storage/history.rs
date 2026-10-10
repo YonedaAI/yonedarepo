@@ -119,11 +119,11 @@ pub(crate) fn run_detail<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
             record.remove("diff");
         }
     }
-    let evaluations = scoped("evaluations")?;
+    let evaluations = run_evaluations(db, id)?;
     let decisions = scoped("decisions")?;
     let team_tasks = scoped("team_tasks")?;
     let team_handoffs = scoped("team_handoffs")?;
-    let artifacts = scoped("artifacts")?;
+    let artifacts = run_artifacts(db, id)?;
     let archive = db.query(
         "SELECT payload FROM archive_index WHERE run_id=?",
         &[json!(id)],
@@ -138,6 +138,58 @@ pub(crate) fn run_detail<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
     Ok(
         json!({"v":1,"repository":repo(db)?,"run":run,"runs":[run],"executions":executions,"candidates":candidates,"evaluations":evaluations,"decisions":decisions,"team_tasks":team_tasks,"team_handoffs":team_handoffs,"artifacts":artifacts,"nodes":[],"edges":[],"graph_paged":true,"source_diffs":"digest_only","archive":archive}),
     )
+}
+
+fn run_evaluations<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> {
+    let rows = db.query("SELECT e.payload FROM candidates c CROSS JOIN evaluations e INDEXED BY evaluations_by_candidate WHERE json_extract(c.payload,'$.run_id')=? AND json_extract(e.payload,'$.candidate')=c.id ORDER BY e.id", &[json!(run_id)])?;
+    decode_payloads(rows)
+}
+
+fn run_artifacts<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> {
+    let executions = db.query(
+        "SELECT id FROM executions WHERE json_extract(payload,'$.run_id')=? ORDER BY id",
+        &[json!(run_id)],
+    )?;
+    let execution_ids = executions
+        .iter()
+        .filter_map(|row| row["id"].as_str())
+        .collect::<Vec<_>>();
+    let mut selects =
+        vec!["SELECT id FROM artifacts WHERE json_extract(payload,'$.run_id')=?".to_owned()];
+    let mut params = vec![json!(run_id)];
+    if !execution_ids.is_empty() {
+        let slots = std::iter::repeat_n("?", execution_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        for path in [
+            "$.producer",
+            "$.producer.execution",
+            "$.producer.execution.id",
+        ] {
+            selects.push(format!(
+                "SELECT id FROM artifacts WHERE json_extract(payload,'{path}') IN ({slots})"
+            ));
+            params.extend(execution_ids.iter().map(|id| json!(id)));
+        }
+    }
+    let sql = format!(
+        "SELECT payload FROM artifacts WHERE id IN ({}) ORDER BY id",
+        selects.join(" UNION ")
+    );
+    decode_payloads(db.query(&sql, &params)?)
+}
+
+fn decode_payloads(rows: Vec<Value>) -> Result<Vec<Value>> {
+    rows.iter()
+        .map(|row| {
+            serde_json::from_str(
+                row["payload"]
+                    .as_str()
+                    .ok_or_else(|| bad("Corrupt history payload"))?,
+            )
+            .map_err(|e| bad(&e.to_string()))
+        })
+        .collect()
 }
 
 pub(crate) fn run_graph_page<S: SqlStore>(
@@ -166,11 +218,9 @@ pub(crate) fn run_graph_page<S: SqlStore>(
     for table in [
         "executions",
         "candidates",
-        "evaluations",
         "decisions",
         "team_tasks",
         "team_handoffs",
-        "artifacts",
     ] {
         let rows = db.query(
             &format!("SELECT id FROM {table} WHERE json_extract(payload,'$.run_id')=?"),
@@ -181,6 +231,16 @@ pub(crate) fn run_graph_page<S: SqlStore>(
                 .filter_map(|r| r["id"].as_str().map(str::to_owned)),
         );
     }
+    anchors.extend(
+        run_evaluations(db, run_id)?
+            .iter()
+            .filter_map(|row| row["id"].as_str().map(str::to_owned)),
+    );
+    anchors.extend(
+        run_artifacts(db, run_id)?
+            .iter()
+            .filter_map(|row| row["id"].as_str().map(str::to_owned)),
+    );
     anchors.sort();
     anchors.dedup();
     let slots = std::iter::repeat_n("?", anchors.len())
