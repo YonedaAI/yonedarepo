@@ -11,6 +11,12 @@ pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
 }
 pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let secret = std::env::var("SUPERVISOR_TOKEN").ok();
+    // Agent workspaces are intentionally chowned to UID 1000. Root-owned
+    // supervisor reads may trust this one canonical checkout path only.
+    let safe_directory = format!(
+        "safe.directory={}",
+        root.canonicalize().map_err(err)?.display()
+    );
     let mut command = Command::new(GIT);
     command.args([
         "-c",
@@ -24,6 +30,7 @@ pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
         "-c",
         "protocol.file.allow=never",
     ]);
+    command.arg("-c").arg(safe_directory);
     command
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -160,4 +167,35 @@ pub async fn capture(
         .into_owned()
     };
     Ok(json!({"commit":commit,"tree":tree,"paths":paths,"diff":diff}))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod ownership_tests {
+    use super::git;
+    use std::os::unix::fs::MetadataExt;
+    use tokio::process::Command;
+
+    #[tokio::test]
+    async fn root_can_read_only_the_agent_owned_checkout_after_chown() {
+        if unsafe { libc::geteuid() } != 0 {
+            return;
+        }
+        let checkout = tempfile::tempdir().expect("temporary checkout");
+        git(checkout.path(), &["init", "-b", "main"])
+            .await
+            .expect("initialize root-owned checkout");
+        let status = Command::new("/usr/bin/chown")
+            .args(["-R", "1000:1000"])
+            .arg(checkout.path())
+            .status()
+            .await
+            .expect("run chown");
+        assert!(status.success(), "chown fixture to the agent uid");
+        assert_eq!(std::fs::metadata(checkout.path()).unwrap().uid(), 1000);
+
+        let top = git(checkout.path(), &["rev-parse", "--show-toplevel"])
+            .await
+            .expect("trusted root Git must read the exact agent checkout");
+        assert_eq!(top, checkout.path().to_string_lossy());
+    }
 }
