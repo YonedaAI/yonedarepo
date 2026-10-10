@@ -1,7 +1,7 @@
 use crate::{
     broker::broker,
     err, field,
-    git::{capture, git},
+    git::{capture_fresh, git, read_git_revision},
     workspace::materialize,
 };
 use serde_json::{Value, json};
@@ -22,38 +22,52 @@ pub(crate) async fn execute_job(
     match field(job, "kind")? {
         "agent" => crate::agent::execute(job, &root, transcript).await,
         "capture" => {
-            let data = broker("/workspace", json!({}), true).await?;
-            let files: Workspace = serde_json::from_value(data["files"].clone()).map_err(err)?;
+            let git_native = crate::transport::enabled(job);
+            let source_commit = job["payload"]["source_revision"]["commit"].as_str();
+            let files = if git_native {
+                let revision =
+                    source_commit.ok_or_else(|| err("Frozen agent Git revision is missing"))?;
+                read_git_revision("http://git.yoneda.internal/fork", revision).await?
+            } else {
+                let data = broker("/workspace", json!({}), true).await?;
+                let files: Workspace =
+                    serde_json::from_value(data["files"].clone()).map_err(err)?;
+                crate::transport::from_legacy(files)?
+            };
             if let Some(scope) = job["payload"].get("team_owned_paths") {
-                let before = crate::team_source::load(job).await?;
-                crate::team_workspace::validate_changes(&before, &files, scope)?;
+                let before = crate::team_source::load_git(job).await?;
+                crate::team_workspace::validate_changes_git(&before, &files, scope)?;
             }
-            git(&root, &["init", "-b", "main"]).await?;
-            git(
+            let base = job["payload"]["execution"]["base"]["commit"]
+                .as_str()
+                .or_else(|| job["payload"]["base"]["commit"].as_str())
+                .ok_or_else(|| err("Frozen approved base commit is missing"))?;
+            let mut result = capture_fresh(
                 &root,
-                &[
-                    "fetch",
-                    "http://git.yoneda.internal/canonical",
-                    field(&job["payload"]["base"], "commit")?,
-                ],
-            )
-            .await?;
-            let mut result = capture(
-                &root,
-                Some(field(&job["payload"]["base"], "commit")?),
+                "http://git.yoneda.internal/canonical",
+                base,
                 &files,
                 "YonedaRepo captured candidate",
             )
             .await?;
-            git(
-                &root,
-                &[
-                    "push",
-                    "http://git.yoneda.internal/candidate",
-                    "HEAD:refs/heads/main",
-                ],
-            )
-            .await?;
+            let push = if git_native {
+                vec![
+                    "push".to_owned(),
+                    format!(
+                        "--force-with-lease=refs/heads/main:{}",
+                        source_commit.unwrap_or_default()
+                    ),
+                    "http://git.yoneda.internal/fork".to_owned(),
+                    "HEAD:refs/heads/main".to_owned(),
+                ]
+            } else {
+                vec![
+                    "push".into(),
+                    "http://git.yoneda.internal/candidate".into(),
+                    "HEAD:refs/heads/main".into(),
+                ]
+            };
+            git(&root, &push.iter().map(String::as_str).collect::<Vec<_>>()).await?;
             result["id"] = json!(format!("candidate:{}:{}", field(job, "id")?, job["epoch"]));
             result["revision"] = json!({"repository":job["fork"],"commit":result["commit"]});
             result["summary"] = json!(format!(

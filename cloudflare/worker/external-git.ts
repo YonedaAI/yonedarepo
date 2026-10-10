@@ -51,7 +51,13 @@ export async function externalGit(req: Request, env: Env, parts: string[]): Prom
       const upstream = new URL(`${info.remote}/${path}`);
       upstream.search = url.search;
       const headers = new Headers();
-      for (const name of ['content-type', 'git-protocol', 'accept', 'user-agent']) {
+      for (const name of [
+        'content-type',
+        'content-encoding',
+        'git-protocol',
+        'accept',
+        'user-agent',
+      ]) {
         const value = req.headers.get(name);
         if (value) headers.set(name, value);
       }

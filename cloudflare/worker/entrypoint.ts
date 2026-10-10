@@ -74,7 +74,26 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             created_at: now(),
           };
           await attemptLog(this.env, scope, 'execution.started');
-          if (job.kind === 'capture') {
+          if (job.payload?.workspace_transport === 'git-native-v1') {
+            if (job.kind === 'agent') {
+              const base = job.payload.execution?.base;
+              const fork = await provisionAttemptFork(
+                this.env,
+                envelope.repo_id,
+                job,
+                base?.repository,
+              );
+              job.fork = fork;
+              scope.fork = fork;
+            } else if (job.kind === 'capture') {
+              const fork = job.payload.source_revision?.repository;
+              if (typeof fork !== 'string') throw new Error('Frozen agent Git revision is missing');
+              job.fork = fork;
+              scope.fork = fork;
+            } else if (job.kind === 'evaluate') {
+              scope.fork = job.payload.target?.repository;
+            }
+          } else if (job.kind === 'capture') {
             const canonical = job.payload.base.repository.split('/')[1];
             const name = `candidate-${(await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
             using repo = await this.env.ARTIFACTS.get(canonical);
@@ -128,4 +147,37 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
       }),
     );
   }
+}
+
+async function provisionAttemptFork(
+  env: Env,
+  repoId: string,
+  job: Record<string, any>,
+  revision?: string,
+) {
+  const [namespace, canonical, extra] = String(revision ?? '').split('/');
+  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !canonical)
+    throw new Error('Approved canonical repository is unavailable');
+  const name = `attempt-${(await sha(`${repoId}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
+  using source = await env.ARTIFACTS.get(canonical);
+  try {
+    await source.fork(name, { defaultBranchOnly: true });
+  } catch (error) {
+    try {
+      using existing = await env.ARTIFACTS.get(name);
+      await existing.info();
+    } catch {
+      throw error;
+    }
+  }
+  using attempt = await env.ARTIFACTS.get(name);
+  for (const token of (await attempt.listTokens()).tokens)
+    if (token.state === 'active') await attempt.revokeToken(token.id);
+  try {
+    await ledger(env, repoId, { op: 'check_attempt', job_id: job.id, epoch: job.epoch });
+  } catch (error: any) {
+    if (error.code === 'REPOSITORY_DELETED') await cleanupLateRemote(env, repoId, name);
+    throw error;
+  }
+  return `${namespace}/${name}`;
 }

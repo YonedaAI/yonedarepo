@@ -1,5 +1,5 @@
 import { isCanonicalAccountIdentifier } from '../../shared/account';
-import { source } from './artifacts';
+import { validateSourceMetadata } from './artifacts';
 import { safeId } from './http';
 import { writeLog } from './logging';
 import {
@@ -46,7 +46,10 @@ async function initializeProject(
       'The repository has no commit on its default branch. Push an initial commit, then retry setup.',
     );
   await progress('checking_source');
-  await source(env, { repository: `${env.ARTIFACTS_NAMESPACE}/${project.id}`, commit: head });
+  await validateSourceMetadata(env, {
+    repository: `${env.ARTIFACTS_NAMESPACE}/${project.id}`,
+    commit: head,
+  });
   await progress('initializing');
   try {
     await ledger(env, project.id, {
@@ -55,6 +58,7 @@ async function initializeProject(
       name: project.name,
       workspace: owner,
       commit: head,
+      workspace_transport: 'git-native-v1',
       remote: { namespace: env.ARTIFACTS_NAMESPACE, name: project.id, branch },
       policy: project.policy,
     });

@@ -3,25 +3,49 @@ use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::{Result, Workspace};
+const GIT: &str = "/usr/bin/git";
 pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&git_raw(root, args).await?)
         .trim()
         .to_owned())
 }
-async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let mut command = Command::new("git");
+pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+    let secret = std::env::var("SUPERVISOR_TOKEN").ok();
+    let mut command = Command::new(GIT);
     command.args([
         "-c",
         "core.hooksPath=/dev/null",
         "-c",
+        "core.attributesFile=/dev/null",
+        "-c",
         "protocol.file.allow=never",
     ]);
-    if let Ok(secret) = std::env::var("SUPERVISOR_TOKEN") {
+    command
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
+        .env("LANG", "C.UTF-8")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_ATTR_NOSYSTEM", "1")
+        .env("GIT_CONFIG_COUNT", "5")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", "/dev/null")
+        .env("GIT_CONFIG_KEY_1", "core.attributesFile")
+        .env("GIT_CONFIG_VALUE_1", "/dev/null")
+        .env("GIT_CONFIG_KEY_2", "protocol.file.allow")
+        .env("GIT_CONFIG_VALUE_2", "never")
+        .env("GIT_CONFIG_KEY_3", "core.fsmonitor")
+        .env("GIT_CONFIG_VALUE_3", "false")
+        .env("GIT_CONFIG_KEY_4", "credential.helper")
+        .env("GIT_CONFIG_VALUE_4", "");
+    if let Some(secret) = secret {
         command
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
+            .env("GIT_CONFIG_COUNT", "6")
+            .env("GIT_CONFIG_KEY_5", "http.extraHeader")
             .env(
-                "GIT_CONFIG_VALUE_0",
+                "GIT_CONFIG_VALUE_5",
                 format!("Authorization: Bearer {secret}"),
             );
     }
@@ -38,6 +62,11 @@ async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
+pub(crate) use crate::{
+    git_capture::capture_fresh,
+    git_revision::{read_git_revision, verify_git_parent},
+};
+
 /// Trusted capture reconstructs a fresh Git tree. It never opens the agent's .git directory.
 pub async fn capture(
     root: &Path,
@@ -46,13 +75,40 @@ pub async fn capture(
     message: &str,
 ) -> Result<Value> {
     std::fs::create_dir_all(root).map_err(err)?;
+    let git_dir = root.join(".git");
+    if let Ok(metadata) = std::fs::symlink_metadata(&git_dir) {
+        if metadata.file_type().is_symlink() || metadata.is_file() {
+            std::fs::remove_file(&git_dir).map_err(err)?;
+        } else {
+            for name in ["config", "config.worktree"] {
+                let config = git_dir.join(name);
+                if std::fs::symlink_metadata(&config).is_ok() {
+                    std::fs::remove_file(&config).map_err(err)?;
+                }
+            }
+        }
+    }
     git(root, &["init", "-b", "main"]).await?;
     materialize(root, workspace)?;
     git(root, &["add", "--force", "--all"]).await?;
     let tree = git(root, &["write-tree"]).await?;
-    let mut command = Command::new("git");
+    let mut command = Command::new(GIT);
     command
+        .env_clear()
         .current_dir(root)
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
+        .env("LANG", "C.UTF-8")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_COUNT", "3")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", "/dev/null")
+        .env("GIT_CONFIG_KEY_1", "core.attributesFile")
+        .env("GIT_CONFIG_VALUE_1", "/dev/null")
+        .env("GIT_CONFIG_KEY_2", "protocol.file.allow")
+        .env("GIT_CONFIG_VALUE_2", "never")
         .args(["commit-tree", &tree, "-m", message]);
     if let Some(parent) = base {
         command.args(["-p", parent]);
@@ -83,11 +139,13 @@ pub async fn capture(
         .map(|path| String::from_utf8(path.to_vec()).map_err(err))
         .collect::<Result<_>>()?;
     let diff = if let Some(base) = base {
-        String::from_utf8(git_raw(root, &["diff", "--no-ext-diff", base, &commit]).await?)
-            .map_err(err)?
+        String::from_utf8_lossy(&git_raw(root, &["diff", "--no-ext-diff", base, &commit]).await?)
+            .into_owned()
     } else {
-        String::from_utf8(git_raw(root, &["show", "--format=", "--no-ext-diff", &commit]).await?)
-            .map_err(err)?
+        String::from_utf8_lossy(
+            &git_raw(root, &["show", "--format=", "--no-ext-diff", &commit]).await?,
+        )
+        .into_owned()
     };
     Ok(json!({"commit":commit,"tree":tree,"paths":paths,"diff":diff}))
 }

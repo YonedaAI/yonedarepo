@@ -6,6 +6,7 @@ license.workspace = true
 [dependencies]
 yoneda-core.workspace = true
 serde_json.workspace = true
+base64 = "0.22.1"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 axum = "0.8"
