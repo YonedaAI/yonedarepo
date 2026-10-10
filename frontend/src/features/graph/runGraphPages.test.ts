@@ -97,11 +97,9 @@ describe('run graph page merging', () => {
     expect(apiMock.mock.calls[1][0]).toContain('cursor=cursor-1');
     expect(apiMock.mock.calls[1][0]).toContain('watermark=27');
     await vi.waitFor(() =>
-      expect(hooks.states[5].nodes.map((item: Graph['nodes'][number]) => item.id)).toEqual([
-        'intent',
-        'assertion-1',
-        'assertion-2',
-      ]),
+      expect(
+        (hooks.states[5] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
+      ).toEqual(['intent', 'assertion-1', 'assertion-2']),
     );
 
     tree = render(view);
@@ -135,7 +133,7 @@ describe('run graph page merging', () => {
     let tree = render(view);
     const firstEffects = hooks.effects.splice(0);
     const cleanupOldRun = firstEffects[1]?.() as (() => void) | undefined;
-    await vi.waitFor(() => expect(hooks.states[5].nodes[0]?.id).toBe('run1-intent'));
+    await vi.waitFor(() => expect((hooks.states[5] as Graph).nodes[0]?.id).toBe('run1-intent'));
     await vi.waitFor(() => expect(hooks.states[8]).toBe('run1-next'));
 
     tree = render(view);
@@ -148,12 +146,12 @@ describe('run graph page merging', () => {
     cleanupOldRun?.();
     const newRunEffects = hooks.effects.splice(0);
     newRunEffects[1]?.();
-    await vi.waitFor(() => expect(hooks.states[5].nodes[0]?.id).toBe('run2-intent'));
+    await vi.waitFor(() => expect((hooks.states[5] as Graph).nodes[0]?.id).toBe('run2-intent'));
     resolveOldPage(graphPage(['stale-run1-node'], null, false, 31));
     await vi.waitFor(() =>
-      expect(hooks.states[5].nodes.map((item: Graph['nodes'][number]) => item.id)).toEqual([
-        'run2-intent',
-      ]),
+      expect(
+        (hooks.states[5] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
+      ).toEqual(['run2-intent']),
     );
     expect(renderToStaticMarkup(render(view))).toContain('run-2');
   });
