@@ -35,6 +35,9 @@ export interface Env {
   SITE_ORIGIN?: string;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
+  /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
+  ACCEPTANCE_FAULTS?: 'publish-ack-once';
+  ACCEPTANCE_REPOSITORY?: string;
 }
 export type Principal = {
   workspace: string;
