@@ -462,5 +462,24 @@
       "Biome",
       "frontend production build"
     ]
+  },
+  "october_10_delivery_gate": {
+    "checked_at": "2026-10-10T21:40:04.170234+00:00",
+    "full_gate_revision": "6f3929078efd3e83c3cef651a0c2d6a74c140a96",
+    "followup_revision": "5d32ac41bfe120194fa596908bb4a8250c581d17",
+    "full_gate": "cargo xtask check passed",
+    "followup_gate": "pnpm check and pnpm test passed",
+    "rust_tests": 283,
+    "workers_tests": 290,
+    "workers_test_files": 59,
+    "frontend_tests": 55,
+    "node_tests": 11,
+    "linux_runtime_tests": 71,
+    "production_build_revision": "5d32ac41bfe120194fa596908bb4a8250c581d17",
+    "worker_version": "a12a0a89-0064-4a9d-a2d5-b4c0a7f1ce6f",
+    "runtime_version": 24,
+    "runtime_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
+    "native_acceptance_record": "git-native-acceptance.json",
+    "human_reviewer_rehearsal": "pending after development"
   }
 }
