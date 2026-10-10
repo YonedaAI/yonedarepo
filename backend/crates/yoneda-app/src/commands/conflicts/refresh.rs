@@ -110,6 +110,39 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
         save(db, "jobs", &active_id, &active_job)?;
         return Ok(json!({"conflict_id":id,"status":"stale","reason":"HEAD_MOVED"}));
     }
+    if active_job["payload"]["capture_subtype"] == "refresh_candidate" {
+        // Only the authenticated broker capture path can finish this internal operation.
+        // Bind its readback to the server-frozen Git-native job; a result flag supplied by
+        // the caller is not evidence that Git was read back from the canonical Artifact.
+        if active_job["payload"]["workspace_transport"] != "git-native-v1" {
+            return Err(Error::new(
+                "FORBIDDEN",
+                "Remote head readback requires a trusted Git-native capture job",
+            ));
+        }
+        let observed_head = hash(&c["result"]["readback"], "observed_head", &[40, 64])?;
+        if c["result"]["readback"]["version"] != record["expected_version"] {
+            return Err(bad(
+                "Canonical Git readback version differs from the reserved version",
+            ));
+        }
+        if observed_head != record["head_commit"] {
+            record["status"] = json!("stale");
+            record["stale_reason"] = json!("REMOTE_CHANGE");
+            record["observed_remote_head"] = json!(observed_head);
+            save(db, "conflicts", &id, &record)?;
+            event(
+                db,
+                "candidate.refresh_fenced",
+                now,
+                json!({"conflict_id":id,"reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
+            )?;
+            save(db, "jobs", &active_id, &active_job)?;
+            return Ok(
+                json!({"conflict_id":id,"status":"stale","reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
+            );
+        }
+    }
     let mut leased = active_job.clone();
     leased["status"] = json!("running");
     yoneda_core::conflict_capture::validate_capture_result(

@@ -88,6 +88,85 @@ fn second_head_move_stales_and_fences_refresh_result() {
 }
 
 #[test]
+fn trusted_remote_only_head_move_completes_refresh_as_stale() {
+    let db = setup();
+    let receipt = refresh(&db, &request(), 2).unwrap();
+    let job_id = receipt["job_id"].as_str().unwrap();
+    let leased = execute(&db, json!({"op":"claim","job_id":job_id,"now":3})).unwrap();
+    let result = complete(
+        &db,
+        &json!({"job_id":job_id,"epoch":leased["epoch"],"now":4,"result":{
+            "readback":{"observed_head":"d".repeat(40),"version":1}
+        }}),
+        4,
+    )
+    .unwrap();
+
+    assert_eq!(result["status"], "stale");
+    assert_eq!(result["reason"], "REMOTE_CHANGE");
+    assert_eq!(result["observed_remote_head"], "d".repeat(40));
+    assert_eq!(get(&db, "jobs", job_id).unwrap()["status"], "done");
+    let conflict = get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap();
+    assert_eq!(conflict["status"], "stale");
+    assert_eq!(conflict["stale_reason"], "REMOTE_CHANGE");
+    assert_eq!(all(&db, "candidates").unwrap().len(), 2);
+}
+
+#[test]
+fn caller_claim_cannot_authorize_remote_head_staleness_without_frozen_git_transport() {
+    let db = setup();
+    let receipt = refresh(&db, &request(), 2).unwrap();
+    let job_id = receipt["job_id"].as_str().unwrap();
+    let leased = execute(&db, json!({"op":"claim","job_id":job_id,"now":3})).unwrap();
+    let mut job = get(&db, "jobs", job_id).unwrap();
+    job["payload"]
+        .as_object_mut()
+        .unwrap()
+        .remove("workspace_transport");
+    save(&db, "jobs", job_id, &job).unwrap();
+    let before = get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap();
+    let error = complete(
+        &db,
+        &json!({"job_id":job_id,"epoch":leased["epoch"],"now":4,"result":{
+            "git_verified":true,
+            "readback":{"observed_head":"d".repeat(40),"version":1}
+        }}),
+        4,
+    )
+    .unwrap_err();
+
+    assert_eq!(error.code, "FORBIDDEN");
+    assert_eq!(get(&db, "jobs", job_id).unwrap()["status"], "running");
+    assert_eq!(
+        get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap(),
+        before
+    );
+}
+
+#[test]
+fn malformed_remote_head_readback_does_not_terminalize_refresh() {
+    let db = setup();
+    let receipt = refresh(&db, &request(), 2).unwrap();
+    let job_id = receipt["job_id"].as_str().unwrap();
+    let leased = execute(&db, json!({"op":"claim","job_id":job_id,"now":3})).unwrap();
+    assert!(
+        complete(
+            &db,
+            &json!({"job_id":job_id,"epoch":leased["epoch"],"now":4,"result":{
+                "readback":{"observed_head":"not-a-git-hash","version":1}
+            }}),
+            4,
+        )
+        .is_err()
+    );
+    assert_eq!(get(&db, "jobs", job_id).unwrap()["status"], "running");
+    assert_eq!(
+        get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap()["status"],
+        "refreshing"
+    );
+}
+
+#[test]
 fn inventory_includes_stale_candidates_without_a_conflict_id() {
     let db = setup();
     let inventory = status(&db, &json!({"op":"conflict_status"})).unwrap();
