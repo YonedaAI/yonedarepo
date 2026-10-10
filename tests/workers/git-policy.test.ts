@@ -44,3 +44,23 @@ it('gives a resolver read access to its exact merge workspace and writes only it
   expect(gitRole(attempt, 'current')).toBeNull();
   expect(gitRole(attempt, 'team-0')).toBeNull();
 });
+
+it('gives trusted conflict capture read access to its frozen merge workspace only', () => {
+  const attempt = scope({
+    kind: 'capture',
+    payload: {
+      capture_subtype: 'resolve_conflict',
+      execution: { base: { repository: 'ns/canonical' } },
+      conflict_resolver: {
+        merge_workspace_repository: 'ns/refresh',
+        merge_workspace_commit: 'd'.repeat(40),
+      },
+    },
+  });
+  const mergeWorkspace = gitRole(attempt, 'merge-workspace');
+  expect(mergeWorkspace).toEqual({ repository: 'ns/refresh', writable: false });
+  expect(gitRole(attempt, 'canonical')).toEqual({ repository: 'ns/canonical', writable: false });
+  expect(mergeWorkspace?.writable).toBe(false);
+  expect(gitRole(attempt, 'target')).toBeNull();
+  expect(gitRole(attempt, 'team-0')).toBeNull();
+});

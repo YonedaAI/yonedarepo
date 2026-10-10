@@ -8,7 +8,10 @@ export function gitRole(scope: Scope, role: string): GitRole | null {
   if (job.payload?.workspace_transport !== 'git-native-v1') return null;
   const payload = job.payload;
   const refresh = job.kind === 'capture' && payload.capture_subtype === 'refresh_candidate';
-  const resolver = job.kind === 'agent' && payload.conflict_resolver;
+  const resolver =
+    Boolean(payload.conflict_resolver) &&
+    (job.kind === 'agent' ||
+      (job.kind === 'capture' && payload.capture_subtype === 'resolve_conflict'));
   let repository: string | undefined;
   if (refresh) {
     if (['current', 'head'].includes(role)) repository = payload.candidate?.base?.repository;
