@@ -51,7 +51,7 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
                 </dd>
               </div>
               <div>
-                <dt>Reserved estimate</dt>
+                <dt>Allowance used (estimate)</dt>
                 <dd>
                   {budget.pricing ? formatBudgetUsd(budget.charged_microusd) : 'Not priced'}
                   {budget.spend_limit_microusd != null &&
@@ -77,7 +77,7 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
                 {formatBudgetUsd(budget.pricing.output_microusd_per_million)} output per 1M tokens
                 <br />
                 {budget.pricing.source === 'owner-approved conservative rates'
-                  ? 'Owner-approved conservative rates'
+                  ? 'Approved budget rates · provider bill may differ'
                   : 'Pricing source unavailable'}
               </p>
             )}

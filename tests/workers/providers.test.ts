@@ -47,10 +47,18 @@ it('settles complete Claude usage but keeps incomplete stream reservations charg
  const {trackClaudeUsage} = await import('../../cloudflare/worker/model-usage');
  await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'complete',amount:1_000_000});
  const stream = 'data: {"type":"message_start","message":{"usage":{"input_tokens":100,"output_tokens":0}}}\n\ndata: {"type":"message_delta","usage":{"output_tokens":50}}\n\ndata: {"type":"message_stop"}\n\n';
- const response = trackClaudeUsage(new Response(stream,{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','complete',1_000_000);
+ const response = trackClaudeUsage(new Response(stream,{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','complete',1_000_000,'claude-sonnet-4-6');
  expect(await response.text()).toBe(stream);
  expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(2100);
  await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'unknown',amount:1_000_000});
- await trackClaudeUsage(new Response(stream.replace('data: {"type":"message_stop"}\n\n',''),{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','unknown',1_000_000).text();
+ await trackClaudeUsage(new Response(stream.replace('data: {"type":"message_stop"}\n\n',''),{headers:{'content-type':'text/event-stream'}}),bindings,'_budget_claude','unknown',1_000_000,'claude-sonnet-4-6').text();
  expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(1_002_100);
+});
+it('settles Sonnet 5.5 at its own cache-safe input and standard output rates', async () => {
+ const {trackClaudeUsage} = await import('../../cloudflare/worker/model-usage');
+ await workspace(bindings,'_budget_claude',{op:'budget_reserve',id:'sonnet55',amount:1_000_000});
+ const content = {type:'message',usage:{input_tokens:100,cache_creation_input_tokens:20,cache_read_input_tokens:30,output_tokens:50}};
+ const response = trackClaudeUsage(Response.json(content),bindings,'_budget_claude','sonnet55',1_000_000,'claude-sonnet-5-5');
+ expect(await response.json()).toEqual(content);
+ expect((await workspace(bindings,'_budget_claude',{op:'budget_status'})).charged).toBe(1100);
 });

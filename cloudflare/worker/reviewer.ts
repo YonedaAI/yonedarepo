@@ -31,9 +31,11 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
     });
     for (const [provider, model] of [
       ['codex', 'gpt-5.6-luna'],
-      ['claude', 'claude-sonnet-4-6'],
+      ['claude', 'claude-sonnet-5-5'],
     ]) {
-      const connection = `reviewer-${provider}`;
+      // Preserve legacy connections so an already-approved attempt keeps its model.
+      const connection =
+        provider === 'claude' ? 'reviewer-claude-sonnet-5-5' : `reviewer-${provider}`;
       const { key } = await providerCredentials(env, '_admin', provider);
       await workspace(env, owner, {
         op: 'provider_put',

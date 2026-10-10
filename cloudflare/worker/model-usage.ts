@@ -7,7 +7,9 @@ export function trackClaudeUsage(
   owner: string,
   id: string,
   ceiling: number,
+  model: string,
 ) {
+  const rates = claudeBudgetRates(model);
   if (!response.body || !response.ok) return response;
   const decoder = new TextDecoder();
   let pending = '';
@@ -67,7 +69,7 @@ export function trackClaudeUsage(
         }
       }
       if (!completed || !seenInput || !seenOutput) return;
-      const charge = input * 6 + output * 30;
+      const charge = input * rates.input + output * rates.output;
       if (!Number.isSafeInteger(charge) || charge > ceiling) return;
       try {
         await workspace(env, owner, { op: 'budget_settle', id, amount: charge });
@@ -78,3 +80,5 @@ export function trackClaudeUsage(
   });
   return new Response(response.body.pipeThrough(transform), response);
 }
+
+import { claudeBudgetRates } from './claude-pricing';

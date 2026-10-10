@@ -51,7 +51,7 @@ it('preserves a failed start reservation across reload and resumes the exact ID 
   expect(snapshot.runs[0]).toMatchObject({ id, mode: 'collaborate' });
   expect(snapshot.runs[0].intent).toContain('San Jose');
   expect(snapshot.runs[0].agents.map((a: Json) => [a.provider, a.model])).toEqual([
-    ['codex', 'gpt-5.6-luna'], ['claude', 'claude-sonnet-4-6'],
+    ['codex', 'gpt-5.6-luna'], ['claude', 'claude-sonnet-5-5'],
   ]);
   expect(snapshot.runs[0].model_budgets.reduce((sum: number, b: Json) => sum + b.spend_limit_microusd, 0)).toBe(5_000_000);
   expect((await workspace(bindings, f.owner, { op: 'reviewer_status' })).active_trial).toBe(id);

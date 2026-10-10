@@ -22,7 +22,7 @@ export default defineConfig({
           OWNER_TOKEN: 'local-test-owner',
           ARTIFACTS_NAMESPACE: 'yoneda-test',
           CODEX_MODEL: 'gpt-5.6-luna',
-          CLAUDE_MODEL: 'claude-sonnet-4-6',
+          CLAUDE_MODEL: 'claude-sonnet-5-5',
         },
       },
     }),

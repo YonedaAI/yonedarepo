@@ -4,9 +4,21 @@ import { accountPrincipal } from '../../cloudflare/worker/accounts';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { seal } from '../../cloudflare/worker/vault';
 import { api, bindings, expires, readyReviewer, reviewerFixture, signup, testKeys } from './reviewer-fixture';
 
 afterEach(reset);
+
+it('upgrades the prepared model without rewriting legacy approvals, credentials or charged usage', async () => {
+  const f = await readyReviewer();
+  await workspace(f.scoped, f.owner, { op: 'provider_put', provider: 'claude', model: 'claude-sonnet-4-6', connection: 'reviewer-claude', sealed: await seal(f.scoped, f.owner, 'claude', 'legacy-synthetic-key', 'reviewer-claude') });
+  await workspace(f.scoped, f.owner, { op: 'budget_reserve', id: 'legacy-charge', amount: 123456 });
+  const repeated = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner }, true);
+  expect(repeated.status).toBe(200);
+  expect(await workspace(f.scoped, f.owner, { op: 'provider_secret', provider: 'claude', connection: 'reviewer-claude' })).toMatchObject({ model: 'claude-sonnet-4-6' });
+  expect(await workspace(f.scoped, f.owner, { op: 'provider_secret', provider: 'claude', connection: 'reviewer-claude-sonnet-5-5' })).toMatchObject({ model: 'claude-sonnet-5-5' });
+  expect((await workspace(f.scoped, f.owner, { op: 'budget_status' })).charged).toBe(123456);
+});
 
 it('provisions a public account only as admin, persists immutable policy and exposes no funded keys', async () => {
   const cookie = await signup('review_target');
@@ -83,7 +95,9 @@ it('creates exactly one fixed two-agent $5 trial on concurrent replay and reject
   expect(run.mode).toBe('collaborate');
   expect(run.intent).toContain('San Jose');
   expect(run.intent).not.toContain('attacker');
-  expect(run.agents.map((a: Json) => [a.provider, a.model])).toEqual([['codex', 'gpt-5.6-luna'], ['claude', 'claude-sonnet-4-6']]);
+  expect(run.agents.map((a: Json) => [a.provider, a.model])).toEqual([['codex', 'gpt-5.6-luna'], ['claude', 'claude-sonnet-5-5']]);
+  expect(run.agents[1].connection).toBe('reviewer-claude-sonnet-5-5');
+  expect(run.model_budgets.find((b: Json) => b.provider === 'claude').pricing).toMatchObject({ input_microusd_per_million: 4000000, output_microusd_per_million: 10000000 });
   expect(run.model_budgets.reduce((sum: number, b: Json) => sum + b.spend_limit_microusd, 0)).toBe(5_000_000);
   const conflict = await api(f.scoped, '/api/reviewer/trial', f.cookie, { request_id: 'different-trial-12345678' });
   expect(conflict.status).toBe(409);

@@ -43,9 +43,12 @@
     "id": "claude", "name": "Anthropic / Claude", "harness": "claude", "protocol": "anthropic_messages",
     "api_base": "https://api.anthropic.com",
     "auth_header": "x-api-key", "auth_prefix": "", "secret_binding": "ANTHROPIC_KEY",
-    "default_model": "claude-sonnet-4-6", "allow_custom_model": false,
+    "default_model": "claude-sonnet-5-5", "allow_custom_model": false,
     "catalog_url": "https://platform.claude.com/docs/en/about-claude/pricing",
-    "models": [ { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 · Workspace default" } ]
+    "models": [
+      { "id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5 · Lower-cost coding default" },
+      { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 · Legacy, higher token price" }
+    ]
   },
   {
     "id": "gemini", "name": "Google / Gemini", "harness": "gemini", "protocol": "gemini_generate_content",

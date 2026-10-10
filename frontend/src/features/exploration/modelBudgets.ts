@@ -65,6 +65,12 @@ export function selectedModels(agents: AgentDraft[], providers: Provider[]): Sel
 
 export function modelPricingSuggestion(provider: string, model: string) {
   const known: Record<string, { input: string; output: string; note: string; url: string }> = {
+    'claude:claude-sonnet-5-5': {
+      input: '4',
+      output: '10',
+      note: 'Standard API pricing is $2/M input and $10/M output. Input reserves up to $4/M for one-hour cache writes; output uses the standard rate. These are budget limits, not an invoice.',
+      url: 'https://platform.claude.com/docs/en/about-claude/pricing',
+    },
     'claude:claude-sonnet-4-6': {
       input: '6',
       output: '30',
