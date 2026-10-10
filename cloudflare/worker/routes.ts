@@ -4,7 +4,7 @@ import { candidateDetail, candidateSource, hydrateOwnerSnapshot } from './candid
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
-import { archivedHistoryDetail } from './history-archive';
+import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
@@ -187,6 +187,12 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     const input = await ownerCommandInput(req, action);
     if (action === 'run_detail' && requestedAction === 'runs')
       input.run_id = decodeURIComponent(parts[4]);
+    if (action === 'run_detail') {
+      if (typeof input.run_id !== 'string' || !input.run_id)
+        return error('INVALID_INPUT', 'Missing run_id');
+      return response(await historyDetail(env, repo, input.run_id));
+    }
+
     if (action === 'init') {
       input.workspace_transport = 'git-native-v1';
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
@@ -254,13 +260,6 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);
         await env.EXECUTIONS.get(env.EXECUTIONS.idFromName(name)).stop();
       }
-    if (action === 'run_detail' && value.archive)
-      return response({
-        ...(await archivedHistoryDetail(env, repo, input.run_id)),
-        repository: value.repository,
-        capabilities: value.capabilities,
-        seq: value.seq,
-      });
     return response(action === 'snapshot' ? await hydrateOwnerSnapshot(env, value) : value);
   } catch (e: any) {
     const repo = url.pathname.split('/')[3];
