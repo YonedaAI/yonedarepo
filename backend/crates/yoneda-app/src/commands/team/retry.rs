@@ -125,6 +125,9 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     job["error"] = Value::Null;
     job["result"] = Value::Null;
     job["payload"]["execution"] = execution;
+    if let Some(transport) = run.get("workspace_transport") {
+        job["payload"]["workspace_transport"] = transport.clone();
+    }
     save(db, "jobs", &jid, &job)?;
     outbox(
         db,

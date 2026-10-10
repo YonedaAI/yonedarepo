@@ -107,3 +107,57 @@ fn repair_budget_is_two_rounds_and_does_not_revise_run_model_budgets() {
         "REPAIR_BUDGET_EXHAUSTED"
     );
 }
+
+#[test]
+fn retry_restores_frozen_git_transport_on_an_older_repaired_job() {
+    let db = NativeStore::memory().unwrap();
+    start(&db);
+    let mut run = get(&db, "runs", "repair-run").unwrap();
+    run["workspace_transport"] = json!("git-native-v1");
+    run["status"] = json!("exploring");
+    save(&db, "runs", "repair-run", &run).unwrap();
+
+    for local in ["downstream", "integrate"] {
+        let id = format!("repair-run:task:{local}");
+        let mut task = get(&db, "team_tasks", &id).unwrap();
+        task["status"] = json!("blocked");
+        task["epoch"] = json!(0);
+        task["output"] = Value::Null;
+        save(&db, "team_tasks", &id, &task).unwrap();
+    }
+    let execution_id = "repair-run:task:upstream";
+    let mut task = get(&db, "team_tasks", execution_id).unwrap();
+    task["status"] = json!("failed");
+    task["epoch"] = json!(1);
+    task["output"] = Value::Null;
+    save(&db, "team_tasks", execution_id, &task).unwrap();
+    let execution = json!({
+        "id":execution_id, "run_id":"repair-run", "harness":"claude", "provider":"mimo",
+        "model":"mimo-v2.6-flash", "role":"coding", "status":"failed",
+        "context":[], "base":run["base"], "team_task":execution_id,
+        "team_task_revision":1, "team_role":"worker", "depth":0,
+        "budget":{"provider":"mimo","model":"mimo-v2.6-flash"}
+    });
+    create(&db, "executions", execution_id, &execution).unwrap();
+    create(
+        &db,
+        "jobs",
+        &format!("job:{execution_id}"),
+        &json!({
+            "id":format!("job:{execution_id}"), "kind":"agent", "status":"failed",
+            "attempt":2, "epoch":1, "lease_until":0, "deadline":2_000_000,
+            "dispatch_deadline":1_500_000, "payload":{"execution":execution,"run":run,"policy":run["policy"]}
+        }),
+    )
+    .unwrap();
+
+    crate::execute(
+        &db,
+        json!({"op":"retry_team_task","now":1000,"run_id":"repair-run","task_id":"upstream","expected_epoch":1,"expected_revision":1}),
+    )
+    .unwrap();
+
+    let retried = get(&db, "jobs", &format!("job:{execution_id}")).unwrap();
+    assert_eq!(retried["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(retried["payload"]["execution"]["team_task_revision"], 2);
+}
