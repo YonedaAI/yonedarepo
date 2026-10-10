@@ -42,6 +42,17 @@ export function checkRuntime(health: Json, job: Json) {
 function compatibleRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (
+    job.payload?.workspace_transport === 'git-native-v1' &&
+    health.capabilities?.git_native_transport !== 1
+  )
+    throw new Error(
+      'Container image does not support Git-native workspaces; wait for rollout completion',
+    );
+  if (job.payload?.policy?.build?.test_bundle != null && health.capabilities?.test_bundle !== 1)
+    throw new Error(
+      'Container image does not support the frozen test bundle; wait for rollout completion',
+    );
   if (job.payload?.team_planning === true && health.capabilities?.team_planning !== 1)
     throw new Error('Container image does not support team planning; wait for rollout completion');
   if (job.payload?.execution?.team_task && health.capabilities?.collaborative_runs !== 1)
