@@ -18,6 +18,10 @@ pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
         "-c",
         "core.attributesFile=/dev/null",
         "-c",
+        "core.excludesFile=/dev/null",
+        "-c",
+        "core.fileMode=true",
+        "-c",
         "protocol.file.allow=never",
     ]);
     command
@@ -29,23 +33,27 @@ pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ATTR_NOSYSTEM", "1")
-        .env("GIT_CONFIG_COUNT", "5")
+        .env("GIT_CONFIG_COUNT", "7")
         .env("GIT_CONFIG_KEY_0", "core.hooksPath")
         .env("GIT_CONFIG_VALUE_0", "/dev/null")
         .env("GIT_CONFIG_KEY_1", "core.attributesFile")
         .env("GIT_CONFIG_VALUE_1", "/dev/null")
         .env("GIT_CONFIG_KEY_2", "protocol.file.allow")
         .env("GIT_CONFIG_VALUE_2", "never")
-        .env("GIT_CONFIG_KEY_3", "core.fsmonitor")
-        .env("GIT_CONFIG_VALUE_3", "false")
-        .env("GIT_CONFIG_KEY_4", "credential.helper")
-        .env("GIT_CONFIG_VALUE_4", "");
+        .env("GIT_CONFIG_KEY_3", "core.excludesFile")
+        .env("GIT_CONFIG_VALUE_3", "/dev/null")
+        .env("GIT_CONFIG_KEY_4", "core.fileMode")
+        .env("GIT_CONFIG_VALUE_4", "true")
+        .env("GIT_CONFIG_KEY_5", "core.fsmonitor")
+        .env("GIT_CONFIG_VALUE_5", "false")
+        .env("GIT_CONFIG_KEY_6", "credential.helper")
+        .env("GIT_CONFIG_VALUE_6", "");
     if let Some(secret) = secret {
         command
-            .env("GIT_CONFIG_COUNT", "6")
-            .env("GIT_CONFIG_KEY_5", "http.extraHeader")
+            .env("GIT_CONFIG_COUNT", "8")
+            .env("GIT_CONFIG_KEY_7", "http.extraHeader")
             .env(
-                "GIT_CONFIG_VALUE_5",
+                "GIT_CONFIG_VALUE_7",
                 format!("Authorization: Bearer {secret}"),
             );
     }

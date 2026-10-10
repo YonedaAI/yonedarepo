@@ -11,6 +11,43 @@ pub(crate) struct GitFile {
 }
 pub(crate) type GitWorkspace = BTreeMap<String, GitFile>;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReadOnlySnapshot {
+    commit: String,
+    tree: String,
+}
+
+pub(crate) async fn snapshot_read_only(root: &Path) -> Result<ReadOnlySnapshot> {
+    let commit = git(root, &["rev-parse", "HEAD^{commit}"]).await?;
+    let tree = git(root, &["rev-parse", "HEAD^{tree}"]).await?;
+    let snapshot = ReadOnlySnapshot { commit, tree };
+    verify_read_only(root, &snapshot).await?;
+    Ok(snapshot)
+}
+
+pub(crate) async fn verify_read_only(root: &Path, approved: &ReadOnlySnapshot) -> Result<()> {
+    let commit = git(root, &["rev-parse", "HEAD^{commit}"]).await?;
+    let tree = git(root, &["rev-parse", "HEAD^{tree}"]).await?;
+    if commit != approved.commit || tree != approved.tree {
+        return Err(err("Git planning changed the approved HEAD or tree"));
+    }
+    let status = crate::git::git_raw(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--ignored=matching",
+        ],
+    )
+    .await?;
+    if !status.is_empty() {
+        return Err(err("Git planning left a dirty worktree"));
+    }
+    Ok(())
+}
+
 impl GitFile {
     pub(crate) fn from_entry(entry: yoneda_core::FileEntry) -> Result<Self> {
         Ok(Self {

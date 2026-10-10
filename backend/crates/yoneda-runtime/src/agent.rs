@@ -18,6 +18,11 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     } else {
         super::jobs::workspace(job, root).await?
     };
+    let git_baseline = if git_native && job["payload"]["team_planning"] == true {
+        Some(crate::transport::snapshot_read_only(root).await?)
+    } else {
+        None
+    };
     #[cfg(target_os = "linux")]
     {
         Command::new("/usr/bin/chown")
@@ -121,10 +126,23 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     }
     if git_native {
         let commit = crate::git::git(root, &["rev-parse", "HEAD"]).await?;
-        return Ok(
-            json!({"fork_revision":crate::transport::candidate_revision(job, commit),
-            "transcript":evidence["digest"],"model":model}),
-        );
+        if let Some(snapshot) = &git_baseline {
+            crate::transport::verify_read_only(root, snapshot).await?;
+            return Ok(git_agent_result(
+                job,
+                commit,
+                true,
+                &evidence["digest"],
+                model,
+            ));
+        }
+        return Ok(git_agent_result(
+            job,
+            commit,
+            false,
+            &evidence["digest"],
+            model,
+        ));
     }
     let files = export_with_baseline(root, &baseline)?;
     if payload["team_planning"] == true {
@@ -138,6 +156,25 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     }
     let uploaded = broker("/workspace", json!({"files":files}), true).await?;
     Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
+}
+
+fn git_agent_result(
+    job: &Value,
+    commit: String,
+    planning: bool,
+    transcript: &Value,
+    model: &str,
+) -> Value {
+    let mut result = json!({
+        "fork_revision":crate::transport::candidate_revision(job, commit),
+        "transcript":transcript,
+        "model":model
+    });
+    if planning {
+        result["planning"] = json!(true);
+        result["source_unchanged"] = json!(true);
+    }
+    result
 }
 
 fn gemini_settings(

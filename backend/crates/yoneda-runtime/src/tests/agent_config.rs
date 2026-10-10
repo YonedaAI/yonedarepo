@@ -2,6 +2,22 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn git_native_planner_returns_read_only_flags_and_worker_receipt_revision() {
+    let job = json!({"fork":"repo/attempt","payload":{"workspace_transport":"git-native-v1"}});
+    let result = git_agent_result(
+        &job,
+        "a".repeat(40),
+        true,
+        &json!("evidence"),
+        "cheap-model",
+    );
+    assert_eq!(result["planning"], true);
+    assert_eq!(result["source_unchanged"], true);
+    assert_eq!(result["fork_revision"]["repository"], "repo/attempt");
+    assert_eq!(result["fork_revision"]["commit"], "a".repeat(40));
+}
+
+#[test]
 fn harness_budget_actual_anthropic_and_legacy_claude_keep_one_dollar_allowance() {
     for execution in [
         json!({"harness":"claude","provider":"claude"}),
