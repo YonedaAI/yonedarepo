@@ -75,6 +75,7 @@ export function authorityLabel(node: GraphNode) {
   if (node.kind === 'evaluation') return 'Independent check';
   if (node.kind === 'candidate' || node.data.authority === 'captured_revision')
     return 'Trusted source capture';
+  if (node.data.authority === 'superseded') return 'Superseded source capture';
   if (node.kind === 'decision')
     return node.data.decision_kind === 'development_verification'
       ? 'Automated fixture decision'

@@ -1,6 +1,7 @@
 import { short } from '../../lib/api';
 import type { Graph, GraphNode, Snapshot } from '../../lib/types';
 import { TeamHandoff } from '../team/TeamHandoff';
+import { classifyTeamHandoffs } from '../team/teamView';
 import { EvidenceFields } from './EvidenceFields';
 import { authorityLabel } from './evidenceView';
 
@@ -18,7 +19,8 @@ export function EvidenceTrail({
   const run = snapshot.runs.find((item) => item.id === runId);
   const candidates = snapshot.candidates.filter((item) => item.run_id === runId);
   const executions = snapshot.executions.filter((item) => item.run_id === runId);
-  const handoffs = (snapshot.team_handoffs ?? []).filter((item) => item.run_id === runId);
+  const runHandoffs = (snapshot.team_handoffs ?? []).filter((item) => item.run_id === runId);
+  const { assertions: handoffs, captures, superseded } = classifyTeamHandoffs(runHandoffs);
   const decision = snapshot.decisions.find((item) => item.run_id === runId);
   const assertions = graph.nodes.filter((node) => authorityLabel(node) === 'Agent assertion');
   const evaluations = snapshot.evaluations.filter((item) =>
@@ -72,6 +74,16 @@ export function EvidenceTrail({
               <TeamHandoff handoff={handoff} />
             </section>
           ))}
+          {captures.map((handoff) => (
+            <section key={handoff.id}>
+              <TeamHandoff handoff={handoff} />
+            </section>
+          ))}
+          {superseded.map((handoff) => (
+            <section key={handoff.id}>
+              <TeamHandoff handoff={handoff} />
+            </section>
+          ))}
           {assertions.length > 0 && (
             <details>
               <summary>Agent assertions and cited context ({assertions.length})</summary>
@@ -102,6 +114,16 @@ export function EvidenceTrail({
               <h3>{candidate.summary || 'Captured result'}</h3>
               <p>
                 Exact revision <code>{candidate.revision?.commit}</code>
+              </p>
+              <p>
+                <strong>
+                  {candidate.status === 'stale' ||
+                  candidate.base?.commit !== snapshot.repository.head_commit
+                    ? 'Stale · cannot select; retained in history'
+                    : candidate.status === 'eligible'
+                      ? 'Eligible for review'
+                      : `Not eligible for review · ${candidate.status ?? 'status unknown'}; retained in history`}
+                </strong>
               </p>
               <details>
                 <summary>Changed paths ({candidate.paths?.length ?? 0})</summary>

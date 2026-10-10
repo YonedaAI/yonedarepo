@@ -39,17 +39,22 @@ const task = {
   role: 'worker',
   output: { revision: { commit: 'old-commit' }, paths: ['src/a.ts'] },
 };
-function render(onRepair: (request: Record<string, unknown>) => Promise<boolean>) {
+function render(
+  onRepair: (request: Record<string, unknown>) => Promise<boolean>,
+  overrides: Record<string, unknown> = {},
+  handoffs: unknown[] = [],
+) {
   hooks.cursor = 0;
+  const currentTask = { ...task, ...overrides };
   return TeamTaskCard({
-    task,
-    tasks: [task],
+    task: currentTask,
+    tasks: [currentTask],
     run: { id: 'run-1', team_plan_revision: 8 },
     snapshot: {
       repository: { id: 'repo', head_commit: 'current-head', version: 12 },
       executions: [],
       team_tasks: [],
-      team_handoffs: [],
+      team_handoffs: handoffs,
     } as any,
     busy: false,
     onRetry: () => {},
@@ -62,6 +67,53 @@ beforeEach(() => {
 });
 
 describe('team task repair request', () => {
+  it('keeps assertion handoffs distinct from trusted captures and other records', () => {
+    const html = renderToStaticMarkup(
+      render(
+        vi.fn().mockResolvedValue(true),
+        {
+          status: 'complete',
+          output: { revision: { commit: 'captured-revision' }, tree: 'captured-tree', paths: [] },
+        },
+        [
+          {
+            id: 'assertion-1',
+            run_id: 'run-1',
+            task_id: 'task-local',
+            authority: 'assertion',
+            summary: 'The agent says it completed the source change.',
+          },
+          {
+            id: 'capture-1',
+            run_id: 'run-1',
+            task_id: 'task-local',
+            authority: 'captured_revision',
+            output: {
+              revision: { commit: 'captured-revision' },
+              tree: 'captured-tree',
+            },
+          },
+          {
+            id: 'unclassified-1',
+            run_id: 'run-1',
+            task_id: 'task-local',
+            authority: 'superseded',
+            output: {
+              revision: { commit: 'older-capture' },
+              tree: 'older-tree',
+            },
+          },
+        ],
+      ),
+    );
+
+    expect(html.match(/Agent handoff · assertion/g)).toHaveLength(1);
+    expect(html).toContain('The agent says it completed the source change.');
+    expect(html.match(/Trusted source capture/g)).toHaveLength(1);
+    expect(html).toContain('Superseded source capture');
+    expect(html).not.toContain('No summary recorded.');
+  });
+
   it('collects an inline brief and retries the exact frozen task-scoped request', async () => {
     const onRepair = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     let tree = render(onRepair);

@@ -15,6 +15,18 @@ export function TeamHandoff({ handoff }: { handoff: TeamRecord }) {
         </p>
       </div>
     );
+  if (handoff.authority === 'superseded')
+    return (
+      <div className="team-handoff">
+        <strong>Superseded source capture</strong>
+        <p>
+          Earlier revision <code>{short(handoff.output?.revision?.commit)}</code> · tree{' '}
+          <code>{short(handoff.output?.tree)}</code>
+        </p>
+        <p>This capture remains in history; a later source capture superseded it.</p>
+      </div>
+    );
+  if (handoff.authority !== 'assertion') return null;
   return (
     <div className="team-handoff">
       <strong>Agent handoff · assertion</strong>

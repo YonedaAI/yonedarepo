@@ -1,5 +1,12 @@
 import type { Snapshot } from '../../lib/types';
 export type TeamRecord = Record<string, any>;
+export function classifyTeamHandoffs(handoffs: TeamRecord[]) {
+  return {
+    assertions: handoffs.filter((item) => item.authority === 'assertion'),
+    captures: handoffs.filter((item) => item.authority === 'captured_revision'),
+    superseded: handoffs.filter((item) => item.authority === 'superseded'),
+  };
+}
 export function teamTasks(snapshot: Snapshot, run: TeamRecord) {
   const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
   // Keep specialists in the approved plan order, followed by final integration.
