@@ -101,7 +101,8 @@ export async function reviewerTrialStatus(env: Env, owner: string) {
           e.run_id === policy.active_trial &&
           ['queued', 'running', 'capturing', 'evaluating'].includes(e.status),
       ) ?? false;
-    if (run && !active && !['planning', 'integrating'].includes(run.status)) {
+    const terminal = ['ready', 'failed', 'cancelled', 'accepted'].includes(run?.status);
+    if (run && terminal && !active) {
       await workspace(env, owner, { op: 'reviewer_trial_complete', id: policy.active_trial });
       policy = await workspace(env, owner, { op: 'reviewer_status' });
     }

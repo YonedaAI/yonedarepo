@@ -116,6 +116,80 @@ fn reviewer_trial_is_idempotent_one_at_a_time_and_revocable() {
         "REVIEWER_EXPIRED"
     );
 }
+
+#[test]
+fn reviewer_trial_reopen_restores_only_the_existing_lock_without_changing_budget() {
+    let db = setup();
+    let trial = call(&db, json!({"op":"reviewer_trial","id":"trial-reopen"})).unwrap();
+    call(
+        &db,
+        json!({"op":"budget_reserve","id":"preserved-spend","amount":1234}),
+    )
+    .unwrap();
+    call(
+        &db,
+        json!({"op":"reviewer_trial_complete","id":"trial-reopen"}),
+    )
+    .unwrap();
+    let budget = call(&db, json!({"op":"budget_status"})).unwrap();
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"reviewer_trial_reopen","id":"changed-trial"})
+        )
+        .unwrap_err()
+        .code,
+        "NOT_FOUND"
+    );
+
+    let reopened = call(
+        &db,
+        json!({"op":"reviewer_trial_reopen","id":"trial-reopen"}),
+    )
+    .unwrap();
+    assert_eq!(reopened["id"], trial["id"]);
+    assert_eq!(reopened["repo_id"], trial["repo_id"]);
+    assert_eq!(reopened["active_trial"], trial["id"]);
+    assert_eq!(reopened["status"], "reopened");
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"reviewer_trial_reopen","id":"trial-reopen"})
+        )
+        .unwrap(),
+        reopened
+    );
+    assert_eq!(
+        call(&db, json!({"op":"reviewer_status"})).unwrap()["active_trial"],
+        trial["id"]
+    );
+    assert_eq!(call(&db, json!({"op":"budget_status"})).unwrap(), budget);
+    assert_eq!(
+        call(&db, json!({"op":"reviewer_trial","id":"new-trial"}))
+            .unwrap_err()
+            .code,
+        "TRIAL_ACTIVE"
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"reviewer_trial_reopen","id":"another-trial"})
+        )
+        .unwrap_err()
+        .code,
+        "TRIAL_ACTIVE"
+    );
+    call(&db, json!({"op":"reviewer_revoke"})).unwrap();
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"reviewer_trial_reopen","id":"trial-reopen"})
+        )
+        .unwrap_err()
+        .code,
+        "REVIEWER_EXPIRED"
+    );
+}
 #[test]
 fn peer_awareness_is_lease_bound_and_does_not_return_candidate_source() {
     let db = NativeStore::memory().unwrap();
