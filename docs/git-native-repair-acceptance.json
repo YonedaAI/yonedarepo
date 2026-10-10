@@ -1,0 +1,567 @@
+{
+  "schema": 1,
+  "kind": "hosted_paid_git_native_upstream_repair",
+  "origin": "https://yonedarepo.com",
+  "repo_id": "reviewer-2d70999ae1805e4bcef9b4ab",
+  "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+  "verified_at": "2026-10-10T21:47:30.368Z",
+  "source_revision": "9d3a9f8148fe8931e51b952fd0fbe4383a49b728",
+  "worker_version": "da7f5ecc-557b-492b-8ad2-320fd3c3eb0a",
+  "runtime_version": 24,
+  "status": "ready",
+  "owner_decision": "pending",
+  "publication": "not selected or published",
+  "initial_candidate": [
+    {
+      "id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+      "revision": {
+        "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+        "repository": "yoneda-dev/attempt-93c111d8de286ce8eb22c8629a8f8496"
+      },
+      "status": "eligible"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+      "revision": {
+        "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+        "repository": "yoneda-dev/attempt-93c111d8de286ce8eb22c8629a8f8496"
+      },
+      "status": "stale",
+      "paths": [
+        "public/index.html",
+        "public/js/trails.js"
+      ],
+      "tree": "26ce5371595e4e81ab0c589e8c0e9649bd851640",
+      "integration_digest": "b60c115013f309d55fc05ebc9e2445bfdfebe567b2664e9c756cca60639dbc2e",
+      "integration_manifest": {
+        "base": {
+          "commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+          "repository": "yoneda-dev/reviewer-2d70999ae1805e4bcef9b4ab"
+        },
+        "inputs": [
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+            "capture_paths": [
+              "public/index.html"
+            ],
+            "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+            "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:1",
+            "paths": [
+              "public/index.html"
+            ],
+            "revision": {
+              "commit": "1ad0e436e8cddfc7f951576c9404fbb576ab8649",
+              "repository": "yoneda-dev/attempt-7f9b9f8b065ad4c73efd1da5594825b2"
+            },
+            "task_id": "bilingual-ui",
+            "task_revision": 1,
+            "tree": "deabf572bd5b47aad7f584bbb71269dad4e54244",
+            "write_paths": [
+              "public/index.html"
+            ]
+          },
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+            "capture_paths": [
+              "public/js/trails.js"
+            ],
+            "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+            "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1",
+            "paths": [
+              "public/js/trails.js"
+            ],
+            "revision": {
+              "commit": "c711ce7fccdad9e6ca035be0df825b7c1c51ead3",
+              "repository": "yoneda-dev/attempt-fccb550a664e76b083f3d4b7f65823c3"
+            },
+            "task_id": "trail-data",
+            "task_revision": 1,
+            "tree": "698400abe6070964485aed6b480f3f92c6291f20",
+            "write_paths": [
+              "public/js/trails.js"
+            ]
+          }
+        ],
+        "plan_revision": 1,
+        "version": 1
+      },
+      "diff_digest": "1afe2f444bd5fd72ad20ef8dd73589d3e0d1d42b7f1de3ebaafee20d1ed72ccd"
+    },
+    {
+      "id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+      "revision": {
+        "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+        "repository": "yoneda-dev/attempt-4ed4f4028b3bb826935641fcb5625be9"
+      },
+      "status": "eligible",
+      "paths": [
+        "public/index.html",
+        "public/js/trails.js"
+      ],
+      "tree": "6c10a661cf5a95676a7a96c70bfee7f3f4506211",
+      "integration_digest": "41f086d733cd778595e89997cbadeb508e31e5d7eb25d522cf2b18c984460af1",
+      "integration_manifest": {
+        "base": {
+          "commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+          "repository": "yoneda-dev/reviewer-2d70999ae1805e4bcef9b4ab"
+        },
+        "inputs": [
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:r2",
+            "capture_paths": [
+              "public/index.html"
+            ],
+            "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+            "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2",
+            "paths": [
+              "public/index.html"
+            ],
+            "revision": {
+              "commit": "308f4e5b0752e1770199f38954d8dc14a950f99b",
+              "repository": "yoneda-dev/attempt-1591c4e16d986c8b6e553112189c194c"
+            },
+            "task_id": "bilingual-ui",
+            "task_revision": 2,
+            "tree": "372870dc6449e6585530a0c1bccfc75436249ba4",
+            "write_paths": [
+              "public/index.html"
+            ]
+          },
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+            "capture_paths": [
+              "public/js/trails.js"
+            ],
+            "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+            "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1",
+            "paths": [
+              "public/js/trails.js"
+            ],
+            "revision": {
+              "commit": "c711ce7fccdad9e6ca035be0df825b7c1c51ead3",
+              "repository": "yoneda-dev/attempt-fccb550a664e76b083f3d4b7f65823c3"
+            },
+            "task_id": "trail-data",
+            "task_revision": 1,
+            "tree": "698400abe6070964485aed6b480f3f92c6291f20",
+            "write_paths": [
+              "public/js/trails.js"
+            ]
+          }
+        ],
+        "plan_revision": 2,
+        "version": 1
+      },
+      "diff_digest": "71ac956546ef6801fc72c4d17989ed2fdbd40c324a13a71a4af5caae21d57068"
+    }
+  ],
+  "evaluation": {
+    "id": "evaluation:evaluate:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1:1",
+    "candidate": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+    "revision": {
+      "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+      "repository": "yoneda-dev/attempt-4ed4f4028b3bb826935641fcb5625be9"
+    },
+    "policy": "reviewer-v2",
+    "checks": [
+      {
+        "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+        "name": "site",
+        "status": "pass"
+      },
+      {
+        "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+        "name": "trail-module",
+        "status": "pass"
+      },
+      {
+        "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+        "name": "bilingual",
+        "status": "pass"
+      },
+      {
+        "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+        "name": "registry-egress",
+        "status": "pass"
+      },
+      {
+        "detail": "Evaluator captured bounded regular static files from this revision",
+        "name": "static_assets",
+        "status": "pass"
+      }
+    ],
+    "evidence": "4cfb8118fe41b75dacec6d71769520b047b97a65b7aaf1fcd0e6fd2c21959f27"
+  },
+  "repair": {
+    "plan_revision": 2,
+    "rounds": 1,
+    "amendments": [
+      {
+        "approved_by": "repository_owner",
+        "created_at": 1791668561077,
+        "expected_task_revisions": {
+          "bilingual-ui": 1
+        },
+        "owner_brief": "Improve the existing bilingual UI with a keyboard-accessible Clear search / Borrar b\u00fasqueda control. It must empty the search field, restore all illustrative trails and update the aria-live result count in the current language. Preserve window.Trails, the existing accessible layout and the approved contract. Change only public/index.html; retain the captured trail-data module. Use the existing approval and budget, no delegation. Batch validation and Git commit/push where practical; publish a concise handoff. The integrator must preserve both frozen specialist captures and produce a fresh independently checked candidate.",
+        "plan_revision": 2,
+        "repair_round": 1,
+        "selected_tasks": [
+          "bilingual-ui"
+        ],
+        "supersedes_revision": 1
+      }
+    ],
+    "tasks": [
+      {
+        "task_id": "bilingual-ui",
+        "revision": 2,
+        "status": "complete",
+        "output": {
+          "capture_epoch": 1,
+          "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:r2",
+          "capture_paths": [
+            "public/index.html"
+          ],
+          "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+          "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2",
+          "paths": [
+            "public/index.html"
+          ],
+          "revision": {
+            "commit": "308f4e5b0752e1770199f38954d8dc14a950f99b",
+            "repository": "yoneda-dev/attempt-1591c4e16d986c8b6e553112189c194c"
+          },
+          "task_id": "bilingual-ui",
+          "task_revision": 2,
+          "tree": "372870dc6449e6585530a0c1bccfc75436249ba4",
+          "write_paths": [
+            "public/index.html"
+          ]
+        }
+      },
+      {
+        "task_id": "integrate",
+        "revision": 2,
+        "status": "complete",
+        "output": null
+      },
+      {
+        "task_id": "trail-data",
+        "revision": 1,
+        "status": "complete",
+        "output": {
+          "capture_epoch": 1,
+          "capture_job": "capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+          "capture_paths": [
+            "public/js/trails.js"
+          ],
+          "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+          "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1",
+          "paths": [
+            "public/js/trails.js"
+          ],
+          "revision": {
+            "commit": "c711ce7fccdad9e6ca035be0df825b7c1c51ead3",
+            "repository": "yoneda-dev/attempt-fccb550a664e76b083f3d4b7f65823c3"
+          },
+          "task_id": "trail-data",
+          "task_revision": 1,
+          "tree": "698400abe6070964485aed6b480f3f92c6291f20",
+          "write_paths": [
+            "public/js/trails.js"
+          ]
+        }
+      }
+    ]
+  },
+  "frozen_limits_unchanged": true,
+  "unaffected_trail_data_capture_unchanged": true,
+  "model_budgets": [
+    {
+      "charged_microusd": 159528,
+      "max_execution_ms": 600000,
+      "max_output_tokens": 4096,
+      "max_requests": 48,
+      "model": "gpt-5.6-luna",
+      "pricing": {
+        "input_microusd_per_million": 250000,
+        "output_microusd_per_million": 1200000,
+        "source": "owner-approved conservative rates"
+      },
+      "provider": "codex",
+      "requests": 31,
+      "spend_limit_microusd": 200000
+    },
+    {
+      "charged_microusd": 2211968,
+      "max_execution_ms": 600000,
+      "max_output_tokens": 4096,
+      "max_requests": 24,
+      "model": "claude-sonnet-5-5",
+      "pricing": {
+        "input_microusd_per_million": 4000000,
+        "output_microusd_per_million": 10000000,
+        "source": "owner-approved conservative rates"
+      },
+      "provider": "claude",
+      "requests": 12,
+      "spend_limit_microusd": 4800000
+    }
+  ],
+  "file_provenance": [
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1:0",
+        "new_blob": "adb6d0ada83b05e4e7c07e1bb73267e3e92a4091",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791668473279,
+        "revision": {
+          "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+          "repository": "yoneda-dev/attempt-93c111d8de286ce8eb22c8629a8f8496"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "task_revision": 1
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791668473279
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1:1",
+        "new_blob": "8d0dcf62299c42c6ecee928cc225bdab52dd16fc",
+        "old_blob": "69b632cbf428ac6a4143cd28e2f5ee2f54d42a35",
+        "old_path": null,
+        "path": "public/js/trails.js",
+        "recorded_at": 1791668473279,
+        "revision": {
+          "commit": "568eb829fd68f856e82616918e14d90cf36f4cd2",
+          "repository": "yoneda-dev/attempt-93c111d8de286ce8eb22c8629a8f8496"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "task_revision": 1
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:1:1",
+      "kind": "file_provenance",
+      "label": "modify public/js/trails.js",
+      "recorded_at": 1791668473279
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+        "execution_epoch": 4,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1:0",
+        "new_blob": "1efc9427e45f1263070b49cf055c81c2c344d14c",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791668730476,
+        "revision": {
+          "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+          "repository": "yoneda-dev/attempt-4ed4f4028b3bb826935641fcb5625be9"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "task_revision": 2
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791668730476
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+        "execution_epoch": 4,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1:1",
+        "new_blob": "8d0dcf62299c42c6ecee928cc225bdab52dd16fc",
+        "old_blob": "69b632cbf428ac6a4143cd28e2f5ee2f54d42a35",
+        "old_path": null,
+        "path": "public/js/trails.js",
+        "recorded_at": 1791668730476,
+        "revision": {
+          "commit": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+          "repository": "yoneda-dev/attempt-4ed4f4028b3bb826935641fcb5625be9"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate",
+        "task_revision": 2
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:integrate:r2:1:1",
+      "kind": "file_provenance",
+      "label": "modify public/js/trails.js",
+      "recorded_at": 1791668730476
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": null,
+        "capture_epoch": 1,
+        "capture_kind": "task_handoff",
+        "change": "modify",
+        "commit": "1ad0e436e8cddfc7f951576c9404fbb576ab8649",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+        "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:1",
+        "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:1:0",
+        "new_blob": "adb6d0ada83b05e4e7c07e1bb73267e3e92a4091",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791668344778,
+        "revision": {
+          "commit": "1ad0e436e8cddfc7f951576c9404fbb576ab8649",
+          "repository": "yoneda-dev/attempt-7f9b9f8b065ad4c73efd1da5594825b2"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+        "task_revision": 1
+      },
+      "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791668344778
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": null,
+        "capture_epoch": 1,
+        "capture_kind": "repair",
+        "change": "modify",
+        "commit": "308f4e5b0752e1770199f38954d8dc14a950f99b",
+        "execution_epoch": 4,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+        "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2",
+        "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2:0",
+        "new_blob": "1efc9427e45f1263070b49cf055c81c2c344d14c",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791668625660,
+        "revision": {
+          "commit": "308f4e5b0752e1770199f38954d8dc14a950f99b",
+          "repository": "yoneda-dev/attempt-1591c4e16d986c8b6e553112189c194c"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui",
+        "task_revision": 2
+      },
+      "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:bilingual-ui:2:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791668625660
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": null,
+        "capture_epoch": 1,
+        "capture_kind": "task_handoff",
+        "change": "modify",
+        "commit": "c711ce7fccdad9e6ca035be0df825b7c1c51ead3",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+        "handoff_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1",
+        "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1:0",
+        "new_blob": "8d0dcf62299c42c6ecee928cc225bdab52dd16fc",
+        "old_blob": "69b632cbf428ac6a4143cd28e2f5ee2f54d42a35",
+        "old_path": null,
+        "path": "public/js/trails.js",
+        "recorded_at": 1791668367129,
+        "revision": {
+          "commit": "c711ce7fccdad9e6ca035be0df825b7c1c51ead3",
+          "repository": "yoneda-dev/attempt-fccb550a664e76b083f3d4b7f65823c3"
+        },
+        "run_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4",
+        "subject_id": "handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1",
+        "task_id": "reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data",
+        "task_revision": 1
+      },
+      "id": "file-receipt:handoff:reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4:task:trail-data:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/js/trails.js",
+      "recorded_at": 1791668367129
+    }
+  ],
+  "scope": "Developer-controlled live acceptance using the funded reviewer profile; not independent human reviewer acceptance",
+  "runtime_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
+  "browser_acceptance": {
+    "verified_at": "2026-10-10T21:59:21.223025+00:00",
+    "ui_source_revision": "8d2de21f3938ab93b75510d85c02d751498cd596",
+    "worker_version": "b8877feb-1e20-49bd-b9ca-18667466b99e",
+    "checks": [
+      "Unmatched English search reports zero trails",
+      "Keyboard Enter on Clear search restores four trails and search focus",
+      "Spanish switch shows Borrar b\u00fasqueda and four senderos",
+      "Stale prior candidate is explicitly unselectable history",
+      "Fresh candidate is explicitly eligible for review",
+      "Superseded capture labeled as history, not assertion"
+    ],
+    "human_rehearsal": false,
+    "selection_or_publication_performed": false
+  }
+}

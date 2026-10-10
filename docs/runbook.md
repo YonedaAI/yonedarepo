@@ -10,7 +10,7 @@ The code stores bounded full Git-native capture patches (`7d8ccd5`) and the revi
 
 The repaired preview was checked in the browser: English “Clear search” and Spanish “Borrar búsqueda” both work, with the keyboard check changing results from zero to four.
 
-The final public source export remains pending. Verify the package using its [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) provenance and [current packaging/build actions in GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions); CI for the final export is not yet known, and matching its public download against the exported SHA remains pending. Workflow `38088529282` for earlier source `e884a546` is a dated baseline only.
+The submission source is packaged as a public export. Verify its originating implementation revision in [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) and the corresponding result in [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions). Workflow `38088529282` for earlier source `e884a546` is a dated baseline; final-export CI acceptance is reported separately after publication.
 
 The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captions, rendered and uploaded. Normal-speed playback of the prior render reached the end; all 12 scenes and 48 captions were reviewed, and revised chapter 6 was reviewed with the honest history summary, exact captured-source view, and four captions. The final re-render passed ffmpeg decode. This edited video is not a continuous recording of a current full run.
 

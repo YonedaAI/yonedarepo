@@ -36,14 +36,14 @@
       ]
     },
     {
-      "title": "Timeline keeps failure and repair history",
+      "title": "Timeline preserves the checked repair history",
       "capture": "reviewer-activity.jpg",
       "seconds": 30,
       "captions": [
-        "The timeline keeps failed attempts visible alongside later activity.",
-        "A repair appears as an amendment to the task history.",
-        "Repair uses the trial’s existing budget and records its own progress and checks.",
-        "The earlier failure remains visible instead of being rewritten as success."
+        "Earlier failed trials stay available in run history.",
+        "This trial records an owner-approved repair after its first checked result.",
+        "Repair retains the same budget and unchanged specialist captures.",
+        "The old candidate is kept as stale; a fresh capture is independently checked."
       ]
     },
     {
@@ -63,9 +63,9 @@
       "seconds": 30,
       "captions": [
         "Open the result tied to its exact captured revision.",
-        "Review the candidate diff and its independent check records.",
-        "The candidate’s check status is visible; review does not publish it automatically.",
-        "The selected result and published source stay separate until an owner decides."
+        "This historical example retains a change summary; inspect its exact source using the read-only viewer.",
+        "New Git-native captures record a bounded full patch instead of change statistics.",
+        "The checked result and published source stay separate until an owner decides."
       ]
     },
     {

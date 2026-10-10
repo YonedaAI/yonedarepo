@@ -481,5 +481,86 @@
     "runtime_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
     "native_acceptance_record": "git-native-acceptance.json",
     "human_reviewer_rehearsal": "pending after development"
+  },
+  "october_10_final_delivery_gate": {
+    "checked_at": "2026-10-10T21:59:21.222225+00:00",
+    "implementation_revision": "8d2de21f3938ab93b75510d85c02d751498cd596",
+    "command": "cargo xtask check",
+    "result": "passed",
+    "rust_tests": 283,
+    "rust_components": {
+      "xtask": 15,
+      "yoneda_app": 186,
+      "yoneda_cloudflare": 1,
+      "yoneda_core": 16,
+      "yoneda_runtime_macos": 65
+    },
+    "workers_tests": 290,
+    "workers_files": 59,
+    "frontend_tests": 57,
+    "frontend_files": 14,
+    "node_tests": 11,
+    "linux_runtime_image_tests": 71,
+    "linux_runtime_image_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
+    "worker_version": "b8877feb-1e20-49bd-b9ca-18667466b99e",
+    "runtime_version": 24,
+    "native_acceptance_records": [
+      "git-native-acceptance.json",
+      "git-native-repair-acceptance.json"
+    ],
+    "human_reviewer_rehearsal": "pending after development",
+    "includes": [
+      "fmt",
+      "clippy warnings denied",
+      "Wasm build",
+      "TypeScript",
+      "Biome",
+      "frontend production build"
+    ]
+  },
+  "october_10_refreshed_video": {
+    "duration_seconds": 360,
+    "chapters": 12,
+    "caption_count": 48,
+    "format": "Edited actual browser captures; captioned without narration; not a continuous live run",
+    "sha256": "21dceeca3704f3645b8e2be16edccf25122332cd787136baa7971ecbf922e6e7",
+    "video_url": "https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-10/yonedarepo-reviewer.mp4",
+    "capture_bundle": "yonedarepo-reviewer-captures.zip",
+    "checked_revision": "f5527348509497e87c5942e9fb4fd5094df02d8a",
+    "review": {
+      "all_12_chapter_frames_and_48_captions_reviewed": true,
+      "refreshed_chapter_6_reviewed_after_source_inspection_fix": true,
+      "full_stream_decode_passed": true,
+      "method": "Normal-speed browser playback, chapter/frame inspection, full ffmpeg decode; edited still captures, no narration",
+      "normal_speed_playback_before_final_chapter_6_refresh_reached_end": true
+    },
+    "anonymous_public_download_sha256_verified": true
+  },
+  "october_10_final_patch_delivery_gate": {
+    "checked_at": "2026-10-10T22:13:41.382835+00:00",
+    "implementation_revision": "a581aaf82a8253943c90b5cfd2d71382f6b7ea22",
+    "command": "cargo xtask check",
+    "result": "passed",
+    "rust_tests": 284,
+    "rust_components": {
+      "xtask": 15,
+      "yoneda_app": 186,
+      "yoneda_cloudflare": 1,
+      "yoneda_core": 16,
+      "yoneda_runtime_macos": 66
+    },
+    "workers_tests": 290,
+    "workers_files": 59,
+    "frontend_tests": 67,
+    "frontend_files": 15,
+    "node_tests": 11,
+    "linux_runtime_tests": 72,
+    "linux_runtime_digest": "sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87",
+    "runtime_version": 25,
+    "runtime_rollout": "complete; seven healthy; no failed or starting instances",
+    "worker_version": "b4ffc0b4-e801-4271-b119-1d32db58ecd3",
+    "offline_gemini_rust_mcp_smoke": "passed; no inference",
+    "historical_candidate_patch": "f55273485 retains stat summary; exact source inspection verified; later captures store bounded full patches",
+    "human_reviewer_rehearsal": "pending after development"
   }
 }
