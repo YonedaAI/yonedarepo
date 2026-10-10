@@ -161,7 +161,7 @@ async function main() {
   assert.equal(refreshReceipt.conflict_id, `conflict:${access.refresh_request.request_id}`);
   const conflict = await until(async () => {
     const status = await api(`repos/${access.repo_id}/conflict_status?conflict_id=${encodeURIComponent(refreshReceipt.conflict_id)}`);
-    if (['unresolved', 'stale'].includes(status.status)) throw new Error(`Disjoint refresh did not merge cleanly: ${status.status}`);
+    if (['unresolved', 'stale', 'failed'].includes(status.status)) throw new Error(`Disjoint refresh did not merge cleanly: ${status.status}`);
     return status.status === 'clean' ? status : false;
   }, 'trusted stale-candidate refresh', deadline);
   assert.equal(conflict.evidence.observed_head, publishedHead);
@@ -174,7 +174,7 @@ async function main() {
   const evaluated = await until(async () => {
     const detail = await readRun(api, access.repo_id, stale.run_id);
     const candidate = detail.candidates.find(item => item.id === refreshedRun.id);
-    if (candidate?.status === 'rejected') throw new Error('Freshly refreshed candidate failed independent evaluation.');
+    if (['rejected', 'failed'].includes(candidate?.status)) throw new Error('Freshly refreshed candidate failed independent evaluation.');
     return candidate?.status === 'eligible' && candidate.evaluation && candidate.evaluation !== access.refresh_request.old_candidate_evaluation
       ? { candidate, detail } : false;
   }, 'fresh eligible refresh evaluation', deadline);
@@ -186,7 +186,7 @@ async function main() {
   assert.equal(refreshed.status, 'eligible');
   assert.ok(evaluated.detail.evaluations.some(item => item.id === refreshed.evaluation
     && item.candidate === refreshed.id && item.revision?.commit === refreshed.revision.commit
-    && item.checks?.length && item.checks.every(check => check.status === 'passed')),
+    && item.checks?.length && item.checks.every(check => check.status === 'pass')),
   'Require an independent passing evaluation for the refreshed revision.');
   const source = await api(`repos/${access.repo_id}/candidate_source?id=${encodeURIComponent(refreshed.id)}`);
   assert.equal(source.revision.commit, refreshed.revision.commit, 'Read back the actual refreshed Git tree.');
