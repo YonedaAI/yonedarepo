@@ -69,6 +69,26 @@ describe('candidate diff hydration', () => {
     expect(renderToStaticMarkup(render())).toContain('+new');
   });
 
+  it('labels a stat-only historical diff as a summary and says no patch was recorded', async () => {
+    const stat = 'public/index.html | 4 +++-\n1 file changed, 3 insertions(+), 1 deletion(-)';
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'candidate-1', diff: stat }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    let tree = render();
+    find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
+    tree = render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[1]).toBe(stat));
+    const html = renderToStaticMarkup(render());
+    expect(html).toContain('Change summary');
+    expect(html).toContain('change statistics only; the patch was not recorded');
+    expect(html).toContain(stat);
+    expect(html).not.toContain('class="source-diff"');
+    expect(html).toContain('View captured source (read-only)');
+  });
+
   it('shows a retry action on error and never fetches an inline scoped diff', async () => {
     const fetch = vi.fn().mockResolvedValue({
       ok: false,

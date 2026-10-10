@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { CandidateSourcePreview } from './CandidateSourcePreview';
 import { SourceDiff } from './SourceDiff';
 
 export function LazyCandidateDiff({
@@ -35,21 +36,33 @@ export function LazyCandidateDiff({
       current = false;
     };
   }, [open, diff, retry, repo, candidate.id]);
+  const patchRecorded =
+    diff?.split(/\r?\n/).some((line) => line.startsWith('diff --git ')) ?? false;
   return (
-    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>Review changes</summary>
-      {diff !== null ? (
-        <SourceDiff diff={diff} />
-      ) : error ? (
-        <div role="alert">
-          <p>{error}</p>
-          <button type="button" onClick={() => setRetry((value) => value + 1)}>
-            Retry diff
-          </button>
-        </div>
-      ) : (
-        <p role="status">Loading captured diff…</p>
-      )}
-    </details>
+    <>
+      <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+        <summary>{patchRecorded || diff === null ? 'Review changes' : 'Change summary'}</summary>
+        {diff !== null && !patchRecorded ? (
+          <>
+            <p>
+              This historical capture records change statistics only; the patch was not recorded.
+            </p>
+            <pre>{diff || 'No change summary was recorded.'}</pre>
+          </>
+        ) : diff !== null ? (
+          <SourceDiff diff={diff} />
+        ) : error ? (
+          <div role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={() => setRetry((value) => value + 1)}>
+              Retry diff
+            </button>
+          </div>
+        ) : (
+          <p role="status">Loading captured diff…</p>
+        )}
+      </details>
+      <CandidateSourcePreview repo={repo} candidate={candidate} />
+    </>
   );
 }
