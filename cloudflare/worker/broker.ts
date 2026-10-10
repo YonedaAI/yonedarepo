@@ -1,4 +1,5 @@
 import type { OutboundHandler } from '@cloudflare/containers';
+import { injectPublicationAckLoss } from './acceptance-faults';
 import { source } from './artifacts';
 import { CANDIDATE_DIFF_LIMIT } from './evidence';
 import { hostedMcp } from './hosted-mcp';
@@ -105,6 +106,18 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       return response(result);
     }
     if (path === '/complete') {
+      if (await injectPublicationAckLoss(env, scope, body)) {
+        await ledger(env, scope.repo_id, {
+          op: 'progress',
+          ...identity,
+          progress: { stage: 'controlled_publish_ack_loss', target: body.commit },
+        });
+        return error(
+          'CONTROLLED_ACK_LOSS',
+          'Disposable acceptance exercise: publication acknowledgement withheld',
+          503,
+        );
+      }
       let command: Json = { op: 'finish', ...identity, result: body };
       if (job.kind === 'evaluate') {
         const stored = await object(env, JSON.stringify(body));

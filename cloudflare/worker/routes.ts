@@ -9,6 +9,7 @@ import { failureCode, writeLog } from './logging';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
+import { ownerCommandInput, repositoryOperationAllowed } from './repository-command';
 import { deleteRepository } from './repository-deletion';
 import { resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
@@ -156,42 +157,9 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       await ledger(env, repo, { op: 'snapshot' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
     }
-    const allowed =
-      req.method === 'GET'
-        ? [
-            'snapshot',
-            'events',
-            'graph',
-            'why',
-            'decision',
-            'context_search',
-            'context_get',
-            'context_usage',
-            'execution_logs',
-          ]
-        : req.method === 'POST'
-          ? [
-              'init',
-              'start_run',
-              'accept',
-              'cancel_run',
-              'observe',
-              'update_policy',
-              'context_publish',
-              'configure_context_study',
-              'retry_team_task',
-            ]
-          : [];
-    if (!allowed.includes(action)) return error('NOT_FOUND', 'Unknown repository operation', 404);
-    const input: Json =
-      req.method === 'GET' ? Object.fromEntries(url.searchParams) : await readJson(req, 256 * 1024);
-    for (const key of [
-      'after',
-      'depth',
-      'limit',
-      ...(action === 'context_usage' ? ['cursor', 'epoch'] : []),
-    ])
-      if (input[key] !== undefined) input[key] = Number(input[key]);
+    if (!repositoryOperationAllowed(req.method, action))
+      return error('NOT_FOUND', 'Unknown repository operation', 404);
+    const input = await ownerCommandInput(req, action);
     if (action === 'init') {
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
         return error('INVALID_INPUT', 'Repository identity mismatch');
@@ -244,18 +212,6 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         checked.add(id);
       }
     }
-    // Authority fields are assigned here; model/browser JSON cannot become an internal attempt.
-    for (const key of [
-      'job_id',
-      ...(action === 'context_usage' ? [] : ['epoch']),
-      '_workspace',
-      '_grant',
-      'session_id',
-      'actor',
-      'author',
-      'workspace',
-    ])
-      delete input[key];
     const value = await ledger(env, repo, {
       ...input,
       op: action,

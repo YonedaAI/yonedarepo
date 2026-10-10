@@ -2,6 +2,7 @@
 // Reviewer credentials remain in memory and never enter argv, URLs or disk.
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { findCheckedRun, readRun } from './reviewer-client.mjs';
 
 const origin = 'https://yonedarepo.com';
 function keyPrompt() {
@@ -52,14 +53,13 @@ async function main() {
   if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
   let trial;
   if (!policy.active_trial && !process.argv.includes('--new')) {
-    const snapshot=await api(`repos/${policy.repo_id}/snapshot`);
-    const recorded=snapshot.runs.filter(run=>['ready','accepted'].includes(run.status))
-      .sort((a,b)=>(b.created_at??0)-(a.created_at??0))[0];
+    const recorded=await findCheckedRun(api,policy.repo_id);
     if(recorded) {
       trial={repo_id:policy.repo_id,run_id:recorded.id,
         url:`/?repo=${encodeURIComponent(policy.repo_id)}&run=${encodeURIComponent(recorded.id)}`};
       console.log('Opening the recorded checked example. Use --new only to approve another funded trial.');
     }
+    else throw new Error('No checked example is available yet. Use --new to approve a funded trial (up to $5).');
   }
   const request_id=policy.active_trial?.replace(/^reviewer-/, '') ?? randomUUID();
   if (!trial) console.log(policy.active_trial ? 'Resuming the recorded reviewer trial.' : 'Starting the prepared Build Together trial (up to $5).');
@@ -78,7 +78,7 @@ async function main() {
   const child=spawn(opener[0],opener[1],{stdio:'ignore'}); child.on('error',()=>{}); child.unref();
   let previous='';
   for (let n=0;n<240;n++) {
-    const snapshot=await api(`repos/${trial.repo_id}/snapshot`);
+    const snapshot=await readRun(api,trial.repo_id,trial.run_id);
     const run=snapshot.runs.find(r=>r.id===trial.run_id);
     const executions=snapshot.executions.filter(e=>e.run_id===trial.run_id);
     const status=`${run?.status ?? 'queued'} | ${executions.map(e=>`${e.strategy}: ${e.status}`).join(' | ')}`;
