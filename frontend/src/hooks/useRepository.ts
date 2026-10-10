@@ -150,12 +150,22 @@ export function useRepository() {
           : baseSnapshot.runs.find((run) => run.id === requestedRunForRepository);
         if (requestedRunForRepository && !requestedRunFound && !requestedRunMissing.current) {
           try {
-            requestedRunFound = await findRunInPages(requestedRunForRepository, page, (cursor) => {
-              const query = new URLSearchParams({ limit: '25', cursor });
-              return api<RunsPage>(`repos/${id}/runs?${query}`);
-            });
+            requestedRunFound = await findRunInPages(
+              requestedRunForRepository,
+              page,
+              (cursor, watermark) => {
+                const query = new URLSearchParams({
+                  limit: '25',
+                  cursor,
+                  watermark: String(watermark),
+                });
+                return api<RunsPage>(`repos/${id}/runs?${query}`);
+              },
+            );
+            if (!stillCurrent()) return;
             setRequestedRunError('');
           } catch (error) {
+            if (!stillCurrent()) return;
             if (error instanceof RequestedRunNotFoundError) {
               requestedRunMissing.current = true;
               setRequestedRunError(error.message);
