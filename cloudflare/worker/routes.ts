@@ -4,6 +4,8 @@ import { candidateDetail, candidateSource, hydrateOwnerSnapshot } from './candid
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
+import { archivedHistoryDetail } from './history-archive';
+import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
 import { projectRoute } from './projects';
@@ -146,6 +148,18 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       return await candidateDetail(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'candidate_source' && req.method === 'GET')
       return await candidateSource(env, repo, url.searchParams.get('id') ?? '');
+    if (action === 'candidate_diff' && req.method === 'GET')
+      return response(
+        await candidateDiffPage(
+          env,
+          repo,
+          url.searchParams.get('run_id') ?? '',
+          url.searchParams.get('id') ?? '',
+          url.searchParams.get('cursor') ?? undefined,
+          url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : 50,
+          url.searchParams.get('watermark') ?? undefined,
+        ),
+      );
     if (action === 'team_source' && req.method === 'GET')
       return await teamTaskSource(
         env,
@@ -154,7 +168,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         url.searchParams.get('task_id') ?? '',
       );
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
-      await ledger(env, repo, { op: 'snapshot' });
+      await ledger(env, repo, { op: 'repository_status' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
     }
     if (!repositoryOperationAllowed(req.method, action))
@@ -168,7 +182,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       if (head !== input.commit)
         return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
     }
-    if (action === 'start_run') checkLedger(await ledger(env, repo, { op: 'snapshot' }), input);
+    if (action === 'start_run')
+      checkLedger(await ledger(env, repo, { op: 'repository_status' }), input);
     if (action === 'start_run' && principal.role === 'user') {
       const settings = await workspace(env, principal.workspace, { op: 'settings' });
       if (
@@ -223,6 +238,13 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);
         await env.EXECUTIONS.get(env.EXECUTIONS.idFromName(name)).stop();
       }
+    if (action === 'run_detail' && value.archive)
+      return response({
+        ...(await archivedHistoryDetail(env, repo, input.run_id)),
+        repository: value.repository,
+        capabilities: value.capabilities,
+        seq: value.seq,
+      });
     return response(action === 'snapshot' ? await hydrateOwnerSnapshot(env, value) : value);
   } catch (e: any) {
     const repo = url.pathname.split('/')[3];

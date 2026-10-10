@@ -6,8 +6,7 @@ import type { Env, Json } from './types';
 
 /** Owner inspection resolves a recorded candidate, never a caller-supplied revision. */
 export async function candidateSource(env: Env, repo: string, id: string) {
-  const snapshot = await ledger(env, repo, { op: 'snapshot' });
-  const candidate = snapshot.candidates.find((item: Json) => item.id === id);
+  const candidate = await recordedCandidate(env, repo, id);
   if (!candidate) return error('NOT_FOUND', 'Candidate is not recorded in this repository', 404);
   const files = await source(env, candidate.revision);
   const result = response({ candidate_id: candidate.id, revision: candidate.revision, ...files });
@@ -29,10 +28,19 @@ export async function hydrateOwnerSnapshot(env: Env, snapshot: Json): Promise<Js
 
 /** Resolve a candidate ID from the owner-authorized repository before reading its diff. */
 export async function candidateDetail(env: Env, repo: string, id: string) {
-  const snapshot = await ledger(env, repo, { op: 'snapshot' });
-  const candidate = snapshot.candidates.find((item: Json) => item.id === id);
+  const candidate = await recordedCandidate(env, repo, id);
   if (!candidate) return error('NOT_FOUND', 'Candidate is not recorded in this repository', 404);
   return response(await hydrateCandidateDiff(env, candidate));
+}
+
+async function recordedCandidate(env: Env, repo: string, id: string): Promise<Json | null> {
+  if (!id) return null;
+  try {
+    return await ledger(env, repo, { op: 'candidate_record', id });
+  } catch (failure) {
+    if ((failure as { code?: string }).code === 'NOT_FOUND') return null;
+    throw failure;
+  }
 }
 
 async function hydrateCandidateDiff(env: Env, candidate: Json): Promise<Json> {

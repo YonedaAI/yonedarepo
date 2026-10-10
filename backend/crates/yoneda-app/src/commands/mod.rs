@@ -2,6 +2,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
+mod archive;
 mod capture_completion;
 mod completion;
 mod context_access;
@@ -74,7 +75,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "repository_status" => {
             let mut r = crate::storage::repo(db)?;
-            r["capabilities"] = serde_json::json!({"workspace_authority":1});
+            r["capabilities"] = repository::capabilities(db, now)?;
             Ok(r)
         }
         "resync_repository" | "defer_job" => recovery::handle(db, &c, now),
@@ -85,7 +86,16 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "peer_status" => peers::read(db, &c, now),
         "update_policy" => policy::update(db, c, now),
         "configure_context_study" => study::configure(db, c, now),
-        "init" | "snapshot" => repository::handle(db, c, now),
+        "init"
+        | "snapshot"
+        | "repository_overview"
+        | "runs_page"
+        | "run_detail"
+        | "run_graph_page"
+        | "candidate_record" => repository::handle(db, c, now),
+        "archive_candidates" | "archive_prepare" | "archive_commit" | "archive_status" => {
+            archive::handle(db, c, now)
+        }
         "start_run" | "cancel_run" => runs::handle(db, c, now),
         "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
         "team_context"
@@ -104,7 +114,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         }
         "context" | "publish_artifact" | "authorize_artifact" | "get_artifact"
         | "hint_complete" => mcp::handle(db, c, now),
-        "outbox" | "outbox_sent" | "events" => events::handle(db, c, now),
+        "outbox" | "outbox_sent" | "outbox_prune" | "events" => events::handle(db, c, now),
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),

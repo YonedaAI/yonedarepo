@@ -16,14 +16,20 @@ export async function archiveDueHistory(env: Env, repo: string, now = Date.now()
     const body = JSON.stringify(bundle);
     const actual = await digest(body);
     if (actual !== job.digest) throw new Error(`Prepared history digest mismatch for ${run_id}`);
-    await env.OBJECTS.put(job.object_key, body, { httpMetadata: { contentType: 'application/json' } });
+    await env.OBJECTS.put(job.object_key, body, {
+      httpMetadata: { contentType: 'application/json' },
+    });
     const stored = await env.OBJECTS.get(job.object_key);
     if (!stored) throw new Error(`Archive object missing after upload for ${run_id}`);
     const storedBody = await stored.text();
-    if ((await digest(storedBody)) !== job.digest) throw new Error(`Stored history digest mismatch for ${run_id}`);
+    if ((await digest(storedBody)) !== job.digest)
+      throw new Error(`Stored history digest mismatch for ${run_id}`);
     const receipt = await ledger(env, repo, {
-      op: 'archive_commit', job_id: job.id, digest: job.digest,
-      receipt_id: `archive-receipt:${run_id}:${job.digest}`, now,
+      op: 'archive_commit',
+      job_id: job.id,
+      digest: job.digest,
+      receipt_id: `archive-receipt:${run_id}:${job.digest}`,
+      now,
     });
     receipts.push(receipt);
   }
@@ -36,6 +42,7 @@ export async function archivedHistoryDetail(env: Env, repo: string, run_id: stri
   const object = await env.OBJECTS.get(index.object_key);
   if (!object) throw new Error('Archived history object is missing');
   const body = await object.text();
-  if ((await digest(body)) !== index.digest) throw new Error('Archived history failed digest verification');
+  if ((await digest(body)) !== index.digest)
+    throw new Error('Archived history failed digest verification');
   return JSON.parse(body) as Json;
 }

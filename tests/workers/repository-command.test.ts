@@ -27,3 +27,9 @@ it('preserves opaque page cursors, parses watermark, and keeps context usage epo
   const usage = await ownerCommandInput(new Request('https://example.com/?epoch=2&cursor=3'), 'context_usage');
   expect(usage).toEqual({ epoch: 2, cursor: 3 });
 });
+
+it('rejects invalid numeric cursors instead of silently resetting the requested snapshot', async () => {
+  for (const value of ['invalid', 'Infinity', '1.5', '9007199254740992'])
+    await expect(ownerCommandInput(new Request(`https://example.com/?watermark=${value}`), 'runs_page'))
+      .rejects.toMatchObject({ code: 'INVALID_INPUT' });
+});
