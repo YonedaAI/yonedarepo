@@ -98,11 +98,28 @@ export function AgentActivityTimeline({
                     : 'Run event'}
                   {event.data.epoch != null ? ` · attempt ${event.data.epoch}` : ''}
                 </p>
-                {progress != null && (
-                  <RecordedContent
-                    content={typeof progress === 'string' ? progress : JSON.stringify(progress)}
-                  />
-                )}
+                {progress != null &&
+                  (typeof progress === 'string' ? (
+                    <RecordedContent content={progress} />
+                  ) : (
+                    <>
+                      {typeof progress.stage === 'string' && (
+                        <p>
+                          {(
+                            {
+                              container_starting: 'Preparing an execution environment',
+                              container_ready: 'Execution environment ready',
+                              harness_running: 'Agent is working',
+                            } as Record<string, string>
+                          )[progress.stage] ?? progress.stage.replaceAll('_', ' ')}
+                        </p>
+                      )}
+                      <details>
+                        <summary>Recorded progress details</summary>
+                        <RecordedContent content={JSON.stringify(progress)} />
+                      </details>
+                    </>
+                  ))}
                 {event.data.error && (
                   <RecordedContent
                     content={
