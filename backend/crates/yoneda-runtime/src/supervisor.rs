@@ -2,7 +2,7 @@ use crate::err;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn health() -> Value {
-    json!({"protocol":2,"capabilities":{"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
+    json!({"protocol":2,"capabilities":{"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1,"git_native_transport":1,"test_bundle":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
 }
 pub async fn serve() -> Result<()> {
     #[cfg(target_os = "linux")]

@@ -86,10 +86,24 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               job.fork = fork;
               scope.fork = fork;
             } else if (job.kind === 'capture') {
-              const fork = job.payload.source_revision?.repository;
-              if (typeof fork !== 'string') throw new Error('Frozen agent Git revision is missing');
-              job.fork = fork;
-              scope.fork = fork;
+              if (job.payload.capture_subtype === 'refresh_candidate') {
+                const canonical = job.payload.candidate?.base?.repository;
+                const fork = await provisionAttemptFork(
+                  this.env,
+                  envelope.repo_id,
+                  job,
+                  canonical,
+                  'refresh',
+                );
+                job.fork = fork;
+                scope.fork = fork;
+              } else {
+                const fork = job.payload.source_revision?.repository;
+                if (typeof fork !== 'string')
+                  throw new Error('Frozen agent Git revision is missing');
+                job.fork = fork;
+                scope.fork = fork;
+              }
             } else if (job.kind === 'evaluate') {
               scope.fork = job.payload.target?.repository;
             }
@@ -154,11 +168,12 @@ async function provisionAttemptFork(
   repoId: string,
   job: Record<string, any>,
   revision?: string,
+  purpose = 'attempt',
 ) {
   const [namespace, canonical, extra] = String(revision ?? '').split('/');
   if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !canonical)
     throw new Error('Approved canonical repository is unavailable');
-  const name = `attempt-${(await sha(`${repoId}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
+  const name = `${purpose}-${(await sha(`${repoId}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
   using source = await env.ARTIFACTS.get(canonical);
   try {
     await source.fork(name, { defaultBranchOnly: true });

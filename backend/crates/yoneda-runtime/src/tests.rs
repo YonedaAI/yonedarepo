@@ -280,6 +280,8 @@ fn runtime_health_identifies_protocol_and_evaluator_environment() {
     assert_eq!(health["protocol"], 2);
     assert_eq!(health["capabilities"]["context_usage"], 1);
     assert_eq!(health["capabilities"]["context_study"], 1);
+    assert_eq!(health["capabilities"]["git_native_transport"], 1);
+    assert_eq!(health["capabilities"]["test_bundle"], 1);
     assert_eq!(
         health["environment"],
         yoneda_core::Policy::default().environment

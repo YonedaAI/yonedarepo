@@ -114,6 +114,33 @@ async fn disjoint_head_move_produces_merge_commit_with_both_parents() {
     );
     let parents: Vec<_> = parents.split_whitespace().collect();
     assert_eq!(parents, vec![head.as_str(), candidate.as_str()]);
+    assert!(
+        crate::git_revision::verify_git_parent(
+            root.path().to_str().unwrap(),
+            result["merge_commit"].as_str().unwrap(),
+            &head,
+        )
+        .await
+        .is_err(),
+        "Ordinary candidates must keep the single-parent invariant"
+    );
+    crate::git_revision::verify_git_parents(
+        root.path().to_str().unwrap(),
+        result["merge_commit"].as_str().unwrap(),
+        &[&head, &candidate],
+    )
+    .await
+    .unwrap();
+    assert!(
+        crate::git_revision::verify_git_parents(
+            root.path().to_str().unwrap(),
+            result["merge_commit"].as_str().unwrap(),
+            &[&candidate, &head],
+        )
+        .await
+        .is_err(),
+        "Frozen parent order must be exact"
+    );
 }
 
 #[tokio::test]

@@ -104,3 +104,28 @@ pub(crate) fn report_fields(
     json!({"test_bundle_digest":digest,"protected_changes":protected_changes,
         "test_bundle_policy_digest":policy.map(|p| p.digest.as_str())})
 }
+
+#[cfg(test)]
+mod tests {
+    use yoneda_core::{FileEntry, Workspace};
+
+    #[test]
+    fn owner_bundle_digest_input_uses_rust_utf8_path_and_entry_field_order() {
+        let mut files = Workspace::new();
+        for (path, content) in [
+            ("2", "two"),
+            ("10", "ten"),
+            ("😀", "astral"),
+            ("\u{e000}", "bmp"),
+        ] {
+            files.insert(
+                path.to_owned(),
+                FileEntry::from_bytes(content.as_bytes().to_vec(), false),
+            );
+        }
+        assert_eq!(
+            serde_json::to_string(&files).unwrap(),
+            r#"{"10":{"content":"ten","executable":false},"2":{"content":"two","executable":false},"":{"content":"bmp","executable":false},"😀":{"content":"astral","executable":false}}"#
+        );
+    }
+}
