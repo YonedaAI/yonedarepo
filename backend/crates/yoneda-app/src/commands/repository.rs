@@ -89,6 +89,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             Ok(value)
         }
         "candidate_record" => get(db, "candidates", &string(&c, "id")?),
+        "job_status" => job_status(db, &c),
         "run_graph_page" => {
             let limit = match c.get("limit") {
                 Some(v) => v
@@ -107,5 +108,115 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             )
         }
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
+    }
+}
+
+/// Return only diagnostic fields needed to inspect a job without exposing its full payload.
+fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
+    let id = string(command, "job_id")?;
+    let job = get(db, "jobs", &id)?;
+    let payload = &job["payload"];
+    let execution = &payload["execution"];
+    let revision = |value: &Value| {
+        json!({
+            "repository": value.get("repository").cloned().unwrap_or(Value::Null),
+            "commit": value.get("commit").cloned().unwrap_or(Value::Null),
+        })
+    };
+    Ok(json!({
+        "id": job["id"],
+        "kind": job["kind"],
+        "status": job["status"],
+        "epoch": job["epoch"],
+        "attempt": job["attempt"],
+        "lease_until": job["lease_until"],
+        "deadline": job["deadline"],
+        "attempt_deadline": job["attempt_deadline"],
+        "progress": job["progress"],
+        "error": job["error"],
+        "workspace_transport": payload["workspace_transport"],
+        "source_revision": revision(&payload["source_revision"]),
+        "execution": {
+            "id": execution["id"],
+            "base": revision(&execution["base"]),
+            "team_task_revision": execution["team_task_revision"],
+        },
+    }))
+}
+
+#[cfg(test)]
+mod job_status_tests {
+    use super::*;
+    use crate::native::NativeStore;
+
+    #[test]
+    fn job_status_returns_bounded_capture_projection_without_payload_secrets() {
+        let db = NativeStore::memory().unwrap();
+        crate::execute(
+            &db,
+            json!({
+                "op":"init", "id":"repo", "name":"repo",
+                "remote":{"namespace":"owner", "name":"repo"},
+                "commit":"a".repeat(40), "policy":yoneda_core::Policy::default()
+            }),
+        )
+        .unwrap();
+        let payload = json!({
+            "workspace_transport":"git-native-v1",
+            "source_revision":{"repository":"artifacts/fork","commit":"b".repeat(40)},
+            "execution":{
+                "id":"execution-1", "base":{"repository":"artifacts/base","commit":"a".repeat(40)},
+                "team_task":"task-1", "team_task_revision":2
+            },
+            "credential":"must-not-leak", "context":["must-not-leak"]
+        });
+        db.query(
+            "INSERT INTO jobs(id,payload) VALUES(?,?)",
+            &[
+                json!("capture:execution-1:r2"),
+                json!(
+                    json!({
+                        "id":"capture:execution-1:r2", "kind":"capture", "status":"running",
+                        "epoch":2, "attempt":2, "lease_until":2000, "deadline":9000,
+                        "attempt_deadline":9000, "progress":null, "error":null, "payload":payload
+                    })
+                    .to_string()
+                ),
+            ],
+        )
+        .unwrap();
+
+        let status = job_status(&db, &json!({"job_id":"capture:execution-1:r2"})).unwrap();
+        assert_eq!(status["kind"], "capture");
+        assert_eq!(status["epoch"], 2);
+        assert_eq!(status["attempt"], 2);
+        assert_eq!(status["workspace_transport"], "git-native-v1");
+        assert_eq!(status["source_revision"]["repository"], "artifacts/fork");
+        assert_eq!(status["source_revision"]["commit"], "b".repeat(40));
+        assert_eq!(status["execution"]["base"]["repository"], "artifacts/base");
+        assert_eq!(status["execution"]["team_task_revision"], 2);
+        let serialized = status.to_string();
+        assert!(!serialized.contains("must-not-leak"));
+        assert!(status.get("payload").is_none());
+    }
+
+    #[test]
+    fn job_status_keeps_repository_scope_and_reports_unknown_jobs() {
+        let db = NativeStore::memory().unwrap();
+        crate::execute(
+            &db,
+            json!({
+                "op":"init", "id":"repo", "name":"repo",
+                "remote":{"namespace":"owner", "name":"repo"},
+                "commit":"a".repeat(40), "policy":yoneda_core::Policy::default()
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            job_status(&db, &json!({"job_id":"capture:other-repo"}))
+                .unwrap_err()
+                .code,
+            "NOT_FOUND"
+        );
     }
 }
