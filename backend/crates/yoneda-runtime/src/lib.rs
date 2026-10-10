@@ -4,15 +4,19 @@ use yoneda_core::Error;
 mod agent;
 mod agent_transcript;
 mod broker;
+mod conflict_merge;
 mod evaluation;
 mod execution_limits;
 mod git;
+mod git_capture;
+mod git_revision;
 mod harness_error;
 mod jobs;
 mod mcp;
 mod process;
 mod process_guard;
 mod prompt;
+mod refresh_capture;
 mod report;
 mod secure_fs;
 mod site;
@@ -24,6 +28,8 @@ mod team_prompt;
 mod team_source;
 mod team_workspace;
 mod telemetry;
+mod test_bundle;
+mod transport;
 mod workspace;
 pub use git::{capture, git};
 pub use mcp::mcp;
@@ -36,5 +42,8 @@ fn err(e: impl std::fmt::Display) -> Error {
 fn field<'a>(v: &'a Value, k: &str) -> yoneda_core::Result<&'a str> {
     v[k].as_str().ok_or_else(|| err(format!("Missing {k}")))
 }
+#[cfg(test)]
+#[path = "tests/git_native.rs"]
+mod git_native_tests;
 #[cfg(test)]
 mod tests;

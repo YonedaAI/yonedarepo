@@ -19,8 +19,22 @@ pub(crate) async fn read_git_revision(
 }
 
 pub(crate) async fn verify_git_parent(remote: &str, commit: &str, expected: &str) -> Result<()> {
+    verify_git_parents(remote, commit, &[expected]).await
+}
+
+/// Verify exact, ordered parents frozen by trusted capture metadata.
+pub(crate) async fn verify_git_parents(
+    remote: &str,
+    commit: &str,
+    expected: &[&str],
+) -> Result<()> {
     validate_revision(commit)?;
-    validate_revision(expected)?;
+    if expected.is_empty() || expected.len() > 2 {
+        return Err(err("Invalid frozen Git parent list"));
+    }
+    for parent in expected {
+        validate_revision(parent)?;
+    }
     let repository = tempfile::tempdir().map_err(err)?;
     git(repository.path(), &["init", "-b", "main"]).await?;
     fetch_git(repository.path(), remote, commit).await?;
@@ -30,9 +44,12 @@ pub(crate) async fn verify_git_parent(remote: &str, commit: &str, expected: &str
     )
     .await?;
     let revisions = parents.split_whitespace().collect::<Vec<_>>();
-    if revisions.len() != 2 || revisions[0] != commit || revisions[1] != expected {
+    if revisions.len() != expected.len() + 1
+        || revisions[0] != commit
+        || revisions[1..] != *expected
+    {
         return Err(err(
-            "Captured Git revision does not have the frozen approved base as its sole parent",
+            "Captured Git revision parents differ from the frozen approved parent list",
         ));
     }
     Ok(())

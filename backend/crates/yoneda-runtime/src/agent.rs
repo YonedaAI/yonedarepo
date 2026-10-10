@@ -20,7 +20,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     };
     #[cfg(target_os = "linux")]
     {
-        Command::new("chown")
+        Command::new("/usr/bin/chown")
             .args(["-R", "1000:1000", "/work", "/home/agent"])
             .status()
             .await
@@ -42,7 +42,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     std::fs::write("/home/agent/.codex/config.toml", config).map_err(err)?;
     #[cfg(target_os = "linux")]
     {
-        Command::new("chown")
+        Command::new("/usr/bin/chown")
             .args(["-R", "1000:1000", "/home/agent"])
             .status()
             .await

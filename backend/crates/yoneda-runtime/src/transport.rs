@@ -106,6 +106,29 @@ pub(crate) async fn prepare_agent_workspace(job: &Value, root: &Path) -> Result<
     git(root, &["fetch", "canonical", base]).await?;
     git(root, &["checkout", "-B", "main", "FETCH_HEAD"]).await?;
     git(root, &["push", "--force", "origin", "HEAD:refs/heads/main"]).await?;
+    if let Some(resolver) = job["payload"]["conflict_resolver"].as_object() {
+        let repository = resolver["merge_workspace_repository"]
+            .as_str()
+            .ok_or_else(|| err("Frozen resolver merge-workspace repository is missing"))?;
+        let commit = resolver["merge_workspace_commit"]
+            .as_str()
+            .ok_or_else(|| err("Frozen resolver merge-workspace revision is missing"))?;
+        crate::git_revision::validate_revision(commit)?;
+        git(
+            root,
+            &[
+                "fetch",
+                "http://git.yoneda.internal/merge-workspace",
+                commit,
+            ],
+        )
+        .await?;
+        git(root, &["checkout", "-B", "main", "FETCH_HEAD"]).await?;
+        git(root, &["push", "--force", "origin", "HEAD:refs/heads/main"]).await?;
+        if repository.is_empty() {
+            return Err(err("Invalid resolver merge-workspace repository"));
+        }
+    }
     if job["payload"]["team_inputs"].is_array() {
         let assembled = crate::team_source::load_git(job).await?;
         crate::git_capture::seed_workspace(root, base, &assembled).await?;

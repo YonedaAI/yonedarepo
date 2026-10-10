@@ -2,7 +2,7 @@
 use serde_json::{Value, json};
 use std::{collections::BTreeSet, path::Path};
 use tokio::process::Command;
-use yoneda_core::{Result, conflict::TrustedPathEvidence};
+use yoneda_core::Result;
 
 /// Rebase a captured candidate onto an observed head using only local Git objects.
 /// The adapter must fetch/materialize the three commits before invoking this function.
@@ -40,7 +40,7 @@ pub async fn refresh(
     let intervening = paths(repository, base, observed_head).await?;
     let declared: BTreeSet<_> = declared_paths.iter().collect();
     if declared_paths.is_empty()
-        || declared_paths.len() > yoneda_core::MAX_FILES
+        || declared_paths.len() > 10_000
         || declared.len() != declared_paths.len()
     {
         return Err(err(
@@ -64,15 +64,15 @@ pub async fn refresh(
         .filter(|path| intervening.contains(path))
         .cloned()
         .collect();
-    let evidence = TrustedPathEvidence {
-        base_commit: base.into(),
-        observed_head: observed_head.into(),
-        candidate_commit: candidate.into(),
-        declared_paths: declared_paths.to_vec(),
-        captured_paths: captured,
-        intervening_paths: intervening,
-        overlapping_paths: overlapping.clone(),
-    };
+    let evidence = json!({
+        "base_commit":base,
+        "observed_head":observed_head,
+        "candidate_commit":candidate,
+        "declared_paths":declared_paths,
+        "captured_paths":captured,
+        "intervening_paths":intervening,
+        "overlapping_paths":overlapping,
+    });
     let merged = command(
         repository,
         &["merge-tree", "--write-tree", observed_head, candidate],
@@ -159,7 +159,11 @@ pub async fn execute_refresh_job(job: &Value, repository: &Path) -> Result<Value
 }
 
 async fn paths(repository: &Path, base: &str, target: &str) -> Result<Vec<String>> {
-    let output = command(repository, &["diff", "--name-only", "-z", base, target]).await?;
+    let output = command(
+        repository,
+        &["diff", "--no-renames", "--name-only", "-z", base, target],
+    )
+    .await?;
     if !output.status.success() {
         return Err(err(&String::from_utf8_lossy(&output.stderr)));
     }
@@ -195,7 +199,7 @@ async fn git(repository: &Path, args: &[&str]) -> Result<String> {
 }
 
 async fn command(repository: &Path, args: &[&str]) -> Result<std::process::Output> {
-    Command::new("git")
+    Command::new("/usr/bin/git")
         .args([
             "-c",
             "core.hooksPath=/dev/null",
@@ -204,7 +208,20 @@ async fn command(repository: &Path, args: &[&str]) -> Result<std::process::Outpu
         ])
         .args(args)
         .current_dir(repository)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("HOME", "/nonexistent")
+        .env("LANG", "C.UTF-8")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_CONFIG_COUNT", "3")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", "/dev/null")
+        .env("GIT_CONFIG_KEY_1", "core.attributesFile")
+        .env("GIT_CONFIG_VALUE_1", "/dev/null")
+        .env("GIT_CONFIG_KEY_2", "protocol.file.allow")
+        .env("GIT_CONFIG_VALUE_2", "never")
         .output()
         .await
         .map_err(|error| err(&error.to_string()))

@@ -13,7 +13,13 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         let revision = &job["payload"]["candidate"]["revision"];
         let commit = field(revision, "commit")?;
         let base = field(&job["payload"]["candidate"]["base"], "commit")?;
-        crate::git::verify_git_parent("http://git.yoneda.internal/target", commit, base).await?;
+        let parents = approved_parents(job, base)?;
+        crate::git_revision::verify_git_parents(
+            "http://git.yoneda.internal/target",
+            commit,
+            &parents,
+        )
+        .await?;
         let files =
             crate::git::read_git_revision("http://git.yoneda.internal/target", commit).await?;
         if let Some(policy) = job["payload"]["policy"]["build"]["test_bundle"].as_object() {
@@ -36,7 +42,7 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
     }
     #[cfg(target_os = "linux")]
     {
-        Command::new("chown")
+        Command::new("/usr/bin/chown")
             .args(["-R", "1000:1000", "/work", "/home/agent"])
             .status()
             .await
@@ -152,6 +158,36 @@ fn protected_changes(job: &Value, profile: &yoneda_core::build::BuildProfile) ->
         .collect()
 }
 
+fn approved_parents<'a>(job: &'a Value, base: &'a str) -> Result<Vec<&'a str>> {
+    let Some(parents) = job["payload"]["candidate"]["approved_parents"].as_array() else {
+        if job["payload"]["candidate"]["refresh_of"].is_string() {
+            return Err(err(
+                "Refreshed candidate omitted its frozen approved parents",
+            ));
+        }
+        return Ok(vec![base]);
+    };
+    if job["payload"]["candidate"]["refresh_of"].as_str().is_none() {
+        return Err(err(
+            "Only a refreshed candidate may declare two approved parents",
+        ));
+    }
+    let values = parents
+        .iter()
+        .map(|parent| {
+            parent
+                .as_str()
+                .ok_or_else(|| err("Invalid frozen approved parent"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if values.len() != 2 || values[0] != base {
+        return Err(err(
+            "Refreshed candidate parent list differs from its approved head",
+        ));
+    }
+    Ok(values)
+}
+
 pub(crate) async fn run_profile(
     root: &Path,
     profile: &yoneda_core::build::BuildProfile,
@@ -196,7 +232,7 @@ async fn run_command(root: &Path, spec: &yoneda_core::build::CommandSpec) -> Res
 
 #[cfg(test)]
 mod bundle_security_tests {
-    use super::protected_delta;
+    use super::{approved_parents, protected_delta};
     use crate::transport::{GitFile, GitWorkspace};
     use serde_json::json;
     use yoneda_core::{Policy, build::checks_from_report};
@@ -233,5 +269,28 @@ mod bundle_security_tests {
                 "fail"
             );
         }
+    }
+
+    #[test]
+    fn only_refreshed_candidates_may_use_two_frozen_parents() {
+        let head = "a".repeat(40);
+        let source = "b".repeat(40);
+        let ordinary = json!({"payload":{"candidate":{"base":{"commit":head}}}});
+        assert_eq!(
+            approved_parents(&ordinary, &head).unwrap(),
+            vec![head.as_str()]
+        );
+        let refreshed = json!({"payload":{"candidate":{"base":{"commit":head},
+            "refresh_of":"candidate:old","approved_parents":[head,source]}}});
+        assert_eq!(
+            approved_parents(&refreshed, &head).unwrap(),
+            vec![head.as_str(), source.as_str()]
+        );
+        let missing =
+            json!({"payload":{"candidate":{"base":{"commit":head},"refresh_of":"candidate:old"}}});
+        assert!(approved_parents(&missing, &head).is_err());
+        let forged = json!({"payload":{"candidate":{"base":{"commit":head},
+            "approved_parents":[head,source]}}});
+        assert!(approved_parents(&forged, &head).is_err());
     }
 }

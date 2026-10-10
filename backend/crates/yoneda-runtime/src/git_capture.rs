@@ -60,7 +60,7 @@ pub(crate) async fn capture_fresh(
     git(staging.path(), &["update-ref", "refs/heads/main", &commit]).await?;
     let raw_paths = git_raw(
         staging.path(),
-        &["diff", "--name-only", "-z", base, &commit],
+        &["diff", "--no-renames", "--name-only", "-z", base, &commit],
     )
     .await?;
     let paths = raw_paths

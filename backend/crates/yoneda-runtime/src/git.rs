@@ -129,7 +129,11 @@ pub async fn capture(
     let commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
     git(root, &["update-ref", "refs/heads/main", &commit]).await?;
     let paths = if let Some(base) = base {
-        git_raw(root, &["diff", "--name-only", "-z", base, &commit]).await?
+        git_raw(
+            root,
+            &["diff", "--no-renames", "--name-only", "-z", base, &commit],
+        )
+        .await?
     } else {
         git_raw(root, &["ls-tree", "-r", "--name-only", "-z", &commit]).await?
     };

@@ -1,4 +1,5 @@
 import type { OutboundHandler } from '@cloudflare/containers';
+import { gitRole } from './git-policy';
 import { error } from './http';
 import { scopeFor } from './scope';
 import type { Env } from './types';
@@ -14,31 +15,16 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     const [_, role, ...tail] = url.pathname.split('/');
     const gitNative = job.payload?.workspace_transport === 'git-native-v1';
     if (gitNative) {
-      const teamIndex = role?.startsWith('team-') ? Number(role.slice(5)) : -1;
-      const teamInput =
-        Number.isInteger(teamIndex) && teamIndex >= 0 && role === `team-${teamIndex}`
-          ? job.payload.team_inputs?.[teamIndex]
-          : undefined;
-      const repository =
-        role === 'fork'
-          ? scope.fork
-          : role === 'target'
-            ? (job.payload.candidate?.revision?.repository ?? job.payload.target?.repository)
-            : role?.startsWith('team-')
-              ? teamInput?.revision?.repository
-              : (job.payload.execution?.base?.repository ?? job.payload.base?.repository);
-      if (
-        !['agent', 'capture', 'evaluate'].includes(job.kind) ||
-        !(['canonical', 'fork', 'target'].includes(role) || teamInput)
-      )
-        return error('FORBIDDEN', 'Attempt Git capability unavailable', 403);
+      const capability = role ? gitRole(scope, role) : null;
+      if (!capability) return error('FORBIDDEN', 'Attempt Git capability unavailable', 403);
+      const repository = capability.repository;
       const [namespace, name] = repository?.split('/') ?? [];
       if (!name || namespace !== env.ARTIFACTS_NAMESPACE)
         return error('FORBIDDEN', 'Attempt Git repository unavailable', 403);
       const receive =
         url.pathname.endsWith('/git-receive-pack') ||
         url.searchParams.get('service') === 'git-receive-pack';
-      const writable = role === 'fork' && (job.kind === 'agent' || job.kind === 'capture');
+      const writable = capability.writable;
       if (receive && !writable) return error('FORBIDDEN', 'Read-only Git capability', 403);
       const endpoint = tail.join('/');
       const service =

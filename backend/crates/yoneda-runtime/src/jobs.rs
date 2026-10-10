@@ -22,6 +22,9 @@ pub(crate) async fn execute_job(
     match field(job, "kind")? {
         "agent" => crate::agent::execute(job, &root, transcript).await,
         "capture" => {
+            if job["payload"]["capture_subtype"] == "refresh_candidate" {
+                return crate::refresh_capture::execute(job, &root).await;
+            }
             let git_native = crate::transport::enabled(job);
             let source_commit = job["payload"]["source_revision"]["commit"].as_str();
             let files = if git_native {
@@ -34,10 +37,18 @@ pub(crate) async fn execute_job(
                     serde_json::from_value(data["files"].clone()).map_err(err)?;
                 crate::transport::from_legacy(files)?
             };
-            if let Some(scope) = job["payload"].get("team_owned_paths") {
+            let resolver_delta = if job["payload"]["capture_subtype"] == "resolve_conflict" {
+                let (before, scope, delta) =
+                    crate::refresh_capture::resolver_capture_scope(job, &files).await?;
+                crate::team_workspace::validate_changes_git(&before, &files, &scope)?;
+                Some(delta)
+            } else if let Some(scope) = job["payload"].get("team_owned_paths") {
                 let before = crate::team_source::load_git(job).await?;
                 crate::team_workspace::validate_changes_git(&before, &files, scope)?;
-            }
+                None
+            } else {
+                None
+            };
             let base = job["payload"]["execution"]["base"]["commit"]
                 .as_str()
                 .or_else(|| job["payload"]["base"]["commit"].as_str())
@@ -70,6 +81,9 @@ pub(crate) async fn execute_job(
             git(&root, &push.iter().map(String::as_str).collect::<Vec<_>>()).await?;
             result["id"] = json!(format!("candidate:{}:{}", field(job, "id")?, job["epoch"]));
             result["revision"] = json!({"repository":job["fork"],"commit":result["commit"]});
+            if let Some(delta) = resolver_delta {
+                result["resolver_delta_paths"] = json!(delta);
+            }
             result["summary"] = json!(format!(
                 "{} approach",
                 job["payload"]["execution"]["strategy"]
