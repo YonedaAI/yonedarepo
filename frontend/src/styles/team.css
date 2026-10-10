@@ -159,6 +159,21 @@
   margin-top: 12px;
   font-size: 12px;
 }
+.team-task-repair-form {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+.team-task-card .team-task-repair-form > label {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+}
+.team-task-card .team-task-repair-form textarea {
+  width: 100%;
+  min-height: 6em;
+  line-height: 1.5;
+}
 .team-task-card summary {
   cursor: pointer;
   color: var(--blue);

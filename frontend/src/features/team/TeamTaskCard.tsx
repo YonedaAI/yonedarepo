@@ -117,6 +117,7 @@ export function TeamTaskCard({
               : 'Repair task from current revision'}
           </summary>
           <form
+            className="team-task-repair-form"
             onSubmit={(event) => {
               event.preventDefault();
               if (repairSending) return;
@@ -177,6 +178,7 @@ export function TeamTaskCard({
                 required
                 minLength={8}
                 maxLength={4000}
+                rows={4}
                 placeholder="Describe the focused repair. Dependent tasks will be refreshed by the backend."
                 disabled={busy || repairSending}
               />
