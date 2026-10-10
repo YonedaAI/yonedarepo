@@ -1,0 +1,213 @@
+{
+  "controlled_fixture": true,
+  "paid_inference": false,
+  "origin": "https://yonedarepo-acceptance.mlong-f01.workers.dev",
+  "revision": "3abade23e2593812fadd751fdb2eecfa9a09f8a1",
+  "repo_id": "repo-367d034ceab238815b06a8ee238b8e78",
+  "recorded_at": "2026-10-10T20:35:37.924Z",
+  "capacity_deferrals": [
+    {
+      "at": 1791664307628,
+      "data": {
+        "epoch": 2,
+        "id": "evaluate:candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1:controlled-capacity-v2",
+        "not_before": 1791664312628,
+        "reason": "container_capacity",
+        "refunded_epoch": 1
+      },
+      "kind": "job.deferred",
+      "seq": 50
+    },
+    {
+      "at": 1791664324844,
+      "data": {
+        "epoch": 4,
+        "id": "evaluate:candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1:controlled-capacity-v2",
+        "not_before": 1791664334844,
+        "reason": "container_capacity",
+        "refunded_epoch": 3
+      },
+      "kind": "job.deferred",
+      "seq": 53
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1",
+      "revision": {
+        "commit": "4e038fd858681d0bf159b1aba7c222feb2760634",
+        "repository": "yoneda-platform-acceptance/contribution-9d3a65f53e8f4cc3f6605dfc808c6476"
+      },
+      "status": "eligible"
+    },
+    {
+      "id": "candidate:capture:external-9f0f4fc8cdc039c3640ae32cdcc8ace2:1",
+      "revision": {
+        "commit": "2a55d219d887bf395c7f9400e30ea8d0f78b6454",
+        "repository": "yoneda-platform-acceptance/contribution-f16833b65ecdb1dec569c1c546c0596e"
+      },
+      "status": "eligible"
+    },
+    {
+      "id": "candidate:capture:external-50433cf84031f685d4d76100fafb2d9b:1",
+      "revision": {
+        "commit": "87d854ce6a277370c7428d6887ab43202bfaabf5",
+        "repository": "yoneda-platform-acceptance/contribution-647e12e221c5fe39c95f31ec1a290940"
+      },
+      "status": "eligible"
+    }
+  ],
+  "decision": {
+    "alternatives": [],
+    "base": {
+      "commit": "40b7170ec643ec0cab48afadaa8acdb2011c94f5",
+      "repository": "yoneda-platform-acceptance/repo-367d034ceab238815b06a8ee238b8e78"
+    },
+    "candidate": "candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1",
+    "created_at": 1791664403632,
+    "decision_kind": "development_verification",
+    "fingerprint": "ba7554a4f8c6c54eb14cc48b409eff3cd4a4366d1a3ba0fc7900eb9f4a07697a",
+    "id": "decision:71c095b9-f812-408f-8886-06c173b2e149",
+    "published_at": 1791664447095,
+    "rationale": "Controlled isolated publication acknowledgement-loss exercise; not human product acceptance.",
+    "receipt": {
+      "commit": "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "id": "decision:71c095b9-f812-408f-8886-06c173b2e149",
+      "status": "publication_pending",
+      "version": 1
+    },
+    "request_id": "71c095b9-f812-408f-8886-06c173b2e149",
+    "run_id": "run:external-aef696b5f6d4f887039a0c412c2b4c57",
+    "status": "published",
+    "target": {
+      "commit": "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "repository": "yoneda-platform-acceptance/contribution-9d3a65f53e8f4cc3f6605dfc808c6476"
+    }
+  },
+  "refresh": {
+    "conflict_id": "conflict:908f7b35-156e-4586-9c13-2d343ed0b8de",
+    "status": "clean",
+    "merge_commit": "2e0abc11b7495a8dce501f64f31ba1d673785157",
+    "refreshed_candidate": "candidate:refresh:2e0abc11b7495a8dce501f64f31ba1d673785157",
+    "refreshed_revision": {
+      "commit": "2e0abc11b7495a8dce501f64f31ba1d673785157",
+      "repository": "yoneda-platform-acceptance/refresh-a0c306abe0780619c5f632c778b45fc6"
+    },
+    "ordered_git_parents": [
+      "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "2a55d219d887bf395c7f9400e30ea8d0f78b6454"
+    ],
+    "evaluation": "evaluation:evaluate:candidate:refresh:2e0abc11b7495a8dce501f64f31ba1d673785157:1",
+    "evaluation_status": "eligible",
+    "evidence": {
+      "base_commit": "40b7170ec643ec0cab48afadaa8acdb2011c94f5",
+      "candidate_commit": "2a55d219d887bf395c7f9400e30ea8d0f78b6454",
+      "captured_paths": [
+        "acceptance-1.txt"
+      ],
+      "declared_paths": [
+        "acceptance-1.txt"
+      ],
+      "intervening_paths": [
+        "acceptance-0.txt"
+      ],
+      "observed_head": "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "overlapping_paths": []
+    },
+    "files_preserved": [
+      "acceptance-0.txt",
+      "acceptance-1.txt"
+    ]
+  },
+  "failure_history": [
+    {
+      "at": 1791664181028,
+      "data": {
+        "epoch": 1,
+        "error": "Container boot failed: Maximum number of running container instances exceeded. Try again later, or try configuring a higher value for max_instances",
+        "id": "evaluate:candidate:capture:external-50433cf84031f685d4d76100fafb2d9b:1",
+        "status": "queued"
+      },
+      "kind": "job.failed",
+      "seq": 24
+    },
+    {
+      "at": 1791664213461,
+      "data": {
+        "epoch": 1,
+        "error": "Container boot failed: Maximum number of running container instances exceeded. Try again later, or try configuring a higher value for max_instances",
+        "id": "evaluate:candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1",
+        "status": "queued"
+      },
+      "kind": "job.failed",
+      "seq": 35
+    },
+    {
+      "at": 1791664225454,
+      "data": {
+        "epoch": 2,
+        "error": "Container boot failed: Maximum number of running container instances exceeded. Try again later, or try configuring a higher value for max_instances",
+        "id": "evaluate:candidate:capture:external-aef696b5f6d4f887039a0c412c2b4c57:1",
+        "status": "failed"
+      },
+      "kind": "job.failed",
+      "seq": 38
+    },
+    {
+      "at": 1791664287782,
+      "data": {
+        "policy": {
+          "build": {
+            "checks": [
+              {
+                "argv": [
+                  "node",
+                  "-e",
+                  "const fs=require('node:fs');if(!fs.existsSync('public/index.html'))process.exit(1);setTimeout(()=>process.exit(0),45000)"
+                ],
+                "name": "hold-capacity",
+                "timeout_seconds": 60
+              }
+            ],
+            "setup": []
+          },
+          "environment": "linux-node24-rust1.94-v1",
+          "required_checks": [
+            "hold-capacity"
+          ],
+          "suite": "commands-v1",
+          "version": "controlled-capacity-v2"
+        }
+      },
+      "kind": "policy.updated",
+      "seq": 41
+    },
+    {
+      "at": 1791664435453,
+      "data": {
+        "epoch": 1,
+        "error": "RUNTIME: {\"error\":{\"code\":\"CONTROLLED_ACK_LOSS\",\"message\":\"Disposable acceptance exercise: publication acknowledgement withheld\"}}",
+        "id": "publish:decision:71c095b9-f812-408f-8886-06c173b2e149",
+        "status": "queued"
+      },
+      "kind": "job.failed",
+      "seq": 65
+    }
+  ],
+  "acknowledgement_loss": [
+    {
+      "at": 1791664434687,
+      "data": {
+        "epoch": 1,
+        "id": "publish:decision:71c095b9-f812-408f-8886-06c173b2e149",
+        "progress": {
+          "stage": "controlled_publish_ack_loss",
+          "target": "4e038fd858681d0bf159b1aba7c222feb2760634"
+        }
+      },
+      "kind": "job.progress",
+      "seq": 64
+    }
+  ],
+  "runtime_image": "registry.cloudflare.com/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-acceptance-executioncontainer@sha256:d936e75493d065ac763314590ee8d684f537dd481feb61b3e1b23e52ff2dc6b7"
+}
