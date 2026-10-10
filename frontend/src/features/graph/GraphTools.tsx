@@ -4,11 +4,13 @@ import type { Graph, GraphNode } from '../../lib/types';
 export function GraphTools({
   repo,
   selected,
+  fullGraphLabel = 'Show full graph',
   onGraph,
   onSelect,
 }: {
   repo: string;
   selected?: GraphNode | null;
+  fullGraphLabel?: string;
   onGraph: (graph: Graph | null) => void;
   onSelect: (node: GraphNode) => void;
 }) {
@@ -91,7 +93,7 @@ export function GraphTools({
             setKind('');
           }}
         >
-          Show full graph
+          {fullGraphLabel}
         </button>
         {selected && (
           <button
