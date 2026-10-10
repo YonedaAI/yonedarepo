@@ -26,6 +26,12 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         }
     }
     let repository = repo(db)?;
+    if !repository["pending"].is_null() {
+        return Err(Error::new(
+            "PUBLICATION_PENDING",
+            "Wait for canonical publication before resolving a conflict",
+        ));
+    }
     if record["status"] != "unresolved" {
         return Err(Error::new(
             "INVALID_STATE",
@@ -63,6 +69,22 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         "executions",
         &string(&record["candidate"], "execution")?,
     )?;
+    let approved_model = (|| -> Result<()> {
+        let provider = string(&source_execution, "provider")?;
+        let model = string(&source_execution, "model")?;
+        let harness = string(&source_execution, "harness")?;
+        yoneda_core::providers::validate_model(&provider, &model)?;
+        if yoneda_core::providers::provider(&provider)?.harness != harness {
+            return Err(bad("Frozen provider and harness differ"));
+        }
+        Ok(())
+    })();
+    if approved_model.is_err() {
+        return Err(Error::new(
+            "MISSING_MODEL_APPROVAL",
+            "This candidate has no approved hosted model. Resolve its merge workspace with your local agent and submit a new contribution.",
+        ));
+    }
     let run_id = string(&record["candidate"], "run_id")?;
     let run = get(db, "runs", &run_id)?;
     let count = run_executions(db, &run_id)?.len();

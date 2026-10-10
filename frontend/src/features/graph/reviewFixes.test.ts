@@ -34,7 +34,11 @@ vi.mock('./ContextGraph', () => ({
 vi.mock('./GraphTools', () => ({ GraphTools: () => null }));
 vi.mock('./EvidenceTrail', () => ({
   EvidenceTrail: ({ graph }: { graph: Graph }) =>
-    createElement('div', { 'data-testid': 'trail' }, graph.nodes.map((item) => item.label).join('|')),
+    createElement(
+      'div',
+      { 'data-testid': 'trail' },
+      graph.nodes.map((item) => item.label).join('|'),
+    ),
 }));
 
 function node(id: string, kind = 'run', data = {}): GraphNode {
@@ -72,17 +76,36 @@ describe('review evidence views', () => {
     });
     vi.stubGlobal('fetch', fetch);
     const snapshot: Snapshot = {
-      repository: { id: 'repo', name: 'repo', version: 1, status: 'ready', head_commit: 'a', published_commit: 'a', pending: null, remote: { namespace: 'test', name: 'repo' } },
+      repository: {
+        id: 'repo',
+        name: 'repo',
+        version: 1,
+        status: 'ready',
+        head_commit: 'a',
+        published_commit: 'a',
+        pending: null,
+        remote: { namespace: 'test', name: 'repo' },
+      },
       runs: [{ id: 'run-1', intent: 'Preserve the accepted behavior', created_at: 1 }],
-      executions: [], candidates: [], evaluations: [], decisions: [], artifacts: [],
-      nodes: [], edges: [], seq: 12, graph_paged: true,
+      executions: [],
+      candidates: [],
+      evaluations: [],
+      decisions: [],
+      artifacts: [],
+      nodes: [],
+      edges: [],
+      seq: 12,
+      graph_paged: true,
     };
     let tree = render(() => GraphWorkspace({ snapshot, runId: 'run-1' }));
     expect(renderToStaticMarkup(tree)).not.toContain('Evidence from agent');
     for (const effect of hooks.effects.splice(0)) effect();
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      '/api/repos/repo/run_graph_page?run_id=run-1&limit=200', expect.objectContaining({ method: 'GET' }),
-    ));
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/repos/repo/run_graph_page?run_id=run-1&limit=200',
+        expect.objectContaining({ method: 'GET' }),
+      ),
+    );
     await vi.waitFor(() => expect(hooks.states[5]).toMatchObject({ nodes: [assertion] }));
     tree = render(() => GraphWorkspace({ snapshot, runId: 'run-1' }));
     expect(renderToStaticMarkup(tree)).toContain('assertion-1');

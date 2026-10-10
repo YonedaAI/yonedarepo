@@ -1,4 +1,4 @@
-import { createElement, type ReactElement, type ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,13 +8,18 @@ vi.mock('react', async (original) => ({
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.states)) hooks.states[index] = initial;
-    return [hooks.states[index], (value: unknown) => {
-      hooks.states[index] = typeof value === 'function'
-        ? (value as (current: unknown) => unknown)(hooks.states[index])
-        : value;
-    }];
+    return [
+      hooks.states[index],
+      (value: unknown) => {
+        hooks.states[index] =
+          typeof value === 'function'
+            ? (value as (current: unknown) => unknown)(hooks.states[index])
+            : value;
+      },
+    ];
   },
 }));
+
 import { TeamTaskCard } from './TeamTaskCard';
 
 function find(element: ReactNode, type: string): ReactElement<Record<string, any>> | undefined {
@@ -42,14 +47,19 @@ function render(onRepair: (request: Record<string, unknown>) => Promise<boolean>
     run: { id: 'run-1', team_plan_revision: 8 },
     snapshot: {
       repository: { id: 'repo', head_commit: 'current-head', version: 12 },
-      executions: [], team_tasks: [], team_handoffs: [],
+      executions: [],
+      team_tasks: [],
+      team_handoffs: [],
     } as any,
     busy: false,
     onRetry: () => {},
     onRepair,
   });
 }
-beforeEach(() => { hooks.states = []; hooks.cursor = 0; });
+beforeEach(() => {
+  hooks.states = [];
+  hooks.cursor = 0;
+});
 
 describe('team task repair request', () => {
   it('collects an inline brief and retries the exact frozen task-scoped request', async () => {
@@ -57,7 +67,9 @@ describe('team task repair request', () => {
     let tree = render(onRepair);
     const textarea = find(tree, 'textarea');
     expect(textarea).toBeTruthy();
-    textarea?.props.onChange({ target: { value: 'Repair the failing source path and rerun checks.' } });
+    textarea?.props.onChange({
+      target: { value: 'Repair the failing source path and rerun checks.' },
+    });
     tree = render(onRepair);
     const form = find(tree, 'form');
     await form?.props.onSubmit({ preventDefault: () => {} });

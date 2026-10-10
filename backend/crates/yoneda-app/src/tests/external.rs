@@ -7,7 +7,7 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
     let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
     let attempt = call(&db, begin()).unwrap();
     assert_eq!(attempt["external_grant"], "grant-one");
-    assert_eq!(attempt["transport"], "json-v1");
+    assert_eq!(attempt["workspace_transport"], "json-v1");
     assert_eq!(call(&db, begin()).unwrap(), attempt);
     let context = json!({"op":"context_publish","_grant":"grant-one","job_id":"job:external-one","epoch":1,"record":{"id":"context:external","kind":"finding","statement":"Navigation needs focus styles","purpose":"Guide the change","intent_id":"intent:run:external-one","author":"owner"}});
     let node = call(&db, context.clone()).unwrap();
@@ -58,18 +58,21 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
 fn git_v1_submission_uses_only_the_worker_bound_revision_and_skips_workspace_object() {
     let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
     let mut repository = crate::storage::get(&db, "repository", "repo").unwrap();
-    repository["transport"] = json!("git-v1");
+    repository["workspace_transport"] = json!("git-native-v1");
     crate::storage::save(&db, "repository", "repo", &repository).unwrap();
 
     let attempt = call(&db, begin()).unwrap();
-    assert_eq!(attempt["transport"], "git-v1");
-    assert_eq!(attempt["payload"]["run"]["transport"], "git-v1");
+    assert_eq!(attempt["workspace_transport"], "git-native-v1");
+    assert_eq!(
+        attempt["payload"]["run"]["workspace_transport"],
+        "git-native-v1"
+    );
     let mut changed_repository = crate::storage::get(&db, "repository", "repo").unwrap();
-    changed_repository["transport"] = json!("json-v1");
+    changed_repository["workspace_transport"] = json!("json-v1");
     crate::storage::save(&db, "repository", "repo", &changed_repository).unwrap();
     assert_eq!(
-        crate::storage::get(&db, "jobs", "job:external-one").unwrap()["transport"],
-        "git-v1"
+        crate::storage::get(&db, "jobs", "job:external-one").unwrap()["workspace_transport"],
+        "git-native-v1"
     );
     call(
         &db,
@@ -104,9 +107,8 @@ fn git_v1_submission_uses_only_the_worker_bound_revision_and_skips_workspace_obj
     assert_eq!(completed["result"]["submitted_revision"], revision);
     assert_eq!(completed["submitted_revision"], revision);
     let capture = crate::storage::get(&db, "jobs", "capture:external-one").unwrap();
-    assert_eq!(capture["payload"]["transport"], "git-v1");
-    assert_eq!(capture["payload"]["git_verified"], true);
-    assert_eq!(capture["payload"]["fork_revision"], revision);
+    assert_eq!(capture["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(capture["payload"]["source_revision"], revision);
     assert!(capture["payload"].get("workspace").is_none());
     assert_eq!(
         call(

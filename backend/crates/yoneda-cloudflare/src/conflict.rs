@@ -4,7 +4,7 @@ pub use yoneda_core::conflict_capture::validate_capture_result;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn job() -> Value {
         json!({"id":"capture:refresh:req-1","kind":"capture","status":"running","epoch":4,"payload":{"capture_subtype":"refresh_candidate","expected_base":"a".repeat(40),"expected_head":"b".repeat(40),"expected_version":7,"declared_paths":["src/change.rs"],"candidate":{"revision":{"commit":"c".repeat(40)}}}})

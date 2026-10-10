@@ -97,7 +97,9 @@ export function RunCandidates({
             onInspectTask={onInspectTask}
           />
         ))}
-      {!team && comparing && <CandidateComparison key={run.id} repo={repo.id} candidates={candidates} />}
+      {!team && comparing && (
+        <CandidateComparison key={run.id} repo={repo.id} candidates={candidates} />
+      )}
     </>
   );
 }

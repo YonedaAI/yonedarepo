@@ -15,6 +15,7 @@ export function LazyCandidateDiff({
   );
   const [error, setError] = useState('');
   const [retry, setRetry] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry restarts a failed read without changing the captured identity.
   useEffect(() => {
     if (!open || diff !== null) return;
     let current = true;

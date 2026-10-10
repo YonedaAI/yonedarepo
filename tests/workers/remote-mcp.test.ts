@@ -52,7 +52,7 @@ it('binds server-observed source, derives context identity and fences Git before
 it('submits Git-v1 external revisions without flattening repositories over 500 files',async()=>{
  const token=await setup();
  await runInDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('remote-repo')),(_instance,state)=>{
-  state.storage.sql.exec("UPDATE repository SET payload=json_set(payload,'$.transport','git-v1') WHERE id='repo'");
+  state.storage.sql.exec("UPDATE repository SET payload=json_set(payload,'$.workspace_transport','git-native-v1') WHERE id='repo'");
  });
  const head='f'.repeat(40);const readCommits:string[]=[];let treeReads=0;let blobReads=0;
  const files=Array.from({length:501},(_,i)=>({name:`file-${String(i).padStart(3,'0')}.txt`,type:'blob',hash:'d'.repeat(40)}));
@@ -60,13 +60,13 @@ it('submits Git-v1 external revisions without flattening repositories over 500 f
  const scoped={...bindings,ARTIFACTS:{get:async()=>remote}} as unknown as Env;
  const call=async(name:string,args:any)=>{const res=await remoteMcp(new Request('https://yoneda/mcp/remote-repo',{method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})}),scoped,'remote-repo');const body=await res.json<any>();expect(body.result.isError,JSON.stringify(body)).not.toBe(true);return JSON.parse(body.result.content[0].text);};
  const attempt=await call('attempt_begin',{request_id:crypto.randomUUID(),intent:'Preserve a large fork as Git'});
- expect(attempt.transport).toBe('git-v1');
+ expect(attempt.workspace_transport).toBe('git-native-v1');
  const submitted=await call('attempt_submit',{attempt_id:attempt.attempt_id,commit:'0'.repeat(40)});
  expect(submitted.submitted_revision.repository).toMatch(/^yoneda-test\/contribution-[a-f0-9]{32}$/);expect(submitted.submitted_revision.commit).toBe(head);
  expect(readCommits).toEqual([head]);expect(treeReads).toBe(0);expect(blobReads).toBe(0);
  const job=await ledger(bindings,'remote-repo',{op:'external_status',attempt_id:attempt.attempt_id,_workspace:'alice',_grant:'grant-1234567890123456'});
  expect(job.result).toMatchObject({git_verified:true,submitted_revision:submitted.submitted_revision,fork_revision:submitted.submitted_revision});
  const capture=await ledger(bindings,'remote-repo',{op:'claim',job_id:`capture:${attempt.attempt_id}`,_workspace:'alice'});
- expect(capture.payload).toMatchObject({transport:'git-v1',git_verified:true,fork_revision:submitted.submitted_revision,submitted_revision:submitted.submitted_revision});
+ expect(capture.payload).toMatchObject({workspace_transport:'git-native-v1',source_revision:submitted.submitted_revision});
  expect(capture.payload.workspace).toBeUndefined();
 });

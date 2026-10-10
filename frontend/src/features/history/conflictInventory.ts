@@ -28,9 +28,12 @@ export interface ConflictInventoryView {
 
 /** Convert the backend inventory shape to renderable rows without assuming IDs on stale entries. */
 export function normalizeConflictInventory(raw: unknown): ConflictInventoryView {
-  const inventory = raw && typeof raw === 'object'
-    ? (raw as Partial<ConflictStatusContract> & { conflicts?: ConflictStatusContract['conflicts'] })
-    : {};
+  const inventory =
+    raw && typeof raw === 'object'
+      ? (raw as Partial<ConflictStatusContract> & {
+          conflicts?: ConflictStatusContract['conflicts'];
+        })
+      : {};
   const records: ConflictInventoryItem[] = [];
   const normalized = new Map<string, ConflictInventoryItem>();
   const rows = [
@@ -53,8 +56,12 @@ export function normalizeConflictInventory(raw: unknown): ConflictInventoryView 
       ...(typeof row.expected_version === 'number'
         ? { expected_version: row.expected_version }
         : {}),
-      conflict_paths: (Array.isArray(row.conflict_paths) ? row.conflict_paths : Array.isArray(row.paths) ? row.paths : [])
-        .filter((path): path is string => typeof path === 'string'),
+      conflict_paths: (Array.isArray(row.conflict_paths)
+        ? row.conflict_paths
+        : Array.isArray(row.paths)
+          ? row.paths
+          : []
+      ).filter((path): path is string => typeof path === 'string'),
       ...(row.evidence && typeof row.evidence === 'object' ? { evidence: row.evidence } : {}),
       ...(typeof row.status === 'string' ? { status: row.status } : {}),
     };
