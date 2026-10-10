@@ -62,7 +62,7 @@ export function trialRequest(id: string) {
       version: 1,
       contract:
         'public/js/trails.js exposes window.Trails with trails and filter({query}). Every trail has id, name, lengthMiles, difficulty. public/index.html loads this script and consumes the contract. No dependencies, tracking, forms collecting identity, or build-script changes.',
-      integrator_agent: 1,
+      integrator_agent: 0,
       integration_paths: ['public/index.html'],
       tasks: [
         {
