@@ -10,12 +10,6 @@ pub(crate) fn checked_watermark(value: i64) -> Result<i64> {
     Ok(value)
 }
 
-pub(crate) fn active_run_count<S: SqlStore>(db: &S) -> Result<i64> {
-    Ok(db.query("SELECT COUNT(*) AS count FROM runs WHERE json_extract(payload,'$.status') NOT IN ('accepted','cancelled','failed','ready')", &[])?[0]["count"].as_i64().unwrap_or_default())
-}
-pub(crate) fn external_run_count<S: SqlStore>(db: &S) -> Result<i64> {
-    Ok(db.query("SELECT COUNT(*) AS count FROM runs WHERE json_extract(payload,'$.external')=1 AND json_extract(payload,'$.status') NOT IN ('accepted','cancelled','failed','ready')", &[])?[0]["count"].as_i64().unwrap_or_default())
-}
 pub(crate) fn prune_outbox_payloads<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     let cutoff = now.saturating_sub(7 * 24 * 60 * 60 * 1000);
     let rows=db.query("UPDATE outbox SET payload='{}',payload_pruned=1 WHERE delivered=1 AND payload_pruned=0 AND created_at>0 AND created_at<? RETURNING id", &[json!(cutoff)])?;
