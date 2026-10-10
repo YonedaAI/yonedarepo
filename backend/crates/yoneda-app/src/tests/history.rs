@@ -39,7 +39,72 @@ fn lifetime_runs_are_not_capped_and_active_limit_is_transactional() {
         &[],
     )
     .unwrap();
+    assert_eq!(
+        call(&db, run("active-while-work-remains", 2011))
+            .unwrap_err()
+            .code,
+        "ACTIVE_RUN_LIMIT"
+    );
+    call(
+        &db,
+        json!({"op":"cancel_run","run_id":"active-0","now":2012}),
+    )
+    .unwrap();
     assert!(call(&db, run("active-after-review", 2011)).is_ok());
+}
+
+#[test]
+fn eligible_candidate_does_not_release_cap_while_peer_job_is_queued() {
+    let policy = json!({"version":"site-v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1","required_checks":["build"],"build":{"setup":[],"checks":[{"name":"build","argv":["node","--check","app.js"],"timeout_seconds":30}],"static_dir":"public"}});
+    let db = repo_with_policy(policy);
+    let agents = json!([{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}]);
+    for n in 0..5 {
+        call(&db,json!({"op":"start_run","id":format!("cap-{n}"),"intent":"Fill active work capacity","criteria":[],"agents":agents})).unwrap();
+    }
+    call(&db,json!({"op":"start_run","id":"peer-review","intent":"Build a checked website","criteria":[],"agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}]})).unwrap();
+    super::single_agent::eligible(&db, "peer-review", 1, &"c".repeat(40));
+    assert_eq!(get(&db, "runs", "peer-review").unwrap()["status"], "ready");
+    assert_eq!(
+        get(&db, "jobs", "job:peer-review:agent-2").unwrap()["status"],
+        "queued"
+    );
+    assert_eq!(crate::storage::active_run_count(&db).unwrap(), 6);
+    assert_eq!(
+        call(&db,json!({"op":"start_run","id":"cap-blocked","intent":"Check active limit","criteria":[],"agents":agents})).unwrap_err().code,
+        "ACTIVE_RUN_LIMIT"
+    );
+
+    call(
+        &db,
+        json!({"op":"claim","job_id":"job:peer-review:agent-2"}),
+    )
+    .unwrap();
+    call(&db,json!({"op":"fail","job_id":"job:peer-review:agent-2","epoch":1,"error":"fixture complete","retryable":false})).unwrap();
+    assert_eq!(crate::storage::active_run_count(&db).unwrap(), 5);
+    assert!(call(&db,json!({"op":"start_run","id":"cap-released","intent":"Check released active limit","criteria":[],"agents":agents})).is_ok());
+}
+
+#[test]
+fn external_active_count_uses_live_execution_even_when_run_is_ready() {
+    let db = repo();
+    db.query(
+        "INSERT INTO runs(id,payload) VALUES('run:external-ready',?)",
+        &[json!(
+            json!({"id":"run:external-ready","status":"ready","external":true}).to_string()
+        )],
+    )
+    .unwrap();
+    db.query("INSERT INTO executions(id,payload) VALUES('external-ready',?)", &[json!(json!({"id":"external-ready","run_id":"run:external-ready","harness":"external","status":"running"}).to_string())]).unwrap();
+    assert_eq!(crate::storage::active_run_count(&db).unwrap(), 1);
+    assert_eq!(crate::storage::external_run_count(&db).unwrap(), 1);
+    db.query("UPDATE executions SET payload=json_set(payload,'$.status','completed') WHERE id='external-ready'", &[]).unwrap();
+    assert_eq!(crate::storage::active_run_count(&db).unwrap(), 0);
+    assert_eq!(crate::storage::external_run_count(&db).unwrap(), 0);
+    db.query("UPDATE runs SET payload=json_set(payload,'$.status','exploring') WHERE id='run:external-ready'", &[]).unwrap();
+    db.query("UPDATE executions SET payload=json_set(payload,'$.status','failed') WHERE id='external-ready'", &[]).unwrap();
+    db.query("INSERT INTO jobs(id,payload) VALUES('job:external-ready',?)", &[json!(json!({"id":"job:external-ready","kind":"agent","external":true,"status":"failed","payload":{"execution":{"run_id":"run:external-ready"}}}).to_string())]).unwrap();
+    assert_eq!(crate::storage::active_run_count(&db).unwrap(), 0);
+    assert_eq!(crate::storage::external_run_count(&db).unwrap(), 0);
 }
 
 #[test]
