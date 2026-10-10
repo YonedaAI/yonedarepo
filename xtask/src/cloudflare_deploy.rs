@@ -160,7 +160,10 @@ fn parse_inventory(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<Value>
         return Ok(serde_json::from_slice(stdout)?);
     }
     let diagnostic = String::from_utf8_lossy(stderr).to_lowercase();
-    if diagnostic.contains("10007") || diagnostic.contains("worker does not exist") {
+    if diagnostic.contains("10007")
+        || diagnostic.contains("worker does not exist")
+        || (diagnostic.contains("worker \"") && diagnostic.contains("not found"))
+    {
         return Ok(json!([]));
     }
     Err("Cannot inventory Worker secrets; refusing to overwrite them. Check Wrangler login, account and permissions.".into())
@@ -172,6 +175,10 @@ mod tests {
     fn only_a_missing_worker_allows_initial_secret_creation() {
         assert_eq!(
             parse_inventory(false, b"", b"Worker not found [code: 10007]").unwrap(),
+            json!([])
+        );
+        assert_eq!(
+            parse_inventory(false, b"", b"Worker \"yonedarepo-acceptance\" not found.").unwrap(),
             json!([])
         );
         assert!(parse_inventory(false, b"", b"Authentication error [code: 10000]").is_err());
