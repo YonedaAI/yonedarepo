@@ -2,6 +2,14 @@
 
 The product runs on [Cloudflare](https://yonedarepo-dev.mlong-f01.workers.dev/), with a real [agent-built Garden website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/). [Machine-readable evidence](release-evidence.json) records identities, revisions, epoch timestamps, independent checks, the decision, canonical readback and served asset hashes. These are development verification results, not a production readiness claim.
 
+## Evidence boundary for the current source wave
+
+The October 8–10 records below describe the source and deployed behavior observed at that time. The current deployed Claude `claude-sonnet-5-5` reviewer check is run `reviewer-f07f61a0-97b6-48e9-b9de-521753744063`, checked candidate revision `20dc24de9`, with canonical published HEAD `3bbe63325`. These revisions are distinct; this remains evidence for the deployed version only. The checked-in [reviewer acceptance JSON](reviewer-acceptance.json) names an earlier run and a different published HEAD, so it is historical evidence rather than the machine-readable record for this current check.
+
+The newer source wave has **not been deployed**. Its current reported component counts are 270 Rust tests (173 app, 16 core, 65 runtime, 1 Cloudflare and 15 xtask), 283 Workers tests, 50 frontend tests and 11 Node tests (7 reviewer client, 2 relay and 2 profile). The full gate is being repeated after a shared-contract compilation fix. These counts are not a final complete-gate pass; exact final status and isolated live proof remain pending. No behavior from the new source should be inferred from the existing deployed reviewer evidence.
+
+The current source includes Git-native workspace/capture support; metadata pagination with stable-watermark continuation and lazy run detail; digest-verified archive compaction and read-through; and active-work limits. It also includes bounded iterative repair, immutable test bundles with explicit approval for test edits, file-level provenance, and conflict inspection/refresh/resolver paths. These statements describe implementation scope, not deployed verification. In particular, the external Git contribution launch/completion path, archive interruption/replay/integrity cases, final repeated gate and isolated live proof remain pending.
+
 ## Concurrent hosted agents
 
 Run `garden-3e5f9022-9704-4207-a36d-e8af7cea6122` started Luna `gpt-5.6-luna` and Claude `claude-sonnet-4-6` from the same Artifacts commit `91470de625798365cfc6d8d2d2b2596642b4cd84`, approved brief, check policy and prior browser finding. Both completed at attempt epoch 1. The intersection from recorded `harness_running` to trusted transcript registration is **87.117 seconds**. This measures actual harness overlap rather than queued jobs or overlapping cold starts.

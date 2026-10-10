@@ -31,6 +31,10 @@ After publication, **Update website** / **Update project** continues the winning
 
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
+### Current source changes and deployment status
+
+This source wave adds Git-native workspaces and revision capture, paged history with stable continuation and lazy run detail, digest-verified archive compaction/read-through, and a six-live-work active-run cap. It also adds bounded iterative repair, immutable test bundles with explicit approval for test edits, file-level provenance, and Git conflict inspection, candidate refresh and resolver capture. The current reported component counts are 270 Rust tests (173 app, 16 core, 65 runtime, 1 Cloudflare and 15 xtask), 283 Workers tests, 50 frontend tests and 11 Node tests (7 reviewer client, 2 relay and 2 profile). The complete local gate passed these counts, plus formatting, Clippy, TypeScript, Wasm and production builds. The external Git launch/completion path and isolated live proof remain pending. **This source wave has not been deployed.** The hosted reviewer evidence refers to the prior deployed version; see [submission](docs/submission.md) and [release evidence](docs/release-evidence.md) for the evidence boundary.
+
 ## Get running
 
 Requires the pinned Rust toolchain, Node 24, pnpm 11, Docker, and `worker-build` 0.8.7:

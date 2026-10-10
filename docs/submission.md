@@ -22,9 +22,15 @@ Use a project-specific test profile: the starter HTML smoke check does not prove
 
 ## Current verification
 
-October 10: a funded Codex/Claude Build together run produced checked revision `3bbe6332556bdcdc72945dfc590845bc3e071057`. The two specialist job intervals overlap by 53.074 seconds, including startup. All five checks passed under `reviewer-v2`: site, trail-module, bilingual, registry-egress (`npm ci`) and static output capture. The result remains available for human review; no publication decision is claimed. [Exact verification record](reviewer-acceptance.json) preserves the source/policy binding and conservative budget accounting. Earlier interrupted trials and the corrected browser-fixture evaluation remain in history.
+The current deployed reviewer check used Claude `claude-sonnet-5-5`: run `reviewer-f07f61a0-97b6-48e9-b9de-521753744063` checked candidate revision `20dc24de9`; canonical published HEAD is `3bbe63325`. Candidate and published revisions are distinct. This is evidence for the deployed version only and does not verify the newer source changes below. The checked-in [reviewer acceptance record](reviewer-acceptance.json) is an earlier run (`reviewer-f0ca6e5e-ccc6-4f13-9fd6-c083fbb817c3`) and records a different canonical HEAD; it is historical evidence, not the machine-readable record for the current check.
 
-The complete local gate passes 213 native Rust tests, 247 workerd tests and 30 Node frontend/profile tests, plus formatting, Clippy, TypeScript and production/Wasm builds. The submitted source provenance records the implementation commit. CI and video release are checked separately; competition form submission and any entry agreement remain the entrant's actions.
+The current full-gate component counts are 270 Rust tests (173 app, 16 core, 65 runtime, 1 Cloudflare and 15 xtask), 283 Workers tests, 50 frontend tests, and 11 Node tests (7 reviewer client, 2 relay and 2 profile). The complete local gate passed, including formatting, Clippy, TypeScript, Wasm and production builds. Do not infer deployment or acceptance of the new source from them. CI and video release are checked separately; competition form submission and any entry agreement remain the entrant's actions.
+
+## Current source wave — pending gate and deployment
+
+The current source adds Git-native isolated workspaces and revision-based external contribution capture; paged repository history with a stable watermark and on-demand run details; verified archive storage with hot-history compaction and detail read-through; and an active-work cap that counts live jobs/executions rather than lifetime run totals. The read design keeps metadata pages free of graph nodes and diffs, and retains source diffs by digest until detail is requested.
+
+It also adds bounded iterative repair, immutable test bundles with approval for edits to the test set, file-level provenance, and Git conflict inspection, refresh and resolver workflows. These are source-level feature claims only. End-to-end validation—including the Git-native external-agent launch/completion path, archive replay and integrity behavior, and the combined local gate—is pending. This wave has **not been deployed**; the hosted platform and production reviewer evidence above describe the prior deployed version.
 
 ## Direction and remaining gaps
 
@@ -34,15 +40,15 @@ The useful product direction is an evidence and coordination layer for agent-wri
 |---|---|---|
 | [Cursor worktrees and best-of-n](https://cursor.com/docs/configuration/worktrees) | Parallel models use isolated checkouts; results can be compared and applied. | Parallel alternatives alone provide little differentiation. Make captured evidence and decision lineage the main product. |
 | [GitHub Copilot agents](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents) | Delegate work on branches or PRs, track sessions, iterate and review output. | Review/progress are expected capabilities. Explain the assertion → capture → check → decision authority chain clearly. |
-| [CAID: Effective Strategies for Asynchronous Software Engineering Agents](https://arxiv.org/abs/2603.21489v2) | Central delegation, dependency plans, concurrent isolated workspaces and tested integration. | Build together follows a supported coordination direction. Git-native branch/merge and iterative repair are the next architectural gaps. The paper's reported performance gains are not measurements of this platform. |
+| [CAID: Effective Strategies for Asynchronous Software Engineering Agents](https://arxiv.org/abs/2603.21489v2) | Central delegation, dependency plans, concurrent isolated workspaces and tested integration. | Build together follows a supported coordination direction. The current source adds Git-native workspaces, explicit repair and conflict-refresh flows; the paper's reported performance gains are not measurements of this platform. |
 
 | Gap | Current delivery | Next recommendation |
 |---|---|---|
 | Reviewer setup and readability | Dedicated funded sandbox, one-key login, immediate recorded example command, readable evidence trail and optional focused graph. | Measure time to first useful review with an unfamiliar person. |
 | Runtime/lifecycle failure | Remote-HEAD reconciliation, capacity deferral, compact digest-bound diff jobs, HTTPS trust and bounded process/report handling. | Exercise deployed capacity exhaustion and publication acknowledgement loss before claiming operational reliability at scale. |
-| Agent awareness and conflicts | Same-run peer status, visible task scopes/dependencies, owner-approved fresh runs for stale candidates. | Add cross-run path claims/conflict records and a re-capture/re-evaluate merge queue. Automatic overlapping merge and disjoint auto-rebase are not delivered. |
-| Team iteration | Frozen DAG and exact captured inputs; final integrated checks. | Add per-task checks and plan amendments that reopen dependent work. |
-| Scale and Git compatibility | Current deployment remains 16 containers; source is bounded to 500 files/8 MiB; retained-run cap and snapshot limits remain. | Move agents to Artifacts-backed Git forks, paginate reads, prune history/outbox/forks and replace lifetime limits with active-work limits. |
-| Evaluation and provenance | Exact revision/policy checks, typed authority and adapter-written delivery receipts. | Protect general project test integrity and add file/hunk attribution. Demonstrate context benefit with controlled comparisons. |
+| Agent awareness and conflicts | Same-run peer status, visible task scopes/dependencies, plus source-level conflict inspection, candidate refresh and resolver capture. | Deployed conflict recovery and broader cross-run contention behavior still need acceptance. Automatic semantic merge quality is not claimed. |
+| Team iteration | Frozen task inputs and integrated checks, with bounded iterative repair in the current source. | Verify repair behavior under the full gate and deployed runtime; plan amendments remain separately scoped. |
+| Scale and Git compatibility | Current source adds Git-native workspaces, paged reads with stable continuation, archive/detail read-through and a six-live-work active cap. | Run the pending capacity, pagination, archive and transport gates, then deploy before making runtime-scale claims. |
+| Evaluation and provenance | Exact revision/policy checks, immutable approved test bundles, explicit test-edit approval, and file-level provenance in the current source. | Validate end-to-end capture and reviewer comprehension. Controlled comparisons are still needed to establish context-use benefit. |
 
 No large-scale throughput, semantic merge resolution, or causal context-use benefit is claimed for this prototype.

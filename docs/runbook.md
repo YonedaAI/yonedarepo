@@ -1,5 +1,17 @@
 # Runbook
 
+## Current source wave status
+
+The new history, archive, active-work, Git-native, repair, test-integrity, provenance and conflict workflows described below are source-level changes and are **not deployed yet**. Current reported component counts are 270 Rust tests (173 app, 16 core, 65 runtime, 1 Cloudflare and 15 xtask), 283 Workers tests, 50 frontend tests and 11 Node tests (7 reviewer client, 2 relay and 2 profile). The full gate is repeating after a shared-contract compilation fix; the counts are not its final pass. Complete and record the gate, then obtain isolated live proof and deploy the compatible Worker/Repo DO and runtime image before relying on these operations. The existing production reviewer check remains tied to its earlier deployed version. Do not interpret local source or unit tests as a live rollout or acceptance result.
+
+## History, archives and Git conflicts
+
+The source history interface separates compact repository metadata from run detail. `runs_page` returns `items`, `next_cursor` and a numeric `watermark`; continuation must preserve the opaque cursor and watermark so inserts during browsing do not cause gaps or duplicates. Pages sort newest `created_at` first, then run ID descending, with a default page size of 50 and a maximum of 200. `run_detail` is requested for one run and hydrates its executions, candidates, evaluations, decisions, team records, artifacts and lineage on demand. Metadata pages do not carry source diffs or graph nodes. These source contracts need the pending adapter/runtime gate before CLI or browser clients rely on them in a deployment.
+
+Terminal runs older than 30 days are eligible for archive only after the immutable archive object is uploaded and read back with its digest verified. Commit/compaction must follow that acknowledgment; replay after a lost acknowledgment must be idempotent, and a digest mismatch must leave hot records intact. Archived detail is read through the verified bundle and overlaid with current authoritative repository state. The ledger retains summaries, receipts, provenance and the archive index. Outbox payload cleanup applies only after seven days and preserves replay guards. Unknown or globally shared content-addressed objects are retained. A daily `archive_due` maintenance enqueue is source-level scheduling; until the alarm/outbox integration is deployed, do not assume archiving is running.
+
+The active-work limit is six live runs: queued/running jobs and running external executions count even when a run has already reached a review-ready status. A ready run with no live work does not consume a slot. Completed lifetime history does not consume active capacity. Git-native candidate refresh and conflict resolution use frozen manifests and trusted Git readback; preserve both revisions and the decision/history records when a conflict occurs. The resolver produces an independently captured result for review rather than silently overwriting canonical source. These behaviors still require the pending end-to-end gate and rollout.
+
 ## Team runs and container rollout
 
 [Build together](build-together.md) starts from a brief and one to six selected agents.
