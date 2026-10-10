@@ -38,6 +38,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all(
       batch.messages.map(async (message) => {
         const envelope = message.body;
+        let claimed: { id: string; epoch: number } | undefined;
         try {
           if (envelope.v !== 1) {
             message.ack();
@@ -62,6 +63,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             message.ack();
             return;
           }
+          claimed = { id: String(job.id), epoch: Number(job.epoch) };
           job.model = modelForJob(job, {
             codex: this.env.CODEX_MODEL,
             claude: this.env.CLAUDE_MODEL,
@@ -100,7 +102,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               } else {
                 const fork = job.payload.source_revision?.repository;
                 if (typeof fork !== 'string')
-                  throw new Error('Frozen agent Git revision is missing');
+                  throw Object.assign(new Error('Frozen agent Git revision is missing'), {
+                    code: 'INVALID_CAPTURE',
+                  });
                 job.fork = fork;
                 scope.fork = fork;
               }
@@ -149,11 +153,34 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
           await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
           message.ack();
         } catch (e: any) {
+          const code = failureCode(e);
           writeLog('queue.dispatch_failed', {
             repo_id: envelope.repo_id,
             job_id: envelope.job_id,
-            error_code: failureCode(e),
+            error_code: code,
           });
+          if (claimed) {
+            try {
+              await ledger(this.env, envelope.repo_id, {
+                op: 'fail',
+                job_id: claimed.id,
+                epoch: claimed.epoch,
+                error: `Queue dispatch failed (${code})`,
+                retryable: !['INVALID_CAPTURE', 'INVALID_INPUT', 'FORBIDDEN'].includes(code),
+              });
+              // The ledger now owns retry delivery through its transactional outbox.
+              message.ack();
+            } catch (dispositionError: any) {
+              if (
+                ['LEASE_HELD', 'FENCED', 'ATTEMPTS_EXHAUSTED', 'REPOSITORY_DELETED'].includes(
+                  dispositionError.code,
+                )
+              )
+                message.ack();
+              else message.retry({ delaySeconds: 20 });
+            }
+            return;
+          }
           if (['LEASE_HELD', 'FENCED', 'ATTEMPTS_EXHAUSTED', 'REPOSITORY_DELETED'].includes(e.code))
             message.ack();
           else message.retry({ delaySeconds: 20 });
