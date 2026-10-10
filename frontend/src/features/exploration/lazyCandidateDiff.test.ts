@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const hooks = vi.hoisted(() => ({
   states: [] as unknown[],
   cursor: 0,
+  refs: new Map<number, { current: unknown }>(),
   effects: [] as (() => unknown)[],
 }));
 vi.mock('react', async (original) => ({
@@ -22,6 +23,11 @@ vi.mock('react', async (original) => ({
       },
     ];
   },
+  useRef: (initial: unknown) => {
+    const index = hooks.cursor++;
+    if (!hooks.refs.has(index)) hooks.refs.set(index, { current: initial });
+    return hooks.refs.get(index);
+  },
   useEffect: (effect: () => unknown) => {
     hooks.effects.push(effect);
   },
@@ -29,9 +35,13 @@ vi.mock('react', async (original) => ({
 
 import { LazyCandidateDiff } from './LazyCandidateDiff';
 
-function render() {
+function render(repo = 'repo', candidate: Record<string, any> = { id: 'candidate-1' }) {
   hooks.cursor = 0;
-  return LazyCandidateDiff({ repo: 'repo', candidate: { id: 'candidate-1' } });
+  return LazyCandidateDiff({ repo, candidate });
+}
+function flushLatestEffect() {
+  const effects = hooks.effects.splice(0);
+  for (const effect of effects.slice(-2)) effect();
 }
 function find(element: ReactNode, type: string): ReactElement<Record<string, any>> | undefined {
   if (Array.isArray(element)) return element.map((child) => find(child, type)).find(Boolean);
@@ -42,6 +52,7 @@ function find(element: ReactNode, type: string): ReactElement<Record<string, any
 beforeEach(() => {
   hooks.states = [];
   hooks.cursor = 0;
+  hooks.refs = new Map();
   hooks.effects = [];
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -58,14 +69,14 @@ describe('candidate diff hydration', () => {
     find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
     tree = render();
     expect(renderToStaticMarkup(tree)).toContain('Loading captured diff');
-    for (const effect of hooks.effects.splice(0)) effect();
+    flushLatestEffect();
     await vi.waitFor(() =>
       expect(fetch).toHaveBeenCalledWith(
         '/api/repos/repo/candidate?id=candidate-1',
         expect.objectContaining({ method: 'GET' }),
       ),
     );
-    await vi.waitFor(() => expect(hooks.states[1]).toBe(diff));
+    await vi.waitFor(() => expect(hooks.states[1]).toMatchObject({ value: diff }));
     expect(renderToStaticMarkup(render())).toContain('+new');
   });
 
@@ -79,8 +90,8 @@ describe('candidate diff hydration', () => {
     let tree = render();
     find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
     tree = render();
-    for (const effect of hooks.effects.splice(0)) effect();
-    await vi.waitFor(() => expect(hooks.states[1]).toBe(stat));
+    flushLatestEffect();
+    await vi.waitFor(() => expect(hooks.states[1]).toMatchObject({ value: stat }));
     const html = renderToStaticMarkup(render());
     expect(html).toContain('Change summary');
     expect(html).toContain('change statistics only; the patch was not recorded');
@@ -107,8 +118,125 @@ describe('candidate diff hydration', () => {
     tree = render();
     find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
     render();
-    for (const effect of hooks.effects.splice(0)) effect();
-    await vi.waitFor(() => expect(hooks.states[2]).toBe('Diff unavailable'));
+    flushLatestEffect();
+    await vi.waitFor(() => expect(hooks.states[2]).toMatchObject({ message: 'Diff unavailable' }));
     expect(renderToStaticMarkup(render())).toContain('Retry diff');
+  });
+
+  it('hides an inline summary immediately when repository and revision identity change', async () => {
+    const stat = 'public/index.html | 4 +++-\n1 file changed, 3 insertions(+), 1 deletion(-)';
+    let resolveB!: (response: Response) => void;
+    const fetch = vi
+      .fn()
+      .mockImplementation(() => new Promise<Response>((resolve) => (resolveB = resolve)));
+    vi.stubGlobal('fetch', fetch);
+    const a = { id: 'stable-id', revision: { commit: 'a'.repeat(40) }, diff: stat };
+    const b = { id: 'stable-id', revision: { commit: 'b'.repeat(40) } };
+
+    let tree = render('repo-a', a);
+    expect(renderToStaticMarkup(tree)).toContain('Change summary');
+    find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
+    tree = render('repo-a', a);
+    flushLatestEffect();
+
+    tree = render('repo-b', b);
+    const switched = renderToStaticMarkup(tree);
+    expect(switched).not.toContain('Change summary');
+    expect(switched).not.toContain(stat);
+    expect(switched).toContain('Loading captured diff');
+    flushLatestEffect();
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/repos/repo-b/candidate?id=stable-id',
+      expect.objectContaining({ method: 'GET' }),
+    );
+
+    resolveB({
+      ok: true,
+      json: async () => ({ id: 'stable-id', diff: 'diff --git a/b b/b\n+current repo revision' }),
+    } as Response);
+    await vi.waitFor(() =>
+      expect(renderToStaticMarkup(render('repo-b', b))).toContain('+current repo revision'),
+    );
+    expect(renderToStaticMarkup(render('repo-b', b))).not.toContain(stat);
+  });
+
+  it('ignores a late candidate A response and error after switching to candidate B', async () => {
+    let resolveA!: (response: Response) => void;
+    let resolveB!: (response: Response) => void;
+    const deferred = () =>
+      new Promise<Response>((resolve) => {
+        if (!resolveA) resolveA = resolve;
+        else resolveB = resolve;
+      });
+    const fetch = vi.fn().mockImplementationOnce(deferred).mockImplementationOnce(deferred);
+    vi.stubGlobal('fetch', fetch);
+    const a = { id: 'candidate-A', revision: { commit: 'a'.repeat(40) } };
+    const b = { id: 'candidate-B', revision: { commit: 'b'.repeat(40) } };
+
+    let tree = render('repo', a);
+    find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
+    tree = render('repo', a);
+    flushLatestEffect();
+    tree = render('repo', b);
+    expect(renderToStaticMarkup(tree)).not.toContain('diff from A');
+    flushLatestEffect();
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    resolveA({
+      ok: false,
+      json: async () => ({ error: { message: 'A response failed late' } }),
+    } as Response);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const whileBLoads = renderToStaticMarkup(render('repo', b));
+    expect(whileBLoads).toContain('Loading captured diff');
+    expect(whileBLoads).not.toContain('A response failed late');
+    expect(whileBLoads).not.toContain('role="alert"');
+
+    resolveB({
+      ok: true,
+      json: async () => ({ id: b.id, diff: 'diff --git a/b b/b\n+diff from B' }),
+    } as Response);
+    await vi.waitFor(() =>
+      expect(renderToStaticMarkup(render('repo', b))).toContain('+diff from B'),
+    );
+    expect(renderToStaticMarkup(render('repo', b))).not.toContain('A response failed late');
+  });
+
+  it('hides candidate A error immediately when the revision changes', async () => {
+    let resolveB!: (response: Response) => void;
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error: { message: 'Old revision is unavailable' } }),
+      })
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => (resolveB = resolve)));
+    vi.stubGlobal('fetch', fetch);
+    const a = { id: 'stable-id', revision: { commit: 'a'.repeat(40) } };
+    const b = { id: 'stable-id', revision: { commit: 'b'.repeat(40) } };
+
+    let tree = render('repo', a);
+    find(tree, 'details')?.props.onToggle({ currentTarget: { open: true } });
+    tree = render('repo', a);
+    flushLatestEffect();
+    await vi.waitFor(() =>
+      expect(renderToStaticMarkup(render('repo', a))).toContain('Old revision is unavailable'),
+    );
+
+    tree = render('repo', b);
+    const switched = renderToStaticMarkup(tree);
+    expect(switched).not.toContain('Old revision is unavailable');
+    expect(switched).not.toContain('role="alert"');
+    expect(switched).toContain('Loading captured diff');
+    flushLatestEffect();
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    resolveB({
+      ok: true,
+      json: async () => ({ id: b.id, diff: 'diff --git a/b b/b\n+new revision' }),
+    } as Response);
+    await vi.waitFor(() =>
+      expect(renderToStaticMarkup(render('repo', b))).toContain('+new revision'),
+    );
   });
 });
