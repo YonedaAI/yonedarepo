@@ -34,11 +34,16 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
     return enqueueProjects(this.env, owner, projects);
   }
 
+  protected async launchExecution(name: string, scope: Scope) {
+    await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
+  }
+
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
       batch.messages.map(async (message) => {
         const envelope = message.body;
         let claimed: { id: string; epoch: number } | undefined;
+        let launchRequested = false;
         try {
           if (envelope.v !== 1) {
             message.ack();
@@ -150,7 +155,8 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             }
           }
           const name = await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`);
-          await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
+          launchRequested = true;
+          await this.launchExecution(name, scope);
           message.ack();
         } catch (e: any) {
           const code = failureCode(e);
@@ -159,7 +165,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             job_id: envelope.job_id,
             error_code: code,
           });
-          if (claimed) {
+          if (claimed && !launchRequested) {
             try {
               await ledger(this.env, envelope.repo_id, {
                 op: 'fail',
@@ -181,7 +187,7 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             }
             return;
           }
-          if (['LEASE_HELD', 'FENCED', 'ATTEMPTS_EXHAUSTED', 'REPOSITORY_DELETED'].includes(e.code))
+          if (['LEASE_HELD', 'FENCED', 'ATTEMPTS_EXHAUSTED', 'REPOSITORY_DELETED'].includes(code))
             message.ack();
           else message.retry({ delaySeconds: 20 });
         }
