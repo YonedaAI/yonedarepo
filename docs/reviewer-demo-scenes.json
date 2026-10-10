@@ -98,7 +98,7 @@
         "Read the trail as intent, tasks, captured changes, checks and decision.",
         "File provenance links changed paths to trusted capture receipts.",
         "Receipts show what was captured and which revision contains it.",
-        "A receipt proves delivery of records, not that a model understood or used them."
+        "File receipts prove captured bytes. Separate context-read receipts show delivery, not a model's understanding."
       ]
     },
     {
