@@ -16,6 +16,7 @@ const reads = new Set([
   'context_usage',
   'execution_logs',
   'conflict_status',
+  'job_status',
 ]);
 const writes = new Set([
   'init',
