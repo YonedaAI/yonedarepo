@@ -4,7 +4,7 @@ YonedaRepo treats a development run as a shared intent and a set of concurrent a
 
 - **Video:** [narrated product walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/mvp-2026-10-08/yonedarepo-mvp.mp4). Edited actual browser captures and live evidence; synthetic narration. See [script and production notes](demo-video.md).
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0.
-- **Try it:** [hosted platform](https://yonedarepo.com/). Choose **Have a reviewer access key?** and enter the privately supplied key. Funded provider connections and a sandbox are prepared; choose **Run prepared example**. From the submitted source, `node tools/reviewer.mjs` starts the same example without installing dependencies.
+- **Try it:** [hosted platform](https://yonedarepo.com/). Choose **Have a reviewer access key?** and enter the privately supplied key. Funded provider connections and a sandbox are prepared; choose **Run prepared example**. From the submitted source, `node tools/reviewer.mjs` opens the recorded checked example without installing dependencies; `--new` explicitly approves another funded trial.
 - **Immediate public example:** [Juniper Garden](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/), built by concurrent Luna/Sonnet agents and published after an owner-directed selection.
 - **Run locally:** [README](../README.md#get-running) and [runbook](runbook.md). The local gate needs no inference keys; local Artifacts access requires Cloudflare authentication and configured resources.
 - **Connect your existing agent:** [remote MCP and Git setup](remote-mcp.md), using a revocable repository-scoped key from the website.
@@ -13,7 +13,7 @@ YonedaRepo treats a development run as a shared intent and a set of concurrent a
 ## Reviewer hands-on path
 
 1. Enter the reviewer access key. The sandbox opens with configured agents and recorded runs.
-2. Choose **Run prepared example** or run `node tools/reviewer.mjs` from the source checkout. The command asks for the same key privately. One trial may run at a time; each trial is limited to $5 within a shared $50 allowance.
+2. Choose **Run prepared example** or use `node tools/reviewer.mjs` to open the recorded checked example immediately. Add `--new` to approve another trial. The command asks for the same key privately. One trial may run at a time; each trial is limited to $5 within a shared $50 allowance.
 3. Watch the two specialists' activity and captured handoffs, then review the integrated exact revision and independent checks.
 4. Open **Evidence trail** to read intent, assertions, trusted capture, checks and the owner's rationale at normal text size. **Explore graph** provides the optional relationship view.
 5. Select an eligible candidate, record the decision and wait for verified publication. Reviewer publication affects only the sandbox. A failed or conflicting publish can be reconciled using **Recover repository**, which reads the actual canonical Git HEAD and retains the failed decision as history.

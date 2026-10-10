@@ -10,7 +10,7 @@ A Context Graph platform for the agentic era. Agents can compare parallel implem
 node tools/reviewer.mjs
 ```
 
-The command prompts for the key without echoing it, starts the same two-agent **Build together** example, and opens its review page. Node 24 is sufficient; no dependency installation or local Cloudflare deployment is needed. The sandbox has a shared $50 conservative inference allowance, up to $5 per trial, one active trial, and access through October 22, 2026. Unknown usage retains its reservation. Provider settings and arbitrary paid runs cannot be changed using reviewer access.
+The command prompts for the key without echoing it and opens the latest checked **Build together** example immediately. It resumes active work, or starts the prepared trial if no checked example exists. Use `node tools/reviewer.mjs --new` to explicitly approve another funded trial. Node 24 is sufficient; no dependency installation or local Cloudflare deployment is needed. The sandbox has a shared $50 conservative inference allowance, up to $5 per trial, one active trial, and access through October 22, 2026. Unknown usage retains its reservation. Provider settings and arbitrary paid runs cannot be changed using reviewer access.
 
 Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Alternatively, connect a local agent through a scoped MCP/Git key; it uses your local agent credentials. The public Garden website is viewable without an account.
 

@@ -3,7 +3,7 @@ import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
 import { reviewerPolicy } from './reviewer-policy';
 import { resumeTrial, reviewerTrialStatus, startTrial } from './reviewer-trial';
-import { sha } from './storage';
+import { ledger, sha } from './storage';
 import type { Env, Principal } from './types';
 import { providerCredentials, seal } from './vault';
 import { workspace } from './workspace';
@@ -16,6 +16,10 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
     const owner = username(body.username);
     if (path.endsWith('/revoke') && req.method === 'POST')
       return response(await workspace(env, owner, { op: 'reviewer_revoke' }));
+    if (path.endsWith('/recheck') && req.method === 'POST') {
+      const configured = await workspace(env, owner, { op: 'reviewer_status' });
+      return response(await configureReviewPolicy(env, owner, configured.repo_id));
+    }
     if (!path.endsWith('/provision') || req.method !== 'POST')
       return error('NOT_FOUND', 'Unknown reviewer operation', 404);
     const repo = `reviewer-${(await sha(owner)).slice(0, 24)}`;
@@ -40,13 +44,22 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
         sealed: await seal(env, owner, provider, key, connection),
       });
     }
+    let initialPolicy = reviewerPolicy;
+    try {
+      // Preserve the original provisioning receipt when upgrading check policy.
+      const existing = await workspace(env, owner, { op: 'project_get', id: repo });
+      initialPolicy = existing.policy;
+    } catch (failure: any) {
+      if (failure.code !== 'NOT_FOUND') throw failure;
+    }
     const project = await workspace(env, owner, {
       op: 'project_reserve',
       id: repo,
       name: 'Reviewer sandbox',
       source: null,
-      policy: reviewerPolicy,
+      policy: initialPolicy,
     });
+    if (project.status === 'ready') await configureReviewPolicy(env, owner, repo);
     await scheduleProject(env, owner, project);
     return response({
       username: owner,
@@ -94,4 +107,17 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
   )
     return null;
   return error('FORBIDDEN', 'Reviewer access permits funded trials and sandbox review only', 403);
+}
+
+/** Operator-only callers select the fixed profile; client policy and repo fields are ignored. */
+async function configureReviewPolicy(env: Env, owner: string, repo: string) {
+  const current = await ledger(env, repo, { op: 'repository_status', _workspace: owner });
+  return ledger(env, repo, {
+    op: 'update_policy',
+    _workspace: owner,
+    expected_commit: current.head_commit,
+    expected_version: current.version,
+    expected_policy: current.policy.version,
+    policy: reviewerPolicy,
+  });
 }

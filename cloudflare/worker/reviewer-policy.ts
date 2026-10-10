@@ -2,7 +2,7 @@ import { sitePolicy } from './site-policy';
 /** These check commands belong to the platform approval, not candidate package scripts. */
 export const reviewerPolicy = {
   ...sitePolicy,
-  version: 'reviewer-v1',
+  version: 'reviewer-v2',
   required_checks: ['site', 'trail-module', 'bilingual', 'registry-egress'],
   build: {
     setup: [
@@ -23,7 +23,7 @@ export const reviewerPolicy = {
         argv: [
           'node',
           '-e',
-          "const vm=require('node:vm'),fs=require('node:fs');const c={window:{}};vm.createContext(c);vm.runInContext(fs.readFileSync('public/js/trails.js','utf8'),c,{timeout:1000});const t=c.window.Trails;if(!t||!Array.isArray(t.trails)||t.trails.length<2||typeof t.filter!=='function')process.exit(1);for(const v of t.trails)if(!v.id||!v.name||!Number.isFinite(v.lengthMiles)||!v.difficulty)process.exit(1);if(!Array.isArray(t.filter({query:''})))process.exit(1)",
+          "const vm=require('node:vm'),fs=require('node:fs');const c={};c.window=c;c.self=c;vm.createContext(c);vm.runInContext(fs.readFileSync('public/js/trails.js','utf8'),c,{timeout:1000});const t=c.window.Trails;if(!t||!Array.isArray(t.trails)||t.trails.length<2||typeof t.filter!=='function')process.exit(1);for(const v of t.trails)if(!v.id||!v.name||!Number.isFinite(v.lengthMiles)||!v.difficulty)process.exit(1);if(!Array.isArray(t.filter({query:''})))process.exit(1)",
         ],
         timeout_seconds: 10,
       },

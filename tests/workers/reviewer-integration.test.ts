@@ -145,3 +145,31 @@ it('recovers a lost start_run acknowledgement and replays an old request after c
   expect((await workspace(bindings, f.owner, { op: 'reviewer_status' })).active_trial).toBe(newRun.run_id);
   expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toHaveLength(2);
 });
+
+it('rechecks only the configured sandbox with the fixed profile, preserving spend and replay', async () => {
+  const f = await readyReviewer('policy_upgrade');
+  await workspace(bindings, f.owner, { op: 'budget_reserve', id: 'unknown-usage', amount: 2_000_000 });
+  const before = await ledger(bindings, f.repo, { op: 'repository_status' });
+  const oldPolicy = { ...before.policy, version: 'reviewer-v1' };
+  await ledger(bindings, f.repo, { op: 'update_policy', policy: oldPolicy,
+    expected_commit: before.head_commit, expected_version: before.version, expected_policy: before.policy.version });
+  const body = { username: f.owner, repo_id: 'foreign', policy: { version: 'unchecked', required_checks: [] } };
+  expect((await api(f.scoped, '/api/admin/reviewer/recheck', f.cookie, body)).status).toBe(403);
+  expect((await api(f.scoped, '/api/admin/reviewer/recheck', '', body)).status).toBe(401);
+  const response = await api(f.scoped, '/api/admin/reviewer/recheck', '', body, true);
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ id: f.repo, policy: { version: 'reviewer-v2', required_checks: ['site','trail-module','bilingual','registry-egress'] } });
+  const snapshot = await ledger(bindings, f.repo, { op: 'snapshot' });
+  expect((await api(f.scoped, '/api/admin/reviewer/recheck', '', body, true)).status).toBe(200);
+  expect((await ledger(bindings, f.repo, { op: 'snapshot' })).seq).toBe(snapshot.seq);
+  expect((await workspace(bindings, f.owner, { op: 'budget_status' })).charged).toBe(2_000_000);
+  // Historical project provisioning metadata must retain its immutable receipt.
+  const stub = bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`account:${f.owner}`));
+  await runInDurableObject(stub, (_instance, state) => {
+    state.storage.sql.exec("UPDATE workspace_records SET payload=json_set(payload,'$.policy',json(?)) WHERE id=?", JSON.stringify(oldPolicy), `project:${f.repo}`);
+  });
+  const provision = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner }, true);
+  expect(provision.status).toBe(200);
+  expect((await workspace(bindings, f.owner, { op: 'project_get', id: f.repo })).policy.version).toBe('reviewer-v1');
+  expect((await ledger(bindings, f.repo, { op: 'repository_status' })).policy.version).toBe('reviewer-v2');
+});
