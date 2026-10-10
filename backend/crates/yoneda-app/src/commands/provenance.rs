@@ -2,6 +2,8 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
+const MAX_FILE_PROVENANCE_RECEIPTS: usize = 10_000;
+
 /// Persist Worker-verified blob receipts tied to the live capture lease and revision.
 #[allow(dead_code)] // Lead-owned capture_completion calls this after candidate creation.
 pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
@@ -56,7 +58,7 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
         // Old captures remain inspectable but their per-file coverage is explicitly unknown.
         return Ok(Vec::new());
     };
-    if entries.len() > 500 {
+    if entries.len() > MAX_FILE_PROVENANCE_RECEIPTS {
         return Err(Error::new(
             "RESOURCE_LIMIT",
             "File provenance exceeds capture limit",
@@ -181,9 +183,11 @@ pub(super) fn why<S: SqlStore>(
     requested_path: &str,
 ) -> Result<Value> {
     let candidates = all(db, "candidates")?;
-    let receipt_rows = db.query("SELECT payload FROM nodes WHERE json_extract(payload,'$.kind')='file_provenance' ORDER BY id LIMIT 2000", &[])?;
+    let receipt_rows = db.query("SELECT payload FROM nodes WHERE json_extract(payload,'$.kind')='file_provenance' ORDER BY id LIMIT 10001", &[])?;
+    let receipt_scan_truncated = receipt_rows.len() > MAX_FILE_PROVENANCE_RECEIPTS;
     let receipts: Vec<Value> = receipt_rows
         .iter()
+        .take(MAX_FILE_PROVENANCE_RECEIPTS)
         .map(|row| {
             serde_json::from_str(row["payload"].as_str().unwrap_or("{}"))
                 .map_err(|e| Error::new("DATABASE", e.to_string()))
@@ -249,7 +253,7 @@ pub(super) fn why<S: SqlStore>(
     }
     if lineage.is_empty() {
         return Ok(
-            json!({"coverage":"unknown","status":"unknown","path":requested_path,"commit":requested_commit,"lineage":[],"decisions":[],"rejected_alternatives":[],"nodes":[],"edges":[]}),
+            json!({"coverage":"unknown","status":"unknown","path":requested_path,"commit":requested_commit,"lineage":[],"decisions":[],"rejected_alternatives":[],"nodes":[],"edges":[],"bounded":true,"truncated":receipt_scan_truncated}),
         );
     }
     let candidate_ids: std::collections::BTreeSet<String> = lineage
@@ -282,7 +286,7 @@ pub(super) fn why<S: SqlStore>(
     let mut nodes = lineage.clone();
     nodes.extend(decisions.iter().cloned());
     Ok(
-        json!({"coverage":"recorded","status":status,"path":requested_path,"commit":requested_commit,"lineage":lineage,"decisions":decisions,"rejected_alternatives":rejected,"nodes":nodes,"edges":[],"bounded":true,"truncated":false}),
+        json!({"coverage":"recorded","status":status,"path":requested_path,"commit":requested_commit,"lineage":lineage,"decisions":decisions,"rejected_alternatives":rejected,"nodes":nodes,"edges":[],"bounded":true,"truncated":receipt_scan_truncated}),
     )
 }
 

@@ -6,6 +6,8 @@ type GitRepository = {
   readTree(hash: string): Promise<TreeEntry[] | null>;
 };
 type FileEntry = { blob: string; mode: string };
+const MAX_PROVENANCE_TREE_FILES = 20_000;
+const MAX_PROVENANCE_RECEIPTS = 10_000;
 
 async function filesAt(repo: GitRepository, revision: string): Promise<Map<string, FileEntry>> {
   const commit = await repo.readCommit(revision);
@@ -28,7 +30,8 @@ async function filesAt(repo: GitRepository, revision: string): Promise<Map<strin
       } else if (entry.type === 'blob' || entry.type === 'exec') {
         if (!/^[0-9a-f]{40,64}$/i.test(entry.hash)) throw new Error('Invalid captured blob ID');
         files.set(path, { blob: entry.hash.toLowerCase(), mode: entry.type });
-        if (files.size > 500) throw new Error('Provenance tree exceeds the file limit');
+        if (files.size > MAX_PROVENANCE_TREE_FILES)
+          throw new Error('Provenance tree exceeds the runtime safety limit');
       } else {
         throw new Error('Provenance supports regular files only');
       }
@@ -107,6 +110,8 @@ export async function captureFileProvenance(
     if (!pairedNew.has(path))
       receipts.push({ path, change: 'add', old_blob: null, new_blob: next.blob });
   }
+  if (receipts.length > MAX_PROVENANCE_RECEIPTS)
+    throw new Error('File provenance exceeds the receipt limit');
   return receipts.sort((a, b) => String(a.path).localeCompare(String(b.path)));
 }
 

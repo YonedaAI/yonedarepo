@@ -1,8 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import type { RepositoryOverview, RunDetail, Snapshot } from '../lib/types';
-import { mergeRunDetails } from './repositorySnapshot';
+import { emptySnapshot, mergeRunDetails, scopedRunIds } from './repositorySnapshot';
 
 describe('scoped snapshot refresh', () => {
+  it('hydrates the newest run and active run states without polling completed history', () => {
+    expect(
+      scopedRunIds(
+        [
+          { id: 'newest', status: 'accepted' },
+          { id: 'ready', status: 'ready' },
+          { id: 'planning', status: 'planning' },
+          { id: 'exploring', status: 'exploring' },
+        ],
+        [
+          { id: 'remembered-active', status: 'researching' },
+          { id: 'done', status: 'accepted' },
+        ],
+      ),
+    ).toEqual(['newest', 'planning', 'exploring', 'remembered-active']);
+  });
+
+  it('creates a scoped initial snapshot with an empty graph for on-demand hydration', () => {
+    const overview = {
+      repository: { id: 'repo' },
+      v: 1,
+      capabilities: {},
+      counts: { runs: 4 },
+      watermark: 12,
+    } as unknown as RepositoryOverview;
+    const snapshot = emptySnapshot(overview);
+    expect(snapshot.repository.id).toBe('repo');
+    expect(snapshot.watermark).toBe(12);
+    expect(snapshot.runs).toEqual([]);
+    expect(snapshot.graph_paged).toBe(true);
+  });
+
   it('merges run detail without erasing other runs or lazily paged context graph', () => {
     const graphNode = {
       id: 'context:1',

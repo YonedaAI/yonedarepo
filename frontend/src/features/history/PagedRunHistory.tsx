@@ -16,7 +16,7 @@ export function PagedRunHistory({
   const [more, setMore] = useState(false);
   const [selected, setSelected] = useState<RunDetail | null>(null);
   const [diffs, setDiffs] = useState<
-    Record<string, { text: string; cursor: string | null; more: boolean }>
+    Record<string, { text: string; cursor: string | null; more: boolean; watermark: string }>
   >({});
   const [graphCursor, setGraphCursor] = useState<string | null>(null);
   const [graph, setGraph] = useState<Graph>({ nodes: [], edges: [] });
@@ -65,15 +65,37 @@ export function PagedRunHistory({
     setBusy(candidate);
     try {
       const current = diffs[candidate];
-      const query = new URLSearchParams({ id: candidate, limit: '100' });
+      const runId = selected?.runs[0]?.id;
+      const candidateRecord = selected?.candidates.find((item) => item.id === candidate);
+      const digest = current?.watermark ?? candidateRecord?.diff_digest;
+      if (!runId || typeof digest !== 'string' || !digest) {
+        throw new Error('This captured diff is missing its run or digest identity.');
+      }
+      const query = new URLSearchParams({
+        run_id: runId,
+        candidate_id: candidate,
+        limit: '100',
+        watermark: digest,
+      });
       if (current?.cursor) query.set('cursor', current.cursor);
-      const response = await api<CandidateDiffPage>(`repos/${repo}/candidate?${query}`);
+      const response = await api<CandidateDiffPage>(`repos/${repo}/candidate_diff?${query}`);
+      if (response.watermark !== digest) {
+        setDiffs((old) => {
+          const next = { ...old };
+          delete next[candidate];
+          return next;
+        });
+        throw new Error(
+          'The captured diff changed while paging. Reload this run before continuing.',
+        );
+      }
       setDiffs((old) => ({
         ...old,
         [candidate]: {
           text: `${old[candidate]?.text ?? ''}${response.diff ?? ''}`,
           cursor: response.next_cursor,
           more: response.has_more,
+          watermark: response.watermark,
         },
       }));
     } catch (e) {
@@ -87,7 +109,7 @@ export function PagedRunHistory({
     if (!runId) return;
     setBusy(`graph:${runId}`);
     try {
-      const query = new URLSearchParams({ run_id: runId, limit: '250' });
+      const query = new URLSearchParams({ run_id: runId, limit: '200' });
       const cursor = next ? graphCursor : null;
       if (cursor) query.set('cursor', cursor);
       const page = await api<RunGraphPage>(`repos/${repo}/run_graph_page?${query}`);

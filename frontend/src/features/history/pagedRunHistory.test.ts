@@ -139,7 +139,7 @@ describe('paged run history', () => {
           repository: { id: 'repo' },
           runs: [{ id: 'run-1' }],
           executions: [],
-          candidates: [{ id: 'candidate-1', summary: 'Candidate' }],
+          candidates: [{ id: 'candidate-1', summary: 'Candidate', diff_digest: 'digest-v1' }],
           evaluations: [],
           decisions: [],
           artifacts: [],
@@ -156,7 +156,16 @@ describe('paged run history', () => {
           diff: '+one',
           next_cursor: 'diff-next',
           has_more: true,
-          watermark: 2,
+          watermark: 'digest-v1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          diff: '+two',
+          next_cursor: null,
+          has_more: false,
+          watermark: 'digest-v1',
         }),
       })
       .mockResolvedValueOnce({
@@ -172,7 +181,26 @@ describe('paged run history', () => {
               data: {},
             },
           ],
-          edges: [],
+          edges: [{ source: 'intent:1', target: 'run:run-1', relation: 'addresses' }],
+          next_cursor: 'graph-next',
+          has_more: true,
+          watermark: 2,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          nodes: [
+            {
+              id: 'assertion:1',
+              kind: 'assertion',
+              label: 'Captured evidence',
+              author: 'agent',
+              recorded_at: 2,
+              data: {},
+            },
+          ],
+          edges: [{ source: 'assertion:1', target: 'intent:1', relation: 'supports' }],
           next_cursor: null,
           has_more: false,
           watermark: 2,
@@ -188,11 +216,93 @@ describe('paged run history', () => {
     await vi.waitFor(() => expect((hooks.states[5] as any)?.runs?.[0]?.id).toBe('run-1'));
     tree = render(onGraph);
     find(tree, 'button', 'Load diff')?.props.onClick();
-    await vi.waitFor(() => expect(fetch.mock.calls[2][0]).toContain('/candidate?'));
+    await vi.waitFor(() => expect(fetch.mock.calls[2][0]).toContain('/candidate_diff?'));
+    const firstDiffUrl = new URL(String(fetch.mock.calls[2][0]), 'https://local');
+    expect(firstDiffUrl.searchParams.get('run_id')).toBe('run-1');
+    expect(firstDiffUrl.searchParams.get('candidate_id')).toBe('candidate-1');
+    expect(firstDiffUrl.searchParams.get('watermark')).toBe('digest-v1');
+    await vi.waitFor(() => expect((hooks.states[6] as any)?.['candidate-1']?.more).toBe(true));
+    tree = render(onGraph);
+    find(tree, 'button', 'Load next diff page')?.props.onClick();
+    await vi.waitFor(() => expect(fetch.mock.calls[3][0]).toContain('cursor=diff-next'));
+    expect(String(fetch.mock.calls[3][0])).toContain('watermark=digest-v1');
     tree = render(onGraph);
     find(tree, 'button', 'Load run context graph')?.props.onClick();
     await vi.waitFor(() => expect(onGraph).toHaveBeenCalled());
-    expect(fetch.mock.calls[3][0]).toContain('run_graph_page');
+    expect(fetch.mock.calls[4][0]).toContain('run_graph_page');
+    expect(String(fetch.mock.calls[4][0])).toContain('limit=200');
     expect(onGraph.mock.calls[0][0].nodes[0].kind).toBe('intent');
+    tree = render(onGraph);
+    find(tree, 'button', 'Load more run context')?.props.onClick();
+    await vi.waitFor(() => expect(fetch.mock.calls[5][0]).toContain('cursor=graph-next'));
+    await vi.waitFor(() => expect(onGraph).toHaveBeenCalledTimes(2));
+    expect(onGraph.mock.calls.at(-1)?.[0].nodes.map((node: any) => node.kind)).toEqual([
+      'intent',
+      'assertion',
+    ]);
+    expect(onGraph.mock.calls.at(-1)?.[0].edges).toHaveLength(2);
+  });
+
+  it('discards diff pages when the capture digest changes mid-pagination', async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [{ id: 'run-1' }],
+          next_cursor: null,
+          watermark: 1,
+          has_more: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          repository: { id: 'repo' },
+          runs: [{ id: 'run-1' }],
+          executions: [],
+          candidates: [{ id: 'candidate-1', diff_digest: 'digest-v1' }],
+          evaluations: [],
+          decisions: [],
+          artifacts: [],
+          team_tasks: [],
+          team_handoffs: [],
+          nodes: [],
+          edges: [],
+          graph_paged: true,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          diff: '+old',
+          next_cursor: 'next',
+          has_more: true,
+          watermark: 'digest-v1',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          diff: '+new',
+          next_cursor: null,
+          has_more: false,
+          watermark: 'digest-v2',
+        }),
+      });
+    vi.stubGlobal('fetch', fetch);
+    let tree = render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toHaveLength(1));
+    tree = render();
+    find(tree, 'button', 'run-1')?.props.onClick();
+    await vi.waitFor(() => expect((hooks.states[5] as any)?.runs?.[0]?.id).toBe('run-1'));
+    tree = render();
+    find(tree, 'button', 'Load diff')?.props.onClick();
+    await vi.waitFor(() => expect((hooks.states[6] as any)?.['candidate-1']?.more).toBe(true));
+    tree = render();
+    find(tree, 'button', 'Load next diff page')?.props.onClick();
+    await vi.waitFor(() => expect(hooks.states[10]).toContain('diff changed'));
+    expect((hooks.states[6] as any)?.['candidate-1']).toBeUndefined();
   });
 });

@@ -76,6 +76,43 @@ fn task_receipts_are_scoped_to_the_handoff_identity() {
 }
 
 #[test]
+fn capture_receipt_limit_allows_more_than_git_diff_legacy_limit() {
+    let db = NativeStore::memory().unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    create(
+        &db,
+        "executions",
+        "exec",
+        &json!({"id":"exec","run_id":"run","epoch":1,"status":"capturing"}),
+    )
+    .unwrap();
+    let job = json!({"kind":"capture","epoch":1,"payload":{"execution":{"id":"exec","run_id":"run","epoch":1},"base":{"commit":"a".repeat(40)}}});
+    let make_result = |id: &str, count: usize| {
+        let entries: Vec<_> = (0..count)
+            .map(|index| {
+                json!({"path":format!("src/file-{index}.rs"),"change":"add","old_blob":null,"new_blob":"c".repeat(40)})
+            })
+            .collect();
+        let paths: Vec<_> = entries.iter().map(|entry| entry["path"].clone()).collect();
+        json!({"id":id,"revision":{"commit":"b".repeat(40)},"paths":paths,"file_provenance":entries})
+    };
+    let result = make_result("candidate-many", 501);
+    assert_eq!(
+        capture_file_provenance(&db, &job, &result, 42)
+            .unwrap()
+            .len(),
+        501
+    );
+    let too_many = make_result("candidate-too-many", 10_001);
+    assert_eq!(
+        capture_file_provenance(&db, &job, &too_many, 43)
+            .unwrap_err()
+            .code,
+        "RESOURCE_LIMIT"
+    );
+}
+
+#[test]
 fn lineage_inherits_unchanged_paths_and_keeps_file_histories_isolated() {
     let db = NativeStore::memory().unwrap();
     crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();

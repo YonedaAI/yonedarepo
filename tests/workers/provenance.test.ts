@@ -46,6 +46,39 @@ describe('trusted per-file capture receipts', () => {
     await expect(captureFileProvenance(unsafe, 'base', 'next')).rejects.toThrow('unsafe path');
   });
 
+  it('keeps the runtime tree cap separate from the changed-file receipt cap', async () => {
+    const baseFiles = Array.from({ length: 501 }, (_, index) => ({
+      name: `kept-${index}.txt`,
+      type: 'blob',
+      hash: index.toString(16).padStart(40, '0'),
+    }));
+    const git = fakeGit({
+      base: baseFiles,
+      next: [...baseFiles, { name: 'one-more.txt', type: 'blob', hash: 'f'.repeat(40) }],
+    });
+    await expect(captureFileProvenance(git, 'base', 'next')).resolves.toHaveLength(1);
+  });
+
+  it('accepts more than 500 changed paths and rejects captures above 10,000 receipts', async () => {
+    const overLegacyLimit = Array.from({ length: 501 }, (_, index) => ({
+      name: `file-${index}.txt`,
+      type: 'blob',
+      hash: index.toString(16).padStart(40, '0'),
+    }));
+    await expect(
+      captureFileProvenance(fakeGit({ base: [], next: overLegacyLimit }), 'base', 'next'),
+    ).resolves.toHaveLength(501);
+
+    const beyondReceiptLimit = Array.from({ length: 10_001 }, (_, index) => ({
+      name: `file-${index}.txt`,
+      type: 'blob',
+      hash: index.toString(16).padStart(40, '0'),
+    }));
+    await expect(
+      captureFileProvenance(fakeGit({ base: [], next: beyondReceiptLimit }), 'base', 'next'),
+    ).rejects.toThrow('receipt limit');
+  });
+
   it('checks optional context file paths against the assigned captured source tree', async () => {
     const git = fakeGit({ source: [{ name: 'main.rs', type: 'blob', hash: 'b'.repeat(40) }] });
     await expect(validateFilePathAssertions(git, 'source', ['main.rs', 'main.rs'])).resolves.toEqual(['main.rs']);
