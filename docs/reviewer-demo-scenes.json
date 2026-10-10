@@ -1,0 +1,78 @@
+{
+  "title": "YonedaRepo: build together, keep the why",
+  "format": "Edited current browser captures. Captioned walkthrough without narration; not a continuous recording.",
+  "scenes": [
+    {"title": "One key opens the prepared workspace", "capture": "reviewer-login-domain.jpg", "seconds": 30, "captions": [
+      "Open yonedarepo.com and choose Have a reviewer access key? The privately supplied key opens a dedicated sandbox.",
+      "There is no signup or paid provider-key setup. Codex and Claude connections are already configured on the server.",
+      "The key is intentionally absent from this public video. Reviewer access expires and can be revoked by the operator.",
+      "You can explore a recorded result immediately. A new prepared trial is optional and has an explicit spending ceiling."
+    ]},
+    {"title": "One command, the same prepared example", "capture": "reviewer-workspace.jpg", "seconds": 30, "captions": [
+      "From the submitted source checkout, run node tools/reviewer.mjs. Node 24 is sufficient; no dependency installation is needed.",
+      "The command asks for the same key without echoing it. Credentials never enter command arguments, URLs or source control.",
+      "The command opens a checked example immediately. Add --new to approve another two-agent trial; active work resumes without duplication.",
+      "One trial runs at a time. Each trial is capped at five dollars within a shared fifty-dollar conservative inference allowance."
+    ]},
+    {"title": "Two specialists work concurrently", "capture": "reviewer-concurrent.jpg", "seconds": 30, "captions": [
+      "This is an actual deployed run, not a simulated agent result. Both specialists started from the same canonical base revision.",
+      "Codex implements the trail data and filter module. Claude implements an accessible English and Spanish interface.",
+      "Their writable paths are disjoint and the shared JavaScript interface is frozen before work begins.",
+      "Isolation protects their changes. Scoped MCP tools expose task context, peer status and typed findings without sharing provider credentials."
+    ]},
+    {"title": "Recorded activity makes progress visible", "capture": "reviewer-activity.jpg", "seconds": 30, "captions": [
+      "Agent activity shows ledger timestamps, elapsed times and the sequence of work, context reads, source capture and checks.",
+      "Progress reports describe activity; they do not prove correctness. Technical runtime details remain available behind a disclosure.",
+      "You can filter the timeline by agent. An interruption stays visible in history instead of being replaced with a success claim.",
+      "Earlier interrupted trials remain recorded. Their conservative usage reservations were retained; the corrected trial is a separate run."
+    ]},
+    {"title": "Handoffs are assertions; source capture is evidence", "capture": "reviewer-handoffs.jpg", "seconds": 30, "captions": [
+      "Each specialist publishes a handoff describing the interface and work completed. That message is labelled as an agent assertion.",
+      "Trusted capture stops untrusted processes, validates regular files and constructs fresh Git objects in a separate job.",
+      "Task cards show the captured revision and changed paths. The integrator waits for both captured specialist outputs.",
+      "A digest-bound manifest records which exact task revisions entered assembly. Team integration uses a scoped file overlay."
+    ]},
+    {"title": "Review the integrated revision", "capture": "reviewer-results.jpg", "seconds": 30, "captions": [
+      "The final candidate has its own exact captured revision. Review required is displayed above the result and independent checks.",
+      "A candidate becoming eligible does not publish it. The canonical published source remains unchanged until a human decision.",
+      "Open the diff to inspect the actual captured changes. Large diffs are stored by digest rather than embedded in runtime job bodies.",
+      "The preview and checks refer to the captured candidate, while the header identifies the separate canonical published revision."
+    ]},
+    {"title": "Independent checks include deployed HTTPS egress", "capture": "reviewer-checks.jpg", "seconds": 30, "captions": [
+      "Evaluation runs in a fresh container against the captured revision. The ledger derives the verdict from recorded command exits.",
+      "This prepared profile checks an HTML entrypoint, the trail-module interface, bilingual labels and a registry installation.",
+      "The registry check executes npm ci against an allowed HTTPS registry. It exercises the deployed container's certificate trust.",
+      "These bounded checks provide specific evidence. They are not a claim that every interaction or product requirement is tested."
+    ]},
+    {"title": "Inspect the generated product", "capture": "reviewer-preview.jpg", "seconds": 30, "captions": [
+      "The preview serves static output from the candidate's recorded manifest on a separate, sandboxed origin.",
+      "The two specialist outputs become one bilingual interface consuming the shared trail-data module.",
+      "The dataset is explicitly illustrative. The example collects no account identity, location or other personal data.",
+      "Previewing a candidate is review evidence. It does not mean that the candidate has been selected or published."
+    ]},
+    {"title": "Read the why as a story", "capture": "reviewer-trail.jpg", "seconds": 30, "captions": [
+      "Evidence trail is the default context presentation. Intent, contributions, captured source, checks and decision appear as readable stages.",
+      "Agent claims stay separate from trusted capture, independent verification and the human shipping decision.",
+      "When a decision exists, the trail shows its rationale and each rejected alternative's reason. Missing decisions remain visibly pending.",
+      "This provenance is the platform's central contribution: the next agent can recover the reasoning and the evidence that followed it."
+    ]},
+    {"title": "Explore a focused graph when needed", "capture": "reviewer-graph.jpg", "seconds": 30, "captions": [
+      "Explore graph is optional. Choose a run and inspect a readable neighborhood instead of fitting the entire repository onto one screen.",
+      "Select a record to inspect its authority, author, statement and linked evidence. Raw JSON remains an optional diagnostic view.",
+      "Context access receipts are written by the adapter. They prove which records were delivered, not that a model understood or used them.",
+      "The graph supports exploration; the evidence trail supports ordinary reading. Reviewers can use either without deciphering tiny boxes."
+    ]},
+    {"title": "A human decision controls publication", "capture": "reviewer-decision.jpg", "seconds": 30, "captions": [
+      "The review dialog asks for a shipping rationale and identifies the checked revision that would be selected.",
+      "This walkthrough opens the dialog but submits no decision. The prepared result is left available for the reviewer to decide.",
+      "Publication uses an expected-old Git lease, an ancestry check and remote readback. Selected and published remain distinct states.",
+      "A failed or conflicting publish can be reconciled with the actual remote HEAD. The failed decision remains recorded in history."
+    ]},
+    {"title": "The current prototype and its limits", "capture": "reviewer-history.jpg", "seconds": 30, "captions": [
+      "Cloudflare Workers hosts the platform, Artifacts stores Git, and a transactional repository Durable Object owns authoritative state.",
+      "Build together combines scoped specialist work and evidence. Compare mode preserves alternative approaches and the human choice.",
+      "Overlapping edits still require a fresh owner-approved run. There is no automatic semantic merge queue or demonstrated large-scale throughput.",
+      "Try the current source at github.com/MagnetonIO/yonedarepo and the prepared reviewer workspace at yonedarepo.com."
+    ]}
+  ]
+}

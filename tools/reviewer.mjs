@@ -7,14 +7,15 @@ const origin = 'https://yonedarepo.com';
 function keyPrompt() {
   if (!process.stdin.isTTY) throw new Error('Run in an interactive terminal to enter your reviewer key privately.');
   return new Promise((resolve, reject) => {
-    process.stdout.write('Reviewer access key (hidden): ');
     process.stdin.setRawMode(true);
+    process.stdout.write('Reviewer access key (hidden): ');
     process.stdin.resume();
     let key = '';
     function finish(error) {
       process.stdin.off('data', data);
       process.stdin.setRawMode(false);
       process.stdin.pause();
+      process.stdin.destroy();
       process.stdout.write('\n');
       if (error) reject(error); else resolve(key);
     }

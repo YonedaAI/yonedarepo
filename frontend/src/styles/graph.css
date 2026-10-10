@@ -38,7 +38,7 @@
   max-height: 50px;
   overflow: hidden;
   font-family: "IBM Plex Sans", sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
 }
 .graph-node.kind-assumption {

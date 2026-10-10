@@ -54,6 +54,23 @@ export function initialNeighborhood(graph: Graph, limit = 32): Graph {
   };
 }
 
+/** Keep a selected record and its immediate evidence; never traverse unrelated ancestry. */
+export function focusedNeighborhood(graph: Graph, selectedId: string): Graph {
+  if (!graph.nodes.some((node) => node.id === selectedId)) return { nodes: [], edges: [] };
+  const ids = new Set([selectedId]);
+  for (const edge of graph.edges) {
+    if (edge.source === selectedId) ids.add(edge.target);
+    if (edge.target === selectedId) ids.add(edge.source);
+  }
+  const nodes = graph.nodes.filter((node) => ids.has(node.id));
+  const included = new Set(nodes.map((node) => node.id));
+  return {
+    nodes,
+    edges: graph.edges.filter((edge) => included.has(edge.source) && included.has(edge.target)),
+    truncated: graph.truncated,
+  };
+}
+
 export function authorityLabel(node: GraphNode) {
   if (node.kind === 'evaluation') return 'Independent check';
   if (node.kind === 'candidate' || node.data.authority === 'captured_revision')
