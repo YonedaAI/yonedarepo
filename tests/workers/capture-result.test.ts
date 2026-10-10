@@ -40,6 +40,21 @@ it('rejects an unapproved parent before binding capture evidence', async () => {
   expect((await bindings.OBJECTS.list()).objects).toHaveLength(0);
 });
 
+it('resolver readback separates approved conflict edits from already merged clean changes', async () => {
+  const { bindings, scope, result } = fixture([base]);
+  await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Resolver readback', commit: base,
+    remote: { namespace: 'yoneda-test', name: 'canonical' },
+    policy: { version: 'v1', required_checks: ['retry'], suite: 'retry-contract-v1', environment: 'linux-rust-1.94-v1' } });
+  scope.job.payload.capture_subtype = 'resolve_conflict';
+  scope.job.payload.expected_head = base;
+  scope.job.payload.expected_version = 0;
+  scope.job.payload.merge_workspace_revision = { repository: scope.fork, commit: head };
+  const command = await captureResult(bindings, scope, { ...result, resolver_delta_paths: ['forged.txt'] });
+  expect(command.result.resolver_delta_paths).toEqual([]);
+  expect(command.result.paths).toEqual(['file.txt']);
+  expect(command.result.readback).toMatchObject({ candidate_commit: target, captured_paths: ['file.txt'], resolver_delta_paths: [], parents: [base] });
+});
+
 it('refresh readback binds both parents and independently observes canonical head/version', async () => {
   const { bindings, scope, result } = fixture([head, base]);
   await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Refresh readback', commit: head,

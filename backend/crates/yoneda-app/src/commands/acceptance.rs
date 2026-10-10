@@ -57,6 +57,18 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let cid = string(c, "candidate")?;
     let candidate = get(db, "candidates", &cid)?;
+    if candidate
+        .get("refresh_expected_version")
+        .is_some_and(|version| version != &r["version"])
+        || candidate
+            .get("conflict_expected_version")
+            .is_some_and(|version| version != &r["version"])
+    {
+        return Err(Error::new(
+            "HEAD_MOVED",
+            "Refreshed candidate's reserved repository version changed",
+        ));
+    }
     if candidate["base"]["commit"] != r["head_commit"] {
         return Err(Error::new(
             "HEAD_MOVED",

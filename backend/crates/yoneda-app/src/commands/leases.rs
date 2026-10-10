@@ -235,6 +235,36 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             run["status"] = json!("failed");
             save(db, "runs", &rid, &run)?;
         }
+        if job["kind"] == "evaluate" && job["status"] == "failed" {
+            let cid = string(&job["payload"]["candidate"], "id")?;
+            let mut candidate = get(db, "candidates", &cid)?;
+            if candidate["status"] == "evaluating"
+                && job["payload"]["policy"] == repo(db)?["policy"]
+            {
+                candidate["status"] = json!("failed");
+                candidate["error"] = e["error"].clone();
+                save(db, "candidates", &cid, &candidate)?;
+                super::conflicts::resolver_evaluated(db, &cid, false, now)?;
+            }
+        }
+        if job["status"] == "failed" {
+            let rid = string(&e, "run_id")?;
+            let mut run = get(db, "runs", &rid)?;
+            if run["mode"] == "compare" && run["status"] == "exploring" {
+                let active = db.query("SELECT id FROM executions WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('queued','running','capturing','evaluating') LIMIT 1", &[json!(rid)])?;
+                let reviewable = db.query("SELECT id FROM candidates WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('eligible','evaluating') LIMIT 1", &[json!(rid)])?;
+                if active.is_empty() && reviewable.is_empty() {
+                    run["status"] = json!("failed");
+                    save(db, "runs", &rid, &run)?;
+                    event(
+                        db,
+                        "run.failed",
+                        now,
+                        json!({"run_id":rid,"reason":"No active or independently eligible approach remains"}),
+                    )?;
+                }
+            }
+        }
     }
     if job["kind"] == "publish" && job["status"] == "failed" {
         let did = string(&job["payload"], "decision_id")?;

@@ -1,5 +1,42 @@
 use super::*;
 
+#[test]
+fn refreshed_candidate_requires_its_reserved_repository_version() {
+    let db = repo();
+    let request = ready(&db);
+    db.query("UPDATE candidates SET payload=json_set(payload,'$.refresh_expected_version',7) WHERE id='candidate-a'", &[]).unwrap();
+    assert_eq!(call(&db, request).unwrap_err().code, "HEAD_MOVED");
+}
+
+#[test]
+fn exhausted_evaluator_makes_the_candidate_terminal() {
+    let db = repo();
+    captured(&db);
+    call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
+    call(&db, json!({"op":"fail","job_id":"evaluate:candidate-a","epoch":1,"retryable":false,"error":"Evaluator exhausted"})).unwrap();
+    let candidate = crate::storage::get(&db, "candidates", "candidate-a").unwrap();
+    assert_eq!(candidate["status"], "failed");
+}
+
+#[test]
+fn all_failed_compare_agents_finish_the_run() {
+    let db = repo_with_policy(super::single_agent::policy());
+    call(&db,json!({"op":"start_run","id":"failures","intent":"Compare bounded approaches","agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}]})).unwrap();
+    for index in 1..=2 {
+        let id = format!("job:failures:agent-{index}");
+        call(&db, json!({"op":"claim","job_id":id})).unwrap();
+        call(
+            &db,
+            json!({"op":"fail","job_id":id,"epoch":1,"retryable":false,"error":"Agent failed"}),
+        )
+        .unwrap();
+    }
+    assert_eq!(
+        crate::storage::get(&db, "runs", "failures").unwrap()["status"],
+        "failed"
+    );
+}
+
 fn blocked(db: &NativeStore, conflict: bool) -> Value {
     let receipt = call(db, ready(db)).unwrap();
     let id = format!("publish:{}", receipt["id"].as_str().unwrap());

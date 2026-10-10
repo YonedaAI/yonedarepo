@@ -26,7 +26,8 @@ pub async fn refresh(
         .await?;
     }
     let parents = git(repository, &["rev-list", "--parents", "-n", "1", candidate]).await?;
-    if parents.split_whitespace().collect::<Vec<_>>() != [candidate, base] {
+    let ancestry = parents.split_whitespace().collect::<Vec<_>>();
+    if !(2..=3).contains(&ancestry.len()) || ancestry[0] != candidate || ancestry[1] != base {
         return Err(err(
             "Candidate does not have the reserved base as its parent",
         ));

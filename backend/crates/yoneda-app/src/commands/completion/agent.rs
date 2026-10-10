@@ -12,7 +12,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     if result.get("transcript").is_some() {
         e["transcript"] = json!(hash(result, "transcript", &[64])?);
     }
-    if super::super::team::finish_planner(db, &j, result, &mut run, now)? {
+    if super::super::team::finish_planner(db, j, result, &mut run, now)? {
         // A successful read-only planner freezes a validated DAG; it creates no source capture.
     } else if e["role"] == "research" {
         let context: Vec<_> = all(db, "artifacts")?
@@ -51,6 +51,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             payload["workspace"] = json!(hash(result, "workspace", &[64])?);
         }
         if let Some(resolver) = j["payload"].get("conflict_resolver") {
+            payload["conflict_resolver"] = resolver.clone();
             payload["capture_subtype"] = json!("resolve_conflict");
             payload["conflict_id"] = resolver["conflict_id"].clone();
             payload["candidate"] = resolver["candidate"].clone();
@@ -60,7 +61,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             payload["conflict_paths"] = e["conflict_paths"].clone();
             payload["team_owned_paths"] = e["conflict_paths"].clone();
         }
-        super::super::team::capture_payload(db, &j, &mut payload, now)?;
+        super::super::team::capture_payload(db, j, &mut payload, now)?;
         let capture_id = if e["team_task_revision"].as_i64().is_some_and(|r| r > 1) {
             format!("capture:{eid}:r{}", number(&e, "team_task_revision")?)
         } else {

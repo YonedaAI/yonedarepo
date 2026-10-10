@@ -15,7 +15,9 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
     result: &Value,
     now: i64,
 ) -> Result<Vec<Value>> {
-    if job["payload"]["subtype"] == "refresh_candidate" {
+    if job["payload"]["capture_subtype"] == "refresh_candidate"
+        || job["payload"]["subtype"] == "refresh_candidate"
+    {
         return refresh::capture_file_provenance(db, job, result, now);
     }
     if job["kind"] != "capture" {
