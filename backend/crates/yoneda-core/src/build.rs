@@ -21,6 +21,18 @@ pub struct BuildProfile {
     pub checks: Vec<CommandSpec>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub static_dir: Option<String>,
+    /// Immutable owner-approved tests loaded by the evaluator outside candidate source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test_bundle: Option<TestBundlePolicy>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TestBundlePolicy {
+    /// SHA-256 of canonical JSON encoding of the sorted test bundle workspace.
+    pub digest: String,
+    /// Repository paths whose candidate changes require a new owner policy.
+    #[serde(default)]
+    pub protected_paths: Vec<String>,
 }
 pub fn validate_policy(policy: &Policy) -> Result<()> {
     if policy.version.is_empty() || policy.version.len() > 128 || policy.required_checks.is_empty()
@@ -88,6 +100,37 @@ pub fn validate_policy(policy: &Policy) -> Result<()> {
     if let Some(path) = &profile.static_dir {
         validate_path(path)?;
     }
+    if let Some(bundle) = &profile.test_bundle {
+        if bundle.digest.len() != 64
+            || !bundle
+                .digest
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || bundle.protected_paths.len() > 128
+            || bundle
+                .protected_paths
+                .iter()
+                .any(|path| validate_path(path).is_err())
+            || bundle.protected_paths.iter().collect::<BTreeSet<_>>().len()
+                != bundle.protected_paths.len()
+        {
+            return Err(Error::new(
+                "INVALID_INPUT",
+                "Invalid immutable test bundle policy",
+            ));
+        }
+        if !profile.checks.iter().any(|command| {
+            command
+                .argv
+                .iter()
+                .any(|arg| arg.contains("/opt/yoneda/test-bundle/"))
+        }) {
+            return Err(Error::new(
+                "INVALID_INPUT",
+                "A bundle-backed policy must execute its immutable test runner",
+            ));
+        }
+    }
     Ok(())
 }
 /// Derive verdicts from trusted supervisor exit observations, never agent assertions.
@@ -101,6 +144,20 @@ pub fn checks_from_report(policy: &Policy, report: &Value) -> Result<Vec<Check>>
         .setup
         .iter()
         .all(|command| observation(report, "setup", &command.name) == Some(0));
+    let bundle_ok = profile.test_bundle.as_ref().is_none_or(|bundle| {
+        report["test_bundle_digest"].as_str() == Some(bundle.digest.as_str())
+            && report["protected_changes"].as_array().is_some_and(|paths| {
+                !paths.iter().any(|path| {
+                    path.as_str().is_some_and(|path| {
+                        bundle.protected_paths.iter().any(|protected| {
+                            path == protected
+                                || path.starts_with(&format!("{protected}/"))
+                                || protected.starts_with(&format!("{path}/"))
+                        })
+                    })
+                })
+            })
+    });
     Ok(profile
         .checks
         .iter()
@@ -108,13 +165,13 @@ pub fn checks_from_report(policy: &Policy, report: &Value) -> Result<Vec<Check>>
             let exit = observation(report, "commands", &command.name);
             Check {
                 name: command.name.clone(),
-                status: if setup_ok && exit == Some(0) {
+                status: if setup_ok && bundle_ok && exit == Some(0) {
                     "pass"
                 } else {
                     "fail"
                 }
                 .into(),
-                detail: format!("Clean evaluator exit: {exit:?}; setup succeeded: {setup_ok}"),
+                detail: format!("Clean evaluator exit: {exit:?}; setup succeeded: {setup_ok}; immutable policy satisfied: {bundle_ok}"),
             }
         })
         .collect())
@@ -129,4 +186,56 @@ fn observation(report: &Value, key: &str, name: &str) -> Option<i64> {
         return None;
     }
     matching[0]["output"]["exit"].as_i64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn policy() -> Policy {
+        serde_json::from_value(json!({"version":"v1","suite":"commands-v1",
+            "environment":ENVIRONMENT,"required_checks":["tests"],"build":{"checks":[
+                {"name":"tests","argv":["sh","/opt/yoneda/test-bundle/run.sh"],"timeout_seconds":10}],
+                "test_bundle":{"digest":"a".repeat(64),"protected_paths":["tests","scripts/runner.sh"]}}})).unwrap()
+    }
+
+    #[test]
+    fn old_build_profile_without_bundle_remains_valid() {
+        let old: BuildProfile = serde_json::from_value(
+            json!({"checks":[{"name":"x","argv":["true"],"timeout_seconds":1}]}),
+        )
+        .unwrap();
+        assert!(old.test_bundle.is_none());
+    }
+
+    #[test]
+    fn bundle_runner_path_must_not_depend_on_unexpanded_shell_variables() {
+        let mut policy = policy();
+        policy.build.as_mut().unwrap().checks[0].argv[1] = "$YONEDA_TEST_BUNDLE/run.sh".into();
+        assert!(validate_policy(&policy).is_err());
+    }
+
+    #[test]
+    fn zero_exit_cannot_pass_without_exact_bundle_and_clean_protected_paths() {
+        let policy = policy();
+        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
+            "test_bundle_digest":"wrong","protected_changes":[]});
+        assert_eq!(
+            checks_from_report(&policy, &report).unwrap()[0].status,
+            "fail"
+        );
+        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
+            "test_bundle_digest":"a".repeat(64),"protected_changes":["tests/run.sh"]});
+        assert_eq!(
+            checks_from_report(&policy, &report).unwrap()[0].status,
+            "fail"
+        );
+        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
+            "test_bundle_digest":"a".repeat(64),"protected_changes":["src/lib.rs"]});
+        assert_eq!(
+            checks_from_report(&policy, &report).unwrap()[0].status,
+            "pass"
+        );
+    }
 }

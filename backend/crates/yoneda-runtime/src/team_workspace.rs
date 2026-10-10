@@ -140,6 +140,87 @@ fn failure(message: &str) -> Error {
     Error::new("TEAM_SOURCE", message)
 }
 
+/// Assemble immutable exact-revision Git snapshots using the frozen task scopes.
+pub(crate) fn assemble_git(
+    base: &crate::transport::GitWorkspace,
+    expected: &[Value],
+    delivered: &[crate::transport::GitWorkspace],
+) -> Result<crate::transport::GitWorkspace> {
+    if expected.len() > 16 || expected.len() != delivered.len() {
+        return Err(failure("Missing or excessive exact Git source inputs"));
+    }
+    let mut tasks = BTreeSet::new();
+    let mut merged = base.clone();
+    for (input, files) in expected.iter().zip(delivered) {
+        if !tasks.insert(field(input, "task_id")?) {
+            return Err(failure("Duplicate captured task input"));
+        }
+        let allowed = scopes(&input["write_paths"])?;
+        for path in changed_git(base, files) {
+            if !contains(&allowed, &path) {
+                continue;
+            }
+            if let Some(file) = files.get(&path) {
+                merged.insert(path, file.clone());
+            } else {
+                merged.remove(&path);
+            }
+        }
+    }
+    validate_git_shape(&merged)?;
+    Ok(merged)
+}
+
+pub(crate) fn validate_changes_git(
+    before: &crate::transport::GitWorkspace,
+    after: &crate::transport::GitWorkspace,
+    write_paths: &Value,
+) -> Result<()> {
+    let allowed = scopes(write_paths)?;
+    if changed_git(before, after)
+        .iter()
+        .any(|path| !contains(&allowed, path))
+    {
+        return Err(Error::new(
+            "TEAM_SCOPE",
+            "Git source changes exceed frozen task write paths",
+        ));
+    }
+    validate_git_shape(after)
+}
+
+fn changed_git(
+    before: &crate::transport::GitWorkspace,
+    after: &crate::transport::GitWorkspace,
+) -> Vec<String> {
+    let paths: BTreeSet<_> = before.keys().chain(after.keys()).collect();
+    paths
+        .into_iter()
+        .filter(|path| match (before.get(*path), after.get(*path)) {
+            (Some(left), Some(right)) => {
+                left.executable != right.executable || left.bytes != right.bytes
+            }
+            (None, None) => false,
+            _ => true,
+        })
+        .cloned()
+        .collect()
+}
+
+fn validate_git_shape(files: &crate::transport::GitWorkspace) -> Result<()> {
+    for path in files.keys() {
+        validate_path(path)?;
+        let mut prefix = path.as_str();
+        while let Some((parent, _)) = prefix.rsplit_once('/') {
+            if files.contains_key(parent) {
+                return Err(failure("Git file is also a parent directory"));
+            }
+            prefix = parent;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 #[path = "tests/team_workspace.rs"]
 mod tests;

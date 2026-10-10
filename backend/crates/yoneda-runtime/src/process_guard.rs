@@ -2,6 +2,10 @@
 //! A Linux subreaper and kernel UID signal barrier contain children even after setsid().
 use yoneda_core::Result;
 pub(crate) struct AgentProcesses(bool);
+pub(crate) fn terminate_attempt() -> yoneda_core::Result<()> {
+    let mut processes = AgentProcesses::prepare()?;
+    processes.finish()
+}
 impl AgentProcesses {
     pub(crate) fn prepare() -> Result<Self> {
         #[cfg(target_os = "linux")]

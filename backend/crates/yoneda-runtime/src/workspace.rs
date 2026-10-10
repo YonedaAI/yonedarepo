@@ -3,7 +3,20 @@ use std::path::Path;
 use yoneda_core::{Result, Workspace};
 pub fn materialize(root: &Path, workspace: &Workspace) -> Result<()> {
     yoneda_core::validate_workspace(workspace)?;
+    materialize_unbounded(root, workspace)
+}
+
+pub(crate) fn materialize_unbounded(root: &Path, workspace: &Workspace) -> Result<()> {
+    if workspace.is_empty() || workspace.len() > 10_000 {
+        return Err(err("Workspace must contain 1–10,000 files"));
+    }
+    let mut total = 0usize;
     for (path, file) in workspace {
+        yoneda_core::validate_path(path)?;
+        total = total.saturating_add(file.bytes()?.len());
+        if total > 100 * 1024 * 1024 {
+            return Err(err("Workspace exceeds 100 MiB"));
+        }
         let destination = root.join(path);
         std::fs::create_dir_all(destination.parent().unwrap()).map_err(err)?;
         std::fs::write(&destination, file.bytes()?).map_err(err)?;

@@ -6,10 +6,54 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
   try {
     const { scope } = await scopeFor(env, ctx.containerId);
     const job = scope.job;
-    if (req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
+    const agentGit =
+      scope.job.payload?.workspace_transport === 'git-native-v1' && scope.job.kind === 'agent';
+    if (!agentGit && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted Git client required', 403);
     const url = new URL(req.url);
     const [_, role, ...tail] = url.pathname.split('/');
+    const gitNative = job.payload?.workspace_transport === 'git-native-v1';
+    if (gitNative) {
+      const teamIndex = role?.startsWith('team-') ? Number(role.slice(5)) : -1;
+      const teamInput =
+        Number.isInteger(teamIndex) && teamIndex >= 0 && role === `team-${teamIndex}`
+          ? job.payload.team_inputs?.[teamIndex]
+          : undefined;
+      const repository =
+        role === 'fork'
+          ? scope.fork
+          : role === 'target'
+            ? (job.payload.candidate?.revision?.repository ?? job.payload.target?.repository)
+            : role?.startsWith('team-')
+              ? teamInput?.revision?.repository
+              : (job.payload.execution?.base?.repository ?? job.payload.base?.repository);
+      if (
+        !['agent', 'capture', 'evaluate'].includes(job.kind) ||
+        !(['canonical', 'fork', 'target'].includes(role) || teamInput)
+      )
+        return error('FORBIDDEN', 'Attempt Git capability unavailable', 403);
+      const [namespace, name] = repository?.split('/') ?? [];
+      if (!name || namespace !== env.ARTIFACTS_NAMESPACE)
+        return error('FORBIDDEN', 'Attempt Git repository unavailable', 403);
+      const receive =
+        url.pathname.endsWith('/git-receive-pack') ||
+        url.searchParams.get('service') === 'git-receive-pack';
+      const writable = role === 'fork' && (job.kind === 'agent' || job.kind === 'capture');
+      if (receive && !writable) return error('FORBIDDEN', 'Read-only Git capability', 403);
+      const endpoint = tail.join('/');
+      const service =
+        endpoint === 'info/refs' && req.method === 'GET'
+          ? url.searchParams.get('service')
+          : req.method === 'POST'
+            ? endpoint
+            : null;
+      if (
+        !['git-upload-pack', 'git-receive-pack'].includes(service ?? '') ||
+        !['info/refs', 'git-upload-pack', 'git-receive-pack'].includes(endpoint)
+      )
+        return error('FORBIDDEN', 'Git endpoint not allowed', 403);
+      return proxyArtifacts(req, env, name, tail.join('/'), url.search, receive);
+    }
     if (!['capture', 'publish'].includes(job.kind) || !['canonical', 'candidate'].includes(role))
       return error('FORBIDDEN', 'Git capability unavailable', 403);
     const endpoint = tail.join('/');
@@ -37,11 +81,26 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       tail.join('/') === 'git-receive-pack' ||
       url.searchParams.get('service') === 'git-receive-pack';
     if (receive && !write) return error('FORBIDDEN', 'Read-only Git capability', 403);
-    using repo = await env.ARTIFACTS.get(name);
-    const info = await repo.info();
-    const token = await repo.createToken(receive ? 'write' : 'read', 60);
-    const remote = new URL(`${info.remote}/${tail.join('/')}`);
-    remote.search = url.search;
+    return proxyArtifacts(req, env, name, tail.join('/'), url.search, receive);
+  } catch (e: any) {
+    return error('GIT_PROXY', e.message, 409);
+  }
+};
+
+async function proxyArtifacts(
+  req: Request,
+  env: Env,
+  name: string,
+  path: string,
+  search: string,
+  receive: boolean,
+) {
+  using repo = await env.ARTIFACTS.get(name);
+  const info = await repo.info();
+  const token = await repo.createToken(receive ? 'write' : 'read', 60);
+  try {
+    const remote = new URL(`${info.remote}/${path}`);
+    remote.search = search;
     const headers = new Headers(req.headers);
     headers.delete('host');
     headers.delete('authorization');
@@ -49,10 +108,10 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     const result = await fetch(
       new Request(remote, { method: req.method, headers, body: req.body, redirect: 'manual' }),
     );
-    // Revocation after fetch headers is safe: the Artifacts request has authenticated already.
-    await repo.revokeToken(token.id);
+    if (result.status >= 300 && result.status < 400)
+      return error('GIT_PROXY', 'Unexpected upstream redirect', 502);
     return result;
-  } catch (e: any) {
-    return error('GIT_PROXY', e.message, 409);
+  } finally {
+    await repo.revokeToken(token.id);
   }
-};
+}
