@@ -1,5 +1,5 @@
 import { checkLedger } from './runtime';
-import { ledger } from './storage';
+import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
 
@@ -102,12 +102,93 @@ export async function reviewerTrialStatus(env: Env, owner: string) {
           ['queued', 'running', 'capturing', 'evaluating'].includes(e.status),
       ) ?? false;
     const terminal = ['ready', 'failed', 'cancelled', 'accepted'].includes(run?.status);
-    if (run && terminal && !active) {
-      await workspace(env, owner, { op: 'reviewer_trial_complete', id: policy.active_trial });
+    if (run && policy._active_trial_status === 'repair_pending' && (!terminal || active)) {
+      await workspace(env, owner, {
+        op: 'reviewer_trial_repair_finish',
+        id: policy.active_trial,
+        request_id: policy._active_repair_request_id,
+        fingerprint: policy._active_repair_fingerprint,
+      }).catch(() => undefined);
+    } else if (run && terminal && !active) {
+      await workspace(env, owner, {
+        op: 'reviewer_trial_complete',
+        id: policy.active_trial,
+        expected_epoch: policy.trial_epoch ?? 0,
+      });
       policy = await workspace(env, owner, { op: 'reviewer_status' });
     }
   }
+  delete policy._active_trial_status;
+  delete policy._active_repair_request_id;
+  delete policy._active_repair_fingerprint;
   return policy;
+}
+
+export async function reviewerRepairFingerprint(input: Json) {
+  const keys = [
+    'request_id',
+    'expected_commit',
+    'expected_version',
+    'run_id',
+    'expected_plan_revision',
+    'task_ids',
+    'expected_task_revisions',
+    'owner_brief',
+  ];
+  const normalized = Object.fromEntries(
+    keys.filter((key) => input[key] !== undefined).map((key) => [key, input[key]]),
+  );
+  return sha(JSON.stringify(normalized));
+}
+
+export async function finishReviewerRepair(
+  env: Env,
+  owner: string,
+  id: string,
+  requestId: string,
+  fingerprint: string,
+) {
+  return workspace(env, owner, {
+    op: 'reviewer_trial_repair_finish',
+    id,
+    request_id: requestId,
+    fingerprint,
+  });
+}
+
+export async function abortReviewerRepair(
+  env: Env,
+  owner: string,
+  id: string,
+  requestId: string,
+  fingerprint: string,
+) {
+  return workspace(env, owner, {
+    op: 'reviewer_trial_repair_abort',
+    id,
+    request_id: requestId,
+    fingerprint,
+  });
+}
+
+export async function submitReviewerRepair(
+  env: Env,
+  owner: string,
+  repo: string,
+  command: Json,
+): Promise<Json> {
+  const runId = command.run_id;
+  const requestId = command.request_id;
+  const fingerprint = await reviewerRepairFingerprint(command);
+  try {
+    const result = await ledger(env, repo, command);
+    await finishReviewerRepair(env, owner, runId, requestId, fingerprint);
+    return result;
+  } catch (failure) {
+    if ((failure as Error & { code?: string }).code)
+      await abortReviewerRepair(env, owner, runId, requestId, fingerprint).catch(() => undefined);
+    throw failure;
+  }
 }
 
 export async function startTrial(env: Env, owner: string, requestId: string) {

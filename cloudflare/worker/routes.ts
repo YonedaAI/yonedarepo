@@ -15,6 +15,7 @@ import { ownerCommandInput, repositoryOperationAllowed } from './repository-comm
 import { deleteRepository } from './repository-deletion';
 import { resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
+import { submitReviewerRepair } from './reviewer-trial';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
@@ -249,12 +250,16 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
         checked.add(id);
       }
     }
-    const value = await ledger(env, repo, {
+    const command = {
       ...input,
       op: action,
       _workspace: principal.workspace,
       ...(action === 'init' ? { workspace: principal.workspace } : {}),
-    });
+    };
+    const value =
+      action === 'repair_team' && principal.reviewer
+        ? await submitReviewerRepair(env, principal.workspace, repo, command)
+        : await ledger(env, repo, command);
     if (action === 'cancel_run')
       for (const stop of value.stop) {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);
