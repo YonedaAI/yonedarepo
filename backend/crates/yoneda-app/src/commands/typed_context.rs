@@ -53,7 +53,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 Some(job) => string(&job["payload"]["execution"], "id")?,
                 None => "owner".into(),
             };
-            let value = json!({"id":record.id,"kind":record.kind.as_str(),"label":record.statement,"author":author,"recorded_at":now,"data":{"statement":record.statement,"purpose":record.purpose,"intent_id":record.intent_id,"links":record.links,"authority":"assertion","epoch":attempt.as_ref().map(|job| &job["epoch"])}});
+            let value = json!({"id":record.id,"kind":record.kind.as_str(),"label":record.statement,"author":author,"recorded_at":now,"data":{"statement":record.statement,"purpose":record.purpose,"intent_id":record.intent_id,"links":record.links,"file_paths":record.file_paths,"file_path_authority":"assertion_pending_capture_match","authority":"assertion","epoch":attempt.as_ref().map(|job| &job["epoch"])}});
             create(db, "nodes", &record.id, &value)?;
             edge(
                 db,

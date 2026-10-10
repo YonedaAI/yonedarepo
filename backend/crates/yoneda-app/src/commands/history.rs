@@ -1,17 +1,23 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+
+#[path = "provenance.rs"]
+pub(super) mod provenance;
+#[allow(unused_imports)] // Lead integration hooks called from capture_completion and accept.
+pub(super) use provenance::capture_file_provenance;
+#[allow(unused_imports)]
+pub(super) use provenance::link_file_provenance_to_decision;
+#[allow(unused_imports)]
+pub(super) use provenance::link_file_provenance_to_publication;
+
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "why" => {
             let path = string(&c, "path")?;
             yoneda_core::validate_path(&path)?;
             let commit = hash(&c, "commit", &[40, 64])?;
-            let id = format!("source:{commit}:{path}");
-            if get(db, "nodes", &id).is_err() {
-                return Ok(json!({"coverage":"unknown","nodes":[],"edges":[]}));
-            }
-            neighborhood(db, &id, c["depth"].as_u64().unwrap_or(7).min(8) as usize)
+            provenance::why(db, &commit, &path)
         }
         "graph" => neighborhood(
             db,
@@ -63,13 +69,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
     }
 }
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
 fn neighborhood<S: SqlStore>(db: &S, id: &str, depth: usize) -> Result<Value> {
     get(db, "nodes", id)?;
-    let mut discovered = BTreeSet::from([id.to_owned()]);
-    let mut queue = VecDeque::from([(id.to_owned(), 0)]);
+    let mut discovered = std::collections::BTreeSet::from([id.to_owned()]);
+    let mut queue = std::collections::VecDeque::from([(id.to_owned(), 0)]);
     let mut nodes = Vec::new();
-    let mut edges = BTreeMap::new();
+    let mut edges = std::collections::BTreeMap::new();
     let mut truncated = false;
     while let Some((id, d)) = queue.pop_front() {
         nodes.push(get(db, "nodes", &id)?);

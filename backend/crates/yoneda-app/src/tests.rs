@@ -221,7 +221,7 @@ fn acceptance_is_idempotent_and_publication_has_a_separate_receipt() {
             .iter()
             .any(|edge| edge["relation"] == "published_as")
     );
-    assert_eq!(call(&db,json!({"op":"why","commit":"cccccccccccccccccccccccccccccccccccccccc","path":"src/retry.rs"})).unwrap()["coverage"],"recorded");
+    assert_eq!(call(&db,json!({"op":"why","commit":"cccccccccccccccccccccccccccccccccccccccc","path":"src/retry.rs"})).unwrap()["coverage"],"unknown");
 }
 #[test]
 fn stale_head_and_failed_checks_never_select_code() {

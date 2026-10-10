@@ -65,6 +65,9 @@ pub struct ContextInput {
     pub intent_id: String,
     #[serde(default)]
     pub links: Vec<ContextLink>,
+    /// Agent supplied source references remain assertions until matched to trusted capture receipts.
+    #[serde(default)]
+    pub file_paths: Vec<String>,
 }
 impl ContextInput {
     pub fn validate(&self) -> Result<()> {
@@ -101,6 +104,43 @@ impl ContextInput {
                 "Context has invalid or excessive references",
             ));
         }
+        if self.file_paths.len() > 32 {
+            return Err(Error::new(
+                "INVALID_INPUT",
+                "Context has too many file path assertions",
+            ));
+        }
+        for path in &self.file_paths {
+            crate::validate_path(path)?;
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn input(file_paths: Vec<String>) -> ContextInput {
+        ContextInput {
+            id: "context:file-review".into(),
+            kind: ContextKind::Finding,
+            statement: "This source path is relevant".into(),
+            purpose: "Keep the reference as an assertion until capture".into(),
+            intent_id: "intent:run".into(),
+            links: Vec::new(),
+            file_paths,
+        }
+    }
+
+    #[test]
+    fn optional_file_paths_are_bounded_and_path_validated_assertions() {
+        assert!(input(vec!["src/lib.rs".into()]).validate().is_ok());
+        assert!(input(vec!["../secrets".into()]).validate().is_err());
+        assert!(
+            input((0..33).map(|i| format!("src/{i}.rs")).collect())
+                .validate()
+                .is_err()
+        );
     }
 }

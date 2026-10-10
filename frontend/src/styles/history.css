@@ -29,6 +29,45 @@
   grid-column: 1 / -1;
   margin: 0;
 }
+
+.paged-run-history,
+.conflict-status,
+.file-provenance {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line, #d8dde5);
+  border-radius: 0.75rem;
+  background: var(--surface, #fff);
+}
+.history-heading,
+.conflict-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.paged-run-history ol,
+.file-provenance ol {
+  display: grid;
+  gap: 0.5rem;
+  padding-inline-start: 1.5rem;
+}
+.run-history-detail details,
+.file-provenance details {
+  margin-block: 0.75rem;
+}
+.source-diff-history {
+  overflow: auto;
+  max-height: 24rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  background: var(--code-surface, #f3f5f8);
+}
+.conflict-actions label {
+  display: grid;
+  gap: 0.25rem;
+}
 .error-banner,
 .publication-banner {
   padding: 14px 36px;

@@ -5,6 +5,7 @@ import type { Graph, Snapshot } from '../../lib/types';
 import { Exploration } from '../exploration/Exploration';
 import { SiteLink } from '../exploration/SiteLink';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
+import { ConflictStatusPanel } from '../history/ConflictStatusPanel';
 import { HistoryTools } from '../history/HistoryTools';
 import type { WorkspacePanel } from './WorkspacePanels';
 
@@ -57,6 +58,14 @@ export function RepositoryWorkspace({
           . Selected <code>{short(repo.head_commit)}</code> · Published{' '}
           <code>{short(repo.published_commit)}</code>
         </div>
+      )}
+      {(repo.status === 'blocked' || view === 'history') && (
+        <ConflictStatusPanel
+          repository={repo}
+          reviewer={reviewer}
+          onChange={onChange}
+          onError={onError}
+        />
       )}
       {view === 'runs' && (
         <Exploration

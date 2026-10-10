@@ -35,6 +35,7 @@ export function RunDetail({
   onRestart,
   onCancel,
   onRetry,
+  onRepairTask,
   onAccept,
   onProviders,
   onContext,
@@ -48,6 +49,7 @@ export function RunDetail({
   onRestart: () => void;
   onCancel: () => void;
   onRetry: (task: Record<string, any>) => void;
+  onRepairTask: (task: Record<string, any>) => void;
   onAccept: (
     candidate: string,
     rationale: string,
@@ -173,6 +175,7 @@ export function RunDetail({
                   busy={busy}
                   onProviders={reviewer ? undefined : onProviders}
                   onRetry={onRetry}
+                  onRepair={onRepairTask}
                 />
               ) : (
                 <ExecutionHierarchy
