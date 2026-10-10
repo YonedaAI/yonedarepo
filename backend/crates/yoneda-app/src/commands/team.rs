@@ -7,6 +7,7 @@ mod evidence;
 mod inputs;
 mod planning;
 mod proposals;
+mod repair;
 mod retry;
 mod scheduling;
 mod tools;
@@ -46,6 +47,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         planning::propose(db, &c, now)
     } else if c["op"] == "retry_team_task" {
         retry::retry(db, &c, now)
+    } else if c["op"] == "repair_team" {
+        repair::repair(db, &c, now)
     } else {
         tools::handle(db, &c, now)
     }

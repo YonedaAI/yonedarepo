@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_TEAM_TASKS: usize = 16;
-pub const MAX_TEAM_EXECUTIONS: usize = MAX_TEAM_TASKS + 2;
+/// Leaves room for bounded owner-approved resolver executions alongside the frozen DAG.
+pub const MAX_TEAM_EXECUTIONS: usize = MAX_TEAM_TASKS + 4;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
