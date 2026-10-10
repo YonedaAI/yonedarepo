@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 
-const origin = 'https://yonedarepo-dev.mlong-f01.workers.dev';
+const origin = 'https://yonedarepo.com';
 function keyPrompt() {
   if (!process.stdin.isTTY) throw new Error('Run in an interactive terminal to enter your reviewer key privately.');
   return new Promise((resolve, reject) => {

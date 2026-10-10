@@ -6,6 +6,7 @@ import {
   elapsedTime,
   eventExecution,
   eventInRun,
+  executionElapsed,
 } from './activityView';
 
 const snapshot = {
@@ -75,4 +76,14 @@ describe('ledger activity attribution', () => {
     expect(elapsedTime(3660000)).toBe('1h 1m');
     expect(elapsedTime(-1000)).toBe('0s');
   });
+});
+
+it('stops terminal agent elapsed time at the recorded failure, including retries', () => {
+  const execution = { ...snapshot.executions[0], status: 'failed', started_at: 1000 };
+  const failed = { ...event('job.failed', { id: 'job:run:agent' }), at: 6000 };
+  expect(executionElapsed(execution, [failed], snapshot, 'run', 90000)).toBe(5000);
+  expect(executionElapsed(execution, [], snapshot, 'run', 90000)).toBeNull();
+  expect(
+    executionElapsed({ ...execution, status: 'running' }, [failed], snapshot, 'run', 90000),
+  ).toBe(89000);
 });
