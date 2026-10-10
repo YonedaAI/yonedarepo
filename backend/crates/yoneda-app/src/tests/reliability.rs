@@ -19,6 +19,20 @@ fn exhausted_evaluator_makes_the_candidate_terminal() {
 }
 
 #[test]
+fn failed_external_evaluation_finishes_run_without_a_mode_field() {
+    let db = repo();
+    captured(&db);
+    db.query("UPDATE runs SET payload=json_set(json_remove(payload,'$.mode'),'$.external',json('true')) WHERE id='run-one'", &[]).unwrap();
+    db.query("UPDATE executions SET payload=json_set(payload,'$.status','cancelled') WHERE id<>'run-one:codex-minimal'",&[]).unwrap();
+    call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
+    call(&db,json!({"op":"fail","job_id":"evaluate:candidate-a","epoch":1,"retryable":false,"error":"Controlled external evaluator failure"})).unwrap();
+    assert_eq!(
+        crate::storage::get(&db, "runs", "run-one").unwrap()["status"],
+        "failed"
+    );
+}
+
+#[test]
 fn all_failed_compare_agents_finish_the_run() {
     let db = repo_with_policy(super::single_agent::policy());
     call(&db,json!({"op":"start_run","id":"failures","intent":"Compare bounded approaches","agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}]})).unwrap();

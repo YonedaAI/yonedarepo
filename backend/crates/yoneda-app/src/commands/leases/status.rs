@@ -74,7 +74,8 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
         if job["status"] == "failed" {
             let rid = string(&e, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
-            if run["mode"] == "compare" && run["status"] == "exploring" {
+            if (run["mode"] == "compare" || run["external"] == true) && run["status"] == "exploring"
+            {
                 let active = db.query("SELECT id FROM executions WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('queued','running','capturing','evaluating') LIMIT 1", &[json!(rid)])?;
                 let reviewable = db.query("SELECT id FROM candidates WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('eligible','evaluating') LIMIT 1", &[json!(rid)])?;
                 if active.is_empty() && reviewable.is_empty() {
