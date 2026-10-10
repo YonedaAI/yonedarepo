@@ -70,7 +70,11 @@ fn archive_bundle<S: SqlStore>(db: &S, run_id: &str) -> Result<Value> {
     bundle["nodes"] = json!(nodes);
     bundle["edges"] = json!(edges);
     bundle["graph_paged"] = json!(false);
-    bundle["watermark"] = json!(high);
+    if let Some(record) = bundle.as_object_mut() {
+        for key in ["repository", "archive", "capabilities", "seq", "watermark"] {
+            record.remove(key);
+        }
+    }
     let execution_ids = bundle["executions"]
         .as_array()
         .into_iter()
@@ -95,9 +99,11 @@ fn prepare<S: SqlStore>(db: &S, run_id: &str, now: i64) -> Result<Value> {
         if job["status"] == "committed" {
             return Ok(json!({"job":job,"archived":true}));
         }
-        let bundle = archive_bundle(db, run_id)?;
-        verify_bundle(&bundle, &job["digest"])?;
-        return Ok(json!({"job":job,"bundle":bundle}));
+        let bundle_json = job["bundle_json"]
+            .as_str()
+            .ok_or_else(|| bad("Prepared archive is missing its immutable bundle"))?;
+        verify_bundle(bundle_json, &job["digest"])?;
+        return prepared_response(&job, bundle_json);
     }
     let run = get(db, "runs", run_id)?;
     let created = run["created_at"].as_i64().unwrap_or(i64::MAX);
@@ -112,16 +118,25 @@ fn prepare<S: SqlStore>(db: &S, run_id: &str, now: i64) -> Result<Value> {
         ));
     }
     let bundle = archive_bundle(db, run_id)?;
-    let digest = digest(&bundle)?;
+    let bundle_json = serde_json::to_string(&bundle).map_err(|e| bad(&e.to_string()))?;
+    let digest = digest(&bundle_json);
     let repository_id = string(&repo(db)?, "id")?;
     let object_key = format!("history/{repository_id}/{run_id}.json");
-    let job = json!({"id":id,"run_id":run_id,"status":"prepared","digest":digest,"object_key":object_key,"created_at":now});
+    let job = json!({"id":id,"run_id":run_id,"status":"prepared","digest":digest,"object_key":object_key,"created_at":now,"bundle_json":bundle_json});
     create(db, "archive_jobs", &id, &job)?;
-    Ok(json!({"job":job,"bundle":bundle}))
+    prepared_response(&job, &bundle_json)
 }
 
-fn verify_bundle(bundle: &Value, expected: &Value) -> Result<()> {
-    if digest(bundle)? != expected.as_str().unwrap_or_default() {
+fn prepared_response(job: &Value, bundle_json: &str) -> Result<Value> {
+    let mut public_job = job.clone();
+    if let Some(object) = public_job.as_object_mut() {
+        object.remove("bundle_json");
+    }
+    Ok(json!({"job":public_job,"bundle_json":bundle_json}))
+}
+
+fn verify_bundle(bundle_json: &str, expected: &Value) -> Result<()> {
+    if digest(bundle_json) != expected.as_str().unwrap_or_default() {
         return Err(Error::new(
             "ARCHIVE_DIGEST_MISMATCH",
             "Prepared history changed before archive acknowledgment",
@@ -130,10 +145,8 @@ fn verify_bundle(bundle: &Value, expected: &Value) -> Result<()> {
     Ok(())
 }
 
-fn digest(bundle: &Value) -> Result<String> {
-    Ok(yoneda_core::digest(
-        &serde_json::to_vec(bundle).map_err(|e| bad(&e.to_string()))?,
-    ))
+fn digest(bundle_json: &str) -> String {
+    yoneda_core::digest(bundle_json.as_bytes())
 }
 
 fn compact_object(value: &mut Value, keep: &[&str]) {
@@ -160,7 +173,7 @@ fn compact_job(mut job: Value) -> Value {
     job
 }
 
-fn compact<S: SqlStore>(db: &S, run_id: &str) -> Result<usize> {
+fn compact<S: SqlStore>(db: &S, run_id: &str, bundle: &Value) -> Result<usize> {
     let jobs = run_jobs(db, run_id)?;
     for job in &jobs {
         if job["status"] == "queued" || job["status"] == "running" {
@@ -172,13 +185,15 @@ fn compact<S: SqlStore>(db: &S, run_id: &str) -> Result<usize> {
         let id = string(job, "id")?;
         save(db, "jobs", &id, &compact_job(job.clone()))?;
     }
-    let executions = db.query(
-        "SELECT id FROM executions WHERE json_extract(payload,'$.run_id')=?",
-        &[json!(run_id)],
-    )?;
+    let archived_log_sequences = bundle["execution_logs"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|log| log["seq"].as_i64())
+        .collect::<std::collections::BTreeSet<_>>();
     let mut pruned = 0;
-    for execution in executions {
-        let rows = db.query("UPDATE execution_logs SET data='{}',data_pruned=1 WHERE execution_id=? AND data_pruned=0 RETURNING seq", &[execution["id"].clone()])?;
+    for seq in archived_log_sequences {
+        let rows = db.query("UPDATE execution_logs SET data='{}',data_pruned=1 WHERE seq=? AND data_pruned=0 RETURNING seq", &[json!(seq)])?;
         pruned += rows.len();
     }
     Ok(pruned)
@@ -199,8 +214,18 @@ fn commit<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     if job["status"] == "committed" {
         return Ok(job["receipt"].clone());
     }
+    let bundle_json = job["bundle_json"]
+        .as_str()
+        .ok_or_else(|| bad("Prepared archive is missing its immutable bundle"))?;
+    if digest(bundle_json) != supplied {
+        return Err(Error::new(
+            "ARCHIVE_DIGEST_MISMATCH",
+            "Prepared archive bytes no longer match their ledger digest",
+        ));
+    }
     let run_id = string(&job, "run_id")?;
     ensure_quiescent(db, &run_id)?;
+    let bundle: Value = serde_json::from_str(bundle_json).map_err(|e| bad(&e.to_string()))?;
     let receipt_id = string(c, "receipt_id")?;
     let receipt = json!({"id":receipt_id,"run_id":run_id,"digest":supplied,"object_key":job["object_key"],"committed_at":now});
     let index =
@@ -209,11 +234,13 @@ fn commit<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "INSERT INTO archive_index(run_id,payload) VALUES(?,?)",
         &[json!(run_id), json!(index.to_string())],
     )?;
-    let pruned_logs = compact(db, &run_id)?;
+    let pruned_logs = compact(db, &run_id, &bundle)?;
     job["status"] = json!("committed");
     job["receipt"] = receipt.clone();
     job["committed_at"] = json!(now);
     job["compacted_logs"] = json!(pruned_logs);
+    job.as_object_mut()
+        .map(|object| object.remove("bundle_json"));
     save(db, "archive_jobs", &id, &job)?;
     event(db, "history.archived", now, receipt.clone())?;
     Ok(receipt)
