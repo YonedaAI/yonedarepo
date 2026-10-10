@@ -1,7 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
-pub(super) fn handle<S: SqlStore>(db: &S, c: Value, _now: i64) -> Result<Value> {
+pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "outbox" => {
             let rows = db.query(
@@ -18,6 +18,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, _now: i64) -> Result<Value> 
             )?;
             Ok(json!({"ok":true}))
         }
+        "outbox_prune" => prune_outbox_payloads(db, now),
         "events" => {
             let rows = db.query(
                 "SELECT seq,kind,at,data FROM events WHERE seq>? ORDER BY seq LIMIT 200",
