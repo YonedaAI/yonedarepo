@@ -22,7 +22,7 @@ Use a project-specific test profile: the starter HTML smoke check does not prove
 
 ## Current verification
 
-Production rollout is complete: Worker version `1e3ea8dd87e044f1ad3d5f7d51401820` runs code revision `2d3d8cd`, app version 24, with all seven health checks passing. The pinned Linux runtime image passed 71 tests at `sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197c`. A root-UID Git dubious-ownership failure was reproduced RED and fixed GREEN in `f92`; the fix is in the deployed image.
+Production rollout is complete: Worker version `7a159115-15af-4353-8132-da744dfdae52` runs code revision `68fb72e`, app version 24, with all seven health checks passing. The pinned Linux runtime image passed 71 tests at `sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6`. A root-UID Git dubious-ownership failure was reproduced RED and fixed GREEN in `f92aa6f`; the fix is in the deployed image.
 
 The current local gate passed: 278 Rust tests (181 app, 16 core, 65 runtime, 1 Cloudflare and 15 xtask), 286 Workers tests across 56 files, 55 frontend tests across 13 files, and 11 Node tests. Formatting, Clippy, TypeScript, Wasm and production builds also passed.
 
