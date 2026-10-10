@@ -266,7 +266,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7},{"version":8},{"version":9},{"version":10},{"version":11}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7},{"version":8},{"version":9},{"version":10},{"version":11},{"version":12}])
             .as_array()
             .unwrap()
             .clone()
