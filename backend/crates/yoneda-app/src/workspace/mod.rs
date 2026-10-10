@@ -26,7 +26,8 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             | "reviewer_status"
             | "reviewer_revoke"
             | "reviewer_trial"
-            | "reviewer_trial_complete" => reviewer::handle(&db, &command, now),
+            | "reviewer_trial_complete"
+            | "reviewer_trial_reopen" => reviewer::handle(&db, &command, now),
             "signup" | "login" | "session" | "logout" | "recover" => {
                 accounts::handle(&db, &command, now)
             }

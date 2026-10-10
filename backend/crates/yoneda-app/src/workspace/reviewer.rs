@@ -124,6 +124,45 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             Ok(t)
         }
+        "reviewer_trial_reopen" => {
+            let mut p = require(db, now)?;
+            let id = string(c, "id")?;
+            if p["active_trial"]
+                .as_str()
+                .is_some_and(|active| active != id)
+            {
+                return Err(Error::new(
+                    "TRIAL_ACTIVE",
+                    "A reviewer trial is already running",
+                ));
+            }
+            let key = format!("trial:{id}");
+            let mut t = get(db, TABLE, &key)?;
+            if t["repo_id"] != p["repo_id"] {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "Trial belongs to another reviewer repository",
+                ));
+            }
+            if p["active_trial"] == id && t["status"] == "active" {
+                return Ok(
+                    json!({"id":id,"repo_id":p["repo_id"],"active_trial":id,"status":"reopened"}),
+                );
+            }
+            if t["status"] != "complete" {
+                return Err(Error::new(
+                    "INVALID_STATE",
+                    "Only a completed reviewer trial can be reopened",
+                ));
+            }
+            t["status"] = json!("active");
+            t["reopened_at"] = json!(now);
+            p["active_trial"] = json!(id);
+            put(db, &key, &t)?;
+            put(db, "reviewer_policy", &p)?;
+            audit(db, "reviewer.trial_reopened", now, json!({"id":id}))?;
+            Ok(json!({"id":id,"repo_id":p["repo_id"],"active_trial":id,"status":"reopened"}))
+        }
         _ => Err(bad("Unknown reviewer operation")),
     }
 }

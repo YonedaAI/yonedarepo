@@ -4,7 +4,7 @@ import { scheduleProject } from './project-provisioning';
 import { reviewerPolicy } from './reviewer-policy';
 import { resumeTrial, reviewerTrialStatus, startTrial } from './reviewer-trial';
 import { ledger, sha } from './storage';
-import type { Env, Principal } from './types';
+import type { Env, Json, Principal } from './types';
 import { providerCredentials, seal } from './vault';
 import { workspace } from './workspace';
 
@@ -102,17 +102,34 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
   if (path.startsWith('/api/reviewer')) return null;
   if (req.method === 'GET') return null;
   const parts = path.split('/').filter(Boolean);
+  if (parts[1] === 'repos' && parts[3] === 'repair_team') {
+    if (req.method !== 'POST' || parts[2] !== policy.repo_id)
+      return error('FORBIDDEN', 'Reviewer repair is limited to its trial repository', 403);
+    let input: Json;
+    try {
+      input = await readJson(req.clone(), 256 * 1024);
+    } catch {
+      return error('INVALID_INPUT', 'A valid repair request is required');
+    }
+    const runId = input.run_id;
+    if (typeof runId !== 'string' || !runId || runId.length > 200)
+      return error('INVALID_INPUT', 'A reviewer trial run ID is required');
+    const detail = await ledger(env, policy.repo_id, {
+      op: 'run_detail',
+      run_id: runId,
+      _workspace: principal.workspace,
+    });
+    if (detail.repository?.id !== policy.repo_id || detail.run?.id !== runId)
+      return error('FORBIDDEN', 'Repair must target an existing reviewer trial run', 403);
+    await workspace(env, principal.workspace, { op: 'reviewer_trial_reopen', id: runId });
+    return null;
+  }
   if (
     parts[1] === 'repos' &&
     parts[2] === policy.repo_id &&
-    [
-      'accept',
-      'cancel_run',
-      'resync_repository',
-      'refresh_candidate',
-      'resolve_conflict',
-      'repair_team',
-    ].includes(parts[3])
+    ['accept', 'cancel_run', 'resync_repository', 'refresh_candidate', 'resolve_conflict'].includes(
+      parts[3],
+    )
   )
     return null;
   return error('FORBIDDEN', 'Reviewer access permits funded trials and sandbox review only', 403);
