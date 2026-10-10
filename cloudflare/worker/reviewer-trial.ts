@@ -35,7 +35,7 @@ export function trialRequest(id: string) {
       {
         provider: 'codex',
         model: 'gpt-5.6-luna',
-        max_requests: 24,
+        max_requests: 48,
         max_output_tokens: 4096,
         max_execution_ms: 600000,
         spend_limit_microusd: 200000,
