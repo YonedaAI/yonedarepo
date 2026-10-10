@@ -172,6 +172,9 @@ fn clean_refresh_terminates_capture_and_freezes_fresh_evaluation_with_two_parent
         "d".repeat(64)
     );
     assert!(candidate["evaluation"].is_null());
+    let inventory = status(&db, &json!({"op":"conflict_status"})).unwrap();
+    assert_eq!(inventory["conflicts"][0]["status"], "evaluating");
+    assert_eq!(inventory["conflicts"][0]["merge_status"], "clean");
     let mut repository = repo(&db).unwrap();
     repository["head_commit"] = json!("1".repeat(40));
     repository["version"] = json!(2);
