@@ -129,4 +129,11 @@ it('does not fail a running job when launch succeeds but queue acknowledgment is
   expect(outcome).toEqual({ acked: false, retries: [20], launchRequested: true });
   const status = await ledger(bindings, fixture.repo, { op: 'job_status', id: captureId });
   expect(status).toMatchObject({ status: 'running', epoch: 1, attempt: 1, progress: null });
+  const redelivery = await queue.dispatchOneForTest(
+    { v: 1, kind: 'capture', repo_id: fixture.repo, job_id: captureId },
+    false,
+  );
+  expect(redelivery).toEqual({ acked: true, retries: [], launchRequested: false });
+  expect(await ledger(bindings, fixture.repo, { op: 'job_status', id: captureId }))
+    .toMatchObject({ status: 'running', epoch: 1, attempt: 1 });
 });

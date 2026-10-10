@@ -13,6 +13,7 @@ export default class TestEntrypoint extends YonedaEntrypoint {
   }
 
   async dispatchOneForTest(body: Envelope, loseAck = false) {
+    this.launchRequestedForTest = false;
     const result = { acked: false, retries: [] as number[] };
     await this.queue({ messages: [{
       body,
