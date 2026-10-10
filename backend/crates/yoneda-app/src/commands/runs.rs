@@ -101,6 +101,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 run["agents"] = c["agents"].clone();
             }
+            if let Some(transport) = c
+                .get("workspace_transport")
+                .or_else(|| r.get("workspace_transport"))
+            {
+                if transport != "git-native-v1" {
+                    return Err(bad("Unsupported workspace transport"));
+                }
+                run["workspace_transport"] = transport.clone();
+            }
             if automatic {
                 run["team_planning"] = json!("automatic");
                 run["execution_count"] = json!(1);

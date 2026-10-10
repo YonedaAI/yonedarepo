@@ -1,6 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod agent;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "finish" => finish(db, &c, now),
@@ -53,55 +54,14 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let id = string(&j, "id")?;
     let result = &c["result"];
     match j["kind"].as_str().unwrap_or_default() {
-        "agent" => {
-            let eid = string(&j["payload"]["execution"], "id")?;
-            let mut e = get(db, "executions", &eid)?;
-            let run_id = string(&e, "run_id")?;
-            let mut run = get(db, "runs", &run_id)?;
-            e["status"] = json!("completed");
-            e["finished_at"] = json!(now);
-            if result.get("transcript").is_some() {
-                e["transcript"] = json!(hash(result, "transcript", &[64])?);
-            }
-            if super::team::finish_planner(db, &j, result, &mut run, now)? {
-                // A successful read-only planner freezes a validated DAG; it creates no source capture.
-            } else if e["role"] == "research" {
-                let context: Vec<_> = all(db, "artifacts")?
-                    .iter()
-                    .filter(|a| a["producer"] == eid)
-                    .map(|a| a["id"].clone())
-                    .collect();
-                if context.is_empty() {
-                    return Err(Error::new(
-                        "MISSING_CONTEXT",
-                        "Research must publish an artifact through MCP",
-                    ));
-                }
-                for (h, s) in [
-                    ("codex", "minimal"),
-                    ("claude", "defensive"),
-                    ("codex", "maintainable"),
-                ] {
-                    execution(db, &run, h, s, "coding", json!(context), now)?;
-                }
-                run["status"] = json!("exploring");
+        "agent" => agent::complete(db, &j, result, now)?,
+        "capture" => {
+            if j["payload"]["capture_subtype"] == "resolve_conflict" {
+                super::conflicts::complete_resolver_capture(db, &j, result, now)?;
             } else {
-                let workspace = hash(result, "workspace", &[64])?;
-                let mut payload =
-                    json!({"execution":e,"run_id":run_id,"base":run["base"],"workspace":workspace});
-                super::team::capture_payload(db, &j, &mut payload, now)?;
-                let capture_id = if e["team_task_revision"].as_i64().is_some_and(|r| r > 1) {
-                    format!("capture:{eid}:r{}", number(&e, "team_task_revision")?)
-                } else {
-                    format!("capture:{eid}")
-                };
-                job(db, &capture_id, "capture", now, payload)?;
-                e["status"] = json!("capturing");
+                super::capture_completion::complete(db, &j, result, now)?;
             }
-            save(db, "runs", &run_id, &run)?;
-            save_execution(db, &e, now)?;
         }
-        "capture" => super::capture_completion::complete(db, &j, result, now)?,
         "evaluate" => {
             let candidate_id = string(&j["payload"]["candidate"], "id")?;
             let mut candidate = get(db, "candidates", &candidate_id)?;
@@ -182,6 +142,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 run["status"] = json!("ready");
             }
             save(db, "runs", &rid, &run)?;
+            super::conflicts::resolver_evaluated(db, &candidate_id, validation.is_ok(), now)?;
             super::team::reflect(
                 db,
                 &e,

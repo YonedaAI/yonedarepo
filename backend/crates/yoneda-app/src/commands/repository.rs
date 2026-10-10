@@ -23,6 +23,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .and_then(Value::as_str)
                 .unwrap_or("_admin");
             let mut r = json!({"id":id,"name":name,"workspace":workspace,"remote":c["remote"],"head_commit":commit,"published_commit":commit,"version":0,"policy":policy,"pending":null,"status":"ready"});
+            if let Some(transport) = c.get("workspace_transport") {
+                if transport != "git-native-v1" {
+                    return Err(bad("Unsupported workspace transport"));
+                }
+                r["workspace_transport"] = transport.clone();
+            }
             super::study::initialize(&c, &mut r)?;
             create(db, "repository", "repo", &r)?;
             node(db, &id, "repository", &name, "owner", now, r.clone())?;

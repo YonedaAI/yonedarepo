@@ -1,5 +1,5 @@
 //! Internal job construction keeps queue wait and approved execution time separate.
-use super::{SqlStore, bad, create, outbox};
+use super::{SqlStore, bad, create, get, outbox};
 use serde_json::{Value, json};
 use yoneda_core::Result;
 
@@ -8,8 +8,23 @@ pub(crate) fn job<S: SqlStore>(
     id: &str,
     kind: &str,
     now: i64,
-    payload: Value,
+    mut payload: Value,
 ) -> Result<()> {
+    if ["agent", "capture", "evaluate"].contains(&kind) {
+        let run_id = payload["execution"]["run_id"]
+            .as_str()
+            .or_else(|| payload["run_id"].as_str())
+            .or_else(|| payload["candidate"]["run_id"].as_str());
+        let run = match run_id.map(|id| get(db, "runs", id)) {
+            Some(Ok(run)) => Some(run),
+            Some(Err(error)) if error.code == "NOT_FOUND" => None,
+            Some(Err(error)) => return Err(error),
+            None => None,
+        };
+        if let Some(transport) = run.as_ref().and_then(|r| r.get("workspace_transport")) {
+            payload["workspace_transport"] = transport.clone();
+        }
+    }
     // The twenty-minute dispatch window must not truncate approved agent time.
     let execution_ms = if kind == "agent" {
         payload["run"]["model_budgets"]

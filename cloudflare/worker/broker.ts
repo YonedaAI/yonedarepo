@@ -1,11 +1,10 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { injectPublicationAckLoss } from './acceptance-faults';
 import { source } from './artifacts';
-import { CANDIDATE_DIFF_LIMIT } from './evidence';
+import { captureResult } from './capture-result';
 import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
-import { captureFileProvenance } from './provenance';
 import { scopeFor } from './scope';
 import { ledger, object, readObject } from './storage';
 import { teamAttemptSource } from './team-source';
@@ -148,53 +147,7 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         const stored = await object(env, JSON.stringify(body));
         command = { op: 'verify_finish', ...identity, report: body, evidence: stored.digest };
       }
-      if (job.kind === 'capture') {
-        if (!scope.fork || body.revision?.repository !== scope.fork)
-          return error('FORBIDDEN', 'Captured repository mismatch', 403);
-        using captured = await env.ARTIFACTS.get(scope.fork.split('/')[1]);
-        const commit = await captured.readCommit(body.revision.commit);
-        if (
-          !commit ||
-          commit.treeHash !== body.tree ||
-          commit.parents.length !== 1 ||
-          commit.parents[0] !== job.payload.base.commit
-        )
-          return error('INVALID_CAPTURE', 'Captured commit identity or parent mismatch', 409);
-        if (typeof body.diff !== 'string')
-          return error('INVALID_CAPTURE', 'Trusted capture must supply the full diff', 409);
-        // Only the container-derived capture capability can create this binding, after
-        // checking the freshly pushed commit. Never accept a caller-provided R2 digest.
-        const stored = await object(env, body.diff, CANDIDATE_DIFF_LIMIT);
-        const fileProvenance = await captureFileProvenance(
-          captured,
-          job.payload.base.commit,
-          body.revision.commit,
-        );
-        const paths = [
-          ...new Set(
-            fileProvenance.flatMap((file) =>
-              [file.path, file.old_path].filter((path): path is string => typeof path === 'string'),
-            ),
-          ),
-        ];
-        const {
-          diff: _diff,
-          diff_digest: _claimedDigest,
-          file_provenance: _claimedFiles,
-          paths: _claimedPaths,
-          ...metadata
-        } = body;
-        command = {
-          op: 'finish',
-          ...identity,
-          result: {
-            ...metadata,
-            paths,
-            file_provenance: fileProvenance,
-            diff_digest: stored.digest,
-          },
-        };
-      }
+      if (job.kind === 'capture') command = await captureResult(env, scope, body);
       await attemptLog(env, scope, 'execution.completion_received');
       const result = await ledger(env, scope.repo_id, command);
       await stub.scheduleStop();

@@ -248,7 +248,7 @@ fn migration_eight_upgrades_v7_and_repeats_without_changing_existing_runs() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        8
+        12
     );
     assert_eq!(snapshot(&db)["runs"][0]["mode"], "collaborate");
 }

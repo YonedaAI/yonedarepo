@@ -6,6 +6,22 @@ mod inventory;
 mod refresh;
 mod resolver;
 mod support;
+pub(super) fn complete_resolver_capture<S: SqlStore>(
+    db: &S,
+    job: &Value,
+    result: &Value,
+    now: i64,
+) -> Result<Value> {
+    refresh::complete_resolver_capture(db, job, result, now)
+}
+pub(super) fn resolver_evaluated<S: SqlStore>(
+    db: &S,
+    candidate: &str,
+    eligible: bool,
+    now: i64,
+) -> Result<()> {
+    refresh::resolver_evaluated(db, candidate, eligible, now)
+}
 #[cfg(test)]
 #[path = "tests/conflicts.rs"]
 mod tests;

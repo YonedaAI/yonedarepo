@@ -5,6 +5,7 @@ mod acceptance;
 mod archive;
 mod capture_completion;
 mod completion;
+mod conflicts;
 mod context_access;
 mod context_evidence;
 mod context_sessions;
@@ -79,6 +80,10 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
             Ok(r)
         }
         "resync_repository" | "defer_job" => recovery::handle(db, &c, now),
+        "conflict_status"
+        | "refresh_candidate"
+        | "resolve_conflict"
+        | "conflict_refresh_complete" => conflicts::handle(db, &c, now),
         "deletion_status" => deletion::status(db),
         "retry_deletion_cleanup" => deletion::retry_cleanup(db, &c),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
@@ -104,7 +109,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "team_plan_propose"
         | "task_handoff"
         | "integration_request"
-        | "retry_team_task" => team::handle(db, c, now),
+        | "retry_team_task"
+        | "repair_team" => team::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),
         "context_usage" => context_usage::read(db, c, now),

@@ -7,6 +7,7 @@ import { workspace } from './workspace';
 export function trialRequest(id: string) {
   return {
     id,
+    workspace_transport: 'git-native-v1',
     mode: 'collaborate',
     intent:
       'Build an accessible San Jose cycling trail guide together, with trail data and a bilingual English/Spanish interface.',
