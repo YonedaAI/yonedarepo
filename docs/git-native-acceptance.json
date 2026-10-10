@@ -1,0 +1,426 @@
+{
+  "schema": 1,
+  "kind": "hosted_paid_git_native_team_run",
+  "origin": "https://yonedarepo.com",
+  "repo_id": "reviewer-2d70999ae1805e4bcef9b4ab",
+  "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+  "checked_at": "2026-10-10T21:35:58.748Z",
+  "source_revision": "3e590227a41a7692696aead49955b62b87fd089a",
+  "workspace_transport": "git-native-v1",
+  "status": "ready",
+  "owner_decision": "pending",
+  "publication": "not selected or published",
+  "execution_overlap_ms": 43099,
+  "executions": [
+    {
+      "id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+      "model": "claude-sonnet-5-5",
+      "provider": "claude",
+      "epoch": 1,
+      "started_at": 1791667865112,
+      "finished_at": 1791667915825,
+      "status": "completed",
+      "task_revision": 1
+    },
+    {
+      "id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate",
+      "model": "gpt-5.6-luna",
+      "provider": "codex",
+      "epoch": 1,
+      "started_at": 1791667965501,
+      "finished_at": 1791668044729,
+      "status": "completed",
+      "task_revision": 1
+    },
+    {
+      "id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+      "model": "gpt-5.6-luna",
+      "provider": "codex",
+      "epoch": 1,
+      "started_at": 1791667872726,
+      "finished_at": 1791667948100,
+      "status": "completed",
+      "task_revision": 1
+    }
+  ],
+  "model_budgets": [
+    {
+      "charged_microusd": 82168,
+      "max_execution_ms": 600000,
+      "max_output_tokens": 4096,
+      "max_requests": 24,
+      "model": "gpt-5.6-luna",
+      "pricing": {
+        "input_microusd_per_million": 250000,
+        "output_microusd_per_million": 1200000,
+        "source": "owner-approved conservative rates"
+      },
+      "provider": "codex",
+      "requests": 19,
+      "spend_limit_microusd": 200000
+    },
+    {
+      "charged_microusd": 1110916,
+      "max_execution_ms": 600000,
+      "max_output_tokens": 4096,
+      "max_requests": 24,
+      "model": "claude-sonnet-5-5",
+      "pricing": {
+        "input_microusd_per_million": 4000000,
+        "output_microusd_per_million": 10000000,
+        "source": "owner-approved conservative rates"
+      },
+      "provider": "claude",
+      "requests": 6,
+      "spend_limit_microusd": 4800000
+    }
+  ],
+  "candidates": [
+    {
+      "id": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+      "revision": {
+        "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+        "repository": "yoneda-dev/attempt-1d97babd18b7b6e9746c764988a25e09"
+      },
+      "status": "eligible",
+      "paths": [
+        "public/index.html",
+        "public/js/trails.js"
+      ],
+      "tree": "3c653ee0775371fcf70f9d96767377dc87dc6a93",
+      "integration_digest": "51b7ddf2edba640d1af1965cc21f0585b006ca1a78f2b9945a6dded41cd40d8c",
+      "integration_manifest": {
+        "base": {
+          "commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+          "repository": "yoneda-dev/reviewer-2d70999ae1805e4bcef9b4ab"
+        },
+        "inputs": [
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+            "capture_paths": [
+              "public/index.html"
+            ],
+            "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+            "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1",
+            "paths": [
+              "public/index.html"
+            ],
+            "revision": {
+              "commit": "fdd60621e91722d3ef813b194412623b0d1fe082",
+              "repository": "yoneda-dev/attempt-4891178a599ae72aede797f625b6cdd4"
+            },
+            "task_id": "bilingual-ui",
+            "task_revision": 1,
+            "tree": "3ef25fd41497249d4618857bb3f46c669260953a",
+            "write_paths": [
+              "public/index.html"
+            ]
+          },
+          {
+            "capture_epoch": 1,
+            "capture_job": "capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+            "capture_paths": [
+              "public/js/trails.js"
+            ],
+            "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+            "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1",
+            "paths": [
+              "public/js/trails.js"
+            ],
+            "revision": {
+              "commit": "e8dfe7f8f161f0dc4bf1c87523a41b53285d4b19",
+              "repository": "yoneda-dev/attempt-316c70de51184701f270736199c98cb4"
+            },
+            "task_id": "trail-data",
+            "task_revision": 1,
+            "tree": "a6f0c279329038c8118bfb52f3acc2466d07c84e",
+            "write_paths": [
+              "public/js/trails.js"
+            ]
+          }
+        ],
+        "plan_revision": 1,
+        "version": 1
+      },
+      "diff_digest": "a7ab36cf1a02fa171b6a0109b6d5b537a04a70ee5dda4cb3852d31c9ade3e558"
+    }
+  ],
+  "evaluations": [
+    {
+      "id": "evaluation:evaluate:candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1:1",
+      "candidate": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+      "revision": {
+        "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+        "repository": "yoneda-dev/attempt-1d97babd18b7b6e9746c764988a25e09"
+      },
+      "policy": "reviewer-v2",
+      "suite": "commands-v1",
+      "environment": "linux-node24-rust1.94-v1",
+      "checks": [
+        {
+          "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+          "name": "site",
+          "status": "pass"
+        },
+        {
+          "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+          "name": "trail-module",
+          "status": "pass"
+        },
+        {
+          "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+          "name": "bilingual",
+          "status": "pass"
+        },
+        {
+          "detail": "Clean evaluator exit: Some(0); setup succeeded: true; immutable policy satisfied: true",
+          "name": "registry-egress",
+          "status": "pass"
+        },
+        {
+          "detail": "Evaluator captured bounded regular static files from this revision",
+          "name": "static_assets",
+          "status": "pass"
+        }
+      ],
+      "evidence": "53a5ecd1ac6cdc1bd696aff2ff2302cefbca880fbc4806d3135b1c440a26b7ae"
+    }
+  ],
+  "captured_handoffs": [
+    {
+      "assertions": [
+        {
+          "authority": "assertion",
+          "created_at": 1791667908709,
+          "epoch": 1,
+          "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+          "id": "handoff-assertion:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1:af42e344110de0b28bd9562bac861dd0544b1bcce35572fcfa08fb9a10b59d7f",
+          "interface_contract": "Consumes window.Trails.trails/filter({query}) with id,name,lengthMiles,difficulty from js/trails.js. Inline CSS/JS only; no data collection.",
+          "references": [
+            "context:dc8c6a6f-0a3e-4827-813a-03907f73348e"
+          ],
+          "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+          "summary": "Refined public/index.html: fixed label/field layout, moved live region to a result count, improved badge/muted contrast, added EN/ES count text. Keyboard-accessible search, difficulty select and language button.",
+          "task_id": "bilingual-ui"
+        }
+      ],
+      "authority": "captured_revision",
+      "created_at": 1791667928525,
+      "epoch": 1,
+      "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+      "id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1",
+      "output": {
+        "capture_epoch": 1,
+        "capture_job": "capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+        "capture_paths": [
+          "public/index.html"
+        ],
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+        "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1",
+        "paths": [
+          "public/index.html"
+        ],
+        "revision": {
+          "commit": "fdd60621e91722d3ef813b194412623b0d1fe082",
+          "repository": "yoneda-dev/attempt-4891178a599ae72aede797f625b6cdd4"
+        },
+        "task_id": "bilingual-ui",
+        "task_revision": 1,
+        "tree": "3ef25fd41497249d4618857bb3f46c669260953a",
+        "write_paths": [
+          "public/index.html"
+        ]
+      },
+      "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+      "task_id": "bilingual-ui"
+    },
+    {
+      "assertions": [
+        {
+          "authority": "assertion",
+          "created_at": 1791667936843,
+          "epoch": 1,
+          "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+          "id": "handoff-assertion:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1:670042aef0e6238495fe74fb79c2233de622f2d9d344251efb3ae1fe8451fa78",
+          "interface_contract": "UMD module: in browsers, window.Trails = { trails, filter }; in CommonJS, module.exports is the same object. trails is an array of objects with id, name, lengthMiles, difficulty. filter({query}) accepts an optional query, matches case-insensitively against id/name/difficulty, and returns a new array; empty or missing query returns all trails.",
+          "references": [
+            "intent:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+            "context:6dfcc9aa-d7da-4bd0-b07e-d7e0153bf3f7"
+          ],
+          "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+          "summary": "Implemented and pushed the dependency-free illustrative San Jose trail data/filter module in public/js/trails.js. Commit ef6b31c is on origin/main. node public/js/trails.js, git diff --check, and browser-like VM contract checks passed.",
+          "task_id": "trail-data"
+        }
+      ],
+      "authority": "captured_revision",
+      "created_at": 1791667962988,
+      "epoch": 1,
+      "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+      "id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1",
+      "output": {
+        "capture_epoch": 1,
+        "capture_job": "capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+        "capture_paths": [
+          "public/js/trails.js"
+        ],
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+        "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1",
+        "paths": [
+          "public/js/trails.js"
+        ],
+        "revision": {
+          "commit": "e8dfe7f8f161f0dc4bf1c87523a41b53285d4b19",
+          "repository": "yoneda-dev/attempt-316c70de51184701f270736199c98cb4"
+        },
+        "task_id": "trail-data",
+        "task_revision": 1,
+        "tree": "a6f0c279329038c8118bfb52f3acc2466d07c84e",
+        "write_paths": [
+          "public/js/trails.js"
+        ]
+      },
+      "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+      "task_id": "trail-data"
+    }
+  ],
+  "file_provenance": [
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1:0",
+        "new_blob": "9af1816317e6113ffd0120e6511734203a6fb8eb",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791668067545,
+        "revision": {
+          "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+          "repository": "yoneda-dev/attempt-1d97babd18b7b6e9746c764988a25e09"
+        },
+        "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+        "subject_id": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+        "task_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate",
+        "task_revision": 1
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791668067545
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+        "capture_epoch": 1,
+        "capture_kind": "team_integration",
+        "change": "modify",
+        "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate",
+        "handoff_id": null,
+        "id": "file-receipt:candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1:1",
+        "new_blob": "43ec5393f0b65c0ba610e78ee9f903f829fc9caa",
+        "old_blob": "69b632cbf428ac6a4143cd28e2f5ee2f54d42a35",
+        "old_path": null,
+        "path": "public/js/trails.js",
+        "recorded_at": 1791668067545,
+        "revision": {
+          "commit": "005af7274ee1811a7d81dfd0de80f13ca790fd29",
+          "repository": "yoneda-dev/attempt-1d97babd18b7b6e9746c764988a25e09"
+        },
+        "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+        "subject_id": "candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1",
+        "task_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate",
+        "task_revision": 1
+      },
+      "id": "file-receipt:candidate:capture:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:integrate:1:1",
+      "kind": "file_provenance",
+      "label": "modify public/js/trails.js",
+      "recorded_at": 1791668067545
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": null,
+        "capture_epoch": 1,
+        "capture_kind": "task_handoff",
+        "change": "modify",
+        "commit": "fdd60621e91722d3ef813b194412623b0d1fe082",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+        "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1",
+        "id": "file-receipt:handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1:0",
+        "new_blob": "9af1816317e6113ffd0120e6511734203a6fb8eb",
+        "old_blob": "0a66efcb686289b834470fe3bc0f9906cb37fdc4",
+        "old_path": null,
+        "path": "public/index.html",
+        "recorded_at": 1791667928525,
+        "revision": {
+          "commit": "fdd60621e91722d3ef813b194412623b0d1fe082",
+          "repository": "yoneda-dev/attempt-4891178a599ae72aede797f625b6cdd4"
+        },
+        "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+        "subject_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1",
+        "task_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui",
+        "task_revision": 1
+      },
+      "id": "file-receipt:handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:bilingual-ui:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/index.html",
+      "recorded_at": 1791667928525
+    },
+    {
+      "author": "platform_capture",
+      "data": {
+        "authority": "trusted_capture",
+        "base_commit": "3bbe6332556bdcdc72945dfc590845bc3e071057",
+        "candidate": null,
+        "capture_epoch": 1,
+        "capture_kind": "task_handoff",
+        "change": "modify",
+        "commit": "e8dfe7f8f161f0dc4bf1c87523a41b53285d4b19",
+        "execution_epoch": 1,
+        "execution_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+        "handoff_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1",
+        "id": "file-receipt:handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1:0",
+        "new_blob": "43ec5393f0b65c0ba610e78ee9f903f829fc9caa",
+        "old_blob": "69b632cbf428ac6a4143cd28e2f5ee2f54d42a35",
+        "old_path": null,
+        "path": "public/js/trails.js",
+        "recorded_at": 1791667962988,
+        "revision": {
+          "commit": "e8dfe7f8f161f0dc4bf1c87523a41b53285d4b19",
+          "repository": "yoneda-dev/attempt-316c70de51184701f270736199c98cb4"
+        },
+        "run_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509",
+        "subject_id": "handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1",
+        "task_id": "reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data",
+        "task_revision": 1
+      },
+      "id": "file-receipt:handoff:reviewer-a2f7b197-db84-4cd5-bd01-2537c0272509:task:trail-data:1:0",
+      "kind": "file_provenance",
+      "label": "modify public/js/trails.js",
+      "recorded_at": 1791667962988
+    }
+  ],
+  "failure_events": [],
+  "scope": "Actual agents, Git capture and independent checks; development verification, not independent human reviewer acceptance",
+  "worker_version": "1665f965-2ee8-43ca-8bbf-de82ce1d5e25",
+  "runtime_version": 24,
+  "runtime_image": "registry.cloudflare.com/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-runtime-gitownership@sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6"
+}
