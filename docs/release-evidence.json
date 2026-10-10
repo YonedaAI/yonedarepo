@@ -434,5 +434,33 @@
     "exported_snapshot_native_tests": 71,
     "disposable_mcp_grant_revoked": true,
     "revoked_mcp_http_status": 401
+  },
+  "october_10_source_gate": {
+    "implementation_revision": "68fb72e",
+    "command": "cargo xtask check",
+    "result": "passed",
+    "rust_tests": 278,
+    "rust_components": {
+      "xtask": 15,
+      "yoneda_app": 181,
+      "yoneda_cloudflare": 1,
+      "yoneda_core": 16,
+      "yoneda_runtime_macos": 65
+    },
+    "workers_tests": 286,
+    "workers_files": 56,
+    "frontend_tests": 55,
+    "frontend_files": 13,
+    "node_tests": 11,
+    "linux_runtime_image_tests": 71,
+    "linux_runtime_image_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
+    "includes": [
+      "fmt",
+      "clippy warnings denied",
+      "Wasm build",
+      "TypeScript",
+      "Biome",
+      "frontend production build"
+    ]
   }
 }
