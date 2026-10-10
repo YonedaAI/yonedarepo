@@ -113,7 +113,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
 
 /// Return only diagnostic fields needed to inspect a job without exposing its full payload.
 fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
-    let id = string(command, "job_id")?;
+    let id = string(command, "id")?;
     let job = get(db, "jobs", &id)?;
     let payload = &job["payload"];
     let execution = &payload["execution"];
@@ -186,7 +186,11 @@ mod job_status_tests {
         )
         .unwrap();
 
-        let status = job_status(&db, &json!({"job_id":"capture:execution-1:r2"})).unwrap();
+        let status = crate::execute(
+            &db,
+            json!({"op":"job_status","id":"capture:execution-1:r2"}),
+        )
+        .unwrap();
         assert_eq!(status["kind"], "capture");
         assert_eq!(status["epoch"], 2);
         assert_eq!(status["attempt"], 2);
@@ -213,7 +217,7 @@ mod job_status_tests {
         )
         .unwrap();
         assert_eq!(
-            job_status(&db, &json!({"job_id":"capture:other-repo"}))
+            crate::execute(&db, json!({"op":"job_status","id":"capture:other-repo"}))
                 .unwrap_err()
                 .code,
             "NOT_FOUND"

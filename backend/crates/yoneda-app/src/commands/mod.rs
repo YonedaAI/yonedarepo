@@ -97,7 +97,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "runs_page"
         | "run_detail"
         | "run_graph_page"
-        | "candidate_record" => repository::handle(db, c, now),
+        | "candidate_record"
+        | "job_status" => repository::handle(db, c, now),
         "archive_candidates"
         | "archive_prepare"
         | "archive_commit"
