@@ -111,7 +111,11 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
     if run.get("model_budgets").is_some() {
         execution["budget"] = json!({"provider":provider,"model":agent["model"]});
     }
-    create(db, "executions", &id, &execution)?;
+    if get(db, "executions", &id).is_ok() {
+        save_execution(db, &execution, now)?;
+    } else {
+        create(db, "executions", &id, &execution)?;
+    }
     node(
         db,
         &id,
@@ -173,7 +177,47 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         payload["manifest_record"] = get(db, "nodes", &manifest_id)?;
         payload["integration_manifest"] = manifest;
     }
-    job(db, &format!("job:{id}"), "agent", now, payload.clone())?;
+    let jid = format!("job:{id}");
+    if let Ok(mut existing) = get(db, "jobs", &jid) {
+        if existing["status"] == "queued" || existing["status"] == "running" {
+            return Err(Error::new(
+                "AGENT_BUSY",
+                "A prior task attempt is still active",
+            ));
+        }
+        let epoch = number(&existing, "epoch")?
+            .checked_add(1)
+            .ok_or_else(|| bad("Attempt epoch overflow"))?;
+        let dispatch = now
+            .checked_add(1_200_000)
+            .ok_or_else(|| bad("Dispatch deadline overflow"))?;
+        let duration = super::super::model_budgets::for_job(db, &json!({"payload":payload}))?
+            .map_or(600_000, |b| b.max_execution_ms);
+        let deadline = dispatch
+            .checked_add(duration)
+            .and_then(|value| value.checked_add(120_000))
+            .ok_or_else(|| bad("Attempt deadline overflow"))?;
+        existing["status"] = json!("queued");
+        existing["attempt"] = json!(0);
+        existing["epoch"] = json!(epoch);
+        existing["lease_until"] = json!(0);
+        existing["dispatch_deadline"] = json!(dispatch);
+        existing["deadline"] = json!(deadline);
+        existing["attempt_deadline"] = Value::Null;
+        existing["runtime_started_at"] = Value::Null;
+        existing["error"] = Value::Null;
+        existing["result"] = Value::Null;
+        existing["payload"] = payload.clone();
+        save(db, "jobs", &jid, &existing)?;
+        outbox(
+            db,
+            &format!("dispatch:{jid}:repair:{}", task["revision"]),
+            "agent",
+            json!({"job_id":jid}),
+        )?;
+    } else {
+        job(db, &jid, "agent", now, payload.clone())?;
+    }
     task["status"] = json!("queued");
     task["execution_id"] = json!(id);
     task["inputs"] = payload["team_inputs"].clone();
