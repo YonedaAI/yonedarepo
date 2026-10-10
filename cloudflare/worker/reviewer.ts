@@ -105,7 +105,14 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
   if (
     parts[1] === 'repos' &&
     parts[2] === policy.repo_id &&
-    ['accept', 'cancel_run', 'resync_repository'].includes(parts[3])
+    [
+      'accept',
+      'cancel_run',
+      'resync_repository',
+      'refresh_candidate',
+      'resolve_conflict',
+      'repair_team',
+    ].includes(parts[3])
   )
     return null;
   return error('FORBIDDEN', 'Reviewer access permits funded trials and sandbox review only', 403);

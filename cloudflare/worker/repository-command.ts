@@ -28,6 +28,8 @@ const writes = new Set([
   'configure_context_study',
   'retry_team_task',
   'repair_team',
+  'refresh_candidate',
+  'resolve_conflict',
 ]);
 
 /** Trusted capture, archive commits and remote observations are never generic owner operations. */
