@@ -1,4 +1,5 @@
 import { providerDefinition } from '../../shared/providers';
+import { claudeBudgetRates } from './claude-pricing';
 import { prepareGeminiRequest } from './gemini-policy';
 import { mimoUpstream } from './mimo-routing';
 import { outputCeiling } from './model-budget';
@@ -82,7 +83,26 @@ export function prepareModelRequest(
       // The proxy sends no beta headers. Claude Code 2.1.293 requests the
       // beta-only "updates" display even in adaptive mode; use stable summaries.
       if (body.thinking?.display === 'updates') body.thinking.display = 'summarized';
-      if (body.thinking?.type === 'enabled') {
+      if (model === 'claude-sonnet-5-5') {
+        if (['any', 'tool'].includes(body.tool_choice?.type))
+          throw new Error('Forced tool selection is unsupported by Sonnet 5.5');
+        if (body.thinking?.type === 'enabled') {
+          const budget = body.thinking.budget_tokens;
+          if (!Number.isSafeInteger(budget) || budget < 1024)
+            throw new Error('Manual thinking requires an integer budget of at least 1024 tokens');
+          body.thinking = {
+            type: 'adaptive',
+            ...(body.thinking.display ? { display: body.thinking.display } : {}),
+          };
+        } else if (body.thinking?.type === 'disabled') {
+          body.thinking = { type: 'between_tools' };
+        }
+        if (
+          body.thinking?.type === 'between_tools' &&
+          ['xhigh', 'max'].includes(body.output_config?.effort)
+        )
+          throw new Error('Sonnet 5.5 between_tools requires low, medium or high effort');
+      } else if (body.thinking?.type === 'enabled') {
         const budget = body.thinking.budget_tokens;
         if (!Number.isSafeInteger(budget) || budget < 1024)
           throw new Error('Manual thinking requires an integer budget of at least 1024 tokens');
@@ -101,12 +121,13 @@ export function prepareModelRequest(
   }
   const bytes = new TextEncoder().encode(JSON.stringify(body)).length;
   if (bytes > 256 * 1024) throw new Error('Model input exceeds 256 KiB testing limit');
-  // Sonnet 4.6: up to $6/M input including one-hour cache creation; output ceiling
-  // uses $30/M, twice the standard price. One token per UTF-8 byte plus overhead
-  // deliberately over-reserves. No server tools, images, premium tier or residency.
+  // One token per UTF-8 byte plus protocol overhead deliberately over-reserves.
+  // No server tools, images, premium tier or residency. Model-specific input
+  // ceilings cover one-hour cache creation; historical rates remain unchanged.
+  const rates = provider === 'claude' ? claudeBudgetRates(model) : null;
   const reservation =
-    provider === 'claude' && !path.endsWith('/count_tokens')
-      ? (bytes + 8192) * 6 + body.max_tokens * 30
+    rates && !path.endsWith('/count_tokens')
+      ? (bytes + 8192) * rates.input + body.max_tokens * rates.output
       : 0;
   return {
     provider,

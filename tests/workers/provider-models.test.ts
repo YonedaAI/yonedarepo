@@ -9,9 +9,11 @@ it('keeps the cost-sensitive default selected while preserving saved custom mode
   expect(modelOptions('codex', saved, 'another-custom-model').at(-1)?.id).toBe('another-custom-model');
 });
 
-it('offers Claude Sonnet only even when historical saved connections used other models', () => {
+it('defaults to the cheaper Sonnet while preserving explicit legacy support and rejecting arbitrary models', () => {
   const saved = [{ provider: 'claude', model: 'unsupported-model' }];
   expect(modelOptions('claude', saved, saved[0].model).map((option) => option.id)).toEqual([
+    'claude-sonnet-5-5',
     'claude-sonnet-4-6',
   ]);
+  expect(defaults.claude).toBe('claude-sonnet-5-5');
 });

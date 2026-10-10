@@ -25,8 +25,8 @@ export function trialRequest(id: string) {
       },
       {
         provider: 'claude',
-        model: 'claude-sonnet-4-6',
-        connection: 'reviewer-claude',
+        model: 'claude-sonnet-5-5',
+        connection: 'reviewer-claude-sonnet-5-5',
         strategy: 'Bilingual accessible interface',
       },
     ],
@@ -46,14 +46,14 @@ export function trialRequest(id: string) {
       },
       {
         provider: 'claude',
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5-5',
         max_requests: 24,
         max_output_tokens: 4096,
         max_execution_ms: 600000,
         spend_limit_microusd: 4800000,
         pricing: {
-          input_microusd_per_million: 6000000,
-          output_microusd_per_million: 30000000,
+          input_microusd_per_million: 4000000,
+          output_microusd_per_million: 10000000,
           source: 'owner-approved conservative rates',
         },
       },

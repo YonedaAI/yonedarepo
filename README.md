@@ -126,7 +126,7 @@ cargo xtask seed-template --url http://localhost:8787
 
 Local DO/D1/R2 state is isolated under `.local/deploy/my-yoneda/state`; the local sites origin is `http://localhost:8788`. Local authentication/vault variables are private and separate from deployed credentials. Artifacts still uses your remote namespace and Cloudflare authentication. `cargo xtask check` works without provider keys or remote inference.
 
-Use low cost MiMo/ZAI models for testing. Codex defaults to `gpt-5.6-luna`, Claude to `claude-sonnet-4-6` under the durable $20 workspace allowance, and Gemini to `gemini-3.8-flash`. These are recorded model choices; no more expensive fallback is selected silently. Gemini's CLI/proxy path has local integration coverage; paid Gemini completion must be verified with a funded user key.
+Use low cost MiMo/ZAI models for testing. Codex defaults to `gpt-5.6-luna`, Claude to `claude-sonnet-5-5` under the durable $20 workspace allowance, and Gemini to `gemini-3.8-flash`. These are recorded model choices; no more expensive fallback is selected silently. Gemini's CLI/proxy path has local integration coverage; paid Gemini completion must be verified with a funded user key.
 
 To connect a local agent instead, use **Connect local agent** and follow the scoped MCP/Git instructions shown there and in [the MCP guide](docs/remote-mcp.md). After publication, **Source history** traces the exact revision to its intent, alternatives and decision. **Context graph** is the browsable memory; future agents retrieve it through MCP.
 

@@ -13,8 +13,8 @@ afterEach(async () => {
   await reset();
 });
 
-function job(ceiling = 4096, provider = 'claude'): Json {
-  const model = provider === 'claude' ? 'claude-sonnet-4-6' : 'test-model';
+function job(ceiling = 4096, provider = 'claude', configuredModel?: string): Json {
+  const model = configuredModel ?? (provider === 'claude' ? 'claude-sonnet-4-6' : 'test-model');
   return {
     kind: 'agent',
     model,
@@ -24,6 +24,26 @@ function job(ceiling = 4096, provider = 'claude'): Json {
     },
   };
 }
+
+it.each([
+  [{ type: 'enabled', budget_tokens: 10000, display: 'updates' }, { type: 'adaptive', display: 'summarized' }],
+  [{ type: 'disabled' }, { type: 'between_tools' }],
+  [{ type: 'adaptive', display: 'updates' }, { type: 'adaptive', display: 'summarized' }],
+])('adapts legacy CLI thinking to Sonnet 5.5 without changing signed history: %j', (thinking, expected) => {
+  const messages = [{ role: 'assistant', content: [{ type: 'thinking', thinking: 'Synthetic note', signature: 'unchanged-test-signature' }] }];
+  const input = { max_tokens: 99999, thinking, messages, output_config: { effort: 'low' } };
+  const { body, reservation } = prepareModelRequest(job(4096, 'claude', 'claude-sonnet-5-5'), 'claude', '/v1/messages', input);
+  expect(body.thinking).toEqual(expected);
+  expect(body.messages).toEqual(messages);
+  expect(body.output_config).toEqual({ effort: 'low' });
+  expect(body.max_tokens).toBe(4096);
+  expect(reservation).toBe((new TextEncoder().encode(JSON.stringify(body)).length + 8192) * 4 + 4096 * 10);
+  expect(input.thinking).toEqual(thinking);
+});
+
+it('rejects unsupported forced tool selection for Sonnet 5.5 before provider spending', () => {
+  expect(() => prepareModelRequest(job(4096, 'claude', 'claude-sonnet-5-5'), 'claude', '/v1/messages', { tool_choice: { type: 'any' } })).toThrow('Forced tool');
+});
 
 it.each([4096, 10000])('keeps manual thinking budget %s below the clamped output cap', (budget) => {
   // Without the interleaved-thinking beta header Anthropic requires

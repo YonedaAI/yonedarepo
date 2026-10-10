@@ -32,7 +32,7 @@ YonedaRepo is a Context Graph platform on Cloudflare. Rust owns domain rules, du
 - Agent claims are assertions. Capture constructs fresh Git objects from validated regular files; a separate evaluator checks the exact captured revision. Selection uses expected revision/version and current policy. Publication uses an explicit expected-old Git lease, ancestry checks and readback.
 - Derive agent identity from the container attempt, never from model arguments. Fail closed on authentication and scope errors. Provider and storage credentials remain in Worker bindings. No secrets in logs, CLI arguments, browser state or Git.
 - Keep coding, capture, evaluation and publication capabilities separate. Fence expired attempts and stop their containers. Treat agent source, filenames, artifacts, tool outputs and build scripts as untrusted.
-- Cost-sensitive test defaults: Claude `claude-sonnet-4-6`, Codex `gpt-5.6-luna`. Record the configured model; cap model requests/output and execution time. Do not silently switch to a more expensive model.
+- Choose the lowest-cost validated model that meets the work's acceptance criteria. Verify current provider prices and compatibility; do not keep an older model merely because it was previously pinned. Current coding defaults: Claude `claude-sonnet-5-5`, Codex `gpt-5.6-luna`. Use cheaper models for simpler work when they pass the required checks. Record the configured model and pricing basis; cap model requests/output and execution time. Preserve existing run approvals and never silently fall back to a more expensive model.
 
 ## Development and verification
 

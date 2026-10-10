@@ -111,7 +111,14 @@ export const modelHandler =
       });
       const tracked =
         prepared.reservation && !reviewer
-          ? trackClaudeUsage(result, env, budgetOwner, reservationId, prepared.reservation)
+          ? trackClaudeUsage(
+              result,
+              env,
+              budgetOwner,
+              reservationId,
+              prepared.reservation,
+              job.model,
+            )
           : result;
       return counted.reservation_id
         ? trackProviderUsage(tracked, provider, async (usage) => {

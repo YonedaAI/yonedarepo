@@ -66,8 +66,13 @@ export async function settingsRoute(
     /[\r\n]/.test(body.key)
   )
     return error('INVALID_INPUT', 'Enter a provider API key');
-  if (provider === 'claude' && body.model !== 'claude-sonnet-4-6')
-    return error('INVALID_INPUT', 'Claude testing uses claude-sonnet-4-6');
+  if (
+    provider === 'claude' &&
+    !providers
+      .find((entry) => entry.id === provider)
+      ?.models.some((model) => model.id === body.model)
+  )
+    return error('INVALID_INPUT', 'Choose a supported Claude model');
   let routing: MiMoRouting | undefined;
   try {
     routing = mimoRouting(provider, body.routing);
