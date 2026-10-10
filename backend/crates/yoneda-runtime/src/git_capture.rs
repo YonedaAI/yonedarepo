@@ -9,6 +9,8 @@ use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::Result;
 
+const REVIEW_DIFF_LIMIT: usize = 24 * 1024 * 1024;
+
 pub(crate) async fn capture_fresh(
     root: &Path,
     canonical: &str,
@@ -68,21 +70,63 @@ pub(crate) async fn capture_fresh(
         .filter(|path| !path.is_empty())
         .map(|path| String::from_utf8(path.to_vec()).map_err(err))
         .collect::<Result<Vec<_>>>()?;
-    let stat = git_raw(
+    let attributes = binary_review_attributes(staging.path(), files)?;
+    let patch = git_raw(
         staging.path(),
-        &["diff", "--stat", "--no-ext-diff", base, &commit],
+        &[
+            "diff",
+            "--binary",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-renames",
+            "--no-color",
+            base,
+            &commit,
+        ],
     )
     .await?;
-    let diff = String::from_utf8_lossy(&stat)
-        .chars()
-        .take(65_536)
-        .collect::<String>();
+    if patch.len() > REVIEW_DIFF_LIMIT {
+        return Err(err("Capture diff exceeds the 24 MiB review limit"));
+    }
+    let diff =
+        String::from_utf8(patch).map_err(|_| err("Git produced a non-UTF-8 review patch"))?;
+    if attributes {
+        std::fs::remove_file(staging.path().join(".git/info/attributes")).map_err(err)?;
+    }
     if root.exists() {
         std::fs::remove_dir_all(root).map_err(err)?;
     }
     std::fs::create_dir_all(root).map_err(err)?;
     copy_tree(staging.path(), root)?;
     Ok(json!({"commit":commit,"tree":tree,"paths":paths,"diff":diff}))
+}
+
+fn binary_review_attributes(root: &Path, files: &crate::transport::GitWorkspace) -> Result<bool> {
+    let mut attributes = String::new();
+    for (path, file) in files {
+        if std::str::from_utf8(&file.bytes).is_ok() {
+            continue;
+        }
+        for (index, character) in path.chars().enumerate() {
+            if matches!(character, '*' | '?' | '[' | ']' | ' ')
+                || (index == 0 && matches!(character, '#' | '!'))
+            {
+                attributes.push('\\');
+            }
+            if character == '\n' || character == '\r' || character == '\t' {
+                return Err(err("Cannot safely encode a non-UTF-8 review path"));
+            }
+            attributes.push(character);
+        }
+        attributes.push_str(" -diff\n");
+    }
+    if attributes.is_empty() {
+        return Ok(false);
+    }
+    let info = root.join(".git/info");
+    std::fs::create_dir_all(&info).map_err(err)?;
+    std::fs::write(info.join("attributes"), attributes).map_err(err)?;
+    Ok(true)
 }
 
 pub(crate) async fn seed_workspace(
