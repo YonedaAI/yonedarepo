@@ -82,8 +82,8 @@ async function main() {
   console.log('Three real fixture pipelines submitted to the isolated two-container deployment; no inference started.');
   const candidates = await until(async () => {
     const details = await Promise.all(access.contributions.map(receipt => readRun(api, access.repo_id, receipt.attempt.execution.run_id)));
-    const candidates = details.flatMap(detail => detail.candidates);
-    if (candidates.some(candidate => candidate.status === 'rejected') || details.some(detail => ['failed', 'cancelled'].includes(detail.runs[0].status)))
+    const candidates = details.flatMap(detail => detail.candidates).filter(candidate => !candidate.refresh_of && !candidate.conflict_id);
+    if (candidates.some(candidate => ['rejected', 'failed'].includes(candidate.status)) || details.some(detail => ['failed', 'cancelled'].includes(detail.runs[0].status)))
       throw new Error('A controlled fixture pipeline failed; inspect its recorded events.');
     return candidates.length === 3 && candidates.every(candidate => candidate.status === 'eligible') ? candidates : false;
   }, 'all three clean evaluations', deadline);
