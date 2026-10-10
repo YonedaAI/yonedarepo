@@ -39,13 +39,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let Some(mut p) = policy(db)? else {
                 return Ok(Value::Null);
             };
-            if let Some(id) = p["active_trial"].as_str() {
-                if let Ok(t) = get(db, TABLE, &format!("trial:{id}")) {
-                    p["_active_trial_status"] = t["status"].clone();
-                    if t["status"] == "repair_pending" {
-                        p["_active_repair_request_id"] = t["repair_request_id"].clone();
-                        p["_active_repair_fingerprint"] = t["repair_fingerprint"].clone();
-                    }
+            if let Some(id) = p["active_trial"].as_str()
+                && let Ok(t) = get(db, TABLE, &format!("trial:{id}"))
+            {
+                p["_active_trial_status"] = t["status"].clone();
+                if t["status"] == "repair_pending" {
+                    p["_active_repair_request_id"] = t["repair_request_id"].clone();
+                    p["_active_repair_fingerprint"] = t["repair_fingerprint"].clone();
                 }
             }
             Ok(p)
