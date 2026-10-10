@@ -25,9 +25,12 @@ export function GraphWorkspace({
   const [full, setFull] = useState(false);
   const [nodeId, setNodeId] = useState('');
   const [loadedRunGraph, setLoadedRunGraph] = useState<Graph>({ nodes: [], edges: [] });
+  const [loadedGraphRunId, setLoadedGraphRunId] = useState('');
   const [graphError, setGraphError] = useState('');
   const [graphCursor, setGraphCursor] = useState<string | null>(null);
+  const [graphWatermark, setGraphWatermark] = useState<number | null>(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
+  const [graphRequest] = useState({ current: { key: '', generation: 0 } });
   useEffect(() => {
     if (!initialGraph) return;
     setCustomGraph(null);
@@ -40,57 +43,93 @@ export function GraphWorkspace({
     .find((run) => initialGraph?.nodes.some((node) => node.id === run.id));
   const activeRun =
     snapshot.runs.find((run) => run.id === (chosenRun || runId)) ?? historyRun ?? latest;
+  const requestKey = `${snapshot.repository.id}:${activeRun?.id ?? ''}:${initialGraph ? 'external' : 'paged'}`;
+  if (graphRequest.current.key !== requestKey) {
+    graphRequest.current.key = requestKey;
+    graphRequest.current.generation += 1;
+  }
   useEffect(() => {
     if (initialGraph || !snapshot.graph_paged || !activeRun?.id) return;
     let current = true;
+    const generation = graphRequest.current.generation;
     setLoadedRunGraph({ nodes: [], edges: [] });
+    setLoadedGraphRunId('');
     setGraphError('');
     setGraphCursor(null);
+    setGraphWatermark(null);
     setLoadingGraph(true);
     const query = new URLSearchParams({ run_id: activeRun.id, limit: '200' });
     void api<RunGraphPage>(`repos/${snapshot.repository.id}/run_graph_page?${query}`)
       .then((page) => {
-        if (current) {
+        if (current && graphRequest.current.generation === generation) {
           setLoadedRunGraph(mergeRunGraphPage({ nodes: [], edges: [] }, page));
+          setLoadedGraphRunId(activeRun.id);
           setGraphCursor(page.has_more ? page.next_cursor : null);
+          setGraphWatermark(page.watermark);
         }
       })
       .catch((error: unknown) => {
-        if (current) setGraphError((error as Error).message);
+        if (current && graphRequest.current.generation === generation)
+          setGraphError((error as Error).message);
       })
       .finally(() => {
-        if (current) setLoadingGraph(false);
+        if (current && graphRequest.current.generation === generation) setLoadingGraph(false);
       });
     return () => {
       current = false;
     };
-  }, [initialGraph, snapshot.graph_paged, snapshot.repository.id, activeRun?.id]);
+  }, [graphRequest, initialGraph, snapshot.graph_paged, snapshot.repository.id, activeRun?.id]);
   async function loadMoreRunGraph() {
-    if (!activeRun?.id || !graphCursor || loadingGraph) return;
+    if (
+      !activeRun?.id ||
+      loadedGraphRunId !== activeRun.id ||
+      !graphCursor ||
+      graphWatermark === null ||
+      loadingGraph
+    )
+      return;
+    const generation = graphRequest.current.generation;
+    const requestedRunId = activeRun.id;
     setLoadingGraph(true);
     setGraphError('');
-    const query = new URLSearchParams({ run_id: activeRun.id, limit: '200', cursor: graphCursor });
+    const query = new URLSearchParams({
+      run_id: requestedRunId,
+      limit: '200',
+      cursor: graphCursor,
+      watermark: String(graphWatermark),
+    });
     try {
       const page = await api<RunGraphPage>(
         `repos/${snapshot.repository.id}/run_graph_page?${query}`,
       );
-      setLoadedRunGraph((before) => mergeRunGraphPage(before, page));
-      setGraphCursor(page.has_more ? page.next_cursor : null);
+      if (graphRequest.current.generation === generation) {
+        setLoadedRunGraph((before) => mergeRunGraphPage(before, page));
+        setGraphCursor(page.has_more ? page.next_cursor : null);
+        setGraphWatermark(page.watermark);
+      }
     } catch (error) {
-      setGraphError((error as Error).message);
+      if (graphRequest.current.generation === generation) setGraphError((error as Error).message);
     } finally {
-      setLoadingGraph(false);
+      if (graphRequest.current.generation === generation) setLoadingGraph(false);
     }
   }
+  const runGraphPaged = Boolean(snapshot.graph_paged && !initialGraph);
+  const activeLoadedGraph =
+    loadedGraphRunId === activeRun?.id ? loadedRunGraph : { nodes: [], edges: [] };
   const graphSnapshot = {
     ...snapshot,
-    nodes: [...snapshot.nodes, ...loadedRunGraph.nodes],
-    edges: [...snapshot.edges, ...loadedRunGraph.edges],
+    nodes: [...snapshot.nodes, ...activeLoadedGraph.nodes],
+    edges: [...snapshot.edges, ...activeLoadedGraph.edges],
   };
   const scoped = runEvidenceGraph(graphSnapshot, activeRun?.id ?? '');
   const neighborhood = initialNeighborhood(chosenRun || runId ? scoped : (initialGraph ?? scoped));
   const active =
-    customGraph ?? (full ? { nodes: snapshot.nodes, edges: snapshot.edges } : neighborhood);
+    customGraph ??
+    (full
+      ? runGraphPaged
+        ? activeLoadedGraph
+        : { nodes: snapshot.nodes, edges: snapshot.edges }
+      : neighborhood);
   const selected =
     active.nodes.find((node) => node.id === nodeId) ??
     snapshot.nodes.find((node) => node.id === nodeId);
@@ -181,6 +220,7 @@ export function GraphWorkspace({
           <GraphTools
             repo={snapshot.repository.id}
             selected={selected}
+            fullGraphLabel={runGraphPaged ? 'Show loaded run graph' : 'Show full graph'}
             onGraph={(graph) => {
               setCustomGraph(graph);
               setNodeId('');
@@ -193,7 +233,9 @@ export function GraphWorkspace({
               {nodeId
                 ? 'Selected record and immediate relationships'
                 : full
-                  ? 'Full repository graph'
+                  ? runGraphPaged
+                    ? 'Loaded run graph'
+                    : 'Full repository graph'
                   : customGraph
                     ? 'Search or expanded context'
                     : 'Initial run neighborhood'}{' '}
@@ -215,6 +257,16 @@ export function GraphWorkspace({
               </button>
             )}
           </div>
+          {runGraphPaged && (graphCursor || loadingGraph) && (
+            <button
+              type="button"
+              className="quiet"
+              disabled={loadingGraph}
+              onClick={() => void loadMoreRunGraph()}
+            >
+              {loadingGraph ? 'Loading run graph…' : 'Load more run graph'}
+            </button>
+          )}
           <div className="graph-workspace">
             <div className="graph-canvas">
               <ContextGraph
