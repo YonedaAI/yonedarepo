@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { ledgerMock } = vi.hoisted(() => ({ ledgerMock: vi.fn() }));
 vi.mock('../../cloudflare/worker/storage', () => ({ ledger: ledgerMock }));
 
-import { archiveDueHistory, mergeArchivedHistoryDetail } from '../../cloudflare/worker/history-archive';
+import { archiveDueHistory, historyDetail, mergeArchivedHistoryDetail } from '../../cloudflare/worker/history-archive';
 import type { Env, Json } from '../../cloudflare/worker/types';
 
 const sha = async (content: string) => {
@@ -68,6 +68,38 @@ describe('history archive delivery', () => {
       .mockResolvedValueOnce({ job: { id: 'archive:run-one', digest, object_key: 'history/repo/run-one.json' }, bundle_json: body });
     await expect(archiveDueHistory(corrupt.env, 'repo', 100)).rejects.toThrow('Stored history digest mismatch');
     expect(ledgerMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('hydrates run detail once from R2 and overlays current authoritative ledger records', async () => {
+    const archived: Json = {
+      run: { id: 'run-one', status: 'ready' }, runs: [{ id: 'run-one', status: 'ready' }],
+      executions: [], candidates: [{ id: 'old-candidate' }], evaluations: [{ id: 'old-eval' }],
+      decisions: [], team_tasks: [], team_handoffs: [], artifacts: [],
+      nodes: [{ id: 'archived-node' }], edges: [{ source: 'archived-node', target: 'run-one' }],
+      execution_logs: [{ event_id: 'compacted-log', data: { stage: 'execution.finished' } }],
+    };
+    const hot: Json = {
+      repository: { head_commit: 'current-head' }, run: { id: 'run-one', status: 'accepted' },
+      runs: [{ id: 'run-one', status: 'accepted' }], executions: [], candidates: [{ id: 'current-candidate' }],
+      evaluations: [{ id: 'current-evaluation' }], decisions: [{ id: 'current-decision' }],
+      team_tasks: [], team_handoffs: [], artifacts: [], archive: { digest: 'verified' },
+      capabilities: { history: 1 }, seq: 42,
+    };
+    const body = JSON.stringify(archived);
+    const digest = await sha(body);
+    const { env } = archiveEnv(body);
+    ledgerMock
+      .mockResolvedValueOnce(hot)
+      .mockResolvedValueOnce({ object_key: 'history/repo/run-one.json', digest });
+
+    const detail = await historyDetail(env, 'repo', 'run-one');
+    expect(detail.run.status).toBe('accepted');
+    expect(detail.candidates).toEqual(hot.candidates);
+    expect(detail.evaluations).toEqual(hot.evaluations);
+    expect(detail.decisions).toEqual(hot.decisions);
+    expect(detail.nodes).toEqual(archived.nodes);
+    expect(detail.execution_logs).toEqual(archived.execution_logs);
+    expect(ledgerMock.mock.calls.map(([, , input]) => input.op)).toEqual(['run_detail', 'archive_status']);
   });
 });
 
