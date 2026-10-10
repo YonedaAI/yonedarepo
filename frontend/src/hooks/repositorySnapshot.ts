@@ -9,20 +9,29 @@ export class RequestedRunNotFoundError extends Error {
   }
 }
 
+export class RunHistoryChangedError extends Error {
+  constructor() {
+    super('Run history changed while following this link. Refresh the repository and try again.');
+    this.name = 'RunHistoryChangedError';
+  }
+}
+
 export async function findRunInPages(
   runId: string,
   firstPage: RunsPage,
-  loadPage: (cursor: string) => Promise<RunsPage>,
+  loadPage: (cursor: string, watermark: number) => Promise<RunsPage>,
 ): Promise<Record<string, any>> {
   let page = firstPage;
+  const watermark = firstPage.watermark;
   const visited = new Set<string>();
   while (true) {
+    if (page.watermark !== watermark) throw new RunHistoryChangedError();
     const match = page.items.find((item) => item.id === runId);
     if (match) return match;
     const cursor = page.has_more ? page.next_cursor : null;
     if (!cursor || visited.has(cursor)) throw new RequestedRunNotFoundError(runId);
     visited.add(cursor);
-    page = await loadPage(cursor);
+    page = await loadPage(cursor, watermark);
   }
 }
 
