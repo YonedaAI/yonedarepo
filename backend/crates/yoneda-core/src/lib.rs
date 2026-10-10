@@ -7,6 +7,7 @@ pub const CONTRACT_VERSION: u32 = 1;
 pub mod account;
 pub mod agents;
 pub mod build;
+pub mod conflict;
 pub mod context;
 pub mod context_study;
 pub mod context_usage;

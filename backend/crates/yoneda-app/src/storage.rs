@@ -35,8 +35,8 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             (10, include_str!("migrations/0010_conflicts.sql")),
             (11, include_str!("migrations/0011_archive_compaction.sql")),
             (
-                11,
-                include_str!("migrations/0011_history_provenance_indexes.sql"),
+                12,
+                include_str!("migrations/0012_history_provenance_indexes.sql"),
             ),
         ];
         let applied = owned.query(

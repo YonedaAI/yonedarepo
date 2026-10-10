@@ -5,6 +5,7 @@ use wasm_bindgen::{JsCast, prelude::*};
 use worker::{SqlStorageValue, Storage};
 use yoneda_app::SqlStore;
 use yoneda_core::{Error, Result};
+pub mod conflict;
 
 // SDK interop only: transactionSync is not exposed by workers-rs 0.8.7.
 #[wasm_bindgen(

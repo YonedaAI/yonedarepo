@@ -188,6 +188,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (action === 'run_detail' && requestedAction === 'runs')
       input.run_id = decodeURIComponent(parts[4]);
     if (action === 'init') {
+      input.workspace_transport = 'git-native-v1';
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
         return error('INVALID_INPUT', 'Repository identity mismatch');
       using remote = await env.ARTIFACTS.get(input.remote.name);
@@ -195,8 +196,10 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       if (head !== input.commit)
         return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
     }
-    if (action === 'start_run')
+    if (action === 'start_run') {
+      input.workspace_transport = 'git-native-v1';
       checkLedger(await ledger(env, repo, { op: 'repository_status' }), input);
+    }
     if (action === 'start_run' && principal.role === 'user') {
       const settings = await workspace(env, principal.workspace, { op: 'settings' });
       if (

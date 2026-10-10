@@ -16,6 +16,7 @@ mod delegation;
 mod deletion;
 #[path = "tests/execution_logs.rs"]
 mod execution_logs;
+mod git_transport;
 #[path = "tests/graph_status.rs"]
 mod graph_status;
 #[path = "tests/model_budgets.rs"]
