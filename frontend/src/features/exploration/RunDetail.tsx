@@ -4,6 +4,7 @@ import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { TeamWorkflow } from '../team/TeamWorkflow';
 import { runCandidates } from '../team/teamView';
+import { AgentActivityTimeline } from './AgentActivityTimeline';
 import { DecisionForm } from './DecisionForm';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
@@ -16,6 +17,7 @@ import { RunWorkflow } from './RunWorkflow';
 import { runHasActiveAttempts } from './runControlState';
 import { runAttention, selectionBlocker } from './runReviewState';
 import { runTitle } from './runTitle';
+import { StaleCandidateRepair } from './StaleCandidateRepair';
 
 const ContextUsagePanel = lazy(() =>
   import('../context-usage/ContextUsagePanel').then((module) => ({
@@ -24,6 +26,7 @@ const ContextUsagePanel = lazy(() =>
 );
 
 export function RunDetail({
+  reviewer = false,
   snapshot,
   run,
   busy,
@@ -36,6 +39,7 @@ export function RunDetail({
   onProviders,
   onContext,
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   run: Record<string, any>;
   busy: boolean;
@@ -49,7 +53,7 @@ export function RunDetail({
     rationale: string,
     alternatives: { candidate: string; reason: string }[],
   ) => Promise<boolean>;
-  onProviders: () => void;
+  onProviders?: () => void;
   onContext: () => void;
 }) {
   const [tab, setTab] = useState<RunTab>(() =>
@@ -136,38 +140,52 @@ export function RunDetail({
       <RunTabs active={tab} onSelect={setTab}>
         {(panel) =>
           panel === 'results' ? (
-            <RunCandidates
-              snapshot={snapshot}
-              run={run}
-              selected={selected}
-              busy={busy}
-              comparing={comparing}
-              candidates={candidates}
-              onCompare={() => setComparing(!comparing)}
-              onSelect={review}
-              onProviders={onProviders}
-              onInspectTask={(id) => openEvidence('activity', `team-task-${id}`)}
-            />
-          ) : panel === 'activity' ? (
-            team ? (
-              <TeamWorkflow
+            <>
+              <StaleCandidateRepair
+                reviewer={reviewer}
                 snapshot={snapshot}
                 run={run}
                 busy={busy}
-                onProviders={onProviders}
-                onRetry={onRetry}
+                canStart={canStart}
+                onRepair={onRestart}
               />
-            ) : (
-              <ExecutionHierarchy
+              <RunCandidates
                 snapshot={snapshot}
                 run={run}
-                onInspect={(id) => openEvidence('results', `approach-${id}`)}
+                selected={selected}
+                busy={busy}
+                comparing={comparing}
+                candidates={candidates}
+                onCompare={() => setComparing(!comparing)}
+                onSelect={review}
+                onProviders={reviewer ? undefined : onProviders}
+                onInspectTask={(id) => openEvidence('activity', `team-task-${id}`)}
               />
-            )
+            </>
+          ) : panel === 'activity' ? (
+            <>
+              <AgentActivityTimeline snapshot={snapshot} run={run} />
+              {team ? (
+                <TeamWorkflow
+                  reviewer={reviewer}
+                  snapshot={snapshot}
+                  run={run}
+                  busy={busy}
+                  onProviders={reviewer ? undefined : onProviders}
+                  onRetry={onRetry}
+                />
+              ) : (
+                <ExecutionHierarchy
+                  snapshot={snapshot}
+                  run={run}
+                  onInspect={(id) => openEvidence('results', `approach-${id}`)}
+                />
+              )}
+            </>
           ) : panel === 'context' ? (
             <>
               <button type="button" className="text-button context-link" onClick={onContext}>
-                Explore repository context graph
+                Read this run’s evidence trail
               </button>
               <Suspense fallback={<p role="status">Loading context evidence…</p>}>
                 <ContextUsagePanel key={run.id} snapshot={snapshot} run={run} />
@@ -180,12 +198,15 @@ export function RunDetail({
                   <h3>Run controls</h3>
                   <p>
                     Recorded status: {run.status.replaceAll('_', ' ')}
-                    {activeAttempts
-                      ? '. Finish or cancel active work before restarting.'
-                      : '. Restart opens a new attempt with these settings.'}
+                    {reviewer
+                      ? '.'
+                      : activeAttempts
+                        ? '. Finish or cancel active work before restarting.'
+                        : '. Restart opens a new attempt with these settings.'}
                   </p>
                 </div>
                 <RunControls
+                  reviewer={reviewer}
                   run={run}
                   busy={busy}
                   canStart={canStart}

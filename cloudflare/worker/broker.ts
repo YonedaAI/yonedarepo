@@ -1,7 +1,8 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { source } from './artifacts';
+import { CANDIDATE_DIFF_LIMIT } from './evidence';
 import { hostedMcp } from './hosted-mcp';
-import { error, response } from './http';
+import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
 import { ledger, object, readObject } from './storage';
@@ -13,11 +14,12 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     const job = scope.job;
     const path = new URL(req.url).pathname;
     const identity = { job_id: job.id, epoch: job.epoch };
-    const body = await req.json<Json>();
+    // Authenticate supervisor endpoints before consuming an untrusted large body.
+    if (path !== '/mcp' && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
+      return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
+    const body = await readJson(req, path === '/mcp' ? 1024 * 1024 : 32 * 1024 * 1024);
     // Await inside this boundary so ledger rejections reach the agent as typed JSON.
     if (path === '/mcp') return await hostedMcp(env, scope, body);
-    if (req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
-      return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
     if (path === '/heartbeat' || path === '/progress')
       return response(
         await ledger(env, scope.repo_id, {
@@ -40,6 +42,7 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
             : job.kind === 'capture'
               ? job.payload.base
               : job.payload.execution.base,
+          job.kind === 'evaluate' ? job.payload.candidate.tree : undefined,
         ),
       );
     }
@@ -119,6 +122,17 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
           commit.parents[0] !== job.payload.base.commit
         )
           return error('INVALID_CAPTURE', 'Captured commit identity or parent mismatch', 409);
+        if (typeof body.diff !== 'string')
+          return error('INVALID_CAPTURE', 'Trusted capture must supply the full diff', 409);
+        // Only the container-derived capture capability can create this binding, after
+        // checking the freshly pushed commit. Never accept a caller-provided R2 digest.
+        const stored = await object(env, body.diff, CANDIDATE_DIFF_LIMIT);
+        const { diff: _diff, diff_digest: _claimedDigest, ...metadata } = body;
+        command = {
+          op: 'finish',
+          ...identity,
+          result: { ...metadata, diff_digest: stored.digest },
+        };
       }
       await attemptLog(env, scope, 'execution.completion_received');
       const result = await ledger(env, scope.repo_id, command);

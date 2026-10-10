@@ -87,7 +87,7 @@ fn agent_transcript_caps_each_stream_and_bounds_escaped_partial_evidence() {
     }
     let normal = transcript.output(Some(0), None).unwrap();
     for field in ["stdout", "stderr"] {
-        assert_eq!(normal[field].as_str().unwrap().len(), STREAM_LIMIT);
+        assert!(normal[field].as_str().unwrap().len() <= STREAM_LIMIT);
     }
     assert_eq!(normal["stdout_truncated"], true);
     assert_eq!(normal["stderr_truncated"], true);
@@ -166,4 +166,22 @@ async fn agent_deadline_stops_a_stalled_evidence_upload_before_failure_reporting
         vec![("/evidence", true), ("/failed", true)]
     );
     assert!(!transcript.is_recorded().unwrap());
+}
+
+#[test]
+fn normal_report_caps_json_expansion_and_keeps_exit_observations() {
+    let transcript = Transcript::default();
+    for channel in [Channel::Stdout, Channel::Stderr] {
+        transcript
+            .append(channel, &vec![0; STREAM_LIMIT + 1])
+            .unwrap();
+    }
+    let output = transcript.output(Some(7), None).unwrap();
+    assert!(
+        output.to_string().len() <= 8 * 1024 * 1024,
+        "Normal escaped transcript exceeds R2 report cap"
+    );
+    assert_eq!(output["exit"], 7);
+    assert_eq!(output["stdout_truncated"], true);
+    assert_eq!(output["stderr_truncated"], true);
 }

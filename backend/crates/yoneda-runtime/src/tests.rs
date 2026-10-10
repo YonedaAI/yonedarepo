@@ -5,6 +5,8 @@ use serde_json::json;
 use tokio::process::Command;
 #[path = "tests/context_study_prompt.rs"]
 mod context_study_prompt;
+#[path = "tests/process_transport.rs"]
+mod process_transport;
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn supervisor_refuses_jobs_without_owning_the_agent_uid() {
@@ -305,4 +307,19 @@ fn static_assets_capture_ignored_outputs_but_reject_symlink_directories() {
     assert!(crate::site::assets(root.path(), "linked").is_err());
     std::os::unix::fs::symlink("/etc/passwd", root.path().join("dist/secret")).unwrap();
     assert!(crate::site::assets(root.path(), "dist").is_err());
+}
+
+#[tokio::test]
+async fn primary_exit_kills_background_pipe_holders_before_drain() {
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "printf 'primary finished'; sleep 30 & exit 7"]);
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        crate::process::bounded_output(&mut command),
+    )
+    .await
+    .expect("Background descendants must not hold output pipes until the execution deadline")
+    .unwrap();
+    assert_eq!(result["exit"], 7);
+    assert_eq!(result["stdout"], "primary finished");
 }

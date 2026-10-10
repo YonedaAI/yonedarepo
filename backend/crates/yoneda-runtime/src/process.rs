@@ -23,6 +23,9 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
         .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "4096")
         .env("CLAUDE_CODE_EFFORT_LEVEL", "low")
         .env("CLAUDE_CODE_DISABLE_AUTO_MEMORY", "1");
+    if let Some(certificates) = std::env::var_os("NODE_EXTRA_CA_CERTS") {
+        command.env("NODE_EXTRA_CA_CERTS", certificates);
+    }
     #[cfg(target_os = "linux")]
     {
         // The deployed supervisor requires root before accepting jobs. Native
@@ -51,9 +54,31 @@ pub(crate) async fn captured_output(
     command: &mut Command,
     transcript: &crate::agent_transcript::Transcript,
 ) -> Result<Value> {
+    captured_output_with_input(command, transcript, None).await
+}
+
+/// Large prompts travel through a pipe, never a Linux single-argument allocation.
+pub(crate) async fn captured_output_with_input(
+    command: &mut Command,
+    transcript: &crate::agent_transcript::Transcript,
+    input: Option<&str>,
+) -> Result<Value> {
     use crate::agent_transcript::Channel;
-    use tokio::io::AsyncReadExt;
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    if input.is_some_and(|text| text.len() > crate::report::REPORT_LIMIT) {
+        return Err(yoneda_core::Error::new(
+            "PROMPT_LIMIT",
+            "Harness prompt exceeds the 8 MiB stdin cap",
+        ));
+    }
+    command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        });
     #[cfg(unix)]
     command.process_group(0);
     let mut processes = crate::process_guard::AgentProcesses::prepare()?;
@@ -85,10 +110,28 @@ pub(crate) async fn captured_output(
         .stderr
         .take()
         .ok_or_else(|| err("Missing child stderr pipe"))?;
-    let (out, errors, status) = tokio::join!(
+    // Reap the primary child, then stop descendants before waiting for pipe EOF.
+    // Background processes (including Linux setsid descendants) can hold either pipe open.
+    let stdin = child.stdin.take();
+    let wait = async {
+        let status = child.wait().await.map_err(err)?;
+        #[cfg(unix)]
+        drop(_group);
+        processes.finish()?;
+        Ok::<_, yoneda_core::Error>(status)
+    };
+    let write = async {
+        if let (Some(mut pipe), Some(input)) = (stdin, input) {
+            pipe.write_all(input.as_bytes()).await.map_err(err)?;
+            pipe.shutdown().await.map_err(err)?;
+        }
+        Ok::<_, yoneda_core::Error>(())
+    };
+    let (out, errors, status, written) = tokio::join!(
         read(out, transcript, Channel::Stdout),
         read(errors, transcript, Channel::Stderr),
-        child.wait()
+        wait,
+        write
     );
     let status = status.map_err(err)?;
     #[cfg(unix)]
@@ -99,11 +142,9 @@ pub(crate) async fn captured_output(
     #[cfg(not(unix))]
     let signal: Option<i32> = None;
     tracing::info!(exit_code = status.code(), signal, "agent process finished");
-    #[cfg(unix)]
-    drop(_group);
-    processes.finish()?;
     out.map_err(err)?;
     errors.map_err(err)?;
+    written?;
     transcript.output(Some(status.code().unwrap_or(-1)), signal)
 }
 

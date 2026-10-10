@@ -122,3 +122,14 @@ Migration changes must be additive and appended. Check fresh, repeat and precedi
 DO SQL migration 0003 repairs existing execution graph projections from authoritative execution records, preserving node timestamps, events and evaluation evidence. It applies automatically before ledger commands; no D1 or Durable Object class migration is needed. After it applies, older binaries supporting only schema 2 refuse the database, so recovery must use a schema-3-compatible version.
 
 No live run, deployment or acceptance should be inferred from passing local tests. Record actual commands and outcomes in `docs/progress.md`.
+
+
+## Funded reviewer sandbox
+
+Operator bootstrap on the configured development account: `node tools/provision-reviewer.mjs`. It creates `reviewer`, stores access and recovery details only in ignored `.local/reviewer/access.json` with mode 0600, and provisions encrypted Codex/Claude connections through the Worker. The operator token comes from `.local/owner-token`; neither credential is printed or passed in arguments. Provisioning is repeatable and cannot reset the workspace spend counter.
+
+Reviewer access permits the fixed trial and sandbox selection/cancellation/recovery. Provider changes, new projects, contribution grants, policy changes and arbitrary run approvals are refused server-side. The $50 workspace allowance reserves all configured trial providers before upstream I/O. Verified usage can settle downward; unknown or failed usage remains charged. Access expires at 2026-10-23 00:00 UTC. Operator revocation uses authenticated `POST /api/admin/reviewer/revoke` with the username; it revokes sessions and further inference.
+
+For blocked repositories, **Recover repository** invokes `resync_repository` with expected version and pending decision. The Worker derives the observed HEAD from Artifacts, never from caller JSON. The ledger fences superseded publishers and retains failed/conflicting decision history. A matching target confirms publication; a different target reconciles to observed source and clears stale site metadata. Stale recovery requests are rejected.
+
+Known container allocation/rate-limit errors defer dispatch with durable backoff and fence the old epoch without consuming the execution-attempt allowance. Other boot failures retain the ordinary retry limit. HTTPS interception requires the ephemeral Cloudflare CA installed at runtime, before harnesses start; it cannot be installed during Docker image construction.

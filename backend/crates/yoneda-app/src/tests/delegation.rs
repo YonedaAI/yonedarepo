@@ -330,7 +330,16 @@ fn review_regression_recovery_cannot_revive_a_child_fenced_earlier_in_the_pass()
 }
 
 #[test]
-fn review_regression_cancelled_child_publisher_fences_writes_and_updates_graph() {
+fn accepted_child_publication_survives_parent_failure_without_agent_authority() {
+    accepted_child_publication(false);
+}
+
+#[test]
+fn queued_accepted_child_publication_survives_parent_expiry_and_restart() {
+    accepted_child_publication(true);
+}
+
+fn accepted_child_publication(queued: bool) {
     let db = coding_repo();
     run(&db, 2, true, 12);
     claim(&db, "job:scale:agent-1");
@@ -362,19 +371,50 @@ fn review_regression_cancelled_child_publisher_fences_writes_and_updates_graph()
     call(&db,json!({"op":"accept","request_id":"child-publication","candidate":"publication-candidate",
         "expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Choose checked alternative"})).unwrap();
     let publisher = "publish:decision:child-publication";
-    claim(&db, publisher);
-    call(&db,json!({"op":"fail","job_id":"job:scale:agent-1","epoch":1,"retryable":false,"error":"Parent failed","now":2000})).unwrap();
-    for op in ["check_attempt", "finish"] {
+    if queued {
+        call(&db, json!({"op":"recover","now":122000})).unwrap();
+        call(
+            &db,
+            json!({"op":"claim","job_id":"job:scale:agent-1","now":122000}),
+        )
+        .unwrap();
         assert_eq!(
-            call(
-                &db,
-                json!({"op":op,"job_id":publisher,"epoch":1,"result":{"commit":"c".repeat(40)}})
-            )
-            .unwrap_err()
-            .code,
-            "FENCED"
+            call(&db, json!({"op":"claim","job_id":publisher,"now":122001})).unwrap()["epoch"],
+            1
         );
+    } else {
+        claim(&db, publisher);
+        call(&db,json!({"op":"fail","job_id":"job:scale:agent-1","epoch":1,"retryable":false,"error":"Parent failed","now":2000})).unwrap();
     }
+    let now = if queued { 122002 } else { 2001 };
+    call(
+        &db,
+        json!({"op":"check_attempt","job_id":publisher,"epoch":1,"now":now}),
+    )
+    .unwrap();
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"context","job_id":child_job,"epoch":1,"now":now})
+        )
+        .unwrap_err()
+        .code,
+        "FENCED"
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"context","job_id":publisher,"epoch":1,"now":now})
+        )
+        .unwrap_err()
+        .code,
+        "FORBIDDEN"
+    );
+    call(
+        &db,
+        json!({"op":"finish","job_id":publisher,"epoch":1,"now":now,"result":{"commit":"c".repeat(40)}}),
+    )
+    .unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     let decision = &snapshot["decisions"][0];
     let graph_decision = snapshot["nodes"]
@@ -383,9 +423,9 @@ fn review_regression_cancelled_child_publisher_fences_writes_and_updates_graph()
         .iter()
         .find(|n| n["id"] == decision["id"])
         .unwrap();
-    assert_eq!(decision["status"], "publication_failed");
+    assert_eq!(decision["status"], "published");
     assert_eq!(graph_decision["data"], *decision);
-    assert_eq!(graph_decision["recorded_at"], 2000);
-    assert_eq!(snapshot["repository"]["status"], "blocked");
-    assert_eq!(snapshot["repository"]["published_commit"], "a".repeat(40));
+    assert_eq!(snapshot["repository"]["status"], "ready");
+    assert_eq!(snapshot["repository"]["published_commit"], "c".repeat(40));
+    assert_eq!(snapshot["candidates"][0]["status"], "eligible");
 }

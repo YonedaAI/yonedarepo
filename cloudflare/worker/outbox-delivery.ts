@@ -31,12 +31,20 @@ export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
           publish: env.PUBLISH_QUEUE,
         };
         if (!queues[entry.kind]) throw new Error('Unknown outbox kind');
-        await queues[entry.kind].send({
-          v: 1,
-          repo_id: repo,
-          job_id: entry.payload.job_id,
-          kind: entry.kind,
-        });
+        await queues[entry.kind].send(
+          {
+            v: 1,
+            repo_id: repo,
+            job_id: entry.payload.job_id,
+            kind: entry.kind,
+          },
+          {
+            delaySeconds: Math.min(
+              43200,
+              Math.max(0, Math.ceil(((entry.payload.not_before ?? 0) - Date.now()) / 1000)),
+            ),
+          },
+        );
       }
       delivered.push(entry.id);
     } catch {

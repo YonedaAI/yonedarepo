@@ -83,9 +83,11 @@ pub async fn capture(
         .map(|path| String::from_utf8(path.to_vec()).map_err(err))
         .collect::<Result<_>>()?;
     let diff = if let Some(base) = base {
-        git(root, &["diff", "--no-ext-diff", base, &commit]).await?
+        String::from_utf8(git_raw(root, &["diff", "--no-ext-diff", base, &commit]).await?)
+            .map_err(err)?
     } else {
-        git(root, &["show", "--format=", "--no-ext-diff", &commit]).await?
+        String::from_utf8(git_raw(root, &["show", "--format=", "--no-ext-diff", &commit]).await?)
+            .map_err(err)?
     };
     Ok(json!({"commit":commit,"tree":tree,"paths":paths,"diff":diff}))
 }

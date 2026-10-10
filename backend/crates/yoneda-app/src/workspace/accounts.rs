@@ -24,8 +24,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         }
         "session" => {
             let key = format!("session:{}", hash(c, "session_hash", &[64])?);
-            let valid = get(db, TABLE, &key)
-                .is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
+            let valid = super::reviewer::valid(db, now)?
+                && get(db, TABLE, &key)
+                    .is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
             if valid {
                 Ok(public_account(&account(db)?))
             } else {
@@ -46,7 +47,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let Ok(mut a) = account(db) else {
                 return Ok(json!({"authenticated":false}));
             };
-            if !allow_attempt(db, now)? {
+            if !super::reviewer::valid(db, now)? || !allow_attempt(db, now)? {
                 return Ok(json!({"authenticated":false,"limited":true}));
             }
             let recovery = c["op"] == "recover";

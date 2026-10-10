@@ -7,7 +7,12 @@ export function useRepository() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [authenticated, setAuthenticated] = useState(false);
   const [identity, setIdentity] = useState<AccountIdentity | null>(null);
-  const [error, setError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [pollError, setPollError] = useState('');
+  const setError = useCallback((message: string) => {
+    setActionError(message);
+    setPollError('');
+  }, []);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
   const selectedId = useRef('');
@@ -24,13 +29,14 @@ export function useRepository() {
     setSnapshot(null);
     setError('');
     setLoading(false);
-  }, []);
+  }, [setError]);
   const fail = useCallback(
-    (e: unknown) => {
+    (e: unknown, polling = false) => {
       if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clear();
+      else if (polling) setPollError((e as Error).message);
       else setError((e as Error).message);
     },
-    [clear],
+    [clear, setError],
   );
   const discover = useCallback(async () => {
     const current = ++generation.current;
@@ -58,7 +64,7 @@ export function useRepository() {
     } finally {
       if (generation.current === current) setLoading(false);
     }
-  }, [fail]);
+  }, [fail, setError]);
   const updateProject = useCallback((result: ProjectMetadata, requestedId: string) => {
     if (result.id !== requestedId || !['provisioning', 'ready', 'failed'].includes(result.status))
       throw new Error('The repository setup response could not be verified. Refresh its status.');
@@ -84,7 +90,7 @@ export function useRepository() {
           const result = await api<ProjectMetadata>(`projects/${id}`);
           if (stillCurrent()) {
             updateProject(result, id);
-            setError('');
+            setPollError('');
           }
           return;
         }
@@ -96,7 +102,7 @@ export function useRepository() {
             ? previous
             : result,
         );
-        setError('');
+        setPollError('');
       } catch (e) {
         if (!stillCurrent()) return;
         if (e instanceof ApiError && e.code === 'REPOSITORY_DELETED') {
@@ -108,7 +114,7 @@ export function useRepository() {
           setRepositories((previous) => previous.filter((repo) => repo.id !== id));
           setError('');
           await discover();
-        } else fail(e);
+        } else fail(e, true);
       }
     })();
     requests.current.set(key, request);
@@ -117,7 +123,7 @@ export function useRepository() {
     } finally {
       if (requests.current.get(key) === request) requests.current.delete(key);
     }
-  }, [id, fail, project?.status, discover, updateProject]);
+  }, [id, fail, project?.status, discover, updateProject, setError]);
   const retrySetup = useCallback(async () => {
     if (!id || id !== selectedId.current || deletedIds.current.has(id)) return;
     const current = ++generation.current;
@@ -140,16 +146,19 @@ export function useRepository() {
     } finally {
       if (requests.current.get(key) === request) requests.current.delete(key);
     }
-  }, [id, fail, updateProject]);
-  const setId = useCallback((id: string) => {
-    if (deletedIds.current.has(id)) return;
-    generation.current++;
-    selectedId.current = id;
-    setCurrentId(id);
-    setSnapshot(null);
-    setError('');
-    setLoading(false);
-  }, []);
+  }, [id, fail, updateProject, setError]);
+  const setId = useCallback(
+    (id: string) => {
+      if (deletedIds.current.has(id)) return;
+      generation.current++;
+      selectedId.current = id;
+      setCurrentId(id);
+      setSnapshot(null);
+      setError('');
+      setLoading(false);
+    },
+    [setError],
+  );
   const deleteRepository = useCallback(
     async (repository: Repository, confirmName: string) => {
       const result = await api<{ status: string; cleanup_pending: boolean }>(
@@ -170,7 +179,7 @@ export function useRepository() {
       await discover();
       return { cleanup_pending: result.cleanup_pending !== false };
     },
-    [repositories, discover],
+    [repositories, discover, setError],
   );
   const signOut = useCallback(async () => {
     await api('auth/logout', {});
@@ -205,7 +214,7 @@ export function useRepository() {
     snapshot: snapshot?.repository.id === id && !deletedIds.current.has(id) ? snapshot : null,
     authenticated,
     identity,
-    error,
+    error: actionError || pollError,
     setError,
     loading,
     discover,

@@ -29,15 +29,17 @@ const titles = {
 };
 
 export function WorkspacePanels({
+  reviewer = false,
   panel,
   state,
   onClose,
 }: {
+  reviewer?: boolean;
   panel: WorkspacePanel;
   state: ReturnType<typeof useRepository>;
   onClose: () => void;
 }) {
-  if (!panel) return null;
+  if (!panel || (reviewer && ['agents', 'providers', 'project'].includes(panel))) return null;
   return (
     <Dialog key={panel} title={titles[panel]} onClose={onClose} wide={panel === 'guide'}>
       {panel === 'account' && !state.authenticated && (

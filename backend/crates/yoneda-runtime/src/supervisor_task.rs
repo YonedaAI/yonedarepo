@@ -53,7 +53,13 @@ async fn run(job: Value) {
                 event = "attempt.finished",
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0
             );
-            broker("/complete", value, true).await
+            report_completion(
+                value,
+                job["kind"] == "evaluate",
+                job["kind"] != "agent",
+                broker,
+            )
+            .await
         }
         Ok(Err(error)) => {
             tracing::error!(event = "attempt.failed", error_code = %error.code,
@@ -113,4 +119,39 @@ where
         true,
     )
     .await
+}
+
+/// A rejected completion must close the original attempt through the failure path.
+/// Callback acknowledgment loss also uses this path; the ledger fences already-completed jobs.
+pub(crate) async fn report_completion<F, Fut>(
+    value: Value,
+    evaluation: bool,
+    retryable: bool,
+    mut report: F,
+) -> yoneda_core::Result<Value>
+where
+    F: FnMut(&'static str, Value, bool) -> Fut,
+    Fut: std::future::Future<Output = yoneda_core::Result<Value>>,
+{
+    let value = if evaluation {
+        crate::report::bounded(value)
+    } else {
+        Ok(value)
+    };
+    let result = match value {
+        Ok(value) => report("/complete", value, true).await,
+        Err(error) => Err(error),
+    };
+    match result {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            tracing::error!(event = "attempt.completion_rejected", error_code = %error.code);
+            report(
+                "/failed",
+                json!({"error":error.to_string(),"retryable":retryable}),
+                true,
+            )
+            .await
+        }
+    }
 }

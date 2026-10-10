@@ -7,7 +7,7 @@ fn harness_budget_actual_anthropic_and_legacy_claude_keep_one_dollar_allowance()
         json!({"harness":"claude","provider":"claude"}),
         json!({"harness":"claude"}),
     ] {
-        let args = claude_arguments(&execution, false, "claude-sonnet-4-6", "Build a website");
+        let args = claude_arguments(&execution, false, "claude-sonnet-4-6");
         assert!(
             args.windows(2)
                 .any(|pair| pair == ["--max-budget-usd", "1.00"])
@@ -26,7 +26,6 @@ fn harness_budget_third_party_models_do_not_use_anthropic_dollar_estimates() {
             &json!({"harness":"claude","provider":provider}),
             false,
             model,
-            "Build a website",
         );
         assert!(!args.contains(&"--max-budget-usd"));
         assert!(args.windows(2).any(|pair| pair == ["--model", model]));
@@ -44,7 +43,6 @@ fn model_budgets_approved_anthropic_run_uses_owner_allowance_without_hidden_cli_
         &json!({"harness":"claude","provider":"claude"}),
         true,
         "claude-sonnet-4-6",
-        "Build a website",
     );
     assert!(!args.contains(&"--max-budget-usd"));
     assert!(

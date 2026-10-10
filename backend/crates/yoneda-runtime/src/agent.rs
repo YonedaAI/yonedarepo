@@ -2,7 +2,7 @@ use crate::{
     agent_transcript::Transcript,
     broker::broker,
     err, field,
-    process::{captured_output, untrusted},
+    process::{captured_output_with_input, untrusted},
     workspace::export_with_baseline,
 };
 use serde_json::{Value, json};
@@ -61,7 +61,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
             "--dangerously-bypass-approvals-and-sandbox",
             "--model",
             model,
-            &prompt,
+            "-",
         ]);
     } else if harness == "gemini" {
         command
@@ -72,7 +72,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
             .env("GEMINI_CLI_TRUST_WORKSPACE", "true")
             .args([
                 "--prompt",
-                &prompt,
+                "",
                 "--model",
                 model,
                 "--output-format",
@@ -93,7 +93,6 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
             execution,
             approved_budget.is_some(),
             model,
-            &prompt,
         ));
     }
     broker(
@@ -102,7 +101,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
         true,
     )
     .await?;
-    let output = captured_output(&mut command, transcript).await?;
+    let output = captured_output_with_input(&mut command, transcript, Some(&prompt)).await?;
     let evidence = broker("/evidence", json!({"content":output.to_string()}), true).await?;
     transcript.mark_recorded()?;
     if output["exit"] != 0 {
@@ -149,15 +148,11 @@ fn configure_output_limit(
     }
 }
 
-fn claude_arguments<'a>(
-    execution: &Value,
-    approved_budget: bool,
-    model: &'a str,
-    prompt: &'a str,
-) -> Vec<&'a str> {
+fn claude_arguments<'a>(execution: &Value, approved_budget: bool, model: &'a str) -> Vec<&'a str> {
     let mut args = vec![
         "-p",
-        prompt,
+        "--input-format",
+        "text",
         "--model",
         model,
         "--output-format",

@@ -1,7 +1,9 @@
 import { X } from 'lucide-react';
 import { useState } from 'react';
 import { DeleteRepositoryDialog } from './features/workspace/DeleteRepositoryDialog';
+import { RepositoryRecovery } from './features/workspace/RepositoryRecovery';
 import { RepositoryWorkspace } from './features/workspace/RepositoryWorkspace';
+import { ReviewerTrial } from './features/workspace/ReviewerTrial';
 import { WorkspaceHeader } from './features/workspace/WorkspaceHeader';
 import { type WorkspacePanel, WorkspacePanels } from './features/workspace/WorkspacePanels';
 import { WorkspaceRail } from './features/workspace/WorkspaceRail';
@@ -14,14 +16,16 @@ export function App() {
   const [panel, setPanel] = useState<WorkspacePanel>(null);
   const [deleting, setDeleting] = useState<Repository | null>(null);
   const [notice, setNotice] = useState('');
+  const reviewer = state.identity?.role === 'user' && state.identity.reviewer === true;
   return (
     <div className="app">
       <a className="skip-link" href="#workspace">
         Skip to workspace
       </a>
-      <WorkspaceRail state={state} onPanel={setPanel} />
+      <WorkspaceRail reviewer={reviewer} state={state} onPanel={setPanel} />
       <main id="workspace">
         <WorkspaceHeader
+          reviewer={reviewer}
           repository={state.snapshot?.repository ?? state.project}
           loading={state.loading}
           onDelete={setDeleting}
@@ -64,8 +68,19 @@ export function App() {
             </button>
           </div>
         )}
+        {reviewer && state.snapshot && (
+          <ReviewerTrial onChange={state.refresh} onError={state.setError} />
+        )}
+        {state.snapshot && (
+          <RepositoryRecovery
+            repository={state.snapshot.repository}
+            onChange={state.refresh}
+            onError={state.setError}
+          />
+        )}
         {state.snapshot ? (
           <RepositoryWorkspace
+            reviewer={reviewer}
             key={state.id}
             snapshot={state.snapshot}
             onChange={state.refresh}
@@ -74,14 +89,20 @@ export function App() {
           />
         ) : (
           <WorkspaceWelcome
+            reviewer={reviewer}
             state={state}
             onProject={() => setPanel('project')}
             onProviders={() => setPanel('providers')}
           />
         )}
       </main>
-      <WorkspacePanels panel={panel} state={state} onClose={() => setPanel(null)} />
-      {deleting && (
+      <WorkspacePanels
+        reviewer={reviewer}
+        panel={panel}
+        state={state}
+        onClose={() => setPanel(null)}
+      />
+      {deleting && !reviewer && (
         <DeleteRepositoryDialog
           key={deleting.id}
           repository={deleting}

@@ -3,24 +3,30 @@ import { TeamPlanning } from './TeamPlanning';
 import { TeamTaskCard } from './TeamTaskCard';
 import { type TeamRecord, teamTasks } from './teamView';
 export function TeamWorkflow({
+  reviewer = false,
   snapshot,
   run,
   busy,
   onRetry,
   onProviders,
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   run: TeamRecord;
   busy: boolean;
   onRetry: (task: TeamRecord) => void;
-  onProviders: () => void;
+  onProviders?: () => void;
 }) {
   const tasks = teamTasks(snapshot, run);
   const specialists = tasks.filter((task) => task.role !== 'integrator');
   return (
     <section className="team-workflow" aria-labelledby="team-workflow-heading">
       <h2 id="team-workflow-heading">Build together</h2>
-      <TeamPlanning snapshot={snapshot} run={run} onProviders={onProviders} />
+      <TeamPlanning
+        snapshot={snapshot}
+        run={run}
+        onProviders={reviewer ? undefined : onProviders}
+      />
       {tasks.length > 0 && (
         <p>
           {specialists.filter((task) => task.status === 'complete').length} / {specialists.length}{' '}
@@ -47,6 +53,7 @@ export function TeamWorkflow({
         <ol className="team-task-list" aria-label="Team tasks and dependencies">
           {tasks.map((task) => (
             <TeamTaskCard
+              reviewer={reviewer}
               key={task.id}
               task={task}
               tasks={tasks}
@@ -54,7 +61,7 @@ export function TeamWorkflow({
               snapshot={snapshot}
               busy={busy}
               onRetry={onRetry}
-              onProviders={onProviders}
+              onProviders={reviewer ? undefined : onProviders}
             />
           ))}
         </ol>

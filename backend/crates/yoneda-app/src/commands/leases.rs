@@ -30,6 +30,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             {
                 return Err(Error::new("ATTEMPTS_EXHAUSTED", "Job budget exhausted"));
             }
+            if j["not_before"].as_i64().is_some_and(|time| time > now) {
+                return Ok(json!({"deferred":true,"id":id,"not_before":j["not_before"]}));
+            }
             check_lineage(db, &j, now)?;
             if j["kind"] == "agent" && number(&j, "attempt")? > 0 {
                 fence_descendants(db, &j, now)?;
@@ -37,6 +40,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["attempt"] = json!(number(&j, "attempt")? + 1);
             j["epoch"] = json!(number(&j, "epoch")? + 1);
             j["status"] = json!("running");
+            j["not_before"] = Value::Null;
             j["runtime_started_at"] = Value::Null;
             j["progress"] = Value::Null;
             let duration = duration(db, &j)?;
@@ -137,16 +141,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         }
         "recover" => {
             let mut recovered = 0;
-            let rows = db.query("SELECT id FROM jobs WHERE (json_extract(payload,'$.status')='running' AND json_extract(payload,'$.lease_until')<=?) OR (json_extract(payload,'$.status')='queued' AND json_extract(payload,'$.deadline')<=?) ORDER BY id", &[json!(now),json!(now)])?;
+            let rows = db.query("SELECT id FROM jobs WHERE (json_extract(payload,'$.status')='running' AND json_extract(payload,'$.lease_until')<=?) OR (json_extract(payload,'$.status')='queued' AND (json_extract(payload,'$.deadline')<=? OR (json_extract(payload,'$.attempt')=0 AND json_extract(payload,'$.dispatch_deadline')<=?))) ORDER BY id", &[json!(now),json!(now),json!(now)])?;
             for row in rows {
                 // Recovering a parent may fence a child selected in this same pass.
                 let mut j = get(db, "jobs", &string(&row, "id")?)?;
                 if (j["status"] == "running" && number(&j, "lease_until")? <= now)
-                    || (j["status"] == "queued" && number(&j, "deadline")? <= now)
+                    || (j["status"] == "queued"
+                        && (number(&j, "deadline")? <= now || dispatch_expired(&j, now)))
                 {
                     let id = string(&j, "id")?;
                     j["status"] = json!(if number(&j, "attempt")? < 2
                         && number(&j, "deadline")? > now
+                        && !dispatch_expired(&j, now)
                     {
                         "queued"
                     } else {
@@ -184,7 +190,14 @@ fn duration<S: SqlStore>(db: &S, job: &Value) -> Result<i64> {
     Ok(super::model_budgets::for_job(db, job)?.map_or(600_000, |budget| budget.max_execution_ms))
 }
 
-fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
+fn dispatch_expired(job: &Value, now: i64) -> bool {
+    job["attempt"] == 0
+        && job["dispatch_deadline"]
+            .as_i64()
+            .is_some_and(|time| time <= now)
+}
+
+pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
     let execution = if job["kind"] == "agent" || job["kind"] == "capture" {
         job["payload"]["execution"]["id"].as_str()
     } else if job["kind"] == "evaluate" {
@@ -225,13 +238,17 @@ fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
     }
     if job["kind"] == "publish" && job["status"] == "failed" {
         let did = string(&job["payload"], "decision_id")?;
+        let mut repository = repo(db)?;
+        if repository["pending"] != did {
+            // A superseded publisher cannot re-block a recovered or advanced repository.
+            return Ok(());
+        }
         let mut decision = get(db, "decisions", &did)?;
         decision["status"] = json!("publication_failed");
         decision["error"] = job
             .get("error")
             .cloned()
             .unwrap_or(json!("Publisher attempt budget exhausted"));
-        let mut repository = repo(db)?;
         repository["status"] = json!("blocked");
         save(db, "repository", "repo", &repository)?;
         save(db, "decisions", &did, &decision)?;

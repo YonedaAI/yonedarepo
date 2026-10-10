@@ -88,3 +88,42 @@ fn old_evaluations_without_assets_cannot_publish_and_conflicts_keep_the_previous
         old
     );
 }
+
+#[test]
+fn owner_resync_restores_only_the_selected_evaluator_site_after_lost_acknowledgement() {
+    let db = evaluating();
+    let site = call(
+        &db,
+        json!({"op":"register_site","job_id":"evaluate:candidate-site","epoch":1,
+        "digest":"f".repeat(64),"files":{"index.html":{"content":"Checked site"}}}),
+    )
+    .unwrap();
+    verify(&db);
+    let decision = call(
+        &db,
+        json!({"op":"accept","request_id":"recover-site","candidate":"candidate-site",
+        "expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Choose checked site"}),
+    )
+    .unwrap();
+    let job = format!("publish:{}", decision["id"].as_str().unwrap());
+    call(&db, json!({"op":"claim","job_id":job})).unwrap();
+    call(
+        &db,
+        json!({"op":"fail","job_id":job,"epoch":1,"retryable":false,"error":"Readback lost"}),
+    )
+    .unwrap();
+    call(
+        &db,
+        json!({"op":"resync_repository","_workspace":"_admin","expected_version":1,
+        "expected_pending":decision["id"],"observed_commit":"c".repeat(40)}),
+    )
+    .unwrap();
+    let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
+    assert_eq!(snapshot["repository"]["site"], site);
+    assert_eq!(
+        snapshot["repository"]["site"]["commit"],
+        snapshot["repository"]["published_commit"]
+    );
+    assert_eq!(snapshot["decisions"][0]["status"], "published");
+    assert_eq!(snapshot["decisions"][0]["error"], "Readback lost");
+}

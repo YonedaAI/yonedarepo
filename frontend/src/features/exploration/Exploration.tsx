@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
@@ -17,28 +17,37 @@ const RunDetail = lazy(() =>
 );
 
 export function Exploration({
+  reviewer = false,
   snapshot,
   onChange,
   onError,
   onProviders,
   onAgents,
   onContext,
+  onSelectedRun,
+  initialRunId = '',
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   onChange: () => Promise<void>;
   onError: (message: string) => void;
   onProviders: () => void;
   onAgents: () => void;
-  onContext: () => void;
+  onContext: (runId: string) => void;
+  onSelectedRun: (runId: string) => void;
+  initialRunId?: string;
 }) {
   const [busy, setBusy] = useState(false);
-  const [runId, setRunId] = useState('');
+  const [runId, setRunId] = useState(initialRunId);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const repo = snapshot.repository;
   const run = snapshot.runs.find((record) => record.id === runId) ?? snapshot.runs.at(-1);
+  useEffect(() => {
+    if (run?.id) onSelectedRun(run.id);
+  }, [run?.id, onSelectedRun]);
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
-  const canStart = !busy && !repo.pending && repo.status === 'ready';
+  const canStart = !reviewer && !busy && !repo.pending && repo.status === 'ready';
   async function act(action: string, body: unknown): Promise<boolean> {
     setBusy(true);
     try {
@@ -56,6 +65,7 @@ export function Exploration({
   return (
     <section className="exploration">
       <RunToolbar
+        reviewer={reviewer}
         snapshot={snapshot}
         canStart={canStart}
         onNewRun={() => {
@@ -64,7 +74,7 @@ export function Exploration({
         }}
       />
       <PendingReviews snapshot={snapshot} selected={run?.id} onSelect={setRunId} />
-      {composing && (
+      {composing && !reviewer && (
         <Dialog
           title={
             restartSource
@@ -108,6 +118,7 @@ export function Exploration({
           <RunEvidenceBoundary label="run results">
             <Suspense fallback={<p role="status">Loading run results…</p>}>
               <RunDetail
+                reviewer={reviewer}
                 key={run.id}
                 snapshot={snapshot}
                 run={run}
@@ -137,22 +148,28 @@ export function Exploration({
                     alternatives,
                   })
                 }
-                onProviders={onProviders}
-                onContext={onContext}
+                onProviders={reviewer ? undefined : onProviders}
+                onContext={() => onContext(run.id)}
               />
             </Suspense>
           </RunEvidenceBoundary>
         </>
       ) : (
         <div className="empty-run">
-          <h2>What will you build next?</h2>
-          <p>
-            Start agents with a shared brief, or connect your local agent to contribute code and
-            context.
-          </p>
-          <button type="button" className="quiet" onClick={onAgents}>
-            Connect local agent
-          </button>
+          <h2>{reviewer ? 'Your trial results will appear here' : 'What will you build next?'}</h2>
+          {reviewer ? (
+            <p>Start a funded trial to explore captured source and independent checks.</p>
+          ) : (
+            <>
+              <p>
+                Start agents with a shared brief, or connect your local agent to contribute code and
+                context.
+              </p>
+              <button type="button" className="quiet" onClick={onAgents}>
+                Connect local agent
+              </button>
+            </>
+          )}
         </div>
       )}
     </section>

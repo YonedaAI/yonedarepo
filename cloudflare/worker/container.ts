@@ -1,4 +1,5 @@
 import { Container } from '@cloudflare/containers';
+import { capacityUnavailable } from './container-capacity';
 import { now } from './http';
 import { writeLog } from './logging';
 import { checkRuntime } from './runtime';
@@ -7,12 +8,14 @@ import type { Env, Json, Scope } from './types';
 export class ExecutionContainer extends Container<Env> {
   defaultPort = 8080;
   enableInternet = false;
+  interceptHttps = true;
   sleepAfter = '12m';
   async launch(scope: Scope) {
     const existing = await this.ctx.storage.get<Scope>('scope');
     if (existing) return { status: 'already_configured' };
     await this.ctx.storage.put('scope', scope);
     await this.schedule(15, 'watchdog');
+    let runtimeStarted = false;
     try {
       await ledger(this.env, scope.repo_id, {
         op: 'progress',
@@ -25,6 +28,7 @@ export class ExecutionContainer extends Container<Env> {
         startOptions: { envVars: { SUPERVISOR_TOKEN: scope.supervisor } },
         cancellationOptions: { portReadyTimeoutMS: 90_000 },
       });
+      runtimeStarted = true;
       const health = await this.containerFetch(new Request('http://supervisor/health'));
       let runtime: Json;
       try {
@@ -55,11 +59,15 @@ export class ExecutionContainer extends Container<Env> {
     } catch (error) {
       try {
         await ledger(this.env, scope.repo_id, {
-          op: 'fail',
+          ...(!runtimeStarted && capacityUnavailable(error)
+            ? { op: 'defer_job', reason: 'container_capacity' }
+            : {
+                op: 'fail',
+                retryable: true,
+                error: `Container boot failed: ${(error as Error).message}`,
+              }),
           job_id: scope.job.id,
           epoch: scope.job.epoch,
-          retryable: true,
-          error: `Container boot failed: ${(error as Error).message}`,
         });
       } catch {}
       await this.ctx.storage.put('stop_reason', 'boot_failed');
@@ -112,7 +120,11 @@ export class ExecutionContainer extends Container<Env> {
         job_id: scope.job.id,
         epoch: scope.job.epoch,
       });
-    } catch {
+    } catch (failure) {
+      if (!['FENCED', 'REPOSITORY_DELETED'].includes((failure as { code?: string }).code ?? '')) {
+        await this.schedule(15, 'watchdog');
+        return;
+      }
       await this.ctx.storage.put('stop_reason', 'lease_invalid');
       await this.stop();
       return;

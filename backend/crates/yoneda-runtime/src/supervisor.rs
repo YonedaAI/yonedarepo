@@ -9,6 +9,21 @@ pub async fn serve() -> Result<()> {
     if unsafe { libc::geteuid() } != 0 {
         return Err(err("Container supervisor must own the isolated agent UID"));
     }
+    let app = router(
+        std::env::var("SUPERVISOR_TOKEN").unwrap_or_default(),
+        crate::supervisor_task::spawn,
+    );
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
+        .await
+        .map_err(err)?;
+    axum::serve(listener, app).await.map_err(err)
+}
+
+/// Reuse the actual request boundary in transport tests without running paid jobs.
+pub(crate) fn router(
+    secret: String,
+    start: impl Fn(Value) + Clone + Send + Sync + 'static,
+) -> axum::Router {
     use axum::{
         Json, Router,
         http::{HeaderMap, StatusCode},
@@ -20,14 +35,15 @@ pub async fn serve() -> Result<()> {
         atomic::{AtomicBool, Ordering},
     };
     let started = Arc::new(AtomicBool::new(false));
-    let app = Router::new()
+    Router::new()
         .route("/health", get(|| async { Json(health()) }))
         .route(
             "/job",
             post(move |headers: HeaderMap, Json(job): Json<Value>| {
                 let started = started.clone();
+                let secret = secret.clone();
+                let start = start.clone();
                 async move {
-                    let secret = std::env::var("SUPERVISOR_TOKEN").unwrap_or_default();
                     if secret.is_empty()
                         || headers.get("authorization").and_then(|v| v.to_str().ok())
                             != Some(format!("Bearer {secret}").as_str())
@@ -36,15 +52,11 @@ pub async fn serve() -> Result<()> {
                             .into_response();
                     }
                     if !started.swap(true, Ordering::SeqCst) {
-                        crate::supervisor_task::spawn(job);
+                        start(job);
                     }
                     (StatusCode::ACCEPTED, Json(json!({"status":"started"}))).into_response()
                 }
             }),
         )
-        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
-        .await
-        .map_err(err)?;
-    axum::serve(listener, app).await.map_err(err)
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 1024))
 }

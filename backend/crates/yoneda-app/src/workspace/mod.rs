@@ -9,6 +9,7 @@ mod project_dispatch;
 mod project_setup;
 mod projects;
 mod providers;
+mod reviewer;
 pub(super) const TABLE: &str = "workspace_records";
 
 /// Apply the workspace schema and execute a command in one synchronous transaction.
@@ -21,6 +22,11 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .as_i64()
             .ok_or_else(|| bad("Trusted clock required"))?;
         match string(&command, "op")?.as_str() {
+            "reviewer_configure"
+            | "reviewer_status"
+            | "reviewer_revoke"
+            | "reviewer_trial"
+            | "reviewer_trial_complete" => reviewer::handle(&db, &command, now),
             "signup" | "login" | "session" | "logout" | "recover" => {
                 accounts::handle(&db, &command, now)
             }
@@ -90,7 +96,7 @@ pub(super) fn account<S: SqlStore>(db: &S) -> Result<Value> {
     get(db, TABLE, "account")
 }
 pub(super) fn public_account(account: &Value) -> Value {
-    json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"]})
+    json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"],"reviewer":account["reviewer"]})
 }
 pub(super) fn put<S: SqlStore>(db: &S, id: &str, value: &Value) -> Result<()> {
     save(db, TABLE, id, value)

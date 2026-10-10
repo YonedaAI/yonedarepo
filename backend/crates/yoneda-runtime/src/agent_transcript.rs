@@ -51,7 +51,7 @@ impl Transcript {
             .0
             .lock()
             .map_err(|_| crate::err("Transcript lock poisoned"))?;
-        Ok(json!({"exit":exit,"signal":signal,
+        crate::report::bounded(json!({"exit":exit,"signal":signal,
             "stdout":String::from_utf8_lossy(&streams.stdout),
             "stderr":String::from_utf8_lossy(&streams.stderr),
             "stdout_truncated":streams.stdout_truncated,"stderr_truncated":streams.stderr_truncated}))
@@ -62,24 +62,7 @@ impl Transcript {
         output["partial"] = json!(true);
         output["timeout"] = json!(true);
         output["error_code"] = json!("EXECUTION_TIMEOUT");
-        // The existing evidence object allows 8 MiB. Escaped control bytes or lossy UTF-8
-        // can expand bounded raw output; shorten only the private partial snapshot if needed.
-        while output.to_string().len() > 8 * 1024 * 1024 {
-            for (field, flag) in [
-                ("stdout", "stdout_truncated"),
-                ("stderr", "stderr_truncated"),
-            ] {
-                let text = output[field].as_str().unwrap_or_default();
-                let mut keep = text.len() / 2;
-                while !text.is_char_boundary(keep) {
-                    keep -= 1;
-                }
-                let shortened = text[..keep].to_owned();
-                output[field] = json!(shortened);
-                output[flag] = json!(true);
-            }
-        }
-        Ok(output)
+        crate::report::bounded(output)
     }
 
     pub(crate) fn mark_recorded(&self) -> Result<()> {

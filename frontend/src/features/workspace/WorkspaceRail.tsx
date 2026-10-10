@@ -14,9 +14,11 @@ import type { useRepository } from '../../hooks/useRepository';
 import type { WorkspacePanel } from './WorkspacePanels';
 
 export function WorkspaceRail({
+  reviewer = false,
   state,
   onPanel,
 }: {
+  reviewer?: boolean;
   state: ReturnType<typeof useRepository>;
   onPanel: (panel: WorkspacePanel) => void;
 }) {
@@ -71,14 +73,14 @@ export function WorkspaceRail({
                   : 'Your repositories live here.'}
             </span>
           )}
-          {state.authenticated && (
+          {state.authenticated && !reviewer && (
             <button type="button" className="rail-new" onClick={() => show('project')}>
               <Plus size={17} />
               New repository
             </button>
           )}
         </nav>
-        {state.authenticated && (
+        {state.authenticated && !reviewer && (
           <nav className="rail-connections" aria-label="Connections">
             <p className="nav-label">Connections</p>
             <button type="button" onClick={() => show('providers')}>

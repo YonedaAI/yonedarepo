@@ -13,6 +13,7 @@ mod mcp;
 mod process;
 mod process_guard;
 mod prompt;
+mod report;
 mod secure_fs;
 mod site;
 mod source_filter;

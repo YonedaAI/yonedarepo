@@ -15,6 +15,7 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
   await guardContextAccess(env, scope.repo_id, identity, name, args);
   const finish = async (value: Json) =>
     response(await contextResponse(env, scope.repo_id, identity, name, value));
+  if (name === 'peer_status') return response(await command({ op: 'peer_status' }));
   if (name === 'repo_context' || name === 'execution_status')
     return finish(await command({ op: 'context' }));
   if (name === 'team_context' || name === 'integration_request')

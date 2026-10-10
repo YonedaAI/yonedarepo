@@ -5,10 +5,12 @@ import { runAgentLimits } from './agentLimits';
 import { hasPublishedWork } from './runDefaults';
 
 export function RunToolbar({
+  reviewer = false,
   snapshot,
   canStart,
   onNewRun,
 }: {
+  reviewer?: boolean;
   snapshot: Snapshot;
   canStart: boolean;
   onNewRun: () => void;
@@ -27,15 +29,17 @@ export function RunToolbar({
               : 'Compare independent approaches. Decide what ships.'}
           </p>
         </div>
-        <button
-          type="button"
-          className={snapshot.runs.length ? 'quiet' : undefined}
-          disabled={!canStart}
-          onClick={onNewRun}
-        >
-          <Plus size={17} />
-          {updating ? (repo.site ? 'Update website' : 'Update project') : 'New run'}
-        </button>
+        {!reviewer && (
+          <button
+            type="button"
+            className={snapshot.runs.length ? 'quiet' : undefined}
+            disabled={!canStart}
+            onClick={onNewRun}
+          >
+            <Plus size={17} />
+            {updating ? (repo.site ? 'Update website' : 'Update project') : 'New run'}
+          </button>
+        )}
       </div>
       {updating && (
         <p className="subtle">
