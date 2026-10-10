@@ -1,18 +1,138 @@
 {
   "title": "YonedaRepo: build together, keep the why",
-  "format": "12 scenes × 30 seconds. Existing capture filenames are historical and await lead refresh. Captions describe implemented behavior; they do not claim the images demonstrate the new features. No new funded-trial success, deployment, or browser acceptance is claimed.",
+  "format": "Edited current browser captures. Captioned walkthrough without narration; not a continuous recording.",
   "scenes": [
-    {"title": "A private key opens the prepared workspace", "capture": "reviewer-login-domain.jpg", "seconds": 30, "captions": ["A reviewer access key opens a dedicated sandbox without signup or a personal provider key.", "The key stays private and can be revoked or allowed to expire.", "A previously recorded checked run can be reviewed before deciding whether to start new work.", "This walkthrough does not claim a new funded trial succeeded."]},
-    {"title": "The checked CLI stays read-only", "capture": "reviewer-workspace.jpg", "seconds": 30, "captions": ["Run node tools/reviewer.mjs --checked --no-open to inspect a recorded checked run without launching a browser.", "The CLI reads paged run history and selected-run detail when the hosted service supports those routes.", "A narrow compatibility path reads the legacy snapshot only when the service reports the repository operation is unknown.", "Checked mode never starts a trial, resumes paid work, or calls a model."]},
-    {"title": "New work uses Git-native forks", "capture": "reviewer-concurrent.jpg", "seconds": 30, "captions": ["New coding work uses scoped Git-native fork transport for canonical, candidate and task workspaces.", "Older records created with JSON workspace transport remain readable as historical evidence.", "The transport recorded for a run determines how its source and capture are interpreted.", "This historical capture predates the refreshed transport view; it is not visual proof of the new path."]},
-    {"title": "Repair reopens only the affected team work", "capture": "reviewer-activity.jpg", "seconds": 30, "captions": ["An owner can repair selected team tasks using the current plan revision and each selected task revision.", "The ledger fences superseded attempts and reopens the selected tasks plus dependent work.", "A repair brief becomes part of a new plan amendment; it does not rewrite the prior handoffs.", "Repair is bounded to two rounds, after which the owner must choose another course."]},
-    {"title": "Handoffs and integration preserve captured revisions", "capture": "reviewer-handoffs.jpg", "seconds": 30, "captions": ["A handoff is an agent assertion; trusted capture records the validated source revision separately.", "Disjoint task outputs can be assembled from their exact captured revisions with a scoped file overlay.", "The integration candidate records its source tasks and is independently evaluated after capture.", "Ledger history distinguishes claims, captured files, checks and owner decisions."]},
-    {"title": "Disjoint refresh creates a real two-parent merge", "capture": "reviewer-results.jpg", "seconds": 30, "captions": ["When candidate changes are disjoint from the newer canonical head, trusted Git refresh merges both trees.", "The refreshed candidate records the canonical head and original candidate revision as its two parents.", "Refresh creates a new candidate revision and queues fresh independent checks against that revision.", "The original candidate remains immutable evidence; refresh does not silently replace it."]},
-    {"title": "Overlaps require an owner-approved resolver", "capture": "reviewer-checks.jpg", "seconds": 30, "captions": ["A true overlap remains unresolved with its paths and frozen three-way merge workspace recorded.", "The platform does not choose a side or claim an automatic semantic merge.", "An owner brief can authorize a scoped resolver that works from both parents and edits only approved conflict paths.", "Its fresh capture and independent checks determine the resulting candidate's eligibility."]},
-    {"title": "Preview and verification stay separate", "capture": "reviewer-preview.jpg", "seconds": 30, "captions": ["A preview serves static output from the exact candidate manifest on an isolated origin.", "An independent evaluator checks the captured revision; passing checks make it reviewable, not published.", "The repository admits at most six active work runs, with execution and model-request limits frozen into approval.", "These bounds limit resource use; they do not demonstrate large-scale throughput or a new successful trial."]},
-    {"title": "File lineage follows trusted captures", "capture": "reviewer-trail.jpg", "seconds": 30, "captions": ["Per-file receipts come from Worker-verified Git trees, not paths or blob IDs supplied by an agent.", "A receipt records old and new blob IDs, capture identity, task revision and changes such as rename or deletion.", "Unchanged files can inherit exact lineage through a verified refresh; changed files are attributed only to matching captured bytes.", "When a file has no trusted receipt, the answer is explicitly unknown."]},
-    {"title": "Why stays specific to the file", "capture": "reviewer-graph.jpg", "seconds": 30, "captions": ["A file-level why view follows that path's captures and inherited lineage across revisions.", "It connects relevant context and decisions, including rejected alternatives and their recorded reasons.", "Run-wide activity is not presented as proof of who changed a particular file.", "Assertions, trusted capture, independent checks and the human shipping decision remain distinct."]},
-    {"title": "A human still controls publication", "capture": "reviewer-decision.jpg", "seconds": 30, "captions": ["The owner reviews the checked revision and records a rationale before selecting it.", "Selection and publication are separate states; the human decision remains the publication gate.", "Publishing uses an expected-old Git lease, ancestry checks and remote readback.", "The historical capture is awaiting refresh; this script does not claim a new trial or publication succeeded."]},
-    {"title": "History is immutable and paged", "capture": "reviewer-history.jpg", "seconds": 30, "captions": ["Terminal history can be archived into a digest-bound bundle; reads verify the stored bytes against that digest.", "Run lists, graph context and large candidate diffs use bounded pages with stable cursors or watermarks.", "The browser loads one run's detail first and hydrates graph context or diffs when requested.", "Pagination keeps history review scoped instead of polling a full repository snapshot."]}
+    {
+      "title": "Private access opens the funded sandbox",
+      "capture": "reviewer-login-domain.jpg",
+      "seconds": 30,
+      "captions": [
+        "Enter one privately supplied reviewer key to open the funded sandbox.",
+        "The key stays out of the video, URL, command line and source tree.",
+        "Trial access and its spending limit are controlled by the workspace owner.",
+        "Use the prepared workspace to inspect the application and its recorded evidence."
+      ]
+    },
+    {
+      "title": "Open the checked result without a paid run",
+      "capture": "reviewer-workspace.jpg",
+      "seconds": 30,
+      "captions": [
+        "Run node tools/reviewer.mjs --checked from the repository checkout.",
+        "Node 24 is enough; the command needs no dependency installation.",
+        "Checked mode opens an existing result and does not start a paid trial.",
+        "Enter the private access key only when the command prompts for it."
+      ]
+    },
+    {
+      "title": "Two Git-native forks, two scoped agents",
+      "capture": "reviewer-concurrent.jpg",
+      "seconds": 30,
+      "captions": [
+        "Two agents receive separate Git-native forks from the same starting revision.",
+        "Each fork grants write access only to that agent’s assigned paths.",
+        "Separate scopes let both agents work without overwriting each other’s files.",
+        "The workspace shows each agent’s task and captured contribution."
+      ]
+    },
+    {
+      "title": "Timeline keeps failure and repair history",
+      "capture": "reviewer-activity.jpg",
+      "seconds": 30,
+      "captions": [
+        "The timeline keeps failed attempts visible alongside later activity.",
+        "A repair appears as an amendment to the task history.",
+        "Repair uses the trial’s existing budget and records its own progress and checks.",
+        "The earlier failure remains visible instead of being rewritten as success."
+      ]
+    },
+    {
+      "title": "Assertions, verified receipts and the manifest",
+      "capture": "reviewer-handoffs.jpg",
+      "seconds": 30,
+      "captions": [
+        "Agent handoffs describe what an agent says it completed; the UI labels them as assertions.",
+        "Trusted capture validates files and records an exact Git revision.",
+        "Verified task receipts show which revisions and paths entered the next stage.",
+        "An integration manifest lists the captured inputs used for assembly."
+      ]
+    },
+    {
+      "title": "Inspect the exact checked candidate",
+      "capture": "reviewer-results.jpg",
+      "seconds": 30,
+      "captions": [
+        "Open the result tied to its exact captured revision.",
+        "Review the candidate diff and its independent check records.",
+        "The candidate’s check status is visible; review does not publish it automatically.",
+        "The selected result and published source stay separate until an owner decides."
+      ]
+    },
+    {
+      "title": "Choose the checks for this project",
+      "capture": "reviewer-checks.jpg",
+      "seconds": 30,
+      "captions": [
+        "Owners can choose checks and see each command’s recorded result.",
+        "An inline npm ci check can install dependencies from the approved registry.",
+        "An optional bundle check can be enabled for the project.",
+        "These are available options; their appearance does not mean they ran in this trial."
+      ]
+    },
+    {
+      "title": "Preview in an isolated environment",
+      "capture": "reviewer-preview.jpg",
+      "seconds": 30,
+      "captions": [
+        "Open a candidate preview on an isolated origin.",
+        "Preview output is served separately from the main workspace.",
+        "Inspect the rendered project before deciding whether to publish it.",
+        "The preview stays associated with its candidate revision."
+      ]
+    },
+    {
+      "title": "Trace each file to its capture receipt",
+      "capture": "reviewer-trail.jpg",
+      "seconds": 30,
+      "captions": [
+        "Read the trail as intent, tasks, captured changes, checks and decision.",
+        "File provenance links changed paths to trusted capture receipts.",
+        "Receipts show what was captured and which revision contains it.",
+        "A receipt proves delivery of records, not that a model understood or used them."
+      ]
+    },
+    {
+      "title": "Open the focused graph when useful",
+      "capture": "reviewer-graph.jpg",
+      "seconds": 30,
+      "captions": [
+        "Open the graph for a visual view of connected evidence.",
+        "Focus on one run’s neighborhood to keep the view readable.",
+        "Graph pages load on demand; the readable trail remains available.",
+        "Select a record and follow its linked context when useful."
+      ]
+    },
+    {
+      "title": "Review conflicts before an owner decides",
+      "capture": "reviewer-decision.jpg",
+      "seconds": 30,
+      "captions": [
+        "Review the candidate, fresh checks and repository conflicts before selection.",
+        "Disjoint changes can be integrated, then checked again against the current revision.",
+        "Overlapping changes require an owner-approved scoped resolver.",
+        "The resolver does not claim an automatic semantic merge; publication still needs an owner decision."
+      ]
+    },
+    {
+      "title": "Browse paged history and active-run limits",
+      "capture": "reviewer-history.jpg",
+      "seconds": 30,
+      "captions": [
+        "Run history loads in pages so older results remain available.",
+        "Diffs and evidence graph pages load only when opened.",
+        "The active-run cap is six simultaneous runs.",
+        "That cap applies to active work, not the total number of historical runs."
+      ]
+    }
   ]
 }
