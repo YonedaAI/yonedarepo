@@ -186,6 +186,10 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
     const input = await ownerCommandInput(req, action);
+    if (action === 'job_status') {
+      if (typeof input.id !== 'string' || !input.id || input.id.length > 256)
+        return error('INVALID_INPUT', 'A bounded job id is required');
+    }
     if (action === 'run_detail' && requestedAction === 'runs')
       input.run_id = decodeURIComponent(parts[4]);
     if (action === 'run_detail') {
