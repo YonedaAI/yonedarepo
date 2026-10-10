@@ -13,6 +13,7 @@ fn now() -> i64 {
 pub struct RepositoryAuthority {
     state: State,
     env: Env,
+    flushing: std::cell::Cell<bool>,
 }
 
 impl RepositoryAuthority {
@@ -31,6 +32,21 @@ impl RepositoryAuthority {
         Ok(())
     }
     async fn flush(&self) -> Result<()> {
+        // Adapter maintenance reads reenter this DO while delivery awaits I/O.
+        // The outer drain owns acknowledgement; nested reads must not redeliver it.
+        if self.flushing.replace(true) {
+            return Ok(());
+        }
+        struct Reset<'a>(&'a std::cell::Cell<bool>);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.set(false);
+            }
+        }
+        let _reset = Reset(&self.flushing);
+        self.flush_pending().await
+    }
+    async fn flush_pending(&self) -> Result<()> {
         let db = CloudStore::new(self.state.storage());
         if db
             .query("SELECT id FROM repository LIMIT 1", &[])
@@ -89,6 +105,12 @@ impl RepositoryAuthority {
                     u64::try_from(at.saturating_sub(now()).max(1_000)).unwrap_or(1_000),
                 ))
                 .await?;
+        } else if repository["status"] != "deleted" {
+            // Terminal histories still need retention maintenance without browser traffic.
+            self.state
+                .storage()
+                .set_alarm(std::time::Duration::from_secs(24 * 60 * 60))
+                .await?;
         } else {
             self.state.storage().delete_alarm().await?;
         }
@@ -97,7 +119,11 @@ impl RepositoryAuthority {
 }
 impl DurableObject for RepositoryAuthority {
     fn new(state: State, env: Env) -> Self {
-        Self { state, env }
+        Self {
+            state,
+            env,
+            flushing: std::cell::Cell::new(false),
+        }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         let mut command: Value = req.json().await?;
@@ -117,6 +143,17 @@ impl DurableObject for RepositoryAuthority {
     }
     async fn alarm(&self) -> Result<Response> {
         self.ensure_alarm().await?;
+        let db = CloudStore::new(self.state.storage());
+        let repository = execute(&db, json!({"op":"repository_status"}))
+            .map_err(|e| Error::RustError(e.to_string()))?;
+        if repository["status"] != "deleted" {
+            let maintenance = execute(&db, json!({"op":"schedule_archive_due","now":now()}))
+                .map_err(|e| Error::RustError(e.to_string()))?;
+            if maintenance["scheduled"] == true {
+                execute(&db, json!({"op":"outbox_prune","now":now()}))
+                    .map_err(|e| Error::RustError(e.to_string()))?;
+            }
+        }
         execute(
             &CloudStore::new(self.state.storage()),
             json!({"op":"recover","now":now()}),

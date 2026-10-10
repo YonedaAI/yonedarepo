@@ -93,9 +93,11 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "run_detail"
         | "run_graph_page"
         | "candidate_record" => repository::handle(db, c, now),
-        "archive_candidates" | "archive_prepare" | "archive_commit" | "archive_status" => {
-            archive::handle(db, c, now)
-        }
+        "archive_candidates"
+        | "archive_prepare"
+        | "archive_commit"
+        | "archive_status"
+        | "schedule_archive_due" => archive::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
         "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
         "team_context"
