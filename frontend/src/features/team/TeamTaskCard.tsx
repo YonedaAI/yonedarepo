@@ -103,18 +103,18 @@ export function TeamTaskCard({
           {task.output.paths?.length ?? 0} changed paths
         </p>
       )}
-      {!reviewer &&
-        task.output &&
-        task.output.revision?.commit !== snapshot.repository.head_commit && (
-          <button
-            type="button"
-            className="quiet"
-            disabled={busy || task.status === 'running'}
-            onClick={() => onRepair(task)}
-          >
-            Repair task from current revision
-          </button>
-        )}
+      {task.output && task.output.revision?.commit !== snapshot.repository.head_commit && (
+        <button
+          type="button"
+          className="quiet"
+          disabled={busy || task.status === 'running'}
+          onClick={() => onRepair(task)}
+        >
+          {reviewer
+            ? 'Repair task using existing trial approval'
+            : 'Repair task from current revision'}
+        </button>
+      )}
       <details>
         <summary>Task scope and handoffs</summary>
         <p>{task.instructions}</p>
