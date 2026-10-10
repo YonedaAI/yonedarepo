@@ -49,7 +49,7 @@ export function RunDetail({
   onRestart: () => void;
   onCancel: () => void;
   onRetry: (task: Record<string, any>) => void;
-  onRepairTask: (task: Record<string, any>) => void;
+  onRepairTask: (request: Record<string, unknown>) => Promise<boolean>;
   onAccept: (
     candidate: string,
     rationale: string,

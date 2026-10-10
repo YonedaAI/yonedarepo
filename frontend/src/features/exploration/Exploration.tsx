@@ -138,16 +138,7 @@ export function Exploration({
                     expected_revision: task.revision,
                   })
                 }
-                onRepairTask={(task) =>
-                  void act('repair_team', {
-                    run_id: run.id,
-                    task_id: task.task_id,
-                    expected_epoch: task.epoch,
-                    expected_revision: task.revision,
-                    repository_revision: repo.head_commit,
-                    repository_version: repo.version,
-                  })
-                }
+                onRepairTask={(request) => act('repair_team', request)}
                 onAccept={(candidate, rationale, alternatives) =>
                   act('accept', {
                     request_id: crypto.randomUUID(),

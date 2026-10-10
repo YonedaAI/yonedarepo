@@ -75,7 +75,7 @@ describe('reviewer run permissions', () => {
       run: { id: 'run' },
       busy: false,
       canStart: true,
-      onRepair: noop,
+      onRepair: async () => true,
       reviewer: true,
     };
     expect(renderToStaticMarkup(createElement(RunToolbar, toolbar))).not.toContain('New run');
@@ -114,7 +114,7 @@ describe('reviewer run permissions', () => {
       run: { id: 'run', status: 'failed' },
       busy: false,
       onRetry: noop,
-      onRepair: noop,
+      onRepair: async () => true,
       onProviders: noop,
       reviewer: true,
     };
@@ -135,7 +135,7 @@ describe('reviewer run permissions', () => {
       run: { id: 'run', status: 'exploring', team_plan: { tasks: [{ id: 'task' }] } },
       busy: false,
       onRetry: noop,
-      onRepair: noop,
+      onRepair: async () => true,
       reviewer: true,
     };
     const html = renderToStaticMarkup(createElement(TeamWorkflow, props));
@@ -190,7 +190,7 @@ describe('reviewer run permissions', () => {
       onRestart: noop,
       onCancel: noop,
       onRetry: noop,
-      onRepairTask: noop,
+      onRepairTask: async () => true,
       onAccept: async () => true,
       onProviders: noop,
       onContext: noop,

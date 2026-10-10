@@ -32,7 +32,10 @@ vi.mock('./ContextGraph', () => ({
     createElement('div', {}, graph.nodes.map((node) => node.label).join('|')),
 }));
 vi.mock('./GraphTools', () => ({ GraphTools: () => null }));
-vi.mock('./EvidenceTrail', () => ({ EvidenceTrail: () => null }));
+vi.mock('./EvidenceTrail', () => ({
+  EvidenceTrail: ({ graph }: { graph: Graph }) =>
+    createElement('div', { 'data-testid': 'trail' }, graph.nodes.map((item) => item.label).join('|')),
+}));
 
 function node(id: string, kind = 'run', data = {}): GraphNode {
   return { id, label: id, kind, data, author: 'platform_capture', recorded_at: 1000 };
@@ -55,6 +58,36 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('review evidence views', () => {
+  it('hydrates scoped run context before rendering assertions from an empty paged snapshot', async () => {
+    const assertion = node('assertion-1', 'assertion', { run_id: 'run-1' });
+    const fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        nodes: [assertion],
+        edges: [],
+        next_cursor: null,
+        has_more: false,
+        watermark: 12,
+      }),
+    });
+    vi.stubGlobal('fetch', fetch);
+    const snapshot: Snapshot = {
+      repository: { id: 'repo', name: 'repo', version: 1, status: 'ready', head_commit: 'a', published_commit: 'a', pending: null, remote: { namespace: 'test', name: 'repo' } },
+      runs: [{ id: 'run-1', intent: 'Preserve the accepted behavior', created_at: 1 }],
+      executions: [], candidates: [], evaluations: [], decisions: [], artifacts: [],
+      nodes: [], edges: [], seq: 12, graph_paged: true,
+    };
+    let tree = render(() => GraphWorkspace({ snapshot, runId: 'run-1' }));
+    expect(renderToStaticMarkup(tree)).not.toContain('Evidence from agent');
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      '/api/repos/repo/run_graph_page?run_id=run-1&limit=200', expect.objectContaining({ method: 'GET' }),
+    ));
+    await vi.waitFor(() => expect(hooks.states[5]).toMatchObject({ nodes: [assertion] }));
+    tree = render(() => GraphWorkspace({ snapshot, runId: 'run-1' }));
+    expect(renderToStaticMarkup(tree)).toContain('assertion-1');
+  });
+
   it('fetches a digest-only candidate through repository-authorized evidence and renders added/removed diff lines', async () => {
     const digest = 'a'.repeat(64);
     const diff =

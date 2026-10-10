@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { short } from '../../lib/api';
-import { SourceDiff } from './SourceDiff';
-export function CandidateComparison({ candidates }: { candidates: Record<string, any>[] }) {
+import { LazyCandidateDiff } from './LazyCandidateDiff';
+export function CandidateComparison({
+  candidates,
+  repo,
+}: {
+  candidates: Record<string, any>[];
+  repo: string;
+}) {
   const [left, setLeft] = useState('');
   const [right, setRight] = useState('');
   return (
@@ -30,7 +36,7 @@ export function CandidateComparison({ candidates }: { candidates: Record<string,
                   ))}
                 </select>
               </label>
-              {candidate && <SourceDiff diff={candidate.diff} />}
+              {candidate && <LazyCandidateDiff key={candidate.id} repo={repo} candidate={candidate} />}
             </div>
           );
         })}

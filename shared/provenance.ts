@@ -26,13 +26,30 @@ export interface CandidateDiffPageContract {
   watermark: string;
 }
 export interface ConflictStatusContract {
-  records: {
+  /** New inventory response; `conflicts` remains accepted during route alias rollout. */
+  records?: {
     id?: string;
     kind: string;
     candidate_id: string;
     head_commit?: string;
+    expected_head?: string;
+    expected_commit?: string;
     expected_version?: number;
     conflict_paths?: string[];
+    paths?: string[];
+    evidence?: Record<string, unknown>;
+    status?: string;
+  }[];
+  conflicts?: {
+    id?: string;
+    kind?: string;
+    candidate_id: string;
+    head_commit?: string;
+    expected_head?: string;
+    expected_commit?: string;
+    expected_version?: number;
+    conflict_paths?: string[];
+    paths?: string[];
     evidence?: Record<string, unknown>;
     status?: string;
   }[];
@@ -55,9 +72,14 @@ export interface FileProvenanceContract {
     handoff_id?: string | null;
     task_id?: string | null;
     task_revision?: number;
-    capture_kind?: 'task_handoff' | 'team_integration' | 'repair' | 'candidate';
-    execution_id: string;
-    execution_epoch: number;
+    capture_kind?: 'task_handoff' | 'team_integration' | 'repair' | 'candidate' | 'merge_refresh';
+    /** Direct capture identity; merge refresh uses byte-matched source attribution instead. */
+    execution_id: string | null;
+    execution_epoch: number | null;
+    source_candidate?: string | null;
+    source_execution_id?: string | null;
+    source_execution_epoch?: number | null;
+    lineage_relation?: 'exact_blob_inherited_by_merge_refresh';
     capture_epoch: number;
     revision: { commit: string };
     path: string;
