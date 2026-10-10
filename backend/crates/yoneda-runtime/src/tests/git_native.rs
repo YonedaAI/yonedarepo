@@ -53,6 +53,23 @@ async fn fresh_capture_preserves_large_binary_modes_and_base_history_without_age
     )
     .await
     .unwrap();
+    let diff = captured["diff"].as_str().unwrap();
+    assert!(
+        diff.starts_with("diff --git a/"),
+        "capture must retain a reviewable patch"
+    );
+    assert!(
+        diff.contains("candidate base file"),
+        "text changes must be present in the patch"
+    );
+    assert!(
+        diff.contains("GIT binary patch"),
+        "binary changes must use Git's binary-safe encoding"
+    );
+    assert!(
+        diff.len() <= 24 * 1024 * 1024,
+        "stored patches must fit the Worker evidence limit"
+    );
     assert!(
         !marker.exists(),
         "agent-defined Git filters must never execute during capture"
@@ -79,6 +96,45 @@ async fn fresh_capture_preserves_large_binary_modes_and_base_history_without_age
     assert_eq!(loaded["payload.bin"].bytes, [0, 255, 128, 42]);
     assert!(loaded["payload.bin"].executable);
     assert_eq!(loaded["README"].bytes, b"candidate base file");
+}
+
+#[tokio::test]
+async fn fresh_capture_rejects_review_patch_over_worker_limit_without_truncating() {
+    let canonical = tempfile::tempdir().unwrap();
+    let base_files = Workspace::from([(
+        "base.txt".into(),
+        yoneda_core::FileEntry::from_bytes(b"approved".to_vec(), false),
+    )]);
+    let base = capture(canonical.path(), None, &base_files, "approved empty base")
+        .await
+        .unwrap();
+    let mut state = 0x1234_5678_u32;
+    let bytes = (0..25 * 1024 * 1024)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            (state >> 24) as u8
+        })
+        .collect::<Vec<_>>();
+    let files = BTreeMap::from([(
+        "large.bin".into(),
+        crate::transport::GitFile {
+            bytes,
+            executable: false,
+        },
+    )]);
+    let target = tempfile::tempdir().unwrap();
+    let error = capture_fresh(
+        target.path(),
+        canonical.path().to_str().unwrap(),
+        base["commit"].as_str().unwrap(),
+        &files,
+        "oversized review patch",
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("24 MiB review limit"), "{error}");
 }
 
 #[tokio::test]
