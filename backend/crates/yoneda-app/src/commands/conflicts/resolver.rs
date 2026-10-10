@@ -3,22 +3,6 @@ use super::*;
 pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     owner(c)?;
     let mut record = get(db, "conflicts", &string(c, "conflict_id")?)?;
-    let repository = repo(db)?;
-    if record["status"] != "unresolved" {
-        return Err(Error::new(
-            "INVALID_STATE",
-            "Only unresolved conflicts can be resolved",
-        ));
-    }
-    if repository["version"] != number(c, "expected_version")?
-        || repository["version"] != record["expected_version"]
-        || repository["head_commit"] != record["head_commit"]
-    {
-        return Err(Error::new(
-            "HEAD_MOVED",
-            "Repository changed since conflict review",
-        ));
-    }
     let brief = string(c, "owner_brief")?;
     if brief.len() > 4096 {
         return Err(bad("Resolver brief exceeds 4096 bytes"));
@@ -41,6 +25,22 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             ));
         }
     }
+    let repository = repo(db)?;
+    if record["status"] != "unresolved" {
+        return Err(Error::new(
+            "INVALID_STATE",
+            "Only unresolved conflicts can be resolved",
+        ));
+    }
+    if repository["version"] != number(c, "expected_version")?
+        || repository["version"] != record["expected_version"]
+        || repository["head_commit"] != record["head_commit"]
+    {
+        return Err(Error::new(
+            "HEAD_MOVED",
+            "Repository changed since conflict review",
+        ));
+    }
     let conflict_paths = record["conflict_paths"]
         .as_array()
         .ok_or_else(|| bad("Invalid conflict path list"))?;
@@ -53,6 +53,11 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         })
         .collect::<Result<_>>()?;
     validate_path_list(&scopes)?;
+    hash(&record["workspace_revision"], "commit", &[40, 64])?;
+    string(&record["workspace_revision"], "repository")?;
+    if record["workspace_revision"]["commit"] != record["merge_workspace_commit"] {
+        return Err(bad("Frozen merge workspace identity differs"));
+    }
     let source_execution = get(
         db,
         "executions",
@@ -82,7 +87,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         record["candidate_revision"],
         scopes.join(", ")
     );
-    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":"Owner-approved three-way conflict resolver","role":"coding","status":"queued","context":source_execution["context"],"base":{"repository":repository["remote"],"commit":record["head_commit"]},"depth":0,"parent_execution":source_execution["id"],"parent_epoch":source_execution.get("epoch").cloned().unwrap_or(json!(1)),"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
+    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":"Owner-approved three-way conflict resolver","role":"coding","status":"queued","context":source_execution["context"],"base":{"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]},"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
     }
@@ -109,7 +114,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         &job_id,
         "agent",
         now,
-        json!({"execution":execution,"run":run,"policy":policy,"team_owned_paths":scopes,"conflict_resolver":{"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"approved_manifest":record["evidence"],"serverguard":"own_repository_only"}}),
+        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"team_owned_paths":scopes,"conflict_resolver":{"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":record["evidence"],"serverguard":"own_repository_only"}}),
     )?;
     record["resolver_request_id"] = json!(request);
     record["status"] = json!("resolving");

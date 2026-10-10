@@ -118,7 +118,7 @@ fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
     execution["team_role"] = json!("worker");
     save_execution(&db, &execution, 2).unwrap();
     let candidate = get(&db, "candidates", "candidate").unwrap();
-    create(&db,"conflicts","conflict:unresolved",&json!({"id":"conflict:unresolved","repository_id":"conflict-repo","request_id":"refresh-1","candidate_id":"candidate","candidate":candidate,"candidate_revision":"c".repeat(40),"candidate_base":"a".repeat(40),"expected_version":1,"head_commit":"b".repeat(40),"status":"unresolved","evidence":evidence(),"conflict_paths":["src/change.rs"]})).unwrap();
+    create(&db,"conflicts","conflict:unresolved",&json!({"id":"conflict:unresolved","repository_id":"conflict-repo","request_id":"refresh-1","candidate_id":"candidate","candidate":candidate,"candidate_revision":"c".repeat(40),"candidate_base":"a".repeat(40),"expected_version":1,"head_commit":"b".repeat(40),"status":"unresolved","merge_workspace_commit":"f".repeat(40),"workspace_revision":{"repository":"test/merge-workspace","commit":"f".repeat(40)},"evidence":evidence(),"conflict_paths":["src/change.rs"]})).unwrap();
     let result = resolve(&db, &json!({"op":"resolve_conflict","conflict_id":"conflict:unresolved","request_id":"resolve-1","expected_version":1,"owner_brief":"Preserve both API behaviors"}), 3).unwrap();
     assert_eq!(result["status"], "resolving");
     let job = get(&db, "jobs", "job:conflict-resolver:resolve-1").unwrap();
@@ -135,4 +135,57 @@ fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
             .unwrap()
             .contains("conflict markers contain both sides")
     );
+}
+
+#[test]
+fn clean_refresh_terminates_capture_and_freezes_fresh_evaluation_with_two_parents() {
+    let db = setup();
+    let receipt = refresh(&db, &request(), 2).unwrap();
+    let job_id = receipt["job_id"].as_str().unwrap();
+    let leased = execute(&db, json!({"op":"claim","job_id":job_id,"now":3})).unwrap();
+    assert_eq!(leased["payload"]["workspace_transport"], "git-native-v1");
+    let cid = format!("candidate:refresh:{}", "e".repeat(40));
+    let result = json!({"status":"clean","evidence":evidence(),"candidate_id":cid,
+        "revision":{"repository":"test/refresh-fork","commit":"e".repeat(40)},"tree":"f".repeat(40),
+        "merge_commit":"e".repeat(40),"paths":["src/change.rs"],"diff_digest":"d".repeat(64),"file_provenance":[],
+        "readback":{"observed_head":"b".repeat(40),"version":1,"parents":["b".repeat(40),"c".repeat(40)],
+        "candidate_paths":["src/change.rs"],"intervening_paths":["README.md"],"merge_commit":"e".repeat(40),"merged_paths":["src/change.rs"]}});
+    complete(
+        &db,
+        &json!({"job_id":job_id,"epoch":leased["epoch"],"result":result}),
+        4,
+    )
+    .unwrap();
+    assert_eq!(get(&db, "jobs", job_id).unwrap()["status"], "done");
+    let candidate = get(&db, "candidates", &cid).unwrap();
+    assert_eq!(candidate["status"], "evaluating");
+    assert_eq!(candidate["base"]["repository"], "test/conflict");
+    assert_eq!(
+        candidate["approved_parents"],
+        json!(["b".repeat(40), "c".repeat(40)])
+    );
+    assert_eq!(candidate["refresh_expected_version"], 1);
+    let evaluator = get(&db, "jobs", &format!("evaluate:{cid}")).unwrap();
+    assert_eq!(evaluator["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(
+        evaluator["payload"]["candidate"]["diff_digest"],
+        "d".repeat(64)
+    );
+    assert!(candidate["evaluation"].is_null());
+    let mut repository = repo(&db).unwrap();
+    repository["head_commit"] = json!("1".repeat(40));
+    repository["version"] = json!(2);
+    save(&db, "repository", "repo", &repository).unwrap();
+    assert_eq!(refresh(&db, &request(), 5).unwrap(), receipt);
+}
+
+#[test]
+fn refresh_rejects_forged_tree_readback_atomically() {
+    let db = setup();
+    let receipt = refresh(&db, &request(), 2).unwrap();
+    let jid = receipt["job_id"].as_str().unwrap();
+    let leased = execute(&db, json!({"op":"claim","job_id":jid,"now":3})).unwrap();
+    let before = get(&db, "jobs", jid).unwrap();
+    assert!(complete(&db,&json!({"job_id":jid,"epoch":leased["epoch"],"result":{"status":"clean","evidence":evidence(),"readback":{"observed_head":"forged","version":1}}}),4).is_err());
+    assert_eq!(get(&db, "jobs", jid).unwrap(), before);
 }

@@ -46,9 +46,10 @@ export async function captureFileProvenance(
   repo: GitRepository,
   baseCommit: string,
   capturedCommit: string,
+  baseRepository: GitRepository = repo,
 ): Promise<Json[]> {
   const [before, after] = await Promise.all([
-    filesAt(repo, baseCommit),
+    filesAt(baseRepository, baseCommit),
     filesAt(repo, capturedCommit),
   ]);
   const removed = new Map(

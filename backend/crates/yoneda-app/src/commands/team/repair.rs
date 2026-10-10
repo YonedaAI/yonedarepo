@@ -11,6 +11,33 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     }
     let rid = string(c, "run_id")?;
     let mut run = get(db, "runs", &rid)?;
+    let request_id = string(c, "request_id")?;
+    let fingerprint = yoneda_core::fingerprint(
+        &json!({"run_id":c["run_id"],"expected_commit":c["expected_commit"],"expected_version":c["expected_version"],"expected_plan_revision":c["expected_plan_revision"],"task_ids":c["task_ids"],"expected_task_revisions":c["expected_task_revisions"],"owner_brief":c["owner_brief"]}),
+    )?;
+    if let Some(receipts) = run["team_repair_receipts"].as_array() {
+        if let Some(previous) = receipts.iter().find(|v| v["request_id"] == request_id) {
+            if previous["fingerprint"] != fingerprint {
+                return Err(Error::new(
+                    "IDEMPOTENCY_CONFLICT",
+                    "Repair request ID was reused with different input",
+                ));
+            }
+            return Ok(previous["receipt"].clone());
+        }
+    }
+    let repository = repo(db)?;
+    if repository["status"] != "ready"
+        || !repository["pending"].is_null()
+        || repository["head_commit"] != c["expected_commit"]
+        || repository["version"] != c["expected_version"]
+        || run["base"]["commit"] != repository["head_commit"]
+    {
+        return Err(Error::new(
+            "HEAD_MOVED",
+            "Repair requires its reserved canonical head and version",
+        ));
+    }
     if run["mode"] != "collaborate"
         || ["cancelled", "accepted"].contains(&run["status"].as_str().unwrap_or_default())
     {
@@ -95,6 +122,13 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     run["team_repair_brief"] = json!(brief);
     run["team_plan_amendments"] = json!(amendments);
     run["status"] = json!("exploring");
+    let receipt = json!({"run_id":rid,"plan_revision":next_plan,"repair_round":next_round,"affected_tasks":affected,"status":"repairing"});
+    let mut receipts = run["team_repair_receipts"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    receipts.push(json!({"request_id":request_id,"fingerprint":fingerprint,"receipt":receipt}));
+    run["team_repair_receipts"] = json!(receipts);
     save(db, "runs", &rid, &run)?;
     for mut task in tasks
         .into_iter()
@@ -126,9 +160,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         json!({"run_id":rid,"plan_revision":next_plan,"round":next_round,"tasks":affected,"owner_brief":brief}),
     )?;
     scheduling::wake(db, &run, now)?;
-    Ok(
-        json!({"run_id":rid,"plan_revision":next_plan,"repair_round":next_round,"affected_tasks":affected,"status":"repairing"}),
-    )
+    Ok(receipt)
 }
 
 fn supersede_task_attempts<S: SqlStore>(
@@ -225,9 +257,16 @@ mod tests {
         start(&db);
         let before = get(&db, "team_tasks", "repair-run:task:downstream").unwrap();
         let independent_before = get(&db, "team_tasks", "repair-run:task:independent").unwrap();
-        let request = json!({"op":"repair_team","run_id":"repair-run","expected_plan_revision":1,"task_ids":["upstream"],"expected_task_revisions":{"upstream":1},"owner_brief":"Correct the upstream behavior"});
+        let request = json!({"op":"repair_team","request_id":"repair-1","expected_commit":"a".repeat(40),"expected_version":0,"run_id":"repair-run","expected_plan_revision":1,"task_ids":["upstream"],"expected_task_revisions":{"upstream":1},"owner_brief":"Correct the upstream behavior"});
         let result = repair(&db, &request, 20).unwrap();
         assert_eq!(result["repair_round"], 1);
+        assert_eq!(repair(&db, &request, 21).unwrap(), result);
+        let mut changed = request.clone();
+        changed["owner_brief"] = json!("Changed input");
+        assert_eq!(
+            repair(&db, &changed, 22).unwrap_err().code,
+            "IDEMPOTENCY_CONFLICT"
+        );
         assert_eq!(
             get(&db, "team_tasks", "repair-run:task:upstream").unwrap()["revision"],
             2
@@ -270,15 +309,15 @@ mod tests {
         let db = NativeStore::memory().unwrap();
         start(&db);
         let budgets = get(&db, "runs", "repair-run").unwrap()["model_budgets"].clone();
-        let first = json!({"op":"repair_team","run_id":"repair-run","expected_plan_revision":1,"task_ids":["upstream"],"expected_task_revisions":{"upstream":1},"owner_brief":"First repair"});
+        let first = json!({"op":"repair_team","request_id":"repair-1","expected_commit":"a".repeat(40),"expected_version":0,"run_id":"repair-run","expected_plan_revision":1,"task_ids":["upstream"],"expected_task_revisions":{"upstream":1},"owner_brief":"First repair"});
         repair(&db, &first, 20).unwrap();
-        let second = json!({"op":"repair_team","run_id":"repair-run","expected_plan_revision":2,"task_ids":["upstream"],"expected_task_revisions":{"upstream":2},"owner_brief":"Second repair"});
+        let second = json!({"op":"repair_team","request_id":"repair-2","expected_commit":"a".repeat(40),"expected_version":0,"run_id":"repair-run","expected_plan_revision":2,"task_ids":["upstream"],"expected_task_revisions":{"upstream":2},"owner_brief":"Second repair"});
         repair(&db, &second, 30).unwrap();
         assert_eq!(
             get(&db, "runs", "repair-run").unwrap()["model_budgets"],
             budgets
         );
-        let third = json!({"op":"repair_team","run_id":"repair-run","expected_plan_revision":3,"task_ids":["upstream"],"expected_task_revisions":{"upstream":3},"owner_brief":"Third repair"});
+        let third = json!({"op":"repair_team","request_id":"repair-3","expected_commit":"a".repeat(40),"expected_version":0,"run_id":"repair-run","expected_plan_revision":3,"task_ids":["upstream"],"expected_task_revisions":{"upstream":3},"owner_brief":"Third repair"});
         assert_eq!(
             repair(&db, &third, 40).unwrap_err().code,
             "REPAIR_BUDGET_EXHAUSTED"

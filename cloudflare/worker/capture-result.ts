@@ -47,6 +47,7 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     paths: _paths,
     readback: _readback,
     workspace_revision: _workspace,
+    resolver_delta_paths: _resolverDelta,
     ...metadata
   } = body;
   const result: Json = { ...metadata, paths, file_provenance: fileProvenance };
@@ -84,6 +85,32 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
       result.diff_digest = (await object(env, body.diff, CANDIDATE_DIFF_LIMIT)).digest;
     }
     return { op: 'conflict_refresh_complete', ...identity, result };
+  }
+  if (job.payload.capture_subtype === 'resolve_conflict') {
+    const workspace = job.payload.merge_workspace_revision;
+    if (typeof workspace?.repository !== 'string' || typeof workspace?.commit !== 'string')
+      invalid('Frozen resolver merge workspace is missing');
+    using merged = await env.ARTIFACTS.get(workspace.repository.split('/')[1]);
+    // Compare blob identities across repositories; the new fork need not retain
+    // the old merge workspace object after trusted recapture.
+    const delta = changedPaths(
+      await captureFileProvenance(captured, workspace.commit, commitHash, merged),
+    );
+    const status = await ledger(env, scope.repo_id, { op: 'repository_status' });
+    using canonical = await env.ARTIFACTS.get(status.remote.name);
+    const info = await canonical.info();
+    const observed = (
+      await canonical.log({ ref: status.remote.branch ?? info.defaultBranch, limit: 1 })
+    )[0]?.hash;
+    result.resolver_delta_paths = delta;
+    result.readback = {
+      observed_head: observed,
+      version: status.version,
+      parents: commit.parents,
+      candidate_commit: commitHash,
+      captured_paths: paths,
+      resolver_delta_paths: delta,
+    };
   }
   if (typeof body.diff !== 'string') invalid('Trusted capture must supply the full diff');
   result.diff_digest = (await object(env, body.diff, CANDIDATE_DIFF_LIMIT)).digest;

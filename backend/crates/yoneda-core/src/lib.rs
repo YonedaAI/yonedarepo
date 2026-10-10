@@ -8,6 +8,7 @@ pub mod account;
 pub mod agents;
 pub mod build;
 pub mod conflict;
+pub mod conflict_capture;
 pub mod context;
 pub mod context_study;
 pub mod context_usage;

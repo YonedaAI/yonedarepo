@@ -28,7 +28,9 @@ pub(super) fn update<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     repository["policy"] = policy.clone();
     save(db, "repository", "repo", &repository)?;
     for mut candidate in all(db, "candidates")? {
-        if candidate["base"]["commit"] != repository["published_commit"] {
+        if candidate["base"]["commit"] != repository["published_commit"]
+            || ["cancelled", "stale"].contains(&candidate["status"].as_str().unwrap_or_default())
+        {
             continue;
         }
         let run = get(db, "runs", &string(&candidate, "run_id")?)?;

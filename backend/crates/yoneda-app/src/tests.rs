@@ -276,7 +276,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        11
+        12
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();

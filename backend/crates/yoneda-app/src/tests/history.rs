@@ -2,8 +2,14 @@ use super::*;
 use crate::storage::{
     edge, event, get, node, prune_outbox_payloads, run_detail, run_graph_page, run_page, save,
 };
-#[path = "../commands/archive.rs"]
-mod archive_command;
+mod archive_command {
+    use crate::SqlStore;
+    use serde_json::{Value, json};
+    pub fn handle<S: SqlStore>(db: &S, mut command: Value, now: i64) -> yoneda_core::Result<Value> {
+        command["now"] = json!(now);
+        crate::execute(db, command)
+    }
+}
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
 fn run(id: &str, now: i64) -> Value {
@@ -504,7 +510,7 @@ fn migration_eleven_upgrades_a_real_v8_schema_and_repeats_cleanly() {
     assert_eq!(
         db.query("SELECT MAX(version) AS version FROM schema_migrations", &[])
             .unwrap()[0]["version"],
-        11
+        12
     );
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('outbox') WHERE name IN ('created_at','payload_pruned')",&[]).unwrap()[0]["count"],2);
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('execution_logs') WHERE name='data_pruned'", &[]).unwrap()[0]["count"], 1);
