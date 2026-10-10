@@ -155,6 +155,6 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     }
     return error('FORBIDDEN', 'Unknown broker operation', 403);
   } catch (e: any) {
-    return error(e.code ?? 'BROKER_FAILED', e.message, 409);
+    return error(e.code ?? 'BROKER_FAILED', e.message, e.code === 'FORBIDDEN' ? 403 : 409);
   }
 };

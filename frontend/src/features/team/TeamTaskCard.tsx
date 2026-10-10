@@ -126,9 +126,12 @@ export function TeamTaskCard({
               }
               if (
                 !repairRequest &&
-                (!Number.isSafeInteger(run.team_plan_revision) || !Number.isSafeInteger(task.revision))
+                (!Number.isSafeInteger(run.team_plan_revision) ||
+                  !Number.isSafeInteger(task.revision))
               ) {
-                setRepairStatus('The frozen plan or task revision is unavailable. Refresh this run before repairing.');
+                setRepairStatus(
+                  'The frozen plan or task revision is unavailable. Refresh this run before repairing.',
+                );
                 return;
               }
               const request = repairRequest ?? {
@@ -144,23 +147,26 @@ export function TeamTaskCard({
               setRepairRequest(request);
               setRepairSending(true);
               setRepairStatus('');
-              void onRepair(request).then((accepted) => {
-                if (accepted) {
-                  setRepairRequest(null);
-                  setRepairBrief('');
-                  setRepairStatus(
-                    'Repair request accepted. The selected task and its dependents will be refreshed.',
-                  );
-                } else {
+              void onRepair(request)
+                .then((accepted) => {
+                  if (accepted) {
+                    setRepairRequest(null);
+                    setRepairBrief('');
+                    setRepairStatus(
+                      'Repair request accepted. The selected task and its dependents will be refreshed.',
+                    );
+                  } else {
+                    setRepairStatus(
+                      'Repair was not acknowledged. Retry sends the same request ID and expected revisions.',
+                    );
+                  }
+                })
+                .catch(() => {
                   setRepairStatus(
                     'Repair was not acknowledged. Retry sends the same request ID and expected revisions.',
                   );
-                }
-              }).catch(() => {
-                setRepairStatus(
-                  'Repair was not acknowledged. Retry sends the same request ID and expected revisions.',
-                );
-              }).finally(() => setRepairSending(false));
+                })
+                .finally(() => setRepairSending(false));
             }}
           >
             <label>

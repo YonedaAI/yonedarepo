@@ -94,6 +94,7 @@ pub enum ConflictStatus {
     Unresolved,
     Resolved,
     Stale,
+    Failed,
 }
 
 fn invalid(message: &str) -> Error {

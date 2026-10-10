@@ -31,6 +31,7 @@ pub(super) fn attach_typed(record: &mut Value) -> Result<()> {
         "unresolved" => ConflictStatus::Unresolved,
         "resolved" => ConflictStatus::Resolved,
         "stale" => ConflictStatus::Stale,
+        "failed" => ConflictStatus::Failed,
         _ => ConflictStatus::Refreshing,
     };
     let typed = ConflictRecord {

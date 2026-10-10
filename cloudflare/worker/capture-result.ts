@@ -27,7 +27,7 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
   if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(commitHash ?? ''))
     invalid('Captured revision is invalid');
   if (!(refresh && body.status === 'unresolved') && body.revision?.repository !== scope.fork)
-    invalid('Captured repository mismatch');
+    throw Object.assign(new Error('Captured repository mismatch'), { code: 'FORBIDDEN' });
   using captured = await env.ARTIFACTS.get(scope.fork.split('/')[1]);
   const commit = await captured.readCommit(commitHash);
   const base = refresh ? job.payload.expected_head : job.payload.base.commit;

@@ -5,6 +5,7 @@ use yoneda_core::{Error, Result};
 mod inventory;
 mod refresh;
 mod resolver;
+mod resolver_capture;
 mod support;
 pub(super) fn complete_resolver_capture<S: SqlStore>(
     db: &S,
@@ -12,7 +13,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     result: &Value,
     now: i64,
 ) -> Result<Value> {
-    refresh::complete_resolver_capture(db, job, result, now)
+    resolver_capture::complete_resolver_capture(db, job, result, now)
 }
 pub(super) fn resolver_evaluated<S: SqlStore>(
     db: &S,
@@ -20,7 +21,7 @@ pub(super) fn resolver_evaluated<S: SqlStore>(
     eligible: bool,
     now: i64,
 ) -> Result<()> {
-    refresh::resolver_evaluated(db, candidate, eligible, now)
+    resolver_capture::resolver_evaluated(db, candidate, eligible, now)
 }
 #[cfg(test)]
 #[path = "tests/conflicts.rs"]

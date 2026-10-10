@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { Graph } from '../../lib/types';
 import { mergeRunGraphPage } from './runGraphPages';
 
-const node = (id: string) => ({ id, kind: 'assertion', label: id, author: 'agent', recorded_at: 1, data: {} });
+const node = (id: string) => ({
+  id,
+  kind: 'assertion',
+  label: id,
+  author: 'agent',
+  recorded_at: 1,
+  data: {},
+});
 
 describe('run graph page merging', () => {
   it('appends later pages without erasing assertions or duplicate context edges', () => {

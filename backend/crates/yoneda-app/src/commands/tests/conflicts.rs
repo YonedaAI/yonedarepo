@@ -110,7 +110,7 @@ fn inventory_includes_stale_candidates_without_a_conflict_id() {
 fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
     let db = setup();
     let mut execution = get(&db, "executions", "execution").unwrap();
-    execution["harness"] = json!("codex");
+    execution["harness"] = json!("claude");
     execution["provider"] = json!("mimo");
     execution["model"] = json!("mimo-v2.6-flash");
     execution["context"] = json!([]);
@@ -188,4 +188,44 @@ fn refresh_rejects_forged_tree_readback_atomically() {
     let before = get(&db, "jobs", jid).unwrap();
     assert!(complete(&db,&json!({"job_id":jid,"epoch":leased["epoch"],"result":{"status":"clean","evidence":evidence(),"readback":{"observed_head":"forged","version":1}}}),4).is_err());
     assert_eq!(get(&db, "jobs", jid).unwrap(), before);
+}
+
+#[test]
+fn resolver_without_a_frozen_hosted_model_cannot_queue_a_paid_job() {
+    let db = setup();
+    let candidate = get(&db, "candidates", "candidate").unwrap();
+    create(&db,"conflicts","external-conflict",&json!({"id":"external-conflict","candidate":candidate,"candidate_revision":"c".repeat(40),"expected_version":1,"head_commit":"b".repeat(40),"status":"unresolved","merge_workspace_commit":"f".repeat(40),"workspace_revision":{"repository":"test/merge","commit":"f".repeat(40)},"conflict_paths":["src/change.rs"]})).unwrap();
+    let error = execute(&db,json!({"op":"resolve_conflict","conflict_id":"external-conflict","request_id":"external-resolve","expected_version":1,"owner_brief":"Retain both changes","now":3})).unwrap_err();
+    assert_eq!(error.code, "MISSING_MODEL_APPROVAL");
+    assert!(get(&db, "jobs", "job:conflict-resolver:external-resolve").is_err());
+    assert_eq!(
+        get(&db, "conflicts", "external-conflict").unwrap()["status"],
+        "unresolved"
+    );
+}
+
+#[test]
+fn publication_pending_prevents_refresh_and_exhausted_capture_is_terminal() {
+    let db = setup();
+    let mut repository = repo(&db).unwrap();
+    repository["pending"] = json!("decision:pending");
+    save(&db, "repository", "repo", &repository).unwrap();
+    assert_eq!(execute(&db,json!({"op":"refresh_candidate","request_id":"refresh-1","candidate_id":"candidate","expected_version":1,"expected_commit":"b".repeat(40),"now":2})).unwrap_err().code,"PUBLICATION_PENDING");
+    repository["pending"] = Value::Null;
+    save(&db, "repository", "repo", &repository).unwrap();
+    let receipt = refresh(&db, &request(), 3).unwrap();
+    let leased = execute(
+        &db,
+        json!({"op":"claim","job_id":receipt["job_id"],"now":4}),
+    )
+    .unwrap();
+    execute(&db,json!({"op":"fail","job_id":receipt["job_id"],"epoch":leased["epoch"],"retryable":false,"error":"Controlled capture failure","now":5})).unwrap();
+    assert_eq!(
+        get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap()["status"],
+        "failed"
+    );
+    assert_eq!(
+        get(&db, "jobs", receipt["job_id"].as_str().unwrap()).unwrap()["status"],
+        "failed"
+    );
 }

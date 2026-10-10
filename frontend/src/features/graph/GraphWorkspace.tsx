@@ -48,9 +48,7 @@ export function GraphWorkspace({
     setGraphCursor(null);
     setLoadingGraph(true);
     const query = new URLSearchParams({ run_id: activeRun.id, limit: '200' });
-    void api<RunGraphPage>(
-      `repos/${snapshot.repository.id}/run_graph_page?${query}`,
-    )
+    void api<RunGraphPage>(`repos/${snapshot.repository.id}/run_graph_page?${query}`)
       .then((page) => {
         if (current) {
           setLoadedRunGraph(mergeRunGraphPage({ nodes: [], edges: [] }, page));

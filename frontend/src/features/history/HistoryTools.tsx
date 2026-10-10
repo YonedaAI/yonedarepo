@@ -217,8 +217,7 @@ export function HistoryTools({
                       {receipt.source_execution_epoch}
                     </>
                   )}
-                  ; blobs{' '}
-                  <code>{receipt.old_blob || 'none'}</code> →{' '}
+                  ; blobs <code>{receipt.old_blob || 'none'}</code> →{' '}
                   <code>{receipt.new_blob || 'deleted'}</code>.
                 </p>
               </li>

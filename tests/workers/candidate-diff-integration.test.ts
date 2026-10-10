@@ -21,10 +21,13 @@ async function fixture() {
   await ledger(bindings, repo, { op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: 'd'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:diff-run:agent-1' });
   const scope: Scope = { repo_id: repo, job: capture, supervisor, fork: revision.repository, model_calls: 0, created_at: Date.now() };
-  const readCommit = vi.fn(async () => ({ treeHash: tree, parents: ['a'.repeat(40)] }));
+  const readCommit = vi.fn(async (hash: string) => ({ treeHash: hash === 'a'.repeat(40) ? 'a'.repeat(40) : tree, parents: ['a'.repeat(40)] }));
+  const readTree = async (hash: string) => hash === 'a'.repeat(40) ? [] : hash === tree
+    ? [{name:'public',type:'tree',hash:'d'.repeat(40)}]
+    : [{name:'index.html',type:'blob',hash:'e'.repeat(40)}];
   // Artifacts commit verification and Container RPC are fake; the broker,
   // attempt fencing, R2 digest storage and ledger transition are real workerd.
-  const scoped = { ...bindings, ARTIFACTS: { get: async () => ({ [Symbol.dispose]() {}, readCommit }) } } as unknown as Env;
+  const scoped = { ...bindings, ARTIFACTS: { get: async () => ({ [Symbol.dispose]() {}, readCommit, readTree }) } } as unknown as Env;
   const container = containerBindings(scoped, scope);
   const complete = (body: Json, token = supervisor, target = container.scoped) => brokerHandler(new Request('http://yoneda.internal/complete', {
     method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body),

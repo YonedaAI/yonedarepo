@@ -36,7 +36,9 @@ export function CandidateComparison({
                   ))}
                 </select>
               </label>
-              {candidate && <LazyCandidateDiff key={candidate.id} repo={repo} candidate={candidate} />}
+              {candidate && (
+                <LazyCandidateDiff key={candidate.id} repo={repo} candidate={candidate} />
+              )}
             </div>
           );
         })}

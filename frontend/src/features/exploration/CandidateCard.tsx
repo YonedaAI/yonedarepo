@@ -3,8 +3,8 @@ import { short } from '../../lib/api';
 import { ExecutionFailure } from './ExecutionFailure';
 import { executionStatus } from './ExecutionHierarchy';
 import { ExecutionLogs } from './ExecutionLogs';
-import { SiteLink } from './SiteLink';
 import { LazyCandidateDiff } from './LazyCandidateDiff';
+import { SiteLink } from './SiteLink';
 
 const descriptions: Record<string, string> = {
   minimal: 'Aim for the smallest coherent change.',
