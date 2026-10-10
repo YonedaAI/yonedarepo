@@ -1,5 +1,5 @@
 //! Trusted Git transport for the reserved candidate-refresh capture subtype.
-use crate::{err, git::git, git_revision::fetch_git, transport};
+use crate::{err, git::git, git::git_raw, git_revision::fetch_git, transport};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -74,6 +74,24 @@ pub(crate) async fn execute(job: &Value, _work_root: &Path) -> Result<Value> {
     } else {
         result["merge_workspace_revision"] = json!({"repository":output_repo,"commit":pushed});
     }
+    let summary = git_raw(
+        repository.path(),
+        &[
+            "diff",
+            "--stat",
+            "--no-renames",
+            "--no-ext-diff",
+            head,
+            &pushed,
+        ],
+    )
+    .await?;
+    result["diff"] = json!(
+        String::from_utf8_lossy(&summary)
+            .chars()
+            .take(65_536)
+            .collect::<String>()
+    );
     result["transport_receipt"] = json!({
         "repository":output_repo,
         "commit":pushed,
