@@ -2,7 +2,12 @@ import { username } from './accounts';
 import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
 import { reviewerPolicy } from './reviewer-policy';
-import { resumeTrial, reviewerTrialStatus, startTrial } from './reviewer-trial';
+import {
+  resumeTrial,
+  reviewerRepairFingerprint,
+  reviewerTrialStatus,
+  startTrial,
+} from './reviewer-trial';
 import { ledger, sha } from './storage';
 import type { Env, Json, Principal } from './types';
 import { providerCredentials, seal } from './vault';
@@ -114,6 +119,8 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
     const runId = input.run_id;
     if (typeof runId !== 'string' || !runId || runId.length > 200)
       return error('INVALID_INPUT', 'A reviewer trial run ID is required');
+    if (typeof input.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(input.request_id))
+      return error('INVALID_INPUT', 'A stable repair request ID is required');
     const detail = await ledger(env, policy.repo_id, {
       op: 'run_detail',
       run_id: runId,
@@ -121,7 +128,12 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
     });
     if (detail.repository?.id !== policy.repo_id || detail.run?.id !== runId)
       return error('FORBIDDEN', 'Repair must target an existing reviewer trial run', 403);
-    await workspace(env, principal.workspace, { op: 'reviewer_trial_reopen', id: runId });
+    await workspace(env, principal.workspace, {
+      op: 'reviewer_trial_reopen',
+      id: runId,
+      request_id: input.request_id,
+      fingerprint: await reviewerRepairFingerprint(input),
+    });
     return null;
   }
   if (
