@@ -30,7 +30,7 @@
       "seconds": 30,
       "captions": [
         "Two agents receive separate Git-native forks from the same starting revision.",
-        "Each fork grants write access only to that agent’s assigned paths.",
+        "Each agent has approved writable paths; capture rejects changes outside that scope.",
         "Separate scopes let both agents work without overwriting each other’s files.",
         "The workspace shows each agent’s task and captured contribution."
       ]
@@ -75,8 +75,8 @@
       "captions": [
         "Owners can choose checks and see each command’s recorded result.",
         "An inline npm ci check can install dependencies from the approved registry.",
-        "An optional bundle check can be enabled for the project.",
-        "These are available options; their appearance does not mean they ran in this trial."
+        "Optional immutable test bundles pin owner-approved tests; changes to protected tests require explicit review.",
+        "This prepared example uses owner-defined inline checks; its results do not establish arbitrary application correctness."
       ]
     },
     {
