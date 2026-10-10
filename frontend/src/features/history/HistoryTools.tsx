@@ -197,9 +197,27 @@ export function HistoryTools({
                     · renamed from <code>{receipt.old_path}</code>
                   </>
                 )}
+                {receipt.lineage_relation === 'exact_blob_inherited_by_merge_refresh' && (
+                  <span> · Exact bytes inherited by merge refresh</span>
+                )}
                 <p>
-                  Execution <code>{receipt.execution_id}</code>, attempt {receipt.execution_epoch},
-                  capture lease {receipt.capture_epoch}; blobs{' '}
+                  {receipt.capture_kind === 'merge_refresh' ? (
+                    <>Platform merge refresh, capture lease {receipt.capture_epoch}</>
+                  ) : (
+                    <>
+                      Execution <code>{receipt.execution_id}</code>, attempt{' '}
+                      {receipt.execution_epoch}, capture lease {receipt.capture_epoch}
+                    </>
+                  )}
+                  {receipt.source_execution_id && (
+                    <>
+                      {' '}
+                      · Exact blob inherited from execution{' '}
+                      <code>{receipt.source_execution_id}</code>, attempt{' '}
+                      {receipt.source_execution_epoch}
+                    </>
+                  )}
+                  ; blobs{' '}
                   <code>{receipt.old_blob || 'none'}</code> →{' '}
                   <code>{receipt.new_blob || 'deleted'}</code>.
                 </p>

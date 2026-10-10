@@ -16,7 +16,7 @@ export function TeamWorkflow({
   run: TeamRecord;
   busy: boolean;
   onRetry: (task: TeamRecord) => void;
-  onRepair: (task: TeamRecord) => void;
+  onRepair: (request: Record<string, unknown>) => Promise<boolean>;
   onProviders?: () => void;
 }) {
   const tasks = teamTasks(snapshot, run);

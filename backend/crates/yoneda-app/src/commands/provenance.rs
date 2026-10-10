@@ -4,6 +4,9 @@ use yoneda_core::{Error, Result};
 
 const MAX_FILE_PROVENANCE_RECEIPTS: usize = 10_000;
 
+#[path = "provenance_refresh.rs"]
+mod refresh;
+
 /// Persist Worker-verified blob receipts tied to the live capture lease and revision.
 #[allow(dead_code)] // Lead-owned capture_completion calls this after candidate creation.
 pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
@@ -12,6 +15,9 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
     result: &Value,
     now: i64,
 ) -> Result<Vec<Value>> {
+    if job["payload"]["subtype"] == "refresh_candidate" {
+        return refresh::capture_file_provenance(db, job, result, now);
+    }
     if job["kind"] != "capture" {
         return Err(Error::new(
             "FORBIDDEN",
@@ -142,7 +148,6 @@ fn optional_blob(value: Option<&Value>) -> Result<Option<String>> {
     }
 }
 
-/// Keep selection evidence connected to file receipts; publication remains a separate operation.
 #[allow(dead_code)] // Called by the lead-owned acceptance command during integration.
 pub(in crate::commands) fn link_file_provenance_to_decision<S: SqlStore>(
     db: &S,
@@ -218,8 +223,15 @@ pub(super) fn why<S: SqlStore>(
         if let Some(row) = receipt {
             let mut item = row["data"].clone();
             item["candidate_summary"] = candidate["summary"].clone();
-            item["capture_kind"] = candidate["capture_kind"].clone();
+            if item["capture_kind"].is_null() {
+                item["capture_kind"] = candidate["capture_kind"].clone();
+            }
             lineage.push(item.clone());
+            if let Some(inherited) = refresh::inherited_source_receipt(&receipts, &item)
+                && !lineage.iter().any(|known| known["id"] == inherited["id"])
+            {
+                lineage.push(inherited);
+            }
             // Attribute integrated bytes to specialist captures only when the trusted blob
             // identity and path match within this same run.
             let output_blob = item["new_blob"].as_str();

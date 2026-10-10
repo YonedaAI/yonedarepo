@@ -113,6 +113,87 @@ fn capture_receipt_limit_allows_more_than_git_diff_legacy_limit() {
 }
 
 #[test]
+fn merge_refresh_is_platform_authored_and_inherits_execution_only_for_exact_blobs() {
+    let db = NativeStore::memory().unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    let original = json!({"id":"candidate-old","execution":"original-exec","run_id":"run","revision":{"commit":"b".repeat(40)}});
+    create(&db, "candidates", "candidate-old", &original).unwrap();
+    create(
+        &db,
+        "executions",
+        "original-exec",
+        &json!({"id":"original-exec","run_id":"run","epoch":6,"status":"completed"}),
+    )
+    .unwrap();
+    let original_receipt = json!({"id":"old-receipt","candidate":"candidate-old","run_id":"run","execution_id":"original-exec","execution_epoch":6,"path":"src/same.rs","new_blob":"f".repeat(40)});
+    create(&db, "nodes", "old-receipt", &json!({"id":"old-receipt","kind":"file_provenance","author":"platform_capture","data":original_receipt})).unwrap();
+    let job = json!({"kind":"capture","epoch":9,"payload":{"subtype":"refresh_candidate","candidate":original,"run_id":"run","expected_head":"c".repeat(40),"execution":{"id":"spoofed-execution","run_id":"run","epoch":99}}});
+    let result = json!({"candidate_id":"candidate-refreshed","revision":{"commit":"d".repeat(40)},"paths":["src/same.rs","src/merged.rs"],"file_provenance":[
+        {"path":"src/same.rs","change":"modify","old_blob":"e".repeat(40),"new_blob":"f".repeat(40)},
+        {"path":"src/merged.rs","change":"add","old_blob":null,"new_blob":"9".repeat(40)}
+    ]});
+    let receipts = capture_file_provenance(&db, &job, &result, 15).unwrap();
+    assert_eq!(receipts.len(), 2);
+    assert_eq!(receipts[0]["candidate"], "candidate-refreshed");
+    assert_eq!(receipts[0]["source_candidate"], "candidate-old");
+    assert_eq!(receipts[0]["subject_id"], "candidate-refreshed");
+    assert_eq!(receipts[0]["base_commit"], "c".repeat(40));
+    assert_eq!(receipts[0]["capture_kind"], "merge_refresh");
+    assert_eq!(receipts[0]["execution_id"], Value::Null);
+    assert_eq!(receipts[0]["source_execution_id"], "original-exec");
+    assert_eq!(receipts[0]["source_execution_epoch"], 6);
+    assert_eq!(receipts[1]["execution_id"], Value::Null);
+    assert_eq!(receipts[1]["source_execution_id"], Value::Null);
+    let persisted = get(&db, "nodes", &string(&receipts[1], "id").unwrap()).unwrap();
+    assert_eq!(persisted["author"], "platform_merge_refresh");
+    let edges = db.query("SELECT source,target,relation FROM edges WHERE source LIKE 'file-receipt:merge-refresh:%' ORDER BY source,target", &[]).unwrap();
+    assert!(
+        edges.iter().any(
+            |edge| edge["target"] == "original-exec" && edge["relation"] == "source_bytes_from"
+        )
+    );
+    assert!(
+        !edges
+            .iter()
+            .any(|edge| edge["target"] == "spoofed-execution")
+    );
+    create(
+        &db,
+        "candidates",
+        "candidate-refreshed",
+        &json!({"id":"candidate-refreshed","run_id":"run","base":{"commit":"c".repeat(40)},"revision":{"commit":"d".repeat(40)},"recorded_at":15}),
+    )
+    .unwrap();
+    let same_blob = why(&db, &"d".repeat(40), "src/same.rs").unwrap();
+    assert_eq!(same_blob["lineage"][0]["capture_kind"], "merge_refresh");
+    assert_eq!(same_blob["lineage"][1]["execution_id"], "original-exec");
+    assert_eq!(
+        same_blob["lineage"][1]["lineage_relation"],
+        "exact_blob_inherited_by_merge_refresh"
+    );
+    let changed_blob = why(&db, &"d".repeat(40), "src/merged.rs").unwrap();
+    assert_eq!(changed_blob["lineage"].as_array().unwrap().len(), 1);
+    assert!(changed_blob["lineage"][0]["execution_id"].is_null());
+}
+
+#[test]
+fn merge_refresh_rejects_frozen_candidate_run_mismatch() {
+    let db = NativeStore::memory().unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    let candidate = json!({"id":"candidate-old","execution":"original-exec","run_id":"actual-run"});
+    create(&db, "candidates", "candidate-old", &candidate).unwrap();
+    create(
+        &db,
+        "executions",
+        "original-exec",
+        &json!({"id":"original-exec","run_id":"actual-run","epoch":1,"status":"completed"}),
+    )
+    .unwrap();
+    let job = json!({"kind":"capture","epoch":9,"payload":{"subtype":"refresh_candidate","candidate":candidate,"run_id":"other-run","expected_head":"c".repeat(40)}});
+    assert_eq!(capture_file_provenance(&db, &job, &json!({"candidate_id":"new","revision":{"commit":"d".repeat(40)},"paths":[],"file_provenance":[]}), 1).unwrap_err().code, "FENCED");
+}
+
+#[test]
 fn lineage_inherits_unchanged_paths_and_keeps_file_histories_isolated() {
     let db = NativeStore::memory().unwrap();
     crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
