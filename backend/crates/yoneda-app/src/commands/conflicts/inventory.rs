@@ -8,13 +8,25 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return get(db, "conflicts", id);
     }
     let rows = db.query("SELECT payload FROM conflicts ORDER BY id", &[])?;
-    let conflicts: Vec<Value> = rows
+    let mut conflicts: Vec<Value> = rows
         .iter()
         .map(|row| {
             serde_json::from_str(row["payload"].as_str().unwrap_or_default())
                 .map_err(|e| bad(&e.to_string()))
         })
         .collect::<Result<_>>()?;
+    for record in &mut conflicts {
+        if record["status"] == "clean"
+            && let Some(id) = record["refreshed_candidate_id"].as_str()
+        {
+            let candidate = get(db, "candidates", id)?;
+            record["merge_status"] = json!("clean");
+            record["evaluation_status"] = candidate["status"].clone();
+            if candidate["status"] != "eligible" {
+                record["status"] = candidate["status"].clone();
+            }
+        }
+    }
     let existing: BTreeSet<String> = conflicts
         .iter()
         .filter_map(|v| v["candidate_id"].as_str().map(str::to_owned))

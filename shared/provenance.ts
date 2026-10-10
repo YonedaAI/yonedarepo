@@ -31,6 +31,8 @@ export interface ConflictStatusContract {
     id?: string;
     kind: string;
     candidate_id: string;
+    refreshed_candidate_id?: string;
+    resolver_candidate_id?: string;
     head_commit?: string;
     expected_head?: string;
     expected_commit?: string;
@@ -44,6 +46,8 @@ export interface ConflictStatusContract {
     id?: string;
     kind?: string;
     candidate_id: string;
+    refreshed_candidate_id?: string;
+    resolver_candidate_id?: string;
     head_commit?: string;
     expected_head?: string;
     expected_commit?: string;
