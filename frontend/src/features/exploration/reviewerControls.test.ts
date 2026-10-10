@@ -123,6 +123,25 @@ describe('reviewer run permissions', () => {
       renderToStaticMarkup(createElement(TeamWorkflow, { ...props, reviewer: false })),
     ).toContain('Retry task');
   });
+  it('allows an approved reviewer to repair stale team output without exposing retry', () => {
+    const task = {
+      ...snapshot.team_tasks?.[0],
+      status: 'complete',
+      output: { revision: { commit: 'old' }, paths: ['src/a.rs'] },
+    };
+    const repairedSnapshot = { ...snapshot, team_tasks: [task] };
+    const props = {
+      snapshot: repairedSnapshot,
+      run: { id: 'run', status: 'exploring', team_plan: { tasks: [{ id: 'task' }] } },
+      busy: false,
+      onRetry: noop,
+      onRepair: noop,
+      reviewer: true,
+    };
+    const html = renderToStaticMarkup(createElement(TeamWorkflow, props));
+    expect(html).toContain('Repair task using existing trial approval');
+    expect(html).not.toContain('Retry task');
+  });
   it('passes permissions through RunDetail, hiding provider changes while preserving eligible candidate review', () => {
     const run = {
       id: 'run',

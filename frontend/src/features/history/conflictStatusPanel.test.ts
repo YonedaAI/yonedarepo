@@ -61,10 +61,10 @@ function find(
   if (item.type === type && (!label || String(item.props.children).includes(label))) return item;
   return find(item.props.children, type, label);
 }
-function render() {
+function render(reviewer = false) {
   hooks.cursor = 0;
   hooks.refCursor = 0;
-  return ConflictStatusPanel({ repository, onChange: async () => {}, onError: () => {} });
+  return ConflictStatusPanel({ repository, reviewer, onChange: async () => {}, onError: () => {} });
 }
 beforeEach(() => {
   hooks.states = [];
@@ -75,30 +75,58 @@ beforeEach(() => {
   apiMock.mockReset();
 });
 
-describe('owner conflict repair requests', () => {
+const inventory = {
+  records: [
+    {
+      kind: 'stale_candidate',
+      candidate_id: 'candidate-stale',
+      head_commit: 'head-6',
+      expected_version: 6,
+      conflict_paths: ['src/old.rs'],
+      evidence: { reason: 'base_moved' },
+    },
+    {
+      id: 'conflict-1',
+      kind: 'unresolved_conflict',
+      candidate_id: 'candidate-1',
+      head_commit: 'head-7',
+      expected_version: 7,
+      conflict_paths: ['src/a.rs'],
+      evidence: { reason: 'head_changed' },
+    },
+  ],
+  overlaps: [
+    {
+      conflict_id: 'conflict-1',
+      candidate_id: 'candidate-1',
+      paths: ['src/a.rs', 'src/shared.rs'],
+      status: 'overlap',
+    },
+  ],
+  seq: 4,
+};
+
+describe('backend conflict inventory normalization and repair actions', () => {
   it('uses an owner brief and retries the identical CAS request after an uncertain failure', async () => {
-    const inventory = {
-      conflicts: [
-        {
-          conflict_id: 'conflict-1',
-          candidate_id: 'candidate-1',
-          status: 'stale',
-          expected_commit: 'head-7',
-          declared_paths: ['src/a.rs'],
-        },
-      ],
-      overlaps: [{ path: 'src/a.rs', candidates: ['task-a', 'task-b'], status: 'overlap' }],
-      seq: 4,
-    };
     apiMock
       .mockResolvedValueOnce(inventory)
       .mockRejectedValueOnce(new Error('Acknowledgment lost'))
       .mockResolvedValueOnce({ status: 'repair_started' });
     let tree = render();
     for (const effect of hooks.effects.splice(0)) effect();
-    await vi.waitFor(() => expect(hooks.states[0]).toEqual(inventory));
+    await vi.waitFor(() =>
+      expect(hooks.states[0]).toMatchObject({
+        records: [
+          { key: 'candidate:candidate-stale', kind: 'stale_candidate' },
+          { key: 'conflict:conflict-1', kind: 'unresolved_conflict', conflict_id: 'conflict-1' },
+        ],
+        overlaps: [{ candidate_id: 'candidate-1', paths: ['src/a.rs', 'src/shared.rs'] }],
+      }),
+    );
     tree = render();
     expect(renderToStaticMarkup(tree)).toContain('Overlapping task paths');
+    expect(renderToStaticMarkup(tree)).toContain('src/shared.rs');
+    expect(renderToStaticMarkup(tree)).toContain('candidate-1');
     find(tree, 'textarea')?.props.onChange({
       target: { value: 'Repair only the overlapping source path and rerun checks.' },
     });
@@ -123,5 +151,36 @@ describe('owner conflict repair requests', () => {
     expect(first.request_id).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     );
+  });
+
+  it('keys id-less stale candidates by candidate ID and refreshes without a conflict ID', async () => {
+    apiMock.mockResolvedValueOnce(inventory).mockResolvedValueOnce({ status: 'refreshed' });
+    let tree = render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    tree = render();
+    find(tree, 'button', 'Refresh candidate')?.props.onClick();
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    expect(apiMock.mock.calls[1][0]).toBe('repos/repo/refresh_candidate');
+    expect(apiMock.mock.calls[1][1]).toMatchObject({
+      candidate_id: 'candidate-stale',
+      expected_commit: 'head-8',
+      expected_version: 8,
+      declared_paths: ['src/old.rs'],
+      request_id: expect.any(String),
+    });
+    expect(apiMock.mock.calls[1][1]).not.toHaveProperty('conflict_id');
+  });
+
+  it('shows reviewer refresh and resolver controls with the existing approval label', async () => {
+    apiMock.mockResolvedValueOnce(inventory);
+    let tree = render(true);
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    tree = render(true);
+    const html = renderToStaticMarkup(tree);
+    expect(html).toContain('Refresh candidate using existing trial approval');
+    expect(html).toContain('Resolve using existing trial approval');
+    expect(html).toContain('existing reviewer approval and shared trial allowance');
   });
 });

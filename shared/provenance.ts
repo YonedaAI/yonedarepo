@@ -26,16 +26,22 @@ export interface CandidateDiffPageContract {
   watermark: string;
 }
 export interface ConflictStatusContract {
-  conflicts: {
-    conflict_id: string;
+  records: {
+    id?: string;
+    kind: string;
     candidate_id: string;
-    status: string;
-    expected_commit: string;
-    actual_commit?: string;
-    message?: string;
-    declared_paths?: string[];
+    head_commit?: string;
+    expected_version?: number;
+    conflict_paths?: string[];
+    evidence?: Record<string, unknown>;
+    status?: string;
   }[];
-  overlaps: { path: string; candidates: string[]; status: string }[];
+  overlaps: {
+    conflict_id?: string;
+    candidate_id: string;
+    paths: string[];
+    status: string;
+  }[];
   seq: number;
 }
 export interface FileProvenanceContract {

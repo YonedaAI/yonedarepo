@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { ConflictStatus, Repository } from '../../lib/types';
+import {
+  type ConflictInventoryItem,
+  type ConflictInventoryView,
+  normalizeConflictInventory,
+} from './conflictInventory';
 
 export function ConflictStatusPanel({
   repository,
@@ -13,7 +18,7 @@ export function ConflictStatusPanel({
   onChange: () => Promise<void>;
   onError: (message: string) => void;
 }) {
-  const [status, setStatus] = useState<ConflictStatus | null>(null);
+  const [status, setStatus] = useState<ConflictInventoryView | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -23,7 +28,8 @@ export function ConflictStatusPanel({
     setLoading(true);
     setError('');
     try {
-      setStatus(await api<ConflictStatus>(`repos/${repository.id}/conflict_status`));
+      const inventory = await api<ConflictStatus>(`repos/${repository.id}/conflict_status`);
+      setStatus(normalizeConflictInventory(inventory));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -36,17 +42,17 @@ export function ConflictStatusPanel({
 
   async function mutate(
     action: 'refresh_candidate' | 'resolve_conflict',
-    conflict: ConflictStatus['conflicts'][number],
+    conflict: ConflictInventoryItem,
   ) {
-    const key = `${action}:${conflict.conflict_id}`;
+    const key = `${action}:${conflict.key}`;
     let body = pendingRequests.current.get(key);
     if (!body) {
       body = {
         request_id: crypto.randomUUID(),
         candidate_id: conflict.candidate_id,
-        ...(conflict.declared_paths ? { declared_paths: conflict.declared_paths } : {}),
+        ...(conflict.conflict_paths.length ? { declared_paths: conflict.conflict_paths } : {}),
         ...(action === 'resolve_conflict'
-          ? { conflict_id: conflict.conflict_id, owner_brief: briefs[conflict.conflict_id] }
+          ? { conflict_id: conflict.conflict_id, owner_brief: briefs[conflict.key] }
           : {}),
         expected_commit: repository.head_commit,
         expected_version: repository.version,
@@ -84,7 +90,12 @@ export function ConflictStatusPanel({
       </div>
       {loading && <p role="status">Loading conflict and overlap status…</p>}
       {error && <p role="alert">{error}</p>}
-      {!loading && status && !status.conflicts.length && !status.overlaps.length && (
+      {reviewer && (
+        <p className="empty-note">
+          Refresh and repair actions use the existing reviewer approval and shared trial allowance.
+        </p>
+      )}
+      {!loading && status && !status.records.length && !status.overlaps.length && (
         <p className="empty-note">No stale candidates or path overlaps are recorded.</p>
       )}
       {!!status?.overlaps.length && (
@@ -92,62 +103,90 @@ export function ConflictStatusPanel({
           <h3>Overlapping task paths</h3>
           <ul>
             {status.overlaps.map((overlap) => (
-              <li key={`${overlap.path}:${overlap.candidates.join(',')}`}>
-                <code>{overlap.path}</code> · {overlap.candidates.join(' and ')} ·{' '}
+              <li key={overlap.key}>
+                {overlap.paths.map((path) => (
+                  <code key={path}>{path}</code>
+                ))}{' '}
+                · candidate <code>{overlap.candidate_id}</code> ·{' '}
                 {overlap.status.replaceAll('_', ' ')}
               </li>
             ))}
           </ul>
         </div>
       )}
-      {!!status?.conflicts.length && (
+      {!!status?.records.length && (
         <ol>
-          {status.conflicts.map((conflict) => (
-            <li key={conflict.conflict_id}>
-              <h3>Candidate needs a scoped repair</h3>
+          {status.records.map((conflict) => (
+            <li key={conflict.key}>
+              <h3>
+                {conflict.kind === 'stale_candidate'
+                  ? 'Candidate needs a fresh base revision'
+                  : 'Candidate needs a scoped repair'}
+              </h3>
               <p>
-                {conflict.message ||
-                  `Expected ${conflict.expected_commit}; repository is now ${repository.head_commit}.`}
+                Candidate <code>{conflict.candidate_id}</code>
+                {conflict.head_commit && (
+                  <>
+                    {' '}
+                    was captured at <code>{conflict.head_commit}</code>
+                  </>
+                )}
+                {conflict.expected_version !== undefined &&
+                  ` (version ${conflict.expected_version})`}
+                . Current head is <code>{repository.head_commit}</code>.
               </p>
-              {!reviewer && (
-                <div className="conflict-actions">
+              {conflict.conflict_paths.length > 0 && (
+                <p>
+                  Affected paths:{' '}
+                  {conflict.conflict_paths.map((path) => (
+                    <code key={path}>{path} </code>
+                  ))}
+                </p>
+              )}
+              <div className="conflict-actions">
+                {conflict.kind === 'stale_candidate' ? (
                   <button
                     type="button"
                     className="quiet"
                     disabled={!!busy}
                     onClick={() => void mutate('refresh_candidate', conflict)}
                   >
-                    {busy === `refresh_candidate:${conflict.conflict_id}`
+                    {busy === `refresh_candidate:${conflict.key}`
                       ? 'Refreshing candidate…'
-                      : 'Refresh candidate'}
+                      : reviewer
+                        ? 'Refresh candidate using existing trial approval'
+                        : 'Refresh candidate'}
                   </button>
-                  <label>
-                    Owner brief for the scoped resolver
-                    <textarea
-                      value={briefs[conflict.conflict_id] ?? ''}
-                      disabled={pendingRequests.current.has(
-                        `resolve_conflict:${conflict.conflict_id}`,
-                      )}
-                      onChange={(event) =>
-                        setBriefs((old) => ({ ...old, [conflict.conflict_id]: event.target.value }))
-                      }
-                      rows={3}
-                      maxLength={4000}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={!!busy || !(briefs[conflict.conflict_id] ?? '').trim()}
-                    onClick={() => void mutate('resolve_conflict', conflict)}
-                  >
-                    {busy === `resolve_conflict:${conflict.conflict_id}`
-                      ? 'Starting scoped repair…'
-                      : pendingRequests.current.has(`resolve_conflict:${conflict.conflict_id}`)
-                        ? 'Retry scoped repair request'
-                        : 'Resolve with fresh capture and checks'}
-                  </button>
-                </div>
-              )}
+                ) : (
+                  <>
+                    <label>
+                      Owner brief for the scoped resolver
+                      <textarea
+                        value={briefs[conflict.key] ?? ''}
+                        disabled={pendingRequests.current.has(`resolve_conflict:${conflict.key}`)}
+                        onChange={(event) =>
+                          setBriefs((old) => ({ ...old, [conflict.key]: event.target.value }))
+                        }
+                        rows={3}
+                        maxLength={4000}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={!!busy || !(briefs[conflict.key] ?? '').trim()}
+                      onClick={() => void mutate('resolve_conflict', conflict)}
+                    >
+                      {busy === `resolve_conflict:${conflict.key}`
+                        ? 'Starting scoped repair…'
+                        : pendingRequests.current.has(`resolve_conflict:${conflict.key}`)
+                          ? 'Retry scoped repair request'
+                          : reviewer
+                            ? 'Resolve using existing trial approval'
+                            : 'Resolve with fresh capture and checks'}
+                    </button>
+                  </>
+                )}
+              </div>
             </li>
           ))}
         </ol>
