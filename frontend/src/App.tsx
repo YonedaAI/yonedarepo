@@ -83,6 +83,8 @@ export function App() {
             reviewer={reviewer}
             key={state.id}
             snapshot={state.snapshot}
+            initialRunId={state.requestedRunId}
+            requestedRunError={state.requestedRunError}
             onChange={state.refresh}
             onError={state.setError}
             onPanel={setPanel}

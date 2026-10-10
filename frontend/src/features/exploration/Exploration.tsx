@@ -26,6 +26,7 @@ export function Exploration({
   onContext,
   onSelectedRun,
   initialRunId = '',
+  requestedRunError = '',
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -36,13 +37,14 @@ export function Exploration({
   onContext: (runId: string) => void;
   onSelectedRun: (runId: string) => void;
   initialRunId?: string;
+  requestedRunError?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [runId, setRunId] = useState(initialRunId);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const repo = snapshot.repository;
-  const run = snapshot.runs.find((record) => record.id === runId) ?? snapshot.runs.at(-1);
+  const run = runId ? snapshot.runs.find((record) => record.id === runId) : snapshot.runs.at(-1);
   useEffect(() => {
     if (run?.id) onSelectedRun(run.id);
   }, [run?.id, onSelectedRun]);
@@ -155,6 +157,14 @@ export function Exploration({
             </Suspense>
           </RunEvidenceBoundary>
         </>
+      ) : runId ? (
+        <div className="empty-run">
+          {requestedRunError ? (
+            <p role="alert">{requestedRunError}</p>
+          ) : (
+            <p role="status">Loading run {runId}…</p>
+          )}
+        </div>
       ) : (
         <div className="empty-run">
           <h2>{reviewer ? 'Your trial results will appear here' : 'What will you build next?'}</h2>
