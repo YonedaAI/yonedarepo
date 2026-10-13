@@ -1,138 +1,166 @@
 {
-  "title": "YonedaRepo: build together, keep the why",
-  "format": "Edited current browser captures. Captioned walkthrough without narration; not a continuous recording.",
+  "title": "YonedaRepo: actual coordinated initial build and bounded repair",
+  "format": "Edited actual served browser captures; captioned, no narration; not a continuous recording.",
+  "duration_seconds": 360,
+  "repo_id": "reviewer-event-booking-20261012",
+  "run_id": "reviewer-booking-20261012-s1-r2",
+  "revision": "4c330e084f8d698a4c0ba08f82fd73d108c02f2d",
+  "bundle_digest": "c129d6a851f02d62372777047164ec5a3c49227b48164719b8c358ab21d3ea00",
+  "policy_digest": "a82ba60fda9bc0ddce867b06660135031d1f25494929ce7487bb8ba939bf8dda",
+  "stage": "initial_build",
+  "coordinated_three_stage_maintenance_claimed": false,
+  "context_causality_claimed": false,
+  "canonical_publication_performed": false,
   "scenes": [
     {
-      "title": "Private access opens the funded sandbox",
-      "capture": "reviewer-login-domain.jpg",
+      "title": "Review the actual coordinated outcome",
+      "capture": "r2-01-outcome-first.png",
       "seconds": 30,
       "captions": [
-        "Enter one privately supplied reviewer key to open the funded sandbox.",
-        "The key stays out of the video, URL, command line and source tree.",
-        "Trial access and its spending limit are controlled by the workspace owner.",
-        "Use the prepared workspace to inspect the application and its recorded evidence."
-      ]
+        "Current coordinated initial build: two specialists, followed by bounded recovery and final integration.",
+        "The captured integrated revision 4c330e084 is eligible; its protected initial-build check passed.",
+        "Start with the app, behavior checks and recorded reasons. Source changes remain optional.",
+        "This is an edited walkthrough of real served UI captures, not a continuous run recording."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Open the checked result without a paid run",
-      "capture": "reviewer-workspace.jpg",
+      "title": "Read the approved initial intent",
+      "capture": "r2-02-current-intent.png",
       "seconds": 30,
       "captions": [
-        "Run node tools/reviewer.mjs --checked from the repository checkout.",
-        "Node 24 is enough; the command needs no dependency installation.",
-        "Checked mode opens an existing result and does not start a paid trial.",
-        "Enter the private access key only when the command prompts for it."
-      ]
+        "The corrected brief asks for an accessible booking app, real API and durable managed SQLite.",
+        "This stage requires a full event to return HTTP 409. Waitlist work is outside this initial stage.",
+        "Protected schema and build contracts stay frozen. The prior static-only planner assertion was incorrect.",
+        "The original campaign and prior spend were retained; this recording starts no new paid work."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Two Git-native forks, two scoped agents",
-      "capture": "reviewer-concurrent.jpg",
+      "title": "Open the exact checked app",
+      "capture": "r2-03-actual-checked-app.png",
       "seconds": 30,
       "captions": [
-        "Two agents receive separate Git-native forks from the same starting revision.",
-        "Each agent has approved writable paths; capture rejects changes outside that scope.",
-        "Separate scopes let both agents work without overwriting each other’s files.",
-        "The workspace shows each agent’s task and captured contribution."
-      ]
+        "The normal authenticated Preview anchor rendered this actual app bound to the checked R2 revision.",
+        "The browser read two events with HTTP 200, then a normal reload read and rendered them again.",
+        "No registration or cancellation was submitted during these browser captures.",
+        "C separately verified real HTTP and SQLite behavior. Hosted eviction was not induced or observed."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Timeline preserves the checked repair history",
-      "capture": "reviewer-activity.jpg",
+      "title": "Inspect protected behavior checks",
+      "capture": "r2-04-protected-checks.png",
       "seconds": 30,
       "captions": [
-        "Earlier failed trials stay available in run history.",
-        "This trial records an owner-approved repair after its first checked result.",
-        "Repair retains the same budget and unchanged specialist captures.",
-        "The old candidate is kept as stale; a fresh capture is independently checked."
-      ]
+        "The protected booking-acceptance report applies to the exact captured revision and initial policy.",
+        "The evaluator records successful setup, exit zero, satisfied policy and a bound app artifact.",
+        "Four initial protected checks passed; three future-stage checks were skipped, not claimed as passes.",
+        "Eligibility is evidence for this bounded initial build, not three-stage team maintenance or publication."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Assertions, verified receipts and the manifest",
-      "capture": "reviewer-handoffs.jpg",
+      "title": "Two actual specialist outputs",
+      "capture": "r2-05-specialist-captures-focused.png",
       "seconds": 30,
       "captions": [
-        "Agent handoffs describe what an agent says it completed; the UI labels them as assertions.",
-        "Trusted capture validates files and records an exact Git revision.",
-        "Verified task receipts show which revisions and paths entered the next stage.",
-        "An integration manifest lists the captured inputs used for assembly."
-      ]
+        "The GLM backend specialist captured API and booking changes at revision 5f39711ec.",
+        "The Codex frontend specialist captured accessible API-driven UI changes at revision 250a3322e.",
+        "Their earlier harness markers overlapped by 67.477 seconds; this is not pure provider-inference timing.",
+        "The final Codex integrator used both retained outputs. Independent checks apply to the combined result."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Inspect the exact checked candidate",
-      "capture": "reviewer-results.jpg",
+      "title": "Readable frozen context, with authority",
+      "capture": "r2-06b-readable-frozen-finding.png",
       "seconds": 30,
       "captions": [
-        "Open the result tied to its exact captured revision.",
-        "This historical example retains a change summary; inspect its exact source using the read-only viewer.",
-        "New Git-native captures record a bounded full patch instead of change statistics.",
-        "The checked result and published source stay separate until an owner decides."
-      ]
+        "This actual prior finding states what the frontend changed and which checks its author reported.",
+        "It is labeled an assertion, with its recorded purpose and source relationships.",
+        "Assigned, opened and cited are separate records. Access alone does not establish influence or correctness.",
+        "An obsolete static-only assertion is also retained in history; the current approved intent corrects it."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Choose the checks for this project",
-      "capture": "reviewer-checks.jpg",
+      "title": "Checked working head, unpublished",
+      "capture": "r2-07-checked-working-branch.png",
       "seconds": 30,
       "captions": [
-        "Owners can choose checks and see each command’s recorded result.",
-        "An inline npm ci check can install dependencies from the approved registry.",
-        "Optional immutable test bundles pin owner-approved tests; changes to protected tests require explicit review.",
-        "This prepared example uses owner-defined inline checks; its results do not establish arbitrary application correctness."
-      ]
+        "campaign-development has checked working head 4c330e084 at version 1.",
+        "Canonical published source remains addf46b5d; advancing the working branch did not publish this app.",
+        "Continuation uses the exact working-head lease and a reviewed brief. No continuation was started here.",
+        "No publishing rationale is recorded. Record publishing decision remains a separate explicit owner action."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Preview in an isolated environment",
-      "capture": "reviewer-preview.jpg",
+      "title": "Read the actual agent conversation",
+      "capture": "r2-08b-actual-agent-conversation.png",
       "seconds": 30,
       "captions": [
-        "Open a candidate preview on an isolated origin.",
-        "Preview output is served separately from the main workspace.",
-        "Inspect the rendered project before deciding whether to publish it.",
-        "The preview stays associated with its candidate revision."
-      ]
+        "These are actual contract messages from the frontend specialist and final integrator.",
+        "They preserve relative API calls, accessible hooks and the initial-stage no-waitlist contract.",
+        "Messages are assertions. Delivery and acknowledgement do not prove understanding or agreement.",
+        "Conversation inspection is lazy and paged, with a fixed boundary; it starts no coding agents."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Trace each file to its capture receipt",
-      "capture": "reviewer-trail.jpg",
+      "title": "Bounded repair, retained specialist captures",
+      "capture": "r2-09-frozen-plan-inputs.png",
       "seconds": 30,
       "captions": [
-        "Read the trail as intent, tasks, captured changes, checks and decision.",
-        "File provenance links changed paths to trusted capture receipts.",
-        "Receipts show what was captured and which revision contains it.",
-        "File receipts prove captured bytes. Separate context-read receipts show delivery, not a model's understanding."
-      ]
+        "The trusted integration manifest binds frozen plan version 2 to both exact specialist captures.",
+        "The recorded coordinator repair affected integration, reassigned its approved agent and used repair round 1.",
+        "The R4 coordinator completed its repair; historical failed recovery evidence remains visible.",
+        "Both original model request caps remain 48. There was no new campaign, cap increase or budget reset."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Open the focused graph when useful",
-      "capture": "reviewer-graph.jpg",
+      "title": "Optional multi-file source review",
+      "capture": "r2-10-multi-file-captured-diff.png",
       "seconds": 30,
       "captions": [
-        "Open the graph for a visual view of connected evidence.",
-        "Focus on one run’s neighborhood to keep the view readable.",
-        "Graph pages load on demand; the readable trail remains available.",
-        "Select a record and follow its linked context when useful."
-      ]
+        "The captured result changes four files against the frozen base; the file navigator makes each inspectable.",
+        "This booking hunk shows an existing-key lookup before the capacity boundary; the current source is read-only.",
+        "Use the app and checks first, then inspect the specific patch that helps answer your review question.",
+        "This exact integration is evidence for this run, not a broad semantic-merge quality benchmark."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Review conflicts before an owner decides",
-      "capture": "reviewer-decision.jpg",
+      "title": "Optional graph drilldown",
+      "capture": "r2-11-optional-graph-neighborhood.png",
       "seconds": 30,
       "captions": [
-        "Review the candidate, fresh checks and repository conflicts before selection.",
-        "Disjoint changes can be integrated, then checked again against the current revision.",
-        "Overlapping changes require an owner-approved scoped resolver.",
-        "The resolver does not claim an automatic semantic merge; publication still needs an owner decision."
-      ]
+        "The selected neighborhood connects the actual captured candidate to its independent verification.",
+        "The record panel separately exposes recorded authority and exact revision, policy and app binding.",
+        "The graph is optional drilldown after the readable result, context and checks.",
+        "Neither a graph edge nor a context citation proves that graph context caused a better result."
+      ],
+      "evidence_role": "actual coordinated R2 initial build"
     },
     {
-      "title": "Browse paged history and active-run limits",
-      "capture": "reviewer-history.jpg",
+      "title": "Separate controlled maintenance study",
+      "capture": "15-notes-study-checked-app.png",
       "seconds": 30,
       "captions": [
-        "Run history loads in pages so older results remain available.",
-        "Diffs and evidence graph pages load only when opened.",
-        "The active-run cap is six simultaneous runs.",
-        "That cap applies to active work, not the total number of historical runs."
-      ]
+        "This final scene is a different app: notes-study maintenance, one Codex chain, not the coordinated R2 team.",
+        "Across six controlled chains, notes and graph completed four full chains; both source-only finals failed.",
+        "Protected results were 16 passes and 2 failures across 18 stages. Causal context benefit remains unestablished.",
+        "The coordinated result shown earlier is an initial build only. Human rehearsal and publication remain separate."
+      ],
+      "evidence_role": "separate single-Codex maintenance contrast"
     }
-  ]
+  ],
+  "technical_review": {
+    "normal_native_playback_reached_end": true,
+    "no_seeks_during_passing_playback": true,
+    "all_48_captions_legible": true,
+    "human_rehearsal": false
+  }
 }
