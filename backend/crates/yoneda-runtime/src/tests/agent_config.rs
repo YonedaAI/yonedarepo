@@ -123,3 +123,74 @@ fn gemini_turn_budget_uses_approved_request_allowance_and_preserves_legacy_defau
         -1
     );
 }
+
+fn prompt_job(role: &str, harness: &str) -> Value {
+    json!({"kind":"agent","payload":{"workspace_transport":"git-native-v1","team_planning":role=="planner"||role=="coordinator",
+        "execution":{"id":"execution","harness":harness,"provider":"codex","model":"gpt-5.6-luna","role":"coding","team_role":role,"strategy":"Approved strategy","task":"Approved task","team_task":if role=="worker"||role=="integrator" {json!("task")} else {Value::Null},"budget":{"provider":"codex","model":"gpt-5.6-luna"}},
+        "run":{"id":"run","intent":"Preserve booking integrity","criteria":["Exact independently checked integration"],"agents":[{"provider":"codex","model":"gpt-5.6-luna"}],"autonomy_policy":{"version":1,"enabled":true,"max_repair_rounds":2},"intent_clarifications":[{"answer":"Retain the original contract"}],"team_plan":{"contract":"Original contract"},"model_budgets":[{"provider":"codex","model":"gpt-5.6-luna","max_requests":24,"max_output_tokens":4096,"max_execution_ms":600000,"spend_limit_microusd":null,"pricing":null,"requests":4,"charged_microusd":0}]},
+        "policy":{"build":{"static_dir":"public"}}}})
+}
+
+#[test]
+fn read_only_git_native_prompt_never_directs_commit_or_push() {
+    for role in ["planner", "coordinator"] {
+        for harness in ["codex", "claude", "gemini"] {
+            let job = prompt_job(role, harness);
+            let text = agent_prompt(&job).unwrap();
+            assert!(text.contains("read-only"), "{role}: {text}");
+            assert!(
+                !text.contains("Commit your completed changes"),
+                "{role}: read-only role received source commit instructions"
+            );
+            assert!(
+                !text.contains("push them to origin"),
+                "{role}: read-only role received source push instructions"
+            );
+            assert!(text.contains("Retain the original contract"));
+        }
+    }
+}
+
+#[test]
+fn codex_read_only_prompt_discovers_and_calls_platform_before_workspace_analysis() {
+    for role in ["planner", "coordinator"] {
+        let job = prompt_job(role, "codex");
+        let before = job.clone();
+        let text = agent_prompt(&job).unwrap();
+        let discovery = text
+            .find("ALL_TOOLS")
+            .expect("Codex must discover deferred tools");
+        let analysis = if role == "planner" {
+            "Inspect the current checkout"
+        } else {
+            "Read AGENTS.md"
+        };
+        assert!(discovery < text.find(analysis).unwrap());
+        for call in [
+            "functions.exec",
+            "mcp__yonedarepo__team_context({})",
+            "mcp__yonedarepo__peer_status({})",
+            "mcp__yonedarepo__peer_inbox({})",
+            "platform receipts",
+        ] {
+            assert!(text.contains(call), "{role}: missing {call}");
+        }
+        assert_eq!(job, before, "Prompt construction cannot amend approval");
+        assert!(text.contains("Preserve booking integrity"));
+        assert!(text.contains("gpt-5.6-luna"));
+        assert!(text.contains("24"));
+        let other = agent_prompt(&prompt_job(role, "claude")).unwrap();
+        assert!(!other.contains("ALL_TOOLS"));
+    }
+}
+
+#[test]
+fn coding_git_native_prompt_keeps_source_commit_and_push() {
+    for role in ["worker", "integrator"] {
+        let job = prompt_job(role, "codex");
+        let text = agent_prompt(&job).unwrap();
+        assert!(text.contains("Commit your completed changes on branch main"));
+        assert!(text.contains("push them to origin"));
+        assert!(!text.contains("ALL_TOOLS"));
+    }
+}

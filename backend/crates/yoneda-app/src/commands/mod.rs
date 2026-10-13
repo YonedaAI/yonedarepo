@@ -127,6 +127,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "integration_request"
         | "retry_team_task"
         | "repair_request"
+        | "retry_coordinator"
         | "repair_team" => team::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),

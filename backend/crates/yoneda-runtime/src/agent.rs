@@ -34,10 +34,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     let payload = &job["payload"];
     let execution = &payload["execution"];
     let model = field(job, "model")?;
-    let mut prompt = crate::prompt::prompt(payload)?;
-    if git_native {
-        prompt.push_str("\n\nWorkspace transport: git-native-v1. Commit your completed changes on branch main and push them to origin. Preserve the existing history and do not modify remote URLs or credentials.\n");
-    }
+    let prompt = agent_prompt(job)?;
     let mcp = json!({"mcpServers":{"yonedarepo":{"command":"/usr/local/bin/yoneda-runtime","args":["mcp"]}}});
     std::fs::write("/home/agent/mcp.json", mcp.to_string()).map_err(err)?;
     std::fs::create_dir_all("/home/agent/.codex").map_err(err)?;
@@ -156,6 +153,24 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     }
     let uploaded = broker("/workspace", json!({"files":files}), true).await?;
     Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
+}
+
+fn agent_prompt(job: &Value) -> Result<String> {
+    let payload = &job["payload"];
+    let execution = &payload["execution"];
+    let read_only = payload["team_planning"] == true
+        || execution["team_role"] == "planner"
+        || execution["team_role"] == "coordinator";
+    let body = crate::prompt::prompt(payload)?;
+    let mut prompt = if read_only && execution["harness"] == "codex" {
+        format!("{}\n\n{body}", crate::team_prompt::CODEX_READ_ONLY_TOOLS)
+    } else {
+        body
+    };
+    if crate::transport::enabled(job) && !read_only {
+        prompt.push_str("\n\nWorkspace transport: git-native-v1. Commit your completed changes on branch main and push them to origin. Preserve the existing history and do not modify remote URLs or credentials.\n");
+    }
+    Ok(prompt)
 }
 
 fn git_agent_result(

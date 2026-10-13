@@ -288,3 +288,7 @@ mod plan_scope_tests;
 #[cfg(test)]
 #[path = "tests/budget_availability.rs"]
 mod budget_tests;
+
+#[cfg(test)]
+#[path = "tests/coordinator_retry.rs"]
+mod coordinator_retry_tests;
