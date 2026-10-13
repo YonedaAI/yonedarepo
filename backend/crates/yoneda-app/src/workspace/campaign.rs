@@ -64,8 +64,11 @@ fn validate(value: &Value, now: i64) -> Result<()> {
     if repos.is_empty() || repos.len() > 24 {
         return Err(bad("Invalid campaign repositories"));
     }
+    let mut repository_ids = std::collections::BTreeSet::new();
     for repo in repos {
-        identifier(&json!({"id":repo}), "id")?;
+        if !repository_ids.insert(identifier(&json!({"id":repo}), "id")?) {
+            return Err(bad("Campaign repositories must be unique"));
+        }
     }
     let budgets: Vec<ModelBudget> =
         serde_json::from_value(value["model_budgets"].clone()).map_err(|e| bad(&e.to_string()))?;
@@ -207,7 +210,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     "buckets",
                     "expires",
                     "audience",
-                    "repo_ids",
                 ] {
                     if prior[field] != value[field] {
                         return Err(Error::new(
@@ -216,6 +218,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                         ));
                     }
                 }
+                // A new approval may change repository scope. Prior approvals and
+                // bindings stay immutable; aggregate, bucket and chain charges stay in state.
             }
             create(
                 db,

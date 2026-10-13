@@ -1,8 +1,22 @@
-# Product MVP release evidence — October 8–10, 2026
+# Product MVP release evidence — October 8–12, 2026
 
 The product runs on [Cloudflare](https://yonedarepo-dev.mlong-f01.workers.dev/), with a real [agent-built Garden website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/). [Machine-readable evidence](release-evidence.json) records identities, revisions, epoch timestamps, independent checks, the decision, canonical readback and served asset hashes. These are development verification results, not a production readiness claim.
 
-## Current production rollout and acceptance — October 10, 2026
+## Autonomous app implementation and bounded verification — October 12, 2026
+
+Implementation source `0a0eeb5` passed the combined local gate: 323 Rust, 319 platform workerd, 16 app workerd, 107 frontend and 15 reviewer Node tests, plus Wasm, formatting, Clippy, TypeScript and production build. Public export `03949e4` passed [CI 38344853125](https://github.com/MagnetonIO/yonedarepo/actions/runs/38344853125). Production baseline `44e89234-c784-4055-8204-18328d84c138` serves the `13eccb1` source marker; the follow-up commit adds the tested fixtures and verification scripts. This records that baseline, not acceptance of subsequent pending fixes.
+
+The follow-up local gate passed with 339 Rust (234 app, 18 core, 71 runtime, 1 Cloudflare, 15 xtask), 320 platform workerd, 16 app workerd, 107 frontend and 15 reviewer Node tests. Stage-scoped study tools passed 26 Node tests; the R3 image passed 77 Linux runtime tests. These checks include pending-intent evaluation fencing, initial protected-plan scopes, signed temporal corpus selection and hosted ranked retrieval isolation. Deployment and paid-run outcomes follow separately.
+
+The source implements agent-defined task plans, durable peer messaging, bounded repair, intent clarification, checked working branches, prior-context packets, protected tests, file provenance, Git-native workspaces and managed JS/TS UI/API apps with SQLite. The Apps Worker is deployed with isolated preview hosts. Current app build → feature → bugfix outcomes, fresh app browser acceptance and human rehearsal are still separate pending checks.
+
+Fresh isolated hosted exercises used two containers and zero model calls. Actual capacity deferrals refunded attempts; injected publication acknowledgement loss recovered at epoch 2, with canonical Git readback `4e038fd858681d0bf159b1aba7c222feb2760634`. A disjoint two-parent refresh `116ba5ce2a096a32a4f2fbc1022e2370d46ba8c2` preserved both changed files and passed a fresh independent check. The fault is explicitly injected; the container capacity and Git operations are real. This is not overlapping semantic-merge acceptance.
+
+A separate real load fixture completed six external Git capture/check pipelines in 152,855 ms with two containers, seven capacity deferrals and zero model calls. Each pipeline validated 128 KiB of source and hashed 2 GiB during evaluation; no artificial hold was used. The seventh active run was rejected. Observed throughput was 2.355 pipelines/minute for this bounded workload, not agent productivity or general platform scalability. Machine-readable summaries and private receipt hashes appear in `autonomous_app_wave_2026_10_12` in [release evidence](release-evidence.json).
+
+The first controlled context study is retained as a negative, confounded result. Five exact captured revisions failed protected checks by returning a waitlisted HTTP 201 instead of the initial-stage full-event HTTP 409; confirmed-row count remained two. The sixth was cancelled without a verdict. Future waitlist requirements were available too early, so no causal context effect is claimed. All six chains retain 90 requests and $0.390353 in conservative accounting, not provider invoice amounts. The corrected study narrows signed context by stage under the same original $12 aggregate allowance, preserving prior charges.
+
+## Historical production rollout and acceptance — October 10, 2026
 
 `cargo xtask check` passed on source revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`): 284 Rust tests (186 app, 16 core, 66 runtime, 1 Cloudflare and 15 xtask), 290 Workers tests across 59 files, 67 frontend tests across 15 files, and 11 Node tests. The deployed production Worker is version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`, running `a581aaf`. The rolled-out Linux runtime-25 image has seven healthy instances, zero starting, zero failed and no errors; it passed 72 Linux tests at `sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87`, and passed the offline Gemini/Rust MCP smoke test. The earlier checked Claude run (`reviewer-f07f61a0-97b6-48e9-b9de-521753744063`, candidate `20dc24de9`, published HEAD `3bbe63325`) is historical evidence for an earlier deployed version; the checked-in [reviewer acceptance JSON](reviewer-acceptance.json) is older still.
 

@@ -1,6 +1,13 @@
 import { expect, it } from 'vitest';
 import { checkRuntime } from '../../cloudflare/worker/runtime';
 
+it('refuses a static-only planner image for an approved managed app before paid work', () => {
+  const job = { kind: 'agent', payload: { team_planning: true, policy: { build: { app: { version: 1 } } } } };
+  const health = { protocol: 2, suites: ['commands-v1'], capabilities: { app_bundle: 1, team_planning: 1 } };
+  expect(() => checkRuntime(health, job)).toThrow('app planning');
+  expect(() => checkRuntime({ ...health, capabilities: { ...health.capabilities, app_planning: 1 } }, job)).not.toThrow();
+});
+
 const checkFailureCode = (health: any, job: any) => {
   let failure: unknown;
   try {

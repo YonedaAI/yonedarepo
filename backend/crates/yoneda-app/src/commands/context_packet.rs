@@ -4,22 +4,32 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use yoneda_core::Result;
 mod ranking;
+mod scope;
 use ranking::{Selection, ranked};
+pub(super) use scope::get_for_job;
 const MAX_PACKET_BYTES: usize = 64 * 1024;
 
-pub(super) fn search<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+pub(super) fn search<S: SqlStore>(db: &S, c: &Value, job: Option<&Value>) -> Result<Value> {
+    let run = job.map(|job| scope::run(db, job)).transpose()?;
     let query = c.get("query").and_then(Value::as_str).unwrap_or("");
     let file = c.get("file_path").and_then(Value::as_str);
     let authority = c.get("authority").and_then(Value::as_str);
-    let lineage = c.get("lineage").and_then(Value::as_str);
+    let lineage = c
+        .get("lineage")
+        .and_then(Value::as_str)
+        .or_else(|| run.as_ref().and_then(|run| run["id"].as_str()));
     let count = c.get("limit").and_then(Value::as_u64).unwrap_or(25);
     if !(1..=50).contains(&count) {
         return Err(bad("Ranked context limit is 1–50"));
     }
     let kind = c.get("kind").and_then(Value::as_str);
-    let fingerprint = yoneda_core::fingerprint(
-        &json!({"query":query,"file":file,"authority":authority,"lineage":lineage,"kind":kind}),
-    )?;
+    let mut identity =
+        json!({"query":query,"file":file,"authority":authority,"lineage":lineage,"kind":kind});
+    if let Some(run) = &run {
+        identity["run_id"] = run["id"].clone();
+        identity["study"] = run["context_study"].clone();
+    }
+    let fingerprint = yoneda_core::fingerprint(&identity)?;
     let latest = db.query("SELECT COALESCE(MAX(rowid),0) AS watermark FROM nodes", &[])?;
     let latest = number(&latest[0], "watermark")?;
     let (offset, watermark) = if let Some(cursor) = c["cursor"].as_str().filter(|v| !v.is_empty()) {
@@ -49,6 +59,11 @@ pub(super) fn search<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         (0, latest)
     };
     let count = usize::try_from(count).map_err(|_| bad("Invalid context count"))?;
+    let records = run
+        .as_ref()
+        .map(|run| scope::records(db, run, watermark))
+        .transpose()?
+        .flatten();
     let all = ranked(
         db,
         &Selection {
@@ -58,6 +73,7 @@ pub(super) fn search<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             lineage,
             kind,
             watermark,
+            records: records.as_deref(),
         },
         200,
     )?;
@@ -73,7 +89,7 @@ pub(super) fn search<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             .to_string()
     });
     Ok(
-        json!({"items":items,"next_cursor":cursor,"coverage":"ranked top 200 matches from most recent 1000 context records","bounded":true,"watermark":watermark}),
+        json!({"items":items,"next_cursor":cursor,"coverage":if records.is_some(){"ranked frozen study corpus and bounded current-run authored context"}else{"ranked top 200 matches from most recent 1000 context records"},"bounded":true,"watermark":watermark}),
     )
 }
 
@@ -114,6 +130,7 @@ pub(super) fn freeze<S: SqlStore>(db: &S, run: &mut Value, branch: Option<&Value
             lineage: (!prior_run.is_empty()).then_some(prior_run),
             kind: None,
             watermark,
+            records: None,
         },
         200,
     )?;

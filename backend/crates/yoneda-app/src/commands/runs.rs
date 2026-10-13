@@ -99,6 +99,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "name")?
             );
             let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if automatic {"planning"} else if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
+            if collaborate {
+                run["approved_policy"] = run["policy"].clone();
+            }
             if general {
                 run["agents"] = c["agents"].clone();
             }
@@ -116,6 +119,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["execution_count"] = json!(1);
             }
             if let Some(plan) = &team {
+                super::team::validate_plan_scopes(&run, plan)?;
                 run["team_plan"] = json!(plan);
                 run["team_plan_revision"] = json!(1);
                 run["execution_count"] = json!(plan.tasks.len() + 1);
@@ -150,6 +154,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["continuation_of"] = json!(decision);
             }
             super::study::apply(&mut run, super::study::freeze(db, &r)?);
+            super::study::select(&c, &r, &mut run)?;
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(

@@ -8,6 +8,7 @@ mod tools;
 pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     if run["mode"] != "collaborate"
         || run["autonomy_policy"]["enabled"] != true
+        || super::super::autonomy::intent_pending(run)
         || ["cancelled", "accepted", "awaiting_intent"]
             .contains(&run["status"].as_str().unwrap_or_default())
     {

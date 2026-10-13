@@ -1,7 +1,8 @@
 // Operator request templates only: no Artifacts, Git, authentication or model calls.
 import {bookingPolicy} from './booking-policy.mjs';
-import {starterFiles,corpus,studyConfig,safeID,hash} from './booking-campaign-plan.mjs';
+import {starterFiles,planCorpus,studyConfig,safeID,hash} from './booking-campaign-plan.mjs';
 export function bootstrapPlan(plan,template){
+  const corpus=planCorpus(plan);
   safeID(template);
   const initial=bookingPolicy('initial_build');
   const policy={version:'booking-incomplete-bootstrap-v1',suite:initial.suite,environment:initial.environment,

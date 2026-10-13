@@ -155,3 +155,142 @@ fn reviewer_coding_plan_and_unpriced_configuration_fail_closed() {
     unpriced["model_budgets"][0]["pricing"] = Value::Null;
     assert!(call(&db,json!({"op":"campaign_configure","id":"unpriced","expected_version":0,"approval":unpriced})).is_err());
 }
+
+#[test]
+fn campaign_next_version_changes_repos_without_resetting_spend_or_chain_authority() {
+    let db = setup();
+    let old_binding = bind(&db, "initial", "chain1");
+    let reservation = call(&db, reserve("initial", "pending")).unwrap();
+    call(
+        &db,
+        json!({"op":"campaign_disable","id":"fresh","expected_version":1,"expected_revision":2}),
+    )
+    .unwrap();
+    let before = call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap();
+    let mut next = approval();
+    next["version"] = json!(2);
+    next["repo_ids"] = json!(["booking-fresh"]);
+    call(
+        &db,
+        json!({"op":"campaign_configure","id":"fresh","expected_version":1,"approval":next}),
+    )
+    .unwrap();
+    let after = call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap();
+    assert_eq!(after["charged_microusd"], 8500);
+    assert_eq!(after["charged"], before["charged"]);
+    assert_eq!(after["chains"], before["chains"]);
+    assert_eq!(after["approval"], next);
+    let prior = db
+        .query(
+            "SELECT payload FROM workspace_records WHERE id='campaign:fresh:approval:1'",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(prior[0]["payload"].as_str().unwrap()).unwrap(),
+        approval()
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"campaign_run_status","repo_id":"booking","run_id":"initial"})
+        )
+        .unwrap(),
+        {
+            let mut expected = old_binding.clone();
+            expected.as_object_mut().unwrap().remove("op");
+            expected["repair_escalation"] = Value::Null;
+            expected["access"] = json!("owner");
+            expected
+        }
+    );
+    assert_eq!(
+        call(&db, reserve("initial", "pending")).unwrap_err().code,
+        "CAMPAIGN_DISABLED"
+    );
+    call(&db, json!({"op":"campaign_enable","id":"fresh","expected_version":2,"expected_revision":4,"local_gate_receipt":"synthetic upgrade gate"})).unwrap();
+    assert_eq!(
+        call(&db, reserve("initial", "pending")).unwrap(),
+        reservation
+    );
+    let mut removed_scope = old_binding.clone();
+    removed_scope["version"] = json!(2);
+    removed_scope["run_id"] = json!("unauthorized-old-repo");
+    assert_eq!(call(&db, removed_scope).unwrap_err().code, "FORBIDDEN");
+    let mut fresh_binding = json!({"op":"campaign_bind_run","id":"fresh","version":2,"repo_id":"booking-fresh","run_id":"replacement","chain_id":"chain1","bucket":"routine","purpose":"routine","model_budgets":[budget()]});
+    call(&db, fresh_binding.clone()).unwrap();
+    let mut fresh_reservation = reserve("replacement", "next");
+    fresh_reservation["repo_id"] = json!("booking-fresh");
+    assert_eq!(
+        call(&db, fresh_reservation.clone()).unwrap_err().code,
+        "CAMPAIGN_EXHAUSTED"
+    );
+    fresh_binding["run_id"] = json!("new-chain");
+    fresh_binding["chain_id"] = json!("chain2");
+    call(&db, fresh_binding.clone()).unwrap();
+    fresh_reservation["run_id"] = json!("new-chain");
+    call(&db, fresh_reservation.clone()).unwrap();
+    assert_eq!(
+        call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap()["charged_microusd"],
+        17000
+    );
+    fresh_binding["run_id"] = json!("over-bucket");
+    fresh_binding["chain_id"] = json!("chain3");
+    call(&db, fresh_binding).unwrap();
+    fresh_reservation["run_id"] = json!("over-bucket");
+    fresh_reservation["reservation_id"] = json!("third");
+    let before_rejection = call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap();
+    assert_eq!(
+        call(&db, fresh_reservation).unwrap_err().code,
+        "CAMPAIGN_EXHAUSTED"
+    );
+    assert_eq!(
+        call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap(),
+        before_rejection
+    );
+    call(
+        &db,
+        json!({"op":"campaign_configure","id":"fresh","expected_version":1,"approval":next}),
+    )
+    .unwrap();
+    assert_eq!(
+        call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap(),
+        before_rejection
+    );
+    let mut forged = next;
+    forged["repo_ids"] = json!(["foreign"]);
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"campaign_configure","id":"fresh","expected_version":1,"approval":forged})
+        )
+        .unwrap_err()
+        .code,
+        "IDEMPOTENCY_CONFLICT"
+    );
+    assert_eq!(
+        call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap(),
+        before_rejection
+    );
+    call(
+        &db,
+        json!({"op":"campaign_disable","id":"fresh","expected_version":2,"expected_revision":5}),
+    )
+    .unwrap();
+    forged["version"] = json!(3);
+    forged["limit_microusd"] = json!(40000);
+    forged["buckets"]["routine"] = json!(30000);
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"campaign_configure","id":"fresh","expected_version":2,"approval":forged})
+        )
+        .unwrap_err()
+        .code,
+        "IDEMPOTENCY_CONFLICT"
+    );
+    assert_eq!(
+        call(&db, json!({"op":"budget_status"})).unwrap()["charged"],
+        1234
+    );
+}

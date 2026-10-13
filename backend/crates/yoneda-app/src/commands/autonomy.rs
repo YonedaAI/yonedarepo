@@ -2,6 +2,8 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, autonomy::AutonomyPolicy};
+mod intent;
+pub(super) use intent::{hold_candidate, intent_pending, validate_candidate};
 
 pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
     let Some(value) = c.get("autonomy_policy") else {
@@ -60,7 +62,7 @@ pub(super) fn authorize_repair<S: SqlStore>(
         || !approval.enabled
         || run["status"] == "cancelled"
         || run["status"] == "accepted"
-        || run["status"] == "awaiting_intent"
+        || intent_pending(run)
         || run["approved_policy"] != run["policy"]
         || repo(db)?["policy"] != run["approved_policy"]
         || run["intent"] != run["autonomy_approval"]["intent"]
@@ -91,10 +93,14 @@ pub(super) fn authorize_repair<S: SqlStore>(
 }
 
 pub(super) fn validate_scopes(run: &Value, paths: &[String]) -> Result<()> {
+    validate_plan_scopes(run.get("approved_policy").unwrap_or(&run["policy"]), paths)
+}
+
+pub(crate) fn validate_plan_scopes(policy: &Value, paths: &[String]) -> Result<()> {
     for path in paths {
         yoneda_core::validate_path(path.trim_end_matches('/'))?;
         if path.split('/').any(|component| component == ".git")
-            || run["approved_policy"]["build"]["test_bundle"]["protected_paths"]
+            || policy["build"]["test_bundle"]["protected_paths"]
                 .as_array()
                 .into_iter()
                 .flatten()
@@ -162,9 +168,32 @@ pub(super) fn question<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     let value = json!({"id":id,"run_id":run["id"],"execution_id":job["payload"]["execution"]["id"],"epoch":job["epoch"],"question":text,"options":options,"fingerprint":fingerprint,"status":"pending","created_at":now});
     create(db, "intent_questions", &id, &value)?;
     run["intent_question"] = value.clone();
+    run["intent_epoch"] = json!(
+        run["intent_epoch"]
+            .as_u64()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| bad("Intent epoch overflow"))?
+    );
     run["status_before_question"] = run["status"].clone();
     run["status"] = json!("awaiting_intent");
     save(db, "runs", &string(&run, "id")?, &run)?;
+    for mut candidate in all(db, "candidates")?
+        .into_iter()
+        .filter(|c| c["run_id"] == run["id"])
+    {
+        hold_candidate(db, &run, &mut candidate)?;
+        save(db, "candidates", &string(&candidate, "id")?, &candidate)?;
+        node(
+            db,
+            &string(&candidate, "id")?,
+            "candidate",
+            candidate["summary"].as_str().unwrap_or("Candidate"),
+            "platform_capture",
+            now,
+            candidate.clone(),
+        )?;
+    }
     for mut queued in run_jobs(db, &string(&run, "id")?)? {
         if queued["status"] == "queued" {
             queued["status"] = json!("awaiting_intent");
@@ -205,6 +234,13 @@ fn answer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     question["answered_at"] = json!(now);
     save(db, "intent_questions", &string(&question, "id")?, &question)?;
     run["intent_question"] = question.clone();
+    run["intent_epoch"] = json!(
+        run["intent_epoch"]
+            .as_u64()
+            .unwrap_or(0)
+            .checked_add(1)
+            .ok_or_else(|| bad("Intent epoch overflow"))?
+    );
     run["status"] = run["status_before_question"].clone();
     let mut answers = run["intent_clarifications"]
         .as_array()

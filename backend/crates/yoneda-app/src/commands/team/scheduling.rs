@@ -51,8 +51,9 @@ pub(super) fn create_task<S: SqlStore>(db: &S, task: &Value, now: i64) -> Result
     )
 }
 pub(super) fn wake<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
-    if ["cancelled", "accepted", "awaiting_intent"]
-        .contains(&run["status"].as_str().unwrap_or_default())
+    if super::super::autonomy::intent_pending(run)
+        || ["cancelled", "accepted", "awaiting_intent"]
+            .contains(&run["status"].as_str().unwrap_or_default())
     {
         return Ok(());
     }

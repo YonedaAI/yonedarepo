@@ -2,7 +2,7 @@
 import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {checkedOutcome,validateBinding,equal} from './booking-campaign-plan.mjs';
+import {checkedOutcome,validateBinding,validateObservedRun,equal} from './booking-campaign-plan.mjs';
 import {writeJSON} from './booking-campaign.mjs';
 export function lineage(pages,relevantIds,execution,commit){
   const relevant=new Set(relevantIds),assigned=new Set(),delivered=new Set(),opened=new Set(),cited=new Set(),bound=new Set();
@@ -54,16 +54,26 @@ export function auditCampaign(plan,results){
       if(seenStages.has(stage.id))throw new Error('Duplicate campaign stage');seenStages.add(stage.id);
       const task=expected.stages.find(task=>task.id===stage.id);
       if(!task||task.run_id!==stage.run_id)throw new Error('Stage identity changed');
-      let outcome=null,invalidVerdict=false;
+      let outcome=null,invalidVerdict=false,rejected=null;
       if(agentEvidence&&stage.detail){
-        try{validateBinding(plan,expected,task,stage.server_binding);outcome=checkedOutcome(plan,expected,task,stage.detail);}
+        try{
+          validateBinding(plan,expected,task,stage.server_binding);
+          const {run}=validateObservedRun(plan,expected,task,stage.detail);
+          const candidate=stage.detail.candidates?.find(c=>c.run_id===task.run_id&&c.role!=='specialist');
+          const evaluation=stage.detail.evaluations?.find(e=>candidate&&e.candidate===candidate.id&&equal(e.revision,candidate.revision)
+            &&e.policy===run.policy.version);
+          if(candidate?.status==='rejected'&&evaluation?.suite==='commands-v1'
+            &&evaluation.environment==='linux-node24-rust1.94-v1'&&/^[a-f0-9]{64}$/.test(evaluation.evidence)
+            &&evaluation.checks?.some(c=>c.name==='booking-acceptance'&&c.status==='fail'))rejected=candidate;
+          if(!rejected)outcome=checkedOutcome(plan,expected,task,stage.detail);
+        }
         catch{invalidVerdict=true;}
       }
       const execution=outcome?.execution??stage.detail?.executions?.find(execution=>execution.run_id===stage.run_id);
-      const commit=outcome?.revision?.commit??null;
+      const commit=outcome?.revision?.commit??rejected?.revision?.commit??null;
       if(outcome&&(!equal(stage.captured_source?.revision,outcome.revision)))throw new Error('Captured outcome revision mismatch');
-      return {id:task.id,run_id:stage.run_id,behavioral_pass:agentEvidence?(outcome?true:invalidVerdict?false:null):null,
-        checked_revision:outcome?.revision??null,
+      return {id:task.id,run_id:stage.run_id,behavioral_pass:agentEvidence?(outcome?true:rejected?false:null):null,
+        verification_invalid:invalidVerdict,checked_revision:outcome?.revision??rejected?.revision??null,
         working_head_advanced:agentEvidence&&outcome?stage.branch_readback?.latest_candidate_id===outcome.candidate.id
           &&stage.branch_readback?.working_commit===outcome.revision.commit
           &&stage.branch_readback?.version===stage.request?.expected_working_version+1:null,

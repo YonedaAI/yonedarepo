@@ -88,3 +88,55 @@ pub(super) fn apply(run: &mut Value, study: Option<Value>) {
         run["context_study"] = study;
     }
 }
+
+/// A signed study stage narrows the immutable corpus to facts available at that time.
+/// The campaign signature is verified before this function; callers cannot mint its digest.
+pub(super) fn select(c: &Value, repository: &Value, run: &mut Value) -> Result<()> {
+    let Some(ids) = c.get("current_context_ids") else {
+        return Ok(());
+    };
+    if run["campaign_approval_digest"]
+        .as_str()
+        .is_none_or(|s| s.len() != 64)
+        || c["_workspace"] != repository["workspace"]
+        || c.get("_grant").is_some()
+        || run["context_study"]["case"] != "event_booking_maintenance"
+    {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Stage context requires a signed owner booking-study approval",
+        ));
+    }
+    let ids = ids
+        .as_array()
+        .filter(|v| !v.is_empty() && v.len() <= 50)
+        .ok_or_else(|| bad("Stage context requires 1–50 corpus IDs"))?;
+    let corpus = run["context_study"]["corpus"]
+        .as_array()
+        .ok_or_else(|| bad("Missing frozen study corpus"))?;
+    let records = run["context_study"]["records"]
+        .as_array()
+        .ok_or_else(|| bad("Missing frozen study records"))?;
+    let mut seen = BTreeSet::new();
+    let mut selected = Vec::new();
+    for id in ids {
+        let id = id
+            .as_str()
+            .ok_or_else(|| bad("Stage corpus IDs must be strings"))?;
+        if !seen.insert(id) || !corpus.iter().any(|value| value == id) {
+            return Err(bad(
+                "Stage corpus IDs must be unique members of the configured corpus",
+            ));
+        }
+        selected.push(
+            records
+                .iter()
+                .find(|record| record["id"] == id)
+                .cloned()
+                .ok_or_else(|| bad("Missing stage corpus record"))?,
+        );
+    }
+    run["context_study"]["corpus"] = json!(ids);
+    run["context_study"]["records"] = json!(selected);
+    Ok(())
+}

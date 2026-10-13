@@ -19,7 +19,7 @@ export function prepare(settings,output){
   if(settings.template)writeJSON(resolve(directory,'operator-bootstrap-plan.json'),bootstrapPlan(plan,settings.template));
   for(const stage of stages)writeJSON(resolve(directory,`policy-${stage}.json`),bookingPolicy(stage));
   // This request is inert output, not a server approval or a campaign enablement.
-  writeJSON(resolve(directory,'operator-approval-request.json'),{username:plan.username,id:plan.campaign.id,expected_version:0,
+  writeJSON(resolve(directory,'operator-approval-request.json'),{username:plan.username,id:plan.campaign.id,expected_version:plan.campaign.version-1,
     approval:{version:plan.campaign.version,profile:'controlled-event-booking-study-v1',audience:'owner',
       repo_ids:plan.chains.map(chain=>chain.repo_id),expires:settings.approval_expires??null,limit_microusd:12000000,chain_limit_microusd:2000000,
       buckets:{routine:12000000,opus:0,reserve:0},model_budgets:[plan.budget]}});

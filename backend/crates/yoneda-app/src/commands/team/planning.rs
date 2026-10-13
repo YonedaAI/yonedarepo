@@ -71,6 +71,9 @@ fn planner<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<(Value, Value)> {
 }
 pub(super) fn propose<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let (job, run) = planner(db, c, now)?;
+    let plan: TeamPlan =
+        serde_json::from_value(c["plan"].clone()).map_err(|e| bad(&e.to_string()))?;
+    super::validate_plan_scopes(&run, &plan)?;
     proposals::propose(db, c, &job, &run, now)
 }
 pub(super) fn finish<S: SqlStore>(
@@ -114,6 +117,7 @@ pub(super) fn finish<S: SqlStore>(
     })?;
     let proposal_id = string(&proposal, "id")?;
     let plan = proposals::validated(&proposal, job, run)?;
+    super::validate_plan_scopes(run, &plan)?;
     run["team_plan"] = json!(plan);
     run["team_plan_revision"] = json!(1);
     run["team_plan_proposal"] = json!(proposal_id);
@@ -145,7 +149,7 @@ pub(super) fn reflect<S: SqlStore>(
     if execution["team_role"] == "coordinator" {
         if status == "failed" {
             let mut run = get(db, "runs", &string(execution, "run_id")?)?;
-            if run["status"] == "coordinating" {
+            if run["status"] == "coordinating" && !super::super::autonomy::intent_pending(&run) {
                 run["status"] = json!("failed");
                 save(db, "runs", &string(&run, "id")?, &run)?;
             }
@@ -157,7 +161,10 @@ pub(super) fn reflect<S: SqlStore>(
     }
     let rid = string(execution, "run_id")?;
     let mut run = get(db, "runs", &rid)?;
-    if run["status"] == "cancelled" || run["status"] == "accepted" || run.get("team_plan").is_some()
+    if run["status"] == "cancelled"
+        || run["status"] == "accepted"
+        || super::super::autonomy::intent_pending(&run)
+        || run.get("team_plan").is_some()
     {
         return Ok(());
     }

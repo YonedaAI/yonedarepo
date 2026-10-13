@@ -8,6 +8,8 @@ import {bookingPolicy,protectedBundle} from './booking-policy.mjs';
 const root=fileURLToPath(new URL('../../',import.meta.url));
 export const specification=JSON.parse(readFileSync(resolve(root,'fixtures/event-booking/campaign.json'),'utf8'));
 export const corpus=JSON.parse(readFileSync(resolve(root,'fixtures/event-booking/corpus.json'),'utf8'));
+const currentCorpus=JSON.parse(readFileSync(resolve(root,'fixtures/event-booking/corpus-v2.json'),'utf8'));
+export const planCorpus=plan=>plan.corpus_records??corpus;
 export const equal=isDeepStrictEqual;
 export const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail=message=>{throw new Error(message);};
@@ -32,6 +34,8 @@ export function starterFiles(){
   return Object.fromEntries(Object.entries(files).sort(([a],[b])=>Buffer.compare(Buffer.from(a),Buffer.from(b))));
 }
 export function makePlan(settings){
+  if(settings.corpus_version!==undefined&&![1,2].includes(settings.corpus_version))fail('Unsupported frozen corpus version');
+  const records=settings.corpus_version===2?currentCorpus:corpus;
   safeID(settings.id);safeID(settings.campaign?.id);
   if(!Number.isSafeInteger(settings.campaign.version)||settings.campaign.version<1)fail('Explicit campaign version required');
   if(!settings.username||!settings.connection)fail('Operator and saved connection required');
@@ -45,19 +49,35 @@ export function makePlan(settings){
   const repos=settings.repositories;
   if(!Array.isArray(repos)||repos.length!==6||new Set(repos.map(repo=>repo.id)).size!==6)fail('Six distinct fresh repositories required');
   for(const repo of repos)safeID(repo.id);
+  const retained=settings.retained_authority;
+  if(retained){
+    if(retained.campaign_id!==settings.campaign.id||retained.version!==settings.campaign.version-1
+      ||!Array.isArray(retained.chains)||!Array.isArray(retained.repo_ids)
+      ||retained.repo_ids.some(id=>repos.some(repo=>repo.id===id))
+      ||new Set(retained.chains.map(chain=>chain.id)).size!==retained.chains.length
+      ||!Number.isSafeInteger(retained.charged_microusd)||retained.charged_microusd<0||retained.charged_microusd>=12000000
+      ||retained.chains.reduce((sum,chain)=>sum+chain.charged_microusd,0)!==retained.charged_microusd)
+      fail('Invalid retained study authority');
+    retained.repo_ids.forEach(safeID);retained.chains.forEach(chain=>safeID(chain.id));
+  }
   const order=[['source_only',1],['plain_notes',1],['graph',1],['graph',2],['plain_notes',2],['source_only',2]];
   const chains=order.map(([arm,repetition],index)=>{
     const id=`${settings.id}-${arm}-${repetition}`;safeID(id);
     return {id,arm,repetition,repo_id:repos[index].id,
-      branch_id:`${id}-work`,stages:specification.stages.map((stage,number)=>({...stage,run_id:`${id}-s${number+1}`}))};
+      branch_id:`${id}-work`,stages:specification.stages.map((stage,number)=>({...stage,
+        ...(settings.stage_scoped_context===true&&number===0?{brief:stage.brief+' Initial stage only: preserve full-event HTTP 409 rejection and two-seat capacity; do not implement waitlist or promotion until the next feature stage.'}:{}),
+        run_id:`${id}-s${number+1}`}))};
   });
   const plan={version:1,case:specification.case,id:settings.id,campaign:settings.campaign,username:settings.username,
     connection:settings.connection,budget:structuredClone(budget),chains,source_digest:hash(starterFiles()),
-    corpus_digest:hash(corpus),test_bundle_digest:protectedBundle().digest,
+    corpus_digest:hash(records),test_bundle_digest:protectedBundle().digest,
     campaign_limit_microusd:12000000,chain_limit_microusd:2000000,agent_evidence:false,
     experiment:'matched maintenance chains; reversed arm order in repetition two; initial source identical',
     time_limit_basis:'600000ms per stage execution; 1800000ms per chain, queue wait separately bounded',
-    causal_effect:null};
+    causal_effect:null,
+    ...(settings.stage_scoped_context===true?{stage_scoped_context:true}:{}),
+    ...(settings.corpus_version===2?{corpus_records:structuredClone(records)}:{}),
+    ...(retained?{retained_authority:structuredClone(retained)}:{})};
   return {...plan,plan_digest:hash(plan)};
 }
 export function validateAuthority(plan,value,now=Date.now(),allowExhausted=false){
@@ -76,8 +96,10 @@ export function validateAuthority(plan,value,now=Date.now(),allowExhausted=false
   if(!Array.isArray(observedChains)||new Set(observedChains.map(chain=>chain.id)).size!==observedChains.length)
     fail('Invalid server campaign chain readback');
   let total=0;
+  const retained=plan.retained_authority?.chains??[];
+  if(retained.some(previous=>!observedChains.some(current=>equal(current,previous))))fail('Retained study chain counters changed or disappeared');
   for(const chain of observedChains){
-    if(!plan.chains.some(expected=>expected.id===chain.id)||!Number.isSafeInteger(chain.charged_microusd)
+    if(![...plan.chains,...retained].some(expected=>expected.id===chain.id)||!Number.isSafeInteger(chain.charged_microusd)
       ||chain.charged_microusd<0||chain.charged_microusd>2000000)fail('Unexpected or over-budget campaign chain');
     total+=chain.charged_microusd;
     for(const [model,usage] of Object.entries(chain.models??{})){
@@ -89,7 +111,7 @@ export function validateAuthority(plan,value,now=Date.now(),allowExhausted=false
   if(total!==campaign.charged_microusd)fail('Aggregate spend differs from server chain readback');
   return {campaign,approval,chains:observedChains};
 }
-export function studyConfig(plan,chain){return {id:plan.id,case:plan.case,arm:chain.arm,corpus:corpus.map(record=>record.id)};}
+export function studyConfig(plan,chain){return {id:plan.id,case:plan.case,arm:chain.arm,corpus:planCorpus(plan).map(record=>record.id)};}
 export function stageRequest(plan,chain,stage,branch){
   if(branch.id!==chain.branch_id||branch.status==='closed'||! /^[a-f0-9]{40,64}$/.test(branch.working_commit)
     ||!Number.isSafeInteger(branch.version)||branch.version<0)fail('Invalid checked working head');
@@ -98,6 +120,7 @@ export function stageRequest(plan,chain,stage,branch){
     agents:[{provider:plan.budget.provider,model:plan.budget.model,connection:plan.connection,
       strategy:'Implement the requested maintenance stage; preserve prior behavior and persisted data.'}],
     model_budgets:[plan.budget],delegation:{enabled:false,max_depth:0,max_executions:1},context:[],
+    ...(plan.stage_scoped_context?{current_context_ids:stage.relevant_context_ids}:{}),
     working_branch_id:branch.id,expected_working_commit:branch.working_commit,expected_working_version:branch.version,
     campaign:{...plan.campaign,chain_id:chain.id,bucket:'routine',purpose:'routine'}};
 }
@@ -107,24 +130,31 @@ export function validateBinding(plan,chain,stage,binding){
   if(!equal(binding,expected))fail('Server run binding differs from frozen campaign envelope');
   return binding;
 }
-export function checkedOutcome(plan,chain,stage,detail){
+export function validateObservedRun(plan,chain,stage,detail){
   const run=detail.run??detail.runs?.find(run=>run.id===stage.run_id);
   const executions=detail.executions?.filter(execution=>execution.run_id===stage.run_id)??[];
   const cleanBudget=budget=>{const {requests,charged_microusd,...config}=budget;return config;};
   const expected=cleanBudget(plan.budget);
+  const records=planCorpus(plan);
+  const expectedIds=plan.stage_scoped_context?stage.relevant_context_ids:records.map(record=>record.id);
+  const expectedRecords=expectedIds.map(id=>records.find(record=>record.id===id));
   if(!run||run.id!==stage.run_id||Object.hasOwn(run,'context_packet')||run.working_branch_id!==chain.branch_id
     ||! /^[a-f0-9]{64}$/.test(run.campaign_approval_digest)
     ||!equal(run.campaign,{...plan.campaign,chain_id:chain.id,bucket:'routine',purpose:'routine'})
     ||!equal(run.model_budgets?.map(cleanBudget),[expected])
     ||run.context_study?.arm!==chain.arm||run.context_study?.id!==plan.id||run.context_study?.case!==plan.case
-    ||!equal(run.context_study?.corpus,corpus.map(record=>record.id))
+    ||!equal(run.context_study?.corpus,expectedIds)
     ||!equal(run.context_study?.records?.map(record=>({id:record.id,kind:record.kind,statement:record.data?.statement??record.statement,
-      purpose:record.data?.purpose??record.purpose})),corpus)
+      purpose:record.data?.purpose??record.purpose})),expectedRecords)
     ||!equal(run.delegation,{enabled:false,max_depth:0,max_executions:1})
     ||!equal(run.context,[])||!equal(run.context_records,[])
     ||!equal(run.policy,bookingPolicy(stage.id))
     ||executions.length!==1||executions[0].provider!==plan.budget.provider||executions[0].model!==plan.budget.model)
     fail('Observed run violates frozen study isolation');
+  return {run,executions};
+}
+export function checkedOutcome(plan,chain,stage,detail){
+  const {run,executions}=validateObservedRun(plan,chain,stage,detail);
   const candidate=detail.candidates?.find(candidate=>candidate.run_id===stage.run_id&&candidate.role!=='specialist');
   if(!candidate||candidate.status!=='eligible'||executions[0].status!=='completed')fail('Stage has no completed checked candidate');
   const evaluation=detail.evaluations?.find(evaluation=>evaluation.candidate===candidate.id

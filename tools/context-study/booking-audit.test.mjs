@@ -17,6 +17,14 @@ it('separates initial assignment, successful delivery, body opening and capture-
   assert.deepEqual(result.citations_bound_to_capture_ids,['context:booking:capacity']);
   assert.equal(result.successful_receipt_calls,2);assert.equal(result.outcome_benefit,null);
 });
+it('owner-cancelled attempts without protected verdict remain unknown rather than behavioral failures',()=>{
+  const stage={id:'initial_build',run_id:'run',relevant_context_ids:['context:booking:capacity']};
+  const chain={id:'chain',arm:'graph',repetition:1,repo_id:'repo',stages:[stage]};
+  const plan={case:'event_booking_maintenance',campaign:{id:'new-authority'},plan_digest:'frozen',chains:[chain]};
+  const report=auditCampaign(plan,{case:plan.case,campaign_id:plan.campaign.id,plan_digest:plan.plan_digest,
+    agent_evidence:true,synthetic:false,chains:[{...chain,stages:[{...stage,detail:{run:{status:'cancelled'},candidates:[],evaluations:[]}}]}]});
+  assert.equal(report.chains[0].stages[0].behavioral_pass,null);
+});
 it('missing coverage is unknown; truncated citations cannot establish complete lineage',()=>{
   const missing=lineage([],['context:booking:capacity'],'e','capture');
   assert.equal(missing.delivered_ids,null);assert.equal(missing.opened_ids,null);

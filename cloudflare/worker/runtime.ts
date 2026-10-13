@@ -47,6 +47,12 @@ function compatibleRuntime(health: Json, job: Json) {
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (job.payload?.policy?.build?.app != null && health.capabilities?.app_bundle !== 1)
     throw new Error('Container image cannot capture checked apps; wait for rollout completion');
+  if (
+    job.payload?.team_planning === true &&
+    job.payload?.policy?.build?.app != null &&
+    health.capabilities?.app_planning !== 1
+  )
+    throw new Error('Container image lacks managed app planning; wait for rollout completion');
   if (job.payload?.run?.autonomy_policy != null && health.capabilities?.agent_coordination !== 1)
     throw new Error(
       'Container image cannot coordinate autonomous repairs; wait for rollout completion',

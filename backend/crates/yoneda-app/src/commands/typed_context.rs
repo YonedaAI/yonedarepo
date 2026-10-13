@@ -83,14 +83,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             event(db, "context.published", now, value.clone())?;
             Ok(value)
         }
-        "context_get" => get(db, "nodes", &string(&c, "id")?),
+        "context_get" => match &attempt {
+            Some(job) => super::context_packet::get_for_job(db, job, &string(&c, "id")?),
+            None => get(db, "nodes", &string(&c, "id")?),
+        },
         "context_search" => {
-            if c.get("file_path").is_some()
+            if attempt.is_some()
+                || c.get("file_path").is_some()
                 || c.get("authority").is_some()
                 || c.get("lineage").is_some()
                 || c["ranked"] == true
             {
-                return super::context_packet::search(db, &c);
+                return super::context_packet::search(db, &c, attempt.as_ref());
             }
             let query = c.get("query").and_then(Value::as_str).unwrap_or("");
             let cursor = c.get("cursor").and_then(Value::as_str).unwrap_or("");
