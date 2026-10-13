@@ -77,6 +77,7 @@ export interface Snapshot {
   graph_paged?: boolean;
   team_tasks?: Record<string, any>[];
   team_handoffs?: Record<string, any>[];
+  working_branches?: Record<string, any>[];
   capabilities?: {
     agent_limits?: AgentLimits;
     model_budgets?: number;
@@ -84,6 +85,9 @@ export interface Snapshot {
     published_continuation?: number;
     collaborative_runs?: number;
     team_planning?: number;
+    working_branches?: number;
+    agent_coordination?: number;
+    autonomous_repair?: number;
   };
 }
 export interface AgentLimits {
@@ -101,6 +105,7 @@ export interface Graph {
 }
 export type RepositoryOverview = Omit<RepositoryOverviewContract, 'repository'> & {
   repository: Repository;
+  working_branches?: Record<string, any>[];
 };
 export type RunsPage = RunsPageContract;
 export type RunGraphPage = RunGraphPageContract;

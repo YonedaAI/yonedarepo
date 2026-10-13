@@ -1,16 +1,16 @@
 # YonedaRepo
 
-A Context Graph platform for the agentic era. Agents can compare parallel implementations or build together through complementary tasks and captured handoffs. Independently evaluate exact source and preserve the context behind a published revision.
+A Git and Context Graph platform for agent-built applications. Agents plan complementary work, exchange contracts, repair integration and continue from checked development revisions. Humans review the working result, independent checks and the reasons behind it before canonical publication.
 
 [Try the development platform](https://yonedarepo.com/) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/) · [Video and submission](docs/submission.md) · [Verified release evidence](docs/release-evidence.md)
 
-**Reviewers:** open the hosted platform and choose **Have a reviewer access key?** Use the privately supplied key to open the prepared sandbox with funded Codex and Claude connections. There is no signup or provider-key setup. Choose **Run prepared example**, or from this checkout run:
+**Reviewers:** open the hosted platform and choose **Have a reviewer access key?** Use the privately supplied key; no signup or provider-key setup is needed. Open the latest checked result, or from this checkout run:
 
 ```sh
 node tools/reviewer.mjs
 ```
 
-The command prompts for the key without echoing it and opens the latest checked **Build together** example immediately. A private access file can be used without putting the key in shell history: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`. `--checked` reads the latest checked run and never starts or resumes a trial; `--no-open` prints its URL without launching a browser. Use `node tools/reviewer.mjs --new` only to explicitly approve another funded trial. Run `node tools/reviewer.mjs --help` for options. Node 24 is sufficient; no dependency installation or local Cloudflare deployment is needed. The sandbox has a shared $50 conservative inference allowance, up to $5 per trial, one active trial, and access through October 22, 2026. Unknown usage retains its reservation. Provider settings and arbitrary paid runs cannot be changed using reviewer access.
+The command prompts for the key without echoing it and reads the latest checked collaborative example. It never starts or resumes paid work by default. While a newly configured campaign is preparing, it reports that state and does not silently use historical results. A private access file can be used without putting the key in shell history: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`. `--no-open` prints the review URL without launching a browser. Use `--new` only to explicitly approve an optional fixed, funded trial. Run `--help` for options. Node 24 is sufficient; no dependency installation or local Cloudflare deployment is needed. The new booking campaign has a separate $50 conservative allowance, up to $5 per trial, one active trial, and access through October 22, 2026. A one-shot Opus repair requires the original explicit approval and a failed cheaper repair; it shares the same chain ceiling. Unknown usage retains its reservation. Reviewer access cannot change providers or start arbitrary paid work.
 
 Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Alternatively, connect a local agent through a scoped MCP/Git key; it uses your local agent credentials. The public Garden website is viewable without an account.
 
@@ -32,6 +32,12 @@ After publication, **Update website** / **Update project** continues the winning
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
 ### Current source wave and deployment status
+
+The October 12 autonomous-app implementation passed `cargo xtask check`: 323 Rust tests (219 app, 18 core, 70 runtime, 1 Cloudflare, 15 xtask), 319 platform Workers tests, 16 isolated-app workerd tests, 107 frontend tests and 15 Node tests. The Linux runtime image built successfully and is pinned at `sha256:126533b4c09bfaef51125afb2e4bbd068e76d24e9a2cfe18eb5d303701d1f34f`. The platform and separate Apps Worker are deployed; seven fresh booking repositories have identical verified source and no inherited run evidence. Fresh paid build/feature/bug chains and the controlled context study are being verified separately. These local checks and provisioning receipts do not prove an agent-built app outcome or human acceptance.
+
+The source includes Git-native workspaces, paged history, active-work limits, frozen prior context, guarded checked working branches, peer conversations, bounded agent-defined plan amendments and repairs, protected evaluation bundles and file-level provenance. The app profile serves JS/TS UI/API/SQLite on isolated hosts through Worker Loader and AppRunner DOs. See [the current architecture](docs/current-state-architecture.md) and [campaign contract](docs/campaign-contract.md).
+
+The following paragraph records the earlier static-site baseline; its revision, run, deployment and video are historical evidence:
 
 `cargo xtask check` passed on source revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`): 284 Rust tests (186 app, 16 core, 66 runtime, 1 Cloudflare and 15 xtask), 290 Workers tests across 59 files, 67 frontend tests across 15 files, and 11 Node tests. The deployed production Worker is version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`, running `a581aaf`. The rolled-out Linux runtime-25 image has seven healthy instances, zero starting, zero failed and no errors; it passed 72 Linux tests at `sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87`, and passed the offline Gemini/Rust MCP smoke test.
 

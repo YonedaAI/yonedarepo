@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { findCheckedRun, readRun } from './reviewer-client.mjs';
+import { campaignEntry, findCheckedRun, readRun } from './reviewer-client.mjs';
 
 const origin = 'https://yonedarepo.com';
 function keyPrompt() {
@@ -34,21 +34,25 @@ function keyPrompt() {
   });
 }
 function usage() {
-  return `Usage: node tools/reviewer.mjs [--help] [--new] [--checked] [--no-open] [--key-file <path>]
+  return `Usage: node tools/reviewer.mjs [--help] [--new | --resume] [--checked] [--no-open] [--key-file <path>]
 
 Options:
   --help             Show this help without signing in.
   --key-file <path>  Read a reviewer key from a private file (raw key or access.json).
   --checked          Open the latest recorded checked run; never start/resume a trial.
   --no-open          Print the review URL without launching a browser.
-  --new              Explicitly approve a new funded trial (up to $5).`;
+  --new              Explicitly approve a new funded trial (up to $5).
+  --resume           Resume the same approved active campaign trial.
+
+Default: open the latest checked campaign result without starting inference.`;
 }
 function parseArgs(args) {
-  const options = { help: false, newTrial: false, checkedOnly: false, openBrowser: true, keyFile: '' };
+  const options = { help: false, newTrial: false, resume: false, checkedOnly: false, openBrowser: true, keyFile: '' };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--help' || argument === '-h') options.help = true;
     else if (argument === '--new') options.newTrial = true;
+    else if (argument === '--resume') options.resume = true;
     else if (argument === '--checked') options.checkedOnly = true;
     else if (argument === '--no-open') options.openBrowser = false;
     else if (argument === '--key-file') {
@@ -58,8 +62,8 @@ function parseArgs(args) {
     } else throw new Error(usage());
   }
   if (options.help && args.length !== 1) throw new Error('--help cannot be combined with other options.');
-  if (options.checkedOnly && options.newTrial)
-    throw new Error('--checked and --new are mutually exclusive.');
+  if ([options.checkedOnly, options.newTrial, options.resume].filter(Boolean).length > 1)
+    throw new Error('--checked, --new and --resume are mutually exclusive.');
   return options;
 }
 async function keyFromFile(path) {
@@ -99,10 +103,16 @@ async function main() {
     credentials.key='';
   }
   const policy=await api('reviewer');
-  console.log(`Signed in. Funded allowance remaining: $${((policy.budget.limit-policy.budget.charged)/1000000).toFixed(2)}.`);
-  if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
+  const campaign=policy.campaign;
+  const remaining=campaign ? campaign.budget.limit_microusd-campaign.budget.charged_microusd : policy.budget.limit-policy.budget.charged;
+  console.log(`Signed in. Funded allowance remaining: $${(remaining/1000000).toFixed(2)}.`);
   let trial;
-  if (options.checkedOnly || (!policy.active_trial && !options.newTrial)) {
+  if(campaign) {
+    trial=await campaignEntry(api,campaign,options.newTrial,randomUUID(),options.resume);
+    console.log(options.newTrial ? 'Opening the bounded campaign trial.' : 'Read-only review: opening the latest independently checked app.');
+  } else if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
+  if (!campaign && options.resume) throw new Error('No configured campaign trial is available to resume.');
+  if (!campaign && !options.newTrial) {
     const recorded=await findCheckedRun(api,policy.repo_id);
     if(recorded) {
       trial={repo_id:policy.repo_id,run_id:recorded.id,

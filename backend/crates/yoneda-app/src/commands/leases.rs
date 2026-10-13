@@ -16,6 +16,25 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if j["status"] == "done" {
                 return Ok(json!({"already_done":true,"id":id}));
             }
+            if j["status"] == "awaiting_intent" {
+                return Ok(json!({"already_done":true,"paused":true,"id":id}));
+            }
+            if j["kind"] == "agent"
+                && let Some(run_id) = j["payload"]["execution"]["run_id"].as_str()
+            {
+                let run = get(db, "runs", run_id)?;
+                if run["status"] == "awaiting_intent" {
+                    j["status"] = json!("awaiting_intent");
+                    save(db, "jobs", &id, &j)?;
+                    return Ok(json!({"already_done":true,"paused":true,"id":id}));
+                }
+                if let Some(cap) = run["autonomy_policy"]["max_concurrent_agents"].as_i64() {
+                    let active=db.query("SELECT COUNT(*) AS count FROM jobs WHERE json_extract(payload,'$.kind')='agent' AND json_extract(payload,'$.status')='running' AND json_extract(payload,'$.lease_until')>? AND json_extract(payload,'$.payload.execution.run_id')=? AND id<>?",&[json!(now),json!(run_id),json!(id)])?;
+                    if number(&active[0], "count")? >= cap {
+                        return Ok(json!({"deferred":true,"id":id,"not_before":now+5000}));
+                    }
+                }
+            }
             if j["status"] == "cancelled" || j["status"] == "failed" {
                 return Err(Error::new("FENCED", "Job is terminal"));
             }

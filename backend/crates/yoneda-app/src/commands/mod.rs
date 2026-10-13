@@ -3,11 +3,16 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
 mod archive;
+mod autonomy;
+mod branches;
+mod campaign;
 mod capture_completion;
 mod completion;
 mod conflicts;
 mod context_access;
 mod context_evidence;
+mod context_packet;
+mod context_seed;
 mod context_sessions;
 mod context_usage;
 mod continuations;
@@ -21,6 +26,7 @@ mod leases;
 mod mcp;
 mod model_budgets;
 mod model_reservations;
+mod peer_messages;
 mod peers;
 mod policy;
 mod recovery;
@@ -89,6 +95,12 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
         "peer_status" => peers::read(db, &c, now),
+        "peer_messages_page" => peer_messages::page(db, &c),
+        "peer_message" | "peer_inbox" => peer_messages::handle(db, &c, now),
+        "intent_question" | "answer_intent" => autonomy::question(db, &c, now),
+        "create_working_branch" | "working_branch" | "working_branches" => {
+            branches::handle(db, &c, now)
+        }
         "update_policy" => policy::update(db, c, now),
         "configure_context_study" => study::configure(db, c, now),
         "init"
@@ -98,6 +110,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "run_detail"
         | "run_graph_page"
         | "candidate_record"
+        | "evaluation_record"
         | "job_status" => repository::handle(db, c, now),
         "archive_candidates"
         | "archive_prepare"
@@ -111,6 +124,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "task_handoff"
         | "integration_request"
         | "retry_team_task"
+        | "repair_request"
         | "repair_team" => team::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),

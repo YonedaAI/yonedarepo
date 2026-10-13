@@ -16,6 +16,67 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
   await guardContextAccess(env, scope.repo_id, identity, name, args);
   const finish = async (value: Json) =>
     response(await contextResponse(env, scope.repo_id, identity, name, value));
+  if (name === 'peer_message')
+    return finish(
+      await command({
+        op: name,
+        request_id: args.request_id,
+        recipient: args.recipient,
+        kind: args.kind,
+        body: args.body,
+        context_ids: args.context_ids ?? [],
+      }),
+    );
+  if (name === 'peer_inbox')
+    return finish(
+      await command({
+        op: name,
+        after: args.after,
+        limit: args.limit,
+        ack_ids: args.ack_ids ?? [],
+      }),
+    );
+  if (name === 'repair_request')
+    return finish(await command({ op: name, request_id: args.request_id, reason: args.reason }));
+  if (name === 'repair_team' || name === 'resolve_conflict')
+    return finish(
+      await command({
+        op: name,
+        request_id: args.request_id,
+        expected_commit: args.expected_commit,
+        expected_version: args.expected_version,
+        expected_plan_revision: args.expected_plan_revision,
+        expected_task_revisions: args.expected_task_revisions,
+        ...(name === 'repair_team'
+          ? {
+              run_id: args.run_id,
+              task_ids: args.task_ids,
+              ...(args.task_definitions === undefined
+                ? {}
+                : { task_definitions: args.task_definitions }),
+            }
+          : { conflict_id: args.conflict_id }),
+      }),
+    );
+  if (name === 'refresh_candidate')
+    return finish(
+      await command({
+        op: name,
+        request_id: args.request_id,
+        candidate_id: args.candidate_id,
+        expected_commit: args.expected_commit,
+        expected_version: args.expected_version,
+      }),
+    );
+  if (name === 'intent_question')
+    return finish(
+      await command({
+        op: name,
+        request_id: args.request_id,
+        question: args.question,
+        ...(args.options === undefined ? {} : { options: args.options }),
+      }),
+    );
   if (name === 'peer_status') return response(await command({ op: 'peer_status' }));
   if (name === 'repo_context' || name === 'execution_status')
     return finish(await command({ op: 'context' }));
@@ -87,6 +148,9 @@ export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Res
             kind: args.kind,
             limit: args.limit,
             cursor: args.cursor,
+            file_path: args.file_path,
+            authority: args.authority,
+            lineage: args.lineage,
           };
     return finish(await command({ ...input, op: name }));
   }

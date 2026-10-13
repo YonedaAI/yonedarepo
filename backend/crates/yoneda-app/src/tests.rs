@@ -2,8 +2,12 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
+#[path = "tests/autonomous_migration.rs"]
+mod autonomous_migration;
 #[path = "tests/context_intent.rs"]
 mod context_intent;
+#[path = "tests/context_seed.rs"]
+mod context_seed;
 #[path = "tests/context_sessions.rs"]
 mod context_sessions;
 #[path = "tests/context_study.rs"]
@@ -21,16 +25,22 @@ mod git_transport;
 mod graph_status;
 #[path = "tests/model_budgets.rs"]
 mod model_budgets;
+#[path = "tests/peer_messages.rs"]
+mod peer_messages;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
 #[path = "tests/published_continuation.rs"]
 mod published_continuation;
+#[path = "tests/ranked_context.rs"]
+mod ranked_context;
 #[path = "tests/reliability.rs"]
 mod reliability;
 #[path = "tests/restarts.rs"]
 mod restarts;
 #[path = "tests/single_agent.rs"]
 mod single_agent;
+#[path = "tests/working_branches.rs"]
+mod working_branches;
 
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {
@@ -267,7 +277,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
         .unwrap();
     assert_eq!(
         versions,
-        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7},{"version":8},{"version":9},{"version":10},{"version":11},{"version":12}])
+        json!([{"version":1},{"version":2},{"version":3},{"version":4},{"version":5},{"version":6},{"version":7},{"version":8},{"version":9},{"version":10},{"version":11},{"version":12},{"version":13}])
             .as_array()
             .unwrap()
             .clone()
@@ -276,7 +286,7 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS count FROM schema_migrations", &[])
             .unwrap()[0]["count"],
-        12
+        13
     );
     db.query("DELETE FROM schema_migrations WHERE version=2", &[])
         .unwrap();

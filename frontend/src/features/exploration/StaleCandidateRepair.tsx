@@ -22,7 +22,7 @@ export function StaleCandidateRepair({
       candidate.run_id === run.id && candidate.base?.commit !== snapshot.repository.head_commit,
   );
   const decision = snapshot.decisions.some((item) => item.run_id === run.id);
-  if (reviewer || !stale || decision) return null;
+  if (reviewer || run.working_branch_id || !stale || decision) return null;
   const active = runHasActiveAttempts(snapshot, run);
   const agents =
     snapshot.executions.some(

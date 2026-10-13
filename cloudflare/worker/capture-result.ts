@@ -15,6 +15,27 @@ function changedPaths(files: Json[]): string[] {
 function invalid(message: string): never {
   throw Object.assign(new Error(message), { code: 'INVALID_CAPTURE' });
 }
+async function targetReadback(env: Env, scope: Scope) {
+  const branchId =
+    scope.job.payload.working_branch_id ?? scope.job.payload.conflict_resolver?.working_branch_id;
+  if (typeof branchId === 'string') {
+    const branch = await ledger(env, scope.repo_id, { op: 'working_branch', id: branchId });
+    const [namespace, name, extra] = String(branch.working_revision?.repository ?? '').split('/');
+    if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !name)
+      invalid('Working target repository is unavailable');
+    using target = await env.ARTIFACTS.get(name);
+    if (!(await target.readCommit(branch.working_commit)))
+      invalid('Working target commit is unavailable');
+    return { observed: branch.working_commit, version: branch.version };
+  }
+  const status = await ledger(env, scope.repo_id, { op: 'repository_status' });
+  using canonical = await env.ARTIFACTS.get(status.remote.name);
+  const info = await canonical.info();
+  const observed = (
+    await canonical.log({ ref: status.remote.branch ?? info.defaultBranch, limit: 1 })
+  )[0]?.hash;
+  return { observed, version: status.version };
+}
 
 /** Independent Artifacts readback; result claims never supply Git paths or blob identities. */
 export async function captureResult(env: Env, scope: Scope, body: Json): Promise<Json> {
@@ -52,12 +73,7 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
   } = body;
   const result: Json = { ...metadata, paths, file_provenance: fileProvenance };
   if (refresh) {
-    const status = await ledger(env, scope.repo_id, { op: 'repository_status' });
-    using canonical = await env.ARTIFACTS.get(status.remote.name);
-    const info = await canonical.info();
-    const observed = (
-      await canonical.log({ ref: status.remote.branch ?? info.defaultBranch, limit: 1 })
-    )[0]?.hash;
+    const { observed, version } = await targetReadback(env, scope);
     const candidatePaths = changedPaths(
       await captureFileProvenance(
         captured,
@@ -70,7 +86,7 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     );
     result.readback = {
       observed_head: observed,
-      version: status.version,
+      version,
       parents: commit.parents,
       candidate_paths: candidatePaths,
       intervening_paths: interveningPaths,
@@ -96,16 +112,11 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     const delta = changedPaths(
       await captureFileProvenance(captured, workspace.commit, commitHash, merged),
     );
-    const status = await ledger(env, scope.repo_id, { op: 'repository_status' });
-    using canonical = await env.ARTIFACTS.get(status.remote.name);
-    const info = await canonical.info();
-    const observed = (
-      await canonical.log({ ref: status.remote.branch ?? info.defaultBranch, limit: 1 })
-    )[0]?.hash;
+    const { observed, version } = await targetReadback(env, scope);
     result.resolver_delta_paths = delta;
     result.readback = {
       observed_head: observed,
-      version: status.version,
+      version,
       parents: commit.parents,
       candidate_commit: commitHash,
       captured_paths: paths,

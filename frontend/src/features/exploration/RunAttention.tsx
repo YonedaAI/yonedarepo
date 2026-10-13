@@ -60,7 +60,7 @@ export function RunAttention({
             {attention.actionLabel}
           </button>
         )}
-        {evaluation?.deployment?.digest && (
+        {(evaluation?.deployment?.digest || evaluation?.app?.bundle_digest) && (
           <SiteLink key={evaluation.id} repo={snapshot.repository.id} evaluation={evaluation.id} />
         )}
         {decision?.status === 'published' &&

@@ -1,13 +1,15 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { Dialog } from '../../components/Dialog';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { TeamWorkflow } from '../team/TeamWorkflow';
 import { runCandidates } from '../team/teamView';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
-import { DecisionForm } from './DecisionForm';
+import { AgentConversation } from './AgentConversation';
+import { AgentWorkSummary } from './AgentWorkSummary';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
+import { IntentQuestion } from './IntentQuestion';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
+import { PublishingDecision } from './PublishingDecision';
 import { RunAttention } from './RunAttention';
 import { RunBrief } from './RunBrief';
 import { RunCandidates } from './RunCandidates';
@@ -15,9 +17,12 @@ import { RunControls } from './RunControls';
 import { type RunTab, RunTabs } from './RunTabs';
 import { RunWorkflow } from './RunWorkflow';
 import { runHasActiveAttempts } from './runControlState';
-import { runAttention, selectionBlocker } from './runReviewState';
+import { selectionBlocker } from './runReviewState';
 import { runTitle } from './runTitle';
 import { StaleCandidateRepair } from './StaleCandidateRepair';
+import '../../styles/review-work.css';
+import { WorkingBranchPanel } from './WorkingBranchPanel';
+import type { WorkingBranch } from './workingBranchView';
 
 const ContextUsagePanel = lazy(() =>
   import('../context-usage/ContextUsagePanel').then((module) => ({
@@ -39,6 +44,8 @@ export function RunDetail({
   onAccept,
   onProviders,
   onContext,
+  onContinueBranch,
+  onAnswerIntent,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -57,13 +64,12 @@ export function RunDetail({
   ) => Promise<boolean>;
   onProviders?: () => void;
   onContext: () => void;
+  onContinueBranch?: (branch: WorkingBranch) => void;
+  onAnswerIntent?: (question: string, answer: string) => Promise<boolean>;
 }) {
-  const [tab, setTab] = useState<RunTab>(() =>
-    runAttention(snapshot, run).action === 'activity' ? 'activity' : 'results',
-  );
+  const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
   const [selected, setSelected] = useState('');
-  const [selectionError, setSelectionError] = useState('');
   const [comparing, setComparing] = useState(false);
   const repo = snapshot.repository;
   const team = run.mode === 'collaborate';
@@ -85,7 +91,6 @@ export function RunDetail({
   const chosen = candidates.find((candidate) => candidate.id === selected);
   const blocker = selected ? selectionBlocker(snapshot, run, chosen) : undefined;
   function review(id: string) {
-    setSelectionError('');
     setSelected(id);
   }
   function openEvidence(next: RunTab, target = `run-panel-${next}`) {
@@ -104,6 +109,20 @@ export function RunDetail({
       <div className="intent-row">
         <div className="run-heading">
           <h2>{runTitle(run.intent)}</h2>
+          <p className="review-intent">
+            <strong>Intent:</strong> {run.intent}
+          </p>
+          {run.criteria?.length > 0 && (
+            <details className="review-criteria">
+              <summary>Acceptance criteria</summary>
+              <ul>
+                {run.criteria.map((criterion: string, index: number) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: Frozen criteria may repeat and have no item state.
+                  <li key={`${index}:${criterion}`}>{criterion}</li>
+                ))}
+              </ul>
+            </details>
+          )}
           <div className="run-meta">
             <span>
               Base <code>{short(run.base.commit)}</code>
@@ -125,19 +144,40 @@ export function RunDetail({
           </div>
         </div>
       </div>
+      <IntentQuestion
+        key={`${run.intent_question?.id}:${run.intent_question?.status}`}
+        run={run}
+        reviewer={reviewer}
+        busy={busy}
+        onAnswer={onAnswerIntent}
+      />
       <RunAttention
         snapshot={snapshot}
         run={run}
         busy={busy}
         onAction={(action, candidate) => {
-          if (action === 'review' && candidate) review(candidate);
+          if (action === 'review')
+            openEvidence(
+              'results',
+              candidate
+                ? `approach-${candidates.find((item) => item.id === candidate)?.execution}`
+                : 'run-panel-results',
+            );
           else if (
             action === 'details' &&
             snapshot.decisions.some((decision) => decision.run_id === run.id)
           )
             openEvidence('details', 'recorded-shipping-decision');
-          else openEvidence(action === 'review' ? 'results' : action);
+          else openEvidence(action);
         }}
+      />
+      <WorkingBranchPanel
+        snapshot={snapshot}
+        run={run}
+        reviewer={reviewer}
+        busy={busy}
+        canStart={canStart}
+        onContinue={onContinueBranch}
       />
       <RunTabs active={tab} onSelect={setTab}>
         {(panel) =>
@@ -162,10 +202,23 @@ export function RunDetail({
                 onSelect={review}
                 onProviders={reviewer ? undefined : onProviders}
                 onInspectTask={(id) => openEvidence('activity', `team-task-${id}`)}
+                onContext={() => openEvidence('context')}
+                onGraph={onContext}
+              />
+              <AgentWorkSummary
+                snapshot={snapshot}
+                run={run}
+                onInspect={() => openEvidence('activity')}
               />
             </>
           ) : panel === 'activity' ? (
             <>
+              <AgentConversation
+                key={run.id}
+                snapshot={snapshot}
+                run={run}
+                onContext={() => openEvidence('context')}
+              />
               <AgentActivityTimeline snapshot={snapshot} run={run} />
               {team ? (
                 <TeamWorkflow
@@ -231,38 +284,15 @@ export function RunDetail({
         }
       </RunTabs>
       {selected && (
-        <Dialog
-          initialFocus="textarea"
-          title="Review shipping decision"
+        <PublishingDecision
+          key={selected}
+          chosen={chosen}
+          candidates={candidates}
+          busy={busy}
+          blocker={blocker}
           onClose={() => setSelected('')}
-          locked={busy}
-        >
-          <p className="selection-summary">
-            <strong>{chosen?.strategy}</strong>
-            <br />
-            Exact revision <code>{short(chosen?.revision?.commit)}</code>
-          </p>
-          {(selectionError || blocker) && (
-            <p role="alert" className="form-error">
-              {selectionError || blocker}
-            </p>
-          )}
-          <DecisionForm
-            key={selected}
-            busy={busy}
-            blocked={!!blocker}
-            alternatives={candidates.filter((candidate) => candidate.id !== selected)}
-            onClose={() => setSelected('')}
-            onAccept={async (rationale, alternatives) => {
-              if (blocker) return;
-              try {
-                if (await onAccept(selected, rationale, alternatives)) setSelected('');
-              } catch (error) {
-                setSelectionError((error as Error).message);
-              }
-            }}
-          />
-        </Dialog>
+          onAccept={onAccept}
+        />
       )}
     </>
   );

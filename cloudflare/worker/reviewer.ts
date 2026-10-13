@@ -1,6 +1,7 @@
 import { username } from './accounts';
 import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
+import { reviewerCampaignStatus } from './reviewer-campaign';
 import { reviewerPolicy } from './reviewer-policy';
 import {
   resumeTrial,
@@ -84,6 +85,7 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
       ...(await reviewerTrialStatus(env, principal.workspace)),
       budget: await workspace(env, principal.workspace, { op: 'budget_status' }),
       project: await workspace(env, principal.workspace, { op: 'project_get', id: policy.repo_id }),
+      campaign: await reviewerCampaignStatus(env, principal.workspace),
     });
   }
   if (path === '/api/reviewer/trial' && req.method === 'POST') {
@@ -107,6 +109,20 @@ export async function reviewerGuard(req: Request, env: Env, principal: Principal
   if (path.startsWith('/api/reviewer')) return null;
   if (req.method === 'GET') return null;
   const parts = path.split('/').filter(Boolean);
+  if (
+    req.method === 'POST' &&
+    parts[1] === 'repos' &&
+    ['accept', 'cancel_run', 'resync_repository', 'answer_intent'].includes(parts[3])
+  ) {
+    const campaign = await workspace(env, principal.workspace, { op: 'reviewer_campaign_status' });
+    if (
+      campaign?.campaign.enabled === true &&
+      campaign.campaign.reviewer_enabled === true &&
+      campaign.campaign.expires > Date.now() &&
+      parts[2] === campaign.approval.entry.repo_id
+    )
+      return null;
+  }
   if (parts[1] === 'repos' && parts[3] === 'repair_team') {
     if (req.method !== 'POST' || parts[2] !== policy.repo_id)
       return error('FORBIDDEN', 'Reviewer repair is limited to its trial repository', 403);

@@ -1,10 +1,11 @@
 import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
 import { short } from '../../lib/api';
+import type { Snapshot } from '../../lib/types';
+import { CandidateOutcome } from './CandidateOutcome';
 import { ExecutionFailure } from './ExecutionFailure';
 import { executionStatus } from './ExecutionHierarchy';
 import { ExecutionLogs } from './ExecutionLogs';
 import { LazyCandidateDiff } from './LazyCandidateDiff';
-import { SiteLink } from './SiteLink';
 
 const descriptions: Record<string, string> = {
   minimal: 'Aim for the smallest coherent change.',
@@ -23,6 +24,10 @@ export function CandidateCard({
   disabledReason,
   onSelect,
   onProviders,
+  snapshot,
+  run,
+  onContext,
+  onGraph,
   team = false,
 }: {
   strategy: string;
@@ -36,6 +41,10 @@ export function CandidateCard({
   disabledReason?: string;
   onSelect: () => void;
   onProviders?: () => void;
+  snapshot: Snapshot;
+  run: Record<string, any>;
+  onContext: () => void;
+  onGraph: () => void;
   team?: boolean;
 }) {
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
@@ -69,23 +78,34 @@ export function CandidateCard({
           ) : null}
           {published ? 'published' : chosen ? 'selected' : status.replaceAll('_', ' ')}
         </span>
-        {(!team || candidate?.summary !== 'Integrate the team result approach') && (
+        {!candidate && (
           <p>
-            {candidate?.summary ??
-              (status === 'failed'
-                ? team
-                  ? 'Integration stopped before producing a complete result.'
-                  : 'This agent stopped before completing its approach.'
-                : status === 'cancelled'
-                  ? 'This agent was cancelled and will not continue.'
-                  : status === 'queued'
-                    ? 'Queued for an available execution slot.'
-                    : execution
-                      ? team
-                        ? 'Combining exact captured worker outputs under the approved shared contract.'
-                        : 'Working from the approved brief and frozen context.'
-                      : 'Waiting for an agent.')}
+            {status === 'failed'
+              ? team
+                ? 'Integration stopped before producing a complete result.'
+                : 'This agent stopped before completing its approach.'
+              : status === 'cancelled'
+                ? 'This agent was cancelled and will not continue.'
+                : status === 'queued'
+                  ? 'Queued for an available execution slot.'
+                  : execution
+                    ? team
+                      ? 'Combining exact captured worker outputs under the approved shared contract.'
+                      : 'Working from the approved brief and frozen context.'
+                    : 'Waiting for an agent.'}
           </p>
+        )}
+        {candidate && (
+          <CandidateOutcome
+            repo={repo}
+            candidate={candidate}
+            evaluation={evaluation}
+            decision={decision}
+            snapshot={snapshot}
+            run={run}
+            onContext={onContext}
+            onGraph={onGraph}
+          />
         )}
         {candidate && (
           <div className="candidate-action-row">
@@ -96,10 +116,9 @@ export function CandidateCard({
                 disabled={disabled}
                 onClick={onSelect}
               >
-                {team ? 'Review result' : 'Review approach'}
+                Record publishing decision
               </button>
             )}
-            {evaluation?.deployment?.digest && <SiteLink repo={repo} evaluation={evaluation.id} />}
             {execution && (
               <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />
             )}
@@ -128,31 +147,6 @@ export function CandidateCard({
                 {candidate.paths.length} {candidate.paths.length === 1 ? 'path' : 'paths'}
               </span>
             </div>
-            <div className="checks">
-              {evaluation?.checks.map((check: Record<string, string>) => (
-                <span key={check.name} className={check.status} title={check.detail}>
-                  {check.status === 'pass' ? <Check size={12} /> : <X size={12} />}{' '}
-                  {check.name.replaceAll('_', ' ')}
-                </span>
-              ))}
-              {!evaluation && <span>Independent checks pending</span>}
-            </div>
-            <details>
-              <summary>Check details</summary>
-              {evaluation ? (
-                evaluation.checks.map((check: Record<string, string>) => (
-                  <p key={check.name}>
-                    <strong>
-                      {check.name}: {check.status}
-                    </strong>
-                    <br />
-                    {check.detail}
-                  </p>
-                ))
-              ) : (
-                <p>Waiting for independent verification of this captured revision.</p>
-              )}
-            </details>
             <LazyCandidateDiff key={candidate.id} repo={repo} candidate={candidate} />
           </>
         )}

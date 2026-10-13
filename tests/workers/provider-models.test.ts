@@ -13,6 +13,7 @@ it('defaults to the cheaper Sonnet while preserving explicit legacy support and 
   const saved = [{ provider: 'claude', model: 'unsupported-model' }];
   expect(modelOptions('claude', saved, saved[0].model).map((option) => option.id)).toEqual([
     'claude-sonnet-5-5',
+    'claude-opus-5-5',
     'claude-sonnet-4-6',
   ]);
   expect(defaults.claude).toBe('claude-sonnet-5-5');

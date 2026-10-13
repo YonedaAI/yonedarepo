@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
@@ -6,8 +6,10 @@ import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunHistory } from './RunHistory';
 import { RunToolbar } from './RunToolbar';
-import { initialRun } from './restartRun';
+import { type InitialRun, initialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
+import { supportsWorkingBranches, type WorkingBranch, workingBranches } from './workingBranchView';
+import { workingRun } from './workingRun';
 
 const RunComposer = lazy(() =>
   import('./RunComposer').then((module) => ({ default: module.RunComposer })),
@@ -43,6 +45,9 @@ export function Exploration({
   const [runId, setRunId] = useState(initialRunId);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
+  const [branchSource, setBranchSource] = useState<InitialRun>();
+  const openingBranch = useRef(false);
+  const createdBranch = useRef<WorkingBranch | null>(null);
   const repo = snapshot.repository;
   const run = runId ? snapshot.runs.find((record) => record.id === runId) : snapshot.runs.at(-1);
   useEffect(() => {
@@ -50,6 +55,57 @@ export function Exploration({
   }, [run?.id, onSelectedRun]);
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
   const canStart = !reviewer && !busy && !repo.pending && repo.status === 'ready';
+  function continueBranch(branch: WorkingBranch) {
+    if (!canStart || branch.status !== 'active') return;
+    const source =
+      snapshot.runs.find(
+        (item) =>
+          item.id ===
+          snapshot.candidates.find((candidate) => candidate.id === branch.latest_candidate_id)
+            ?.run_id,
+      ) ?? run;
+    setRestartId('');
+    setBranchSource(workingRun(snapshot, branch, source));
+    setComposing(true);
+  }
+  async function newRun() {
+    if (!canStart || openingBranch.current) return;
+    if (!supportsWorkingBranches(snapshot)) {
+      setRestartId('');
+      setBranchSource(undefined);
+      setComposing(true);
+      return;
+    }
+    openingBranch.current = true;
+    setBusy(true);
+    try {
+      let branch =
+        workingBranches(snapshot).find(
+          (item) => item.id === run?.working_branch_id && item.status === 'active',
+        ) ??
+        workingBranches(snapshot)
+          .filter((item) => item.status === 'active')
+          .at(-1) ??
+        createdBranch.current;
+      if (!branch) {
+        const value = await api<unknown>(`repos/${repo.id}/create_working_branch`, {
+          id: `work-${crypto.randomUUID()}`,
+          expected_commit: repo.published_commit,
+          expected_version: repo.version,
+        });
+        branch = workingBranches({ ...snapshot, working_branches: [value] } as Snapshot)[0];
+        if (!branch)
+          throw new Error('The working branch response was incomplete. Refresh before continuing.');
+        createdBranch.current = branch;
+      }
+      continueBranch(branch);
+    } catch (error) {
+      onError((error as Error).message);
+    } finally {
+      openingBranch.current = false;
+      setBusy(false);
+    }
+  }
   async function act(action: string, body: unknown): Promise<boolean> {
     setBusy(true);
     try {
@@ -57,7 +113,7 @@ export function Exploration({
       await onChange();
       return true;
     } catch (error) {
-      if (['start_run', 'accept'].includes(action)) throw error;
+      if (['start_run', 'accept', 'answer_intent'].includes(action)) throw error;
       onError((error as Error).message);
       return false;
     } finally {
@@ -70,22 +126,21 @@ export function Exploration({
         reviewer={reviewer}
         snapshot={snapshot}
         canStart={canStart}
-        onNewRun={() => {
-          setRestartId('');
-          setComposing(true);
-        }}
+        onNewRun={() => newRun()}
       />
       <PendingReviews snapshot={snapshot} selected={run?.id} onSelect={setRunId} />
       {composing && !reviewer && (
         <Dialog
           title={
-            restartSource
-              ? 'Restart development run'
-              : hasPublishedWork(snapshot)
-                ? repo.site
-                  ? 'Update website'
-                  : 'Update project'
-                : 'New development run'
+            branchSource
+              ? 'Continue working branch'
+              : restartSource
+                ? 'Restart development run'
+                : hasPublishedWork(snapshot)
+                  ? repo.site
+                    ? 'Update website'
+                    : 'Update project'
+                  : 'New development run'
           }
           onClose={() => setComposing(false)}
           locked={busy}
@@ -93,8 +148,14 @@ export function Exploration({
         >
           <Suspense fallback={<p role="status">Loading run settings…</p>}>
             <RunComposer
-              key={restartSource?.id ?? 'new-run'}
-              initialRun={restartSource ? initialRun(snapshot, restartSource) : undefined}
+              key={
+                branchSource?.workingBranch
+                  ? `${branchSource.workingBranch.id}:${branchSource.workingBranch.version}`
+                  : (restartSource?.id ?? 'new-run')
+              }
+              initialRun={
+                branchSource ?? (restartSource ? initialRun(snapshot, restartSource) : undefined)
+              }
               busy={busy}
               snapshot={snapshot}
               onProviders={() => {
@@ -108,6 +169,7 @@ export function Exploration({
                   setRunId(id);
                   setComposing(false);
                   setRestartId('');
+                  setBranchSource(undefined);
                 }
               }}
             />
@@ -128,6 +190,7 @@ export function Exploration({
                 canStart={canStart}
                 onSelectRun={setRunId}
                 onRestart={() => {
+                  setBranchSource(undefined);
                   setRestartId(run.id);
                   setComposing(true);
                 }}
@@ -153,6 +216,10 @@ export function Exploration({
                 }
                 onProviders={reviewer ? undefined : onProviders}
                 onContext={() => onContext(run.id)}
+                onContinueBranch={continueBranch}
+                onAnswerIntent={(question, answer) =>
+                  act('answer_intent', { run_id: run.id, question_id: question, answer })
+                }
               />
             </Suspense>
           </RunEvidenceBoundary>

@@ -30,7 +30,7 @@ pub(super) fn start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     }
     wake(db, run, now)
 }
-fn create_task<S: SqlStore>(db: &S, task: &Value, now: i64) -> Result<()> {
+pub(super) fn create_task<S: SqlStore>(db: &S, task: &Value, now: i64) -> Result<()> {
     let id = string(task, "id")?;
     create(db, "team_tasks", &id, task)?;
     node(
@@ -51,7 +51,9 @@ fn create_task<S: SqlStore>(db: &S, task: &Value, now: i64) -> Result<()> {
     )
 }
 pub(super) fn wake<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
-    if run["status"] == "cancelled" || run["status"] == "accepted" {
+    if ["cancelled", "accepted", "awaiting_intent"]
+        .contains(&run["status"].as_str().unwrap_or_default())
+    {
         return Ok(());
     }
     let tasks = rows(db, "team_tasks", &string(run, "id")?)?;
@@ -76,7 +78,7 @@ pub(super) fn wake<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
             reserved.insert(agent);
         }
     }
-    Ok(())
+    coordination::maybe_start(db, &get(db, "runs", &string(run, "id")?)?, now)
 }
 fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Result<()> {
     let index = task["agent"]
@@ -89,7 +91,6 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         .ok_or_else(|| bad("Missing frozen team agent"))?;
     let id = string(&task, "id")?;
     let provider = string(agent, "provider")?;
-    let harness = &yoneda_core::providers::provider(&provider)?.harness;
     let team_inputs = inputs::inputs(db, run, &task)?;
     let mut context: BTreeSet<String> = run["context"]
         .as_array()
@@ -104,13 +105,31 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         }
     }
     let context: Vec<String> = context.into_iter().collect();
-    let mut execution = json!({"id":id,"run_id":run["id"],"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(||json!(provider)),"model":agent["model"],"strategy":task["title"],"role":"coding","status":"queued","context":context,"base":run["base"],"depth":0,"team_task":id,"team_role":task["role"],"task":task["instructions"],"team_task_revision":task["revision"]});
+    let mut execution = json!({"id":id,"run_id":run["id"],"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(||json!(provider)),"model":agent["model"],"strategy":task["title"],"role":"coding","status":"queued","context":context,"base":run["base"],"depth":0,"team_task":id,"team_role":task["role"],"task":task["instructions"],"team_task_revision":task["revision"]});
     if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
         execution["routing"] = routing.clone();
+    }
+    if let Some(round) = task.get("repair_round") {
+        execution["repair_round"] = round.clone();
     }
     if run.get("model_budgets").is_some() {
         execution["budget"] = json!({"provider":provider,"model":agent["model"]});
     }
+    if let Some(selected) = super::super::campaign::claim_escalation(db, run, &execution, now)? {
+        if let Some(object) = execution.as_object_mut() {
+            object.remove("routing");
+        }
+        for (key, value) in selected
+            .as_object()
+            .ok_or_else(|| bad("Invalid approved escalation selection"))?
+        {
+            execution[key] = value.clone();
+        }
+    }
+    execution["harness"] =
+        json!(yoneda_core::providers::provider(&string(&execution, "provider")?)?.harness);
+    let latest_run = get(db, "runs", &string(run, "id")?)?;
+    let run = &latest_run;
     if get(db, "executions", &id).is_ok() {
         save_execution(db, &execution, now)?;
     } else {

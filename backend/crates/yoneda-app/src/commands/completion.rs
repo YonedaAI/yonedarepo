@@ -40,6 +40,16 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             let evidence = hash(&c, "evidence", &[64])?;
             let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence,"deployment":j["site"]});
+            let mut result = result;
+            if policy["build"]["app"].is_object() && c["report"]["app_bundle_digest"].is_string() {
+                if c["report"]["app_revision"] != candidate["revision"]["commit"] {
+                    return Err(Error::new(
+                        "INVALID_CAPTURE",
+                        "App report revision differs from candidate",
+                    ));
+                }
+                result["app"] = json!({"bundle_digest":hash(&c["report"],"app_bundle_digest",&[64])?,"revision":c["report"]["app_revision"],"policy_digest":c["report"]["app_policy_digest"]});
+            }
             finish(
                 db,
                 &json!({"job_id":c["job_id"],"epoch":c["epoch"],"result":result}),
@@ -87,6 +97,17 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                             return Err(Error::new(
                                 "CHECKS_FAILED",
                                 "Static output was not independently captured",
+                            ));
+                        }
+                        if policy.build.as_ref().is_some_and(|b| b.app.is_some())
+                            && (result["app"]["revision"] != candidate["revision"]["commit"]
+                                || result["app"]["bundle_digest"].as_str().is_none()
+                                || result["app"]["policy_digest"]
+                                    != yoneda_core::build::policy_digest(&policy)?)
+                        {
+                            return Err(Error::new(
+                                "CHECKS_FAILED",
+                                "App output was not independently captured for this revision",
                             ));
                         }
                         Ok(())
@@ -138,6 +159,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             save_execution(db, &e, now)?;
             let rid = string(&candidate, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
+            if validation.is_ok() && j["payload"]["policy"] == repo(db)?["policy"] {
+                super::branches::promote(db, &mut run, &mut candidate, now)?;
+            }
             if run["status"] != "accepted" {
                 run["status"] = json!("ready");
             }
@@ -154,6 +178,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 e["epoch"].clone(),
                 now,
             )?;
+            super::team::evaluated(db, &run, &candidate, validation.is_ok(), now)?;
         }
         "publish" => {
             let did = string(&j["payload"], "decision_id")?;
@@ -210,8 +235,10 @@ pub(super) fn record_publication<S: SqlStore>(
     repository["pending"] = Value::Null;
     repository["status"] = json!("ready");
     repository["site"] = Value::Null;
+    repository["app"] = Value::Null;
     decision["status"] = json!("published");
     decision["published_at"] = json!(now);
+    super::branches::published(db, repository, now)?;
     super::history::link_file_provenance_to_publication(db, decision, &commit)?;
     let candidate = get(db, "candidates", &string(decision, "candidate")?)?;
     let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
@@ -219,6 +246,9 @@ pub(super) fn record_publication<S: SqlStore>(
         && evaluation["deployment"]["digest"].is_string()
     {
         repository["site"] = evaluation["deployment"].clone();
+    }
+    if evaluation["app"]["revision"] == commit && evaluation["app"]["bundle_digest"].is_string() {
+        repository["app"] = evaluation["app"].clone();
     }
     for path in candidate["paths"]
         .as_array()

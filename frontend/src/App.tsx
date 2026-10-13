@@ -69,7 +69,11 @@ export function App() {
           </div>
         )}
         {reviewer && state.snapshot && (
-          <ReviewerTrial onChange={state.refresh} onError={state.setError} />
+          <ReviewerTrial
+            snapshot={state.snapshot}
+            onChange={state.refresh}
+            onError={state.setError}
+          />
         )}
         {state.snapshot && (
           <RepositoryRecovery

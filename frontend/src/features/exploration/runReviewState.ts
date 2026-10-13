@@ -1,6 +1,7 @@
 import type { Snapshot } from '../../lib/types';
 import { runCandidates } from '../team/teamView';
 import { runHasActiveAttempts } from './runControlState';
+import { branchPublishable } from './workingBranchView';
 
 type RecordValue = Record<string, any>;
 export type RunAttentionState = {
@@ -18,11 +19,15 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
   if (decision) return 'A shipping decision has already been recorded for this run.';
   if (run.status === 'cancelled') return 'This run was cancelled.';
   if (run.status === 'accepted') return 'This run has already been selected.';
+  if (run.status === 'awaiting_intent')
+    return 'Record the pending product-intent answer before a publishing decision.';
   if (!candidate) return 'Waiting for a captured result.';
   if (candidate.status !== 'eligible') return 'This result has not passed the required checks.';
   if (snapshot.repository.pending) return 'Another publication is in progress in this repository.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready for publication.';
-  if (candidate.base?.commit !== snapshot.repository.head_commit)
+  if (run.working_branch_id && !branchPublishable(snapshot, run, candidate))
+    return 'This result is not the current checked working head, or the canonical publishing lease changed. Refresh branch evidence before recording a decision.';
+  if (!run.working_branch_id && candidate.base?.commit !== snapshot.repository.head_commit)
     return 'The repository has changed since this run started. Start an update from the current source.';
   const evaluation = snapshot.evaluations.find((item) => item.id === candidate.evaluation);
   if (
@@ -76,6 +81,15 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
       detail: 'Work has stopped. Captured source and recorded evidence remain available.',
       action: 'details',
       actionLabel: 'View run details',
+    };
+  if (run.status === 'awaiting_intent')
+    return {
+      tone: 'blocked',
+      title: 'Waiting for intent answer',
+      detail:
+        'Coordinating work is paused for the recorded product question. Review the question above; captured source remains available.',
+      action: 'results',
+      actionLabel: 'Inspect current results',
     };
   const executions = snapshot.executions.filter((execution) => execution.run_id === run.id);
   const failed = executions.filter((execution) => execution.status === 'failed').length;

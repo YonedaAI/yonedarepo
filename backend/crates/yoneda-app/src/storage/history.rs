@@ -30,7 +30,7 @@ pub(crate) fn repository_overview<S: SqlStore>(db: &S) -> Result<Value> {
             .unwrap_or_default(),
     )?;
     Ok(
-        json!({"repository":r,"counts":{"runs":counts("runs")?,"executions":counts("executions")?,"candidates":counts("candidates")?,"evaluations":counts("evaluations")?,"decisions":counts("decisions")?,"artifacts":counts("artifacts")?,"nodes":counts("nodes")?,"edges":counts("edges")?},"watermark":seq}),
+        json!({"repository":r,"working_branches":super::all(db,"working_branches")?,"counts":{"runs":counts("runs")?,"executions":counts("executions")?,"candidates":counts("candidates")?,"evaluations":counts("evaluations")?,"decisions":counts("decisions")?,"artifacts":counts("artifacts")?,"nodes":counts("nodes")?,"edges":counts("edges")?},"watermark":seq}),
     )
 }
 pub(crate) fn run_page<S: SqlStore>(

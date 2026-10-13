@@ -27,5 +27,5 @@ export default defineConfig({
       },
     }),
   ],
-  test: { include: ['tests/workers/**/*.test.ts'], testTimeout: 20_000 },
+  test: { include: ['tests/workers/**/*.test.ts'], exclude: ['tests/workers/apps-*.test.ts'], testTimeout: 20_000 },
 });

@@ -1,4 +1,4 @@
-import manifest from '../backend/crates/yoneda-core/src/providers.json';
+import { providerRegistry } from './provider-registry';
 
 export type Harness = 'claude' | 'codex' | 'gemini';
 export interface ModelOption {
@@ -21,7 +21,7 @@ export interface ProviderDefinition {
   token_plan_regions?: Record<string, string>;
 }
 
-export const providers = manifest as ProviderDefinition[];
+export const providers = providerRegistry as ProviderDefinition[];
 export function providerDefinition(id: string): ProviderDefinition {
   const definition = providers.find((provider) => provider.id === id);
   if (!definition) throw new Error('Unknown provider');

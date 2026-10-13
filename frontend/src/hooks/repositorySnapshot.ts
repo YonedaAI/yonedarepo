@@ -1,6 +1,12 @@
 import type { RepositoryOverview, RunDetail, RunsPage, Snapshot } from '../lib/types';
 
-const ACTIVE_RUN_STATES = new Set(['planning', 'researching', 'exploring']);
+const ACTIVE_RUN_STATES = new Set([
+  'planning',
+  'researching',
+  'exploring',
+  'coordinating',
+  'awaiting_intent',
+]);
 
 export class RequestedRunNotFoundError extends Error {
   constructor(runId: string) {
@@ -63,6 +69,7 @@ export function emptySnapshot(overview: RepositoryOverview): Snapshot {
     capabilities: overview.capabilities as Snapshot['capabilities'],
     team_tasks: [],
     team_handoffs: [],
+    working_branches: overview.working_branches ?? [],
   };
 }
 
@@ -83,6 +90,7 @@ export function mergeRunDetails(
     capabilities: overview.capabilities as Snapshot['capabilities'],
     seq: overview.watermark,
     watermark: overview.watermark,
+    working_branches: overview.working_branches ?? [],
   };
   for (const detail of details) {
     next.runs = mergeRows(next.runs, detail.runs);

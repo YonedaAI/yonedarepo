@@ -58,6 +58,27 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             .ok_or_else(|| err("Missing build profile"))?;
         let bundle_digest = crate::test_bundle::install(profile.test_bundle.as_ref()).await?;
         let mut report = run_profile(root, profile).await?;
+        if profile.app.is_some() {
+            let commit = field(&job["payload"]["candidate"]["revision"], "commit")?;
+            match crate::app_bundle::encode(root, commit, &policy) {
+                Ok((content, digest)) => {
+                    let stored =
+                        crate::broker::broker("/app-bundle", json!({"content":content}), true)
+                            .await?;
+                    if stored["digest"] != digest {
+                        return Err(err("App bundle storage digest mismatch"));
+                    }
+                    report["app_bundle_digest"] = json!(digest);
+                    report["app_revision"] = json!(commit);
+                    report["app_policy_digest"] = json!(yoneda_core::fingerprint(
+                        &serde_json::to_value(&policy).map_err(err)?
+                    )?);
+                }
+                Err(_) => {
+                    report["app_error"] = json!("App output missing, unsafe or exceeds limits");
+                }
+            }
+        }
         if let Some(directory) = &profile.static_dir {
             if let Ok(files) = crate::site::assets(root, directory) {
                 crate::broker::broker("/site", json!({"files":files}), true).await?;

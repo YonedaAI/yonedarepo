@@ -4,6 +4,40 @@
   justify-content: space-between;
   gap: 16px;
 }
+.review-intent {
+  max-width: 90ch;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.review-criteria {
+  margin: 12px 0;
+}
+.candidate :where(.outcome-preview, .outcome-checks, .outcome-story) {
+  margin: 18px 0;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.candidate :where(.outcome-preview, .outcome-checks, .outcome-story) h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+.outcome-preview small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.outcome-checks ul {
+  padding: 0;
+  list-style: none;
+}
+.outcome-checks li {
+  margin: 12px 0;
+}
+.outcome-drilldown {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
 .exploration .run-picker {
   margin-bottom: 20px;
   padding: 12px 0;

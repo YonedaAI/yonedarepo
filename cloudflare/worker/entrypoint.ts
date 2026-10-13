@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { authorizeAppPreview, publishedApp } from './apps';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
@@ -16,6 +17,12 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
 
   async authorizePreview(digest: string, token: string) {
     return authorizePreview(this.env, digest, token);
+  }
+  async authorizeAppPreview(preview: string, token: string) {
+    return authorizeAppPreview(this.env, preview, token);
+  }
+  async publishedApp(repo: string) {
+    return publishedApp(this.env, repo);
   }
   async siteManifest(repo: string): Promise<{ digest: string; commit: string } | null> {
     try {
@@ -94,7 +101,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               scope.fork = fork;
             } else if (job.kind === 'capture') {
               if (job.payload.capture_subtype === 'refresh_candidate') {
-                const canonical = job.payload.candidate?.base?.repository;
+                const canonical =
+                  job.payload.target_revision?.repository ??
+                  job.payload.candidate?.base?.repository;
                 const fork = await provisionAttemptFork(
                   this.env,
                   envelope.repo_id,

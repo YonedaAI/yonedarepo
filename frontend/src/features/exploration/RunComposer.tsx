@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { RunMode } from '../../../../shared/team';
-import { api, short } from '../../lib/api';
+import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
 import { RunModePicker } from '../team/RunModePicker';
 import { TeamPlanOptions } from '../team/TeamPlanOptions';
@@ -11,11 +11,12 @@ import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLi
 import { DelegationSettings } from './DelegationSettings';
 import { ModelBudgetSettings } from './ModelBudgetSettings';
 import { type ModelBudgetDraft, selectedModels, serializeModelBudgets } from './modelBudgets';
-import { PublishedRunNotice } from './PublishedRunNotice';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
+import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
 import { defaultConnections, runDraft } from './runDraft';
+import { workingBranchRequest } from './workingBranchView';
 export function RunComposer({
   busy,
   snapshot,
@@ -53,7 +54,7 @@ export function RunComposer({
   const [approving, setApproving] = useState(false);
   const [delegation, setDelegation] = useState<DelegationDraft>(draft.delegation);
   const models = selectedModels(agents, providers);
-  const updating = !draft.restartOf && hasPublishedWork(snapshot);
+  const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
   function changeAgents(next: AgentDraft[]) {
     setAgents(next);
     setTeam((current) => reconcileTeam(current, next));
@@ -129,6 +130,7 @@ export function RunComposer({
           .map((c) => c.trim())
           .filter(Boolean),
         context,
+        ...workingBranchRequest(draft.workingBranch),
         ...(draft.restartOf ? { restart_of: draft.restartOf } : {}),
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         agents: agents.map((a) => ({
@@ -169,36 +171,13 @@ export function RunComposer({
       }}
     >
       <h3>{updating ? 'What’s next for your project?' : 'Describe the change'}</h3>
-      {updating && (
-        <PublishedRunNotice
-          publication={draft.publication}
-          contextTotal={draft.inheritedContextTotal}
-        />
-      )}
-      {draft.restartOf && (
-        <p className="restart-notice">
-          Restarting creates a new run from the current canonical source. The previous run and its
-          failure evidence remain in history. Current repository checks apply. Review connections
-          and limits before approving.
-        </p>
-      )}
-      <p>
-        {mode === 'collaborate'
-          ? 'Your agents plan and build complementary parts of the same project in isolated workspaces.'
-          : agents.length === 1
-            ? 'Your agent works in an isolated workspace with the approved brief and selected context.'
-            : 'Your agents share one source revision, brief and selected context. Each works in an isolated workspace as capacity becomes available.'}{' '}
-        Independent checks and your shipping decision still apply. Approval starts paid inference
-        using your provider keys.
-      </p>
-      <p className="subtle">
-        Publication currently hosts static frontend output. Backend services and databases require a
-        separate deployment.
-      </p>
-      <p className="subtle">
-        Starting source: <code>{short(snapshot.repository.head_commit)}</code> · current canonical
-        revision
-      </p>
+      <RunSourceNotice
+        snapshot={snapshot}
+        draft={draft}
+        updating={updating}
+        mode={mode}
+        agents={agents.length}
+      />
       <label>
         {updating ? 'What should change?' : 'What should your agent build?'}
         <textarea

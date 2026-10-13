@@ -10,7 +10,8 @@
   "workers_dev": true,
   "routes": [
     { "pattern": "yonedarepo.com", "custom_domain": true },
-    { "pattern": "www.yonedarepo.com", "custom_domain": true }
+    { "pattern": "www.yonedarepo.com", "custom_domain": true },
+    { "pattern": "https://www.yonedarepo.com/*", "zone_name": "yonedarepo.com" }
   ],
   "preview_urls": false,
   "observability": {
@@ -24,6 +25,7 @@
   },
   "vars": {
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+    "APP_ORIGIN": "https://apps.yonedarepo.com",
     "ARTIFACTS_NAMESPACE": "yoneda-dev",
     "CODEX_MODEL": "gpt-5.6-luna",
     "CLAUDE_MODEL": "claude-sonnet-5-5",
@@ -36,6 +38,10 @@
     {
       "binding": "SELF",
       "service": "yonedarepo-dev"
+    },
+    {
+      "binding": "APPS",
+      "service": "yonedarepo-apps-dev"
     }
   ],
   "secrets_store_secrets": [

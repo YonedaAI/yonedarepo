@@ -4,9 +4,11 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod inventory;
 mod refresh;
+mod repair_authority;
 mod resolver;
 mod resolver_capture;
 mod support;
+mod target;
 pub(super) fn complete_resolver_capture<S: SqlStore>(
     db: &S,
     job: &Value,

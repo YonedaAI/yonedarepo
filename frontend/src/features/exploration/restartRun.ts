@@ -5,6 +5,7 @@ import { runMode } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import type { AgentDraft, DelegationDraft } from './agentLimits';
 import { defaultModelBudget, type ModelBudgetConfig, type ModelBudgetDraft } from './modelBudgets';
+import type { WorkingBranch } from './workingBranchView';
 
 export interface InitialRun {
   id: string;
@@ -18,6 +19,15 @@ export interface InitialRun {
   mode?: RunMode;
   team?: TeamPlan;
   teamPlanning?: string;
+  workingBranch?: WorkingBranch;
+}
+
+export function workingContinuation(
+  snapshot: Snapshot,
+  run: Record<string, any>,
+  branch: WorkingBranch,
+): InitialRun {
+  return { ...initialRun(snapshot, run), intent: '', workingBranch: branch };
 }
 
 export function agentConnectionIssue(agent: AgentDraft, providers: Provider[]) {

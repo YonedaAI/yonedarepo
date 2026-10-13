@@ -1,4 +1,21 @@
 // Metadata-only discovery and selected-run reads. Never starts or approves work.
+export async function campaignEntry(api, campaign, newTrial, requestId, resume = false) {
+  if (!campaign.enabled) throw new Error('The fresh campaign is not ready for review yet.');
+  if (resume) {
+    if (!campaign.active_trial) throw new Error('No campaign trial to resume.');
+    return api('reviewer/campaign/resume', {});
+  }
+  if (!newTrial) {
+    const checked = await api('reviewer/campaign/checked');
+    if (!checked) throw new Error('No checked app is ready yet. This command does not start work.');
+    return checked;
+  }
+  if (campaign.active_trial) {
+    return {repo_id:campaign.repo_id,run_id:campaign.active_trial,
+      url:`/?repo=${encodeURIComponent(campaign.repo_id)}&run=${encodeURIComponent(campaign.active_trial)}`};
+  }
+  return api('reviewer/campaign/trial',{request_id:requestId});
+}
 function isLegacyUnknownOperation(error) {
   return error?.code === 'NOT_FOUND' && error.message === 'Unknown repository operation';
 }
