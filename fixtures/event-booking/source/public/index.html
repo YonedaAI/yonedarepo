@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Community bookings</title><link rel="stylesheet" href="/style.css"></head>
+<body><main><h1>Community bookings</h1><p>Book locally with this demo. No external reservation is made.</p>
+<section aria-labelledby="events-title"><h2 id="events-title">Events</h2><div id="events" aria-live="polite">Loading events…</div></section>
+<form id="registration"><h2>Register</h2><label>Event <select name="event" required></select></label>
+<label>Name <input name="name" autocomplete="name" maxlength="80" required></label>
+<label>Email <input name="email" type="email" autocomplete="email" required></label><button>Register</button></form>
+<p id="status" role="status"></p><button id="cancel" hidden>Cancel registration</button>
+</main><script type="module" src="/app.mjs"></script></body></html>

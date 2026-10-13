@@ -5,6 +5,7 @@
 /backend/crates/yoneda-worker/build/
 /.wrangler/
 /.superpowers/
+/.playwright-mcp/
 /artifacts/
 /.env
 /.dev.vars

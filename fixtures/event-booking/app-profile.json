@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "entrypoint": "dist/worker.js",
+  "export_name": "App",
+  "migrations": [
+    {
+      "version": 1,
+      "sql": [
+        "CREATE TABLE events(id TEXT PRIMARY KEY,title TEXT NOT NULL,capacity INTEGER NOT NULL CHECK(capacity>0))",
+        "CREATE TABLE registrations(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id TEXT NOT NULL REFERENCES events(id),name TEXT NOT NULL,email TEXT NOT NULL,idempotency_key TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('confirmed','waitlisted','cancelled')))"
+      ]
+    }
+  ],
+  "seed": [
+    "INSERT INTO events(id,title,capacity) VALUES('workshop','Neighborhood workshop',2)",
+    "INSERT INTO events(id,title,capacity) VALUES('talk','Community talk',1)"
+  ]
+}
