@@ -146,3 +146,152 @@ fn only_plain_notes_counts_frozen_study_records_as_assigned_inputs() {
         }
     }
 }
+
+fn booking_trial(arm: &str) -> NativeStore {
+    let db = NativeStore::memory().unwrap();
+    call(&db, json!({"op":"init","id":"booking","name":"Disposable booking study","workspace":"reviewer",
+        "remote":{"namespace":"test","name":"booking"},"commit":"a".repeat(40),"policy":single_agent::policy(),
+        "context_seed":{"intent_id":"intent:seed","statement":"Staged maintenance experiment","records":[
+            {"id":"context:capacity","kind":"constraint","statement":"Reject registration once the event is full","purpose":"Initial capacity contract"},
+            {"id":"context:waitlist","kind":"requirement","statement":"Add a waitlist in the next feature run","purpose":"Future feature contract"},
+            {"id":"context:duplicate","kind":"finding","statement":"Prevent duplicate registration retries","purpose":"Later bug-fix contract"}]},
+        "context_study":{"id":"booking-v2","case":"event_booking_maintenance","arm":arm,
+            "corpus":["context:capacity","context:waitlist","context:duplicate"]}})).unwrap();
+    db
+}
+
+fn stage_request(id: &str, ids: Value) -> Value {
+    json!({"op":"start_run","id":id,"_workspace":"reviewer","intent":"Initial registration app: full event returns 409; no waitlist yet",
+        "agents":[{"provider":"codex","model":"gpt-5.6-luna","strategy":"Implement current intent"}],
+        "current_context_ids":ids,
+        "model_budgets":[{"provider":"codex","model":"gpt-5.6-luna","max_requests":8,"max_output_tokens":4096,
+            "max_execution_ms":600000,"spend_limit_microusd":2000000,
+            "pricing":{"input_microusd_per_million":250000,"output_microusd_per_million":1200000,"source":"owner-approved conservative rates"}}],
+        "campaign":{"id":"booking-study","version":2,"chain_id":id,"bucket":"routine","purpose":"routine"}})
+}
+
+fn sign_stage(mut command: Value) -> Value {
+    use hmac::{Hmac, Mac};
+    use sha2::Sha256;
+    let mut public = command.clone();
+    for field in [
+        "op",
+        "now",
+        "_workspace",
+        "_campaign_grant",
+        "_campaign_signing_key",
+    ] {
+        public.as_object_mut().unwrap().remove(field);
+    }
+    let claims = json!({"workspace":"reviewer","repo_id":"booking","run_id":command["id"],
+        "campaign":command["campaign"],"model_budgets":command["model_budgets"],
+        "request_digest":yoneda_core::fingerprint(&public).unwrap(),"expires":61000});
+    let key = "1".repeat(64);
+    let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).unwrap();
+    mac.update(
+        format!(
+            "yoneda:campaign-grant:v1\0{}",
+            yoneda_core::fingerprint(&claims).unwrap()
+        )
+        .as_bytes(),
+    );
+    let signature: String = mac
+        .finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    command["_campaign_grant"] = json!({"claims":claims,"signature":signature});
+    command["_campaign_signing_key"] = json!(key);
+    command
+}
+
+#[test]
+fn signed_stage_corpus_excludes_future_requirements_and_stays_frozen() {
+    for arm in ["source_only", "plain_notes", "graph"] {
+        let db = booking_trial(arm);
+        let initial = call(
+            &db,
+            sign_stage(stage_request("initial", json!(["context:capacity"]))),
+        )
+        .unwrap();
+        assert_eq!(
+            initial["context_study"]["corpus"],
+            json!(["context:capacity"])
+        );
+        assert_eq!(
+            initial["context_study"]["records"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            initial["context_study"]["records"][0]["id"],
+            "context:capacity"
+        );
+        call(
+            &db,
+            json!({"op":"cancel_run","_workspace":"reviewer","run_id":"initial"}),
+        )
+        .unwrap();
+        let feature = call(
+            &db,
+            sign_stage(stage_request(
+                "feature",
+                json!(["context:waitlist", "context:capacity"]),
+            )),
+        )
+        .unwrap();
+        assert_eq!(
+            feature["context_study"]["corpus"],
+            json!(["context:waitlist", "context:capacity"])
+        );
+        assert_eq!(
+            feature["context_study"]["records"][0]["id"],
+            "context:waitlist"
+        );
+        let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
+        assert_eq!(
+            snapshot["repository"]["context_study"]["corpus"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        assert_eq!(
+            snapshot["runs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["id"] == "initial")
+                .unwrap()["context_study"],
+            initial["context_study"]
+        );
+    }
+}
+
+#[test]
+fn stage_selection_requires_a_signed_owner_request_and_known_unique_nonempty_ids() {
+    let db = booking_trial("graph");
+    let before = call(&db, json!({"op":"snapshot"})).unwrap();
+    let mut unsigned = stage_request("unsigned", json!(["context:capacity"]));
+    unsigned.as_object_mut().unwrap().remove("campaign");
+    assert_eq!(call(&db, unsigned).unwrap_err().code, "FORBIDDEN");
+    for ids in [
+        json!([]),
+        json!(["context:unknown"]),
+        json!(["context:capacity", "context:capacity"]),
+    ] {
+        assert_eq!(
+            call(&db, sign_stage(stage_request("invalid", ids)))
+                .unwrap_err()
+                .code,
+            "INVALID_INPUT"
+        );
+    }
+    let mut tampered = sign_stage(stage_request("tampered", json!(["context:capacity"])));
+    tampered["current_context_ids"] = json!(["context:waitlist"]);
+    assert_eq!(call(&db, tampered).unwrap_err().code, "FORBIDDEN");
+    assert_eq!(call(&db, json!({"op":"snapshot"})).unwrap(), before);
+}

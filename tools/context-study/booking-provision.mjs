@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {gitEnvironment,campaignClient} from './booking-operator.mjs';
 import {operatorStudyClient} from './booking-client.mjs';
 import {bootstrapPlan} from './booking-bootstrap.mjs';
-import {starterFiles,hash,equal,studyConfig,corpus} from './booking-campaign-plan.mjs';
+import {starterFiles,hash,equal,studyConfig,planCorpus} from './booking-campaign-plan.mjs';
 import {prepare,writeJSON} from './booking-campaign.mjs';
 const reject=message=>{throw new Error(message);};
 export function git(args,cwd,capability){
@@ -63,6 +63,7 @@ export async function seedTemplate(client,template,output,{runGit=git}={}){
   writeJSON(receiptPath,receipt);return receipt;
 }
 export async function provisionAll(client,plan,template,output,{reviewerRepo,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))}={}){
+  const corpus=planCorpus(plan);
   const setup=bootstrapPlan(plan,template),requests=setup.provisions.map(value=>value.body);
   if(reviewerRepo)requests.push({username:plan.username,repo_id:reviewerRepo,template,policy:setup.provisions[0].body.policy});
   const receipts=[];

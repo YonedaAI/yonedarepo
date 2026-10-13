@@ -75,6 +75,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "evaluate" => {
             let candidate_id = string(&j["payload"]["candidate"], "id")?;
             let mut candidate = get(db, "candidates", &candidate_id)?;
+            let rid = string(&candidate, "run_id")?;
+            let mut run = get(db, "runs", &rid)?;
+            let held = super::autonomy::hold_candidate(db, &run, &mut candidate)?;
             let evaluation: yoneda_core::Evaluation =
                 serde_json::from_value(result.clone()).map_err(|e| bad(&e.to_string()))?;
             let policy: yoneda_core::Policy =
@@ -120,7 +123,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             create(db, "evaluations", &evaluation.id, result)?;
             // A late historical evaluation remains evidence but cannot replace current eligibility.
             if j["payload"]["policy"] == repo(db)?["policy"] {
-                candidate["status"] = json!(if validation.is_ok() {
+                candidate["status"] = json!(if held {
+                    "awaiting_intent"
+                } else if validation.is_ok() {
                     "eligible"
                 } else {
                     "rejected"
@@ -157,20 +162,25 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("completed");
             save_execution(db, &e, now)?;
-            let rid = string(&candidate, "run_id")?;
-            let mut run = get(db, "runs", &rid)?;
-            if validation.is_ok() && j["payload"]["policy"] == repo(db)?["policy"] {
+            if !held && validation.is_ok() && j["payload"]["policy"] == repo(db)?["policy"] {
                 super::branches::promote(db, &mut run, &mut candidate, now)?;
             }
-            if run["status"] != "accepted" {
+            if run["status"] != "accepted" && !super::autonomy::intent_pending(&run) && !held {
                 run["status"] = json!("ready");
             }
             save(db, "runs", &rid, &run)?;
-            super::conflicts::resolver_evaluated(db, &candidate_id, validation.is_ok(), now)?;
+            super::conflicts::resolver_evaluated(
+                db,
+                &candidate_id,
+                validation.is_ok() && !held,
+                now,
+            )?;
             super::team::reflect(
                 db,
                 &e,
-                if validation.is_ok() {
+                if held {
+                    "awaiting_intent"
+                } else if validation.is_ok() {
                     "complete"
                 } else {
                     "failed"
@@ -178,7 +188,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 e["epoch"].clone(),
                 now,
             )?;
-            super::team::evaluated(db, &run, &candidate, validation.is_ok(), now)?;
+            if !held {
+                super::team::evaluated(db, &run, &candidate, validation.is_ok(), now)?;
+            }
         }
         "publish" => {
             let did = string(&j["payload"], "decision_id")?;

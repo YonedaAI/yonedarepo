@@ -65,6 +65,10 @@ pub(super) fn capture_payload<S: SqlStore>(
     payload: &mut Value,
     now: i64,
 ) -> Result<()> {
+    if job["payload"]["run"]["mode"] == "collaborate" {
+        payload["intent_epoch"] =
+            json!(job["payload"]["run"]["intent_epoch"].as_u64().unwrap_or(0));
+    }
     if job["payload"]["execution"]["team_task"].is_null() {
         return Ok(());
     }
@@ -108,7 +112,10 @@ pub(super) fn reflect<S: SqlStore>(
     if status == "failed" {
         let rid = string(e, "run_id")?;
         let mut run = get(db, "runs", &rid)?;
-        if run["status"] != "cancelled" && run["status"] != "accepted" {
+        if run["status"] != "cancelled"
+            && run["status"] != "accepted"
+            && !super::autonomy::intent_pending(&run)
+        {
             run["status"] = json!("failed");
             save(db, "runs", &rid, &run)?;
         }
@@ -140,6 +147,7 @@ pub(super) fn validate_candidate<S: SqlStore>(
     run: &Value,
     candidate: &Value,
 ) -> Result<()> {
+    super::autonomy::validate_candidate(run, candidate)?;
     if run["mode"] != "collaborate" {
         return Ok(());
     }
@@ -163,6 +171,15 @@ pub(super) fn validate_candidate<S: SqlStore>(
 }
 fn plan(run: &Value) -> Result<TeamPlan> {
     serde_json::from_value(run["team_plan"].clone()).map_err(|e| bad(&e.to_string()))
+}
+
+pub(super) fn validate_plan_scopes(run: &Value, plan: &TeamPlan) -> Result<()> {
+    let policy = run.get("approved_policy").unwrap_or(&run["policy"]);
+    super::autonomy::validate_plan_scopes(policy, &plan.integration_paths)?;
+    for task in &plan.tasks {
+        super::autonomy::validate_plan_scopes(policy, &task.write_paths)?;
+    }
+    Ok(())
 }
 fn rows<S: SqlStore>(db: &S, table: &str, run: &str) -> Result<Vec<Value>> {
     db.query(

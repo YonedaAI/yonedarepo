@@ -1,16 +1,17 @@
 // Execution adapter is injectable for offline protocol tests. No fixture repairs here.
 import {bookingPolicy,protectedBundle} from './booking-policy.mjs';
-import {validateAuthority,stageRequest,checkedOutcome,studyConfig,validateBinding,corpus,equal,hash} from './booking-campaign-plan.mjs';
+import {validateAuthority,stageRequest,checkedOutcome,studyConfig,validateBinding,planCorpus,equal,hash} from './booking-campaign-plan.mjs';
 const stop=message=>{throw new Error(message);};
 const terminal=new Set(['ready','accepted','failed','cancelled']);
 export async function runCampaign(client,plan,{save=()=>{},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
   now=Date.now,waitMs=960000}={}){
   const result={version:1,case:plan.case,campaign_id:plan.campaign.id,plan_digest:plan.plan_digest,
     synthetic:client.simulated===true,agent_evidence:client.simulated!==true,chains:[],complete:false,causal_effect:null};
+  const corpus=planCorpus(plan);
   const campaignStatus=()=>client.api('admin/campaign/status',{username:plan.username,id:plan.campaign.id});
   const detail=(chain,stage)=>client.api(`repos/${chain.repo_id}/run_detail?run_id=${stage.run_id}`);
   const authority=validateAuthority(plan,await campaignStatus(),now());
-  if(authority.campaign.charged_microusd!==0)stop('Fresh campaign must begin with zero spend');
+  if(authority.campaign.charged_microusd!==(plan.retained_authority?.charged_microusd??0))stop('Fresh phase must begin with exact retained campaign spend');
   // Complete all read-only isolation checks before any model run starts.
   for(const chain of plan.chains){
     const snapshot=await client.api(`repos/${chain.repo_id}/snapshot`);

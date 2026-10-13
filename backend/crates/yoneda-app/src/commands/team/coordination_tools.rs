@@ -117,7 +117,7 @@ pub(super) fn finish<S: SqlStore>(
     if run["coordinator_execution_id"] != id {
         return Err(Error::new("FENCED", "Coordinator replaced"));
     }
-    if run["status"] == "coordinating" {
+    if run["status"] == "coordinating" && !super::super::super::autonomy::intent_pending(run) {
         run["status"] = json!(if rows(db, "team_tasks", &string(run, "id")?)?
             .iter()
             .any(|t| t["status"] == "failed")
@@ -134,7 +134,7 @@ pub(super) fn finish<S: SqlStore>(
         now,
         json!({"run_id":run["id"],"execution_id":id,"plan_revision":run["team_plan_revision"]}),
     )?;
-    if run["coordination_pending"] == true && run["status"] != "awaiting_intent" {
+    if run["coordination_pending"] == true && !super::super::super::autonomy::intent_pending(run) {
         let mut execution = get(db, "executions", &id)?;
         execution["status"] = json!("completed");
         save_execution(db, &execution, now)?;

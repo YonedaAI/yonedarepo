@@ -562,5 +562,105 @@
     "offline_gemini_rust_mcp_smoke": "passed; no inference",
     "historical_candidate_patch": "f55273485 retains stat summary; exact source inspection verified; later captures store bounded full patches",
     "human_reviewer_rehearsal": "pending after development"
+  },
+  "autonomous_app_wave_2026_10_12": {
+    "scope": "Implementation and bounded development verification; current three-stage agent app acceptance and human rehearsal remain pending",
+    "source_baseline": "0a0eeb5578d0b0a1b75b2bd28046c2c686d33f98",
+    "public_export": "03949e4a6083dc2e8736c080828e706576a19e8d",
+    "public_ci": {
+      "run": 38344853125,
+      "conclusion": "success"
+    },
+    "local_gate": {
+      "rust": 323,
+      "platform_workerd": 319,
+      "platform_files": 66,
+      "apps_workerd": 16,
+      "frontend": 107,
+      "frontend_files": 24,
+      "reviewer_node": 15
+    },
+    "production_baseline": {
+      "version": "44e89234-c784-4055-8204-18328d84c138",
+      "source_marker": "13eccb1bc5f1e38d9e824bc0c2cef9d210a7f8ef",
+      "containers": 16
+    },
+    "apps_worker": {
+      "version": "def961ab-ce4c-4922-9b57-c131153b1c10",
+      "gateway": "https://apps.yonedarepo.com",
+      "fresh_checked_app_acceptance": false
+    },
+    "hosted_failure_exercises": {
+      "recorded_at": "2026-10-13T04:01:20.329Z",
+      "repo_id": "repo-55fdfecd6775032c27bae95ff36e9e29",
+      "model_requests": 0,
+      "controlled_fixture": true,
+      "model_acceptance": false,
+      "published_head": "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "remote_readback": "4e038fd858681d0bf159b1aba7c222feb2760634",
+      "capacity_refunds": 3,
+      "ack_loss_seq": 49,
+      "recovered_publish_seq": 54,
+      "disjoint_merge": "116ba5ce2a096a32a4f2fbc1022e2370d46ba8c2",
+      "merge_checked": "eligible",
+      "proof_sha256": "437be0817888a23a33a14e8e06b7117c353917470b26c8a6edda7bd0b53d9dc7"
+    },
+    "bounded_load": {
+      "recorded_at": "2026-10-13T04:08:26.065Z",
+      "repo_id": "repo-4a1c5bd92f80dd14833c8c0c30456b85",
+      "concurrency": 6,
+      "containers": 2,
+      "elapsed_ms": 152855,
+      "pipelines_per_minute": 2.355173203362664,
+      "model_requests": 0,
+      "workload": {
+        "source_bytes_per_pipeline": 131072,
+        "data_validation": true,
+        "sha256_bytes_per_evaluation": 2147483648,
+        "artificial_hold": false
+      },
+      "capacity_deferrals": 7,
+      "active_limit_probe": {
+        "rejected": true,
+        "expected_limit": 6,
+        "observed_at": "2026-10-13T04:05:47.667Z"
+      },
+      "proof_sha256": "5155bcefb426783f190a81331c16ed660d6143f40f35c64d91e47fd04ffa73da",
+      "general_scale_claim": false
+    },
+    "context_study_v1": {
+      "temporal_scope_confounded": true,
+      "aggregate_charged_microusd": 390353,
+      "provider_invoice_receipt": false,
+      "causal_effect": null,
+      "protected_failed": 5,
+      "no_verdict": 1,
+      "model_requests": 90,
+      "diagnosis": "Premature waitlisting returned 201 instead of required 409; observed confirmed rows remained two. Future requirements were exposed at the initial stage.",
+      "proof_sha256": "03c6c77efad9c98a30f6e440acbb9188f7556b4405127009b2fe1fe6efd80d63"
+    },
+    "pending": [
+      "Current app build, waitlist and duplicate-fix exact protected checks",
+      "Corrected stage-scoped context study under retained $12 allowance",
+      "Fresh video for current app",
+      "Independent human rehearsal",
+      "Human canonical publication and manual competition submission"
+    ],
+    "followup_gate": {
+      "rust": 339,
+      "app_rust": 234,
+      "core_rust": 18,
+      "runtime_rust": 71,
+      "cloudflare_rust": 1,
+      "xtask_rust": 15,
+      "platform_workerd": 320,
+      "apps_workerd": 16,
+      "frontend": 107,
+      "reviewer_node": 15,
+      "study_node": 26,
+      "linux_runtime": 77,
+      "runtime_image": "sha256:6ad8593ac7d25935b59176e7109a60944462219f402b34e3e3d5aa11ea86af39",
+      "deployment_acceptance": false
+    }
   }
 }

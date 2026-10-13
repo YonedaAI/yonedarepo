@@ -1,7 +1,7 @@
 // Protocol simulations test fencing only; they are never campaign evidence.
 import {it} from 'node:test';
 import assert from 'node:assert/strict';
-import {makePlan,starterFiles,corpus,studyConfig} from './booking-campaign-plan.mjs';
+import {makePlan,starterFiles,planCorpus,studyConfig} from './booking-campaign-plan.mjs';
 import {runCampaign} from './booking-campaign-runner.mjs';
 import {bookingPolicy} from './booking-policy.mjs';
 const budget={provider:'codex',model:'gpt-5.6-luna',max_requests:60,max_output_tokens:4096,max_execution_ms:600000,
@@ -10,13 +10,16 @@ const budget={provider:'codex',model:'gpt-5.6-luna',max_requests:60,max_output_t
 const settings={id:'protocol-test',username:'operator',connection:'frozen',budget,campaign:{id:'server-contract',version:1},
   repositories:Array.from({length:6},(_,i)=>({id:`repo-${i}`,seed_candidate_id:`seed-${i}`}))};
 function fake(plan,{lostAck=false,failedStage=false,wrongSeed=false,oldRuntime=false}={}){
+  const corpus=planCorpus(plan);
   const calls=[],branches=new Map(),runs=new Map(),policies=new Map(),studies=new Map(
     plan.chains.map(chain=>[chain.repo_id,{...studyConfig(plan,chain),records:corpus}]));
   const revision=commit=>({repository:'synthetic/test',commit});
   const base='a'.repeat(40);
-  const state={campaign:{id:plan.campaign.id,version:1,enabled:true,expires:Date.now()+3600000,limit_microusd:12000000,charged_microusd:0},
-    approval:{version:1,limit_microusd:12000000,chain_limit_microusd:2000000,audience:'owner',
-      buckets:{routine:12000000,opus:0,reserve:0},repo_ids:plan.chains.map(c=>c.repo_id),model_budgets:[budget]}};
+  const state={campaign:{id:plan.campaign.id,version:plan.campaign.version,enabled:true,expires:Date.now()+3600000,
+    limit_microusd:12000000,charged_microusd:plan.retained_authority?.charged_microusd??0},
+    approval:{version:plan.campaign.version,limit_microusd:12000000,chain_limit_microusd:2000000,audience:'owner',
+      buckets:{routine:12000000,opus:0,reserve:0},repo_ids:plan.chains.map(c=>c.repo_id),model_budgets:[budget]},
+    chains:structuredClone(plan.retained_authority?.chains??[])};
   const client={simulated:true,calls,api:async(path,body)=>{
     calls.push({path,body:structuredClone(body)});
     if(path==='admin/campaign/status')return structuredClone(state);
@@ -48,7 +51,9 @@ function fake(plan,{lostAck=false,failedStage=false,wrongSeed=false,oldRuntime=f
       const candidate={id:`candidate-${body.id}`,run_id:body.id,role:'final',status:'eligible',revision:revision(commit)};
       const evaluation={candidate:candidate.id,revision:candidate.revision,policy:policies.get(repo).version,suite:'commands-v1',
         environment:'linux-node24-rust1.94-v1',evidence:'e'.repeat(64),checks:[{name:'booking-acceptance',status:failedStage?'fail':'pass'}]};
-      runs.set(body.id,{run:{...body,campaign_approval_digest:'f'.repeat(64),context_records:[],context_study:studies.get(repo),policy:policies.get(repo),status:'ready'},
+      const context=body.current_context_ids?{...studies.get(repo),corpus:body.current_context_ids,
+        records:body.current_context_ids.map(id=>corpus.find(r=>r.id===id))}:studies.get(repo);
+      runs.set(body.id,{run:{...body,campaign_approval_digest:'f'.repeat(64),context_records:[],context_study:context,policy:policies.get(repo),status:'ready'},
         candidates:[candidate],evaluations:[evaluation],executions:[{id:'e',run_id:body.id,provider:budget.provider,model:budget.model,status:'completed'}]});
       if(!failedStage)Object.assign(branch,{working_commit:commit,working_revision:revision(commit),version:number,latest_candidate_id:candidate.id});
       if(lostAck)throw new Error('Simulated lost acknowledgment');return {};
@@ -102,4 +107,19 @@ it('uses the owner-seeded controlled arm and never generic admin reconfiguration
   const result=await runCampaign(client,plan);
   assert.equal(result.complete,true);
   assert.equal(client.calls.some(call=>call.path.endsWith('/configure_context_study')),false);
+});
+it('v2 protocol preserves old spend and accepts only exact stage-scoped frozen context',async()=>{
+  const prior=makePlan(settings);
+  const plan=makePlan({...settings,id:'protocol-v2',stage_scoped_context:true,corpus_version:2,
+    campaign:{...settings.campaign,version:2},repositories:settings.repositories.map(r=>({id:r.id+'-v2'})),
+    retained_authority:{campaign_id:prior.campaign.id,version:1,charged_microusd:100000,
+      repo_ids:prior.chains.map(c=>c.repo_id),chains:[{id:prior.chains[0].id,charged_microusd:100000,
+        models:{'codex/gpt-5.6-luna':{charged_microusd:100000,requests:4}}}]}});
+  const client=fake(plan),result=await runCampaign(client,plan);
+  assert.equal(result.complete,true);assert.equal(result.agent_evidence,false);
+  assert.equal(result.authority_final.campaign.charged_microusd,100000);
+  for(const chain of result.chains)for(const stage of chain.stages){
+    assert.deepEqual(stage.detail.run.context_study.corpus,stage.request.current_context_ids);
+    assert.deepEqual(stage.detail.run.context_study.records.map(r=>r.id),stage.request.current_context_ids);
+  }
 });

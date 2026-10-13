@@ -98,6 +98,10 @@ pub(super) fn promote<S: SqlStore>(
     candidate: &mut Value,
     now: i64,
 ) -> Result<()> {
+    if super::autonomy::hold_candidate(db, run, candidate)? {
+        save(db, "candidates", &string(candidate, "id")?, candidate)?;
+        return Ok(());
+    }
     let Some(id) = run["working_branch_id"].as_str().map(str::to_owned) else {
         return Ok(());
     };
@@ -170,6 +174,7 @@ pub(super) fn published<S: SqlStore>(db: &S, repository: &Value, now: i64) -> Re
 
 pub(super) fn publishable<S: SqlStore>(db: &S, candidate: &Value, r: &Value) -> Result<bool> {
     let run = get(db, "runs", &string(candidate, "run_id")?)?;
+    super::autonomy::validate_candidate(&run, candidate)?;
     let Some(id) = run["working_branch_id"].as_str().map(str::to_owned) else {
         return Ok(false);
     };
