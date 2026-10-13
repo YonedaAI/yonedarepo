@@ -51,6 +51,11 @@ pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     if job["kind"] == "evaluate" {
         return Ok(110_000);
     }
+    // Capture and publication do not run a model. Their execution metadata identifies
+    // source provenance, without carrying the coding attempt's model approval.
+    if job["kind"] == "capture" || job["kind"] == "publish" {
+        return Ok(570_000);
+    }
     let Some(budget) = model_budget(job)? else {
         return Ok(570_000);
     };
@@ -65,3 +70,7 @@ pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     u64::try_from(budget.max_execution_ms - report_window)
         .map_err(|_| Error::new("INVALID_INPUT", "Invalid model execution duration"))
 }
+
+#[cfg(test)]
+#[path = "tests/execution_phases.rs"]
+mod tests;

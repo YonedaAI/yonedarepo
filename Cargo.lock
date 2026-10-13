@@ -2206,6 +2206,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "yoneda-app",
  "yoneda-core",
 ]
 
