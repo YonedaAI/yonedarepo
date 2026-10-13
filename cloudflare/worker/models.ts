@@ -1,7 +1,12 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { providerDefinition } from '../../shared/providers';
 import { observeCampaignModelLimit } from './campaign-model-limit';
-import { campaignForAttempt, reserveCampaignUsage, settleCampaignUsage } from './campaign-usage';
+import {
+  campaignForAttempt,
+  reserveCampaignUsage,
+  settleCampaignUsage,
+  verifyCampaignReservation,
+} from './campaign-usage';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
 import { requestUsage } from './model-budget';
@@ -85,6 +90,7 @@ export const modelHandler =
         throw new Error('Reviewer inference requires a priced run reservation');
       if (ceiling !== undefined) {
         try {
+          verifyCampaignReservation(campaign, counted);
           if (campaign) {
             await reserveCampaignUsage(
               env,

@@ -3,6 +3,26 @@ import { ledger } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
 
+/** Check the same authoritative binding again at the actual run reservation boundary. */
+export function verifyCampaignReservation(binding: Json | null, reservation: Json) {
+  const keys = ['id', 'version', 'chain_id', 'bucket', 'purpose'];
+  const observed = reservation.campaign;
+  const matches = binding
+    ? observed &&
+      typeof observed === 'object' &&
+      !Array.isArray(observed) &&
+      Object.keys(observed).length === keys.length &&
+      keys.every((key) => observed[key] === binding[key])
+    : observed === undefined;
+  if (!matches)
+    throw Object.assign(
+      new Error('Campaign reservation differs from the authoritative run approval'),
+      {
+        code: 'LEDGER_UPDATING',
+      },
+    );
+}
+
 /** Read the persisted run through the attempt's trusted repository, never the model input. */
 export async function campaignForAttempt(env: Env, owner: string, repo: string, job: Json) {
   const runId = job.payload.execution.run_id;
