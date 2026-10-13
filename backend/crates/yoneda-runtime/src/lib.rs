@@ -2,9 +2,12 @@
 use serde_json::Value;
 use yoneda_core::Error;
 mod agent;
+mod agent_harness;
 mod agent_transcript;
 pub mod app_bundle;
 mod broker;
+mod comparison_checkout;
+mod comparison_review;
 mod conflict_merge;
 mod evaluation;
 mod execution_limits;

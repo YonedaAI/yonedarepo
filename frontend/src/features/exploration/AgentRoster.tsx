@@ -24,6 +24,7 @@ export function AgentRoster({
   onChange,
   onProviders,
   onRetry,
+  compare = false,
 }: {
   agents: AdaptiveAgentDraft[];
   providers: Provider[];
@@ -35,6 +36,7 @@ export function AgentRoster({
   onProviders: () => void;
   onRetry: () => void;
   team?: boolean;
+  compare?: boolean;
 }) {
   function update(id: string, patch: Partial<AdaptiveAgentDraft>) {
     onChange(agents.map((agent) => (agent.id === id ? { ...agent, ...patch } : agent)));
@@ -42,15 +44,17 @@ export function AgentRoster({
   return (
     <section className="agent-roster simple-agent-roster" aria-labelledby="agent-roster-heading">
       <div className="section-heading">
-        <h3 id="agent-roster-heading">Agents</h3>
-        <button
-          type="button"
-          className="quiet"
-          disabled={locked || agents.length >= limits.max_root_agents}
-          onClick={() => onChange([...agents, automaticAgent()])}
-        >
-          Add agent
-        </button>
+        <h3 id="agent-roster-heading">{compare ? 'Builders' : 'Agents'}</h3>
+        {!compare && (
+          <button
+            type="button"
+            className="quiet"
+            disabled={locked || agents.length >= limits.max_root_agents}
+            onClick={() => onChange([...agents, automaticAgent()])}
+          >
+            Add agent
+          </button>
+        )}
       </div>
       {agents.map((agent, index) => {
         const issue =
@@ -67,7 +71,9 @@ export function AgentRoster({
             className={`agent-inputs seed-agent${efforts.length > 0 || agent.reasoning_effort != null ? ' has-reasoning' : ''}`}
             key={agent.id}
           >
-            <legend>Agent {index + 1}</legend>
+            <legend>
+              {compare ? 'Builder' : 'Agent'} {index + 1}
+            </legend>
             <label>
               Model
               <select
@@ -146,15 +152,17 @@ export function AgentRoster({
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="text-button"
-              aria-label={`Remove agent ${index + 1}`}
-              disabled={locked || agents.length <= 1}
-              onClick={() => onChange(agents.filter((value) => value.id !== agent.id))}
-            >
-              Remove
-            </button>
+            {!compare && (
+              <button
+                type="button"
+                className="text-button"
+                aria-label={`Remove agent ${index + 1}`}
+                disabled={locked || agents.length <= 1}
+                onClick={() => onChange(agents.filter((value) => value.id !== agent.id))}
+              >
+                Remove
+              </button>
+            )}
             {issue && (
               <p className="agent-connection-issue" role="alert">
                 {issue}

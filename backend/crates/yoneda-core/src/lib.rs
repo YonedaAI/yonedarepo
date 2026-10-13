@@ -9,6 +9,7 @@ pub mod adaptive_team;
 pub mod agents;
 pub mod autonomy;
 pub mod build;
+pub mod comparison;
 pub mod conflict;
 pub mod conflict_capture;
 pub mod context;

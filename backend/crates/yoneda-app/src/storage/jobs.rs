@@ -21,25 +21,33 @@ pub(crate) fn job<S: SqlStore>(
             Some(Err(error)) => return Err(error),
             None => None,
         };
-        if let Some(transport) = run.as_ref().and_then(|r| r.get("workspace_transport")) {
+        if payload["comparison_review"] != true
+            && let Some(transport) = run.as_ref().and_then(|r| r.get("workspace_transport"))
+        {
             payload["workspace_transport"] = transport.clone();
         }
     }
     // The twenty-minute dispatch window must not truncate approved agent time.
     let execution_ms = if kind == "agent" {
-        payload["run"]["model_budgets"]
-            .as_array()
-            .and_then(|budgets| {
-                budgets.iter().find(|budget| {
-                    budget["provider"] == payload["execution"]["provider"]
-                        && budget["model"] == payload["execution"]["model"]
-                })
+        (if payload["run"]["comparison"]["approval"]["budget_scope"] == "comparison_approval"
+            && !payload["execution"]["comparison_approval_id"].is_null()
+        {
+            &payload["run"]["comparison"]["model_budgets"]
+        } else {
+            &payload["run"]["model_budgets"]
+        })
+        .as_array()
+        .and_then(|budgets| {
+            budgets.iter().find(|budget| {
+                budget["provider"] == payload["execution"]["provider"]
+                    && budget["model"] == payload["execution"]["model"]
             })
-            .and_then(|budget| budget["max_execution_ms"].as_i64())
-            .filter(|duration| {
-                (60_000..=yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS).contains(duration)
-            })
-            .unwrap_or(0)
+        })
+        .and_then(|budget| budget["max_execution_ms"].as_i64())
+        .filter(|duration| {
+            (60_000..=yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS).contains(duration)
+        })
+        .unwrap_or(0)
     } else {
         0
     };

@@ -32,7 +32,6 @@ vi.mock('react', async (original) => ({
 import { RunModePicker } from '../team/RunModePicker';
 import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { AgentRoster } from './AgentRoster';
-import { DelegationSettings } from './DelegationSettings';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunComposer } from './RunComposer';
 import { readAllowance } from './WorkspaceAllowance';
@@ -120,29 +119,38 @@ describe('preference-only brief submission', () => {
     ])
       expect(start.mock.calls[0][0]).not.toHaveProperty(field);
   });
-  it('retains explicit seed roles and compare delegation preferences', async () => {
+  it('retains explicit builder roles and requests automatic comparison without a third seed', async () => {
     enterBrief();
     find(render(), (el) => el.type === AgentRoster)?.props.onChange([
       { id: 'a', connection: '', role: 'backend', strategy: 'Team participant' },
       { id: 'b', connection: '', role: 'testing', strategy: 'Team participant' },
     ]);
     find(render(), (el) => el.type === RunModePicker)?.props.onChange('compare');
-    find(render(), (el) => el.type === DelegationSettings)?.props.onChange({
-      enabled: true,
-      max_depth: 1,
-      max_executions: 4,
-    });
     await submit();
     expect(start.mock.calls[0][0]).toMatchObject({
       mode: 'compare',
+      comparison: { version: 1 },
       adaptive_team: {
         requested_agents: [
           { connection: null, role: 'backend' },
           { connection: null, role: 'testing' },
         ],
       },
-      delegation: { enabled: true, max_depth: 1, max_executions: 4 },
     });
+    expect(start.mock.calls[0][0]).not.toHaveProperty('delegation');
+  });
+  it('switching Compare adds a second Auto builder and keeps exactly two rows without add/remove controls', () => {
+    enterBrief();
+    find(render(), (el) => el.type === RunModePicker)?.props.onChange('compare');
+    const roster = find(render(), (el) => el.type === AgentRoster);
+    expect(roster?.props.agents).toHaveLength(2);
+    expect(roster?.props.agents[1]).toMatchObject({ connection: '', role: 'auto' });
+    expect(roster?.props.compare).toBe(true);
+    roster?.props.onChange([
+      ...roster.props.agents,
+      { id: 'extra', connection: '', role: 'review' },
+    ]);
+    expect(find(render(), (el) => el.type === AgentRoster)?.props.agents).toHaveLength(2);
   });
   it('keeps manual task indices aligned with the requested seed order', async () => {
     enterBrief();

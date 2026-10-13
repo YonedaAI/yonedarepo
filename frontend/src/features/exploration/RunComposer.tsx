@@ -8,9 +8,9 @@ import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { reconcileTeam, seedTeam, teamSubmission } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
-import { type AdaptiveAgentDraft, requestedAgents } from './adaptiveDraft';
-import { type DelegationDraft, runAgentLimits } from './agentLimits';
-import { DelegationSettings } from './DelegationSettings';
+import { type AdaptiveAgentDraft, compareBuilders, requestedAgents } from './adaptiveDraft';
+import { runAgentLimits } from './agentLimits';
+import { CompareApprovalNotice } from './CompareApprovalNotice';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
@@ -50,7 +50,9 @@ export function RunComposer({
   const [providersError, setProvidersError] = useState('');
   const [providersRequest, setProvidersRequest] = useState(0);
   const limits = runAgentLimits(snapshot);
-  const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(draft.agents);
+  const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(
+    draft.mode === 'compare' ? compareBuilders(draft.agents) : draft.agents,
+  );
   const [mode, setMode] = useState<RunMode>(draft.mode);
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
   const [manualTeam, setManualTeam] = useState(!!draft.team);
@@ -60,11 +62,14 @@ export function RunComposer({
   const [policy, setPolicy] = useState(draft.policy);
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
-  const [delegation, setDelegation] = useState<DelegationDraft>(draft.delegation);
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
   function changeAgents(next: AdaptiveAgentDraft[]) {
-    setAgents(next);
+    setAgents(mode === 'compare' ? compareBuilders(next) : next);
     setTeam((current) => reconcileTeam(current, next));
+  }
+  function changeMode(next: RunMode) {
+    if (next === 'compare') changeAgents(compareBuilders(agents));
+    setMode(next);
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
@@ -149,17 +154,7 @@ export function RunComposer({
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         ...(sampleProfileId ? { sample_profile_id: sampleProfileId } : {}),
         adaptive_team: { version: 1, requested_agents: preferences },
-        ...(mode === 'compare' && limits.max_delegation_depth > 0
-          ? {
-              delegation: {
-                enabled: delegation.enabled,
-                max_depth: delegation.enabled ? delegation.max_depth : 0,
-                max_executions: delegation.enabled
-                  ? Math.max(agents.length, delegation.max_executions)
-                  : agents.length,
-              },
-            }
-          : {}),
+        ...(mode === 'compare' ? { comparison: { version: 1 } } : {}),
       };
       await onStart(submitted.current);
     } catch (error) {
@@ -207,6 +202,7 @@ export function RunComposer({
       </div>
       <AgentRoster
         team={mode === 'collaborate'}
+        compare={mode === 'compare'}
         agents={agents}
         providers={providers}
         loading={providersLoading}
@@ -217,6 +213,7 @@ export function RunComposer({
         onProviders={() => onProviders(() => setProvidersRequest((request) => request + 1))}
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
+      {mode === 'compare' && <CompareApprovalNotice />}
       <details className="run-advanced">
         <summary>Advanced</summary>
         <label>
@@ -232,7 +229,7 @@ export function RunComposer({
           value={mode}
           supported={teamSupport}
           locked={draftLocked}
-          onChange={setMode}
+          onChange={changeMode}
         />
         {mode === 'collaborate' ? (
           <TeamPlanOptions
@@ -246,15 +243,7 @@ export function RunComposer({
             previousAutomatic={draft.previousAutomatic}
             onChange={setTeam}
           />
-        ) : (
-          <DelegationSettings
-            value={delegation}
-            roots={agents.length}
-            limits={limits}
-            locked={draftLocked}
-            onChange={setDelegation}
-          />
-        )}
+        ) : null}
         <RunAdvancedOptions
           nodes={snapshot.nodes}
           context={context}

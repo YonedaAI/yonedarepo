@@ -1,0 +1,25 @@
+[
+  {
+    "name": "comparison_context",
+    "description": "Read the exact comparison manifest, captured candidate file pages, attached diff/check evidence or an approved frozen context record. Select candidate_id/path for actual source; digest for attached evidence; context_id for frozen context. Pages have at most 65536 bytes.",
+    "inputSchema": { "type": "object", "properties": {
+      "candidate_id": { "type": "string" }, "path": { "type": "string" },
+      "digest": { "type": "string" }, "context_id": { "type": "string" },
+      "offset": { "type": "integer", "minimum": 0 },
+      "limit": { "type": "integer", "minimum": 1, "maximum": 65536 }
+    }, "additionalProperties": false }
+  },
+  {
+    "name": "comparison_submit",
+    "description": "Submit a bounded comparison assertion tied to the exact manifest. Cover both alternatives, cite attached evidence, and choose selected, repair_requested or needs_attention. This tool cannot publish or change policy.",
+    "inputSchema": { "type": "object", "properties": {
+      "request_id": { "type": "string" }, "manifest_digest": { "type": "string" },
+      "outcome": { "type": "string", "enum": ["selected", "repair_requested", "needs_attention"] },
+      "candidate_id": { "type": "string" }, "rationale": { "type": "string" },
+      "alternatives": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "object", "properties": { "candidate_id": { "type": ["string", "null"] }, "execution_id": { "type": "string" }, "reason": { "type": "string" } }, "required": ["candidate_id", "reason"], "additionalProperties": false } },
+      "risks": { "type": "array", "items": { "type": "string" } },
+      "evidence_refs": { "type": "array", "items": { "type": "string" } },
+      "repair_instructions": { "type": "string" }
+    }, "required": ["request_id", "manifest_digest", "outcome", "rationale", "alternatives"], "additionalProperties": false }
+  }
+]

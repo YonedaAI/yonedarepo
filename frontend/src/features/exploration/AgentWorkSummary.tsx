@@ -1,6 +1,7 @@
 import type { Snapshot } from '../../lib/types';
 import { dependencyBlockers, taskError, teamTasks } from '../team/teamView';
 import { AutonomySummary } from './AutonomySummary';
+import { executionFailureCode } from './providerFailure';
 
 const active = ['queued', 'running', 'capturing', 'evaluating'];
 export function AgentWorkSummary({
@@ -13,7 +14,8 @@ export function AgentWorkSummary({
   onInspect: () => void;
 }) {
   const executions = snapshot.executions.filter(
-    (item) => item.run_id === run.id && item.role === 'coding',
+    (item) =>
+      item.run_id === run.id && (item.role === 'coding' || item.comparison_role === 'reviewer'),
   );
   const tasks = teamTasks(snapshot, run);
   const rows = tasks.map((task) => {
@@ -35,10 +37,15 @@ export function AgentWorkSummary({
   ))
     rows.push({
       id: execution.id,
-      name: execution.strategy ?? execution.model ?? execution.id,
+      name:
+        execution.comparison_role === 'reviewer'
+          ? 'Automatic reviewer'
+          : (execution.strategy ?? execution.model ?? execution.id),
       status: execution.status,
-      repairing: itemRepair(execution, run),
-      detail: taskError({}, execution),
+      repairing: execution.comparison_role === 'repair' || itemRepair(execution, run),
+      detail: /BUDGET|SPEND_LIMIT|REQUEST_LIMIT/.test(executionFailureCode(execution) ?? '')
+        ? 'The approved request limit or workspace allowance is exhausted. No extra inference is scheduled.'
+        : taskError({}, execution),
     });
   if (!rows.length) return null;
   return (

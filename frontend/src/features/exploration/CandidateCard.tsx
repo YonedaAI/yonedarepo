@@ -1,6 +1,8 @@
 import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { modelDisplayName } from '../workspace/providerModels';
 import { CandidateOutcome } from './CandidateOutcome';
 import { ExecutionFailure } from './ExecutionFailure';
 import { executionStatus } from './ExecutionHierarchy';
@@ -29,6 +31,10 @@ export function CandidateCard({
   onContext,
   onGraph,
   team = false,
+  showPublishAction = true,
+  actionLabel = 'Record publishing decision',
+  assessment,
+  compact = false,
 }: {
   strategy: string;
   repo: string;
@@ -46,6 +52,10 @@ export function CandidateCard({
   onContext: () => void;
   onGraph: () => void;
   team?: boolean;
+  showPublishAction?: boolean;
+  actionLabel?: string;
+  assessment?: ReactNode;
+  compact?: boolean;
 }) {
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
   const published = chosen && decision?.status === 'published';
@@ -61,7 +71,11 @@ export function CandidateCard({
       <div className="candidate-title">
         <span className="strategy-mark" />
         <h2>{strategy}</h2>
-        <span>{execution?.model ?? execution?.harness}</span>
+        <span>
+          {execution?.model
+            ? modelDisplayName(execution.provider, execution.model)
+            : execution?.harness}
+        </span>
       </div>
       <div className="candidate-content">
         {execution?.parent_execution && (
@@ -105,18 +119,20 @@ export function CandidateCard({
             run={run}
             onContext={onContext}
             onGraph={onGraph}
+            assessment={assessment}
+            compact={compact}
           />
         )}
         {candidate && (
           <div className="candidate-action-row">
-            {!decision && (
+            {!decision && showPublishAction && (
               <button
                 type="button"
                 className="quiet candidate-review"
                 disabled={disabled}
                 onClick={onSelect}
               >
-                Record publishing decision
+                {actionLabel}
               </button>
             )}
             {execution && (

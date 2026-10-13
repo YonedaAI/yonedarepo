@@ -1,11 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { short } from '../../lib/api';
+import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
 import { TeamWorkflow } from '../team/TeamWorkflow';
 import { runCandidates } from '../team/teamView';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
 import { AgentConversation } from './AgentConversation';
 import { AgentWorkSummary } from './AgentWorkSummary';
+import { comparisonState } from './comparisonView';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { IntentQuestion } from './IntentQuestion';
 import { ModelBudgetUsage } from './ModelBudgetUsage';
@@ -14,11 +15,11 @@ import { RunAttention } from './RunAttention';
 import { RunBrief } from './RunBrief';
 import { RunCandidates } from './RunCandidates';
 import { RunControls } from './RunControls';
+import { RunOverviewHeader } from './RunOverviewHeader';
 import { type RunTab, RunTabs } from './RunTabs';
 import { RunWorkflow } from './RunWorkflow';
 import { runHasActiveAttempts } from './runControlState';
 import { selectionBlocker } from './runReviewState';
-import { runTitle } from './runTitle';
 import { StaleCandidateRepair } from './StaleCandidateRepair';
 import '../../styles/review-work.css';
 import { WorkingBranchPanel } from './WorkingBranchPanel';
@@ -46,6 +47,8 @@ export function RunDetail({
   onContext,
   onContinueBranch,
   onAnswerIntent,
+  onComparisonAction,
+  onRefresh,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -66,6 +69,8 @@ export function RunDetail({
   onContext: () => void;
   onContinueBranch?: (branch: WorkingBranch) => void;
   onAnswerIntent?: (question: string, answer: string) => Promise<boolean>;
+  onComparisonAction?: ComparisonAction;
+  onRefresh?: () => Promise<void>;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
@@ -77,7 +82,9 @@ export function RunDetail({
   const coding = snapshot.executions.filter(
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
-  const roots = coding.filter((execution) => !execution.parent_execution).length;
+  const roots = coding.filter(
+    (execution) => !execution.parent_execution && execution.comparison_role !== 'repair',
+  ).length;
   const previousRun =
     run.restart_of ??
     snapshot.decisions.find((decision) => decision.id === run.continuation_of)?.run_id;
@@ -106,44 +113,13 @@ export function RunDetail({
   }, [focusTarget]);
   return (
     <>
-      <div className="intent-row">
-        <div className="run-heading">
-          <h2>{runTitle(run.intent)}</h2>
-          <p className="review-intent">
-            <strong>Intent:</strong> {run.intent}
-          </p>
-          {run.criteria?.length > 0 && (
-            <details className="review-criteria">
-              <summary>Acceptance criteria</summary>
-              <ul>
-                {run.criteria.map((criterion: string, index: number) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: Frozen criteria may repeat and have no item state.
-                  <li key={`${index}:${criterion}`}>{criterion}</li>
-                ))}
-              </ul>
-            </details>
-          )}
-          <div className="run-meta">
-            <span>
-              Base <code>{short(run.base.commit)}</code>
-            </span>
-            <span>
-              {team
-                ? `${run.agents?.length ?? roots} team agents · Build together`
-                : `${roots} root agents · ${coding.length - roots} subagents`}
-            </span>
-            {previousRun && (
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => onSelectRun(previousRun)}
-              >
-                {run.continuation_of ? 'View published base' : 'View previous run'}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+      <RunOverviewHeader
+        run={run}
+        roots={roots}
+        subagents={coding.length - roots}
+        previousRun={previousRun}
+        onSelectRun={onSelectRun}
+      />
       <IntentQuestion
         key={`${run.intent_question?.id}:${run.intent_question?.status}`}
         run={run}
@@ -204,6 +180,8 @@ export function RunDetail({
                 onInspectTask={(id) => openEvidence('activity', `team-task-${id}`)}
                 onContext={() => openEvidence('context')}
                 onGraph={onContext}
+                onComparisonAction={onComparisonAction}
+                onRefresh={onRefresh}
               />
               <AgentWorkSummary
                 snapshot={snapshot}
@@ -292,6 +270,7 @@ export function RunDetail({
           blocker={blocker}
           onClose={() => setSelected('')}
           onAccept={onAccept}
+          comparison={comparisonState(run)}
         />
       )}
     </>

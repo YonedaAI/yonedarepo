@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { frozenInputs } from '../context-usage/frozenContextView';
@@ -16,6 +17,8 @@ export function CandidateOutcome({
   run,
   onContext,
   onGraph,
+  assessment,
+  compact = false,
 }: {
   repo: string;
   candidate: Record<string, any>;
@@ -25,6 +28,8 @@ export function CandidateOutcome({
   run: Record<string, any>;
   onContext: () => void;
   onGraph: () => void;
+  assessment?: ReactNode;
+  compact?: boolean;
 }) {
   const exact =
     evaluation?.candidate === candidate.id &&
@@ -49,7 +54,10 @@ export function CandidateOutcome({
         <p className="subtle">
           Source capture records the files; behavior claims require independent checks.
         </p>
-        {exact && (evaluation?.deployment?.digest || evaluation?.app?.bundle_digest) ? (
+        {exact &&
+        candidate.status === 'eligible' &&
+        evaluation?.policy === snapshot.repository.policy?.version &&
+        (evaluation?.deployment?.digest || evaluation?.app?.bundle_digest) ? (
           <SiteLink repo={repo} evaluation={evaluation.id} />
         ) : (
           <p className="subtle">
@@ -58,6 +66,7 @@ export function CandidateOutcome({
           </p>
         )}
       </section>
+      {assessment}
       <section className="outcome-checks">
         <h3>Behavior checks</h3>
         {exact ? (
@@ -82,74 +91,77 @@ export function CandidateOutcome({
           <p>Independent checks for this exact revision are pending or unavailable.</p>
         )}
       </section>
-      <section className="outcome-story">
-        <h3>Decision and context</h3>
-        {decision ? (
-          <RecordedDecisionStory decision={decision} />
-        ) : (
-          <>
-            <strong>
-              {candidateBlocked
-                ? 'Review blocked'
-                : checksPending
-                  ? 'Checks pending'
-                  : attention?.title}
-            </strong>
+      <details open={!compact} className="outcome-context-details">
+        <summary>Decision and context</summary>
+        <section className="outcome-story">
+          <h3>Decision and context</h3>
+          {decision ? (
+            <RecordedDecisionStory decision={decision} />
+          ) : (
+            <>
+              <strong>
+                {candidateBlocked
+                  ? 'Review blocked'
+                  : checksPending
+                    ? 'Checks pending'
+                    : attention?.title}
+              </strong>
+              <p>
+                {candidateBlocked
+                  ? blocker
+                  : checksPending
+                    ? 'Independent checks for this exact revision must be available before review.'
+                    : attention?.detail}
+              </p>
+              <strong>Acceptance criteria · supplied for review</strong>
+              {run.criteria?.length ? (
+                <ul>
+                  {run.criteria.map((criterion: string, index: number) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: Frozen criteria can repeat and have no item state.
+                    <li key={index}>{criterion}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>No acceptance criteria were recorded.</p>
+              )}
+            </>
+          )}
+          <p>
+            {context.ids.length
+              ? `${context.ids.length} prior context record${context.ids.length === 1 ? ' was' : 's were'} frozen into the initial input.`
+              : 'No prior context records were frozen into the initial input.'}{' '}
+            Recorded access and citations can be inspected separately.
+          </p>
+          {candidate.conflict_id && (
             <p>
-              {candidateBlocked
-                ? blocker
-                : checksPending
-                  ? 'Independent checks for this exact revision must be available before review.'
-                  : attention?.detail}
+              Recorded conflict: <code>{candidate.conflict_id}</code>.
             </p>
-            <strong>Acceptance criteria · supplied for review</strong>
-            {run.criteria?.length ? (
-              <ul>
-                {run.criteria.map((criterion: string, index: number) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: Frozen criteria can repeat and have no item state.
-                  <li key={index}>{criterion}</li>
-                ))}
-              </ul>
-            ) : (
-              <p>No acceptance criteria were recorded.</p>
-            )}
-          </>
-        )}
-        <p>
-          {context.ids.length
-            ? `${context.ids.length} prior context record${context.ids.length === 1 ? ' was' : 's were'} frozen into the initial input.`
-            : 'No prior context records were frozen into the initial input.'}{' '}
-          Recorded access and citations can be inspected separately.
-        </p>
-        {candidate.conflict_id && (
+          )}
+          {candidate.refresh_of && (
+            <p>
+              Refreshed from candidate <code>{candidate.refresh_of}</code>; review this revision’s
+              fresh checks.
+            </p>
+          )}
           <p>
-            Recorded conflict: <code>{candidate.conflict_id}</code>.
+            {run.working_branch_id
+              ? branch?.latest_candidate_id === candidate.id
+                ? `This captured result is the working head of ${run.working_branch_id}. Canonical publication remains a separate decision.`
+                : `This result belongs to working branch ${run.working_branch_id}; its current head must be reviewed separately.`
+              : stale
+                ? `The canonical source moved from this result’s base ${short(candidate.base?.commit)} to ${short(snapshot.repository.head_commit)}.`
+                : `This result’s base matches the current canonical source ${short(candidate.base?.commit)}.`}
           </p>
-        )}
-        {candidate.refresh_of && (
-          <p>
-            Refreshed from candidate <code>{candidate.refresh_of}</code>; review this revision’s
-            fresh checks.
-          </p>
-        )}
-        <p>
-          {run.working_branch_id
-            ? branch?.latest_candidate_id === candidate.id
-              ? `This captured result is the working head of ${run.working_branch_id}. Canonical publication remains a separate decision.`
-              : `This result belongs to working branch ${run.working_branch_id}; its current head must be reviewed separately.`
-            : stale
-              ? `The canonical source moved from this result’s base ${short(candidate.base?.commit)} to ${short(snapshot.repository.head_commit)}.`
-              : `This result’s base matches the current canonical source ${short(candidate.base?.commit)}.`}
-        </p>
-        <div className="outcome-drilldown">
-          <button type="button" className="text-button" onClick={onContext}>
-            Read prior context and citations
-          </button>
-          <button type="button" className="text-button" onClick={onGraph}>
-            Inspect evidence graph
-          </button>
-        </div>
-      </section>
+          <div className="outcome-drilldown">
+            <button type="button" className="text-button" onClick={onContext}>
+              Read prior context and citations
+            </button>
+            <button type="button" className="text-button" onClick={onGraph}>
+              Inspect evidence graph
+            </button>
+          </div>
+        </section>
+      </details>
     </>
   );
 }

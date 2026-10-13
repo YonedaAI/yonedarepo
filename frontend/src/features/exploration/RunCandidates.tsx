@@ -1,9 +1,11 @@
 import { GitCompareArrows } from 'lucide-react';
+import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
 import { IntegrationInputs } from '../team/IntegrationInputs';
 import { integratedExecutions } from '../team/teamView';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
+import { ComparisonResults } from './ComparisonResults';
 import { selectionBlocker } from './runReviewState';
 
 export function RunCandidates({
@@ -19,6 +21,8 @@ export function RunCandidates({
   onInspectTask,
   onContext,
   onGraph,
+  onComparisonAction,
+  onRefresh,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
@@ -32,6 +36,8 @@ export function RunCandidates({
   onInspectTask: (id: string) => void;
   onContext: () => void;
   onGraph: () => void;
+  onComparisonAction?: ComparisonAction;
+  onRefresh?: () => Promise<void>;
 }) {
   const team = run.mode === 'collaborate';
   const repo = snapshot.repository;
@@ -39,6 +45,20 @@ export function RunCandidates({
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
   const executions = team ? integratedExecutions(snapshot, run) : coding;
+  if (run.mode === 'compare')
+    return (
+      <ComparisonResults
+        snapshot={snapshot}
+        run={run}
+        busy={busy}
+        onPublish={onSelect}
+        onAction={onComparisonAction}
+        onRefresh={onRefresh}
+        onProviders={onProviders}
+        onContext={onContext}
+        onGraph={onGraph}
+      />
+    );
   return (
     <>
       {!team && (

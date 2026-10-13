@@ -9,6 +9,7 @@ mod branches;
 mod budget_availability;
 mod campaign;
 mod capture_completion;
+mod comparison;
 mod completion;
 mod conflicts;
 mod context_access;
@@ -82,7 +83,18 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         }
     }
     context_access::activation(db, now)?;
+    comparison::guard_tools(db, &c)?;
+    if ["context_search", "context_get"].contains(&op.as_str())
+        && let Some(result) = comparison::read_context(db, &c, now)?
+    {
+        return Ok(result);
+    }
     match string(&c, "op")?.as_str() {
+        "approve_comparison_review"
+        | "select_comparison_candidate"
+        | "comparison_context"
+        | "comparison_submit"
+        | "comparison_approval" => comparison::handle(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "observe_campaign_model_limit" => budget_availability::observe(db, &c, now),
         "repository_status" => {

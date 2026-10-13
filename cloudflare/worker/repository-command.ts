@@ -37,6 +37,8 @@ const writes = new Set([
   'refresh_candidate',
   'resolve_conflict',
   'run_set_visibility',
+  'approve_comparison_review',
+  'select_comparison_candidate',
 ]);
 
 /** Trusted capture, archive commits and remote observations are never generic owner operations. */
@@ -86,7 +88,14 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     'workspace_spend',
     '_sample_profile',
     'sample_profile',
+    'comparison_approval',
+    'comparison_approval_id',
+    'comparison_role',
+    'review_only',
+    'comparison_review',
+    'comparison_manifest',
   ])
     delete input[key];
+  for (const key of Object.keys(input)) if (key.startsWith('_comparison_')) delete input[key];
   return input;
 }

@@ -13,11 +13,17 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>
             "Model budgets require a hosted coding run",
         ));
     }
-    let approved_agents = if c["adaptive_team"].is_object() {
-        &c["_approved_model_pool"]
+    let mut approved_agents = if c["adaptive_team"].is_object() {
+        c["_approved_model_pool"].clone()
     } else {
-        &c["agents"]
+        c["agents"].clone()
     };
+    if c["comparison"].is_object() {
+        approved_agents
+            .as_array_mut()
+            .ok_or_else(|| bad("Missing comparison builders"))?
+            .push(c["_comparison_reviewer"].clone());
+    }
     let agents = approved_agents
         .as_array()
         .ok_or_else(|| bad("Missing scheduled agents"))?;
@@ -59,9 +65,10 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>
 }
 
 pub(super) fn group(run: &Value, execution: &Value) -> Result<Option<(usize, ModelBudget)>> {
-    let Some(value) = run.get("model_budgets") else {
+    if run.get("model_budgets").is_none() {
         return Ok(None);
-    };
+    }
+    let value = super::comparison::budget_values(run, Some(execution))?;
     let budgets: Vec<ModelBudget> =
         serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
     let provider = string(execution, "provider")?;

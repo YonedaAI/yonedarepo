@@ -13,8 +13,17 @@ export function prepareModelRequest(
   input: Json,
   workspaceApproval: WorkspaceSpendContext | null = null,
 ) {
+  if (workspaceApproval && !workspaceSpendApprovesJob(workspaceApproval, job))
+    throw new Error('Workspace model approval differs from the frozen attempt');
+  if (job.payload?.execution?.comparison_approval_id != null && !workspaceApproval)
+    throw new Error('Comparison model approval requires authoritative readback');
   if (harness === 'gemini') {
-    const result = prepareGeminiRequest(job, path, input);
+    const result = prepareGeminiRequest(
+      job,
+      path,
+      input,
+      workspaceApproval?.model_budget?.max_output_tokens,
+    );
     enforceFrozenReasoning(job, result.body, harness);
     return result;
   }
@@ -47,7 +56,7 @@ export function prepareModelRequest(
   }
   const body = structuredClone(input);
   enforceFrozenReasoning(job, body, harness);
-  const ceiling = outputCeiling(job);
+  const ceiling = workspaceApproval?.model_budget?.max_output_tokens ?? outputCeiling(job);
   body.model = model;
   for (const key of [
     'service_tier',
@@ -64,8 +73,15 @@ export function prepareModelRequest(
     'repair_round',
     'chain_id',
     'bucket',
+    'comparison_approval',
+    'comparison_approval_id',
+    'comparison_role',
+    'comparison_review',
+    'comparison_manifest',
+    'review_only',
   ])
     delete body[key];
+  for (const key of Object.keys(body)) if (key.startsWith('_comparison_')) delete body[key];
   if (harness === 'codex') {
     body.max_output_tokens = Math.max(
       1,

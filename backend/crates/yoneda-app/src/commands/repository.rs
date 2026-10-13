@@ -4,7 +4,7 @@ use yoneda_core::agents::*;
 use yoneda_core::{Error, Result};
 pub(super) fn capabilities<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     Ok(
-        json!({"artifact_reads":2,"adaptive_teams":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
+        json!({"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
     )
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {

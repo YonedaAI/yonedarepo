@@ -3,6 +3,8 @@ import { injectPublicationAckLoss } from './acceptance-faults';
 import { source } from './artifacts';
 import { canonicalJson } from './canonical-json';
 import { captureResult } from './capture-result';
+import { comparisonContext, comparisonSources } from './comparison-context';
+import { comparisonReviewAttempt } from './comparison-scope';
 import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
@@ -17,12 +19,43 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     const job = scope.job;
     const path = new URL(req.url).pathname;
     const identity = { job_id: job.id, epoch: job.epoch };
+    const reviewOnly = comparisonReviewAttempt(job);
+    if (
+      reviewOnly &&
+      ![
+        '/mcp',
+        '/comparison-source',
+        '/comparison-result',
+        '/heartbeat',
+        '/progress',
+        '/evidence',
+        '/failed',
+        '/complete',
+      ].includes(path)
+    )
+      return error(
+        'FORBIDDEN',
+        'Comparison review has no source mutation or capture capability',
+        403,
+      );
     // Authenticate supervisor endpoints before consuming an untrusted large body.
     if (path !== '/mcp' && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
     const body = await readJson(req, path === '/mcp' ? 1024 * 1024 : 32 * 1024 * 1024);
     // Await inside this boundary so ledger rejections reach the agent as typed JSON.
     if (path === '/mcp') return await hostedMcp(env, scope, body);
+    if (path === '/comparison-source')
+      return reviewOnly
+        ? response(await comparisonSources(env, scope))
+        : error('FORBIDDEN', 'Only reviewers can read both captured sources', 403);
+    if (path === '/comparison-result') {
+      if (!reviewOnly) return error('FORBIDDEN', 'Comparison receipt unavailable', 403);
+      const context = await comparisonContext(env, scope);
+      const review = context.comparison?.latest_review;
+      if (!review?.id || review.manifest_digest !== context.manifest_digest)
+        return error('INVALID_REVIEW', 'No submitted receipt matches the active review', 409);
+      return response({ review_id: review.id, manifest_digest: review.manifest_digest });
+    }
     if (path === '/test-bundle') return response(await testBundle(env, scope, String(body.digest)));
     if (path === '/heartbeat' || path === '/progress')
       return response(
@@ -45,7 +78,7 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
             ? job.payload.candidate.revision
             : job.kind === 'capture'
               ? job.payload.base
-              : job.payload.execution.base,
+              : (job.payload.comparison_repair?.source_revision ?? job.payload.execution.base),
           job.kind === 'evaluate' ? job.payload.candidate.tree : undefined,
         ),
       );
@@ -143,7 +176,19 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         );
       }
       let command: Json = { op: 'finish', ...identity, result: body };
-      if (job.kind === 'agent' && job.payload.workspace_transport === 'git-native-v1') {
+      if (
+        reviewOnly &&
+        (body.review_only !== true ||
+          body.source_unchanged !== true ||
+          typeof body.review_id !== 'string' ||
+          typeof body.transcript !== 'string')
+      )
+        return error('INVALID_REVIEW', 'Trusted unchanged-source review completion required', 409);
+      if (
+        !reviewOnly &&
+        job.kind === 'agent' &&
+        job.payload.workspace_transport === 'git-native-v1'
+      ) {
         if (
           !scope.fork ||
           body.fork_revision?.repository !== scope.fork ||

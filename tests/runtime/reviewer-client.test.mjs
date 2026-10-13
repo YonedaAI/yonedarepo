@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { campaignEntry, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from '../../tools/reviewer-client.mjs';
+import { campaignEntry, comparisonSummary, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from '../../tools/reviewer-client.mjs';
 
 function checkedDetail(id, status = 'ready') {
   const revision = { repository: 'test/fork', commit: 'a'.repeat(40) };
@@ -12,6 +12,66 @@ function checkedDetail(id, status = 'ready') {
     checks: policy.required_checks.map(name => ({ name, status: 'pass' })),
   }] };
 }
+
+function comparedDetail() {
+  const detail = checkedDetail('compared');
+  const other = { ...detail.candidates[0], id: 'candidate:other', evaluation: 'evaluation:other',
+    revision: { repository: 'test/other', commit: 'c'.repeat(40) } };
+  detail.candidates.push(other);
+  detail.evaluations.push({ ...detail.evaluations[0], id: other.evaluation, candidate: other.id, revision: other.revision });
+  detail.runs[0].comparison = { version: 1, status: 'selected', selected_candidate_id: other.id, latest_review_id: 'review:compared' };
+  return detail;
+}
+
+test('comparison discovery identifies the selected checked result rather than the first eligible alternative', async () => {
+  const detail = comparedDetail();
+  const found = await findCheckedRun(async path => path.includes('/runs_page?')
+    ? { items: detail.runs, watermark: 1, next_cursor: null } : detail, 'fixture');
+  assert.equal(found.current_checked_candidate.id, 'candidate:other');
+});
+
+test('an invalidated selected comparison result does not silently fall back to another alternative', async () => {
+  const detail = comparedDetail();
+  detail.evaluations[1].checks[0].status = 'fail';
+  const found = await findCheckedRun(async path => path.includes('/runs_page?')
+    ? { items: detail.runs, watermark: 1, next_cursor: null } : detail, 'fixture');
+  assert.equal(found, null);
+});
+
+test('comparison summary identifies an agent explanation without claiming human publication', () => {
+  const run = { comparison: { status: 'selected', selected_by: 'comparison_reviewer',
+    latest_review: { outcome: 'selected', rationale: 'Preserves the existing contract.' } } };
+  const message = comparisonSummary(run);
+  assert.match(message, /Agent explanation: Preserves the existing contract\./);
+  assert.match(message, /Publication still requires your decision/);
+});
+
+test('human override summary uses the owner reason and retains the earlier agent explanation separately', () => {
+  const run = { comparison: { status: 'selected', selected_by: 'owner', selection_reason: 'Choose the smaller change.',
+    latest_review: { outcome: 'selected', rationale: 'Choose the larger redesign.' } } };
+  const message = comparisonSummary(run);
+  assert.match(message, /Human selection: Choose the smaller change\./);
+  assert.doesNotMatch(message, /Agent explanation: Choose the larger redesign/);
+  assert.match(message, /earlier agent review remains recorded/);
+});
+
+test('comparison progress and terminal control characters are handled without starting another review', () => {
+  assert.match(comparisonSummary({ comparison: { status: 'repairing' } }), /repairing/);
+  assert.equal(comparisonSummary({}), 'No automatic comparison review is recorded for this run.');
+  assert.doesNotMatch(comparisonSummary({ comparison: { status: 'selected', latest_review: { rationale: '\u001b[31munsafe\u202etext' } } }), /\u001b|\u202e/);
+});
+
+test('an already accepted comparison does not ask for a second publishing decision or claim readback succeeded', () => {
+  const message = comparisonSummary({ status: 'accepted', comparison: { status: 'selected', latest_review: { rationale: 'Contract preserved.' } } });
+  assert.match(message, /publishing decision is already recorded/);
+  assert.doesNotMatch(message, /still requires|successfully published/);
+});
+
+test('legacy manual choice does not invent a preceding agent review', () => {
+  const message = comparisonSummary({ comparison: { status: 'selected', selected_by: 'owner', selection_reason: 'Smaller change.', latest_review: null } });
+  assert.match(message, /No agent comparison review has completed/);
+  assert.doesNotMatch(message, /earlier agent review remains recorded/);
+});
 
 test('ready historical run with failed current-policy reevaluation is not a current checked result', async () => {
   const detail = checkedDetail('historical');

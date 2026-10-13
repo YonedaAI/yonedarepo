@@ -4,6 +4,8 @@ use serde_json::json;
 
 #[path = "tests/autonomous_migration.rs"]
 mod autonomous_migration;
+#[path = "tests/comparison_branch_gate.rs"]
+mod comparison_branch_gate;
 #[path = "tests/context_intent.rs"]
 mod context_intent;
 #[path = "tests/context_seed.rs"]

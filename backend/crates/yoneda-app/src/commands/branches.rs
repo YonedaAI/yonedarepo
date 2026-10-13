@@ -98,6 +98,11 @@ pub(super) fn promote<S: SqlStore>(
     candidate: &mut Value,
     now: i64,
 ) -> Result<()> {
+    // Compare checks establish evidence for alternatives; selection is a separate decision.
+    // Older research jobs use mode=compare without a hosted agent roster.
+    if run["mode"] == "compare" && run["agents"].is_array() {
+        return Ok(());
+    }
     if super::autonomy::hold_candidate(db, run, candidate)? {
         save(db, "candidates", &string(candidate, "id")?, candidate)?;
         return Ok(());

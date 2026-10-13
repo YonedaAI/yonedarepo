@@ -6,6 +6,11 @@ import type {
   RunGraphPageContract,
   RunsPageContract,
 } from '../../../shared/provenance';
+import type { ComparisonState } from './comparison';
+
+export interface DevelopmentRun extends Record<string, any> {
+  comparison?: ComparisonState | null;
+}
 
 export type AccountIdentity =
   | { role: 'user'; username: string; reviewer?: boolean }
@@ -64,7 +69,7 @@ export type ProjectMetadata = Pick<
 >;
 export interface Snapshot {
   repository: Repository;
-  runs: Record<string, any>[];
+  runs: DevelopmentRun[];
   executions: Record<string, any>[];
   candidates: Record<string, any>[];
   evaluations: Record<string, any>[];

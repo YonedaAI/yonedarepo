@@ -3,6 +3,7 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
+    super::comparison::validate_capture(db, j, result)?;
     let cid = string(result, "id")?;
     let execution = &j["payload"]["execution"];
     let eid = string(execution, "id")?;

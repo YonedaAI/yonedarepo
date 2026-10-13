@@ -26,6 +26,11 @@ export function reasoningIssue(agent: AdaptiveAgentDraft, connections: ModelConn
 export function automaticAgent(): AdaptiveAgentDraft {
   return { id: crypto.randomUUID(), connection: '', role: 'auto', strategy: 'Team participant' };
 }
+export function compareBuilders(agents: AdaptiveAgentDraft[]) {
+  const builders = agents.slice(0, 2);
+  while (builders.length < 2) builders.push(automaticAgent());
+  return builders;
+}
 /** Preferences only: the server resolves eligible models and enforces workspace limits. */
 export function requestedAgents(agents: AdaptiveAgentDraft[], connections: ModelConnection[] = []) {
   return agents.map((agent) => {

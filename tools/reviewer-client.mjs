@@ -1,4 +1,30 @@
 // Metadata-only discovery and selected-run reads. Never starts or approves work.
+function safeExplanation(value) {
+  return typeof value === 'string'
+    ? value.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1024)
+    : '';
+}
+
+/** Agent judgment and human selection are separate from canonical publication. */
+export function comparisonSummary(run) {
+  const comparison = run?.comparison;
+  if (!comparison) return 'No automatic comparison review is recorded for this run.';
+  const publish = run.status === 'accepted'
+    ? 'Your publishing decision is already recorded; inspect publication readback in the browser.'
+    : 'Publication still requires your decision in the browser.';
+  if (comparison.status === 'selected') {
+    if (comparison.selected_by === 'owner') {
+      const history = comparison.latest_review
+        ? 'The earlier agent review remains recorded.' : 'No agent comparison review has completed.';
+      return `Human selection: ${safeExplanation(comparison.selection_reason) || 'recorded'}. ${history} ${publish}`;
+    }
+    return `Agent review completed. Agent explanation: ${safeExplanation(comparison.latest_review?.rationale) || 'inspect the recorded review in the browser'}. ${publish}`;
+  }
+  const stage = ['building', 'checking', 'reviewing', 'repairing', 'needs_attention', 'stale'].includes(comparison.status)
+    ? comparison.status.replaceAll('_', ' ') : 'unavailable';
+  return `Agent comparison: ${stage}. Inspect both results and the recorded evidence in the browser. ${publish}`;
+}
+
 export async function workspaceAllowance(api) {
   let allowance;
   try { allowance = await api('workspace/allowance'); }
@@ -35,7 +61,7 @@ export async function workspaceEntry(api, options) {
     const latest = checked[0];
     return { repo_id: latest.repo_id, run_id: latest.run.id,
       url: `/?repo=${encodeURIComponent(latest.repo_id)}&run=${encodeURIComponent(latest.run.id)}`,
-      message: `Read-only review: opening the latest current-policy checked run in your owned projects. Candidate ${latest.run.current_checked_candidate.id}, revision ${latest.run.current_checked_candidate.revision.commit}, policy ${latest.run.current_checked_candidate.policy}. No work was started or resumed.` };
+      message: `Read-only review: opening the latest current-policy checked run in your owned projects. Candidate ${latest.run.current_checked_candidate.id}, revision ${latest.run.current_checked_candidate.revision.commit}, policy ${latest.run.current_checked_candidate.policy}. ${comparisonSummary(latest.run)} No work was started or resumed.` };
   }
   if (options.checkedOnly) throw new Error('No current-policy checked run is available in your owned projects. --checked never starts or resumes work.');
   return { ...entry, message: 'No current-policy checked run is available. Historical runs remain in the workspace. Open Start a Run to describe a change and approve it in the browser. This command starts no inference.' };
@@ -75,7 +101,11 @@ function currentCheckedRun(detail, run) {
       || policy.required_checks.some(name => typeof name !== 'string' || !name)
       || new Set(policy.required_checks).size !== policy.required_checks.length
       || !Array.isArray(detail.candidates) || !Array.isArray(detail.evaluations)) return null;
-  for (const candidate of detail.candidates) {
+  const selected = run.comparison?.selected_candidate_id;
+  const candidates = typeof selected === 'string' && selected
+    ? detail.candidates.filter(candidate => candidate.id === selected)
+    : [...detail.candidates].sort((left, right) => Number(right.working_branch_state === 'checked_head') - Number(left.working_branch_state === 'checked_head'));
+  for (const candidate of candidates) {
     if (candidate.run_id !== run.id || candidate.status !== 'eligible'
         || typeof candidate.id !== 'string' || !candidate.id
         || typeof candidate.evaluation !== 'string' || !candidate.evaluation

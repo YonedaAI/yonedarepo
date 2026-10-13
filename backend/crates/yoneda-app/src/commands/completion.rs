@@ -224,6 +224,13 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     j["result"] = result.clone();
     j["finished_at"] = json!(now);
     save(db, "jobs", &id, &j)?;
+    if let Some(rid) = j["payload"]["execution"]["run_id"]
+        .as_str()
+        .or_else(|| j["payload"]["candidate"]["run_id"].as_str())
+        .or_else(|| j["payload"]["run_id"].as_str())
+    {
+        super::comparison::wake(db, rid, now)?;
+    }
     event(
         db,
         "job.completed",

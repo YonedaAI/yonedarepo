@@ -251,3 +251,19 @@ fn coding_git_native_prompt_keeps_source_commit_and_push() {
         assert!(!text.contains("ALL_TOOLS"));
     }
 }
+
+#[test]
+fn comparison_reviewer_prompt_requires_captured_reads_and_submit_without_coding_completion() {
+    let mut job = prompt_job("worker", "codex");
+    job["payload"]["review_only"] = json!(true);
+    job["payload"]["comparison_review"] = json!(true);
+    job["payload"]["execution"]["role"] = json!("reviewer");
+    job["payload"]["comparison_manifest"] = json!({"version":1,"manifest_digest":"a".repeat(64),"manifest":{"intent":"Preserve booking integrity","criteria":["Exact independently checked integration"],"alternatives":[]}});
+    let prompt = agent_prompt(&job).unwrap();
+    assert!(prompt.contains("comparison_context"));
+    assert!(prompt.contains("comparison_submit"));
+    assert!(prompt.contains("read-only"));
+    assert!(!prompt.contains("execution_complete"));
+    assert!(!prompt.contains("Commit your completed changes"));
+    assert!(!prompt.contains("push them to origin"));
+}

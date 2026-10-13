@@ -1,5 +1,15 @@
 # Product MVP release evidence — October 8–12, 2026
 
+## Reviewed comparisons — October 13, 2026
+
+Compare now runs two independent builders followed by a separate read-only Auto reviewer. Both captured alternatives receive independent checks before review. The reviewer records why a result won and why the alternative lost; it may repair the more promising alternative up to twice instead of forcing a winner. Every repair requires fresh capture, evaluation and review. Checks alone no longer advance a Compare working head.
+
+Humans can override the checked recommendation with a reason and separately approve publication. The decision records the exact selection and links to the original immutable review, keeping the agent explanation, override reason and human publication rationale distinct. Existing two-builder runs offer one explicit **Review now** approval without rebuilding their original alternatives or resetting earlier spending. Older one-to-six-builder comparisons retain manual selection.
+
+The complete local gate passed: **444 Rust** (321 app, 26 core, 81 runtime, 1 Cloudflare, 15 xtask), **420 platform workerd**, **16 isolated-app workerd**, **206 frontend** and **43 Node** tests, plus formatting, Clippy, TypeScript, the actual workers-rs Wasm build and frontend production build. R8 passed **88 Linux runtime tests**, including actual unprivileged write denial on both captured source trees. Independent review cleared the frozen code. Real Wasm Durable Object tests exercise reviewer write denial, exact source/diff access, charging/settlement, lost acknowledgments, eviction and later retrieval of the recorded explanation. Desktop/mobile UI component checks used controlled data and are not hosted inference evidence.
+
+Deployment, natural paid-run outcome and unfamiliar-human acceptance are separate verification boundaries; the existing video predates this workflow.
+
 ## Modern model picker — October 13, 2026
 
 The source adds connected-model choices with short provider/model names and optional reasoning levels supported by the exact selected model. Auto omits an explicit reasoning setting and selects only models with validated automatic-selection eligibility. Newly catalogued models require explicit selection until compatibility is validated; no more expensive model is selected through a silent fallback.

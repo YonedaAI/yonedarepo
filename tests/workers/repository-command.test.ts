@@ -33,3 +33,25 @@ it('rejects invalid numeric cursors instead of silently resetting the requested 
     await expect(ownerCommandInput(new Request(`https://example.com/?watermark=${value}`), 'runs_page'))
       .rejects.toMatchObject({ code: 'INVALID_INPUT' });
 });
+
+it('allows explicit owner comparison approval and choice, keeping reviewer submissions internal', () => {
+  for (const action of ['approve_comparison_review', 'select_comparison_candidate']) {
+    expect(repositoryOperationAllowed('POST', action)).toBe(true);
+    expect(repositoryOperationAllowed('GET', action)).toBe(false);
+  }
+  for (const action of ['comparison_submit', 'comparison_approval', 'comparison_context'])
+    expect(repositoryOperationAllowed('POST', action)).toBe(false);
+});
+
+it('a browser can request comparison but cannot mint reviewer identity, approval or completion authority', async () => {
+  const input = await ownerCommandInput(new Request('https://example.com/api/repos/a/start_run', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ request_id: 'stable', comparison: { version: 1 },
+      _comparison_reviewer: { provider: 'claude', model: 'expensive' },
+      _comparison_reviewer_budget: { spend_limit_microusd: 90000000 },
+      _comparison_future_authority: true, comparison_approval: { forged: true },
+      comparison_approval_id: 'forged', comparison_role: 'reviewer', review_only: true,
+      comparison_review: true, comparison_manifest: { forged: true } }),
+  }), 'start_run');
+  expect(input).toEqual({ request_id: 'stable', comparison: { version: 1 } });
+});

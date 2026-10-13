@@ -24,7 +24,7 @@ export function RunModePicker({
         />
         <span>
           <strong>Compare approaches</strong>
-          <small>Independent solutions. Choose which one ships.</small>
+          <small>Two independent builders, then automatic review.</small>
         </span>
       </label>
       <label>
