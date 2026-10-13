@@ -24,8 +24,8 @@ export function ComparisonAssessment({ comparison }: { comparison?: ComparisonSt
             ? 'Why a repair was requested'
             : 'Why review needs attention'}
       </h3>
-      <p>{review.rationale}</p>
       <small>Reviewer assessment · agent assertion. Behavior checks are shown separately.</small>
+      {review.outcome !== 'selected' && <p>{review.rationale}</p>}
       <h4>Tradeoffs between alternatives</h4>
       <ul>
         {review.alternatives.map((alternative, index) => (
@@ -45,6 +45,12 @@ export function ComparisonAssessment({ comparison }: { comparison?: ComparisonSt
         </ul>
       ) : (
         <p>No risks were recorded by the reviewer.</p>
+      )}
+      {review.outcome === 'selected' && (
+        <details>
+          <summary>Read full reviewer assessment</summary>
+          <p>{review.rationale}</p>
+        </details>
       )}
       {comparison?.selected_by === 'owner' && (
         <p>
