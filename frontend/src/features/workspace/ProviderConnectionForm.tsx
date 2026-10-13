@@ -19,8 +19,8 @@ export function ProviderConnectionForm({
   onCancel: () => void;
   onSaved: () => Promise<void>;
 }) {
-  const [provider, setProvider] = useState(editing?.provider ?? 'mimo');
-  const [model, setModel] = useState(editing?.model ?? defaults.mimo);
+  const [provider, setProvider] = useState(editing?.provider ?? 'zai');
+  const [model, setModel] = useState(editing?.model ?? defaults.zai);
   const [plan, setPlan] = useState<string>(editing?.routing?.plan ?? 'api_credits');
   const [region, setRegion] = useState(
     editing?.routing?.plan === 'token_plan' ? editing.routing.region : '',
