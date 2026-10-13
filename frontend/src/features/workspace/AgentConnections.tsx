@@ -16,7 +16,7 @@ export function AgentConnections({ repo, onClose }: { repo: string; onClose: () 
   return (
     <section className="workspace-panel">
       <div className="panel-heading">
-        <h2>Connect a local agent</h2>
+        <h2>Connect your agent</h2>
         <button type="button" className="quiet" onClick={onClose}>
           Close
         </button>
@@ -92,8 +92,8 @@ export function AgentConnections({ repo, onClose }: { repo: string; onClose: () 
           }}
         >
           <label>
-            Agent name
-            <input name="label" required maxLength={120} placeholder="Laptop Codex" />
+            Connection name
+            <input name="label" required maxLength={120} placeholder="My Codex agent" />
           </label>
           <label>
             Access

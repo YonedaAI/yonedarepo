@@ -1,10 +1,16 @@
 import type { Json } from './types';
 export function checkLedger(snapshot: Json, request?: Json) {
+  if (request?.adaptive_team !== undefined && snapshot?.capabilities?.adaptive_teams !== 1)
+    throw Object.assign(
+      new Error('Automatic team planning is updating; refresh before starting.'),
+      { code: 'LEDGER_UPDATING' },
+    );
   const limits = snapshot?.capabilities?.agent_limits;
   const roots = request?.agents?.length ?? 0;
   const delegation = request?.delegation;
   if (
     snapshot?.capabilities?.artifact_reads !== 2 ||
+    (request?._workspace_spend === true && snapshot?.capabilities?.workspace_spend !== 1) ||
     request?.model_budgets?.some(
       (budget: Json) =>
         budget.max_execution_ms > (snapshot?.capabilities?.max_execution_ms ?? 600_000),
@@ -43,6 +49,10 @@ export function checkRuntime(health: Json, job: Json) {
   }
 }
 function compatibleRuntime(health: Json, job: Json) {
+  if (job.payload?.run?.adaptive_team !== undefined && health?.capabilities?.adaptive_teams !== 1)
+    throw new Error(
+      'Container image does not support automatic team selection; wait for rollout completion',
+    );
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (job.payload?.policy?.build?.app != null && health.capabilities?.app_bundle !== 1)

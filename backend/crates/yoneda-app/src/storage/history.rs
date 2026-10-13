@@ -64,7 +64,7 @@ pub(crate) fn run_page<S: SqlStore>(
                 .unwrap_or_default(),
         ),
     )?;
-    let rows = db.query("SELECT h.run_id,h.seq,r.payload FROM run_history h JOIN runs r ON r.id=h.run_id WHERE h.seq<=? AND (h.created_at,h.run_id)<(?,?) ORDER BY h.created_at DESC,h.run_id DESC LIMIT ?", &[json!(high),json!(after_created),json!(after_id),json!((limit+1) as i64)])?;
+    let rows = db.query("SELECT h.run_id,h.seq,r.payload FROM run_history h JOIN runs r ON r.id=h.run_id WHERE h.seq<=? AND COALESCE(json_extract(r.payload,'$.hidden'),0)!=1 AND (h.created_at,h.run_id)<(?,?) ORDER BY h.created_at DESC,h.run_id DESC LIMIT ?", &[json!(high),json!(after_created),json!(after_id),json!((limit+1) as i64)])?;
     let has_more = rows.len() > limit;
     let mut items: Vec<Value> = Vec::with_capacity(limit.min(rows.len()));
     for row in rows.iter().take(limit) {

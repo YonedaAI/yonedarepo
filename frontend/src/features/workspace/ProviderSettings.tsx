@@ -38,8 +38,8 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
         </button>
       </div>
       <p>
-        Connect keys for hosted agents. Add multiple connections for the same provider, then choose
-        a connection for each approach. Stored keys are encrypted and never returned to the browser.
+        Connect a model provider for hosted runs. YonedaRepo can choose from these models when
+        planning work, or you can select one when starting a run.
       </p>
       {loading ? (
         <p role="status">Loading connections…</p>

@@ -16,6 +16,9 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
     }
     let latest = evidence::record(db, run, None)?;
     let run = &latest;
+    if run["adaptive_team"].is_object() {
+        super::super::adaptive_team::validate_approval(run)?;
+    }
     if let Some(current) = run["coordinator_execution_id"].as_str() {
         let previous = get(db, "jobs", &format!("job:{current}"))?;
         let execution = get(db, "executions", current)?;

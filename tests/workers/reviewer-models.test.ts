@@ -20,12 +20,15 @@ async function modelFixture(provider = 'codex') {
   // browser-configurable reviewer approvals. No provider network I/O occurs.
   await workspace(bindings, f.owner, { op: 'provider_put', provider, model, connection,
     sealed: await seal(f.scoped, f.owner, provider, key, connection) });
-  await ledger(bindings, f.repo, { op: 'start_run', id: 'funded-model', intent: 'Synthetic provider accounting',
+  // Legacy funding belongs to a durable original trial, not every job owned by this account.
+  const trialId = 'reviewer-funded-model';
+  await workspace(bindings, f.owner, { op: 'reviewer_trial', id: trialId });
+  await ledger(bindings, f.repo, { op: 'start_run', id: trialId, intent: 'Synthetic provider accounting',
     agents: [{ provider, model, connection, strategy: 'Test charging' }],
     model_budgets: [{ provider, model, max_requests: 3, max_output_tokens: 512,
       max_execution_ms: 120000, spend_limit_microusd: 1_000_000,
       pricing: { input_microusd_per_million: 1_000_000, output_microusd_per_million: 5_000_000, source: 'owner-approved conservative rates' } }] });
-  const job = await ledger(bindings, f.repo, { op: 'claim', job_id: 'job:funded-model:agent-1' });
+  const job = await ledger(bindings, f.repo, { op: 'claim', job_id: `job:${trialId}:agent-1` });
   const scope: Scope = { repo_id: f.repo, job, supervisor: 'synthetic-supervisor', model_calls: 0, created_at: Date.now() };
   const container = containerBindings(f.scoped, scope);
   const harness = definition.harness;

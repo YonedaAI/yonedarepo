@@ -1,6 +1,6 @@
 # YonedaRepo submission
 
-Review a checked event-booking application built by an agent team. Start with the running app, its independent checks and the reasons behind the changes. Git-native specialist forks, protected verification, prior-run context, coordination and human publication decisions remain connected in the evidence trail.
+Review how YonedaRepo turns a goal into coordinated, checked changes with a readable history. A human reviews one integrated result: what changed, why, what was checked and what still needs a decision. Agent coordination and Git/context evidence are available for deeper inspection; the example application is the output of that workflow.
 
 ## Reviewer: one key, one command
 
@@ -16,14 +16,15 @@ The command prompts without echoing the key, opens the latest independently chec
 node tools/reviewer.mjs --checked --key-file /path/to/access.json
 ```
 
-Use `--no-open` for command-line inspection. `--new` is an explicit optional funded trial, limited to $5 under the existing $50 campaign; it is not needed to review the recorded result. Keep the access file private. Reviewer access does not permit arbitrary model/provider changes or canonical publication.
+Use `--no-open` for command-line inspection and keep the key private. The reviewer has the ordinary workspace and preconfigured connections. After shared-allowance activation, `--new` and `--resume` open that workspace without starting inference. Use **Start a Run** to approve work; **Connect Agents** manages hosted providers or repository-scoped MCP clients. New work shares the configurable $50 workspace allowance with retained spending. Human publication stays separate from successful checks.
 
 ## What to review
 
-1. Open the **checked app** and inspect booking, capacity and cancellation behavior.
-2. Read **checks and why**: the approved intent, exact captured revision, protected independent verification and why publication still awaits a human decision.
-3. Inspect the two specialist captures and the recovery: the coordinator used platform tools, retained both captures and reassigned integration to an available originally approved model. No budget was raised.
-4. Review changed files individually. Use the optional evidence graph and file provenance for deeper inspection.
+1. Read the goal and integrated result. Open **Review changes**, choose files individually and inspect the output against the intent.
+2. Check the exact captured revision, independent checks, unresolved issues and why publication awaits a human decision.
+3. Inspect specialist contributions and peer coordination. The recorded example retained both specialist captures through one bounded repair without renewing its original budget.
+4. Start a follow-up from the same project to inspect how earlier context is retrieved and cited. Optional sample buttons prepare editable briefs; they do not claim completed proof.
+5. For conflicting changes, inspect both contributions, the original intent and the freshly checked resolution. The existing recorded result proves integration recovery, not general semantic conflict quality.
 
 The current checked run is `reviewer-booking-20261012-s1-r2`, revision `4c330e084f8d698a4c0ba08f82fd73d108c02f2d`. Its initial-build oracle passed four tests; three future-stage tests were skipped. The checked working branch is at version 1. The canonical repository remains at its original version 0: checked is not published.
 
@@ -31,13 +32,13 @@ The current checked run is `reviewer-booking-20261012-s1-r2`, revision `4c330e08
 
 - **Platform:** [yonedarepo.com](https://yonedarepo.com/), with a separate isolated Apps Worker serving checked JS/TS UI/API applications backed by managed SQLite.
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0. Check [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) for the exported implementation revision and [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions) for that export's result.
-- **Current code acceptance:** implementation `82d900f`, Worker `e0cc3b15-ef7c-43bb-af6e-dafd2da11d2d`, R4 container application version 28. The completed rollout had seven healthy instances, none on the old image, and zero startup failures/errors.
-- **Local gate:** 359 Rust, 327 platform workerd, 16 isolated-app workerd, 113 frontend and 15 reviewer Node tests passed. Separate study tooling passed 29 Node tests; R4 passed 80 Linux runtime tests.
+- **Earlier hosted code acceptance:** implementation `82d900f`, Worker `e0cc3b15-ef7c-43bb-af6e-dafd2da11d2d`, R4 container application version 28. The completed rollout had seven healthy instances, none on the old image, and zero startup failures/errors.
+- **Latest local gate:** simplified-flow source passed 387 Rust, 387 platform workerd, 16 isolated-app workerd, 160 frontend and 27 Node runtime/reviewer tests. R5 passed 81 Linux runtime tests. Earlier separate study tooling passed 29 Node tests; those results remain dated evidence.
 - **Hosted app:** exact-revision HTTPS/UI/API/SQLite, capacity/cancellation, wrong-host/origin/unauthenticated isolation and normal browser render/reload checks passed. Browser form mutations and induced hosted DO eviction were not exercised.
 - **Reviewer CLI:** read-only technical check succeeded on the current result without a trial or new inference. This is not an unfamiliar-human rehearsal.
 - **Evidence:** [release verification](release-evidence.md), [machine-readable record](release-evidence.json), [architecture](current-state-architecture.md), [video production](demo-video.md).
 
-**Video:** [Watch the October 13 walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-13/yonedarepo-reviewer.mp4). This six-minute, 12-chapter, 48-caption edit uses actual current browser captures. Normal-speed native playback reached the end without seeking, all captions were visually inspected, and ffmpeg decode passed. It is an edited walkthrough, not a continuous recording of a live run. SHA-256: `494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010`.
+**Video:** [Watch the October 13 walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-13/yonedarepo-reviewer.mp4). This six-minute, 12-chapter, 48-caption edit uses actual R2 browser captures and predates the simplified Start a Run / Connect Agents interface. It does not demonstrate the new adaptive roster or shared allowance. Normal-speed native playback reached the end without seeking, all captions were visually inspected, and ffmpeg decode passed. It is an edited walkthrough, not a continuous recording of a live run. SHA-256: `494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010`.
 
 ## What the evidence establishes
 

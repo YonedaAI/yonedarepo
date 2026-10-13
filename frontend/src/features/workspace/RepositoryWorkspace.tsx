@@ -17,6 +17,7 @@ export function RepositoryWorkspace({
   onChange,
   onError,
   onPanel,
+  onProviders,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -25,6 +26,7 @@ export function RepositoryWorkspace({
   onChange: () => Promise<void>;
   onError: (message: string) => void;
   onPanel: (panel: WorkspacePanel) => void;
+  onProviders?: (refresh?: () => void) => void;
 }) {
   const [view, setView] = useState('runs');
   const [evidenceRun, setEvidenceRun] = useState('');
@@ -77,7 +79,7 @@ export function RepositoryWorkspace({
           snapshot={snapshot}
           onChange={onChange}
           onError={onError}
-          onProviders={() => onPanel('providers')}
+          onProviders={(refresh) => (onProviders ? onProviders(refresh) : onPanel('providers'))}
           onAgents={() => onPanel('agents')}
           onSelectedRun={setEvidenceRun}
           initialRunId={evidenceRun || initialRunId}

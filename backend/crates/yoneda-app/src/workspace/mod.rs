@@ -11,9 +11,14 @@ mod campaign_trial;
 mod grants;
 mod project_dispatch;
 mod project_setup;
+mod project_visibility;
 mod projects;
 mod providers;
 mod reviewer;
+mod spend;
+#[cfg(test)]
+#[path = "spend/tests.rs"]
+mod spend_tests;
 pub(super) const TABLE: &str = "workspace_records";
 
 /// Apply the workspace schema and execute a command in one synchronous transaction.
@@ -26,6 +31,11 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .as_i64()
             .ok_or_else(|| bad("Trusted clock required"))?;
         match string(&command, "op")?.as_str() {
+            "project_set_visibility" => project_visibility::handle(&db, &command, now),
+            "workspace_spend_status"
+            | "workspace_spend_configure"
+            | "workspace_spend_reserve"
+            | "workspace_spend_settle" => spend::handle(&db, &command, now),
             "reviewer_configure"
             | "reviewer_status"
             | "reviewer_revoke"

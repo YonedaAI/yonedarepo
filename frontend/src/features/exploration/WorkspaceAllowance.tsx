@@ -1,45 +1,56 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
-import { formatBudgetUsd } from './modelBudgets';
 
+export interface WorkspaceAllowanceValue {
+  version: number;
+  limit_microusd: number;
+  charged_microusd: number;
+  reserved_microusd: number;
+  remaining_microusd: number;
+}
+export function readAllowance(value: unknown): WorkspaceAllowanceValue | undefined {
+  if (!value || typeof value !== 'object') return;
+  const result = value as WorkspaceAllowanceValue;
+  if (
+    ![
+      result.version,
+      result.limit_microusd,
+      result.charged_microusd,
+      result.reserved_microusd,
+      result.remaining_microusd,
+    ].every((n) => Number.isSafeInteger(n) && n >= 0)
+  )
+    return;
+  return result;
+}
 export function WorkspaceAllowance() {
-  const [allowance, setAllowance] = useState<{ limit: number; charged: number }>();
-  const [error, setError] = useState(false);
+  const [value, setValue] = useState<WorkspaceAllowanceValue>();
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let current = true;
-    void api<{ limit: number; charged: number }>('budget')
-      .then((value) => {
-        if (
-          !Number.isSafeInteger(value.limit) ||
-          !Number.isSafeInteger(value.charged) ||
-          value.limit < 0 ||
-          value.charged < 0
-        ) {
-          throw new Error('Invalid allowance');
-        }
-        if (current) setAllowance(value);
+    void api<unknown>('workspace/allowance')
+      .then((result) => {
+        if (!current) return;
+        const next = readAllowance(result);
+        if (!next) setFailed(true);
+        else setValue(next);
       })
       .catch(() => {
-        if (current) setError(true);
+        if (current) setFailed(true);
       });
     return () => {
       current = false;
     };
   }, []);
+  const usd = (n: number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n / 1_000_000);
   return (
-    <aside className="workspace-allowance" aria-label="Claude workspace allowance">
-      <strong>Claude workspace</strong>
-      {allowance ? (
-        <p>
-          {formatBudgetUsd(Math.max(0, allowance.limit - allowance.charged))} left of{' '}
-          {formatBudgetUsd(allowance.limit)}
-        </p>
-      ) : error ? (
-        <p>Current remaining allowance is unavailable.</p>
-      ) : (
-        <p role="status">Loading workspace allowance…</p>
-      )}
-      <small>Separate $20 operator ceiling; run budgets cannot raise it.</small>
-    </aside>
+    <small className="workspace-allowance" role="status">
+      {value
+        ? `${usd(value.remaining_microusd)} of ${usd(value.limit_microusd)} workspace allowance available`
+        : failed
+          ? 'Workspace allowance unavailable. Limits are checked when you start.'
+          : 'Loading workspace allowance…'}
+    </small>
   );
 }

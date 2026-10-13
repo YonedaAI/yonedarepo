@@ -165,7 +165,7 @@ it('keeps the active slot while an original start is in flight and concurrent re
   expect((await workspace(bindings, f.owner, { op: 'reviewer_status' })).active_trial).toBe(snapshot.runs[0].id);
 });
 
-it('requires an active trial and reviewer authorization without granting generic start permissions', async () => {
+it('requires an active legacy trial and reviewer authorization while generic starts validate owner input', async () => {
   const f = await readyReviewer('resume_access');
   const empty = await api(f.scoped, '/api/reviewer/resume', f.cookie, {});
   expect(empty.status).toBe(409);
@@ -174,7 +174,9 @@ it('requires an active trial and reviewer authorization without granting generic
   const ordinary = await signup('ordinary_user');
   expect((await api(f.scoped, '/api/reviewer/resume', ordinary, {})).status).toBe(403);
   expect((await api(f.scoped, '/api/reviewer/resume', f.cookie)).status).toBe(404);
-  expect((await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, {})).status).toBe(403);
+  const invalidStart = await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, {});
+  expect(invalidStart.status).toBe(409);
+  expect((await invalidStart.json<any>()).error.code).toBe('INVALID_INPUT');
   expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toHaveLength(0);
 });
 

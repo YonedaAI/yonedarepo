@@ -100,6 +100,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             Ok(p)
         }
         "reviewer_trial" => {
+            super::spend::require_legacy(db)?;
             let mut p = require(db, now)?;
             let id = string(c, "id")?;
             if !(1..=80).contains(&id.len())
@@ -153,6 +154,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             Ok(t)
         }
         "reviewer_trial_reopen" => {
+            super::spend::require_legacy(db)?;
             let mut p = require(db, now)?;
             let id = string(c, "id")?;
             let request_id = string(c, "request_id")?;

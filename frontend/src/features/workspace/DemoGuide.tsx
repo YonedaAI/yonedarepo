@@ -50,14 +50,23 @@ export function DemoGuide({ onClose }: { onClose: () => void }) {
       <details>
         <summary>Start new work or make a shipping decision</summary>
         <p>
-          Use New run or Update project to prepare a brief, connections and limits. Approval starts
-          paid model inference. Wait for trusted source capture and independent checks before
-          reviewing a result.
+          Choose Start a Run and describe what to build, a feature to add, or a bug to fix. Start
+          with Auto, or choose agent models and roles. YonedaRepo plans and coordinates the team
+          within your workspace allowance. Starting the run uses model inference; opening the form
+          or choosing a sample does not.
         </p>
         <p>
           Review result or Review approach opens the shipping decision. Record why you chose it and
           why you rejected alternatives, then Record decision and publish. Selection and publication
           stay separate until canonical Git verification finishes.
+        </p>
+      </details>
+      <details>
+        <summary>Connect agents</summary>
+        <p>
+          Connect Agents in the sidebar offers hosted model providers and your own MCP-compatible
+          agents, including Claude Code and Codex. Hosted connections work across your workspace.
+          Your own agent gets a key scoped to the repository you choose.
         </p>
       </details>
       <p>

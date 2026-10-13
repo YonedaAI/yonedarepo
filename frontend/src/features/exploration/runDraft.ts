@@ -1,8 +1,7 @@
 import type { Snapshot } from '../../lib/types';
-import { teamAgents } from '../team/teamAgents';
 import { restoreTeam, runMode } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
-import type { AgentDraft } from './agentLimits';
+import type { AdaptiveAgentDraft } from './adaptiveDraft';
 import { preservePublishedCriteria, publishedContext, publishedRun } from './publishedRun';
 import { type InitialRun, restoreModelBudgets } from './restartRun';
 import { defaultRunAgents } from './runDefaults';
@@ -13,17 +12,14 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
   const inheritedContext = publication
     ? publishedContext(snapshot, publication)
     : { ids: [], total: 0 };
-  const mode = runMode(source?.mode ?? publication?.run.mode);
-  const agents =
-    source?.agents ??
-    (publication?.run.mode === 'collaborate'
-      ? teamAgents(snapshot, publication.run)
-      : defaultRunAgents(snapshot));
+  const mode = source ? runMode(source.mode) : 'collaborate';
+  const agents: AdaptiveAgentDraft[] = source
+    ? structuredClone(source.agents)
+    : defaultRunAgents(snapshot);
   const criteria: string[] = source?.criteria ??
     publication?.run.criteria ?? [
-      'Works on mobile and desktop',
-      'Keyboard accessible navigation',
-      'Clear content and useful interactions',
+      'Preserve existing behavior and checks',
+      'Verify the requested change with meaningful tests',
     ];
   const approvedCriteria =
     publication && criteria.length < 32
@@ -44,27 +40,28 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     previousTeamPlan,
     previousAutomatic,
     team:
-      mode === 'collaborate' && !previousAutomatic && previousTeamPlan
+      source?.id && mode === 'collaborate' && !previousAutomatic && previousTeamPlan
         ? restoreTeam(previousTeamPlan, agents)
         : undefined,
-    context: source?.context ?? inheritedContext.ids,
-    budgets: source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),
+    context: [...(source?.context ?? inheritedContext.ids)],
+    budgets: structuredClone(
+      source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),
+    ),
     policy: source?.policy ?? JSON.stringify(snapshot.repository.policy?.build, null, 2),
-    delegation: source?.delegation ?? {
-      enabled: false,
-      max_depth: 1,
-      max_executions: agents.length,
-    },
+    delegation: structuredClone(
+      source?.delegation ?? {
+        enabled: false,
+        max_depth: 1,
+        max_executions: agents.length,
+      },
+    ),
   };
 }
 
 /** Never silently replace a historical connection that disappeared or changed model. */
-export function defaultConnections(agents: AgentDraft[], providers: Provider[]): AgentDraft[] {
-  return agents.map((agent, index) => ({
-    ...agent,
-    connection:
-      agent.fromPreviousRun || providers.some((provider) => provider.id === agent.connection)
-        ? agent.connection
-        : (providers[index % providers.length]?.id ?? ''),
-  }));
+export function defaultConnections(
+  agents: AdaptiveAgentDraft[],
+  _providers: Provider[],
+): AdaptiveAgentDraft[] {
+  return agents.map((agent) => ({ ...agent }));
 }

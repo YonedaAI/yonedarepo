@@ -1,8 +1,8 @@
 import {
   ArrowRight,
   Bot,
+  CheckCircle2,
   GitBranch,
-  GitCompareArrows,
   LoaderCircle,
   Network,
   Plus,
@@ -64,8 +64,8 @@ export function WorkspaceWelcome({
             Keep the why.
           </h1>
           <p>
-            One intent. Multiple approaches. A shared memory of what worked, what didn't, and why
-            you chose it.
+            Describe a goal. Agents coordinate the work. Review one checked result, with the context
+            behind it.
           </p>
           <div className="welcome-flow" aria-hidden="true">
             <span>
@@ -74,13 +74,13 @@ export function WorkspaceWelcome({
             </span>
             <ArrowRight size={16} />
             <span>
-              <GitCompareArrows size={16} />
-              Approaches
+              <Bot size={16} />
+              Build together
             </span>
             <ArrowRight size={16} />
             <span>
-              <Network size={16} />
-              Context
+              <CheckCircle2 size={16} />
+              Review
             </span>
           </div>
           <p className="welcome-note">Bring your agent. Give the next one a head start.</p>
@@ -139,7 +139,8 @@ export function WorkspaceWelcome({
         </div>
       </div>
       <p className="welcome-note">
-        Prefer your local agent? Add a repository, then choose <strong>Connect local agent</strong>.
+        Choose <strong>Connect Agents</strong> in the sidebar to set up hosted agents or connect
+        your own agent.
       </p>
     </section>
   );

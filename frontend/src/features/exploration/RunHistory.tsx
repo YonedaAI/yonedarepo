@@ -15,12 +15,15 @@ export function RunHistory({
     <div className="run-picker">
       <label htmlFor="recorded-run">Run history</label>
       <select id="recorded-run" value={selected} onChange={(event) => onSelect(event.target.value)}>
-        {[...snapshot.runs].reverse().map((run) => (
-          <option key={run.id} value={run.id}>
-            {runTitle(run.intent)} · {runAttention(snapshot, run).title.toLowerCase()} ·{' '}
-            {new Date(run.created_at).toLocaleDateString()}
-          </option>
-        ))}
+        {[...snapshot.runs]
+          .filter((run) => !run.hidden || run.id === selected)
+          .reverse()
+          .map((run) => (
+            <option key={run.id} value={run.id}>
+              {runTitle(run.intent)} · {runAttention(snapshot, run).title.toLowerCase()} ·{' '}
+              {new Date(run.created_at).toLocaleDateString()}
+            </option>
+          ))}
       </select>
     </div>
   );

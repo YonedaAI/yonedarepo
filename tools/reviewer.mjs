@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { campaignEntry, findCheckedRun, readRun } from './reviewer-client.mjs';
+import { campaignEntry, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from './reviewer-client.mjs';
 
 const origin = 'https://yonedarepo.com';
 function keyPrompt() {
@@ -41,10 +41,11 @@ Options:
   --key-file <path>  Read a reviewer key from a private file (raw key or access.json).
   --checked          Open the latest recorded checked run; never start/resume a trial.
   --no-open          Print the review URL without launching a browser.
-  --new              Explicitly approve a new funded trial (up to $5).
-  --resume           Resume the same approved active campaign trial.
+  --new              Legacy only: approve a funded trial (up to $5); shared accounts open Start a Run.
+  --resume           Legacy only: resume a campaign trial; shared accounts open Start a Run.
 
-Default: open the latest checked campaign result without starting inference.`;
+Default: open the latest checked owned-project result without starting inference.
+Legacy accounts retain checked campaign discovery. Shared accounts approve new work in the browser.`;
 }
 function parseArgs(args) {
   const options = { help: false, newTrial: false, resume: false, checkedOnly: false, openBrowser: true, keyFile: '' };
@@ -92,7 +93,7 @@ async function main() {
       signal: AbortSignal.timeout(30000), redirect:'error',
     });
     const value = await r.json();
-    if (!r.ok) throw Object.assign(new Error(value.error?.message ?? `Request failed (${r.status})`), {code:value.error?.code});
+    if (!r.ok) throw Object.assign(new Error(value.error?.message ?? `Request failed (${r.status})`), {code:value.error?.code,status:r.status});
     if (path === 'auth/login') cookie=(r.headers.get('set-cookie') ?? '').split(';')[0];
     return value;
   }
@@ -102,47 +103,55 @@ async function main() {
     key='';
     credentials.key='';
   }
-  const policy=await api('reviewer');
-  const campaign=policy.campaign;
-  const remaining=campaign ? campaign.budget.limit_microusd-campaign.budget.charged_microusd : policy.budget.limit-policy.budget.charged;
-  console.log(`Signed in. Funded allowance remaining: $${(remaining/1000000).toFixed(2)}.`);
+  const allowance=await workspaceAllowance(api);
   let trial;
-  if(campaign) {
-    trial=await campaignEntry(api,campaign,options.newTrial,randomUUID(),options.resume);
-    console.log(options.newTrial ? 'Opening the bounded campaign trial.' : 'Read-only review: opening the latest independently checked app.');
-  } else if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
-  if (!campaign && options.resume) throw new Error('No configured campaign trial is available to resume.');
-  if (!campaign && !options.newTrial) {
-    const recorded=await findCheckedRun(api,policy.repo_id);
-    if(recorded) {
-      trial={repo_id:policy.repo_id,run_id:recorded.id,
-        url:`/?repo=${encodeURIComponent(policy.repo_id)}&run=${encodeURIComponent(recorded.id)}`};
-      console.log(options.checkedOnly
-        ? 'Read-only mode: using a recorded checked run; no trial will be started.'
-        : 'Opening the recorded checked example. Use --new only to approve another funded trial.');
-    } else if (options.checkedOnly) {
-      throw new Error('No recorded checked run is available. --checked never starts or resumes a trial.');
+  if (allowance?.version >= 1) {
+    console.log(`Signed in. Shared workspace allowance remaining: $${(allowance.remaining_microusd/1000000).toFixed(2)}.`);
+    trial=await workspaceEntry(api,options);
+    console.log(trial.message);
+  } else {
+    const policy=await api('reviewer');
+    const campaign=policy.campaign;
+    const remaining=campaign ? campaign.budget.limit_microusd-campaign.budget.charged_microusd : policy.budget.limit-policy.budget.charged;
+    console.log(`Signed in. Funded allowance remaining: $${(remaining/1000000).toFixed(2)}.`);
+    if(campaign) {
+      trial=await campaignEntry(api,campaign,options.newTrial,randomUUID(),options.resume);
+      console.log(options.newTrial ? 'Opening the bounded campaign trial.' : 'Read-only review: opening the latest independently checked app.');
+    } else if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
+    if (!campaign && options.resume) throw new Error('No configured campaign trial is available to resume.');
+    if (!campaign && !options.newTrial) {
+      const recorded=await findCheckedRun(api,policy.repo_id);
+      if(recorded) {
+        trial={repo_id:policy.repo_id,run_id:recorded.id,
+          url:`/?repo=${encodeURIComponent(policy.repo_id)}&run=${encodeURIComponent(recorded.id)}`};
+        console.log(options.checkedOnly
+          ? 'Read-only mode: using a recorded checked run; no trial will be started.'
+          : 'Opening the recorded checked example. Use --new only to approve another funded trial.');
+      } else if (options.checkedOnly) {
+        throw new Error('No recorded checked run is available. --checked never starts or resumes a trial.');
+      }
+      else throw new Error('No checked example is available yet. Use --new to approve a funded trial (up to $5).');
     }
-    else throw new Error('No checked example is available yet. Use --new to approve a funded trial (up to $5).');
-  }
-  const request_id=policy.active_trial?.replace(/^reviewer-/, '') ?? randomUUID();
-  if (!trial) console.log(policy.active_trial ? 'Resuming the recorded reviewer trial.' : 'Starting the prepared Build Together trial (up to $5).');
-  // Recover a lost acknowledgement using the SAME request ID, never a new paid trial.
-  for (let attempt=0;!trial && attempt<3;attempt++) {
-    try { trial=await api('reviewer/trial',{request_id}); break; }
-    catch (error) {
-      if (error.code || attempt===2) throw error;
-      await new Promise(r=>setTimeout(r,1000));
+    const request_id=policy.active_trial?.replace(/^reviewer-/, '') ?? randomUUID();
+    if (!trial) console.log(policy.active_trial ? 'Resuming the recorded reviewer trial.' : 'Starting the prepared Build Together trial (up to $5).');
+    // Recover a lost acknowledgement using the SAME request ID, never a new paid trial.
+    for (let attempt=0;!trial && attempt<3;attempt++) {
+      try { trial=await api('reviewer/trial',{request_id}); break; }
+      catch (error) {
+        if (error.code || attempt===2) throw error;
+        await new Promise(r=>setTimeout(r,1000));
+      }
     }
+    if (!trial) throw new Error('Trial response unavailable. Check the hosted app before starting another trial.');
   }
-  if (!trial) throw new Error('Trial response unavailable. Check the hosted app before starting another trial.');
   const url=new URL(trial.url,origin).href;
-  console.log(`Run: ${trial.run_id}\nReview: ${url}`);
+  console.log(`${trial.run_id ? `Run: ${trial.run_id}\n` : ''}Review: ${url}`);
   const opener=process.platform==='darwin' ? ['open',[url]] : process.platform==='win32' ? ['cmd',['/c','start','',url]] : ['xdg-open',[url]];
   if (options.openBrowser) {
     const child=spawn(opener[0],opener[1],{stdio:'ignore'}); child.on('error',()=>{}); child.unref();
     console.log('Review browser opened. Sign in as reviewer using the same access key.');
   } else console.log('Browser not opened (--no-open). Open the review URL and sign in separately.');
+  if (!trial.run_id) return;
   let previous='';
   for (let n=0;n<240;n++) {
     const snapshot=await readRun(api,trial.repo_id,trial.run_id);

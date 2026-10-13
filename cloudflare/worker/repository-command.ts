@@ -36,6 +36,7 @@ const writes = new Set([
   'repair_team',
   'refresh_candidate',
   'resolve_conflict',
+  'run_set_visibility',
 ]);
 
 /** Trusted capture, archive commits and remote observations are never generic owner operations. */
@@ -78,6 +79,13 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     '_campaign_grant',
     '_campaign_signing_key',
     'repair_escalation',
+    '_approved_model_pool',
+    'approved_model_pool',
+    'planned_roster_digest',
+    '_workspace_spend',
+    'workspace_spend',
+    '_sample_profile',
+    'sample_profile',
   ])
     delete input[key];
   return input;

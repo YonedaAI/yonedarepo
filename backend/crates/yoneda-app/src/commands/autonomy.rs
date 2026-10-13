@@ -6,12 +6,22 @@ mod intent;
 pub(super) use intent::{hold_candidate, intent_pending, validate_candidate};
 
 pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
-    let Some(value) = c.get("autonomy_policy") else {
+    let adaptive = run["adaptive_team"].is_object();
+    let default = json!({"version":1,"enabled":true,"max_repair_rounds":2,"max_concurrent_agents":3,"max_executions":20,"source_scope":"project","allow_intent_questions":true});
+    let Some(value) = c
+        .get("autonomy_policy")
+        .or_else(|| adaptive.then_some(&default))
+    else {
         return Ok(());
     };
     let policy: AutonomyPolicy =
         serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
     policy.validate()?;
+    if adaptive && (!policy.enabled || policy.max_concurrent_agents > 3) {
+        return Err(bad(
+            "Adaptive teams require enabled autonomy with at most three concurrent agents",
+        ));
+    }
     if c.get("job_id").is_some()
         || c.get("_grant").is_some()
         || run["mode"] != "collaborate"
@@ -40,6 +50,18 @@ pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
     run["autonomy_policy"] = approved;
     run["approved_policy"] = run["policy"].clone();
     run["autonomy_approval"] = json!({"intent":run["intent"],"criteria":run["criteria"],"agents":run["agents"],"model_budgets":run["model_budgets"],"policy":run["policy"]});
+    if adaptive {
+        if let Some(approval) = run["autonomy_approval"].as_object_mut() {
+            approval.remove("agents");
+        }
+        for field in [
+            "adaptive_team",
+            "approved_model_pool",
+            "adaptive_team_digest",
+        ] {
+            run["autonomy_approval"][field] = run[field].clone();
+        }
+    }
     Ok(())
 }
 
@@ -67,7 +89,7 @@ pub(super) fn authorize_repair<S: SqlStore>(
         || repo(db)?["policy"] != run["approved_policy"]
         || run["intent"] != run["autonomy_approval"]["intent"]
         || run["criteria"] != run["autonomy_approval"]["criteria"]
-        || run["agents"] != run["autonomy_approval"]["agents"]
+        || super::adaptive_team::validate_approval(run).is_err()
         || job["payload"]["run"]["autonomy_approval"] != run["autonomy_approval"]
         || json!(yoneda_core::fingerprint(&run["autonomy_policy"])?)
             != run["autonomy_policy_digest"]

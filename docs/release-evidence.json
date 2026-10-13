@@ -987,5 +987,40 @@
       "anonymous_download_sha256": "494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010",
       "anonymous_sha256_matches": true
     }
+  },
+  "simple_workflow_wave_2026_10_13": {
+    "scope": "Source and local gates; deployment and live inference recorded separately",
+    "local_gate": {
+      "command": "cargo xtask check",
+      "passed": true,
+      "rust": 387,
+      "platform_workerd": 387,
+      "isolated_app_workerd": 16,
+      "frontend": 160,
+      "node_runtime_reviewer": 27,
+      "linux_runtime": 81
+    },
+    "runtime_image_digest": "13860da8c6719b7788ef2413260a297323cc49bb9c4ec3997c4c949708fa6cd9",
+    "browser": {
+      "surface": "real served components with simulated authentication/ledger",
+      "viewport_widths": [
+        1280,
+        390,
+        320
+      ],
+      "mutation_requests": 0,
+      "inference_calls": 0
+    },
+    "independent_review": {
+      "blockers_found": 3,
+      "blockers_fixed": 3,
+      "scope": "late acknowledgements, ordinary frozen Opus approval, comparison roster uniqueness"
+    },
+    "workspace_allowance": {
+      "default_limit_microusd": 50000000,
+      "configuration": "versioned operator cap; existing charges and uncertain reservations retained",
+      "billing": "not implemented; conservative model estimates are not provider invoices"
+    },
+    "video": "Existing October 13 R2 walkthrough predates this UI and does not prove this new workflow"
   }
 }

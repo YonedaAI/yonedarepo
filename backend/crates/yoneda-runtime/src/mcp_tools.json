@@ -348,7 +348,7 @@
   },
   {
     "name": "team_plan_propose",
-    "description": "The assigned read-only planner proposes a complete complementary plan for the actual brief and frozen roster. Do not probe with placeholders. Rust validates scopes, references, graph and assignments. Before planning finishes, refine a draft by passing its current returned ID as expected_proposal. Each version is immutable; identical retries do not replace the active draft. At most eight versions per attempt. Activation waits for successful unchanged-source planner completion; this does not claim capture, checks or publication.",
+    "description": "The assigned read-only planner proposes a complete complementary plan for the actual brief and frozen roster. Do not probe with placeholders. Rust validates scopes, references, graph and assignments. Before planning finishes, refine a draft by passing its current returned ID as expected_proposal. Each version is immutable; identical retries do not replace the active draft. At most eight versions per attempt. Activation waits for successful unchanged-source planner completion; this does not claim capture, checks or publication. For adaptive teams only, optional agents selects the actual 1\u20136 roster from the approved_model_pool returned by team_context; provide connection and role, preserve explicit requested rows and roles, and use plan indices for this proposed roster. Provider/model/routing/version and budgets are derived from the frozen pool by Rust, never model arguments.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -450,6 +450,39 @@
         "expected_proposal": {
           "type": "string",
           "description": "Current active draft ID returned by team_plan_propose or planner team_context. Required to replace a different draft before completion; omit on initial proposal."
+        },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "description": "Adaptive only: actual task roster. Repeat on refined proposals. Exact saved connection identity is hydrated from the frozen pool.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "connection": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "auto",
+                  "builder",
+                  "frontend",
+                  "backend",
+                  "design",
+                  "testing",
+                  "review"
+                ]
+              }
+            },
+            "required": [
+              "connection",
+              "role"
+            ]
+          }
         }
       },
       "required": [

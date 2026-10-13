@@ -2,6 +2,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod acceptance;
+mod adaptive_team;
 mod archive;
 mod autonomy;
 mod branches;
@@ -34,6 +35,7 @@ mod recovery;
 mod repository;
 mod resources;
 mod restarts;
+mod run_visibility;
 mod runs;
 mod scheduling;
 mod sites;
@@ -81,6 +83,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     }
     context_access::activation(db, now)?;
     match string(&c, "op")?.as_str() {
+        "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "observe_campaign_model_limit" => budget_availability::observe(db, &c, now),
         "repository_status" => {
             let mut r = crate::storage::repo(db)?;

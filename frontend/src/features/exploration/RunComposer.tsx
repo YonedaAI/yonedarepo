@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RunMode } from '../../../../shared/team';
 import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
@@ -7,16 +7,32 @@ import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { reconcileTeam, seedTeam, teamSubmission } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
-import { type AgentDraft, type DelegationDraft, runAgentLimits } from './agentLimits';
+import { type AdaptiveAgentDraft, requestedAgents } from './adaptiveDraft';
+import { type DelegationDraft, runAgentLimits } from './agentLimits';
 import { DelegationSettings } from './DelegationSettings';
-import { ModelBudgetSettings } from './ModelBudgetSettings';
-import { type ModelBudgetDraft, selectedModels, serializeModelBudgets } from './modelBudgets';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
 import { defaultConnections, runDraft } from './runDraft';
+import { WorkspaceAllowance } from './WorkspaceAllowance';
 import { workingBranchRequest } from './workingBranchView';
+
+const starters = [
+  {
+    label: 'Build new',
+    placeholder: 'Describe what you want to build, who it is for, and how you will know it works…',
+  },
+  {
+    label: 'Add feature',
+    placeholder:
+      'Describe the feature, where it belongs in this project, and the behavior to preserve…',
+  },
+  {
+    label: 'Fix bug',
+    placeholder: 'What happens now? What should happen? Include steps to reproduce the problem…',
+  },
+];
 export function RunComposer({
   busy,
   snapshot,
@@ -24,28 +40,32 @@ export function RunComposer({
   onClose,
   onProviders,
   initialRun,
+  sampleProfileId,
+  startUncertain = false,
 }: {
   busy: boolean;
   snapshot: Snapshot;
   onStart: (body: Record<string, unknown>) => Promise<void>;
   onClose: () => void;
-  onProviders: () => void;
+  onProviders: (refresh?: () => void) => void;
   initialRun?: InitialRun;
+  sampleProfileId?: string;
+  startUncertain?: boolean;
 }) {
+  const submitted = useRef<Record<string, unknown> | undefined>(undefined);
   const [draft] = useState(() => runDraft(snapshot, initialRun));
   const [intent, setIntent] = useState(draft.intent);
   const [criteria, setCriteria] = useState(draft.criteria);
+  const [starter, setStarter] = useState(0);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
   const [providersError, setProvidersError] = useState('');
   const [providersRequest, setProvidersRequest] = useState(0);
   const limits = runAgentLimits(snapshot);
-  const budgetSupport = snapshot.capabilities?.model_budgets === 1;
-  const [budgets, setBudgets] = useState<Record<string, ModelBudgetDraft>>(draft.budgets);
-  const [agents, setAgents] = useState<AgentDraft[]>(draft.agents);
+  const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(draft.agents);
   const [mode, setMode] = useState<RunMode>(draft.mode);
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
-  const [manualTeam, setManualTeam] = useState(false);
+  const [manualTeam, setManualTeam] = useState(!!draft.team);
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
   const automaticSupport = snapshot.capabilities?.team_planning === 1;
   const [context, setContext] = useState<string[]>(draft.context);
@@ -53,14 +73,10 @@ export function RunComposer({
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const [delegation, setDelegation] = useState<DelegationDraft>(draft.delegation);
-  const models = selectedModels(agents, providers);
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
-  function changeAgents(next: AgentDraft[]) {
+  function changeAgents(next: AdaptiveAgentDraft[]) {
     setAgents(next);
     setTeam((current) => reconcileTeam(current, next));
-  }
-  function changeMode(next: RunMode) {
-    setMode(next);
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
@@ -68,13 +84,13 @@ export function RunComposer({
     setProvidersLoading(true);
     setProvidersError('');
     void api<{ providers: Provider[] }>('settings')
-      .then((r) => {
+      .then((result) => {
         if (!current) return;
-        setProviders(r.providers);
-        setAgents((agents) => defaultConnections(agents, r.providers));
+        setProviders(result.providers);
+        setAgents((current) => defaultConnections(current, result.providers));
       })
-      .catch((e) => {
-        if (current) setProvidersError(e.message);
+      .catch((error) => {
+        if (current) setProvidersError(error.message);
       })
       .finally(() => {
         if (current) setProvidersLoading(false);
@@ -84,44 +100,53 @@ export function RunComposer({
     };
   }, [providersRequest]);
   async function start() {
+    if (approving || busy) return;
     setApproving(true);
     setError('');
     try {
+      if (startUncertain && submitted.current) {
+        await onStart(submitted.current);
+        return;
+      }
+      if (!intent.trim()) throw new Error('Describe the change you want to make.');
       if (mode === 'collaborate' && !teamSupport)
         throw new Error('This deployment does not support team runs yet.');
       const teamBody = teamSubmission(mode, manualTeam, team, agents, automaticSupport);
       if (
         agents.length < (mode === 'collaborate' ? 1 : limits.min_root_agents) ||
         agents.length > limits.max_root_agents
-      ) {
+      )
         throw new Error('The number of agents exceeds this deployment’s current limits.');
-      }
-      if (agents.some((agent) => !providers.some((p) => p.id === agent.connection))) {
-        throw new Error('Choose a configured provider connection for every agent.');
-      }
-      if (agents.some((agent) => agentConnectionIssue(agent, providers))) {
-        throw new Error('Review changed provider connections before approving this run.');
-      }
-      const modelBudgets = budgetSupport ? serializeModelBudgets(models, budgets) : undefined;
+      if (
+        agents.some(
+          (agent) =>
+            agent.connection &&
+            (providersLoading ||
+              providersError ||
+              !providers.some((p) => p.id === agent.connection)),
+        )
+      )
+        throw new Error('Load and review the selected model connections before starting.');
+      if (agents.some((agent) => agentConnectionIssue(agent, providers)))
+        throw new Error('Review changed model connections before starting this run.');
       let current: Repository = snapshot.repository;
       const build = JSON.parse(policy);
       if (JSON.stringify(build) !== JSON.stringify(current.policy?.build)) {
-        const next = {
-          ...current.policy,
-          version: `policy-${crypto.randomUUID()}`,
-          suite: 'commands-v1',
-          environment: 'linux-node24-rust1.94-v1',
-          build,
-          required_checks: build.checks.map((c: { name: string }) => c.name),
-        };
         current = await api<Repository>(`repos/${current.id}/update_policy`, {
-          policy: next,
+          policy: {
+            ...current.policy,
+            version: `policy-${crypto.randomUUID()}`,
+            suite: 'commands-v1',
+            environment: 'linux-node24-rust1.94-v1',
+            build,
+            required_checks: build.checks.map((c: { name: string }) => c.name),
+          },
           expected_commit: current.head_commit,
           expected_version: current.version,
           expected_policy: current.policy?.version,
         });
       }
-      await onStart({
+      submitted.current = {
         mode,
         ...teamBody,
         intent: intent.trim(),
@@ -133,76 +158,63 @@ export function RunComposer({
         ...workingBranchRequest(draft.workingBranch),
         ...(draft.restartOf ? { restart_of: draft.restartOf } : {}),
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
-        agents: agents.map((a) => ({
-          id: a.id,
-          connection: a.connection,
-          strategy: mode === 'collaborate' ? 'Team participant' : a.strategy,
-          provider: providers.find((p) => p.id === a.connection)?.provider,
-          model: providers.find((p) => p.id === a.connection)?.model,
-        })),
-        ...(modelBudgets ? { model_budgets: modelBudgets } : {}),
-        ...(limits.max_delegation_depth > 0
+        ...(sampleProfileId ? { sample_profile_id: sampleProfileId } : {}),
+        adaptive_team: { version: 1, requested_agents: requestedAgents(agents) },
+        ...(mode === 'compare' && limits.max_delegation_depth > 0
           ? {
               delegation: {
-                enabled: mode === 'compare' && delegation.enabled,
-                max_depth: mode === 'compare' && delegation.enabled ? delegation.max_depth : 0,
-                max_executions:
-                  mode === 'compare' && delegation.enabled
-                    ? Math.max(agents.length, delegation.max_executions)
-                    : agents.length,
+                enabled: delegation.enabled,
+                max_depth: delegation.enabled ? delegation.max_depth : 0,
+                max_executions: delegation.enabled
+                  ? Math.max(agents.length, delegation.max_executions)
+                  : agents.length,
               },
             }
           : {}),
-      });
-    } catch (e) {
-      setError((e as Error).message);
+      };
+      await onStart(submitted.current);
+    } catch (error) {
+      setError((error as Error).message);
     } finally {
       setApproving(false);
     }
   }
   const locked = busy || approving;
+  const draftLocked = locked || startUncertain;
   return (
     <form
-      className="run-composer"
-      aria-label="Approve run brief"
-      onSubmit={(e) => {
-        e.preventDefault();
+      className="run-composer simple-run-composer"
+      aria-label="Start a run"
+      onSubmit={(event) => {
+        event.preventDefault();
         void start();
       }}
     >
-      <h3>{updating ? 'What’s next for your project?' : 'Describe the change'}</h3>
-      <RunSourceNotice
-        snapshot={snapshot}
-        draft={draft}
-        updating={updating}
-        mode={mode}
-        agents={agents.length}
-      />
-      <label>
-        {updating ? 'What should change?' : 'What should your agent build?'}
+      <label className="run-brief">
+        What would you like to do?
         <textarea
-          placeholder={
-            updating
-              ? 'Update the event schedule and add a photo gallery. Keep the existing navigation and visual style…'
-              : 'Build a website for a neighborhood garden, with events and a clear way to get involved…'
-          }
+          placeholder={starters[starter].placeholder}
           value={intent}
-          onChange={(e) => setIntent(e.target.value)}
+          onChange={(event) => setIntent(event.target.value)}
           required
           maxLength={16000}
-          disabled={locked}
+          disabled={draftLocked}
         />
       </label>
-      <label>
-        Acceptance criteria (one per line)
-        <textarea
-          value={criteria}
-          onChange={(e) => setCriteria(e.target.value)}
-          required
-          disabled={locked}
-        />
-      </label>
-      <RunModePicker value={mode} supported={teamSupport} locked={locked} onChange={changeMode} />
+      <div className="brief-starters">
+        {starters.map((item, index) => (
+          <button
+            type="button"
+            key={item.label}
+            className="quiet"
+            aria-pressed={starter === index}
+            disabled={draftLocked}
+            onClick={() => setStarter(index)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
       <AgentRoster
         team={mode === 'collaborate'}
         agents={agents}
@@ -210,54 +222,75 @@ export function RunComposer({
         loading={providersLoading}
         error={providersError}
         limits={limits}
-        locked={locked}
+        locked={draftLocked}
         onChange={changeAgents}
-        onProviders={onProviders}
+        onProviders={() => onProviders(() => setProvidersRequest((request) => request + 1))}
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
-      {mode === 'collaborate' ? (
-        <TeamPlanOptions
-          manual={manualTeam}
-          onManualChange={setManualTeam}
-          value={team}
-          agents={agents}
-          locked={locked}
-          automaticSupported={automaticSupport}
-          previous={draft.previousTeamPlan}
-          previousAutomatic={draft.previousAutomatic}
-          onChange={setTeam}
+      <details className="run-advanced">
+        <summary>Advanced</summary>
+        <label>
+          Acceptance criteria (one per line)
+          <textarea
+            value={criteria}
+            onChange={(event) => setCriteria(event.target.value)}
+            required
+            disabled={draftLocked}
+          />
+        </label>
+        <RunModePicker
+          value={mode}
+          supported={teamSupport}
+          locked={draftLocked}
+          onChange={setMode}
         />
-      ) : (
-        <DelegationSettings
-          value={delegation}
-          roots={agents.length}
-          limits={limits}
-          locked={locked}
-          onChange={setDelegation}
+        {mode === 'collaborate' ? (
+          <TeamPlanOptions
+            manual={manualTeam}
+            onManualChange={setManualTeam}
+            value={team}
+            agents={agents}
+            locked={draftLocked}
+            automaticSupported={automaticSupport}
+            previous={draft.previousTeamPlan}
+            previousAutomatic={draft.previousAutomatic}
+            onChange={setTeam}
+          />
+        ) : (
+          <DelegationSettings
+            value={delegation}
+            roots={agents.length}
+            limits={limits}
+            locked={draftLocked}
+            onChange={setDelegation}
+          />
+        )}
+        <RunAdvancedOptions
+          nodes={snapshot.nodes}
+          context={context}
+          policy={policy}
+          locked={draftLocked}
+          onContextChange={setContext}
+          onPolicyChange={setPolicy}
         />
+        <RunSourceNotice
+          snapshot={snapshot}
+          draft={draft}
+          updating={updating}
+          mode={mode}
+          agents={agents.length}
+        />
+      </details>
+      <WorkspaceAllowance />
+      {startUncertain && (
+        <p role="status">
+          Start is unconfirmed. Retry checks the same run and keeps this brief unchanged.
+        </p>
       )}
-      <ModelBudgetSettings
-        supported={budgetSupport}
-        models={models}
-        drafts={budgets}
-        locked={locked}
-        onChange={(key, value) => setBudgets((all) => ({ ...all, [key]: value }))}
-      />
-      <RunAdvancedOptions
-        nodes={snapshot.nodes}
-        context={context}
-        policy={policy}
-        locked={locked}
-        onContextChange={setContext}
-        onPolicyChange={setPolicy}
-      />
       {error && <p role="alert">{error}</p>}
       <div className="run-actions">
-        <button
-          type="submit"
-          disabled={locked || providersLoading || !!providersError || !providers.length}
-        >
-          {locked ? 'Starting…' : `Approve brief and start agent${agents.length === 1 ? '' : 's'}`}
+        <button type="submit" disabled={locked || !intent.trim()}>
+          {locked ? 'Starting…' : startUncertain ? 'Check and retry start' : 'Start a Run'}
         </button>
         <button type="button" className="quiet" disabled={locked} onClick={onClose}>
           Cancel

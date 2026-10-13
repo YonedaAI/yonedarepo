@@ -1,9 +1,8 @@
 import { X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { DeleteRepositoryDialog } from './features/workspace/DeleteRepositoryDialog';
 import { RepositoryRecovery } from './features/workspace/RepositoryRecovery';
 import { RepositoryWorkspace } from './features/workspace/RepositoryWorkspace';
-import { ReviewerTrial } from './features/workspace/ReviewerTrial';
 import { WorkspaceHeader } from './features/workspace/WorkspaceHeader';
 import { type WorkspacePanel, WorkspacePanels } from './features/workspace/WorkspacePanels';
 import { WorkspaceRail } from './features/workspace/WorkspaceRail';
@@ -16,16 +15,15 @@ export function App() {
   const [panel, setPanel] = useState<WorkspacePanel>(null);
   const [deleting, setDeleting] = useState<Repository | null>(null);
   const [notice, setNotice] = useState('');
-  const reviewer = state.identity?.role === 'user' && state.identity.reviewer === true;
+  const providerReturn = useRef<(() => void) | undefined>(undefined);
   return (
     <div className="app">
       <a className="skip-link" href="#workspace">
         Skip to workspace
       </a>
-      <WorkspaceRail reviewer={reviewer} state={state} onPanel={setPanel} />
+      <WorkspaceRail state={state} onPanel={setPanel} />
       <main id="workspace">
         <WorkspaceHeader
-          reviewer={reviewer}
           repository={state.snapshot?.repository ?? state.project}
           loading={state.loading}
           onDelete={setDeleting}
@@ -68,13 +66,6 @@ export function App() {
             </button>
           </div>
         )}
-        {reviewer && state.snapshot && (
-          <ReviewerTrial
-            snapshot={state.snapshot}
-            onChange={state.refresh}
-            onError={state.setError}
-          />
-        )}
         {state.snapshot && (
           <RepositoryRecovery
             repository={state.snapshot.repository}
@@ -84,7 +75,6 @@ export function App() {
         )}
         {state.snapshot ? (
           <RepositoryWorkspace
-            reviewer={reviewer}
             key={state.id}
             snapshot={state.snapshot}
             initialRunId={state.requestedRunId}
@@ -92,23 +82,31 @@ export function App() {
             onChange={state.refresh}
             onError={state.setError}
             onPanel={setPanel}
+            onProviders={(refresh) => {
+              providerReturn.current = refresh;
+              setPanel('providers');
+            }}
           />
         ) : (
           <WorkspaceWelcome
-            reviewer={reviewer}
             state={state}
             onProject={() => setPanel('project')}
-            onProviders={() => setPanel('providers')}
+            onProviders={() => setPanel('agents')}
           />
         )}
       </main>
       <WorkspacePanels
-        reviewer={reviewer}
         panel={panel}
         state={state}
-        onClose={() => setPanel(null)}
+        onPanel={setPanel}
+        onClose={() => {
+          setPanel(null);
+          const refresh = providerReturn.current;
+          providerReturn.current = undefined;
+          refresh?.();
+        }}
       />
-      {deleting && !reviewer && (
+      {deleting && (
         <DeleteRepositoryDialog
           key={deleting.id}
           repository={deleting}

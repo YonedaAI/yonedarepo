@@ -29,7 +29,9 @@ vi.mock('react', async (original) => ({
   },
 }));
 
+import { runSamples } from '../../../../shared/run-samples';
 import { Exploration } from './Exploration';
+import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
 
 const branch = {
@@ -83,6 +85,12 @@ function render() {
   state.refCursor = 0;
   return Exploration(props);
 }
+function composer(node: ReactNode): ReactElement<Record<string, any>> | undefined {
+  if (Array.isArray(node)) return node.map(composer).find(Boolean);
+  if (!node || typeof node !== 'object' || !('props' in node)) return;
+  const element = node as ReactElement<Record<string, any>>;
+  return typeof element.props.onStart === 'function' ? element : composer(element.props.children);
+}
 beforeEach(() => {
   state.cells = [];
   state.refs = [];
@@ -90,6 +98,61 @@ beforeEach(() => {
   props.onError.mockReset();
 });
 describe('first working build', () => {
+  it('shares the exact compose callback between the toolbar and empty card', async () => {
+    const tree = render();
+    const cardStart = find(tree, 'button');
+    expect(cardStart?.props.children).toBe('Start a Run');
+    expect(cardStart?.props.onClick).toBe(find(tree, RunToolbar)?.props.onNewRun);
+    state.api.mockResolvedValueOnce(branch);
+    await cardStart?.props.onClick();
+    expect(state.api).toHaveBeenCalledOnce();
+    expect(state.api.mock.calls[0][0]).toBe('repos/repo/create_working_branch');
+    expect(composer(render())).toBeDefined();
+  });
+  it('keeps the draft mounted during a provider detour and forwards the refresh callback', async () => {
+    state.api.mockResolvedValue(branch);
+    await find(render(), RunToolbar)?.props.onNewRun();
+    const refresh = vi.fn();
+    const prior = props.onProviders;
+    props.onProviders = vi.fn();
+    composer(render())?.props.onProviders(refresh);
+    expect(composer(render())).toBeDefined();
+    expect(props.onProviders).toHaveBeenCalledWith(refresh);
+    props.onProviders = prior;
+  });
+  it('a sample opens a fresh Auto brief with existing checks, without inference', async () => {
+    state.api.mockResolvedValue(branch);
+    const samples = find(render(), RunSamples);
+    expect(samples).toBeDefined();
+    await samples?.props.onChoose(runSamples[1]);
+    const form = composer(render());
+    expect(form?.props.initialRun.intent).toBe(runSamples[1].intent);
+    expect(form?.props.initialRun.criteria).toEqual(expect.arrayContaining(runSamples[1].criteria));
+    expect(form?.props.initialRun.agents).toHaveLength(1);
+    expect(form?.props.initialRun.agents[0].connection).toBe('');
+    expect(form?.props.sampleProfileId).toBe('context-continuation');
+    expect(state.api.mock.calls.some(([path]) => path.includes('start_run'))).toBe(false);
+  });
+  it('reconciles a timed-out accepted run before retrying, without a second start', async () => {
+    state.api.mockResolvedValueOnce(branch);
+    await find(render(), RunToolbar)?.props.onNewRun();
+    let accepted = '';
+    state.api.mockImplementation(async (path, body) => {
+      if (path.includes('start_run')) {
+        accepted = body.id;
+        throw Object.assign(new Error('20 second timeout'), { code: 'REQUEST_TIMEOUT' });
+      }
+      if (path.includes('run_detail')) return { run: { id: accepted } };
+      throw new Error('unexpected request');
+    });
+    await expect(composer(render())?.props.onStart({ intent: 'Fix persistence' })).rejects.toThrow(
+      'timeout',
+    );
+    await composer(render())?.props.onStart({ intent: 'Edited after timeout' });
+    expect(state.api.mock.calls.filter(([path]) => path.includes('start_run'))).toHaveLength(1);
+    expect(state.api.mock.calls.some(([path]) => path.includes(`run_id=${accepted}`))).toBe(true);
+    expect(state.cells[1]).toBe(accepted);
+  });
   it('creates one canonical-leased branch before opening an editable brief, without starting inference', async () => {
     const callback = find(render(), RunToolbar)?.props.onNewRun;
     let finish: (value: unknown) => void = () => {};

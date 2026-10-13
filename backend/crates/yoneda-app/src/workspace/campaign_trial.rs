@@ -20,6 +20,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         }
         return Ok(receipt);
     }
+    super::spend::require_legacy(db)?;
     let mut state = require(db, &id, now)?;
     let rows = db.query(
         "SELECT payload FROM workspace_records WHERE id=?",

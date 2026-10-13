@@ -14,6 +14,7 @@ import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
+import { approveOwnerRun } from './owner-run-approval';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
@@ -22,17 +23,15 @@ import { deleteRepository } from './repository-deletion';
 import { resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
-import { submitReviewerRepair } from './reviewer-trial';
-import { checkLedger } from './runtime';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { ledger, sha } from './storage';
 import { teamTaskSource } from './team-source';
 import { approveTestPolicy } from './test-policy';
-import type { Env, Json } from './types';
-import { providerCredentials } from './vault';
+import type { Env } from './types';
 import { websiteAssets } from './website-metadata';
 import { workspace } from './workspace';
+import { workspaceAllowanceRoute } from './workspace-allowance-route';
 
 export async function fetchRequest(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
@@ -64,6 +63,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (reviewer) return reviewer;
     const settings = await settingsRoute(req, env, principal);
     if (settings) return settings;
+    const allowance = await workspaceAllowanceRoute(req, env, principal);
+    if (allowance) return allowance;
     if (url.pathname === '/api/budget' && req.method === 'GET')
       return response(
         await workspace(env, principal.role === 'admin' ? '_budget_claude' : principal.workspace, {
@@ -198,7 +199,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     }
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
-    const input = await ownerCommandInput(req, action);
+    let input = await ownerCommandInput(req, action);
     if (action === 'job_status') {
       if (typeof input.id !== 'string' || !input.id || input.id.length > 256)
         return error('INVALID_INPUT', 'A bounded job id is required');
@@ -220,63 +221,14 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       if (head !== input.commit)
         return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
     }
-    if (action === 'start_run') {
-      input.workspace_transport = 'git-native-v1';
-      checkLedger(await ledger(env, repo, { op: 'repository_status' }), input);
-    }
-    if (action === 'start_run' && principal.role === 'user') {
-      const settings = await workspace(env, principal.workspace, { op: 'settings' });
-      if (
-        !Array.isArray(input.agents) ||
-        input.agents.some(
-          (agent: Json) =>
-            !settings.providers.some(
-              (p: Json) =>
-                p.id === (agent.connection ?? agent.provider) &&
-                p.provider === agent.provider &&
-                p.model === agent.model,
-            ),
-        )
-      )
-        return error(
-          'PROVIDER_MISSING',
-          'Choose agents with the models configured in your provider settings',
-          409,
-        );
-      for (const agent of input.agents) {
-        const connection = settings.providers.find(
-          (p: Json) => p.id === (agent.connection ?? agent.provider),
-        );
-        // Product and region come from the owner's saved connection, never browser/model claims.
-        delete agent.routing;
-        if (connection.routing != null) agent.routing = connection.routing;
-      }
-      // Check the stored key/plan before committing any paid work, including legacy connections.
-      const checked = new Set<string>();
-      for (const agent of input.agents) {
-        const id = agent.connection ?? agent.provider;
-        if (checked.has(id)) continue;
-        await providerCredentials(
-          env,
-          principal.workspace,
-          agent.provider,
-          id,
-          agent.model,
-          agent.routing,
-        );
-        checked.add(id);
-      }
-    }
+    if (action === 'start_run') input = await approveOwnerRun(env, principal, repo, input);
     const command = {
       ...input,
       op: action,
       _workspace: principal.workspace,
       ...(action === 'init' ? { workspace: principal.workspace } : {}),
     };
-    const value =
-      action === 'repair_team' && principal.reviewer
-        ? await submitReviewerRepair(env, principal.workspace, repo, command)
-        : await ledger(env, repo, command);
+    const value = await ledger(env, repo, command);
     if (action === 'cancel_run')
       for (const stop of value.stop) {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);

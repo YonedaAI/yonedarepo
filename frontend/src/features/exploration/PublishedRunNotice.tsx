@@ -1,5 +1,6 @@
 import { short } from '../../lib/api';
 import type { PublishedRun } from './publishedRun';
+import { RecordedDecisionStory } from './RecordedDecisionStory';
 
 export function PublishedRunNotice({
   publication,
@@ -11,8 +12,8 @@ export function PublishedRunNotice({
   if (!publication) {
     return (
       <p className="restart-notice">
-        The previous approval details are unavailable. Your agent will preserve the current source
-        and design. Choose your agents and review the brief before starting.
+        Previous approval details are unavailable. The current source is your starting point.
+        Describe the next change before starting.
       </p>
     );
   }
@@ -32,15 +33,12 @@ export function PublishedRunNotice({
           decision
         </summary>
         <p>{publication.execution?.strategy ?? 'No hosted agent approach was recorded.'}</p>
-        <p>{publication.decision.rationale}</p>
+        <RecordedDecisionStory decision={publication.decision} />
       </details>
       <p>
-        {publication.run.mode === 'collaborate'
-          ? 'The published source, approved context, criteria and model limits are carried forward. The new brief gets a new task plan unless you opt into a manual plan.'
-          : publication.execution?.model
-            ? 'The winning approach, criteria and model limits are prefilled for review.'
-            : 'The published brief, criteria and context are prefilled. Choose a provider for this update; no hosted model was recorded.'}{' '}
-        Edit the brief and agent roster below. Current repository checks apply.
+        Published source, criteria and relevant context carry forward. Describe the next change;
+        YonedaRepo plans a new team within your workspace allowance. Current repository checks
+        apply.
       </p>
       {contextTotal > 50 && (
         <p>

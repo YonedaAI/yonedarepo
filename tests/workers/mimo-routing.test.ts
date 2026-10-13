@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
-import type { Env } from '../../cloudflare/worker/types';
+import type { Env, Json } from '../../cloudflare/worker/types';
 import { providerCredentials } from '../../cloudflare/worker/vault';
 import { ledger } from '../../cloudflare/worker/storage';
 import { seal } from '../../cloudflare/worker/vault';
@@ -14,6 +14,18 @@ const routing = { plan: 'token_plan', region: 'sgp' };
 const job = (route?: object) => ({ kind: 'agent', model: 'mimo-v2.6-flash', payload: {
   execution: { provider: 'mimo', harness: 'claude', ...(route ? { routing: route } : {}) },
 } });
+
+// Explicit grandfathered approval fixture: no generic new-run pricing, funding or upstream calls.
+async function approvedLegacyFixture(owner: string, repo: string, input: Json) {
+  const agents = [];
+  for (const agent of input.agents) {
+    const saved = await workspace(bindings, owner, { op: 'provider_secret', connection: agent.connection ?? agent.provider });
+    const credentials = await providerCredentials(bindings, owner, agent.provider,
+      agent.connection ?? agent.provider, agent.model, saved.routing);
+    agents.push({ ...agent, routing: credentials.routing });
+  }
+  return ledger(bindings, repo, { ...input, agents, op: 'start_run', _workspace: owner });
+}
 
 it('pins Token Plan requests to the approved region and rejects arbitrary destinations', () => {
   for (const region of ['cn', 'sgp', 'ams']) {
@@ -47,7 +59,10 @@ it('blocks a legacy Token Plan key on the API route before scheduling and repair
   });
   const blocked = await start();
   expect(blocked.status).toBe(409);
-  expect(await blocked.text()).toContain('Token Plan');
+  expect(await blocked.json()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
+  expect((await workspace(bindings, owner, { op: 'workspace_spend_status' })).version).toBe(0);
+  await expect(providerCredentials(bindings, owner, 'mimo', 'mimo', 'mimo-v2.6-flash'))
+    .rejects.toThrow('Token Plan');
   expect((await ledger(bindings, repo, { op: 'snapshot' })).executions).toEqual([]);
   const update = () => bindings.SELF.fetch('https://yoneda/api/settings/connections/mimo', {
     method: 'POST', headers: { cookie }, body: JSON.stringify({ expected_version: saved.version ?? 0, routing }),
@@ -57,7 +72,14 @@ it('blocks a legacy Token Plan key on the API route before scheduling and repair
   expect(secret.sealed).toEqual(sealed);
   expect(secret.routing).toEqual(routing);
   expect((await update()).status).toBe(409);
-  expect((await start()).status).toBe(200);
+  const pricedGate = await start();
+  expect(pricedGate.status).toBe(409);
+  expect(await pricedGate.json()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
+  expect((await ledger(bindings, repo, { op: 'snapshot' })).runs).toEqual([]);
+  expect((await workspace(bindings, owner, { op: 'workspace_spend_status' })).version).toBe(0);
+  const fixed = await approvedLegacyFixture(owner, repo, { id: 'repaired', intent: 'Prior approved routing fixture',
+    agents: ['minimal', 'accessible'].map(strategy => ({ strategy, provider: 'mimo', model: 'mimo-v2.6-flash' })) });
+  expect(fixed.workspace_spend).toBeUndefined();
   expect((await ledger(bindings, repo, { op: 'snapshot' })).executions.every((e: any) => e.routing.region === 'sgp')).toBe(true);
 });
 
@@ -96,7 +118,14 @@ it('stores only encrypted plan keys, exposes the route and fences changed routin
       delegation: { enabled: true, max_depth: 1, max_executions: 3 },
     }),
   });
-  expect(started.status).toBe(200);
+  expect(started.status).toBe(409);
+  expect(await started.json()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
+  expect((await workspace(bindings, 'token_plan_user', { op: 'workspace_spend_status' })).version).toBe(0);
+  expect((await ledger(bindings, repo, { op: 'snapshot' })).runs).toEqual([]);
+  await approvedLegacyFixture('token_plan_user', repo, { id: 'routed', intent: 'Prior approved delegation routing fixture',
+    agents: ['minimal', 'accessible'].map(strategy => ({ strategy, connection: connection.id,
+      provider: 'mimo', model: 'mimo-v2.6-flash', routing: { plan: 'token_plan', region: 'cn' } })),
+    delegation: { enabled: true, max_depth: 1, max_executions: 3 } });
   const parent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:routed:agent-1' });
   expect(parent.payload.execution.routing).toEqual(routing);
   const child = await ledger(bindings, repo, { op: 'delegate_agent', job_id: parent.id,

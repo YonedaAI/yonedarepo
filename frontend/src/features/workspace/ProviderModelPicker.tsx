@@ -69,7 +69,7 @@ export function ProviderModelPicker({
           ? 'Uses your ZAI Coding Plan subscription. Regular API usage bundles are separate and are not used by this connector.'
           : allowCustom
             ? 'Availability varies by account.'
-            : 'This workspace permits Sonnet only.'}
+            : 'Choose a supported model for this connection.'}
         {provider === 'zai' && (
           <>
             {' '}

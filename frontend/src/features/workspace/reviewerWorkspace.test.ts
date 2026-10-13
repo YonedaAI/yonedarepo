@@ -8,7 +8,7 @@ import { HistoryTools } from '../history/HistoryTools';
 import { WorkspacePanels } from './WorkspacePanels';
 
 vi.mock('../../hooks/useRepository', () => ({ useRepository: vi.fn() }));
-// The funded trial is owned separately; verify that App keeps it mounted.
+// Private-key login must use the ordinary workspace rather than a separate trial UI.
 vi.mock('./ReviewerTrial', () => ({
   ReviewerTrial: () => createElement('button', { type: 'button' }, 'Funded trial'),
 }));
@@ -75,30 +75,20 @@ describe('reviewer workspace permissions', () => {
     expect(html).toContain('Trace history');
     expect(html).not.toContain('Record simulated observation');
   });
-  it('passes reviewer permission from App to exploration while keeping the funded trial and recovery', () => {
+  it('gives private-key accounts the same workspace controls without a separate funded trial UI', () => {
     vi.mocked(useRepository).mockReturnValue(state(true));
     const html = renderToStaticMarkup(createElement(App));
-    expect(exploration.mock.calls[0][0].reviewer).toBe(true);
-    expect(html).toContain('Funded trial');
+    expect(exploration.mock.calls[0][0].reviewer).toBe(false);
+    expect(html).not.toContain('Funded trial');
     expect(html).toContain('Recover repository');
-    for (const label of [
-      'New repository',
-      'Agent providers',
-      'Connect local agent',
-      'Delete repository',
-    ])
-      expect(html).not.toContain(label);
+    for (const label of ['New repository', 'Connect Agents', 'Delete repository'])
+      expect(html).toContain(label);
   });
   it('retains ordinary workspace mutations for non-reviewer accounts', () => {
     vi.mocked(useRepository).mockReturnValue(state(false));
     const html = renderToStaticMarkup(createElement(App));
     expect(exploration.mock.calls[0][0].reviewer).toBe(false);
-    for (const label of [
-      'New repository',
-      'Agent providers',
-      'Connect local agent',
-      'Delete repository',
-    ])
+    for (const label of ['New repository', 'Connect Agents', 'Delete repository'])
       expect(html).toContain(label);
   });
   it('cannot open an already selected contribution, provider or project panel after becoming a reviewer', () => {
