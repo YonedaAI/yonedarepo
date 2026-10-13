@@ -139,6 +139,44 @@ it('shows the recorded manual choice without inventing a reviewer proposal', () 
   expect(html).not.toContain('Reviewer’s original proposal');
   expect(html).not.toContain('agent assertion');
 });
+it('allows legacy effectively disabled delegation but withholds AI approval for extra delegation capacity or descendants', () => {
+  const input = comparisonFixture();
+  const effectivelyDisabled = {
+    ...input.run,
+    agents: [{}, {}],
+    delegation: { enabled: true, max_executions: 2 },
+  };
+  expect(markup({ ...input, run: effectivelyDisabled })).toContain('Review now');
+  const extraCapacity = markup({
+    ...input,
+    run: { ...effectivelyDisabled, delegation: { enabled: true, max_executions: 3 } },
+  });
+  expect(extraCapacity).not.toContain('Review now');
+  expect(extraCapacity).toContain('delegated');
+  expect(extraCapacity.match(/Use this result<\/button>/g)).toHaveLength(2);
+  const descendantSnapshot = {
+    ...input.snapshot,
+    executions: [
+      ...input.snapshot.executions,
+      {
+        id: 'child',
+        run_id: input.run.id,
+        role: 'coding',
+        parent_execution: 'left',
+        status: 'completed',
+      },
+    ],
+  };
+  const descendant = markup({ ...input, snapshot: descendantSnapshot, run: effectivelyDisabled });
+  expect(descendant).not.toContain('Review now');
+  expect(descendant).toContain('delegated');
+  expect(descendant.match(/Use this result<\/button>/g)).toHaveLength(2);
+  const additional = markup({ ...input, snapshot: { ...input.snapshot, executions: [...input.snapshot.executions, {id:'extra',run_id:input.run.id,role:'research',status:'completed'}] }, run: effectivelyDisabled });
+  expect(additional).not.toContain('Review now');
+  expect(additional.match(/Use this result<\/button>/g)).toHaveLength(2);
+  const wrongRoots = markup({ ...input, snapshot: { ...input.snapshot, executions: input.snapshot.executions.map(e=>({...e,id:`replacement-${e.id}`})) }, run: effectivelyDisabled });
+  expect(wrongRoots).not.toContain('Review now');
+});
 it.each(['reviewing', 'repairing', 'stale', 'needs_attention'] as const)(
   'shows %s clearly without presenting a nonexistent winner',
   (status) => {

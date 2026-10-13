@@ -147,6 +147,27 @@ fn install(c: &Value, run: &mut Value, request: &str, legacy: bool, policy: &Val
 pub(in crate::commands) fn validate(run: &Value) -> Result<()> {
     yoneda_core::comparison::validate_approval(run)
 }
+fn legacy_roots_only<S: SqlStore>(db: &S, run: &Value) -> Result<bool> {
+    if run["delegation"]["enabled"] == true {
+        let policy: yoneda_core::agents::DelegationPolicy =
+            serde_json::from_value(run["delegation"].clone()).map_err(|e| bad(&e.to_string()))?;
+        policy.validate(2)?;
+        if policy.max_executions > 2 {
+            return Ok(false);
+        }
+    }
+    let rid = string(run, "id")?;
+    let executions = run_executions(db, &rid)?;
+    Ok(executions.len() == 2
+        && (1..=2).all(|index| {
+            executions.iter().any(|e| {
+                e["id"] == format!("{rid}:agent-{index}")
+                    && e["role"] == "coding"
+                    && e["parent_execution"].is_null()
+                    && e["depth"].as_i64().unwrap_or(0) == 0
+            })
+        }))
+}
 pub(in crate::commands) fn approve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     owner(c)?;
     let rid = string(c, "run_id")?;
@@ -162,7 +183,7 @@ pub(in crate::commands) fn approve<S: SqlStore>(db: &S, c: &Value, now: i64) -> 
     if !hosted(&run)
         || run["comparison"]["approval"].is_object()
         || run["campaign"].is_object()
-        || run["delegation"]["enabled"] == true
+        || !legacy_roots_only(db, &run)?
         || ["cancelled", "accepted"]
             .iter()
             .any(|s| run["status"] == *s)
