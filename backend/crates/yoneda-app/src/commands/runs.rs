@@ -128,11 +128,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["model_budgets"] = json!(budgets);
                 run["request_limits"] = json!("optional-v1");
             }
+            if c["_workspace_spend"] == true {
+                run["workspace_spend"] = json!({"version":1});
+            }
+            if let Some(profile) = c.get("_sample_profile") {
+                run["sample_profile"] = profile.clone();
+            }
             if let Some(branch) = &working_branch {
                 run["working_branch_id"] = branch["id"].clone();
                 run["working_branch_version"] = branch["version"].clone();
                 run["base"] = branch["working_revision"].clone();
             }
+            super::adaptive_team::freeze(&c, &mut run)?;
             super::autonomy::freeze(&c, &mut run)?;
             super::campaign::freeze(db, &c, &mut run, now)?;
             if run["autonomy_approval"].is_object() {

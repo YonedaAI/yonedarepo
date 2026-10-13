@@ -1,13 +1,16 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import type { RunSample } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunHistory } from './RunHistory';
+import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
 import { type InitialRun, initialRun } from './restartRun';
-import { hasPublishedWork } from './runDefaults';
+import { runDraft } from './runDraft';
+import { createRunStart } from './runStart';
 import { supportsWorkingBranches, type WorkingBranch, workingBranches } from './workingBranchView';
 import { workingRun } from './workingRun';
 
@@ -24,7 +27,6 @@ export function Exploration({
   onChange,
   onError,
   onProviders,
-  onAgents,
   onContext,
   onSelectedRun,
   initialRunId = '',
@@ -34,7 +36,7 @@ export function Exploration({
   snapshot: Snapshot;
   onChange: () => Promise<void>;
   onError: (message: string) => void;
-  onProviders: () => void;
+  onProviders: (refresh?: () => void) => void;
   onAgents: () => void;
   onContext: (runId: string) => void;
   onSelectedRun: (runId: string) => void;
@@ -46,34 +48,48 @@ export function Exploration({
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const [branchSource, setBranchSource] = useState<InitialRun>();
+  const [sampleProfileId, setSampleProfileId] = useState<string>();
+  const launcher = useRef<ReturnType<typeof createRunStart> | undefined>(undefined);
   const openingBranch = useRef(false);
   const createdBranch = useRef<WorkingBranch | null>(null);
   const repo = snapshot.repository;
-  const run = runId ? snapshot.runs.find((record) => record.id === runId) : snapshot.runs.at(-1);
+  const run = runId
+    ? snapshot.runs.find((record) => record.id === runId)
+    : snapshot.runs.filter((record) => !record.hidden).at(-1);
   useEffect(() => {
     if (run?.id) onSelectedRun(run.id);
   }, [run?.id, onSelectedRun]);
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
-  const canStart = !reviewer && !busy && !repo.pending && repo.status === 'ready';
-  function continueBranch(branch: WorkingBranch) {
-    if (!canStart || branch.status !== 'active') return;
-    const source =
-      snapshot.runs.find(
-        (item) =>
-          item.id ===
-          snapshot.candidates.find((candidate) => candidate.id === branch.latest_candidate_id)
-            ?.run_id,
-      ) ?? run;
+  const canStart = !busy && !repo.pending && repo.status === 'ready';
+  function openBrief(branch?: WorkingBranch, sample?: RunSample) {
+    const base = branch ? workingRun(snapshot, branch) : undefined;
+    if (sample) {
+      const draft = runDraft(snapshot, base);
+      setBranchSource({
+        ...base,
+        id: '',
+        intent: sample.intent,
+        criteria: [...new Set([...draft.criteria.split('\n'), ...sample.criteria])],
+        agents: draft.agents,
+        context: draft.context,
+        budgets: draft.budgets,
+        delegation: draft.delegation,
+        policy: draft.policy,
+        mode: draft.mode,
+      });
+    } else setBranchSource(base);
+    setSampleProfileId(sample?.id);
+    launcher.current = createRunStart(repo.id);
     setRestartId('');
-    setBranchSource(workingRun(snapshot, branch, source));
     setComposing(true);
   }
-  async function newRun() {
+  function continueBranch(branch: WorkingBranch) {
+    if (canStart && branch.status === 'active') openBrief(branch);
+  }
+  async function newRun(sample?: RunSample) {
     if (!canStart || openingBranch.current) return;
     if (!supportsWorkingBranches(snapshot)) {
-      setRestartId('');
-      setBranchSource(undefined);
-      setComposing(true);
+      openBrief(undefined, sample);
       return;
     }
     openingBranch.current = true;
@@ -98,7 +114,7 @@ export function Exploration({
           throw new Error('The working branch response was incomplete. Refresh before continuing.');
         createdBranch.current = branch;
       }
-      continueBranch(branch);
+      openBrief(branch, sample);
     } catch (error) {
       onError((error as Error).message);
     } finally {
@@ -106,6 +122,7 @@ export function Exploration({
       setBusy(false);
     }
   }
+  const onCompose = () => newRun();
   async function act(action: string, body: unknown): Promise<boolean> {
     setBusy(true);
     try {
@@ -126,22 +143,18 @@ export function Exploration({
         reviewer={reviewer}
         snapshot={snapshot}
         canStart={canStart}
-        onNewRun={() => newRun()}
+        onNewRun={onCompose}
+      />
+      <RunSamples
+        disabled={!canStart}
+        onChoose={(sample) => {
+          void newRun(sample);
+        }}
       />
       <PendingReviews snapshot={snapshot} selected={run?.id} onSelect={setRunId} />
-      {composing && !reviewer && (
+      {composing && (
         <Dialog
-          title={
-            branchSource
-              ? 'Continue working branch'
-              : restartSource
-                ? 'Restart development run'
-                : hasPublishedWork(snapshot)
-                  ? repo.site
-                    ? 'Update website'
-                    : 'Update project'
-                  : 'New development run'
-          }
+          title={restartSource ? 'Restart run' : 'Start a Run'}
           onClose={() => setComposing(false)}
           locked={busy}
           wide
@@ -156,20 +169,24 @@ export function Exploration({
               initialRun={
                 branchSource ?? (restartSource ? initialRun(snapshot, restartSource) : undefined)
               }
+              sampleProfileId={sampleProfileId}
+              startUncertain={launcher.current?.uncertain}
               busy={busy}
               snapshot={snapshot}
-              onProviders={() => {
-                setComposing(false);
-                onProviders();
-              }}
+              onProviders={onProviders}
               onClose={() => setComposing(false)}
               onStart={async (brief) => {
-                const id = `run-${crypto.randomUUID()}`;
-                if (await act('start_run', { id, ...brief })) {
+                setBusy(true);
+                try {
+                  launcher.current ??= createRunStart(repo.id);
+                  const id = await launcher.current.start(brief);
                   setRunId(id);
                   setComposing(false);
                   setRestartId('');
                   setBranchSource(undefined);
+                  await onChange();
+                } finally {
+                  setBusy(false);
                 }
               }}
             />
@@ -190,6 +207,8 @@ export function Exploration({
                 canStart={canStart}
                 onSelectRun={setRunId}
                 onRestart={() => {
+                  launcher.current = createRunStart(repo.id);
+                  setSampleProfileId(undefined);
                   setBranchSource(undefined);
                   setRestartId(run.id);
                   setComposing(true);
@@ -214,7 +233,7 @@ export function Exploration({
                     alternatives,
                   })
                 }
-                onProviders={reviewer ? undefined : onProviders}
+                onProviders={onProviders}
                 onContext={() => onContext(run.id)}
                 onContinueBranch={continueBranch}
                 onAnswerIntent={(question, answer) =>
@@ -234,20 +253,11 @@ export function Exploration({
         </div>
       ) : (
         <div className="empty-run">
-          <h2>{reviewer ? 'Your trial results will appear here' : 'What will you build next?'}</h2>
-          {reviewer ? (
-            <p>Start a funded trial to explore captured source and independent checks.</p>
-          ) : (
-            <>
-              <p>
-                Start agents with a shared brief, or connect your local agent to contribute code and
-                context.
-              </p>
-              <button type="button" className="quiet" onClick={onAgents}>
-                Connect local agent
-              </button>
-            </>
-          )}
+          <h2>What will you build next?</h2>
+          <p>Describe what to build, a feature to add, or a bug to fix.</p>
+          <button type="button" disabled={!canStart} onClick={onCompose}>
+            Start a Run
+          </button>
         </div>
       )}
     </section>

@@ -1,6 +1,10 @@
 //! Immutable attempt-scoped drafts with an optimistic pointer; only planning completion freezes one.
 use super::*;
 
+#[cfg(test)]
+#[path = "tests/adaptive_team.rs"]
+mod adaptive_tests;
+
 pub(super) const MAX_DRAFTS: i64 = 8;
 
 fn id(job: &Value, fingerprint: &str) -> Result<String> {
@@ -19,6 +23,8 @@ fn identity(proposal: &Value, job: &Value, run: &Value) -> Result<()> {
         || proposal["author"] != execution["id"]
         || proposal["kind"] != "team_plan_proposal"
         || proposal["data"]["authority"] != "assertion"
+        || run["adaptive_team"].is_object()
+            && job["payload"]["run"]["autonomy_approval"] != run["autonomy_approval"]
     {
         return Err(Error::new("FENCED", "Team plan proposal identity changed"));
     }
@@ -27,17 +33,55 @@ fn identity(proposal: &Value, job: &Value, run: &Value) -> Result<()> {
 
 pub(super) fn validated(proposal: &Value, job: &Value, run: &Value) -> Result<TeamPlan> {
     identity(proposal, job, run)?;
+    if run["adaptive_team"].is_object() {
+        super::super::adaptive_team::validate_approval(run)?;
+    }
     if proposal["data"]["epoch"] != job["epoch"] {
         return Err(Error::new("FENCED", "Team plan proposal attempt changed"));
     }
     let plan: TeamPlan = serde_json::from_value(proposal["data"]["plan"].clone())
         .map_err(|e| bad(&e.to_string()))?;
-    plan.validate(run["agents"].as_array().map_or(0, Vec::len))?;
-    let fingerprint = yoneda_core::fingerprint(&json!(plan))?;
+    let agents = roster(proposal, run)?;
+    plan.validate(
+        agents
+            .as_ref()
+            .unwrap_or(&run["agents"])
+            .as_array()
+            .map_or(0, Vec::len),
+    )?;
+    let fingerprint = plan_digest(&plan, agents.as_ref())?;
     if proposal["data"]["fingerprint"] != fingerprint || proposal["id"] != id(job, &fingerprint)? {
         return Err(Error::new("FENCED", "Team plan proposal digest changed"));
     }
     Ok(plan)
+}
+
+pub(super) fn roster(proposal: &Value, run: &Value) -> Result<Option<Value>> {
+    if run["adaptive_team"].is_null() {
+        if proposal["data"].get("agents").is_some() {
+            return Err(Error::new(
+                "FENCED",
+                "Legacy proposal added an unapproved roster",
+            ));
+        }
+        return Ok(None);
+    }
+    let agents = &proposal["data"]["agents"];
+    super::super::adaptive_team::validate_roster(run, agents)?;
+    if proposal["data"]["roster_digest"] != yoneda_core::fingerprint(agents)? {
+        return Err(Error::new(
+            "FENCED",
+            "Proposed adaptive roster digest changed",
+        ));
+    }
+    Ok(Some(agents.clone()))
+}
+
+fn plan_digest(plan: &TeamPlan, agents: Option<&Value>) -> Result<String> {
+    yoneda_core::fingerprint(&agents.map_or_else(
+        || json!(plan),
+        |agents| json!({"plan":plan,"agents":agents}),
+    ))
 }
 
 pub(super) fn current<S: SqlStore>(db: &S, job: &Value, run: &Value) -> Result<Option<Value>> {
@@ -78,8 +122,15 @@ pub(super) fn propose<S: SqlStore>(
 ) -> Result<Value> {
     let plan: TeamPlan =
         serde_json::from_value(c["plan"].clone()).map_err(|e| bad(&e.to_string()))?;
-    plan.validate(run["agents"].as_array().map_or(0, Vec::len))?;
-    let fingerprint = yoneda_core::fingerprint(&json!(plan))?;
+    let agents = super::super::adaptive_team::select(run, c.get("agents"))?;
+    plan.validate(
+        agents
+            .as_ref()
+            .unwrap_or(&run["agents"])
+            .as_array()
+            .map_or(0, Vec::len),
+    )?;
+    let fingerprint = plan_digest(&plan, agents.as_ref())?;
     let execution = &job["payload"]["execution"];
     let id = id(job, &fingerprint)?;
     match get(db, "nodes", &id) {
@@ -123,7 +174,11 @@ pub(super) fn propose<S: SqlStore>(
         ));
     }
     let previous_id = previous.as_ref().map(|p| p["id"].clone());
-    let data = json!({"plan":plan,"fingerprint":fingerprint,"run_id":run["id"],"execution_id":execution["id"],"job_id":job["id"],"epoch":job["epoch"],"authority":"assertion","draft_revision":revision,"supersedes":previous_id});
+    let mut data = json!({"plan":plan,"fingerprint":fingerprint,"run_id":run["id"],"execution_id":execution["id"],"job_id":job["id"],"epoch":job["epoch"],"authority":"assertion","draft_revision":revision,"supersedes":previous_id});
+    if let Some(agents) = agents {
+        data["roster_digest"] = json!(yoneda_core::fingerprint(&agents)?);
+        data["agents"] = agents;
+    }
     node(
         db,
         &id,

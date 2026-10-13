@@ -1,5 +1,14 @@
 # Product MVP release evidence — October 8–12, 2026
 
+## Simplified workflow — October 13, 2026
+
+The current source passed the complete local gate: 387 Rust, 387 platform workerd, 16 isolated-app workerd, 160 frontend and 27 Node runtime/reviewer tests. R5 passed 81 Linux runtime tests. Fresh Start a Run uses one Auto seed and optional model/role preferences; an immutable connected-model pool authorizes the planner to choose the actual team. New owner work reserves the shared workspace allowance before provider I/O. Original campaign approvals, counters and audit records are preserved. Unknown usage remains conservatively reserved.
+
+Connect Agents is available in the left navigation before a repository exists. Local served-component browser checks covered hosted setup, external repository prerequisites, keyboard/focus behavior and 320/390px layouts with zero mutations or inference. The unfamiliar reviewer rehearsal remains a separate human check. Independent review reproduced and fixed late-commit reconciliation, ordinary Opus authorization and comparison-roster uniqueness. These local results do not establish a newly deployed or paid outcome; deployment receipts are added separately.
+
+The earlier six-minute R2 video remains evidence for its recorded work and predates the simplified interface.
+
+
 The product runs on [Cloudflare](https://yonedarepo-dev.mlong-f01.workers.dev/), with a real [agent-built Garden website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/). [Machine-readable evidence](release-evidence.json) records identities, revisions, epoch timestamps, independent checks, the decision, canonical readback and served asset hashes. These are development verification results, not a production readiness claim.
 
 ## Autonomous app implementation and bounded verification — October 12, 2026

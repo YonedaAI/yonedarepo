@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { RecordedDecisionStory } from './RecordedDecisionStory';
 import { reviewableCandidates } from './runReviewState';
 
 function SharedResearch({ repo, artifact }: { repo: string; artifact: Record<string, any> }) {
@@ -152,13 +153,7 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
       {decision && (
         <details className="recorded-decision" id="recorded-shipping-decision" open tabIndex={-1}>
           <summary>Recorded shipping decision</summary>
-          <strong>
-            {decision.decision_kind === 'development_verification'
-              ? 'Automated development selection'
-              : 'Owner decision'}
-          </strong>
-          <p>{decision.rationale}</p>
-          {decision.error && <p role="alert">{decision.error}</p>}
+          <RecordedDecisionStory decision={decision} />
         </details>
       )}
     </section>

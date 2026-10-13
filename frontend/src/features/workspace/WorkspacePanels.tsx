@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
 import { AccountPanel } from './AccountPanel';
-import { AgentConnections } from './AgentConnections';
+import { ConnectAgents } from './ConnectAgents';
 import { DemoGuide } from './DemoGuide';
 import { NewProject } from './NewProject';
 import { OwnerConnection } from './OwnerConnection';
@@ -20,7 +20,7 @@ export type WorkspacePanel =
   | 'account'
   | null;
 const titles = {
-  agents: 'Connect a local agent',
+  agents: 'Connect Agents',
   providers: 'Agent providers',
   project: 'Add repository',
   owner: 'Administrator access',
@@ -33,11 +33,13 @@ export function WorkspacePanels({
   panel,
   state,
   onClose,
+  onPanel,
 }: {
   reviewer?: boolean;
   panel: WorkspacePanel;
   state: ReturnType<typeof useRepository>;
   onClose: () => void;
+  onPanel?: (panel: WorkspacePanel) => void;
 }) {
   if (!panel || (reviewer && ['agents', 'providers', 'project'].includes(panel))) return null;
   return (
@@ -51,8 +53,12 @@ export function WorkspacePanels({
           }}
         />
       )}
-      {panel === 'agents' && state.snapshot && (
-        <AgentConnections repo={state.id} onClose={onClose} />
+      {panel === 'agents' && state.authenticated && (
+        <ConnectAgents
+          repo={state.snapshot ? state.id : undefined}
+          onClose={onClose}
+          onProject={onPanel ? () => onPanel('project') : undefined}
+        />
       )}
       {panel === 'providers' && state.authenticated && (
         <Suspense fallback={<p role="status">Loading connections…</p>}>

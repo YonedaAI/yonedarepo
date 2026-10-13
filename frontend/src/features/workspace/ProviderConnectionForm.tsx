@@ -130,7 +130,7 @@ export function ProviderConnectionForm({
       <p className="subtle">
         {editing
           ? 'The stored key stays encrypted. Changes apply to new runs; existing approvals keep their original settings.'
-          : 'Hosted runs use your provider billing. Claude uses Sonnet with the existing $20 workspace allowance. Models are recorded with every run.'}
+          : 'Hosted runs use your connected provider and share the workspace allowance. Keys stay encrypted; models and usage are recorded with each run.'}
       </p>
       {error && (
         <p role="alert" className="form-error">

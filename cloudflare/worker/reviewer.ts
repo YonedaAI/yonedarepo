@@ -1,6 +1,7 @@
 import { username } from './accounts';
 import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
+import { ownerCommandInput } from './repository-command';
 import { reviewerCampaignStatus } from './reviewer-campaign';
 import { reviewerPolicy } from './reviewer-policy';
 import {
@@ -8,9 +9,10 @@ import {
   reviewerRepairFingerprint,
   reviewerTrialStatus,
   startTrial,
+  submitReviewerRepair,
 } from './reviewer-trial';
 import { ledger, sha } from './storage';
-import type { Env, Json, Principal } from './types';
+import type { Env, Principal } from './types';
 import { providerCredentials, seal } from './vault';
 import { workspace } from './workspace';
 
@@ -79,6 +81,12 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
   }
   if (!path.startsWith('/api/reviewer')) return null;
   if (!principal.reviewer) return error('FORBIDDEN', 'Reviewer account required', 403);
+  if (
+    req.method === 'POST' &&
+    ['/api/reviewer/trial', '/api/reviewer/resume', '/api/reviewer/repair'].includes(path) &&
+    (await workspace(env, principal.workspace, { op: 'workspace_spend_status' })).version >= 1
+  )
+    return error('WORKSPACE_WORKFLOW_UPDATED', 'Use ordinary Start a Run for this workspace', 409);
   const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
   if (path === '/api/reviewer' && req.method === 'GET') {
     return response({
@@ -96,71 +104,43 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
   }
   if (path === '/api/reviewer/resume' && req.method === 'POST')
     return response(await resumeTrial(env, principal.workspace));
-  return error('NOT_FOUND', 'Unknown reviewer route', 404);
-}
-
-/** Restrict reviewer mutations at the server before any generic owner route runs. */
-export async function reviewerGuard(req: Request, env: Env, principal: Principal) {
-  if (!principal.reviewer) return null;
-  const path = new URL(req.url).pathname;
-  const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
-  if (policy.revoked || policy.expires <= Date.now())
-    return error('UNAUTHORIZED', 'Reviewer access expired', 401);
-  if (path.startsWith('/api/reviewer')) return null;
-  if (req.method === 'GET') return null;
-  const parts = path.split('/').filter(Boolean);
-  if (
-    req.method === 'POST' &&
-    parts[1] === 'repos' &&
-    ['accept', 'cancel_run', 'resync_repository', 'answer_intent'].includes(parts[3])
-  ) {
-    const campaign = await workspace(env, principal.workspace, { op: 'reviewer_campaign_status' });
-    if (
-      campaign?.campaign.enabled === true &&
-      campaign.campaign.reviewer_enabled === true &&
-      campaign.campaign.expires > Date.now() &&
-      parts[2] === campaign.approval.entry.repo_id
-    )
-      return null;
-  }
-  if (parts[1] === 'repos' && parts[3] === 'repair_team') {
-    if (req.method !== 'POST' || parts[2] !== policy.repo_id)
-      return error('FORBIDDEN', 'Reviewer repair is limited to its trial repository', 403);
-    let input: Json;
-    try {
-      input = await readJson(req.clone(), 256 * 1024);
-    } catch {
-      return error('INVALID_INPUT', 'A valid repair request is required');
-    }
-    const runId = input.run_id;
-    if (typeof runId !== 'string' || !runId || runId.length > 200)
+  if (path === '/api/reviewer/repair' && req.method === 'POST') {
+    const input = await ownerCommandInput(req, 'repair_team');
+    if (typeof input.run_id !== 'string' || !input.run_id || input.run_id.length > 200)
       return error('INVALID_INPUT', 'A reviewer trial run ID is required');
     if (typeof input.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(input.request_id))
       return error('INVALID_INPUT', 'A stable repair request ID is required');
     const detail = await ledger(env, policy.repo_id, {
       op: 'run_detail',
-      run_id: runId,
+      run_id: input.run_id,
       _workspace: principal.workspace,
     });
-    if (detail.repository?.id !== policy.repo_id || detail.run?.id !== runId)
+    if (detail.repository?.id !== policy.repo_id || detail.run?.id !== input.run_id)
       return error('FORBIDDEN', 'Repair must target an existing reviewer trial run', 403);
     await workspace(env, principal.workspace, {
       op: 'reviewer_trial_reopen',
-      id: runId,
+      id: input.run_id,
       request_id: input.request_id,
       fingerprint: await reviewerRepairFingerprint(input),
     });
-    return null;
+    return response(
+      await submitReviewerRepair(env, principal.workspace, policy.repo_id, {
+        ...input,
+        op: 'repair_team',
+        _workspace: principal.workspace,
+      }),
+    );
   }
-  if (
-    parts[1] === 'repos' &&
-    parts[2] === policy.repo_id &&
-    ['accept', 'cancel_run', 'resync_repository', 'refresh_candidate', 'resolve_conflict'].includes(
-      parts[3],
-    )
-  )
-    return null;
-  return error('FORBIDDEN', 'Reviewer access permits funded trials and sandbox review only', 403);
+  return error('NOT_FOUND', 'Unknown reviewer route', 404);
+}
+
+/** Reviewer login retains expiry/revocation; owner operations use ordinary authorization. */
+export async function reviewerGuard(_req: Request, env: Env, principal: Principal) {
+  if (!principal.reviewer) return null;
+  const policy = await workspace(env, principal.workspace, { op: 'reviewer_status' });
+  if (!policy || policy.revoked || policy.expires <= Date.now())
+    return error('UNAUTHORIZED', 'Reviewer access expired', 401);
+  return null;
 }
 
 /** Operator-only callers select the fixed profile; client policy and repo fields are ignored. */

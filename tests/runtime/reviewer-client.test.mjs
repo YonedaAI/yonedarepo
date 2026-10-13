@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { campaignEntry, findCheckedRun, readRun } from '../../tools/reviewer-client.mjs';
+import { campaignEntry, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from '../../tools/reviewer-client.mjs';
 
 test('campaign entry reads checked output without starting or resuming running paid work', async () => {
   const paths=[];
@@ -114,4 +114,49 @@ test('polling reads only the selected run and rejects a mismatched response', as
   assert.equal(await readRun(async path => { paths.push(path); return detail; }, 'fixture', 'run-1'), detail);
   assert.equal(paths[0], 'repos/fixture/run_detail?run_id=run-1');
   await assert.rejects(readRun(async () => ({ runs: [{ id: 'another' }], executions: [] }), 'fixture', 'run-1'), /selected run/);
+});
+
+test('ordinary checked discovery selects the newest owned result and ignores unavailable projects', async () => {
+  const paths = [];
+  const entry = await workspaceEntry(async path => {
+    paths.push(path);
+    if (path === 'repositories') return { repositories: [
+      { id: 'first', status: 'ready' }, { id: 'latest', status: 'ready' },
+      { id: 'preparing', status: 'provisioning' }, { id: 'deleted', status: 'deleted' },
+    ] };
+    const latest = path.includes('/latest/');
+    return { items: [{ id: latest ? 'new' : 'old', status: 'ready', created_at: latest ? 20 : 10 }], watermark: 30, next_cursor: null };
+  }, {});
+  assert.equal(entry.run_id, 'new');
+  assert.equal(entry.url, '/?repo=latest&run=new');
+  assert.equal(paths.length, 3);
+  assert.ok(paths.every(path => !/preparing|deleted|reviewer|candidate_source/.test(path)));
+});
+
+test('empty ordinary workspace offers browser approval but checked-only never starts work', async () => {
+  const api = async path => {
+    assert.equal(path, 'repositories');
+    return { repositories: [] };
+  };
+  assert.equal((await workspaceEntry(api, {})).url, '/');
+  assert.match((await workspaceEntry(api, { newTrial: true })).message, /No work was started/);
+  await assert.rejects(workspaceEntry(api, { checkedOnly: true }), /never starts or resumes/);
+});
+
+test('allowance unavailable or malformed fails closed without guessing legacy authority', async () => {
+  for (const failure of [
+    new Error('Transport unavailable'),
+    Object.assign(new Error('Unknown API route'), { code: 'NOT_FOUND', status: 403 }),
+    Object.assign(new Error('Unknown workspace operation'), { code: 'NOT_FOUND', status: 500 }),
+  ]) await assert.rejects(workspaceAllowance(async () => { throw failure; }));
+  for (const response of [{}, { version: -1 }, { version: 1 }, { version: 1, remaining_microusd: -1 }])
+    await assert.rejects(workspaceAllowance(async () => response), /Invalid shared workspace allowance/);
+});
+
+test('version-zero campaign explicit new and resume keep their original routes', async () => {
+  const calls = [];
+  const api = async (path, body) => { calls.push([path, body]); return { run_id: 'legacy' }; };
+  await campaignEntry(api, { enabled: true }, true, 'same-request');
+  await campaignEntry(api, { enabled: true, active_trial: 'active' }, false, 'unused', true);
+  assert.deepEqual(calls, [['reviewer/campaign/trial', { request_id: 'same-request' }], ['reviewer/campaign/resume', {}]]);
 });

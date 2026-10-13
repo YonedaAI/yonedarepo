@@ -34,6 +34,14 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
     let total = used
         .checked_add(1)
         .ok_or_else(|| bad("Run model request overflow"))?;
+    if run["adaptive_team"]["version"] == 1
+        && total > yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
+    {
+        return Err(Error::new(
+            "RESOURCE_LIMIT",
+            "Shared adaptive run model request limit reached",
+        ));
+    }
     let legacy = run["request_limits"] != "optional-v1";
     if legacy && total > MAX_RUN_MODEL_REQUESTS {
         return Err(Error::new(
@@ -41,7 +49,7 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
             "Shared run model request limit reached",
         ));
     }
-    let mut response = json!({"number":request_number,"run_number":total,"run_limit":if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
+    let mut response = json!({"number":request_number,"run_number":total,"run_limit":if run["adaptive_team"]["version"] == 1 {json!(yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS)} else if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
     if let Some(campaign) = run.get("campaign") {
         response["campaign"] = campaign.clone();
     }

@@ -3,9 +3,10 @@ use crate::storage::create;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
     if c["op"] == "projects" {
+        let include_hidden = c["include_hidden"] == true;
         let rows = db.query(
-            "SELECT payload FROM workspace_records WHERE id LIKE 'project:%' AND json_extract(payload,'$.status')!='deleted' ORDER BY id LIMIT 100",
-            &[],
+            "SELECT payload FROM workspace_records WHERE id LIKE 'project:%' AND json_extract(payload,'$.status')!='deleted' AND (?=1 OR COALESCE(json_extract(payload,'$.hidden'),0)!=1) ORDER BY id LIMIT 100",
+            &[json!(if include_hidden { 1 } else { 0 })],
         )?;
         let projects = rows
             .iter()
@@ -18,7 +19,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 .map_err(|e| bad(&e.to_string()))
             })
             .collect::<Result<Vec<_>>>()?;
-        return Ok(json!({"projects":projects}));
+        let mut result = json!({"projects":projects});
+        if include_hidden {
+            result["include_hidden"] = json!(true);
+            result["includes_hidden"] = json!(true);
+        }
+        return Ok(result);
     }
     let id = string(c, "id")?;
     if id.len() > 100

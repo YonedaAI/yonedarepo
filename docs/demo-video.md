@@ -1,6 +1,6 @@
 # Demonstration video production
 
-The current October 13 reviewer walkthrough is a **6:00 captioned edit of actual current browser captures**. It shows the checked event-booking app, protected initial-build verification, GLM/Codex specialist captures, one coordinator repair under unchanged limits, readable context, multi-file changes and the optional graph. It has no narration and is explicitly labelled as an edited sequence, not a continuous live recording.
+The October 13 reviewer walkthrough is a **6:00 captioned edit of actual browser captures from the earlier R2 workflow**. It predates the simplified Start a Run and Connect Agents interface; it does not demonstrate the new adaptive roster or shared workspace allowance. It shows the checked event-booking app, protected initial-build verification, GLM/Codex specialist captures, one coordinator repair under unchanged limits, readable context, multi-file changes and the optional graph. It has no narration and is explicitly labelled as an edited sequence, not a continuous live recording.
 
 The last chapter separates this coordinated initial-build result from the controlled maintenance study. It does not claim a three-stage coordinated-team run, a causal graph benefit or canonical publication. The initial oracle passed four tests; three future-stage tests were skipped.
 

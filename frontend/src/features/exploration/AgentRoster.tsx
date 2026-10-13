@@ -1,9 +1,7 @@
 import type { AgentLimits } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
 import { providerNames } from '../workspace/providerModels';
-import { ApproachPicker } from './ApproachPicker';
-import type { AgentDraft } from './agentLimits';
-import { nextApproach } from './approaches';
+import { type AdaptiveAgentDraft, agentRoles, automaticAgent } from './adaptiveDraft';
 import { agentConnectionIssue } from './restartRun';
 
 export function AgentRoster({
@@ -16,143 +14,129 @@ export function AgentRoster({
   onChange,
   onProviders,
   onRetry,
-  team = false,
 }: {
-  agents: AgentDraft[];
+  agents: AdaptiveAgentDraft[];
   providers: Provider[];
   loading: boolean;
   error: string;
   limits: AgentLimits;
   locked: boolean;
-  onChange: (agents: AgentDraft[]) => void;
+  onChange: (agents: AdaptiveAgentDraft[]) => void;
   onProviders: () => void;
   onRetry: () => void;
   team?: boolean;
 }) {
-  function update(id: string, patch: Partial<AgentDraft>) {
+  function update(id: string, patch: Partial<AdaptiveAgentDraft>) {
     onChange(agents.map((agent) => (agent.id === id ? { ...agent, ...patch } : agent)));
   }
   return (
-    <section className="agent-roster" aria-labelledby="agent-roster-heading">
+    <section className="agent-roster simple-agent-roster" aria-labelledby="agent-roster-heading">
       <div className="section-heading">
-        <h3 id="agent-roster-heading">{team ? 'Team agents' : 'Agents and approaches'}</h3>
+        <h3 id="agent-roster-heading">Agents</h3>
         <button
           type="button"
           className="quiet"
-          disabled={locked || loading || agents.length >= limits.max_root_agents}
-          onClick={() =>
-            onChange([
-              ...agents,
-              {
-                id: crypto.randomUUID(),
-                connection: providers[agents.length % providers.length]?.id ?? '',
-                strategy: nextApproach(agents.map((agent) => agent.strategy)),
-              },
-            ])
-          }
+          disabled={locked || agents.length >= limits.max_root_agents}
+          onClick={() => onChange([...agents, automaticAgent()])}
         >
           Add agent
         </button>
       </div>
-      <p className="subtle">
-        {team ? (
-          <>
-            {agents.length} of {limits.max_root_agents} agents. Add or remove connections for this
-            run.
-          </>
-        ) : (
-          <>
-            {agents.length} of {limits.max_root_agents} root agents · minimum{' '}
-            {limits.min_root_agents}.
-            {limits.min_root_agents === 1
-              ? ' Use one agent for a focused change, or add agents to compare approaches.'
-              : ' Give each agent a distinct approach.'}
-          </>
-        )}
-      </p>
-      {loading ? (
-        <p role="status">Loading provider connections…</p>
-      ) : error ? (
-        <div className="inline-empty">
-          <p role="alert">Could not load provider connections: {error}</p>
-          <button type="button" className="quiet" disabled={locked} onClick={onRetry}>
-            Retry connections
-          </button>
-        </div>
-      ) : !providers.length ? (
-        <div className="inline-empty">
-          <p>Connect a provider key before starting hosted agents.</p>
-          <button type="button" className="quiet" disabled={locked} onClick={onProviders}>
-            Connect provider
-          </button>
-        </div>
-      ) : null}
-      {agents.map((agent, index) => (
-        <fieldset className="agent-inputs" key={agent.id}>
-          <legend>
-            {team ? 'Agent' : 'Root agent'} {index + 1}
-          </legend>
-          <label>
-            Provider connection
-            <select
-              required
-              disabled={locked || loading || !providers.length}
-              value={agentConnectionIssue(agent, providers) ? '' : agent.connection}
-              onChange={(event) =>
-                update(agent.id, {
-                  connection: event.target.value,
-                  expectedProvider: undefined,
-                  expectedModel: undefined,
-                  fromPreviousRun: false,
-                })
-              }
+      {agents.map((agent, index) => {
+        const issue =
+          !loading && agent.connection ? agentConnectionIssue(agent, providers) : undefined;
+        const unavailable =
+          !!agent.connection && !providers.some((provider) => provider.id === agent.connection);
+        return (
+          <fieldset className="agent-inputs seed-agent" key={agent.id}>
+            <legend>Agent {index + 1}</legend>
+            <label>
+              Model
+              <select
+                aria-label={`Model for agent ${index + 1}`}
+                disabled={locked}
+                value={agent.connection}
+                onChange={(event) =>
+                  update(agent.id, {
+                    connection: event.target.value,
+                    expectedProvider: undefined,
+                    expectedModel: undefined,
+                    fromPreviousRun: false,
+                  })
+                }
+              >
+                <option value="">Auto</option>
+                {unavailable && (
+                  <option value={agent.connection} disabled>
+                    Previous connection (unavailable)
+                  </option>
+                )}
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label} · {providerNames[provider.provider] ?? provider.provider} ·{' '}
+                    {provider.model}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Role
+              <select
+                aria-label={`Role for agent ${index + 1}`}
+                value={agent.role ?? 'auto'}
+                disabled={locked}
+                onChange={(event) => {
+                  const role = agentRoles.find((value) => value === event.target.value);
+                  if (role) update(agent.id, { role });
+                }}
+              >
+                {agentRoles.map((role) => (
+                  <option key={role} value={role}>
+                    {role[0].toUpperCase() + role.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="text-button"
+              aria-label={`Remove agent ${index + 1}`}
+              disabled={locked || agents.length <= 1}
+              onClick={() => onChange(agents.filter((value) => value.id !== agent.id))}
             >
-              <option value="">Choose a provider connection</option>
-              {providers.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.label} · {providerNames[provider.provider] ?? provider.provider} ·{' '}
-                  {provider.model}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!loading && agentConnectionIssue(agent, providers) && (
-            <p className="agent-connection-issue" role="alert">
-              {agentConnectionIssue(agent, providers)}
-              {agent.expectedModel && (
-                <>
-                  {' '}
-                  Previous model: <code>{agent.expectedModel}</code>.
-                </>
-              )}
-            </p>
-          )}
-          {!team && (
-            <ApproachPicker
-              value={agent.strategy}
-              used={agents.filter((other) => other.id !== agent.id).map((other) => other.strategy)}
-              disabled={locked}
-              onChange={(strategy) => update(agent.id, { strategy })}
-            />
-          )}
-          <button
-            type="button"
-            className="text-button"
-            aria-label={`Remove ${team ? 'agent' : 'root agent'} ${index + 1}`}
-            disabled={locked || agents.length <= (team ? 1 : limits.min_root_agents)}
-            title={
-              agents.length <= (team ? 1 : limits.min_root_agents)
-                ? team
-                  ? 'Keep at least one agent to plan and build this run.'
-                  : `This deployment requires at least ${limits.min_root_agents} agent${limits.min_root_agents === 1 ? '' : 's'}.`
-                : undefined
-            }
-            onClick={() => onChange(agents.filter((value) => value.id !== agent.id))}
-          >
-            Remove agent
+              Remove
+            </button>
+            {issue && (
+              <p className="agent-connection-issue" role="alert">
+                {issue}
+                {agent.expectedModel && (
+                  <>
+                    {' '}
+                    Previous model: <code>{agent.expectedModel}</code>.
+                  </>
+                )}
+              </p>
+            )}
+          </fieldset>
+        );
+      })}
+      <div className="roster-footer">
+        <small>Auto chooses an eligible connected model within your workspace allowance.</small>
+        <button type="button" className="text-button" disabled={locked} onClick={onProviders}>
+          Manage models
+        </button>
+      </div>
+      {loading && <small role="status">Loading connected models…</small>}
+      {error && (
+        <div className="roster-error">
+          <small role="alert">
+            Connected models could not be loaded. Auto is checked when you start.
+          </small>
+          <button type="button" className="text-button" disabled={locked} onClick={onRetry}>
+            Retry
           </button>
-        </fieldset>
-      ))}
+        </div>
+      )}
     </section>
   );
 }

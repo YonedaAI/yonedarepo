@@ -4,11 +4,13 @@ import { prepareGeminiRequest } from './gemini-policy';
 import { mimoUpstream } from './mimo-routing';
 import { outputCeiling } from './model-budget';
 import type { Json } from './types';
+import { type WorkspaceSpendContext, workspaceSpendApprovesJob } from './workspace-spend';
 export function prepareModelRequest(
   job: Json,
   harness: 'codex' | 'claude' | 'gemini',
   path: string,
   input: Json,
+  workspaceApproval: WorkspaceSpendContext | null = null,
 ) {
   if (harness === 'gemini') return prepareGeminiRequest(job, path, input);
   const execution = job.payload?.execution;
@@ -28,7 +30,10 @@ export function prepareModelRequest(
   if (!definition.allow_custom_model && !definition.models.some((entry) => entry.id === model))
     throw new Error('Model is not permitted for this provider');
   if (provider === 'claude' && model === 'claude-opus-5-5') {
-    if (
+    if (workspaceApproval) {
+      if (!workspaceSpendApprovesJob(workspaceApproval, job))
+        throw new Error('Opus workspace approval differs from the frozen attempt');
+    } else if (
       job.payload?.execution?.campaign_opus !== true ||
       job.payload?.execution?.repair_round !== 2 ||
       job.payload?.run?.repair_escalation?.model !== model
@@ -49,6 +54,8 @@ export function prepareModelRequest(
     'campaign',
     'campaign_id',
     'campaign_version',
+    'campaign_opus',
+    'repair_round',
     'chain_id',
     'bucket',
   ])

@@ -6,6 +6,12 @@ use yoneda_core::{
 };
 
 pub(super) fn available(run: &Value, agent: &Value) -> Result<bool> {
+    if run["adaptive_team"]["version"] == 1
+        && run["model_requests"].as_i64().unwrap_or(0)
+            >= yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
+    {
+        return Ok(false);
+    }
     if run["unavailable_model_groups"]
         .as_array()
         .into_iter()

@@ -4,6 +4,13 @@ export type Harness = 'claude' | 'codex' | 'gemini';
 export interface ModelOption {
   id: string;
   label: string;
+  conservative_pricing?: {
+    input_microusd_per_million: number;
+    output_microusd_per_million: number;
+    source: 'owner-approved conservative rates';
+  };
+  pricing_source_url?: string;
+  pricing_verified_at?: string;
 }
 export interface ProviderDefinition {
   id: string;

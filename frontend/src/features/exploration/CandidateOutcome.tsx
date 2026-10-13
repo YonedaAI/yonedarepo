@@ -1,6 +1,8 @@
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { frozenInputs } from '../context-usage/frozenContextView';
+import { RecordedDecisionStory } from './RecordedDecisionStory';
+import { runAttention, selectionBlocker } from './runReviewState';
 import { SiteLink } from './SiteLink';
 import { runWorkingBranch } from './workingBranchView';
 
@@ -31,14 +33,22 @@ export function CandidateOutcome({
   const context = frozenInputs(run);
   const stale = candidate.base?.commit !== snapshot.repository.head_commit;
   const branch = runWorkingBranch(snapshot, run);
+  const attention = !decision ? runAttention(snapshot, run) : undefined;
+  const blocker = !decision ? selectionBlocker(snapshot, run, candidate) : undefined;
+  const candidateBlocked = attention?.tone === 'review' && !!blocker;
+  const checksPending = attention?.tone === 'review' && !blocker && !exact;
   return (
     <>
       <section className="outcome-preview">
         <h3>Outcome preview</h3>
         <p>{candidate.summary || 'No outcome statement was recorded for this captured result.'}</p>
         <small>
-          Recorded candidate summary · revision <code>{short(candidate.revision?.commit)}</code>
+          Agent assertion · recorded candidate summary · captured source revision{' '}
+          <code>{short(candidate.revision?.commit)}</code>
         </small>
+        <p className="subtle">
+          Source capture records the files; behavior claims require independent checks.
+        </p>
         {exact && (evaluation?.deployment?.digest || evaluation?.app?.bundle_digest) ? (
           <SiteLink repo={repo} evaluation={evaluation.id} />
         ) : (
@@ -74,7 +84,37 @@ export function CandidateOutcome({
       </section>
       <section className="outcome-story">
         <h3>Decision and context</h3>
-        <p>{decision?.rationale || 'A publishing rationale has not been recorded for this run.'}</p>
+        {decision ? (
+          <RecordedDecisionStory decision={decision} />
+        ) : (
+          <>
+            <strong>
+              {candidateBlocked
+                ? 'Review blocked'
+                : checksPending
+                  ? 'Checks pending'
+                  : attention?.title}
+            </strong>
+            <p>
+              {candidateBlocked
+                ? blocker
+                : checksPending
+                  ? 'Independent checks for this exact revision must be available before review.'
+                  : attention?.detail}
+            </p>
+            <strong>Acceptance criteria · supplied for review</strong>
+            {run.criteria?.length ? (
+              <ul>
+                {run.criteria.map((criterion: string, index: number) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: Frozen criteria can repeat and have no item state.
+                  <li key={index}>{criterion}</li>
+                ))}
+              </ul>
+            ) : (
+              <p>No acceptance criteria were recorded.</p>
+            )}
+          </>
+        )}
         <p>
           {context.ids.length
             ? `${context.ids.length} prior context record${context.ids.length === 1 ? ' was' : 's were'} frozen into the initial input.`
@@ -95,7 +135,7 @@ export function CandidateOutcome({
         <p>
           {run.working_branch_id
             ? branch?.latest_candidate_id === candidate.id
-              ? `This checked result is the working head of ${run.working_branch_id}. Canonical publication remains a separate decision.`
+              ? `This captured result is the working head of ${run.working_branch_id}. Canonical publication remains a separate decision.`
               : `This result belongs to working branch ${run.working_branch_id}; its current head must be reviewed separately.`
             : stale
               ? `The canonical source moved from this result’s base ${short(candidate.base?.commit)} to ${short(snapshot.repository.head_commit)}.`

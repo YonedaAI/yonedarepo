@@ -13,7 +13,12 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>
             "Model budgets require a hosted coding run",
         ));
     }
-    let agents = c["agents"]
+    let approved_agents = if c["adaptive_team"].is_object() {
+        &c["_approved_model_pool"]
+    } else {
+        &c["agents"]
+    };
+    let agents = approved_agents
         .as_array()
         .ok_or_else(|| bad("Missing scheduled agents"))?;
     let defaults = agents
@@ -38,7 +43,7 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>
             return Err(bad("Duplicate provider/model budget"));
         }
     }
-    let agents = c["agents"]
+    let agents = approved_agents
         .as_array()
         .ok_or_else(|| bad("Missing scheduled agents"))?;
     let scheduled: BTreeSet<_> = agents

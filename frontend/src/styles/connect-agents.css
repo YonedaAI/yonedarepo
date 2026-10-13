@@ -1,0 +1,30 @@
+.agent-connection-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.agent-connection-options button {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: 12px;
+  padding: 20px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.agent-connection-options strong {
+  font-size: 16px;
+}
+.agent-connection-options span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+@media (max-width: 560px) {
+  .agent-connection-options {
+    grid-template-columns: 1fr;
+  }
+}

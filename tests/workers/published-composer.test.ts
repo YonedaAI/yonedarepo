@@ -5,7 +5,6 @@ import {
   serializeModelBudgets,
 } from '../../frontend/src/features/exploration/modelBudgets';
 import {
-  preservePublishedApproach,
   preservePublishedCriteria,
   publishedContext,
   publishedRun,
@@ -122,29 +121,44 @@ function snapshot(): Snapshot {
   return result;
 }
 
-it('updates keep the published winner’s connection, model and approach instead of the first preset or latest failed run', () => {
-  const agents = defaultRunAgents(snapshot());
+it('fresh updates use one Auto seed while explicit restarts restore recorded model preferences', () => {
+  const state = snapshot();
+  const before = structuredClone(state);
+  const agents = defaultRunAgents(state);
   expect(agents).toHaveLength(1);
   expect(agents[0]).toMatchObject({
+    connection: '',
+    role: 'auto',
+  });
+  expect(agents[0]).not.toHaveProperty('expectedModel');
+  expect(agents[0]).not.toHaveProperty('fromPreviousRun');
+  const restarting = runDraft(state, initialRun(state, state.runs[0]));
+  expect(restarting.agents).toHaveLength(2);
+  expect(restarting.agents[1]).toMatchObject({
     connection: 'mimo',
     expectedProvider: 'mimo',
     expectedModel: 'mimo-v2.6-flash',
     strategy: approachPresets[2].instructions,
     fromPreviousRun: true,
   });
+  expect(restarting.agents[1].id).not.toBe('winner');
+  expect(state).toEqual(before);
 });
 
-it('restores the winning subagent as one editable root without bringing back its competitors or parent', () => {
+it('keeps the winning subagent as publication evidence while a fresh brief uses one Auto seed', () => {
   const state = snapshot();
   state.executions[1].parent_execution = 'first';
   state.executions[1].strategy = 'Keep the approved editorial design with warm colors';
   const draft = runDraft(state);
   expect(draft.agents).toHaveLength(1);
-  expect(draft.agents[0].strategy).toBe(state.executions[1].strategy);
+  expect(draft.agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(draft.publication?.execution?.strategy).toBe(state.executions[1].strategy);
+  expect(draft.publication?.execution?.parent_execution).toBe('first');
   expect(draft.agents[0].id).not.toBe('winner');
   expect(draft.delegation.enabled).toBe(false);
   expect(draft.intent).toBe('');
   expect(draft.restartOf).toBeUndefined();
+  expect(draft.mode).toBe('collaborate');
   expect(draft.publication?.decision.id).toBe('decision:release');
 });
 
@@ -153,9 +167,15 @@ it('uses canonical published source when an older website is hosted and a newer 
   state.repository.site!.commit = 'a'.repeat(40);
   state.decisions.push({ ...state.decisions[0], id: 'unpublished', status: 'pending' });
   expect(publishedRun(state)?.decision.id).toBe('decision:release');
+  const draft = runDraft(state);
+  expect(draft.publication?.candidate.revision.commit).toBe(commit);
+  expect(draft.publication?.decision.target.commit).toBe(state.repository.published_commit);
+  expect(draft.publication?.run.id).toBe('release');
+  expect(draft.criteria).toContain('Keyboard accessible');
   delete state.repository.site;
   expect(hasPublishedWork(state)).toBe(true);
-  expect(defaultRunAgents(state)[0].connection).toBe('mimo');
+  expect(defaultRunAgents(state)).toHaveLength(1);
+  expect(defaultRunAgents(state)[0]).toMatchObject({ connection: '', role: 'auto' });
   state.repository.published_commit = 'c'.repeat(40);
   expect(publishedRun(state)).toBeUndefined();
 });
@@ -247,7 +267,7 @@ it('bounds inherited context and handles duplicate, dangling and cyclic referenc
   expect(context.ids).not.toContain('missing');
 });
 
-it('restores approved criteria and winning model limits with fresh usage and current verification policy', () => {
+it('retains criteria and current checks for fresh Auto work, restoring historical model limits only on explicit restart', () => {
   const state = snapshot();
   const currentBuild = {
     setup: [],
@@ -275,34 +295,47 @@ it('restores approved criteria and winning model limits with fresh usage and cur
   const draft = runDraft(state);
   expect(draft.criteria.split('\n')).toEqual(['Keyboard accessible', preservePublishedCriteria]);
   expect(JSON.parse(draft.policy)).toEqual(currentBuild);
-  const models = selectedModels(draft.agents, providers);
-  expect(Object.keys(draft.budgets)).toEqual([models[0].key]);
-  const [budget] = serializeModelBudgets(models, draft.budgets);
-  expect(budget.max_execution_ms).toBe(1_200_000);
-  expect(budget.max_requests).toBeNull();
-  expect(budget.spend_limit_microusd).toBeNull();
-  expect(budget).not.toHaveProperty('requests');
-  expect(budget).not.toHaveProperty('charged_microusd');
+  expect(draft.agents).toHaveLength(1);
+  expect(draft.agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(selectedModels(draft.agents, providers)).toEqual([]);
+  expect(draft.budgets).toEqual({});
+  const before = structuredClone(state);
+  const restarting = runDraft(state, initialRun(state, state.runs[0]));
+  expect(restarting.criteria).toBe('Keyboard accessible');
+  expect(JSON.parse(restarting.policy)).toEqual(currentBuild);
+  const models = selectedModels(restarting.agents, providers);
+  expect(models).toHaveLength(2);
+  expect(Object.keys(restarting.budgets)).toEqual(models.map((model) => model.key));
+  const budgets = serializeModelBudgets(models, restarting.budgets);
+  for (const budget of budgets) {
+    expect(budget.max_execution_ms).toBe(1_200_000);
+    expect(budget.max_requests).toBeNull();
+    expect(budget.spend_limit_microusd).toBeNull();
+    expect(budget).not.toHaveProperty('requests');
+    expect(budget).not.toHaveProperty('charged_microusd');
+  }
+  expect(state).toEqual(before);
   state.runs[0].criteria = Array.from({ length: 32 }, (_, index) => `Criterion ${index}`);
   expect(runDraft(state).criteria.split('\n')).toHaveLength(32);
 });
 
-it('requires a deliberate replacement for a missing or changed published connection', () => {
-  const draft = runDraft(snapshot());
+it('requires deliberate replacement of missing or changed restart connections while fresh Auto stays unresolved', () => {
+  const state = snapshot();
+  const draft = runDraft(state, initialRun(state, state.runs[0]));
   const available = providers.slice(0, 1);
   const hydrated = defaultConnections(draft.agents, available);
-  expect(hydrated[0].connection).toBe('mimo');
-  expect(agentConnectionIssue(hydrated[0], available)).toContain('unavailable');
+  expect(hydrated[1].connection).toBe('mimo');
+  expect(agentConnectionIssue(hydrated[1], available)).toContain('unavailable');
   const changed = [{ ...providers[1], model: 'another-model' }];
-  expect(agentConnectionIssue(defaultConnections(draft.agents, changed)[0], changed)).toContain(
+  expect(agentConnectionIssue(defaultConnections(draft.agents, changed)[1], changed)).toContain(
     'different provider or model',
   );
   expect(
     defaultConnections(
-      [{ ...draft.agents[0], connection: '', fromPreviousRun: false }],
+      runDraft(state).agents,
       available,
     )[0].connection,
-  ).toBe('glm');
+  ).toBe('');
 });
 
 it('keeps old releases usable when hosted connection history is missing, without inventing a previous model', () => {
@@ -311,11 +344,20 @@ it('keeps old releases usable when hosted connection history is missing, without
   delete state.executions[1].model;
   const draft = runDraft(state);
   expect(draft.agents[0].connection).toBe('');
-  expect(agentConnectionIssue(draft.agents[0], providers)).toContain('unavailable');
+  expect(draft.agents[0].role).toBe('auto');
+  expect(agentConnectionIssue(draft.agents[0], providers)).toBe('');
+  expect(draft.publication?.execution).not.toHaveProperty('model');
+  const restarted = runDraft(state, initialRun(state, state.runs[0]));
+  expect(restarted.agents[1].connection).toBe('');
+  expect(restarted.agents[1].expectedModel).toBeUndefined();
+  expect(agentConnectionIssue(restarted.agents[1], providers)).toContain('unavailable');
   state.executions = [];
-  expect(runDraft(state).agents[0].strategy).toBe(preservePublishedApproach);
+  expect(runDraft(state).agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(runDraft(state).criteria).toContain(preservePublishedCriteria);
+  expect(runDraft(state).publication?.candidate.revision.commit).toBe(commit);
   state.decisions = [];
-  expect(runDraft(state).agents[0].strategy).toBe(preservePublishedApproach);
+  expect(runDraft(state).agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(runDraft(state).criteria).toContain('Preserve existing behavior and checks');
   expect(runDraft(state).publication).toBeUndefined();
 });
 
@@ -325,11 +367,16 @@ it('keeps restart semantics separate and initial builds editable without publish
   expect(restarting.publication).toBeUndefined();
   expect(restarting.restartOf).toBe('release');
   expect(restarting.agents).toHaveLength(2);
+  expect(restarting.agents.map((agent) => agent.connection)).toEqual(['glm', 'mimo']);
+  expect(restarting.mode).toBe('compare');
   expect(restarting.intent).toBe('Build a cycling website');
   state.decisions = [];
   delete state.repository.site;
   const newProject = runDraft(state);
-  expect(newProject.agents).toHaveLength(2);
+  expect(newProject.agents).toHaveLength(1);
+  expect(newProject.agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(newProject.intent).toBe('');
+  expect(newProject.mode).toBe('collaborate');
   expect(newProject.context).toEqual([]);
   expect(newProject.criteria).not.toContain(preservePublishedCriteria);
 });

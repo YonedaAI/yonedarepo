@@ -1,14 +1,4 @@
-import {
-  BookOpen,
-  Bot,
-  ExternalLink,
-  GitBranch,
-  KeyRound,
-  Menu,
-  Plus,
-  Terminal,
-  X,
-} from 'lucide-react';
+import { BookOpen, Bot, ExternalLink, GitBranch, KeyRound, Menu, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { useRepository } from '../../hooks/useRepository';
 import type { WorkspacePanel } from './WorkspacePanels';
@@ -83,16 +73,10 @@ export function WorkspaceRail({
         {state.authenticated && !reviewer && (
           <nav className="rail-connections" aria-label="Connections">
             <p className="nav-label">Connections</p>
-            <button type="button" onClick={() => show('providers')}>
+            <button type="button" onClick={() => show('agents')}>
               <Bot size={17} />
-              Agent providers
+              Connect Agents
             </button>
-            {state.snapshot && (
-              <button type="button" onClick={() => show('agents')}>
-                <Terminal size={17} />
-                Connect local agent
-              </button>
-            )}
           </nav>
         )}
         <div className="rail-bottom">

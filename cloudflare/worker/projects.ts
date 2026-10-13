@@ -1,5 +1,6 @@
 import { error, readJson, response, safeId } from './http';
 import { scheduleProject } from './project-provisioning';
+import { changeProjectVisibility } from './project-visibility';
 import { sitePolicy } from './site-policy';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
@@ -34,6 +35,8 @@ export async function projectRoute(
   if (parts[1] !== 'projects') return null;
   if (principal.role !== 'user')
     return error('FORBIDDEN', 'Use a personal account to create projects', 403);
+  if (safeId(parts[2]) && parts.length === 4 && parts[3] === 'visibility' && req.method === 'POST')
+    return changeProjectVisibility(req, env, principal, parts[2]);
   if (parts.length === 2 && req.method === 'POST') {
     const body = await readJson(req);
     if (typeof body.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(body.request_id))

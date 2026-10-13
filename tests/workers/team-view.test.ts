@@ -146,7 +146,12 @@ it('carries published team context without converting a generated plan into a ma
   expect(draft.context).toContain('decision');
   expect(draft.previousAutomatic).toBe(true);
   expect(draft.team).toBeUndefined();
-  expect(draft.agents).toHaveLength(3);
+  expect(draft.agents).toHaveLength(1);
+  expect(draft.agents[0]).toMatchObject({ connection: '', role: 'auto' });
+  expect(draft.previousTeamPlan).toEqual(plan);
+  const restarting = runDraft(published, initialRun(published, published.runs[0]));
+  expect(restarting.agents.map((agent) => agent.connection)).toEqual(agents.map((agent) => agent.connection));
+  expect(restarting.agents).toHaveLength(3);
 });
 
 it('withholds retry while the same roster agent owns another active source task', () => {

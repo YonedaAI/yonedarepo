@@ -5,8 +5,10 @@ import { checkLedger } from './runtime';
 import { ledger } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
+import { assertLegacyInferenceAllowed } from './workspace-spend';
 
 export async function startCampaignTrial(env: Env, owner: string, requestId: string) {
+  await assertLegacyInferenceAllowed(env, owner);
   const status = await workspace(env, owner, { op: 'reviewer_campaign_status' });
   if (!status?.campaign?.enabled || status.campaign.reviewer_enabled !== true)
     throw new Error('Reviewer campaign is not enabled');

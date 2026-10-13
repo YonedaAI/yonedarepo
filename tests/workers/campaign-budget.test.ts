@@ -286,9 +286,9 @@ it('stops a fresh attempt when its original shared model allowance is already ex
       method: 'POST', headers: { cookie: f.cookie, origin: 'https://yoneda', 'content-type': 'application/json' },
       body: JSON.stringify({ job_id: job.id, epoch: job.epoch, requests: 3, max_requests: 3 }),
     }), f.scoped);
-  // The funded reviewer boundary rejects this write before generic repository routing.
-  expect(forbiddenObservation.status).toBe(403);
-  expect(await forbiddenObservation.json()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  // Counter observation remains an internal adapter operation, not an owner route.
+  expect(forbiddenObservation.status).toBe(404);
+  expect(await forbiddenObservation.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
 });
 
 it('never accepts operator-supplied quota counts or ordinary-account reconciliation', async () => {

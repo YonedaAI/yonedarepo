@@ -62,18 +62,19 @@ it('reopens only the completed trial being repaired and keeps its lock and budge
     expected_task_revisions: { 'trail-data': selected.revision },
     owner_brief: 'Repair the trail data task',
   };
+  await ledger(f.scoped, 'foreign', { op: 'init', id: 'foreign', name: 'Other owner', workspace: 'other-owner', remote: { namespace: 'yoneda-test', name: 'foreign' }, commit: 'a'.repeat(40), policy: repository.policy });
   const foreignScope = await api(f.scoped, '/api/repos/foreign/repair_team', f.cookie, repair);
   expect(foreignScope.status).toBe(403);
   expect((await workspace(f.scoped, f.owner, { op: 'reviewer_status' })).active_trial).toBeNull();
 
-  const changedId = await api(f.scoped, `/api/repos/${f.repo}/repair_team`, f.cookie, {
+  const changedId = await api(f.scoped, '/api/reviewer/repair', f.cookie, {
     ...repair,
     run_id: 'reviewer-changed-trial-id',
   });
   expect(changedId.status).toBe(409);
   expect((await workspace(f.scoped, f.owner, { op: 'reviewer_status' })).active_trial).toBeNull();
 
-  const failedRepair = await api(f.scoped, `/api/repos/${f.repo}/repair_team`, f.cookie, {
+  const failedRepair = await api(f.scoped, '/api/reviewer/repair', f.cookie, {
     ...repair,
     request_id: 'reviewer-repair-failed-123456',
     expected_version: repository.version + 1,
@@ -101,14 +102,14 @@ it('reopens only the completed trial being repaired and keeps its lock and budge
     active_trial: trial.run_id,
     _active_trial_status: 'repair_pending',
   });
-  const conflictingReplay = await api(f.scoped, `/api/repos/${f.repo}/repair_team`, f.cookie, {
+  const conflictingReplay = await api(f.scoped, '/api/reviewer/repair', f.cookie, {
     ...repair,
     owner_brief: 'Different repair under the same request ID',
   });
   expect(conflictingReplay.status).toBe(409);
   expect((await workspace(f.scoped, f.owner, { op: 'reviewer_status' })).active_trial).toBe(trial.run_id);
 
-  const repaired = await api(f.scoped, `/api/repos/${f.repo}/repair_team`, f.cookie, repair);
+  const repaired = await api(f.scoped, '/api/reviewer/repair', f.cookie, repair);
   expect(repaired.status).toBe(200);
   expect(await repaired.json<Json>()).toMatchObject({ run_id: trial.run_id, status: 'repairing' });
   await workspace(f.scoped, f.owner, {
@@ -144,7 +145,7 @@ it('fences a terminal completion read before repair of an active trial', async (
     state.storage.sql.exec("UPDATE executions SET payload=json_set(payload,'$.status','completed') WHERE json_extract(payload,'$.run_id')=?", trial.run_id);
   });
   const observedEpoch = (await workspace(f.scoped, f.owner, { op: 'reviewer_status' })).trial_epoch;
-  const repaired = await api(f.scoped, `/api/repos/${f.repo}/repair_team`, f.cookie, {
+  const repaired = await api(f.scoped, '/api/reviewer/repair', f.cookie, {
     request_id: 'active-terminal-repair-123456',
     expected_commit: repo.head_commit,
     expected_version: repo.version,

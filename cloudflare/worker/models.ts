@@ -15,9 +15,16 @@ import { trackClaudeUsage } from './model-usage';
 import { trackProviderUsage } from './provider-usage';
 import { scopeFor } from './scope';
 import { ledger, sha } from './storage';
-import type { Env, Scope } from './types';
+import type { Env, Json, Scope } from './types';
 import { providerCredentials } from './vault';
 import { workspace } from './workspace';
+import {
+  reserveWorkspaceSpend,
+  settleWorkspaceSpend,
+  type WorkspaceSpendContext,
+  type WorkspaceSpendReservation,
+  workspaceSpendForAttempt,
+} from './workspace-spend';
 export const modelHandler =
   (provider: 'codex' | 'claude' | 'gemini'): OutboundHandler<Env> =>
   async (req, env, ctx) => {
@@ -25,6 +32,9 @@ export const modelHandler =
     let attempt: Scope | undefined;
     let upstream = false;
     let requestNumber: number | undefined;
+    let sharedContext: WorkspaceSpendContext | null = null;
+    let sharedReservation: WorkspaceSpendReservation | undefined;
+    let countedReservation: Json | undefined;
     try {
       const { scope } = await scopeFor(env, ctx.containerId);
       attempt = scope;
@@ -33,13 +43,34 @@ export const modelHandler =
         return error('FORBIDDEN', 'Provider outside this attempt scope', 403);
       const path = new URL(req.url).pathname;
       if (req.method !== 'POST') return error('FORBIDDEN', 'POST required', 403);
-      const prepared = prepareModelRequest(job, provider, path, await readJson(req, 256 * 1024));
       const repository = await ledger(env, scope.repo_id, { op: 'repository_status' });
       const owner = repository.workspace ?? '_admin';
+      sharedContext = await workspaceSpendForAttempt(env, owner, scope.repo_id, job);
+      const prepared = prepareModelRequest(
+        job,
+        provider,
+        path,
+        await readJson(req, 256 * 1024),
+        sharedContext,
+      );
+      for (const key of [
+        'workspace_spend',
+        '_workspace_spend',
+        'adaptive_team',
+        'approved_model_pool',
+        'model_budgets',
+      ])
+        delete prepared.body[key];
       const trialPolicy =
         owner === '_admin' ? null : await workspace(env, owner, { op: 'reviewer_status' });
-      const reviewer = Boolean(trialPolicy?.repo_id);
       const campaign = await campaignForAttempt(env, owner, scope.repo_id, job);
+      const legacyTrial =
+        !sharedContext &&
+        trialPolicy?.repo_id === scope.repo_id &&
+        (trialPolicy?.active_trial === job.payload.execution.run_id ||
+          job.payload.execution.run_id?.startsWith('reviewer-'));
+      const reviewer =
+        !sharedContext && Boolean(trialPolicy?.repo_id) && Boolean(campaign || legacyTrial);
       if (
         reviewer &&
         (trialPolicy?.revoked ||
@@ -83,15 +114,24 @@ export const modelHandler =
         throw failure;
       });
       requestNumber = counted.number;
+      countedReservation = counted;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
-      const ceiling = reviewer || campaign ? counted.reservation_microusd : prepared.reservation;
-      if ((reviewer || campaign) && !Number.isSafeInteger(ceiling))
+      const ceiling =
+        sharedContext || reviewer || campaign ? counted.reservation_microusd : prepared.reservation;
+      if ((sharedContext || reviewer || campaign) && !Number.isSafeInteger(ceiling))
         throw new Error('Reviewer inference requires a priced run reservation');
       if (ceiling !== undefined) {
         try {
           verifyCampaignReservation(campaign, counted);
-          if (campaign) {
+          if (sharedContext) {
+            sharedReservation = await reserveWorkspaceSpend(
+              env,
+              sharedContext,
+              reservationId,
+              counted,
+            );
+          } else if (campaign) {
             await reserveCampaignUsage(
               env,
               owner,
@@ -153,7 +193,7 @@ export const modelHandler =
         error_code: providerStatusCode(result.status),
       });
       const tracked =
-        prepared.reservation && !reviewer && !campaign
+        prepared.reservation && !sharedContext && !reviewer && !campaign
           ? trackClaudeUsage(
               result,
               env,
@@ -172,7 +212,15 @@ export const modelHandler =
               reservation_id: counted.reservation_id,
               ...usage,
             });
-            if (campaign)
+            if (sharedContext && sharedReservation)
+              await settleWorkspaceSpend(
+                env,
+                sharedContext.owner,
+                sharedReservation,
+                settled.charged_microusd,
+                usage,
+              );
+            else if (campaign)
               await settleCampaignUsage(
                 env,
                 owner,
@@ -192,6 +240,27 @@ export const modelHandler =
           })
         : tracked;
     } catch (e: any) {
+      if (!upstream && sharedContext && sharedReservation && countedReservation && attempt) {
+        try {
+          const unused = await ledger(env, attempt.repo_id, {
+            op: 'settle_model_request',
+            job_id: attempt.job.id,
+            epoch: attempt.job.epoch,
+            reservation_id: countedReservation.reservation_id,
+            input_tokens: 0,
+            output_tokens: 0,
+          });
+          await settleWorkspaceSpend(
+            env,
+            sharedContext.owner,
+            sharedReservation,
+            unused.charged_microusd,
+            { input_tokens: 0, output_tokens: 0 },
+          );
+        } catch {
+          /* An unconfirmed release keeps its full conservative reservation. */
+        }
+      }
       if (attempt)
         await attemptLog(env, attempt, upstream ? 'model.transport_failed' : 'model.rejected', {
           request_number: requestNumber,

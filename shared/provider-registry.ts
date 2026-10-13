@@ -44,6 +44,13 @@ export const providerRegistry = [
       {
         id: 'glm-5.3-flash',
         label: 'GLM 5.3 Flash · Coding Plan default',
+        conservative_pricing: {
+          input_microusd_per_million: 150000,
+          output_microusd_per_million: 500000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://docs.z.ai/guides/overview/pricing',
+        pricing_verified_at: '2026-10-13',
       },
       {
         id: 'glm-5.3',
@@ -67,6 +74,13 @@ export const providerRegistry = [
       {
         id: 'gpt-5.6-luna',
         label: 'GPT-5.6 Luna · Default',
+        conservative_pricing: {
+          input_microusd_per_million: 250000,
+          output_microusd_per_million: 1200000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://developers.openai.com/api/docs/models/gpt-5.6-luna',
+        pricing_verified_at: '2026-10-13',
       },
       {
         id: 'gpt-6-luna',
@@ -98,10 +112,24 @@ export const providerRegistry = [
       {
         id: 'claude-sonnet-5-5',
         label: 'Claude Sonnet 5.5 · Lower-cost coding default',
+        conservative_pricing: {
+          input_microusd_per_million: 4000000,
+          output_microusd_per_million: 10000000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://platform.claude.com/docs/en/about-claude/pricing',
+        pricing_verified_at: '2026-10-13',
       },
       {
         id: 'claude-opus-5-5',
         label: 'Claude Opus 5.5 · Preapproved difficult second repair only',
+        conservative_pricing: {
+          input_microusd_per_million: 8000000,
+          output_microusd_per_million: 20000000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://platform.claude.com/docs/en/about-claude/pricing',
+        pricing_verified_at: '2026-10-13',
       },
       {
         id: 'claude-sonnet-4-6',

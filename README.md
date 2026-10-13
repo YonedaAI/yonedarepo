@@ -10,30 +10,36 @@ A Git and Context Graph platform for agent-built applications. Agents plan compl
 node tools/reviewer.mjs
 ```
 
-The command prompts for the key without echoing it and reads the latest checked collaborative example. It never starts or resumes paid work by default. While a newly configured campaign is preparing, it reports that state and does not silently use historical results. A private access file can be used without putting the key in shell history: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`. `--no-open` prints the review URL without launching a browser. Use `--new` only to explicitly approve an optional fixed, funded trial. Run `--help` for options. Node 24 is sufficient; no dependency installation or local Cloudflare deployment is needed. The new booking campaign has a separate $50 conservative allowance, up to $5 per trial, one active trial, and access through October 22, 2026. A one-shot Opus repair requires the original explicit approval and a failed cheaper repair; it shares the same chain ceiling. Unknown usage retains its reservation. Reviewer access cannot change providers or start arbitrary paid work.
+The command prompts for the key without echoing it and opens recorded checked work. It never starts inference by default. Node 24 is sufficient; no dependencies or local deployment are needed. A private file is supported: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`.
+
+The reviewer uses the ordinary workspace with preconfigured model connections. Choose **Start a Run**, describe a change, and leave the first agent on **Auto**. Add model/role preferences if useful; YonedaRepo plans the actual team. Optional samples prepare briefs for coordinated work, prior-context continuation or existing conflict resolution. Selecting a sample starts no work and is not evidence that the requested behavior occurred. New work shares a configurable $50 conservative workspace allowance with retained spending; provider charges may differ. Billing comes later. Canonical publication remains a separate human decision.
+
+After the workspace switches to shared accounting, `--new` and `--resume` open the ordinary workspace for browser approval. Historical campaign approvals, counters and receipts remain unchanged; old fixed-trial endpoints do not renew them.
 
 The current recorded result is an event-booking UI/API/SQLite app built by GLM and Codex, independently checked on `4c330e0`. The coordinator retained both specialist captures through one repair. Review the app, checks and why first; canonical publication still awaits a human decision.
 
-Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Alternatively, connect a local agent through a scoped MCP/Git key; it uses your local agent credentials. The public Garden website is viewable without an account.
+Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Choose **Connect Agents** in the sidebar to connect a hosted model provider or your own MCP/Git agent, wherever it runs. The public Garden website is viewable without an account.
 
 ![Reviewing an exact captured revision before publication](docs/images/selection-review.png)
 
 Follow [the website workflow](docs/website-workflow.md) to create an account, connect provider keys, start concurrent agents, compare their changes and publish a checked static website. The older [retry fixture walkthrough](docs/demo.md) remains an operator verification example.
 
 MiMo connections support **API credits** or **Token Plan**, with an explicit plan region. ZAI
-connections use the Coding Plan endpoint and default to **GLM-5.3-Flash**. New hosted runs have
-no request or dollar cap unless you set one; provider quotas and execution limits still apply.
+connections use the Coding Plan endpoint and default to **GLM-5.3-Flash**. New owner runs share the workspace allowance and bounded model/execution limits.
+Automatic selection uses saved models with verified conservative pricing; unsupported or unpriced choices are rejected before scheduling.
 See [provider setup and adding a provider](docs/providers.md).
 
-Choose one to six agents for each run: one for a focused change, several to compare independent approaches, or a **Build together** team that plans complementary tasks from your brief and produces one integrated result. A selected agent can both work and integrate; manual task configuration is optional. Add, remove or change agents before approving the brief. [Build together](docs/build-together.md) captures specialist outputs, assembles their exact revisions, and checks one integrated candidate. In comparison mode, optional subagents allow up to 12 agents in total through two delegation levels; each produces a separately captured and evaluated alternative. The owner chooses what ships. See [concurrency and delegation limits](docs/runbook.md#agent-concurrency-and-delegation).
+Start with one Auto agent preference. The planner selects one to six approved agents when complementary work justifies a team, freezes their responsibilities, and integrates one checked result. Optional model/role rows guide the plan; task ownership and dependencies are system responsibilities. Advanced settings retain manual teams and independent comparisons. [Build together](docs/build-together.md) captures specialist outputs and checks their exact integration. An automatic run shares 144 model requests across planning, work and two bounded repair rounds, with at most three concurrent agents and 20 executions. These run limits do not expand the workspace allowance.
 
-After publication, **Update website** / **Update project** continues the winning approach and model from canonical source. The previous brief, criteria, decision and relevant artifacts/context are carried forward for review. Agent membership and settings remain editable, with fresh usage and current repository checks.
+Later runs start from the current working branch or published source and retain relevant prior intent, criteria and context. Fresh work starts with Auto; an explicit restart preserves the older requested settings for review. Current repository checks apply.
 
 [Current UI and deployment verification](docs/ui-workflow-evidence.md) · [Presenter video script and production brief](docs/video/production-brief.md)
 
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
 ### Current source wave and deployment status
+
+The October 13 simplified-workflow source passed the complete `cargo xtask check` gate: 387 Rust tests (278 app, 18 core, 75 runtime, 1 Cloudflare, 15 xtask), 387 platform Workers tests, 16 isolated-app workerd tests, 160 frontend tests and 27 Node runtime/reviewer tests. The R5 image passed 81 Linux runtime tests. Local browser checks covered the real components with simulated authenticated responses at 1280px, 390px and 320px, including fresh Connect Agents navigation, provider setup, repository-scoped agent access, sample drafts and zero inference on opening forms. Deployment, live funded runs and unfamiliar-human rehearsal are separate acceptance boundaries.
 
 The October 12 autonomous-app implementation and follow-up safeguards passed `cargo xtask check`: 359 Rust tests (251 app, 18 core, 74 runtime, 1 Cloudflare, 15 xtask), 327 platform Workers tests, 16 isolated-app workerd tests, 113 frontend tests and 15 reviewer Node tests. The separate stage-scoped study tools passed 29 Node tests. The R4 Linux runtime passed 80 tests and is pinned at `sha256:bd773a85f434e0d43727c2b6cf7db72a38e6db478e595fb034091450a48db713`; rollout acceptance is recorded separately. The platform and separate Apps Worker are deployed; current image rollout, fresh paid build/feature/bug outcomes and the corrected context study are recorded separately in [release evidence](docs/release-evidence.md). Local checks and provisioning receipts do not prove an agent-built app outcome or human acceptance.
 

@@ -61,6 +61,8 @@ fn planner<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<(Value, Value)> {
         || run["team_planning"] != "automatic"
         || run["status"] != "planning"
         || run.get("team_plan").is_some()
+        || run["adaptive_team"].is_object()
+            && job["payload"]["run"]["autonomy_approval"] != run["autonomy_approval"]
     {
         return Err(Error::new(
             "FORBIDDEN",
@@ -118,6 +120,9 @@ pub(super) fn finish<S: SqlStore>(
     let proposal_id = string(&proposal, "id")?;
     let plan = proposals::validated(&proposal, job, run)?;
     super::validate_plan_scopes(run, &plan)?;
+    if let Some(agents) = proposals::roster(&proposal, run)? {
+        super::super::adaptive_team::activate(run, &agents)?;
+    }
     run["team_plan"] = json!(plan);
     run["team_plan_revision"] = json!(1);
     run["team_plan_proposal"] = json!(proposal_id);
@@ -136,7 +141,7 @@ pub(super) fn finish<S: SqlStore>(
         db,
         "team.plan_frozen",
         now,
-        json!({"run_id":run["id"],"proposal":proposal_id,"plan_revision":1,"planner_epoch":job["epoch"]}),
+        json!({"run_id":run["id"],"proposal":proposal_id,"plan_revision":1,"planner_epoch":job["epoch"],"agents":run["agents"],"planned_roster_digest":run["planned_roster_digest"]}),
     )?;
     Ok(true)
 }
@@ -191,6 +196,6 @@ pub(super) fn context<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     let proposal_id = proposal.as_ref().map(|p| p["id"].clone());
     let versions = proposals::count(db, &job)?;
     Ok(
-        json!({"run_id":run["id"],"mode":"collaborate","stage":"planning","goal":run["intent"],"criteria":run["criteria"],"base":run["base"],"agents":run["agents"],"model_budgets":run["model_budgets"],"context":job["payload"]["execution"]["context"],"task":null,"inputs":[],"handoffs":[],"plan_revision":0,"contract":null,"integration_manifest":null,"integration_digest":null,"manifest_record":null,"active_proposal_id":proposal_id,"active_proposal":proposal,"proposal_versions":versions,"max_proposal_versions":proposals::MAX_DRAFTS}),
+        json!({"run_id":run["id"],"mode":"collaborate","stage":"planning","goal":run["intent"],"criteria":run["criteria"],"base":run["base"],"agents":run["agents"],"approved_model_pool":run["approved_model_pool"],"adaptive_team":run["adaptive_team"],"model_budgets":run["model_budgets"],"context":job["payload"]["execution"]["context"],"task":null,"inputs":[],"handoffs":[],"plan_revision":0,"contract":null,"integration_manifest":null,"integration_digest":null,"manifest_record":null,"active_proposal_id":proposal_id,"active_proposal":proposal,"proposal_versions":versions,"max_proposal_versions":proposals::MAX_DRAFTS}),
     )
 }

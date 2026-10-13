@@ -72,7 +72,7 @@ describe('reviewer run permissions', () => {
     expect(html).not.toContain('Latest failed trial');
   });
 
-  it('keeps an empty reviewer workspace focused on funded trials without contribution setup', () => {
+  it('offers an ordinary reviewer the same brief starters and primary start action', () => {
     const props = {
       snapshot,
       reviewer: true,
@@ -85,10 +85,11 @@ describe('reviewer run permissions', () => {
     };
     const html = renderToStaticMarkup(createElement(Exploration, props));
     expect(html).not.toContain('Connect local agent');
-    expect(html).not.toContain('New run');
-    expect(html).toContain('Start a funded trial');
+    expect(html).toContain('Start a Run');
+    expect(html).toContain('Continue from context');
+    expect(html).not.toContain('Start a funded trial');
   });
-  it('hides generic new runs and stale repair instead of merely disabling forbidden mutations', () => {
+  it('uses the ordinary start action while retaining explicit historical repair permissions', () => {
     const toolbar = { snapshot, canStart: true, onNewRun: noop, reviewer: true };
     const repair = {
       snapshot,
@@ -98,13 +99,13 @@ describe('reviewer run permissions', () => {
       onRepair: async () => true,
       reviewer: true,
     };
-    expect(renderToStaticMarkup(createElement(RunToolbar, toolbar))).not.toContain('New run');
+    expect(renderToStaticMarkup(createElement(RunToolbar, toolbar))).toContain('Start a Run');
     expect(renderToStaticMarkup(createElement(StaleCandidateRepair, repair))).not.toContain(
       'Repair on current revision',
     );
     expect(
       renderToStaticMarkup(createElement(RunToolbar, { ...toolbar, reviewer: false })),
-    ).toContain('New run');
+    ).toContain('Start a Run');
     expect(
       renderToStaticMarkup(createElement(StaleCandidateRepair, { ...repair, reviewer: false })),
     ).toContain('Repair on current revision');
