@@ -1,6 +1,7 @@
 import { providers } from '../../shared/providers';
 import { error, readJson, response } from './http';
 import { type MiMoRouting, mimoRouting, validateMiMoKey } from './mimo-routing';
+import { providerModelAlias } from './provider-model-alias';
 import type { Env, Principal } from './types';
 import { open, seal } from './vault';
 import { workspace } from './workspace';
@@ -21,9 +22,17 @@ export async function settingsRoute(
   }
   const parts = path.split('/');
   const named = parts[3] === 'connections';
+  const connection = parts[4];
+  if (
+    parts.length === 6 &&
+    named &&
+    parts[5] === 'models' &&
+    req.method === 'POST' &&
+    /^[A-Za-z0-9_-]{1,80}$/.test(connection)
+  )
+    return providerModelAlias(req, env, principal, connection);
   if (parts.length > 5 || (!named && parts[3] !== 'providers'))
     return error('NOT_FOUND', 'Unknown provider setting', 404);
-  const connection = parts[4];
   if (req.method === 'DELETE' && connection && /^[A-Za-z0-9_-]{1,80}$/.test(connection))
     return response(
       await workspace(env, principal.workspace, { op: 'provider_delete', connection }),
@@ -32,6 +41,12 @@ export async function settingsRoute(
   const body = await readJson(req);
   if (named && connection) {
     const old = await workspace(env, principal.workspace, { op: 'provider_secret', connection });
+    if (old.alias_source)
+      return error(
+        'ALIAS_IMMUTABLE',
+        'Create a new model alias instead of changing an approved binding',
+        409,
+      );
     const routing = mimoRouting(old.provider, body.routing ?? old.routing);
     const key =
       body.key == null || body.key === ''

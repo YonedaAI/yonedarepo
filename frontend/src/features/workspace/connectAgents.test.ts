@@ -31,9 +31,10 @@ it('preselects a provider model that can actually be approved for new hosted wor
   const selectedModel = providerDefinition(provider).models.find((entry) => entry.id === model);
   expect(selectedModel?.conservative_pricing).toBeDefined();
   const price = selectedModel?.conservative_pricing;
+  expect(selectedModel?.auto_seed_eligible).toBe(true);
   const eligibleRates = providers.flatMap((p) =>
     p.models.flatMap((m) =>
-      m.conservative_pricing
+      m.conservative_pricing && m.auto_seed_eligible
         ? [
             m.conservative_pricing.input_microusd_per_million +
               m.conservative_pricing.output_microusd_per_million,

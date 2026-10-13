@@ -15,11 +15,14 @@ export function RunSamples({
           <button
             key={sample.id}
             type="button"
-            className="quiet"
+            className="quiet sample-choice"
+            aria-label={sample.label}
+            aria-describedby={`sample-${sample.id}-summary`}
             disabled={disabled}
             onClick={() => onChoose(sample)}
           >
-            {sample.label}
+            <span>{sample.label}</span>
+            <small id={`sample-${sample.id}-summary`}>{sample.summary}</small>
           </button>
         ))}
       </div>

@@ -106,6 +106,7 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
     if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
         execution["routing"] = routing.clone();
     }
+    super::super::adaptive_team::configure_execution(run, agent, index, &mut execution)?;
     if run.get("model_budgets").is_some() {
         execution["budget"] = json!({"provider":provider,"model":agent["model"]});
     }

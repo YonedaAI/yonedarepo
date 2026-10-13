@@ -30,6 +30,15 @@ pub(super) fn validate_agents(c: &Value) -> Result<()> {
             }
         }
         let model = string(agent, "model")?;
+        if let Some(value) = agent.get("reasoning_effort").filter(|v| !v.is_null()) {
+            yoneda_core::adaptive_team::validate_effort(
+                &provider,
+                &model,
+                value
+                    .as_str()
+                    .ok_or_else(|| bad("Invalid approved reasoning effort"))?,
+            )?;
+        }
         if let Some(value) = agent.get("routing").filter(|v| !v.is_null()) {
             let route: yoneda_core::provider_routing::ProviderRouting =
                 serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
@@ -64,6 +73,7 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
         if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
             e["routing"] = routing.clone();
         }
+        super::adaptive_team::configure_execution(run, agent, index, &mut e)?;
         if run.get("model_budgets").is_some() {
             e["budget"] = json!({"provider":provider,"model":agent["model"]});
         }

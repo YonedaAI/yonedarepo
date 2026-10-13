@@ -69,6 +69,14 @@ export async function providerKey(
   return (await providerCredentials(env, owner, provider, connection, model)).key;
 }
 
+/** Rebind only in Worker memory: no plaintext credential leaves this adapter. */
+export async function resealModelAlias(env: Env, owner: string, source: Json, aliasId: string) {
+  const route = mimoRouting(source.provider, source.routing);
+  const key = await open(env, owner, source.provider, source.sealed, source.id ?? source.provider);
+  validateMiMoKey(source.provider, key, route);
+  return seal(env, owner, source.provider, key, aliasId);
+}
+
 export async function providerCredentials(
   env: Env,
   owner: string,

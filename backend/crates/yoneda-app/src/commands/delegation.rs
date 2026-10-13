@@ -93,6 +93,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     if let Some(routing) = parent.get("routing") {
         child["routing"] = routing.clone();
     }
+    for field in ["agent_index", "reasoning_effort"] {
+        if let Some(value) = parent.get(field) {
+            child[field] = value.clone();
+        }
+    }
+    yoneda_core::adaptive_team::execution_effort(&run, &child)?;
     create(db, "executions", &id, &child)?;
     node(
         db,

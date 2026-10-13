@@ -30,6 +30,7 @@ vi.mock('react', async (original) => ({
 }));
 
 import { runSamples } from '../../../../shared/run-samples';
+import { Dialog } from '../../components/Dialog';
 import { Exploration } from './Exploration';
 import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
@@ -120,6 +121,26 @@ describe('first working build', () => {
     expect(props.onProviders).toHaveBeenCalledWith(refresh);
     props.onProviders = prior;
   });
+  it.each(runSamples)(
+    'opens $label with its own title and goal, without starting work',
+    async (sample) => {
+      state.api.mockResolvedValue(branch);
+      await find(render(), RunSamples)?.props.onChoose(sample);
+      const tree = render();
+      const form = composer(tree);
+      expect(find(tree, Dialog)?.props.title).toBe(sample.label);
+      expect(form?.props.initialRun.intent).toBe(sample.intent);
+      expect(form?.props.sampleProfileId).toBe(sample.id);
+      expect(form?.props.initialRun.agents).toHaveLength(sample.id === 'build-together' ? 2 : 1);
+      expect(
+        form?.props.initialRun.agents.every(
+          (agent: { connection: string }) => agent.connection === '',
+        ),
+      ).toBe(true);
+      expect(String(form?.key)).toContain(sample.id);
+      expect(state.api.mock.calls.some(([path]) => path.includes('start_run'))).toBe(false);
+    },
+  );
   it('a sample opens a fresh Auto brief with existing checks, without inference', async () => {
     state.api.mockResolvedValue(branch);
     const samples = find(render(), RunSamples);

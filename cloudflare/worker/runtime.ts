@@ -1,5 +1,16 @@
 import type { Json } from './types';
 export function checkLedger(snapshot: Json, request?: Json) {
+  const requestedEffort = [
+    ...(request?.adaptive_team?.requested_agents ?? []),
+    ...(request?.agents ?? []),
+  ].some((agent: Json) => agent.reasoning_effort != null);
+  if (requestedEffort && snapshot?.capabilities?.reasoning_effort !== 1)
+    throw Object.assign(
+      new Error('Repository reasoning support is updating; refresh before starting.'),
+      {
+        code: 'LEDGER_UPDATING',
+      },
+    );
   if (request?.adaptive_team !== undefined && snapshot?.capabilities?.adaptive_teams !== 1)
     throw Object.assign(
       new Error('Automatic team planning is updating; refresh before starting.'),
@@ -49,6 +60,13 @@ export function checkRuntime(health: Json, job: Json) {
   }
 }
 function compatibleRuntime(health: Json, job: Json) {
+  if (
+    job.payload?.execution?.reasoning_effort != null &&
+    health?.capabilities?.reasoning_efforts !== 1
+  )
+    throw new Error(
+      'Container image does not support the approved reasoning effort; wait for rollout completion',
+    );
   if (job.payload?.run?.adaptive_team !== undefined && health?.capabilities?.adaptive_teams !== 1)
     throw new Error(
       'Container image does not support automatic team selection; wait for rollout completion',

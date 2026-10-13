@@ -33,6 +33,7 @@ import { RunModePicker } from '../team/RunModePicker';
 import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { AgentRoster } from './AgentRoster';
 import { DelegationSettings } from './DelegationSettings';
+import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunComposer } from './RunComposer';
 import { readAllowance } from './WorkspaceAllowance';
 
@@ -177,6 +178,35 @@ describe('preference-only brief submission', () => {
         ],
       },
     });
+  });
+  it('rejects unsupported effort before changing the repository check policy', async () => {
+    hooks.api.mockResolvedValue({
+      providers: [{ id: 'glm', provider: 'zai', model: 'glm-5.3-flash', label: 'Saved' }],
+    });
+    render();
+    hooks.effects[0]();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    enterBrief();
+    find(render(), (el) => el.type === AgentRoster)?.props.onChange([
+      {
+        id: 'a',
+        connection: 'glm',
+        role: 'auto',
+        strategy: 'Team participant',
+        reasoning_effort: 'medium',
+      },
+    ]);
+    find(render(), (el) => el.type === RunAdvancedOptions)?.props.onPolicyChange(
+      JSON.stringify({
+        setup: [],
+        checks: [{ name: 'fix', argv: ['node', 'fix.test.mjs'], timeout_ms: 1000 }],
+      }),
+    );
+    await submit();
+    expect(start).not.toHaveBeenCalled();
+    expect(hooks.api.mock.calls.some(([path]) => path.includes('update_policy'))).toBe(false);
   });
   it('retains the submitted brief while checking an unconfirmed start', async () => {
     enterBrief();

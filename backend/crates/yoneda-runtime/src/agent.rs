@@ -10,6 +10,7 @@ use std::path::Path;
 use tokio::process::Command;
 use yoneda_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
+    validate_reasoning_job(job)?;
     let approved_budget = crate::execution_limits::model_budget(job)?;
     let git_native = crate::transport::enabled(job);
     let baseline = if git_native {
@@ -38,9 +39,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     let mcp = json!({"mcpServers":{"yonedarepo":{"command":"/usr/local/bin/yoneda-runtime","args":["mcp"]}}});
     std::fs::write("/home/agent/mcp.json", mcp.to_string()).map_err(err)?;
     std::fs::create_dir_all("/home/agent/.codex").map_err(err)?;
-    let config = format!(
-        "model = {model:?}\nmodel_provider = \"yoneda\"\nmodel_reasoning_effort = \"low\"\n[model_providers.yoneda]\nname = \"Yoneda scoped proxy\"\nbase_url = \"http://codex.yoneda.internal/v1\"\nwire_api = \"responses\"\n[mcp_servers.yonedarepo]\ncommand = \"/usr/local/bin/yoneda-runtime\"\nargs = [\"mcp\"]\n"
-    );
+    let config = codex_configuration(model, execution);
     std::fs::write("/home/agent/.codex/config.toml", config).map_err(err)?;
     #[cfg(target_os = "linux")]
     {
@@ -155,6 +154,29 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
 }
 
+fn codex_configuration(model: &str, execution: &Value) -> String {
+    let effort = execution["reasoning_effort"].as_str().unwrap_or("low");
+    format!(
+        "model = {model:?}\nmodel_provider = \"yoneda\"\nmodel_reasoning_effort = {effort:?}\n[model_providers.yoneda]\nname = \"Yoneda scoped proxy\"\nbase_url = \"http://codex.yoneda.internal/v1\"\nwire_api = \"responses\"\n[mcp_servers.yonedarepo]\ncommand = \"/usr/local/bin/yoneda-runtime\"\nargs = [\"mcp\"]\n"
+    )
+}
+
+fn validate_reasoning_job(job: &Value) -> Result<()> {
+    let execution = &job["payload"]["execution"];
+    let effort = yoneda_core::adaptive_team::execution_effort(&job["payload"]["run"], execution)?;
+    if effort.is_some()
+        && (job["model"] != execution["model"]
+            || execution["harness"]
+                != yoneda_core::providers::provider(field(execution, "provider")?)?.harness)
+    {
+        return Err(yoneda_core::Error::new(
+            "FENCED",
+            "Reasoning effort model or harness changed",
+        ));
+    }
+    Ok(())
+}
+
 fn agent_prompt(job: &Value) -> Result<String> {
     let payload = &job["payload"];
     let execution = &payload["execution"];
@@ -233,6 +255,18 @@ fn claude_arguments<'a>(execution: &Value, approved_budget: bool, model: &'a str
         "",
         "--dangerously-skip-permissions",
     ];
+    // Only exact catalog-supported levels reach this builder after roster validation.
+    let effort = match execution["reasoning_effort"].as_str() {
+        Some("low") => Some("low"),
+        Some("medium") => Some("medium"),
+        Some("high") => Some("high"),
+        Some("xhigh") => Some("xhigh"),
+        Some("max") => Some("max"),
+        _ => None,
+    };
+    if let Some(effort) = effort {
+        args.extend(["--effort", effort]);
+    }
     // Claude Code's dollar estimate uses Anthropic pricing. Third-party models
     // retain the authoritative request/time/output limits in the scoped proxy.
     if !approved_budget

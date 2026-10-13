@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import type { RunSample } from '../../../../shared/run-samples';
+import { type RunSample, runSamples } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
@@ -9,8 +9,8 @@ import { RunHistory } from './RunHistory';
 import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
 import { type InitialRun, initialRun } from './restartRun';
-import { runDraft } from './runDraft';
 import { createRunStart } from './runStart';
+import { sampleBrief } from './sampleBrief';
 import { supportsWorkingBranches, type WorkingBranch, workingBranches } from './workingBranchView';
 import { workingRun } from './workingRun';
 
@@ -63,21 +63,7 @@ export function Exploration({
   const canStart = !busy && !repo.pending && repo.status === 'ready';
   function openBrief(branch?: WorkingBranch, sample?: RunSample) {
     const base = branch ? workingRun(snapshot, branch) : undefined;
-    if (sample) {
-      const draft = runDraft(snapshot, base);
-      setBranchSource({
-        ...base,
-        id: '',
-        intent: sample.intent,
-        criteria: [...new Set([...draft.criteria.split('\n'), ...sample.criteria])],
-        agents: draft.agents,
-        context: draft.context,
-        budgets: draft.budgets,
-        delegation: draft.delegation,
-        policy: draft.policy,
-        mode: draft.mode,
-      });
-    } else setBranchSource(base);
+    setBranchSource(sample ? sampleBrief(snapshot, base, sample) : base);
     setSampleProfileId(sample?.id);
     launcher.current = createRunStart(repo.id);
     setRestartId('');
@@ -154,18 +140,18 @@ export function Exploration({
       <PendingReviews snapshot={snapshot} selected={run?.id} onSelect={setRunId} />
       {composing && (
         <Dialog
-          title={restartSource ? 'Restart run' : 'Start a Run'}
+          title={
+            restartSource
+              ? 'Restart run'
+              : (runSamples.find((item) => item.id === sampleProfileId)?.label ?? 'Start a Run')
+          }
           onClose={() => setComposing(false)}
           locked={busy}
           wide
         >
           <Suspense fallback={<p role="status">Loading run settings…</p>}>
             <RunComposer
-              key={
-                branchSource?.workingBranch
-                  ? `${branchSource.workingBranch.id}:${branchSource.workingBranch.version}`
-                  : (restartSource?.id ?? 'new-run')
-              }
+              key={`${sampleProfileId ?? 'custom'}:${branchSource?.workingBranch ? `${branchSource.workingBranch.id}:${branchSource.workingBranch.version}` : (restartSource?.id ?? 'new-run')}`}
               initialRun={
                 branchSource ?? (restartSource ? initialRun(snapshot, restartSource) : undefined)
               }

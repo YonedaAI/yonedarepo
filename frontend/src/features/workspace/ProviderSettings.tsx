@@ -1,9 +1,10 @@
 import { Bot, Pencil, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
+import { AddProviderModel } from './AddProviderModel';
 import { billingLabel, type ProviderRouting } from './ProviderBillingPicker';
 import { ProviderConnectionForm } from './ProviderConnectionForm';
-import { providerNames } from './providerModels';
+import { modelDisplayName, providerNames } from './providerModels';
 
 export type Provider = {
   id: string;
@@ -12,10 +13,12 @@ export type Provider = {
   model: string;
   routing?: ProviderRouting | null;
   version?: number;
+  alias_source?: { connection: string; version: number } | null;
 };
 export function ProviderSettings({ onClose }: { onClose: () => void }) {
   const [configured, setConfigured] = useState<Provider[]>([]);
   const [editing, setEditing] = useState<Provider | null>(null);
+  const [addingModel, setAddingModel] = useState<Provider | null>(null);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
@@ -49,25 +52,40 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
             <li key={p.id}>
               <Bot size={19} />
               <div>
-                <strong>{p.label}</strong>
+                <strong>{modelDisplayName(p.provider, p.model)}</strong>
                 <small>
-                  {providerNames[p.provider]} · <code>{p.model}</code>
+                  {providerNames[p.provider]}
                   {p.provider === 'mimo' && <> · {billingLabel(p.routing)}</>}
                   {p.provider === 'zai' && ' · Coding Plan'}
                 </small>
               </div>
               <button
                 type="button"
-                className="icon-button"
-                aria-label={`Edit connection ${p.label}`}
-                disabled={busy}
+                className="quiet"
+                disabled={busy || loading}
                 onClick={() => {
-                  setEditing(p);
+                  setAddingModel(p);
+                  setEditing(null);
                   setMessage('');
                 }}
               >
-                <Pencil size={16} />
+                Add model
               </button>
+              {!p.alias_source && (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Edit connection ${p.label}`}
+                  disabled={busy}
+                  onClick={() => {
+                    setEditing(p);
+                    setAddingModel(null);
+                    setMessage('');
+                  }}
+                >
+                  <Pencil size={16} />
+                </button>
+              )}
               <button
                 type="button"
                 className="icon-button"
@@ -108,18 +126,33 @@ export function ProviderSettings({ onClose }: { onClose: () => void }) {
         </p>
       )}
       {message && <p role="status">{message}</p>}
-      <ProviderConnectionForm
-        key={editing?.id ?? 'new'}
-        editing={editing}
-        connections={configured}
-        disabled={busy || loading}
-        onCancel={() => setEditing(null)}
-        onSaved={async () => {
-          await load();
-          setEditing(null);
-          setMessage('Connection saved. Restart a finished run to use the updated settings.');
-        }}
-      />
+      {addingModel ? (
+        <AddProviderModel
+          key={addingModel.id}
+          source={addingModel}
+          connections={configured}
+          disabled={busy || loading}
+          onCancel={() => setAddingModel(null)}
+          onSaved={async () => {
+            await load();
+            setAddingModel(null);
+            setMessage('Model connected. It is available when starting a run.');
+          }}
+        />
+      ) : (
+        <ProviderConnectionForm
+          key={editing?.id ?? 'new'}
+          editing={editing}
+          connections={configured}
+          disabled={busy || loading}
+          onCancel={() => setEditing(null)}
+          onSaved={async () => {
+            await load();
+            setEditing(null);
+            setMessage('Connection saved. Restart a finished run to use the updated settings.');
+          }}
+        />
+      )}
     </section>
   );
 }

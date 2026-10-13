@@ -1,4 +1,7 @@
 use super::*;
+#[cfg(test)]
+#[path = "provider_alias_tests.rs"]
+mod alias_tests;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
     if c["op"] == "settings" {
@@ -14,7 +17,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     .ok_or_else(|| bad("Corrupt provider"))?,
             )
             .map_err(|e| bad(&e.to_string()))?;
-            providers.push(json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"routing":p["routing"],"configured":true,"updated_at":p["updated_at"],"version":p["version"].as_i64().unwrap_or(0)}));
+            let mut public = json!({"id":p.get("id").unwrap_or(&p["provider"]),"label":p.get("label").unwrap_or(&p["provider"]),"provider":p["provider"],"model":p["model"],"routing":p["routing"],"configured":true,"updated_at":p["updated_at"],"version":p["version"].as_i64().unwrap_or(0)});
+            public["alias_source"] = p["alias_source"].clone();
+            providers.push(public);
         }
         return Ok(json!({"providers":providers}));
     }
@@ -31,7 +36,27 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         return Err(bad("Invalid connection identity"));
     }
     let id = format!("provider:{connection}");
+    if matches!(
+        c["op"].as_str(),
+        Some("provider_put" | "provider_update" | "provider_model_alias")
+    ) {
+        super::provider_model_alias::assert_not_retired(db, connection)?;
+    }
+    if matches!(c["op"].as_str(), Some("provider_put" | "provider_update")) {
+        match get(db, TABLE, &id) {
+            Ok(provider) if provider["alias_source"].is_object() => {
+                return Err(Error::new(
+                    "ALIAS_IMMUTABLE",
+                    "Create a new model alias instead of changing an approved binding",
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.code == "NOT_FOUND" => {}
+            Err(error) => return Err(error),
+        }
+    }
     match string(c, "op")?.as_str() {
+        "provider_model_alias" => super::provider_model_alias::create(db, c, now),
         "provider_update" => {
             let old = get(db, TABLE, &id)?;
             if c["expected_version"].as_i64() != Some(old["version"].as_i64().unwrap_or(0)) {
@@ -113,6 +138,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             Ok(value)
         }
         "provider_delete" => {
+            match get(db, TABLE, &id) {
+                Ok(provider) if provider["alias_source"].is_object() => {
+                    put(
+                        db,
+                        &format!("provider-retired:{connection}"),
+                        &json!({"id":connection,"retired_at":now}),
+                    )?;
+                }
+                Ok(_) => {}
+                Err(error) if error.code == "NOT_FOUND" => {}
+                Err(error) => return Err(error),
+            }
             db.query("DELETE FROM workspace_records WHERE id=?", &[json!(id)])?;
             Ok(json!({"removed":true}))
         }

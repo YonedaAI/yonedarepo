@@ -90,6 +90,8 @@ pub(super) fn authorize_repair<S: SqlStore>(
         || run["intent"] != run["autonomy_approval"]["intent"]
         || run["criteria"] != run["autonomy_approval"]["criteria"]
         || super::adaptive_team::validate_approval(run).is_err()
+        || run["adaptive_team"].is_object()
+            && yoneda_core::adaptive_team::execution_effort(run, execution).is_err()
         || job["payload"]["run"]["autonomy_approval"] != run["autonomy_approval"]
         || json!(yoneda_core::fingerprint(&run["autonomy_policy"])?)
             != run["autonomy_policy_digest"]

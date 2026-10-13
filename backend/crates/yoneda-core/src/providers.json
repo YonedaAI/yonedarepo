@@ -14,11 +14,13 @@
     "models": [
       {
         "id": "mimo-v2.6-flash",
-        "label": "MiMo 2.6 Flash \u00b7 Default"
+        "label": "MiMo 2.6 Flash",
+        "auto_seed_eligible": false
       },
       {
         "id": "mimo-v2.6-pro",
-        "label": "MiMo 2.6 Pro"
+        "label": "MiMo 2.6 Pro",
+        "auto_seed_eligible": false
       }
     ],
     "token_plan_regions": {
@@ -42,18 +44,47 @@
     "models": [
       {
         "id": "glm-5.3-flash",
-        "label": "GLM 5.3 Flash \u00b7 Coding Plan default",
+        "label": "GLM 5.3 Flash",
         "conservative_pricing": {
           "input_microusd_per_million": 150000,
           "output_microusd_per_million": 500000,
           "source": "owner-approved conservative rates"
         },
         "pricing_source_url": "https://docs.z.ai/guides/overview/pricing",
-        "pricing_verified_at": "2026-10-13"
+        "pricing_verified_at": "2026-10-13",
+        "auto_seed_eligible": true,
+        "reasoning_efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "reasoning_default": "max",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://docs.z.ai/devpack/latest-model",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Existing conservative metered-equivalent rates retained for the workspace ceiling; Coding Plan subscription usage is not a measured token invoice. Cache storage is currently free."
       },
       {
         "id": "glm-5.3",
-        "label": "GLM 5.3 \u00b7 Coding Plan"
+        "label": "GLM 5.3",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "high",
+          "max"
+        ],
+        "reasoning_default": "max",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://docs.z.ai/devpack/latest-model",
+        "conservative_pricing": {
+          "input_microusd_per_million": 1400000,
+          "output_microusd_per_million": 4400000,
+          "source": "owner-approved conservative rates"
+        },
+        "pricing_source_url": "https://docs.z.ai/guides/overview/pricing",
+        "pricing_verified_at": "2026-10-13",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Conservative metered-equivalent standard token rates for the workspace ceiling; Coding Plan subscription usage is not a measured token invoice. Cache storage is currently free."
       }
     ]
   },
@@ -72,26 +103,116 @@
     "models": [
       {
         "id": "gpt-5.6-luna",
-        "label": "GPT-5.6 Luna \u00b7 Default",
+        "label": "GPT-5.6 Luna",
         "conservative_pricing": {
           "input_microusd_per_million": 250000,
           "output_microusd_per_million": 1200000,
           "source": "owner-approved conservative rates"
         },
         "pricing_source_url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
-        "pricing_verified_at": "2026-10-13"
+        "pricing_verified_at": "2026-10-13",
+        "auto_seed_eligible": true,
+        "reasoning_efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://developers.openai.com/api/docs/models/gpt-5.6-luna",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Existing conservative standard text rates retained; input includes 1.25x cache writes and the 270336-token ceiling stays below the 272000-token threshold."
       },
       {
         "id": "gpt-6-luna",
-        "label": "GPT-6 Luna"
+        "label": "GPT-6 Luna",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "conservative_pricing": {
+          "input_microusd_per_million": 125000,
+          "output_microusd_per_million": 500000,
+          "source": "owner-approved conservative rates"
+        },
+        "pricing_source_url": "https://developers.openai.com/api/docs/models/gpt-6-luna",
+        "pricing_verified_at": "2026-10-13",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard Responses text pricing, including 1.25x cache writes; 270336 input-token ceiling is below the 272000-token long-context threshold. Premium processing and tools excluded."
       },
       {
         "id": "gpt-6.1-sol",
-        "label": "GPT-6.1 Sol"
+        "label": "GPT-6.1 Sol",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "conservative_pricing": {
+          "input_microusd_per_million": 2500000,
+          "output_microusd_per_million": 10000000,
+          "source": "owner-approved conservative rates"
+        },
+        "pricing_source_url": "https://developers.openai.com/api/docs/models/gpt-6.1-sol",
+        "pricing_verified_at": "2026-10-13",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard Responses text pricing, including 1.25x cache writes; 270336 input-token ceiling is below the 272000-token long-context threshold. Premium processing and tools excluded."
       },
       {
         "id": "gpt-6-astra",
-        "label": "GPT-6 Astra \u00b7 Higher cost"
+        "label": "GPT-6 Astra",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://developers.openai.com/api/docs/models/gpt-6-astra"
+      },
+      {
+        "id": "gpt-6-sol",
+        "label": "GPT-6 Sol",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "conservative_pricing": {
+          "input_microusd_per_million": 2500000,
+          "output_microusd_per_million": 10000000,
+          "source": "owner-approved conservative rates"
+        },
+        "pricing_source_url": "https://developers.openai.com/api/docs/models/gpt-6-sol",
+        "pricing_verified_at": "2026-10-13",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard Responses text pricing, including 1.25x cache writes; 270336 input-token ceiling is below the 272000-token long-context threshold. Premium processing and tools excluded."
       }
     ]
   },
@@ -110,29 +231,89 @@
     "models": [
       {
         "id": "claude-sonnet-5-5",
-        "label": "Claude Sonnet 5.5 \u00b7 Lower-cost coding default",
+        "label": "Claude Sonnet 5.5",
         "conservative_pricing": {
           "input_microusd_per_million": 4000000,
           "output_microusd_per_million": 10000000,
           "source": "owner-approved conservative rates"
         },
-        "pricing_source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "pricing_verified_at": "2026-10-13"
+        "pricing_source_url": "https://platform.claude.com/docs/en/models/sonnet-5-5/overview",
+        "pricing_verified_at": "2026-10-13",
+        "auto_seed_eligible": true,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "high",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard text ceiling through 270336 input tokens; input covers one-hour cache writes. Existing conservative rates retained."
       },
       {
         "id": "claude-opus-5-5",
-        "label": "Claude Opus 5.5 \u00b7 Preapproved difficult second repair only",
+        "label": "Claude Opus 5.5",
         "conservative_pricing": {
           "input_microusd_per_million": 8000000,
           "output_microusd_per_million": 20000000,
           "source": "owner-approved conservative rates"
         },
-        "pricing_source_url": "https://platform.claude.com/docs/en/about-claude/pricing",
-        "pricing_verified_at": "2026-10-13"
+        "pricing_source_url": "https://platform.claude.com/docs/en/models/opus-5-5/overview",
+        "pricing_verified_at": "2026-10-13",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard text ceiling through 270336 input tokens; input covers one-hour cache writes. Existing conservative rates retained."
+      },
+      {
+        "id": "claude-haiku-5-5",
+        "label": "Claude Haiku 5.5",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "reasoning_default": "medium",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://platform.claude.com/docs/en/build-with-claude/effort",
+        "conservative_pricing": {
+          "input_microusd_per_million": 1000000,
+          "output_microusd_per_million": 2500000,
+          "source": "owner-approved conservative rates"
+        },
+        "pricing_source_url": "https://platform.claude.com/docs/en/models/haiku-5-5/overview",
+        "pricing_verified_at": "2026-10-13",
+        "pricing_input_token_ceiling": 270336,
+        "pricing_basis": "Standard text ceiling through 270336 input tokens, covering the over-100000-token tier and one-hour cache writes. Not an invoice rate."
       },
       {
         "id": "claude-sonnet-4-6",
-        "label": "Claude Sonnet 4.6 \u00b7 Legacy, higher token price"
+        "label": "Claude Sonnet 4.6",
+        "auto_seed_eligible": false,
+        "reasoning_efforts": [
+          "low",
+          "medium",
+          "high",
+          "max"
+        ],
+        "reasoning_default": "high",
+        "reasoning_control": "effort",
+        "reasoning_source_url": "https://platform.claude.com/docs/en/build-with-claude/effort"
       }
     ]
   },
@@ -151,19 +332,23 @@
     "models": [
       {
         "id": "gemini-3.8-flash",
-        "label": "Gemini 3.8 Flash \u00b7 Default"
+        "label": "Gemini 3.8 Flash",
+        "auto_seed_eligible": false
       },
       {
         "id": "gemini-3.7-flash",
-        "label": "Gemini 3.7 Flash"
+        "label": "Gemini 3.7 Flash",
+        "auto_seed_eligible": false
       },
       {
         "id": "gemini-3.5-flash-lite",
-        "label": "Gemini 3.5 Flash Lite"
+        "label": "Gemini 3.5 Flash Lite",
+        "auto_seed_eligible": false
       },
       {
         "id": "gemini-3.1-pro-preview",
-        "label": "Gemini 3.1 Pro \u00b7 Preview"
+        "label": "Gemini 3.1 Pro Preview",
+        "auto_seed_eligible": false
       }
     ]
   }

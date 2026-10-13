@@ -3,6 +3,7 @@ import type { Snapshot } from '../../lib/types';
 import { teamAgents } from '../team/teamAgents';
 import { runMode } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
+import { modelIsRunnable } from '../workspace/providerModels';
 import type { AgentDraft, DelegationDraft } from './agentLimits';
 import { defaultModelBudget, type ModelBudgetConfig, type ModelBudgetDraft } from './modelBudgets';
 import type { WorkingBranch } from './workingBranchView';
@@ -43,7 +44,9 @@ export function agentConnectionIssue(agent: AgentDraft, providers: Provider[]) {
   ) {
     return 'This connection now uses a different provider or model. Choose a connection to approve its current model.';
   }
-  return '';
+  return connection && !modelIsRunnable(connection.provider, connection.model)
+    ? 'This model is not currently available for new runs. Choose a supported model.'
+    : '';
 }
 
 export function initialRun(snapshot: Snapshot, run: Record<string, any>): InitialRun {
@@ -64,6 +67,9 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
             expectedProvider: execution.provider,
             expectedModel: execution.model,
             fromPreviousRun: true,
+            ...(execution.reasoning_effort != null
+              ? { reasoning_effort: execution.reasoning_effort }
+              : {}),
           }));
   const budgets = restoreModelBudgets(run, agents);
   return {

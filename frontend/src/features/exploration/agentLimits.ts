@@ -40,6 +40,7 @@ export interface AgentDraft {
   expectedProvider?: string;
   expectedModel?: string;
   fromPreviousRun?: boolean;
+  reasoning_effort?: string;
 }
 
 export interface DelegationDraft {

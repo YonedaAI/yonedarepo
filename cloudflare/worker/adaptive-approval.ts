@@ -1,4 +1,5 @@
 import { type ProviderDefinition, providerDefinition } from '../../shared/providers';
+import { normalizeReasoningEffort } from './model-reasoning';
 import type { Json } from './types';
 
 const roles = new Set(['auto', 'builder', 'frontend', 'backend', 'design', 'testing', 'review']);
@@ -27,6 +28,12 @@ export function resolveAdaptiveApproval(
     )
   )
     throw invalid('Choose between one and six agent preferences with valid roles.');
+  const explicitConnections = new Set(
+    requested.requested_agents
+      .map((agent: Json) => agent.connection)
+      .filter((id: unknown) => typeof id === 'string'),
+  );
+  const automaticConnections = new Set<string>();
   const pool = connections.flatMap((connection) => {
     let definition: ProviderDefinition;
     try {
@@ -39,14 +46,19 @@ export function resolveAdaptiveApproval(
       typeof connection.id !== 'string' ||
       !connection.id ||
       !model?.conservative_pricing ||
+      (model.auto_seed_eligible !== true && !explicitConnections.has(connection.id)) ||
       (connection.version !== undefined && !Number.isSafeInteger(connection.version))
     )
       return [];
+    if (model.auto_seed_eligible === true) automaticConnections.add(connection.id);
     return [
       {
         connection: connection.id,
         provider: connection.provider,
         model: model.id,
+        ...(model.reasoning_efforts?.length
+          ? { reasoning_efforts: [...model.reasoning_efforts] }
+          : {}),
         ...(connection.version === undefined ? {} : { version: connection.version }),
         ...(connection.routing == null ? {} : { routing: connection.routing }),
         pricing: model.conservative_pricing,
@@ -67,13 +79,20 @@ export function resolveAdaptiveApproval(
   const agents = requested.requested_agents.map((preference: Json, index: number) => {
     const selected =
       preference.connection === null
-        ? pool[0]
+        ? pool.find((member) => automaticConnections.has(member.connection))
         : pool.find((model) => model.connection === preference.connection);
     if (!selected)
       throw invalid('A selected model connection is missing or has no verified pricing.');
     const { pricing: _pricing, ...identity } = selected;
+    const { reasoning_efforts: _supportedEfforts, ...agentIdentity } = identity;
+    const effort = normalizeReasoningEffort(
+      selected.provider,
+      selected.model,
+      preference.reasoning_effort,
+    );
     return {
-      ...identity,
+      ...agentIdentity,
+      ...(effort === undefined ? {} : { reasoning_effort: effort }),
       role_hint: preference.role,
       strategy: `${preference.role} ${input.mode === 'compare' ? 'approach' : 'team participant'} ${index + 1}`,
     };
@@ -106,9 +125,12 @@ export function resolveAdaptiveApproval(
     adaptive_team: automatic
       ? {
           version: 1,
-          requested_agents: requested.requested_agents.map((agent: Json) => ({
+          requested_agents: requested.requested_agents.map((agent: Json, index: number) => ({
             connection: agent.connection,
             role: agent.role,
+            ...(agents[index].reasoning_effort === undefined
+              ? {}
+              : { reasoning_effort: agents[index].reasoning_effort }),
           })),
         }
       : undefined,

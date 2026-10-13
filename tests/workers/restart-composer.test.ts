@@ -77,12 +77,13 @@ it('restarts roots with their approved model limits while resetting usage', () =
 it('requires explicit connection selection when a restored connection disappeared or changed', () => {
   const agent = initialRun(snapshot, oldRun).agents[0];
   expect(agentConnectionIssue(agent, [])).toContain('unavailable');
-  const changed = [{ ...providers[0], model: 'different-model' }];
+  const changed = [{ ...providers[0], provider: 'claude', model: 'claude-sonnet-5-5' }];
   expect(agentConnectionIssue(agent, changed)).toContain('different provider or model');
   const reselected = {
     ...agent, expectedProvider: undefined, expectedModel: undefined, fromPreviousRun: false,
   };
   expect(agentConnectionIssue(reselected, changed)).toBe('');
+  expect(agentConnectionIssue(reselected, [{ ...changed[0], model: 'different-model' }])).toContain('supported model');
 });
 
 it('seeds known conservative rates when the owner enters a dollar budget', () => {

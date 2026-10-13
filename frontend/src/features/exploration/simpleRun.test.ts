@@ -1,6 +1,7 @@
 import { createElement, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { runSamples } from '../../../../shared/run-samples';
 import type { Snapshot } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
@@ -9,6 +10,7 @@ import { Exploration } from './Exploration';
 import { RunComposer } from './RunComposer';
 import { RunToolbar } from './RunToolbar';
 import { defaultConnections, runDraft } from './runDraft';
+import { sampleBrief } from './sampleBrief';
 
 const snapshot = {
   repository: { id: 'repo', status: 'ready', policy: { build: { setup: [], checks: [] } } },
@@ -120,6 +122,25 @@ describe('ordinary Start a Run', () => {
     expect(html.indexOf('Acceptance criteria')).toBeGreaterThan(html.indexOf('<summary>Advanced'));
     expect(html).not.toContain('Maximum spend');
     expect(html).toContain('Start a Run</button>');
+  });
+  it.each(runSamples)('shows the selected $label goal and task category in the form', (sample) => {
+    const initial = sampleBrief(snapshot, undefined, sample);
+    const html = renderToStaticMarkup(
+      createElement(RunComposer, {
+        snapshot,
+        busy: false,
+        initialRun: initial,
+        sampleProfileId: sample.id,
+        onStart: async () => {},
+        onClose: noop,
+        onProviders: noop,
+      }),
+    );
+    expect(html).toContain(sample.summary);
+    expect(html).toContain(sample.intent);
+    expect(html).toContain(
+      `aria-pressed="true"${sample.starter === 'bug' ? '>Fix bug' : '>Add feature'}`,
+    );
   });
   it('adds an Auto seed and lets the owner assign a maintenance role', () => {
     let agents = runDraft(snapshot).agents;

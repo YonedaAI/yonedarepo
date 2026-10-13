@@ -13,6 +13,7 @@ mod project_dispatch;
 mod project_setup;
 mod project_visibility;
 mod projects;
+mod provider_model_alias;
 mod providers;
 mod reviewer;
 mod spend;
@@ -47,7 +48,11 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "signup" | "login" | "session" | "logout" | "recover" => {
                 accounts::handle(&db, &command, now)
             }
-            "settings" | "provider_put" | "provider_update" | "provider_delete"
+            "settings"
+            | "provider_put"
+            | "provider_update"
+            | "provider_delete"
+            | "provider_model_alias"
             | "provider_secret" => providers::handle(&db, &command, now),
             "reviewer_campaign_enable"
             | "reviewer_campaign_status"
