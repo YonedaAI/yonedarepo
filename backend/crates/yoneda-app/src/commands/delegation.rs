@@ -18,6 +18,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let parent = get(db, "executions", &parent_id)?;
     let run_id = string(&parent, "run_id")?;
     let mut run = get(db, "runs", &run_id)?;
+    if c["op"] == "delegate_agent" && run["comparison"]["approval"].is_object() {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Comparison approval authorizes fixed review and repair executions, never delegation",
+        ));
+    }
     if run["mode"] == "collaborate" {
         return Err(Error::new(
             "FORBIDDEN",

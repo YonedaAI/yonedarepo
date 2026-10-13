@@ -5,6 +5,8 @@ use yoneda_core::Result;
 mod comparison_adversarial_tests;
 #[path = "tests/comparison_legacy_selection_tests.rs"]
 mod comparison_legacy_selection_tests;
+#[path = "tests/delegation_compat_tests.rs"]
+mod delegation_compat_tests;
 #[path = "tests/fixtures.rs"]
 pub(super) mod fixtures;
 #[path = "tests/provenance_tests.rs"]
