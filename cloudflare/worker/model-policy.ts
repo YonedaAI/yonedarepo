@@ -3,6 +3,7 @@ import { claudeBudgetRates } from './claude-pricing';
 import { prepareGeminiRequest } from './gemini-policy';
 import { mimoUpstream } from './mimo-routing';
 import { outputCeiling } from './model-budget';
+import { enforceFrozenReasoning } from './model-reasoning';
 import type { Json } from './types';
 import { type WorkspaceSpendContext, workspaceSpendApprovesJob } from './workspace-spend';
 export function prepareModelRequest(
@@ -12,7 +13,11 @@ export function prepareModelRequest(
   input: Json,
   workspaceApproval: WorkspaceSpendContext | null = null,
 ) {
-  if (harness === 'gemini') return prepareGeminiRequest(job, path, input);
+  if (harness === 'gemini') {
+    const result = prepareGeminiRequest(job, path, input);
+    enforceFrozenReasoning(job, result.body, harness);
+    return result;
+  }
   const execution = job.payload?.execution;
   const provider = execution?.provider ?? execution?.harness;
   const definition = providerDefinition(provider);
@@ -41,6 +46,7 @@ export function prepareModelRequest(
       throw new Error('Opus 5.5 requires the preapproved second repair execution');
   }
   const body = structuredClone(input);
+  enforceFrozenReasoning(job, body, harness);
   const ceiling = outputCeiling(job);
   body.model = model;
   for (const key of [
@@ -160,7 +166,10 @@ export function prepareModelRequest(
   // One token per UTF-8 byte plus protocol overhead deliberately over-reserves.
   // No server tools, images, premium tier or residency. Model-specific input
   // ceilings cover one-hour cache creation; historical rates remain unchanged.
-  const rates = provider === 'claude' ? claudeBudgetRates(model) : null;
+  if (workspaceApproval && !workspaceSpendApprovesJob(workspaceApproval, job))
+    throw new Error('Workspace model approval differs from the frozen attempt');
+  // Shared runs reserve against their exact frozen group in the authoritative ledger.
+  const rates = provider === 'claude' && !workspaceApproval ? claudeBudgetRates(model) : null;
   const reservation =
     rates && !path.endsWith('/count_tokens')
       ? (bytes + 8192) * rates.input + body.max_tokens * rates.output

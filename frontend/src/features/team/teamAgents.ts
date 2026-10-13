@@ -16,5 +16,6 @@ export function teamAgents(snapshot: Snapshot, run: Record<string, any>): AgentD
     expectedProvider: agent.provider,
     expectedModel: agent.model,
     fromPreviousRun: true,
+    ...(agent.reasoning_effort != null ? { reasoning_effort: agent.reasoning_effort } : {}),
   }));
 }

@@ -15,6 +15,10 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
     let execution = &job["payload"]["execution"];
     let rid = string(execution, "run_id")?;
     let mut run = get(db, "runs", &rid)?;
+    if run["adaptive_team"].is_object() {
+        super::adaptive_team::validate_approval(&run)?;
+    }
+    yoneda_core::adaptive_team::execution_effort(&run, execution)?;
     let group = super::model_budgets::group(&run, execution)?;
     let request_number = job["model_requests"]
         .as_i64()

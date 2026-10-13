@@ -4,6 +4,13 @@ export type Harness = 'claude' | 'codex' | 'gemini';
 export interface ModelOption {
   id: string;
   label: string;
+  /** Exact canonical values from this model's official API, never a universal menu. */
+  reasoning_efforts?: string[];
+  reasoning_default?: string;
+  reasoning_control?: 'effort' | 'toggle';
+  reasoning_source_url?: string;
+  /** Manual selection remains available; Auto seed selection needs compatibility evidence. */
+  auto_seed_eligible?: boolean;
   conservative_pricing?: {
     input_microusd_per_million: number;
     output_microusd_per_million: number;
@@ -11,6 +18,8 @@ export interface ModelOption {
   };
   pricing_source_url?: string;
   pricing_verified_at?: string;
+  pricing_input_token_ceiling?: number;
+  pricing_basis?: string;
 }
 export interface ProviderDefinition {
   id: string;

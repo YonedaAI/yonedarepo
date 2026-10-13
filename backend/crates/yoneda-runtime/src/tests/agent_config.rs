@@ -2,6 +2,63 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn reasoning_effort_selected_settings_reach_codex_config_and_claude_native_arguments() {
+    assert!(
+        codex_configuration("gpt-5.6-luna", &json!({"reasoning_effort":"high"}))
+            .contains("model_reasoning_effort = \"high\"")
+    );
+    for (provider, model) in [
+        ("claude", "claude-haiku-5-5"),
+        ("claude", "claude-sonnet-5-5"),
+        ("claude", "claude-opus-5-5"),
+        ("zai", "glm-5.3-flash"),
+    ] {
+        let args = claude_arguments(
+            &json!({"harness":"claude","provider":provider,"reasoning_effort":"max"}),
+            true,
+            model,
+        );
+        assert!(args.windows(2).any(|pair| pair == ["--effort", "max"]));
+    }
+}
+
+#[test]
+fn reasoning_effort_auto_preserves_codex_low_and_claude_native_default() {
+    assert!(
+        codex_configuration("gpt-5.6-luna", &json!({}))
+            .contains("model_reasoning_effort = \"low\"")
+    );
+    assert!(
+        !claude_arguments(
+            &json!({"provider":"claude","harness":"claude"}),
+            true,
+            "claude-sonnet-5-5"
+        )
+        .contains(&"--effort")
+    );
+}
+
+#[test]
+fn reasoning_effort_runtime_fences_unsupported_or_substituted_frozen_settings() {
+    let agent = json!({"connection":"seed","provider":"codex","model":"gpt-5.6-luna","reasoning_effort":"high"});
+    let mut job = json!({"model":"gpt-5.6-luna","payload":{"run":{"adaptive_team":{"version":1},"agents":[agent]},"execution":agent}});
+    job["payload"]["execution"]["harness"] = json!("codex");
+    job["payload"]["execution"]["agent_index"] = json!(0);
+    validate_reasoning_job(&job).unwrap();
+    for (scope, field, value) in [
+        ("execution", "reasoning_effort", json!("max")),
+        ("execution", "harness", json!("claude")),
+        ("execution", "agent_index", json!(1)),
+    ] {
+        let mut forged = job.clone();
+        forged["payload"][scope][field] = value;
+        assert_eq!(validate_reasoning_job(&forged).unwrap_err().code, "FENCED");
+    }
+    job["model"] = json!("gpt-6-luna");
+    assert_eq!(validate_reasoning_job(&job).unwrap_err().code, "FENCED");
+}
+
+#[test]
 fn git_native_planner_returns_read_only_flags_and_worker_receipt_revision() {
     let job = json!({"fork":"repo/attempt","payload":{"workspace_transport":"git-native-v1"}});
     let result = git_agent_result(

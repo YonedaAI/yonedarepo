@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { checkRuntime } from '../../cloudflare/worker/runtime';
+import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 
 it('refuses a static-only planner image for an approved managed app before paid work', () => {
   const job = { kind: 'agent', payload: { team_planning: true, policy: { build: { app: { version: 1 } } } } };
@@ -47,4 +47,20 @@ it('defers frozen test-bundle policy until the runtime image advertises bundle e
       payload: { policy: { environment: 'test', suite: 'commands-v1', build: {} } },
     }),
   ).not.toThrow();
+});
+
+
+it('refuses an explicit reasoning choice before a ledger can freeze it, while preserving Auto', () => {
+  const snapshot = { capabilities: { artifact_reads: 2, adaptive_teams: 1, agent_limits: { min_root_agents: 1 } } };
+  const request = { adaptive_team: { version: 1, requested_agents: [{ connection: 'saved', role: 'auto', reasoning_effort: 'high' }] } };
+  expect(() => checkLedger(snapshot, request)).toThrow('reasoning');
+  expect(() => checkLedger({ capabilities: { ...snapshot.capabilities, reasoning_effort: 1 } }, request)).not.toThrow();
+  expect(() => checkLedger(snapshot, { adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] } })).not.toThrow();
+});
+
+it('refuses a runtime that would silently ignore a frozen explicit reasoning effort', () => {
+  const job = { kind: 'agent', payload: { execution: { reasoning_effort: 'high' } } };
+  checkFailureCode({ protocol: 2, capabilities: {} }, job);
+  expect(() => checkRuntime({ protocol: 2, capabilities: { reasoning_efforts: 1 } }, job)).not.toThrow();
+  expect(() => checkRuntime({ protocol: 2, capabilities: {} }, { kind: 'agent', payload: { execution: {} } })).not.toThrow();
 });

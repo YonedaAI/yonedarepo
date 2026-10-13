@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { runSamples } from '../../../../shared/run-samples';
 import type { RunMode } from '../../../../shared/team';
 import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
@@ -15,24 +16,10 @@ import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
 import { defaultConnections, runDraft } from './runDraft';
+import { SampleBriefSummary, briefStarters as starters } from './sampleBrief';
 import { WorkspaceAllowance } from './WorkspaceAllowance';
 import { workingBranchRequest } from './workingBranchView';
 
-const starters = [
-  {
-    label: 'Build new',
-    placeholder: 'Describe what you want to build, who it is for, and how you will know it works…',
-  },
-  {
-    label: 'Add feature',
-    placeholder:
-      'Describe the feature, where it belongs in this project, and the behavior to preserve…',
-  },
-  {
-    label: 'Fix bug',
-    placeholder: 'What happens now? What should happen? Include steps to reproduce the problem…',
-  },
-];
 export function RunComposer({
   busy,
   snapshot,
@@ -56,7 +43,8 @@ export function RunComposer({
   const [draft] = useState(() => runDraft(snapshot, initialRun));
   const [intent, setIntent] = useState(draft.intent);
   const [criteria, setCriteria] = useState(draft.criteria);
-  const [starter, setStarter] = useState(0);
+  const sample = runSamples.find((item) => item.id === sampleProfileId);
+  const [starter, setStarter] = useState(sample ? (sample.starter === 'bug' ? 2 : 1) : 0);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providersLoading, setProvidersLoading] = useState(true);
   const [providersError, setProvidersError] = useState('');
@@ -129,6 +117,7 @@ export function RunComposer({
         throw new Error('Load and review the selected model connections before starting.');
       if (agents.some((agent) => agentConnectionIssue(agent, providers)))
         throw new Error('Review changed model connections before starting this run.');
+      const preferences = requestedAgents(agents, providers);
       let current: Repository = snapshot.repository;
       const build = JSON.parse(policy);
       if (JSON.stringify(build) !== JSON.stringify(current.policy?.build)) {
@@ -159,7 +148,7 @@ export function RunComposer({
         ...(draft.restartOf ? { restart_of: draft.restartOf } : {}),
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         ...(sampleProfileId ? { sample_profile_id: sampleProfileId } : {}),
-        adaptive_team: { version: 1, requested_agents: requestedAgents(agents) },
+        adaptive_team: { version: 1, requested_agents: preferences },
         ...(mode === 'compare' && limits.max_delegation_depth > 0
           ? {
               delegation: {
@@ -190,6 +179,7 @@ export function RunComposer({
         void start();
       }}
     >
+      <SampleBriefSummary sample={sample} />
       <label className="run-brief">
         What would you like to do?
         <textarea

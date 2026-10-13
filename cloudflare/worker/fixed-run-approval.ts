@@ -29,6 +29,7 @@ export function resolveFixedApproval(input: Json, connections: Json[], limit: nu
         requested_agents: input.agents.map((agent: Json) => ({
           connection: agent.connection ?? agent.provider,
           role: 'auto',
+          ...(agent.reasoning_effort == null ? {} : { reasoning_effort: agent.reasoning_effort }),
         })),
       },
     },

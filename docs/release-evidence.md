@@ -1,5 +1,13 @@
 # Product MVP release evidence — October 8–12, 2026
 
+## Modern model picker — current source, release verification pending
+
+The source adds connected-model choices with short provider/model names and optional reasoning levels supported by the exact selected model. Auto omits an explicit reasoning setting and selects only models with validated automatic-selection eligibility. Newly catalogued models require explicit selection until compatibility is validated; no more expensive model is selected through a silent fallback.
+
+The explicit **Add model** action reuses a Cloudflare-sealed provider key through a new immutable model/connection binding, without exposing the key to the browser or changing an existing binding or approval. Samples have a distinct dialog and prefill an editable run brief. Neither action starts inference.
+
+The fresh complete local gate passed: 415 Rust, 399 platform workerd, 16 isolated-app workerd, 184 frontend and 36 Node tests, including the actual workers-rs Wasm build. R7 passed 84 Linux runtime tests. Independent review cleared the frozen changes after reproducing and fixing dropped Compare/manual-team effort and deleted-alias identity reuse. Deployment is recorded separately. There is no new paid modern-model execution proof, and no third comparison reviewer has been implemented. The comparison workflow's current-branch selection race remains identified and pending; the dated results below retain their original scope.
+
 ## Simplified workflow — October 13, 2026
 
 The current source passed the complete local gate: 387 Rust, 387 platform workerd, 16 isolated-app workerd, 160 frontend and 27 Node runtime/reviewer tests. R5 passed 81 Linux runtime tests. Fresh Start a Run uses one Auto seed and optional model/role preferences; an immutable connected-model pool authorizes the planner to choose the actual team. New owner work reserves the shared workspace allowance before provider I/O. Original campaign approvals, counters and audit records are preserved. Unknown usage remains conservatively reserved.

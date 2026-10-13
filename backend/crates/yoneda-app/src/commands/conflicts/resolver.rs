@@ -157,6 +157,11 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
     }
+    for field in ["agent_index", "reasoning_effort"] {
+        if let Some(value) = source_execution.get(field) {
+            execution[field] = value.clone();
+        }
+    }
     if autonomous {
         execution["repair_round"] = json!(
             run["team_repair_rounds"]

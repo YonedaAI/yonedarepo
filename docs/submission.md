@@ -28,6 +28,14 @@ Use `--no-open` for command-line inspection and keep the key private. The review
 
 The latest current-policy checked run is `run-699e54e0-d070-443c-a0df-9e8272835c5c`, revision `53033856054d10a35f8c967f39b609c30b629732`. It fixes a request-key ownership bug using prior run context; all six protected tests passed after one automatic repair. Only `booking.mjs` changed. It used one GLM agent in sequential roles, 68 requests and $0.421615 in conservative accounting. The working branch is at version 2; canonical source remains at version 0, awaiting a human decision. The earlier `reviewer-booking-20261012-s1-r2` revision `4c330e0` remains the concurrent GLM/Codex initial-build example.
 
+## Modern model picker — current source
+
+The current source groups connected choices under short provider and model names. Optional **Reasoning** choices reflect the exact selected model's supported levels. **Auto** omits an explicit reasoning setting and uses only models with validated automatic-selection eligibility; newly catalogued models require an explicit choice until their compatibility is validated. There is no silent fallback to a more expensive model.
+
+**Add model** explicitly reuses an existing Cloudflare-sealed provider key to create a new immutable model/connection binding. The key is not exposed to the browser, and existing bindings and run approvals remain unchanged. Samples use a separate dialog and prefill an editable run brief; choosing a sample or adding a model does not start inference.
+
+The fresh complete local gate passed: 415 Rust, 399 platform workerd, 16 isolated-app workerd, 184 frontend and 36 Node tests, including the actual workers-rs Wasm build. R7 passed 84 Linux runtime tests. Independent review cleared the frozen changes after reproducing and fixing dropped Compare/manual-team effort and deleted-alias identity reuse. Deployment is recorded separately. No paid execution proof is claimed for newly added modern models. A third comparison reviewer is not implemented, and the comparison workflow's current-branch selection race remains identified and pending.
+
 ## Current package and verification
 
 - **Platform:** [yonedarepo.com](https://yonedarepo.com/), with a separate isolated Apps Worker serving checked JS/TS UI/API applications backed by managed SQLite.

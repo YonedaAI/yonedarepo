@@ -110,6 +110,7 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
     if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
         execution["routing"] = routing.clone();
     }
+    super::super::adaptive_team::configure_execution(run, agent, index, &mut execution)?;
     if let Some(round) = task.get("repair_round") {
         execution["repair_round"] = round.clone();
     }

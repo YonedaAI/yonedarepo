@@ -5,6 +5,8 @@ use yoneda_core::{
     Error, Result,
     adaptive_team::{AdaptiveTeam, AgentSelection, ApprovedModel},
 };
+mod effort;
+pub(super) use effort::configure_execution;
 
 pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
     let Some(request) = c.get("adaptive_team") else {
@@ -39,17 +41,31 @@ pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
         connection: string(&agents[0], "connection")?,
         role: serde_json::from_value(agents[0]["role_hint"].clone())
             .map_err(|_| bad("Seed role hint required"))?,
+        reasoning_effort: serde_json::from_value(agents[0]["reasoning_effort"].clone())
+            .map_err(|_| bad("Invalid seed reasoning effort"))?,
     };
     let first = &request.requested_agents[0];
+    effort::validate_auto_seed(first, &agents[0])?;
     if first
         .connection
         .as_ref()
         .is_some_and(|c| c != &seed.connection)
         || first.role != seed.role
+        || first.reasoning_effort != seed.reasoning_effort
     {
         return Err(Error::new(
             "FORBIDDEN",
             "Initial seed differs from the requested connection or role",
+        ));
+    }
+    if seed.reasoning_effort.is_some_and(|e| {
+        !pool
+            .iter()
+            .any(|m| m.connection == seed.connection && m.reasoning_efforts.contains(&e))
+    }) {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Seed reasoning effort is unsupported",
         ));
     }
     run["approved_model_pool"] = json!(pool);
@@ -106,7 +122,7 @@ pub(super) fn select(run: &Value, value: Option<&Value>) -> Result<Option<Value>
     }
     validate_approval(run)?;
     let (request, pool) = parsed(run)?;
-    let selections: Vec<AgentSelection> = if let Some(value) = value {
+    let mut selections: Vec<AgentSelection> = if let Some(value) = value {
         serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?
     } else {
         request
@@ -120,9 +136,18 @@ pub(super) fn select(run: &Value, value: Option<&Value>) -> Result<Option<Value>
                         .to_owned()
                 }),
                 role: r.role,
+                reasoning_effort: r.reasoning_effort,
             })
             .collect()
     };
+    for (index, selection) in selections.iter_mut().enumerate() {
+        if selection.reasoning_effort.is_none() {
+            selection.reasoning_effort = request
+                .requested_agents
+                .get(index)
+                .and_then(|r| r.reasoning_effort);
+        }
+    }
     request.validate_selection(&pool, &selections)?;
     let agents = selections
         .into_iter()
@@ -133,6 +158,9 @@ pub(super) fn select(run: &Value, value: Option<&Value>) -> Result<Option<Value>
                 .ok_or_else(|| bad("Missing approved connection"))?;
             let mut agent = json!(member);
             agent["role_hint"] = json!(selection.role);
+            if let Some(effort) = selection.reasoning_effort {
+                agent["reasoning_effort"] = json!(effort);
+            }
             agent["strategy"] = json!(format!(
                 "{} team participant",
                 json!(selection.role).as_str().unwrap_or("auto")
@@ -155,6 +183,8 @@ pub(super) fn validate_roster(run: &Value, agents: &Value) -> Result<()> {
                 connection: string(a, "connection")?,
                 role: serde_json::from_value(a["role_hint"].clone())
                     .map_err(|_| bad("Invalid planned role"))?,
+                reasoning_effort: serde_json::from_value(a["reasoning_effort"].clone())
+                    .map_err(|_| bad("Invalid planned reasoning effort"))?,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -206,6 +236,14 @@ pub(super) fn validate_approval(run: &Value) -> Result<()> {
             return Err(Error::new("FENCED", "Initial seed roster changed"));
         }
         validate_member(&pool, &run["agents"][0])?;
+        if run["agents"][0]["reasoning_effort"]
+            != run["adaptive_team"]["requested_agents"][0]["reasoning_effort"]
+        {
+            return Err(Error::new(
+                "FENCED",
+                "Initial seed reasoning effort changed",
+            ));
+        }
     }
     Ok(())
 }

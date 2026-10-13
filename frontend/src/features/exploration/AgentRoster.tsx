@@ -1,7 +1,17 @@
 import type { AgentLimits } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
-import { providerNames } from '../workspace/providerModels';
-import { type AdaptiveAgentDraft, agentRoles, automaticAgent } from './adaptiveDraft';
+import {
+  connectedModelGroups,
+  modelDisplayName,
+  modelReasoningEfforts,
+  reasoningLabel,
+} from '../workspace/providerModels';
+import {
+  type AdaptiveAgentDraft,
+  agentRoles,
+  automaticAgent,
+  reasoningIssue,
+} from './adaptiveDraft';
 import { agentConnectionIssue } from './restartRun';
 
 export function AgentRoster({
@@ -47,8 +57,16 @@ export function AgentRoster({
           !loading && agent.connection ? agentConnectionIssue(agent, providers) : undefined;
         const unavailable =
           !!agent.connection && !providers.some((provider) => provider.id === agent.connection);
+        const connection = providers.find((provider) => provider.id === agent.connection);
+        const efforts = connection
+          ? modelReasoningEfforts(connection.provider, connection.model)
+          : [];
+        const effortIssue = reasoningIssue(agent, providers);
         return (
-          <fieldset className="agent-inputs seed-agent" key={agent.id}>
+          <fieldset
+            className={`agent-inputs seed-agent${efforts.length > 0 || agent.reasoning_effort != null ? ' has-reasoning' : ''}`}
+            key={agent.id}
+          >
             <legend>Agent {index + 1}</legend>
             <label>
               Model
@@ -62,6 +80,7 @@ export function AgentRoster({
                     expectedProvider: undefined,
                     expectedModel: undefined,
                     fromPreviousRun: false,
+                    reasoning_effort: undefined,
                   })
                 }
               >
@@ -71,14 +90,44 @@ export function AgentRoster({
                     Previous connection (unavailable)
                   </option>
                 )}
-                {providers.map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.label} · {providerNames[provider.provider] ?? provider.provider} ·{' '}
-                    {provider.model}
-                  </option>
+                {connectedModelGroups(providers, agent.connection).map((group) => (
+                  <optgroup key={group.provider} label={group.label}>
+                    {group.options.map(({ connection, label, disabled }) => (
+                      <option key={connection.id} value={connection.id} disabled={disabled}>
+                        {label}
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </label>
+            {(efforts.length > 0 || agent.reasoning_effort != null) && (
+              <label>
+                Reasoning
+                <select
+                  aria-label={`Reasoning for agent ${index + 1}`}
+                  disabled={locked}
+                  value={agent.reasoning_effort ?? ''}
+                  onChange={(event) => {
+                    const effort = event.target.value;
+                    if (!effort || efforts.includes(effort))
+                      update(agent.id, { reasoning_effort: effort || undefined });
+                  }}
+                >
+                  <option value="">Auto</option>
+                  {effortIssue && (
+                    <option value={agent.reasoning_effort} disabled>
+                      Previous setting (unavailable)
+                    </option>
+                  )}
+                  {efforts.map((effort) => (
+                    <option key={effort} value={effort}>
+                      {reasoningLabel(effort)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label>
               Role
               <select
@@ -112,9 +161,15 @@ export function AgentRoster({
                 {agent.expectedModel && (
                   <>
                     {' '}
-                    Previous model: <code>{agent.expectedModel}</code>.
+                    Previous model:{' '}
+                    {modelDisplayName(agent.expectedProvider ?? '', agent.expectedModel)}.
                   </>
                 )}
+              </p>
+            )}
+            {effortIssue && (
+              <p className="agent-connection-issue" role="alert">
+                {effortIssue}
               </p>
             )}
           </fieldset>
