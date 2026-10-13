@@ -92,6 +92,7 @@ export function trialRequest(id: string) {
 export async function reviewerTrialStatus(env: Env, owner: string) {
   let policy = await workspace(env, owner, { op: 'reviewer_status' });
   const repo = policy.repo_id;
+  let activeTrialState: 'reserved' | 'running' | null = null;
   if (policy.active_trial) {
     const detail = await runDetailIfPresent(env, repo, owner, policy.active_trial);
     const run = detail?.runs?.find((r: Json) => r.id === policy.active_trial);
@@ -102,6 +103,7 @@ export async function reviewerTrialStatus(env: Env, owner: string) {
           ['queued', 'running', 'capturing', 'evaluating'].includes(e.status),
       ) ?? false;
     const terminal = ['ready', 'failed', 'cancelled', 'accepted'].includes(run?.status);
+    activeTrialState = run ? 'running' : 'reserved';
     if (run && policy._active_trial_status === 'repair_pending' && (!terminal || active)) {
       await workspace(env, owner, {
         op: 'reviewer_trial_repair_finish',
@@ -116,8 +118,10 @@ export async function reviewerTrialStatus(env: Env, owner: string) {
         expected_epoch: policy.trial_epoch ?? 0,
       });
       policy = await workspace(env, owner, { op: 'reviewer_status' });
+      activeTrialState = null;
     }
   }
+  policy.active_trial_state = activeTrialState;
   delete policy._active_trial_status;
   delete policy._active_repair_request_id;
   delete policy._active_repair_fingerprint;
@@ -244,3 +248,6 @@ async function runDetailIfPresent(
     throw failure;
   }
 }
+
+// The versioned fullstack campaign has its own approval and spend records.
+export { campaignTrialRequest, startCampaignTrial } from './reviewer-campaign';

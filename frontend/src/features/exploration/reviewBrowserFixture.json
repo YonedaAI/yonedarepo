@@ -1,0 +1,277 @@
+{
+  "repo": {
+    "id": "offline-review",
+    "name": "Offline maintenance fixture",
+    "status": "ready",
+    "pending": null,
+    "version": 1,
+    "head_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "published_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "remote": {
+      "namespace": "fixture",
+      "name": "fork"
+    },
+    "policy": {
+      "version": "policy",
+      "suite": "fixture",
+      "required_checks": ["calendar-behavior"],
+      "build": {
+        "setup": [],
+        "checks": []
+      }
+    }
+  },
+  "constraint": {
+    "id": "prior-constraint",
+    "kind": "constraint",
+    "label": "Preserve access",
+    "author": "prior-agent",
+    "recorded_at": 1,
+    "data": {
+      "statement": "Bug fixes must preserve anonymous calendar access. Never require account creation.",
+      "purpose": "Retain the previously approved access requirement.",
+      "links": [
+        {
+          "relation": "depends_on",
+          "target": "linked-contract"
+        }
+      ],
+      "file_paths": ["calendar.mjs"]
+    }
+  },
+  "linked": {
+    "id": "linked-contract",
+    "kind": "requirement",
+    "label": "Event contract",
+    "author": "owner",
+    "recorded_at": 1,
+    "data": {
+      "statement": "calendarEvents returns stable event IDs."
+    }
+  },
+  "run": {
+    "id": "offline-run",
+    "mode": "compare",
+    "status": "ready",
+    "created_at": 1,
+    "intent": "Fix calendar filtering while preserving anonymous access and stable event IDs.",
+    "criteria": ["Accented names remain visible"],
+    "base": {
+      "repository": "fixture/fork",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "context": ["prior-constraint"],
+    "context_records": [
+      {
+        "id": "prior-constraint",
+        "kind": "constraint",
+        "label": "Preserve access",
+        "author": "prior-agent",
+        "recorded_at": 1,
+        "data": {
+          "statement": "Bug fixes must preserve anonymous calendar access. Never require account creation.",
+          "purpose": "Retain the previously approved access requirement.",
+          "links": [
+            {
+              "relation": "depends_on",
+              "target": "linked-contract"
+            }
+          ],
+          "file_paths": ["calendar.mjs"]
+        }
+      }
+    ]
+  },
+  "execution": {
+    "id": "agent",
+    "run_id": "offline-run",
+    "role": "coding",
+    "strategy": "Calendar maintenance",
+    "status": "completed"
+  },
+  "candidate": {
+    "id": "captured",
+    "run_id": "offline-run",
+    "execution": "agent",
+    "status": "eligible",
+    "base": {
+      "repository": "fixture/fork",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "revision": {
+      "repository": "fixture/fork",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "paths": ["calendar.mjs", "tests/calendar.mjs"],
+    "evaluation": "evaluation",
+    "summary": "Calendar filtering preserves accented names.",
+    "diff": "diff --git a/calendar.mjs b/calendar.mjs\n--- a/calendar.mjs\n+++ b/calendar.mjs\n@@ -1 +1 @@\n-return raw(query);\n+return normalized(query);\ndiff --git a/tests/calendar.mjs b/tests/calendar.mjs\nnew file mode 100644\n--- /dev/null\n+++ b/tests/calendar.mjs\n@@ -0,0 +1 @@\n+assertSearch(\"café\");"
+  },
+  "evaluation": {
+    "id": "evaluation",
+    "candidate": "captured",
+    "revision": {
+      "repository": "fixture/fork",
+      "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "policy": "policy",
+    "app": {
+      "bundle_digest": "offline-bundle",
+      "revision": {
+        "repository": "fixture/fork",
+        "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "policy_digest": "offline-policy"
+    },
+    "checks": [
+      {
+        "name": "calendar-behavior",
+        "status": "pass",
+        "detail": "Accented events remain visible."
+      }
+    ]
+  },
+  "snapshot": {
+    "repository": {
+      "id": "offline-review",
+      "name": "Offline maintenance fixture",
+      "status": "ready",
+      "pending": null,
+      "version": 1,
+      "head_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "published_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "remote": {
+        "namespace": "fixture",
+        "name": "fork"
+      },
+      "policy": {
+        "version": "policy",
+        "suite": "fixture",
+        "required_checks": ["calendar-behavior"],
+        "build": {
+          "setup": [],
+          "checks": []
+        }
+      }
+    },
+    "runs": [
+      {
+        "id": "offline-run",
+        "mode": "compare",
+        "status": "ready",
+        "created_at": 1,
+        "intent": "Fix calendar filtering while preserving anonymous access and stable event IDs.",
+        "criteria": ["Accented names remain visible"],
+        "base": {
+          "repository": "fixture/fork",
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "context": ["prior-constraint"],
+        "context_records": [
+          {
+            "id": "prior-constraint",
+            "kind": "constraint",
+            "label": "Preserve access",
+            "author": "prior-agent",
+            "recorded_at": 1,
+            "data": {
+              "statement": "Bug fixes must preserve anonymous calendar access. Never require account creation.",
+              "purpose": "Retain the previously approved access requirement.",
+              "links": [
+                {
+                  "relation": "depends_on",
+                  "target": "linked-contract"
+                }
+              ],
+              "file_paths": ["calendar.mjs"]
+            }
+          }
+        ]
+      }
+    ],
+    "executions": [
+      {
+        "id": "agent",
+        "run_id": "offline-run",
+        "role": "coding",
+        "strategy": "Calendar maintenance",
+        "status": "completed"
+      }
+    ],
+    "candidates": [
+      {
+        "id": "captured",
+        "run_id": "offline-run",
+        "execution": "agent",
+        "status": "eligible",
+        "base": {
+          "repository": "fixture/fork",
+          "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "revision": {
+          "repository": "fixture/fork",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "paths": ["calendar.mjs", "tests/calendar.mjs"],
+        "evaluation": "evaluation",
+        "summary": "Calendar filtering preserves accented names.",
+        "diff": "diff --git a/calendar.mjs b/calendar.mjs\n--- a/calendar.mjs\n+++ b/calendar.mjs\n@@ -1 +1 @@\n-return raw(query);\n+return normalized(query);\ndiff --git a/tests/calendar.mjs b/tests/calendar.mjs\nnew file mode 100644\n--- /dev/null\n+++ b/tests/calendar.mjs\n@@ -0,0 +1 @@\n+assertSearch(\"café\");"
+      }
+    ],
+    "evaluations": [
+      {
+        "id": "evaluation",
+        "candidate": "captured",
+        "revision": {
+          "repository": "fixture/fork",
+          "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "policy": "policy",
+        "app": {
+          "bundle_digest": "offline-bundle",
+          "revision": {
+            "repository": "fixture/fork",
+            "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "policy_digest": "offline-policy"
+        },
+        "checks": [
+          {
+            "name": "calendar-behavior",
+            "status": "pass",
+            "detail": "Accented events remain visible."
+          }
+        ]
+      }
+    ],
+    "decisions": [],
+    "artifacts": [],
+    "nodes": [
+      {
+        "id": "prior-constraint",
+        "kind": "constraint",
+        "label": "Preserve access",
+        "author": "prior-agent",
+        "recorded_at": 1,
+        "data": {
+          "statement": "Bug fixes must preserve anonymous calendar access. Never require account creation.",
+          "purpose": "Retain the previously approved access requirement.",
+          "links": [
+            {
+              "relation": "depends_on",
+              "target": "linked-contract"
+            }
+          ],
+          "file_paths": ["calendar.mjs"]
+        }
+      }
+    ],
+    "edges": [],
+    "seq": 10,
+    "watermark": 10,
+    "graph_paged": true,
+    "team_tasks": [],
+    "team_handoffs": [],
+    "capabilities": {}
+  }
+}

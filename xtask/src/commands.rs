@@ -50,6 +50,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             build_wasm()?;
             run("pnpm", &["check"])?;
             run("pnpm", &["test"])?;
+            run("pnpm", &["test:apps"])?;
             run("pnpm", &["test:runtime"])?;
             run("pnpm", &["test:frontend"])?;
             run("pnpm", &["--dir", FRONTEND, "build"])?;

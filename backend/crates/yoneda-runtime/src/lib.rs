@@ -3,6 +3,7 @@ use serde_json::Value;
 use yoneda_core::Error;
 mod agent;
 mod agent_transcript;
+pub mod app_bundle;
 mod broker;
 mod conflict_merge;
 mod evaluation;

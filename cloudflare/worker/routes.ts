@@ -1,6 +1,12 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
-import { candidateDetail, candidateSource, hydrateOwnerSnapshot } from './candidate-source';
+import { campaignRoute } from './campaign-route';
+import {
+  candidateDetail,
+  candidateSource,
+  hydrateOwnerSnapshot,
+  publishedSource,
+} from './candidate-source';
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
@@ -15,6 +21,7 @@ import { ownerCommandInput, repositoryOperationAllowed } from './repository-comm
 import { deleteRepository } from './repository-deletion';
 import { resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
+import { reviewerCampaignRoute } from './reviewer-campaign';
 import { submitReviewerRepair } from './reviewer-trial';
 import { checkLedger } from './runtime';
 import { ownerSession } from './session';
@@ -49,6 +56,10 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       return error('FORBIDDEN', 'Use the scoped MCP and Git endpoints', 403);
     const restricted = await reviewerGuard(req, env, principal);
     if (restricted) return restricted;
+    const campaign = await campaignRoute(req, env, principal);
+    if (campaign) return campaign;
+    const campaignReviewer = await reviewerCampaignRoute(req, env, principal);
+    if (campaignReviewer) return campaignReviewer;
     const reviewer = await reviewerRoute(req, env, principal);
     if (reviewer) return reviewer;
     const settings = await settingsRoute(req, env, principal);
@@ -160,6 +171,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       return await candidateDetail(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'candidate_source' && req.method === 'GET')
       return await candidateSource(env, repo, url.searchParams.get('id') ?? '');
+    if (action === 'published_source' && req.method === 'GET')
+      return await publishedSource(env, repo);
     if (action === 'candidate_diff' && req.method === 'GET')
       return response(
         await candidateDiffPage(

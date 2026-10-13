@@ -2,7 +2,15 @@ use super::support::*;
 use super::*;
 use yoneda_core::conflict::TrustedPathEvidence;
 pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    owner(c)?;
+    let agent = c.get("job_id").is_some();
+    let candidate_id = string(c, "candidate_id")?;
+    let candidate = get(db, "candidates", &candidate_id)?;
+    let run = get(db, "runs", &string(&candidate, "run_id")?)?;
+    if agent {
+        super::super::autonomy::authorize_repair(db, c, &run, now)?;
+    } else {
+        owner(c)?;
+    }
     let request_id = string(c, "request_id")?;
     if let Some(old) = by_request(db, &request_id)? {
         for field in [
@@ -21,6 +29,7 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         return Ok(old["receipt"].clone());
     }
     let repository = repo(db)?;
+    let target = target::current(db, &candidate)?;
     let expected_version = number(c, "expected_version")?;
     let head = hash(c, "expected_commit", &[40, 64])?;
     if !repository["pending"].is_null() {
@@ -30,16 +39,14 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         ));
     }
     if repository["status"] != "ready"
-        || repository["version"] != expected_version
-        || repository["head_commit"] != head
+        || target["expected_version"] != expected_version
+        || target["head_commit"] != head
     {
         return Err(Error::new(
             "HEAD_MOVED",
             "Repository head or version changed",
         ));
     }
-    let candidate_id = string(c, "candidate_id")?;
-    let candidate = get(db, "candidates", &candidate_id)?;
     if !["eligible", "rejected"].contains(&candidate["status"].as_str().unwrap_or_default())
         || candidate["evaluation"].as_str().is_none()
     {
@@ -59,6 +66,7 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     let id = format!("conflict:{request_id}");
     let job_id = format!("capture:refresh:{request_id}");
     let mut record = json!({"id":id,"repository_id":repository["id"],"request_id":request_id,"candidate_id":candidate_id,"candidate":candidate,"candidate_revision":candidate["revision"]["commit"],"expected_version":expected_version,"head_commit":head,"candidate_base":candidate["base"]["commit"],"status":"refreshing","declared_paths":paths,"scope_source":scope_source,"conflict_paths":[],"created_at":now});
+    target::attach(&mut record, &target);
     record["request"] = input;
     record["job_id"] = json!(job_id);
     let receipt = json!({"conflict_id":id,"status":"refreshing","job_id":job_id});
@@ -69,7 +77,7 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         &job_id,
         "capture",
         now,
-        json!({"workspace_transport":"git-native-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"declared_paths":paths,"run_id":candidate["run_id"],"policy":repository["policy"]}),
+        json!({"workspace_transport":"git-native-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"target_revision":target["revision"],"working_branch_id":target["working_branch_id"],"declared_paths":paths,"run_id":candidate["run_id"],"policy":if agent { &run["policy"] } else { &repository["policy"] }}),
     )?;
     event(db, "candidate.refresh_requested", now, receipt.clone())?;
     Ok(receipt)
@@ -96,9 +104,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     let id = string(&active_job["payload"], "conflict_id")?;
     let mut record = get(db, "conflicts", &id)?;
     let repository = repo(db)?;
-    if repository["version"] != record["expected_version"]
-        || repository["head_commit"] != record["head_commit"]
-    {
+    if !target::matches(db, &record)? {
         record["status"] = json!("stale");
         save(db, "conflicts", &id, &record)?;
         event(
@@ -176,6 +182,10 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
             now,
             json!({"conflict_id":id,"paths":record["conflict_paths"]}),
         )?;
+        let run = get(db, "runs", &string(&record["candidate"], "run_id")?)?;
+        let mut signal = record["candidate"].clone();
+        signal["coordination_signal"] = json!(format!("unresolved:{}", string(&record, "id")?));
+        super::super::team::evaluated(db, &run, &signal, false, now)?;
         return Ok(record);
     }
     if result["status"] != "clean" {
@@ -183,11 +193,14 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     }
     let new_id = string(result, "candidate_id")?;
     let evidence_value = serde_json::to_value(&evidence).map_err(|e| bad(&e.to_string()))?;
-    let mut candidate = json!({"id":new_id,"execution":record["candidate"]["execution"],"run_id":record["candidate"]["run_id"],"base":{"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]},"revision":result["revision"],"tree":result["tree"],"paths":result["paths"],"diff_digest":result["diff_digest"],"approved_parents":[record["head_commit"],record["candidate_revision"]],"refresh_expected_version":record["expected_version"],"declared_paths":evidence.declared_paths,"status":"evaluating","capture_job":active_job["id"],"refresh_of":record["candidate_id"],"conflict_id":id});
+    let mut candidate = json!({"id":new_id,"execution":record["candidate"]["execution"],"run_id":record["candidate"]["run_id"],"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"revision":result["revision"],"tree":result["tree"],"paths":result["paths"],"diff_digest":result["diff_digest"],"approved_parents":[record["head_commit"],record["candidate_revision"]],"refresh_expected_version":record["expected_version"],"declared_paths":evidence.declared_paths,"status":"evaluating","capture_job":active_job["id"],"refresh_of":record["candidate_id"],"conflict_id":id});
     for key in ["integration_manifest", "integration_digest"] {
         if let Some(value) = record["candidate"].get(key) {
             candidate[key] = value.clone();
         }
+    }
+    if let Some(id) = record.get("working_branch_id") {
+        candidate["working_branch_id"] = id.clone();
     }
     hash(result, "diff_digest", &[64])?;
     create(db, "candidates", &new_id, &candidate)?;
@@ -232,5 +245,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
         json!({"conflict_id":id,"candidate_id":new_id}),
     )?;
     candidate["status"] = json!("evaluating");
-    Ok(json!({"conflict":record,"candidate":candidate,"repository_version":repository["version"]}))
+    Ok(
+        json!({"conflict":record,"candidate":candidate,"repository_version":record["expected_version"]}),
+    )
 }

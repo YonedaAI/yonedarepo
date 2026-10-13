@@ -12,6 +12,9 @@ export function checkLedger(snapshot: Json, request?: Json) {
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
     (request?.mode === 'collaborate' && snapshot?.capabilities?.collaborative_runs !== 1) ||
+    (request?.autonomy_policy != null && snapshot?.capabilities?.autonomous_repair !== 1) ||
+    (request?.working_branch_id != null && snapshot?.capabilities?.working_branches !== 1) ||
+    (request?.campaign != null && snapshot?.capabilities?.campaign_budget !== 1) ||
     (request?.mode === 'collaborate' &&
       request?.team == null &&
       snapshot?.capabilities?.team_planning !== 1) ||
@@ -42,6 +45,12 @@ export function checkRuntime(health: Json, job: Json) {
 function compatibleRuntime(health: Json, job: Json) {
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
+  if (job.payload?.policy?.build?.app != null && health.capabilities?.app_bundle !== 1)
+    throw new Error('Container image cannot capture checked apps; wait for rollout completion');
+  if (job.payload?.run?.autonomy_policy != null && health.capabilities?.agent_coordination !== 1)
+    throw new Error(
+      'Container image cannot coordinate autonomous repairs; wait for rollout completion',
+    );
   if (
     job.payload?.workspace_transport === 'git-native-v1' &&
     health.capabilities?.git_native_transport !== 1

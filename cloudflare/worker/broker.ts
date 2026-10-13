@@ -1,6 +1,7 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { injectPublicationAckLoss } from './acceptance-faults';
 import { source } from './artifacts';
+import { canonicalJson } from './canonical-json';
 import { captureResult } from './capture-result';
 import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
@@ -75,6 +76,27 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
           files: body.files,
         }),
       );
+    }
+    if (path === '/app-bundle') {
+      if (job.kind !== 'evaluate' || !job.payload.policy.build?.app)
+        return error('FORBIDDEN', 'Only app evaluators capture bundles', 403);
+      if (
+        typeof body.content !== 'string' ||
+        new TextEncoder().encode(body.content).length > 2 * 1024 * 1024
+      )
+        return error('INVALID_INPUT', 'App bundle exceeds limit');
+      const manifest = JSON.parse(body.content);
+      if (
+        manifest.version !== 1 ||
+        manifest.revision !== job.payload.candidate.revision.commit ||
+        canonicalJson(manifest.manifest) !== canonicalJson(job.payload.policy.build.app)
+      )
+        return error(
+          'INVALID_CAPTURE',
+          'App bundle differs from the evaluated revision or policy',
+          409,
+        );
+      return response(await object(env, body.content, 2 * 1024 * 1024));
     }
     if (path === '/evidence') {
       const stored = await object(env, String(body.content));

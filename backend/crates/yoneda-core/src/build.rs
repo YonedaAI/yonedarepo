@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
+mod app;
+pub use app::{AppManifest, AppMigration};
+
 pub const ENVIRONMENT: &str = "linux-node24-rust1.94-v1";
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -16,6 +19,9 @@ pub struct CommandSpec {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BuildProfile {
+    /// Owner-approved full-stack execution; absent for legacy/static profiles.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app: Option<AppManifest>,
     #[serde(default)]
     pub setup: Vec<CommandSpec>,
     pub checks: Vec<CommandSpec>,
@@ -33,6 +39,12 @@ pub struct TestBundlePolicy {
     /// Repository paths whose candidate changes require a new owner policy.
     #[serde(default)]
     pub protected_paths: Vec<String>,
+}
+/// Stable digest shared by capture, evaluation, and publication authority.
+pub fn policy_digest(policy: &Policy) -> Result<String> {
+    crate::fingerprint(
+        &serde_json::to_value(policy).map_err(|e| Error::new("ENCODING", e.to_string()))?,
+    )
 }
 pub fn validate_policy(policy: &Policy) -> Result<()> {
     if policy.version.is_empty() || policy.version.len() > 128 || policy.required_checks.is_empty()
@@ -97,6 +109,9 @@ pub fn validate_policy(policy: &Policy) -> Result<()> {
             "Checks must cover the policy within a 90 second execution budget",
         ));
     }
+    if let Some(app) = &profile.app {
+        app.validate()?;
+    }
     if let Some(path) = &profile.static_dir {
         validate_path(path)?;
     }
@@ -158,6 +173,20 @@ pub fn checks_from_report(policy: &Policy, report: &Value) -> Result<Vec<Check>>
                 })
             })
     });
+    let app_ok = profile.app.as_ref().is_none_or(|_| {
+        let hex = |value: &Value, lengths: &[usize]| {
+            value.as_str().is_some_and(|s| {
+                lengths.contains(&s.len())
+                    && s.bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+            })
+        };
+        hex(&report["app_bundle_digest"], &[64])
+            && hex(&report["app_revision"], &[40, 64])
+            && policy_digest(policy)
+                .ok()
+                .is_some_and(|digest| report["app_policy_digest"].as_str() == Some(digest.as_str()))
+    });
     Ok(profile
         .checks
         .iter()
@@ -165,13 +194,13 @@ pub fn checks_from_report(policy: &Policy, report: &Value) -> Result<Vec<Check>>
             let exit = observation(report, "commands", &command.name);
             Check {
                 name: command.name.clone(),
-                status: if setup_ok && bundle_ok && exit == Some(0) {
+                status: if setup_ok && bundle_ok && app_ok && exit == Some(0) {
                     "pass"
                 } else {
                     "fail"
                 }
                 .into(),
-                detail: format!("Clean evaluator exit: {exit:?}; setup succeeded: {setup_ok}; immutable policy satisfied: {bundle_ok}"),
+                detail: format!("Clean evaluator exit: {exit:?}; setup succeeded: {setup_ok}; immutable policy satisfied: {bundle_ok}; app artifact bound: {app_ok}"),
             }
         })
         .collect())
@@ -189,53 +218,5 @@ fn observation(report: &Value, key: &str, name: &str) -> Option<i64> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn policy() -> Policy {
-        serde_json::from_value(json!({"version":"v1","suite":"commands-v1",
-            "environment":ENVIRONMENT,"required_checks":["tests"],"build":{"checks":[
-                {"name":"tests","argv":["sh","/opt/yoneda/test-bundle/run.sh"],"timeout_seconds":10}],
-                "test_bundle":{"digest":"a".repeat(64),"protected_paths":["tests","scripts/runner.sh"]}}})).unwrap()
-    }
-
-    #[test]
-    fn old_build_profile_without_bundle_remains_valid() {
-        let old: BuildProfile = serde_json::from_value(
-            json!({"checks":[{"name":"x","argv":["true"],"timeout_seconds":1}]}),
-        )
-        .unwrap();
-        assert!(old.test_bundle.is_none());
-    }
-
-    #[test]
-    fn bundle_runner_path_must_not_depend_on_unexpanded_shell_variables() {
-        let mut policy = policy();
-        policy.build.as_mut().unwrap().checks[0].argv[1] = "$YONEDA_TEST_BUNDLE/run.sh".into();
-        assert!(validate_policy(&policy).is_err());
-    }
-
-    #[test]
-    fn zero_exit_cannot_pass_without_exact_bundle_and_clean_protected_paths() {
-        let policy = policy();
-        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
-            "test_bundle_digest":"wrong","protected_changes":[]});
-        assert_eq!(
-            checks_from_report(&policy, &report).unwrap()[0].status,
-            "fail"
-        );
-        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
-            "test_bundle_digest":"a".repeat(64),"protected_changes":["tests/run.sh"]});
-        assert_eq!(
-            checks_from_report(&policy, &report).unwrap()[0].status,
-            "fail"
-        );
-        let report = json!({"setup":[],"commands":[{"name":"tests","output":{"exit":0}}],
-            "test_bundle_digest":"a".repeat(64),"protected_changes":["src/lib.rs"]});
-        assert_eq!(
-            checks_from_report(&policy, &report).unwrap()[0].status,
-            "pass"
-        );
-    }
-}
+#[path = "build/tests.rs"]
+mod tests;

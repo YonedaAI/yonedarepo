@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 pub const CONTRACT_VERSION: u32 = 1;
 pub mod account;
 pub mod agents;
+pub mod autonomy;
 pub mod build;
 pub mod conflict;
 pub mod conflict_capture;

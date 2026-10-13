@@ -218,8 +218,8 @@ describe('reviewer run permissions', () => {
     const html = renderToStaticMarkup(createElement(RunDetail, props));
     expect(html).not.toContain('Review provider connections');
     expect(html).not.toContain('Restart run</button>');
-    expect(html).toContain('Review approach</button>');
-    expect(html).not.toMatch(/disabled=""[^>]*>Review approach/);
+    expect(html).toContain('Record publishing decision</button>');
+    expect(html).not.toMatch(/disabled=""[^>]*>Record publishing decision/);
     expect(renderToStaticMarkup(createElement(RunDetail, { ...props, reviewer: false }))).toContain(
       'Review provider connections',
     );

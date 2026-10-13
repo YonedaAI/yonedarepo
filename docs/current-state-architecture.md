@@ -1,6 +1,6 @@
 # YonedaRepo current-state architecture
 
-Source snapshot: October 9, 2026. This document describes the current code and Cloudflare
+Source snapshot: October 12, 2026. This document describes the current code and Cloudflare
 configuration. Deployment and live acceptance evidence are recorded separately in
 [UI workflow evidence](ui-workflow-evidence.md).
 
@@ -88,6 +88,12 @@ flowchart TD
     Visitors["Website visitors"] --> Sites["Separate Sites Worker"]
     Sites --> R2
     Sites --> Worker
+    AppVisitors["App users and reviewers"] --> Apps["Isolated Apps Worker"]
+    Apps --> Loader["Worker Loader: checked application module"]
+    Apps --> AppState["AppRunner DO: per-app SQLite"]
+    Apps --> Worker
+    AppState --> R2
+    AppState --> Loader
 ```
 
 The platform Worker serves the browser assets and handles `/api`, `/mcp` and `/git`. The sites
@@ -106,6 +112,8 @@ through an internal service binding.
 | R2 | Immutable context objects, workspace snapshots, transcripts, verification evidence and static asset manifests. |
 | D1 | Rebuildable repository discovery projection. It does not authorize selection or publication. |
 | Sites Worker | Serves checked static assets after verified canonical publication. |
+| Apps Worker | Authorizes exact checked previews or the canonical published app through a platform service binding. Each app gets a distinct host; platform cookies are stripped. |
+| Worker Loader and AppRunner | Load the checked JS/TS application bundle with outbound network disabled and a managed SQLite capability. Preview and published data are separate. Additive schema migration preserves application data across revisions. |
 | Observability | Structured operational Worker/container logs. Safe owner-visible execution timelines also persist in Repository DO SQLite. |
 
 There is no separate Task DO. Runs and jobs live inside the Repository DO. Scheduling uses a
@@ -161,7 +169,12 @@ proposal is an agent assertion; trusted unchanged-source completion and ledger v
 the task DAG before work starts. One to six selected agents can share worker and integrator roles.
 Disjoint specialist write scopes, captured handoffs and deterministic Rust source assembly apply.
 Only its final integration receives independent evaluation and owner publication; intermediate
-source never becomes a selectable candidate. Repo DO migration 8 stores this team state.
+source never becomes a selectable candidate. Autonomous approvals allow a coordinator to amend
+the DAG, create tasks, send durable peer messages and repair failed integration within the
+original finite approval. Two repair rounds share the same execution and spend caps; a
+separately approved one-shot Opus escalation is available only after a cheaper repair fails.
+Contradictory intent can pause work for one focused owner answer. Migration 13 stores working
+branches, peer messages, delivery receipts and intent questions; migrations remain append-only.
 
 1. The owner approves a brief, source base, context, agent roster and model limits.
 2. In comparison mode, agents work independently from the same frozen base and publish typed context through MCP.
@@ -169,7 +182,7 @@ source never becomes a selectable candidate. Repo DO migration 8 stores this tea
 4. A clean evaluator checks the exact captured revision against the approved policy.
 5. The owner compares eligible candidates and records a shipping decision and alternatives.
 6. Publication verifies ancestry, updates canonical Git with an expected-old-ref lease and
-   reads it back. Verified publication advances the hosted static site pointer.
+   reads it back. Verified publication advances the static site or checked app pointer.
 7. Later updates carry forward the published approach, decision and selected context for review.
 
 Runs accept one to six initial agents. Optional delegation allows up to 12 total agents through
@@ -180,6 +193,10 @@ before run approval and frozen afterward.
 `continuation_of` connects a new update to the decision at the current published commit.
 Restarting a run creates a new approved attempt while retaining the earlier evidence.
 Selection, canonical Git publication and hosted site state remain separately recorded.
+Checked working branches advance automatically under a compare-and-swap guard. Subsequent
+feature and bug runs can build on that unpublished checked revision and receive a frozen,
+bounded packet of ranked prior intent and evidence. Human approval still controls canonical
+publication. A late result from a superseded team plan cannot advance the working branch.
 
 ## Context graph and agent access
 
@@ -187,10 +204,11 @@ The graph resides in Repository DO SQLite as typed nodes and edges. It joins int
 agent assertions, artifacts, executions, candidates, evaluations, decisions and source
 revisions. Agent assertions remain distinct from independent checks and human decisions.
 
-The browser uses React Flow to explore the graph. The full view consumes fresh repository
-snapshots on live notifications, with a three-second polling fallback. Submitted searches and
-expanded neighborhoods currently retain their query results until requested again. Historical
-queries are anchored to a specific source revision and path; graph traversal is bounded.
+Human review starts with the working app, requested behaviors, checks and readable rationale.
+Multi-file changes and the React Flow graph are optional detail. Peer conversations show actual
+message bodies and platform delivery/acknowledgment receipts; those receipts do not prove
+understanding. Historical reads and context retrieval use bounded, stable-watermark pages.
+Historical queries are anchored to a specific source revision and path; graph traversal is bounded.
 
 Hosted agents use the native stdio MCP server. External agents use Streamable HTTP MCP and
 revocable repository-scoped grants. Scoped Git reads and contribution writes go through the
@@ -221,6 +239,16 @@ See [README setup and deployment](../README.md), [runbook](runbook.md),
 [provider configuration](providers.md), [MCP guide](remote-mcp.md) and
 [logging](logging.md) for operational details.
 
-Cross-run task graphs, automatic semantic merges, interactive question/answer/resume and hosting
-arbitrary application backends are outside the current MVP. Current publication serves static
-website output.
+## What differentiates the platform
+
+Parallel isolated branches are an expected agent-tool capability. YonedaRepo's distinguishing
+design is a durable evidence chain: intent and agent assertions, trusted Git capture,
+independent exact-revision checks, explicit human decisions and file-level provenance. Later
+agents receive a frozen record of why the current checked code exists, rather than only source
+or a chat transcript. Coordination and bounded repair use the same ledger and approval.
+
+This is a design distinction, not a claim of unique invention or proven coding improvement.
+Controlled source-only/plain-notes/graph maintenance chains measure context usefulness
+separately. The application profile supports JS/TS UI/API/SQLite with constrained capabilities;
+arbitrary networked backends and large-scale throughput are not claimed. Hosted run and
+deployment evidence must be checked independently from source and local tests.

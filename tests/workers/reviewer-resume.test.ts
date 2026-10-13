@@ -210,3 +210,17 @@ it('releases only terminal trial slots when status reloads, retaining history an
   expect(snapshot.runs).toHaveLength(1);
   expect(snapshot.runs[0].status).toBe('cancelled');
 });
+
+it('distinguishes an interrupted reservation from running work in reviewer status', async () => {
+  const f = await readyReviewer('resume_state');
+  const id = 'reviewer-state-12345678';
+  await workspace(bindings, f.owner, { op: 'reviewer_trial', id });
+  const reserved = await (await api(f.scoped, '/api/reviewer', f.cookie)).json<Json>();
+  expect(reserved).toMatchObject({ active_trial: id, active_trial_state: 'reserved' });
+  expect((await api(f.scoped, '/api/reviewer/resume', f.cookie, {})).status).toBe(200);
+  const running = await (await api(f.scoped, '/api/reviewer', f.cookie)).json<Json>();
+  expect(running).toMatchObject({ active_trial: id, active_trial_state: 'running' });
+  await ledger(f.scoped, f.repo, { op: 'cancel_run', run_id: id });
+  const finished = await (await api(f.scoped, '/api/reviewer', f.cookie)).json<Json>();
+  expect(finished).toMatchObject({ active_trial: null, active_trial_state: null });
+});

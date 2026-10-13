@@ -1,0 +1,59 @@
+.agent-work-summary,
+.working-branch-panel,
+.intent-question {
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  overflow-wrap: anywhere;
+}
+.working-branch-panel p,
+.intent-question p {
+  max-width: 90ch;
+  line-height: 1.6;
+}
+.agent-work-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-work-summary ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr));
+  gap: 12px;
+  padding: 0;
+  list-style: none;
+}
+.agent-work-summary li {
+  padding: 12px;
+  background: #f8fafb;
+  border: 1px solid var(--line);
+}
+.agent-work-summary li > strong,
+.agent-work-summary li > small {
+  display: block;
+  margin-bottom: 8px;
+}
+.agent-work-summary li p {
+  margin: 8px 0;
+}
+.intent-answer-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0;
+}
+.intent-question label {
+  display: block;
+  max-width: 80ch;
+  margin-bottom: 12px;
+}
+.intent-question textarea {
+  display: block;
+  width: 100%;
+  min-height: 90px;
+  margin-top: 8px;
+}

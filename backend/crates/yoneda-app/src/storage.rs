@@ -20,7 +20,7 @@ pub trait SqlStore: Clone + 'static {
 }
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SCHEMA_VERSION: i64 = 12;
+    const SCHEMA_VERSION: i64 = 13;
     store.query("CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",&[])?;
     let owned = store.clone();
     store.transaction(Box::new(move || {
@@ -40,6 +40,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
                 12,
                 include_str!("migrations/0012_history_provenance_indexes.sql"),
             ),
+            (13, include_str!("migrations/0013_autonomous_work.sql")),
         ];
         let applied = owned.query(
             "SELECT version,digest FROM schema_migrations ORDER BY version",

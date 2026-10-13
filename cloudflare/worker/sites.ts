@@ -1,4 +1,5 @@
 import { jwtVerify, SignJWT } from 'jose';
+import { appPreviewLink } from './apps';
 import { error, response, safeId } from './http';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
@@ -8,6 +9,7 @@ async function signingKey(env: Env) {
   return new TextEncoder().encode(await sha(`yoneda:preview:v1:${env.VAULT_KEY}`));
 }
 export async function previewLink(env: Env, repo: string, evaluation: Json) {
+  if (evaluation.app?.bundle_digest) return appPreviewLink(env, repo, evaluation);
   if (!evaluation.deployment?.digest)
     throw new Error('No independently captured site for this evaluation');
   if (

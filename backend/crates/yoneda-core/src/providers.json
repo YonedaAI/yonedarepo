@@ -47,6 +47,7 @@
     "catalog_url": "https://platform.claude.com/docs/en/about-claude/pricing",
     "models": [
       { "id": "claude-sonnet-5-5", "label": "Claude Sonnet 5.5 · Lower-cost coding default" },
+      { "id": "claude-opus-5-5", "label": "Claude Opus 5.5 · Preapproved difficult second repair only" },
       { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6 · Legacy, higher token price" }
     ]
   },

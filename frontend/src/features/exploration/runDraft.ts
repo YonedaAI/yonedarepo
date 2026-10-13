@@ -33,7 +33,8 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
   const previousAutomatic =
     (source?.teamPlanning ?? publication?.run.team_planning) === 'automatic';
   return {
-    restartOf: source?.id,
+    restartOf: source?.workingBranch ? undefined : source?.id,
+    workingBranch: source?.workingBranch,
     publication,
     inheritedContextTotal: inheritedContext.total,
     intent: source?.intent ?? '',

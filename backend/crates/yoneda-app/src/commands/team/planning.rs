@@ -81,6 +81,9 @@ pub(super) fn finish<S: SqlStore>(
     now: i64,
 ) -> Result<bool> {
     let execution = &job["payload"]["execution"];
+    if execution["team_role"] == "coordinator" {
+        return coordination::finish(db, job, result, run, now);
+    }
     if execution["team_role"] != "planner" {
         return Ok(false);
     }
@@ -139,6 +142,16 @@ pub(super) fn reflect<S: SqlStore>(
     status: &str,
     now: i64,
 ) -> Result<()> {
+    if execution["team_role"] == "coordinator" {
+        if status == "failed" {
+            let mut run = get(db, "runs", &string(execution, "run_id")?)?;
+            if run["status"] == "coordinating" {
+                run["status"] = json!("failed");
+                save(db, "runs", &string(&run, "id")?, &run)?;
+            }
+        }
+        return Ok(());
+    }
     if execution["team_role"] != "planner" {
         return Ok(());
     }

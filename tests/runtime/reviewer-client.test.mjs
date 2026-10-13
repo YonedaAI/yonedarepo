@@ -1,6 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findCheckedRun, readRun } from '../../tools/reviewer-client.mjs';
+import { campaignEntry, findCheckedRun, readRun } from '../../tools/reviewer-client.mjs';
+
+test('campaign entry reads checked output without starting or resuming running paid work', async () => {
+  const paths=[];
+  const checked={repo_id:'booking',run_id:'checked',url:'/?repo=booking&run=checked'};
+  const result=await campaignEntry(async(path,body)=>{paths.push([path,body]);return checked;},
+    {enabled:true,repo_id:'booking',active_trial:'still-running'},false,'unused');
+  assert.equal(result,checked);
+  assert.deepEqual(paths,[['reviewer/campaign/checked',undefined]]);
+});
+
+test('explicit trial reuses an active reservation and disabled campaigns never execute', async () => {
+  const api=()=>{throw new Error('Unexpected paid action');};
+  const active=await campaignEntry(api,{enabled:true,repo_id:'booking',active_trial:'active'},true,'new');
+  assert.equal(active.run_id,'active');
+  await assert.rejects(campaignEntry(api,{enabled:false},true,'new'),/not ready/);
+});
 
 test('reviewer finds a checked example through stable metadata pages', async () => {
   const paths = [];

@@ -194,6 +194,21 @@
         },
         "cursor": {
           "type": "string"
+        },
+        "file_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 513
+        },
+        "authority": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "lineage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
         }
       },
       "additionalProperties": false
@@ -449,6 +464,342 @@
     "inputSchema": {
       "type": "object",
       "properties": {},
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "peer_message",
+    "description": "Send a same-run collaboration assertion. Container lease assigns sender identity. Use a stable request_id; delivery confirms receipt, not correctness.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "recipient": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "contract",
+            "question",
+            "finding",
+            "blocker"
+          ]
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "context_ids": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        }
+      },
+      "required": [
+        "request_id",
+        "recipient",
+        "kind",
+        "body"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "peer_inbox",
+    "description": "Read peer messages at planning, contract, edit, check and handoff checkpoints. Acknowledge delivered item IDs with ack_ids; next_cursor pages delivery only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "ack_ids": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "repair_request",
+    "description": "Ask the read-only coordinator to inspect a blocker or amend source ownership/dependencies. This assertion does not authorize mutation or a new model.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": [
+        "request_id",
+        "reason"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "repair_team",
+    "description": "Coordinator/integrator only: reopen selected tasks and all affected descendants under frozen autonomy. Read team_context for exact guards; provide every affected existing task revision including integrate. Upsert selected task_definitions within the approved project scopes. Two total repair rounds share existing budgets. Fresh capture and checks are required; canonical publication is owner-only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "expected_commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_plan_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_task_revisions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxProperties": 17
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "task_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "task_definitions": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "instructions": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "agent": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 5
+              },
+              "depends_on": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "write_paths": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 513
+                }
+              }
+            },
+            "required": [
+              "id",
+              "title",
+              "instructions",
+              "agent",
+              "depends_on",
+              "write_paths"
+            ]
+          }
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_commit",
+        "expected_version",
+        "expected_plan_revision",
+        "expected_task_revisions",
+        "run_id",
+        "task_ids"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "refresh_candidate",
+    "description": "Coordinator/integrator only: request trusted three-way refresh onto the current checked working branch or canonical target. Read conflict evidence after capture; even a clean merge needs new independent checks.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "expected_commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "request_id",
+        "candidate_id",
+        "expected_commit",
+        "expected_version"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "resolve_conflict",
+    "description": "Coordinator/integrator only: schedule a scoped resolver on the trusted merge workspace using the frozen goal, context, approved model and shared budget. Provide target head, plan and affected task revisions from team_context; consumes one of two total repair rounds. Capture and independent checks are required before owner publication.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "expected_commit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_plan_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expected_task_revisions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "maxProperties": 17
+        },
+        "conflict_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_commit",
+        "expected_version",
+        "expected_plan_revision",
+        "expected_task_revisions",
+        "conflict_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "intent_question",
+    "description": "Coordinator/integrator only: pause new source/check dispatch for an owner decision on product ambiguity. Never invent an answer or revise the approved goal, policy or spending limit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          }
+        }
+      },
+      "required": [
+        "request_id",
+        "question"
+      ],
       "additionalProperties": false
     }
   }

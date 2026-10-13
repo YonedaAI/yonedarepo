@@ -1,6 +1,6 @@
 **/target
 **/node_modules
-**/build
+backend/crates/yoneda-worker/build
 .git
 .wrangler
 **/.wrangler
@@ -12,4 +12,5 @@
 **/.env*
 artifacts
 context
-frontend
+frontend/*
+!frontend/package.json

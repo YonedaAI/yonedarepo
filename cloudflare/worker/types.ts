@@ -33,6 +33,8 @@ export interface Env {
   ZAI_MODEL?: string;
   STARTER_REPO?: string;
   SITE_ORIGIN?: string;
+  APP_ORIGIN?: string;
+  APPS?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */

@@ -1,5 +1,6 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { providerDefinition } from '../../shared/providers';
+import { campaignForAttempt, reserveCampaignUsage, settleCampaignUsage } from './campaign-usage';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
 import { requestUsage } from './model-budget';
@@ -32,14 +33,28 @@ export const modelHandler =
       const trialPolicy =
         owner === '_admin' ? null : await workspace(env, owner, { op: 'reviewer_status' });
       const reviewer = Boolean(trialPolicy?.repo_id);
+      const campaign = await campaignForAttempt(env, owner, scope.repo_id, job);
       if (
         reviewer &&
         (trialPolicy?.revoked ||
           trialPolicy?.expires <= Date.now() ||
-          trialPolicy?.repo_id !== scope.repo_id)
+          (trialPolicy?.repo_id !== scope.repo_id && !campaign))
       )
         throw Object.assign(new Error('Reviewer inference access expired or outside sandbox'), {
           code: 'REVIEWER_EXPIRED',
+        });
+      if (
+        reviewer &&
+        campaign?.access === 'reviewer' &&
+        prepared.provider !== 'codex' &&
+        !(
+          prepared.provider === 'claude' &&
+          job.model === 'claude-opus-5-5' &&
+          job.payload.execution.campaign_opus === true
+        )
+      )
+        throw Object.assign(new Error('Reviewer campaign execution permits metered Codex only'), {
+          code: 'FORBIDDEN',
         });
       const { key } = await providerCredentials(
         env,
@@ -60,16 +75,31 @@ export const modelHandler =
       requestNumber = counted.number;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
-      const ceiling = reviewer ? counted.reservation_microusd : prepared.reservation;
-      if (reviewer && !Number.isSafeInteger(ceiling))
+      const ceiling = reviewer || campaign ? counted.reservation_microusd : prepared.reservation;
+      if ((reviewer || campaign) && !Number.isSafeInteger(ceiling))
         throw new Error('Reviewer inference requires a priced run reservation');
       if (ceiling !== undefined) {
         try {
-          await workspace(env, budgetOwner, {
-            op: 'budget_reserve',
-            id: reservationId,
-            amount: ceiling,
-          });
+          if (campaign) {
+            await reserveCampaignUsage(
+              env,
+              owner,
+              campaign,
+              reservationId,
+              prepared.provider,
+              job.model,
+              prepared.body,
+              provider,
+              ceiling,
+              path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
+            );
+          } else {
+            await workspace(env, budgetOwner, {
+              op: 'budget_reserve',
+              id: reservationId,
+              amount: ceiling,
+            });
+          }
         } catch (failure) {
           // No upstream request has been sent. Release only this known-unused run reservation.
           if (counted.reservation_id) {
@@ -110,7 +140,7 @@ export const modelHandler =
         error_code: providerStatusCode(result.status),
       });
       const tracked =
-        prepared.reservation && !reviewer
+        prepared.reservation && !reviewer && !campaign
           ? trackClaudeUsage(
               result,
               env,
@@ -129,7 +159,17 @@ export const modelHandler =
               reservation_id: counted.reservation_id,
               ...usage,
             });
-            if (reviewer)
+            if (campaign)
+              await settleCampaignUsage(
+                env,
+                owner,
+                campaign,
+                reservationId,
+                prepared.provider,
+                job.model,
+                usage,
+              );
+            else if (reviewer)
               await workspace(env, owner, {
                 op: 'budget_settle',
                 id: reservationId,

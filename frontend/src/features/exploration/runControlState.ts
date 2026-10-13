@@ -8,7 +8,7 @@ import type { Snapshot } from '../../lib/types';
 
 export function runHasActiveAttempts(snapshot: Snapshot, run?: Record<string, any>) {
   return (
-    run?.status === 'planning' ||
+    ['planning', 'coordinating', 'awaiting_intent'].includes(run?.status) ||
     snapshot.executions.some(
       (execution) =>
         execution.run_id === run?.id &&

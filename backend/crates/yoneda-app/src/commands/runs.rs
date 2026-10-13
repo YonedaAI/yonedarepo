@@ -21,6 +21,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             let continuation_of = super::continuations::validate(db, &c, &r)?;
             let restart_of = super::restarts::validate(db, &c)?;
+            let working_branch = super::branches::freeze(db, &c)?;
             let id = string(&c, "id")?;
             let intent = string(&c, "intent")?;
             let general = !r["policy"]["build"].is_null();
@@ -122,6 +123,25 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
                 run["request_limits"] = json!("optional-v1");
+            }
+            if let Some(branch) = &working_branch {
+                run["working_branch_id"] = branch["id"].clone();
+                run["working_branch_version"] = branch["version"].clone();
+                run["base"] = branch["working_revision"].clone();
+            }
+            super::autonomy::freeze(&c, &mut run)?;
+            super::campaign::freeze(db, &c, &mut run, now)?;
+            if run["autonomy_approval"].is_object() {
+                run["autonomy_approval"]["model_budgets"] = run["model_budgets"].clone();
+                if !run["repair_escalation"].is_null() {
+                    run["autonomy_approval"]["repair_escalation"] =
+                        run["repair_escalation"].clone();
+                }
+            }
+            if r.get("context_study").is_none()
+                && (working_branch.is_some() || run["autonomy_policy"]["enabled"] == true)
+            {
+                super::context_packet::freeze(db, &mut run, working_branch.as_ref())?;
             }
             if let Some(previous) = &restart_of {
                 run["restart_of"] = json!(previous);

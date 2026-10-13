@@ -1,6 +1,14 @@
 # YonedaRepo submission
 
-YonedaRepo treats a development run as a shared intent and a set of concurrent alternatives. Agents preserve typed context while they work. Independent capture and checks attach evidence to exact revisions; the owner selects what ships, and a future agent can query why through MCP.
+YonedaRepo lets agents plan and coordinate application development from a shared intent, carry checked work into later feature and bug runs, and retain why each revision exists. Trusted Git capture, protected independent checks and human publication decisions remain distinct from agent assertions.
+
+## October 12 autonomous-app update
+
+The new implementation is deployed on platform version `d0396173-6d22-494f-8c8e-0db379c07946` and Apps Worker `def961ab-ce4c-4922-9b57-c131153b1c10`. The full local gate passed: 323 Rust, 319 platform Workers, 16 isolated-app workerd, 107 frontend and 15 Node tests. Seven fresh event-booking repositories share a verified incomplete starter. Fresh paid build → waitlist feature → duplicate-registration repair and the matched context study have not yet produced accepted results. The new reviewer entry remains gated on an independently checked GLM-containing collaborative result. Historical static-site runs and the video below are dated evidence, not the new campaign's outcome.
+
+The default reviewer command is read-only; optional execution requires `--new`. The fresh $50 booking allowance is distinct from earlier accounting and the separate $12 controlled study. Humans review app behavior, checks and rationale first; multi-file changes, messages, prior context and provenance are accessible detail. [Current architecture](current-state-architecture.md) describes the deployed boundaries.
+
+## Earlier submission package baseline
 
 - **Video:** [Watch the refreshed walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-10/yonedarepo-reviewer.mp4). The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captions, rendered and uploaded. Normal-speed playback of the prior render reached the end; all 12 scenes and 48 captions were reviewed, and revised chapter 6 was reviewed with the honest history summary, exact captured-source view, and four captions. The final re-render passed ffmpeg decode. This edited video is not a continuous recording of a current full run. See [script and production notes](demo-video.md).
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0. Revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`) passed `cargo xtask check` and is running on deployed Worker version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`. The submission source is packaged as a public export. Verify its originating implementation revision in [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) and the corresponding result in [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions). Workflow `38088529282` for earlier source `e884a546` is a dated baseline; final-export CI acceptance is reported separately after publication.
@@ -18,7 +26,7 @@ YonedaRepo treats a development run as a shared intent and a set of concurrent a
 4. Open **Evidence trail** to read intent, assertions, trusted capture, checks and the owner's rationale at normal text size. **Explore graph** provides the optional relationship view.
 5. Select an eligible candidate, record the decision and wait for verified publication. Reviewer publication affects only the sandbox. A failed or conflicting publish can be reconciled using **Recover repository**, which reads the actual canonical Git HEAD and retains the failed decision as history.
 
-Use a project-specific test profile: the starter HTML smoke check does not prove all browser interactions or product requirements. Hosted sites are isolated relative-path static output; full-stack applications and external API calls require a future deployment profile.
+Use a project-specific test profile: the starter HTML smoke check does not prove all browser interactions or product requirements. The app profile supports JS/TS UI/API/SQLite with protected independent checks and isolated preview hosts. Arbitrary external services are not enabled. The earlier static-site walkthrough above remains a historical package baseline.
 
 ## Current verification
 

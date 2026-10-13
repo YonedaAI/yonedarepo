@@ -14,6 +14,18 @@ export async function candidateSource(env: Env, repo: string, id: string) {
   return result;
 }
 
+/** Only stored canonical publication may seed a controlled study; no caller Git reference. */
+export async function publishedSource(env: Env, repo: string) {
+  const repository = await ledger(env, repo, { op: 'repository_status' });
+  const revision = {
+    repository: `${repository.remote.namespace}/${repository.remote.name}`,
+    commit: repository.published_commit,
+  };
+  const result = response({ revision, ...(await source(env, revision)) });
+  result.headers.set('cache-control', 'no-store');
+  return result;
+}
+
 /** Owner read boundary only: pass a workspace-authorized ledger snapshot, never job/model JSON.
  * Returns a copy; hydrated source must never flow back into ledger writes or evaluator jobs.
  */

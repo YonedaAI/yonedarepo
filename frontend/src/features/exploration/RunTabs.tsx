@@ -4,7 +4,7 @@ import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 const labels = {
   results: 'Results',
   activity: 'Agent activity',
-  context: 'Context usage',
+  context: 'Prior context',
   details: 'Run details',
 };
 export type RunTab = keyof typeof labels;

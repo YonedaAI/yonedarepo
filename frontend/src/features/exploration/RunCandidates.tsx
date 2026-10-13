@@ -17,6 +17,8 @@ export function RunCandidates({
   onSelect,
   onProviders,
   onInspectTask,
+  onContext,
+  onGraph,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
@@ -28,6 +30,8 @@ export function RunCandidates({
   onSelect: (id: string) => void;
   onProviders?: () => void;
   onInspectTask: (id: string) => void;
+  onContext: () => void;
+  onGraph: () => void;
 }) {
   const team = run.mode === 'collaborate';
   const repo = snapshot.repository;
@@ -85,6 +89,10 @@ export function RunCandidates({
               disabledReason={selectionBlocker(snapshot, run, candidate)}
               onSelect={() => onSelect(candidate?.id ?? '')}
               onProviders={onProviders}
+              snapshot={snapshot}
+              run={run}
+              onContext={onContext}
+              onGraph={onGraph}
             />
           );
         })}

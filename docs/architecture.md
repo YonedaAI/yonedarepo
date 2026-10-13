@@ -20,6 +20,12 @@ flowchart TD
   Publish --> Artifacts[Cloudflare Artifacts: canonical repository and candidate forks]
   Publish --> SitePointer[Verified publication advances static site pointer]
   SitePointer --> Sites[Separate Sites Worker: opaque sandbox origin]
+  Evaluate --> Working[Checked working branch: automatic guarded advancement]
+  Working --> Next[Feature and bug runs: frozen prior context]
+  Next --> Repo
+  Evaluate --> AppBundle[Exact-revision checked app bundle]
+  AppBundle --> Apps[Separate app hosts: Worker Loader and SQLite AppRunner DO]
+  Apps --> R2
   Sites --> R2
   Repo --> R2[R2: immutable context, workspace and evidence]
   Outbox --> D1[D1: rebuildable repository discovery]
@@ -44,7 +50,7 @@ The workspace authority owns username/password accounts, hashed sessions, recove
 
 ## Execution and evidence
 
-The product run starts one to six owner-configured coding approaches with the same approved brief, base, policy and selected typed context. Provider/model choices are recorded per execution. Standard records include intent, requirement, constraint, assumption, finding, alternative, proposed decision and question. Immutable records can support, challenge, depend on or supersede prior records. Agent-authored statements remain assertions. Questions currently record context; interactive pause/answer/resume is deferred.
+The product run starts from an owner-approved goal, base, policy, provider roster and finite model limits. Comparison runs produce alternatives. Autonomous collaborative runs let agents define tasks, dependencies and interface contracts, amend the plan and exchange durable peer messages. Two shared repair rounds and a separately approved one-shot escalation retain the original approval limits. Actual contradictory intent can pause work for a focused owner answer. Standard records include intent, requirement, constraint, assumption, finding, alternative, proposed decision and question. Immutable records can support, challenge, depend on or supersede prior records. Agent-authored statements remain assertions.
 
 The older retry fixture retains its research-then-three-coders DAG for bounded verification. All receive identical frozen research artifact IDs. `provided_to` records delivery; `retrieved_by` records an actual MCP read. Neither alone proves causal influence. The generic website run does not inherit this fixture's retry requirements.
 
@@ -64,6 +70,10 @@ Acceptance checks exact candidate/evaluation identity, all required passing chec
 
 Published HEAD remains the prior commit until the publisher verifies Artifacts. Publication checks ancestry, pushes with an explicit expected-old-ref lease and reads the ref back. A retry recognizes an already-published target after acknowledgment loss. Unexpected remote changes block publication rather than overwriting them. Starting a new run is blocked while publication is unresolved.
 
-The browser surfaces **Ready for review** only for an eligible candidate against the current base and policy. The owner compares and records a shipping rationale in the product. Selection, verified canonical publication and hosted revision are separate states. A clean evaluator captures bounded static assets into an immutable R2 manifest tied to the exact source commit. Only verified Git publication advances the public site pointer. The separate sites Worker serves relative-path output with an opaque sandbox origin, no platform credentials and blocked external networking. A failed replacement leaves the previous website serving.
+The browser surfaces **Ready for review** only for an eligible candidate against the current base and policy. Outcome review starts with the app, requested behavior, checks and rationale; multiple-file diffs and graph detail are optional. The owner records a shipping rationale in the product. Selection, verified canonical publication and hosted revision are separate states. A clean evaluator captures bounded static assets or the approved JS/TS app bundle into an immutable R2 manifest tied to the exact source commit and policy. Only verified Git publication advances the public pointer. The static Sites Worker retains its opaque sandbox origin. Dynamic applications run on distinct hosts through Worker Loader, with no outbound network, no platform cookies and a managed SQLite capability. Preview and published data are isolated; additive migrations preserve app data across revisions. A failed replacement leaves the previous publication serving.
+
+Checked working branches can advance without canonical publication. Each advancement checks the exact current branch head/version and team-plan revision. A subsequent feature or bug run inherits that checked source and a frozen, bounded packet of prior intent and evidence. Human review controls canonical publication; automatic development does not create a human acceptance record.
+
+The distinguishing design is the connected authority trail, not parallel branches alone: assertion → trusted capture → independent check → human decision → file-level provenance. Delivery and acknowledgment receipts show what context was made available to an agent, not that it understood or benefited from it. Controlled maintenance comparisons and hosted acceptance are separate from implementation and local test results; unique invention, broad scale and causal context improvement are not established.
 
 The history query is anchored to a captured commit and relative source path. Missing coverage is reported as unknown. Graph traversal is bounded. Incident observations preserve the original assumption and append a labelled observation; the MVP's incident inputs are simulated rather than production telemetry.

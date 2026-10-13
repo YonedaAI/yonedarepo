@@ -3,11 +3,14 @@ import type { Json } from './types';
 
 const reads = new Set([
   'snapshot',
+  'working_branch',
+  'working_branches',
   'repository_overview',
   'runs_page',
   'run_detail',
   'run_graph_page',
   'events',
+  'peer_messages_page',
   'graph',
   'why',
   'decision',
@@ -21,6 +24,8 @@ const reads = new Set([
 const writes = new Set([
   'init',
   'start_run',
+  'create_working_branch',
+  'answer_intent',
   'accept',
   'cancel_run',
   'observe',
@@ -69,6 +74,10 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     '_trusted',
     '_capture',
     '_adapter',
+    'campaign',
+    '_campaign_grant',
+    '_campaign_signing_key',
+    'repair_escalation',
   ])
     delete input[key];
   return input;

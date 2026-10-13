@@ -4,6 +4,10 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod accounts;
 mod budget;
+mod campaign;
+mod campaign_budget;
+mod campaign_runs;
+mod campaign_trial;
 mod grants;
 mod project_dispatch;
 mod project_setup;
@@ -35,6 +39,19 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             }
             "settings" | "provider_put" | "provider_update" | "provider_delete"
             | "provider_secret" => providers::handle(&db, &command, now),
+            "reviewer_campaign_enable"
+            | "reviewer_campaign_status"
+            | "campaign_configure"
+            | "campaign_status"
+            | "campaign_enable"
+            | "campaign_disable" => campaign::handle(&db, &command, now),
+            "campaign_bind_run" | "campaign_run_status" => {
+                campaign_runs::handle(&db, &command, now)
+            }
+            "campaign_trial" | "campaign_trial_status" | "campaign_trial_complete" => {
+                campaign_trial::handle(&db, &command, now)
+            }
+            "campaign_reserve" | "campaign_settle" => campaign_budget::handle(&db, &command, now),
             "budget_status" | "budget_reserve" | "budget_settle" => {
                 budget::handle(&db, &command, now)
             }

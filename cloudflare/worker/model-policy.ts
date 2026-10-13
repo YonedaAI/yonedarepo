@@ -27,6 +27,14 @@ export function prepareModelRequest(
     throw new Error('Configured model required');
   if (!definition.allow_custom_model && !definition.models.some((entry) => entry.id === model))
     throw new Error('Model is not permitted for this provider');
+  if (provider === 'claude' && model === 'claude-opus-5-5') {
+    if (
+      job.payload?.execution?.campaign_opus !== true ||
+      job.payload?.execution?.repair_round !== 2 ||
+      job.payload?.run?.repair_escalation?.model !== model
+    )
+      throw new Error('Opus 5.5 requires the preapproved second repair execution');
+  }
   const body = structuredClone(input);
   const ceiling = outputCeiling(job);
   body.model = model;
@@ -38,6 +46,11 @@ export function prepareModelRequest(
     'container',
     'context_management',
     'previous_response_id',
+    'campaign',
+    'campaign_id',
+    'campaign_version',
+    'chain_id',
+    'bucket',
   ])
     delete body[key];
   if (harness === 'codex') {
@@ -83,7 +96,23 @@ export function prepareModelRequest(
       // The proxy sends no beta headers. Claude Code 2.1.293 requests the
       // beta-only "updates" display even in adaptive mode; use stable summaries.
       if (body.thinking?.display === 'updates') body.thinking.display = 'summarized';
-      if (model === 'claude-sonnet-5-5') {
+      if (model === 'claude-opus-5-5') {
+        if (['any', 'tool'].includes(body.tool_choice?.type))
+          throw new Error('Forced tool selection is unsupported by Opus 5.5');
+        if (['disabled', 'between_tools'].includes(body.thinking?.type))
+          throw new Error('Opus 5.5 requires adaptive thinking');
+        if (body.thinking?.type === 'enabled') {
+          if (
+            !Number.isSafeInteger(body.thinking.budget_tokens) ||
+            body.thinking.budget_tokens < 1024
+          )
+            throw new Error('Manual thinking requires an integer budget of at least 1024 tokens');
+          body.thinking = {
+            type: 'adaptive',
+            ...(body.thinking.display ? { display: body.thinking.display } : {}),
+          };
+        }
+      } else if (model === 'claude-sonnet-5-5') {
         if (['any', 'tool'].includes(body.tool_choice?.type))
           throw new Error('Forced tool selection is unsupported by Sonnet 5.5');
         if (body.thinking?.type === 'enabled') {

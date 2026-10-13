@@ -2,6 +2,9 @@ use crate::field;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
+    if payload["execution"]["team_role"] == "coordinator" {
+        return crate::team_prompt::coordinator_prompt(payload);
+    }
     if payload["team_planning"] == true {
         return crate::team_planning::prompt(payload);
     }
@@ -33,12 +36,13 @@ pub(crate) fn prompt(payload: &Value) -> Result<String> {
             " Delegation is disabled for this approved run; do not launch additional agents.".into()
         };
         return Ok(format!(
-            "You are an isolated YonedaRepo coding agent. Implement the approved brief in the frozen checkout. Strategy: {}. Brief: {}. Acceptance criteria: {}. Frozen context: {}. Owner-approved build profile: {}. Read AGENTS.md and other repository instructions before editing. First call repo_context and inspect peer_status once to see declared work and dependencies. Use context_search and context_get to investigate prior alternatives and decisions. Publish a few important requirements, constraints, assumptions, findings, alternatives, proposed_decisions or questions with context_publish; give each a purpose. The platform supplies your assigned intent (intent:{}); omit intent_id rather than guessing it. Reference earlier records with supports, challenges, depends_on, supersedes, answers or motivates. Prioritize a working implementation over exhaustive context records. These are assertions; only the independent evaluator and owner can verify or approve. Change source files and run the approved checks where possible. Do not change the requested verification policy or claim publication. Each model response is capped at {} output tokens. Write and edit source in small chunks; avoid generating a large file in one tool call because truncated JSON cannot be applied. Keep changes focused and finish by calling execution_complete with a concise explanation. Your approach will be captured and evaluated independently alongside other agents. Stay within the execution deadline.{}{}{}",
+            "You are an isolated YonedaRepo coding agent. Implement the approved brief in the frozen checkout. Strategy: {}. Brief: {}. Acceptance criteria: {}. Frozen context: {}. Owner-approved build profile: {}. Read AGENTS.md and other repository instructions before editing. Owner intent clarifications: {}. Self-decompose the implementation into source and verification checkpoints. First call repo_context and inspect peer_status once to see declared work and dependencies. Use context_search and context_get to investigate prior alternatives and decisions. Publish a few important requirements, constraints, assumptions, findings, alternatives, proposed_decisions or questions with context_publish; give each a purpose. The platform supplies your assigned intent (intent:{}); omit intent_id rather than guessing it. Reference earlier records with supports, challenges, depends_on, supersedes, answers or motivates. Prioritize a working implementation over exhaustive context records. These are assertions; only the independent evaluator and owner can verify or approve. Change source files and run the approved checks where possible. Do not change the requested verification policy or claim publication. Each model response is capped at {} output tokens. Write and edit source in small chunks; avoid generating a large file in one tool call because truncated JSON cannot be applied. Keep changes focused and finish by calling execution_complete with a concise explanation. Your approach will be captured and evaluated independently alongside other agents. Stay within the execution deadline.{}{}{}",
             field(execution, "strategy")?,
             payload["run"]["intent"],
             payload["run"]["criteria"],
             initial_context(&payload["run"])?,
             payload["policy"]["build"],
+            payload["run"]["intent_clarifications"],
             field(&payload["run"], "id")?,
             output_tokens,
             task,

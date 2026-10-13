@@ -4,7 +4,7 @@ use yoneda_core::agents::*;
 use yoneda_core::{Error, Result};
 pub(super) fn capabilities<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     Ok(
-        json!({"artifact_reads":2,"workspace_authority":1,"model_budgets":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
+        json!({"artifact_reads":2,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
     )
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
@@ -33,6 +33,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             create(db, "repository", "repo", &r)?;
             node(db, &id, "repository", &name, "owner", now, r.clone())?;
             event(db, "repository.created", now, json!({"id":id}))?;
+            super::context_seed::initialize(db, &c, now)?;
             Ok(r)
         }
         "snapshot" => {
@@ -51,7 +52,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     .unwrap_or_default(),
             )?;
             Ok(
-                json!({"v":1,"capabilities":capabilities(db,now)?,"repository":r,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"team_tasks":all(db,"team_tasks")?,"team_handoffs":all(db,"team_handoffs")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"edge_count":edge_count,"edges_truncated":edges_truncated,"seq":seq}),
+                json!({"v":1,"capabilities":capabilities(db,now)?,"repository":r,"working_branches":all(db,"working_branches")?,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"team_tasks":all(db,"team_tasks")?,"team_handoffs":all(db,"team_handoffs")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"edge_count":edge_count,"edges_truncated":edges_truncated,"seq":seq}),
             )
         }
         "repository_overview" => {
@@ -89,6 +90,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             Ok(value)
         }
         "candidate_record" => get(db, "candidates", &string(&c, "id")?),
+        "evaluation_record" => get(db, "evaluations", &string(&c, "id")?),
         "job_status" => job_status(db, &c),
         "run_graph_page" => {
             let limit = match c.get("limit") {

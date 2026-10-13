@@ -30,7 +30,13 @@ impl ContextStudy {
                 .id
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
-            || !["website_update", "delegation", "local_continuation"].contains(&self.case.as_str())
+            || ![
+                "website_update",
+                "delegation",
+                "local_continuation",
+                "event_booking_maintenance",
+            ]
+            .contains(&self.case.as_str())
             || self.corpus.is_empty()
             || self.corpus.len() > 50
             || self.corpus.iter().any(|id| id.is_empty() || id.len() > 256)

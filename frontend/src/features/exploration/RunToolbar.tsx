@@ -3,6 +3,7 @@ import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { runAgentLimits } from './agentLimits';
 import { hasPublishedWork } from './runDefaults';
+import { supportsWorkingBranches, workingBranches } from './workingBranchView';
 
 export function RunToolbar({
   reviewer = false,
@@ -18,6 +19,8 @@ export function RunToolbar({
   const repo = snapshot.repository;
   const updating = hasPublishedWork(snapshot);
   const supportsSingle = runAgentLimits(snapshot).min_root_agents === 1;
+  const branches = workingBranches(snapshot);
+  const branchSupport = supportsWorkingBranches(snapshot);
   return (
     <>
       <div className="runs-toolbar">
@@ -37,21 +40,36 @@ export function RunToolbar({
             onClick={onNewRun}
           >
             <Plus size={17} />
-            {updating ? (repo.site ? 'Update website' : 'Update project') : 'New run'}
+            {branchSupport
+              ? branches.some((branch) => branch.status === 'active')
+                ? 'Continue working branch'
+                : 'Create working branch'
+              : updating
+                ? repo.site
+                  ? 'Update website'
+                  : 'Update project'
+                : 'New run'}
           </button>
         )}
       </div>
-      {updating && (
+      {branchSupport ? (
         <p className="subtle">
-          Updates start from current canonical source <code>{short(repo.head_commit)}</code>. The
-          published approach and approved context are carried forward for review.
-          {repo.site && repo.site.commit !== repo.head_commit && (
-            <>
-              {' '}
-              Currently hosted revision: <code>{short(repo.site?.commit ?? '')}</code>.
-            </>
-          )}
+          New work starts on a working branch. Checked results advance its head; canonical source
+          changes after a recorded publishing decision.
         </p>
+      ) : (
+        updating && (
+          <p className="subtle">
+            Updates start from current canonical source <code>{short(repo.head_commit)}</code>. The
+            published approach and approved context are carried forward for review.
+            {repo.site && repo.site.commit !== repo.head_commit && (
+              <>
+                {' '}
+                Currently hosted revision: <code>{short(repo.site?.commit ?? '')}</code>.
+              </>
+            )}
+          </p>
+        )
       )}
     </>
   );

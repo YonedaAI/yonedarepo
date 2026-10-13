@@ -3,6 +3,9 @@ use super::*;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let job = active(db, c, now)?;
     let execution = &job["payload"]["execution"];
+    if c["op"] == "team_context" && execution["team_role"] == "coordinator" {
+        return coordination::context(db, c, now);
+    }
     if c["op"] == "team_context" && execution["team_role"] == "planner" {
         return super::planning::context(db, c, now);
     }
@@ -19,6 +22,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     }
     match c["op"].as_str().unwrap_or_default() {
         "team_context" => {
+            let tasks = rows(db, "team_tasks", &string(&run, "id")?)?;
             let inputs = &job["payload"]["team_inputs"];
             let handoffs = inputs
                 .as_array()
@@ -27,7 +31,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 .map(|input| get(db, "team_handoffs", &string(input, "handoff_id")?))
                 .collect::<Result<Vec<_>>>()?;
             Ok(
-                json!({"run_id":run["id"],"mode":"collaborate","plan_revision":run["team_plan_revision"],"contract":run["team_plan"]["contract"],"base":run["base"],"task":task,"inputs":inputs,"handoffs":handoffs,"integration_manifest":job["payload"]["integration_manifest"],"integration_digest":job["payload"]["integration_digest"],"manifest_record":job["payload"]["manifest_record"]}),
+                json!({"run_id":run["id"],"mode":"collaborate","plan_revision":run["team_plan_revision"],"contract":run["team_plan"]["contract"],"base":run["base"],"base_version":run.get("working_branch_version").unwrap_or(&run["base_version"]),"tasks":tasks,"autonomy_policy":run["autonomy_policy"],"task":task,"inputs":inputs,"handoffs":handoffs,"integration_manifest":job["payload"]["integration_manifest"],"integration_digest":job["payload"]["integration_digest"],"manifest_record":job["payload"]["manifest_record"]}),
             )
         }
         "integration_request" => {

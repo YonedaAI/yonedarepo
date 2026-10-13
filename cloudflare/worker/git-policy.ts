@@ -14,7 +14,9 @@ export function gitRole(scope: Scope, role: string): GitRole | null {
       (job.kind === 'capture' && payload.capture_subtype === 'resolve_conflict'));
   let repository: string | undefined;
   if (refresh) {
-    if (['current', 'head'].includes(role)) repository = payload.candidate?.base?.repository;
+    if (role === 'current') repository = payload.candidate?.base?.repository;
+    else if (role === 'head')
+      repository = payload.target_revision?.repository ?? payload.candidate?.base?.repository;
     else if (role === 'candidate') repository = payload.candidate?.revision?.repository;
     else if (role === 'fork') repository = scope.fork;
     else return null;
@@ -23,7 +25,10 @@ export function gitRole(scope: Scope, role: string): GitRole | null {
   if (resolver && role === 'merge-workspace')
     repository = payload.conflict_resolver.merge_workspace_repository;
   else if (role === 'canonical')
-    repository = payload.execution?.base?.repository ?? payload.base?.repository;
+    repository =
+      payload.execution?.base?.repository ??
+      payload.base?.repository ??
+      payload.candidate?.base?.repository;
   else if (role === 'fork') repository = scope.fork;
   else if (role === 'target')
     repository = payload.candidate?.revision?.repository ?? payload.target?.repository;

@@ -3,6 +3,7 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, team::TeamPlan};
 mod capture;
+mod coordination;
 mod evidence;
 mod inputs;
 mod planning;
@@ -49,6 +50,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         retry::retry(db, &c, now)
     } else if c["op"] == "repair_team" {
         repair::repair(db, &c, now)
+    } else if c["op"] == "repair_request" {
+        coordination::request(db, &c, now)
     } else {
         tools::handle(db, &c, now)
     }
@@ -194,6 +197,18 @@ pub(super) fn citation_sources<S: SqlStore>(
 
 pub(super) fn start_planner<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     planning::start(db, run, now)
+}
+pub(super) fn evaluated<S: SqlStore>(
+    db: &S,
+    run: &Value,
+    candidate: &Value,
+    eligible: bool,
+    now: i64,
+) -> Result<()> {
+    coordination::evaluated(db, run, candidate, eligible, now)
+}
+pub(super) fn resume_after_intent<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
+    coordination::resume_after_intent(db, run, now)
 }
 pub(super) fn finish_planner<S: SqlStore>(
     db: &S,

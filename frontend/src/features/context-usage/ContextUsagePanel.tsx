@@ -4,11 +4,12 @@ import type { ContextUsage } from '../../../../shared/context_usage';
 import type { Snapshot } from '../../lib/types';
 import { ContextUsageRows } from './ContextUsageRows';
 import { contextUsageMetric, contextUsagePath } from './contextUsageView';
+import { FrozenPriorContext } from './FrozenPriorContext';
 import { useContextUsage } from './useContextUsage';
 import '../../styles/context-usage.css';
 
 const metrics: { key: keyof ContextUsage['counts']; label: string; detail: string }[] = [
-  { key: 'assigned', label: 'Assigned', detail: 'Frozen input records' },
+  { key: 'assigned', label: 'Assigned', detail: 'Records assigned to agents' },
   { key: 'returned', label: 'Returned in search', detail: 'Distinct delivered records' },
   { key: 'opened', label: 'Opened', detail: 'Distinct retrieved records' },
   { key: 'cited', label: 'Explicitly cited', detail: 'Distinct referenced records' },
@@ -48,8 +49,8 @@ export function ContextUsagePanel({
     <section className="context-usage" aria-labelledby={heading}>
       <div className="context-usage-heading">
         <div>
-          <h2 id={heading}>Context usage</h2>
-          <p>Recorded delivery, retrieval, explicit citations and revision checks.</p>
+          <h2 id={heading}>Context for this work</h2>
+          <p>Prior context and recorded agent access.</p>
         </div>
         <button type="button" className="quiet" disabled={loading || !path} onClick={refresh}>
           <RefreshCw size={15} />
@@ -57,9 +58,10 @@ export function ContextUsagePanel({
         </button>
       </div>
       <p className="context-usage-note">
-        The console projects the same scoped evidence agents query with <code>context_usage</code>.
-        Records show lineage, not what an agent thought.
+        Review the recorded constraints before evaluating this run’s changes. Assignment, retrieval
+        and citation describe different evidence of access.
       </p>
+      <FrozenPriorContext snapshot={snapshot} run={run} data={data} labels={labels} />
       <div className="context-usage-filters">
         <label>
           Retrieval agent
@@ -145,31 +147,37 @@ export function ContextUsagePanel({
             {contextUsageMetric(data, 'read_calls').value} recorded retrieval calls. Assertions
             remain assertions after source checks.
           </p>
-          <ContextUsageRows data={data} labels={labels} />
-          <nav className="context-usage-pagination" aria-label="Context retrieval pages">
-            <button
-              type="button"
-              className="quiet"
-              disabled={loading || pages.length === 1}
-              onClick={() => setPages((current) => current.slice(0, -1))}
-            >
-              Previous
-            </button>
-            <span>Page {pages.length} · up to 30 calls per page</span>
-            <button
-              type="button"
-              className="quiet"
-              disabled={
-                loading || !data.has_more || data.next_cursor == null || data.next_cursor <= cursor
-              }
-              onClick={() => {
-                const next = data.next_cursor;
-                if (next != null) setPages((current) => [...current, next]);
-              }}
-            >
-              Next
-            </button>
-          </nav>
+          <details className="context-lineage-group">
+            <summary>Retrieval and revision evidence</summary>
+            <ContextUsageRows data={data} labels={labels} />
+            <nav className="context-usage-pagination" aria-label="Context retrieval pages">
+              <button
+                type="button"
+                className="quiet"
+                disabled={loading || pages.length === 1}
+                onClick={() => setPages((current) => current.slice(0, -1))}
+              >
+                Previous
+              </button>
+              <span>Page {pages.length} · up to 30 calls per page</span>
+              <button
+                type="button"
+                className="quiet"
+                disabled={
+                  loading ||
+                  !data.has_more ||
+                  data.next_cursor == null ||
+                  data.next_cursor <= cursor
+                }
+                onClick={() => {
+                  const next = data.next_cursor;
+                  if (next != null) setPages((current) => [...current, next]);
+                }}
+              >
+                Next
+              </button>
+            </nav>
+          </details>
         </>
       )}
     </section>
