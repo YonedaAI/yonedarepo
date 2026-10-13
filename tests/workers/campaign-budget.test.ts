@@ -1,7 +1,7 @@
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { campaignGrant } from '../../cloudflare/worker/campaign-grant';
-import { campaignForAttempt } from '../../cloudflare/worker/campaign-usage';
+import { campaignForAttempt, verifyCampaignReservation } from '../../cloudflare/worker/campaign-usage';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
 import { modelHandler } from '../../cloudflare/worker/models';
 import { campaignModelBudgets } from '../../cloudflare/worker/reviewer-campaign';
@@ -53,6 +53,23 @@ it('binds upstream usage from the authoritative run and retains historical spend
   expect(fetch).toHaveBeenCalledOnce();
   await evictDurableObject(bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`account:${f.owner}`)));
   expect((await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).charged_microusd).toBe(37);
+});
+it('reads the frozen campaign from the real Wasm reservation, not supplied model arguments', async () => {
+  const f = await setup();
+  expect(f.job.payload.run.campaign).toEqual(f.campaign);
+  const counted = await ledger(bindings, f.repo, { op: 'reserve_request', job_id: f.job.id,
+    epoch: f.job.epoch, kind: 'model', input_bytes: 100, output_tokens: 256,
+    campaign: { ...f.campaign, bucket: 'reserve', chain_id: 'forged' } });
+  expect(counted.campaign).toEqual(f.campaign);
+  expect(() => verifyCampaignReservation(f.binding, counted)).not.toThrow();
+  for (const campaign of [undefined, null, { ...f.campaign, chain_id: 'forged' },
+    { ...f.campaign, bucket: 'reserve' }, { ...f.campaign, version: 2 },
+    { ...f.campaign, purpose: 'other' }, { ...f.campaign, id: 'other' },
+    { ...f.campaign, extra: true }])
+    expect(() => verifyCampaignReservation(f.binding, { ...counted, campaign }))
+      .toThrow('Campaign reservation differs');
+  expect(() => verifyCampaignReservation(null, counted)).toThrow('Campaign reservation differs');
+  expect(() => verifyCampaignReservation(null, { number: 1 })).not.toThrow();
 });
 it('atomically caps shared stages, replays reservations and keeps unknown usage charged', async () => {
   const f = await setup();

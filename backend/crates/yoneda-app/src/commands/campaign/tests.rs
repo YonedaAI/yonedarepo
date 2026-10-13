@@ -81,6 +81,25 @@ fn signed_start_freezes_escalation_into_the_same_immutable_autonomy_envelope() {
     );
 }
 #[test]
+fn reservation_returns_the_frozen_campaign_not_caller_fields() {
+    let (db, command) = fixture();
+    let campaign = command["campaign"].clone();
+    let run = execute(&db, command).unwrap();
+    let job = execute(
+        &db,
+        json!({"op":"claim","now":1001,"job_id":"job:run:planner"}),
+    )
+    .unwrap();
+    assert_eq!(job["payload"]["run"]["campaign"], campaign);
+    let reservation = execute(&db, json!({"op":"reserve_request","now":1002,
+        "job_id":job["id"],"epoch":job["epoch"],"kind":"model",
+        "input_bytes":100,"output_tokens":256,
+        "campaign":{"id":"forged","version":99,"chain_id":"new","bucket":"reserve","purpose":"other"}})).unwrap();
+    assert_eq!(reservation["campaign"], run["campaign"]);
+    assert!(reservation.get("_campaign_grant").is_none());
+    assert!(reservation.get("_campaign_signing_key").is_none());
+}
+#[test]
 fn invalid_grants_roll_back_every_run_and_job() {
     let (db, command) = fixture();
     let alterations = [

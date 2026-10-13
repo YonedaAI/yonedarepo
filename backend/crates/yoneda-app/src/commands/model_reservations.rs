@@ -42,6 +42,9 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
         ));
     }
     let mut response = json!({"number":request_number,"run_number":total,"run_limit":if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
+    if let Some(campaign) = run.get("campaign") {
+        response["campaign"] = campaign.clone();
+    }
     if let Some((index, mut budget)) = group {
         if budget
             .max_requests
