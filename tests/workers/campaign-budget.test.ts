@@ -14,19 +14,21 @@ import { api, bindings, containerBindings, readyReviewer } from './reviewer-fixt
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 const budget = { ...campaignModelBudgets[1], max_requests: 3, max_output_tokens: 256,
   max_execution_ms: 120000, spend_limit_microusd: 4000 };
-async function setup() {
+async function setup(extraBudgets: Json[] = []) {
   const f = await readyReviewer();
   const approval = { version: 1, audience: 'owner', repo_ids: [f.repo], expires: Date.UTC(2026, 9, 23),
     limit_microusd: 50000000, chain_limit_microusd: 4000,
-    buckets: { routine: 35000000, opus: 10000000, reserve: 5000000 }, model_budgets: [budget] };
+    buckets: { routine: 35000000, opus: 10000000, reserve: 5000000 }, model_budgets: [budget, ...extraBudgets] };
   await workspace(bindings, f.owner, { op: 'campaign_configure', id: 'fresh', expected_version: 0, approval });
   await workspace(bindings, f.owner, { op: 'campaign_enable', id: 'fresh', expected_version: 1,
     expected_revision: 1, local_gate_receipt: 'synthetic successful gate' });
   const campaign = { id: 'fresh', version: 1, chain_id: 'maintenance', bucket: 'routine', purpose: 'routine' };
   const binding = await workspace(bindings, f.owner, { op: 'campaign_bind_run', ...campaign,
-    repo_id: f.repo, run_id: 'initial', model_budgets: [budget] });
+    repo_id: f.repo, run_id: 'initial', model_budgets: [budget, ...extraBudgets] });
   const request = { id: 'initial', intent: 'Synthetic metered campaign',
-    campaign, agents: [{ provider: 'codex', model: 'gpt-5.6-luna', connection: 'reviewer-codex', strategy: 'Synthetic' }], model_budgets: [budget] };
+    campaign, agents: [{ provider: 'codex', model: 'gpt-5.6-luna', connection: 'reviewer-codex', strategy: 'Synthetic' },
+      ...extraBudgets.map(b => ({ provider: b.provider, model: b.model, strategy: 'Synthetic original participant' }))],
+    model_budgets: [budget, ...extraBudgets] };
   const grant = await campaignGrant(bindings, f.owner, f.repo, request, binding);
   await ledger(bindings, f.repo, { ...request, op: 'start_run', _workspace: f.owner, _campaign_grant: grant });
   const job = await ledger(bindings, f.repo, { op: 'claim', job_id: 'job:initial:agent-1' });
@@ -70,6 +72,110 @@ it('reads the frozen campaign from the real Wasm reservation, not supplied model
       .toThrow('Campaign reservation differs');
   expect(() => verifyCampaignReservation(null, counted)).toThrow('Campaign reservation differs');
   expect(() => verifyCampaignReservation(null, { number: 1 })).not.toThrow();
+});
+
+async function finishedCoordinator(sharedPreferredExhausted = false) {
+  const extraBudgets = sharedPreferredExhausted ? [{ ...budget, provider: 'zai', model: 'glm-5.3-flash' }] : [];
+  const f = await setup(extraBudgets);
+  const id = 'coordinated';
+  const binding = await workspace(bindings, f.owner, { op: 'campaign_bind_run', ...f.campaign,
+    repo_id: f.repo, run_id: id, model_budgets: [budget, ...extraBudgets] });
+  const request = { ...f.request, id, mode: 'collaborate',
+    autonomy_policy: { version: 1, enabled: true, max_repair_rounds: 2, max_concurrent_agents: 3,
+      max_executions: 20, source_scope: 'project', allow_intent_questions: true },
+    team: { version: 1, contract: 'Keep the original API intent', integrator_agent: sharedPreferredExhausted ? 1 : 0,
+      integration_paths: ['public/'], tasks: [{ id: 'api', title: 'API', instructions: 'Implement the API',
+        agent: 0, depends_on: [], write_paths: ['src/'] }] } };
+  const grant = await campaignGrant(bindings, f.owner, f.repo, request, binding);
+  await ledger(bindings, f.repo, { ...request, op: 'start_run', _workspace: f.owner, _campaign_grant: grant });
+  const source = await ledger(bindings, f.repo, { op: 'claim', job_id: `job:${id}:task:api` });
+  await ledger(bindings, f.repo, { op: 'fail', job_id: source.id, epoch: source.epoch,
+    retryable: false, error: 'Synthetic source failure' });
+  const detail = await ledger(bindings, f.repo, { op: 'run_detail', run_id: id });
+  const coordinator = await ledger(bindings, f.repo, { op: 'claim', job_id: `job:${detail.run.coordinator_execution_id}` });
+  const reservation = await ledger(bindings, f.repo, { op: 'reserve_request', job_id: coordinator.id,
+    epoch: coordinator.epoch, kind: 'model', input_bytes: 100, output_tokens: 256 });
+  await workspace(bindings, f.owner, { op: 'campaign_reserve', repo_id: f.repo, run_id: id,
+    reservation_id: 'retained-coordination', provider: coordinator.payload.execution.provider, model: coordinator.model,
+    input_bytes: 100, output_tokens: 256, amount: reservation.reservation_microusd, count_only: false });
+  await workspace(bindings, f.owner, { op: 'campaign_settle', repo_id: f.repo, run_id: id,
+    reservation_id: 'retained-coordination', provider: coordinator.payload.execution.provider, model: coordinator.model,
+    input_tokens: 100, output_tokens: 10 });
+  await ledger(bindings, f.repo, { op: 'settle_model_request', job_id: coordinator.id,
+    epoch: coordinator.epoch, reservation_id: reservation.reservation_id, input_tokens: 100, output_tokens: 10 });
+  await ledger(bindings, f.repo, { op: 'finish', job_id: coordinator.id, epoch: coordinator.epoch,
+    result: { planning: true, source_unchanged: true } });
+  if (sharedPreferredExhausted) {
+    for (const reservation_id of ['prior-stage-two', 'prior-stage-three']) {
+      await workspace(bindings, f.owner, { op: 'campaign_reserve', repo_id: f.repo, run_id: 'initial',
+        reservation_id, provider: 'zai', model: 'glm-5.3-flash', input_bytes: 100,
+        output_tokens: 256, amount: reservation.reservation_microusd, count_only: false });
+      await workspace(bindings, f.owner, { op: 'campaign_settle', repo_id: f.repo, run_id: 'initial',
+        reservation_id, provider: 'zai', model: 'glm-5.3-flash', input_tokens: 0, output_tokens: 0 });
+    }
+  }
+  const command = { username: f.owner, repo_id: f.repo, run_id: id, request_id: 'after-runtime-fix',
+    expected_coordinator_job: coordinator.id, expected_epoch: coordinator.epoch,
+    expected_commit: 'a'.repeat(40), expected_version: 0, expected_plan_revision: 1 };
+  return { ...f, command, id };
+}
+it('retries a completed inactive coordinator once across eviction without renewing campaign authority', async () => {
+  const f = await finishedCoordinator();
+  const before = await ledger(bindings, f.repo, { op: 'run_detail', run_id: f.id });
+  expect(before.run.status).toBe('failed');
+  const accounting = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  const denied = await api(f.scoped, '/api/admin/campaign/retry_coordinator', f.cookie, f.command);
+  expect(denied.status).toBe(403);
+  const stale = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '',
+    { ...f.command, expected_plan_revision: 2 }, true);
+  expect(stale.status).toBe(409);
+  const result = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '', f.command, true);
+  expect(result.status).toBe(200);
+  const receipt = await result.json<Json>();
+  await evictDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(f.repo)));
+  const replay = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '', f.command, true);
+  expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual(receipt);
+  const second = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '',
+    { ...f.command, request_id: 'another' }, true);
+  expect(second.status).toBe(409);
+  expect(await second.json()).toMatchObject({ error: { code: 'COORDINATION_RETRY_EXHAUSTED' } });
+  const after = await ledger(bindings, f.repo, { op: 'run_detail', run_id: f.id });
+  expect(after.run.status).toBe('coordinating');
+  expect(after.executions).toHaveLength(before.executions.length + 1);
+  for (const key of ['campaign', 'autonomy_approval', 'model_budgets', 'team_plan', 'team_repair_rounds'])
+    expect(after.run[key]).toEqual(before.run[key]);
+  expect(await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).toEqual(accounting);
+});
+it('refuses coordinator recovery when the existing workspace chain is disabled without resetting its charges', async () => {
+  const f = await finishedCoordinator();
+  const state = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  await workspace(bindings, f.owner, { op: 'campaign_disable', id: 'fresh',
+    expected_version: state.version, expected_revision: state.revision });
+  const response = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '', f.command, true);
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ error: { code: 'CAMPAIGN_DISABLED' } });
+  expect((await ledger(bindings, f.repo, { op: 'run_detail', run_id: f.id })).run.status).toBe('failed');
+  expect((await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).charged_microusd)
+    .toBe(state.charged_microusd);
+});
+it('selects another original group when prior stages exhausted the preferred shared group', async () => {
+  const f = await finishedCoordinator(true);
+  const accounting = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  expect(accounting.chains[0].models['zai/glm-5.3-flash'].requests).toBe(3);
+  const before = await ledger(bindings, f.repo, { op: 'run_detail', run_id: f.id });
+  expect(before.run.unavailable_model_groups ?? []).toEqual([]);
+  expect(before.run.model_budgets.find((b: Json) => b.provider === 'zai').requests).toBe(1);
+  const response = await api(f.scoped, '/api/admin/campaign/retry_coordinator', '',
+    { ...f.command, _shared_model_limits: [], model_budgets: [] }, true);
+  expect(response.status).toBe(200);
+  const receipt = await response.json<Json>();
+  const after = await ledger(bindings, f.repo, { op: 'run_detail', run_id: f.id });
+  expect(after.executions.find((e: Json) => e.id === receipt.execution_id).model).toBe('gpt-5.6-luna');
+  expect(after.run.unavailable_model_groups[0].model).toBe('glm-5.3-flash');
+  expect(after.run.model_budgets).toEqual(before.run.model_budgets);
+  expect(after.run.autonomy_approval).toEqual(before.run.autonomy_approval);
+  expect(await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).toEqual(accounting);
 });
 it('atomically caps shared stages, replays reservations and keeps unknown usage charged', async () => {
   const f = await setup();

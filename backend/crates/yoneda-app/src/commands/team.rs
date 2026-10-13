@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result, team::TeamPlan};
 mod capture;
 mod coordination;
+mod coordination_retry;
 mod evidence;
 mod inputs;
 mod planning;
@@ -54,6 +55,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         retry::retry(db, &c, now)
     } else if c["op"] == "repair_team" {
         repair::repair(db, &c, now)
+    } else if c["op"] == "retry_coordinator" {
+        coordination_retry::retry(db, &c, now)
     } else if c["op"] == "repair_request" {
         coordination::request(db, &c, now)
     } else {

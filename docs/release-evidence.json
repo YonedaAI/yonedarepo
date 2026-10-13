@@ -780,6 +780,121 @@
       "marker_scope": "Includes completion, teardown and transcript upload; not pure provider inference",
       "final_candidate_verified": false,
       "proof_sha256": "ff6d43a810224d0bd9b7e6836c2f5beaeb01cdba05c7ee59a8e283209c9fd93c"
+    },
+    "controlled_context_study_v2_final": {
+      "experiment_complete": true,
+      "all_chain_runs_terminal": true,
+      "stage_runs": 18,
+      "protected_stage_passes": 16,
+      "protected_stage_failures": 2,
+      "unknown_stages": 0,
+      "full_chain_passes": {
+        "source_only": 0,
+        "plain_notes": 2,
+        "graph": 2
+      },
+      "failure": "Both source-only final revisions returned HTTP 200 instead of 409 for a reused request key with a different attendee.",
+      "usage": {
+        "retained_v1_charged_microusd": 390353,
+        "v2_charged_microusd": 1185235,
+        "total_charged_microusd": 1575588,
+        "retained_v1_requests": 90,
+        "v2_requests": 290,
+        "total_requests": 380,
+        "basis": "Authoritative ledger counts and conservative charges; no provider invoice receipt",
+        "limit_microusd": 12000000,
+        "chain_limit_microusd": 2000000,
+        "chain_request_limit": 60,
+        "new_allocation": false,
+        "config_pending": false,
+        "reruns": 0,
+        "paid_repairs": 0
+      },
+      "context_receipts": [
+        {
+          "arm": "source_only",
+          "relevant_stage_constraint_instances": 18,
+          "delivered": 0,
+          "opened": 0,
+          "cited": 0,
+          "capture_bound": 0,
+          "all_pages_complete": true,
+          "attention_established": false,
+          "outcome_benefit": null
+        },
+        {
+          "arm": "plain_notes",
+          "relevant_stage_constraint_instances": 18,
+          "delivered": 18,
+          "opened": 18,
+          "cited": 16,
+          "capture_bound": 16,
+          "all_pages_complete": true,
+          "attention_established": false,
+          "outcome_benefit": null
+        },
+        {
+          "arm": "graph",
+          "relevant_stage_constraint_instances": 18,
+          "delivered": 18,
+          "opened": 13,
+          "cited": 17,
+          "capture_bound": 17,
+          "all_pages_complete": true,
+          "attention_established": false,
+          "outcome_benefit": null
+        }
+      ],
+      "causal_effect": null,
+      "causal_limit": "Two repetitions of one operator-seeded fixture, differing historical information availability and Worker-version variation do not establish causal context benefit. Graph has no observed behavioral pass advantage over plain notes.",
+      "runtime_image_changed": false,
+      "worker_revision_variation": [
+        "acbb3b1",
+        "c3433d2"
+      ],
+      "all_18_revision_app_bindings_verified": true,
+      "publication_performed": false,
+      "proof_sha256": "8b6bb5392654829c5d44d93ca0d0299afc5d7f30ab522f37dd9f30f1f4352a65"
+    },
+    "coordinator_runtime_recovery_gate": {
+      "rust": 359,
+      "app_rust": 251,
+      "runtime_rust": 74,
+      "core_rust": 18,
+      "cloudflare_rust": 1,
+      "xtask_rust": 15,
+      "platform_workerd": 327,
+      "apps_workerd": 16,
+      "frontend": 113,
+      "reviewer_node": 15,
+      "study_node": 29,
+      "gate_exit": 0,
+      "gate_log_sha256": "fa0a2d699580909e5b608d1b8e9e099555dae85fc4d04e67f91d5b18552d7526",
+      "once_only_owner_retry": true,
+      "frozen_approval_and_spend_retained": true,
+      "new_funding": false,
+      "codex_deferred_tools_available_verified_locally": true,
+      "paid_coordinator_recovery_verified": false,
+      "linux_runtime_tests": 80,
+      "shared_budget_fallback_verified": true,
+      "runtime_image": "registry.cloudflare.com/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-runtime-autonomy@sha256:bd773a85f434e0d43727c2b6cf7db72a38e6db478e595fb034091450a48db713",
+      "runtime_rollout_verified": false
+    },
+    "checked_app_browser_anchor": {
+      "repo_id": "booking-study-v2c-20261012-notes-1",
+      "run_id": "booking-maintenance-v2-20261012-plain_notes-1-s3",
+      "candidate_id": "candidate:capture:booking-maintenance-v2-20261012-plain_notes-1-s3:agent-1:1",
+      "evaluation_id": "evaluation:evaluate:candidate:capture:booking-maintenance-v2-20261012-plain_notes-1-s3:agent-1:1:1",
+      "revision": "b83fad1e4a9fc506ddea9b69b3773d6fd038dd1d",
+      "bundle_digest": "88ad8f1ae97577e79413e4c04a16bb5edefef085232be97c6039e6217892c06d",
+      "actual_platform_result_verified": true,
+      "C_HTTP_canary_verified": true,
+      "normal_anchor_browser": "rendered_inventory_loaded",
+      "app_inventory_read_only": true,
+      "app_refresh_verified": false,
+      "booking_mutations_tested": false,
+      "hosted_eviction_verified": false,
+      "normal_anchor_render_scope": "App shell and two real API inventory events only; no form submit, refresh, coordinated reviewer result or context-causality inference."
     }
   }
 }

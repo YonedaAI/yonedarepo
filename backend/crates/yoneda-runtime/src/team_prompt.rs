@@ -3,6 +3,16 @@ use crate::field;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 
+// Codex 0.161 offers local MCP tools through deferred functions.exec discovery.
+pub(crate) const CODEX_READ_ONLY_TOOLS: &str = r#"Codex read-only platform checkpoint: before workspace analysis or local commands, discover the YonedaRepo MCP tools through functions.exec and ALL_TOOLS. An empty top-level tool catalog does not mean the MCP tools are unavailable. In functions.exec, run:
+text(ALL_TOOLS.filter(t => /^mcp__yonedarepo__(repo_context|team_context|peer_status|peer_inbox|team_plan_propose|repair_team|intent_question|execution_complete)$/.test(t.name)));
+Then invoke the actual platform tools in functions.exec:
+text(await tools.mcp__yonedarepo__repo_context({}));
+text(await tools.mcp__yonedarepo__team_context({}));
+text(await tools.mcp__yonedarepo__peer_status({}));
+text(await tools.mcp__yonedarepo__peer_inbox({}));
+Read the returned context and exact guards before inspecting source or deciding recovery. Discover any other needed YonedaRepo tool in ALL_TOOLS by its exact name and call it through tools.mcp__yonedarepo__<name>. Use team_plan_propose for the initial planner's proposal, or repair_team for the coordinator's bounded repair, and inspect the returned platform receipts. Local commands and a final prose plan cannot substitute for those tool calls or receipts. Keep the frozen goal, approved roster, policy and shared budgets authoritative. Do not commit or push from this read-only role. If discovery or a tool call fails, report the exact observed error; do not claim tools are unavailable without trying discovery, manufacture a repair receipt, or claim an intent question was delivered without its successful platform result."#;
+
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
     let execution = &payload["execution"];
     let budget = crate::execution_limits::model_budget(&json!({"payload":payload}))?;
