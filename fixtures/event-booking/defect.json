@@ -1,0 +1,20 @@
+{
+  "fixture": "event-booking-v1",
+  "synthetic": true,
+  "production_bug_claim": false,
+  "campaign_starter": {
+    "generated_by": "tools/context-study/booking-campaign-plan.mjs starterFiles()",
+    "missing": ["GET /api/events responds 501", "browser submit/cancellation wiring is absent"],
+    "purpose": "Initial-build work must close real protected acceptance gaps; the complete reference baseline is not the campaign seed.",
+    "initial_protected_expectation": "3 pass, 1 expected fail, 3 stage-inapplicable checks skipped"
+  },
+  "seeded_defects": [{
+    "id": "duplicate-registration-v1",
+    "stage": "initial_build",
+    "behavior": "Repeated canonical attendee email or idempotency key inserts another row and consumes another seat.",
+    "reproduction": "POST the same attendee twice to workshop; two confirmed rows currently persist.",
+    "expected_bugfix": "Return the original registration with HTTP 200 without a second row or seat. Reject reused keys for different attendees."
+  }],
+  "stages": ["initial_build", "waitlist_feature", "duplicate_registration_bugfix"],
+  "control_notice": "Offline patches are hand-authored oracle controls, never agent campaign outcomes."
+}

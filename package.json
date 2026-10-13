@@ -5,12 +5,13 @@
   "scripts": {
     "dev": "cargo xtask dev",
     "build": "cargo xtask build",
-    "check": "tsc --project cloudflare/tsconfig.json --noEmit && biome check cloudflare/worker cloudflare/sites frontend/src shared",
-    "format": "biome check --write cloudflare/worker cloudflare/sites frontend/src shared",
+    "check": "tsc --project cloudflare/tsconfig.json --noEmit && biome check cloudflare/worker cloudflare/sites cloudflare/apps frontend/src shared",
+    "format": "biome check --write cloudflare/worker cloudflare/sites cloudflare/apps frontend/src shared",
     "test": "vitest run --config tests/workers/vitest.config.ts",
     "test:runtime": "node --test tests/runtime/*.test.mjs",
     "deploy": "cargo xtask deploy",
-    "test:frontend": "vitest run --config tests/frontend/vitest.config.ts"
+    "test:frontend": "vitest run --config tests/frontend/vitest.config.ts",
+    "test:apps": "vitest run --config tests/workers/apps-canary.config.ts && vitest run --config tests/workers/apps-runtime.config.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",
