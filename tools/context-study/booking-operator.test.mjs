@@ -1,10 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,rmSync,existsSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ownerClient,gitEnvironment,campaignClient} from './booking-operator.mjs';
 import {seedTemplate} from './booking-provision.mjs';
+test('paid study refuses reviewer-password authentication before login or creating study output',()=>{
+  const directory=mkdtempSync(join(tmpdir(),'booking-role-'));
+  try{
+    const output=join(directory,'not-created');
+    const result=spawnSync(process.execPath,['tools/context-study/booking-campaign.mjs','run',
+      '--settings',join(directory,'not-read.json'),'--output',output,
+      '--origin','https://example.invalid','--credentials',join(directory,'private-not-read.json'),
+      '--authorization','owner-approved-paid-study'],{encoding:'utf8',timeout:5000});
+    assert.equal(result.status,1);
+    assert.match(result.stderr,/--operator-token-file/);
+    assert.match(result.stderr,/Reviewer login cannot administer campaigns/);
+    assert.equal(existsSync(output),false);
+    assert.ok(!result.stderr.includes('private-not-read'));
+  }finally{rmSync(directory,{recursive:true,force:true});}
+});
 test('operator credential stays in header memory; unsafe paths and response secrets never reach errors',async()=>{
   const directory=mkdtempSync(join(tmpdir(),'booking-auth-'));
   try{
