@@ -4,7 +4,6 @@ import {pathToFileURL} from 'node:url';
 import {makePlan,starterFiles} from './booking-campaign-plan.mjs';
 import {protectedBundle,bookingPolicy,stages} from './booking-policy.mjs';
 import {runCampaign} from './booking-campaign-runner.mjs';
-import {login} from './booking-client.mjs';
 import {bootstrapPlan} from './booking-bootstrap.mjs';
 import {campaignClient} from './booking-operator.mjs';
 export function writeJSON(path,value){
@@ -33,19 +32,26 @@ async function main(){
     options[argumentsList[index]]=argumentsList[index+1];
   }
   if(!options['--settings']||!options['--output'])throw new Error('Explicit settings and output required');
+  options['--owner-token']??=options['--operator-token-file'];
+  if(mode==='run'&&!options['--owner-token'])
+    throw Object.assign(new Error('Operator credential required'),{code:'OPERATOR_CREDENTIAL_REQUIRED'});
   const settings=JSON.parse(readFileSync(options['--settings'],'utf8'));
   const plan=prepare(settings,options['--output']);
   if(mode==='plan'){console.log(`Offline plan only: ${plan.chains.length} chains, 18 stages, $2 per chain/$12 overall. No inference.`);return;}
-  options['--owner-token']??=options['--operator-token-file'];
-  if(mode!=='run'||options['--authorization']!=='owner-approved-paid-study'||!options['--origin']||!options['--credentials']&&!options['--owner-token'])
+  if(mode!=='run'||options['--authorization']!=='owner-approved-paid-study'||!options['--origin'])
     throw new Error('Live execution requires a separately enabled exact server approval and explicit owner-approved-paid-study authorization');
   if(settings.synthetic_example===true)throw new Error('Replace synthetic example with actual owner-approved server identities');
-  const client=options['--owner-token']?campaignClient(options['--origin'],options['--owner-token'],plan.username):await login(options['--origin'],options['--credentials']);
+  const client=campaignClient(options['--origin'],options['--owner-token'],plan.username);
   if(options['--expected-revision']&&(!client.health||(await client.health()).revision!==options['--expected-revision']))throw new Error('Deployed platform revision changed');
   const results=await runCampaign(client,plan,{save:value=>writeJSON(resolve(options['--output'],'results.json'),value)});
   console.log(`Recorded ${results.chains.filter(chain=>chain.complete).length}/6 complete chains; no publication performed.`);
   if(!results.complete)process.exitCode=1;
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
-  main().catch(()=>{console.error('Study stopped. Inspect saved evidence and server approval; sensitive responses were not logged.');process.exitCode=1;});
+  main().catch(error=>{
+    console.error(error?.code==='OPERATOR_CREDENTIAL_REQUIRED'
+      ?'Run requires --operator-token-file pointing to a private operator credential file. Reviewer login cannot administer campaigns.'
+      :'Study stopped. Inspect saved evidence and server approval; sensitive responses were not logged.');
+    process.exitCode=1;
+  });
 }
