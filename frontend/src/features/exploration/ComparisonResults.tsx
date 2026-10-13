@@ -57,11 +57,20 @@ export function ComparisonResults({
       !execution.parent_execution &&
       execution.comparison_role !== 'repair',
   );
+  const originals = snapshot.executions.filter((execution) => execution.run_id === run.id);
   const delegated =
     (run.delegation?.enabled === true &&
-      run.delegation.max_executions !== originalBuilders.length) ||
-    snapshot.executions.some(
-      (execution) => execution.run_id === run.id && !!execution.parent_execution,
+      (!Number.isSafeInteger(run.delegation.max_executions) ||
+        run.delegation.max_executions > 2)) ||
+    originals.length !== 2 ||
+    ![1, 2].every((index) =>
+      originals.some(
+        (execution) =>
+          execution.id === `${run.id}:agent-${index}` &&
+          execution.role === 'coding' &&
+          !execution.parent_execution &&
+          (execution.depth == null || execution.depth === 0),
+      ),
     );
   const reviewCompatible = originalBuilders.length === 2 && !delegated;
   const selectedId =
@@ -76,7 +85,7 @@ export function ComparisonResults({
   const chooseController = controllers.current.get('select_comparison_candidate');
   const reviewCandidates = builderCandidates;
   const reviewBlocker = delegated
-    ? 'Automatic review does not support delegated alternatives. Choose a checked result manually.'
+    ? 'Automatic review requires two original builders without delegated or additional executions. Choose a checked result manually.'
     : originalBuilders.length !== 2 || reviewCandidates.length !== 2
       ? 'Review needs exactly two captured alternatives.'
       : reviewCandidates

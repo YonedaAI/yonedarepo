@@ -171,10 +171,27 @@ it('allows legacy effectively disabled delegation but withholds AI approval for 
   expect(descendant).not.toContain('Review now');
   expect(descendant).toContain('delegated');
   expect(descendant.match(/Use this result<\/button>/g)).toHaveLength(2);
-  const additional = markup({ ...input, snapshot: { ...input.snapshot, executions: [...input.snapshot.executions, {id:'extra',run_id:input.run.id,role:'research',status:'completed'}] }, run: effectivelyDisabled });
+  const additional = markup({
+    ...input,
+    snapshot: {
+      ...input.snapshot,
+      executions: [
+        ...input.snapshot.executions,
+        { id: 'extra', run_id: input.run.id, role: 'research', status: 'completed' },
+      ],
+    },
+    run: effectivelyDisabled,
+  });
   expect(additional).not.toContain('Review now');
   expect(additional.match(/Use this result<\/button>/g)).toHaveLength(2);
-  const wrongRoots = markup({ ...input, snapshot: { ...input.snapshot, executions: input.snapshot.executions.map(e=>({...e,id:`replacement-${e.id}`})) }, run: effectivelyDisabled });
+  const wrongRoots = markup({
+    ...input,
+    snapshot: {
+      ...input.snapshot,
+      executions: input.snapshot.executions.map((e) => ({ ...e, id: `replacement-${e.id}` })),
+    },
+    run: effectivelyDisabled,
+  });
   expect(wrongRoots).not.toContain('Review now');
 });
 it.each(['reviewing', 'repairing', 'stale', 'needs_attention'] as const)(
