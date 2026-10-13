@@ -39,7 +39,9 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             .cloned()
             .unwrap_or(json!("Attempt lease expired"));
         save_execution(db, &e, now)?;
-        if (!e["team_task"].is_null() || e["team_role"] == "planner")
+        if (!e["team_task"].is_null()
+            || e["team_role"] == "planner"
+            || e["team_role"] == "coordinator")
             && (job["kind"] == "agent" || job["status"] == "failed")
         {
             super::super::team::reflect(

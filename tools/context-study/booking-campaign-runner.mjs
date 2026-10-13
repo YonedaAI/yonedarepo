@@ -1,6 +1,6 @@
 // Execution adapter is injectable for offline protocol tests. No fixture repairs here.
 import {bookingPolicy,protectedBundle} from './booking-policy.mjs';
-import {validateAuthority,stageRequest,checkedOutcome,studyConfig,validateBinding,planCorpus,equal,hash} from './booking-campaign-plan.mjs';
+import {validateAuthority,stageRequest,checkedOutcome,studyConfig,validateBinding,validateObservedRun,planCorpus,equal,hash} from './booking-campaign-plan.mjs';
 const stop=message=>{throw new Error(message);};
 const terminal=new Set(['ready','accepted','failed','cancelled']);
 export async function runCampaign(client,plan,{save=()=>{},sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),
@@ -58,17 +58,27 @@ export async function runCampaign(client,plan,{save=()=>{},sleep=ms=>new Promise
         active=stage;
         const saved={id:stage.id,run_id:stage.run_id,request,usage_pages:[],outcome:null};
         evidence.stages.push(saved);save(result);
+        const observe=async()=>{
+          const observed=await detail(chain,stage);
+          saved.detail=observed;save(result);
+          try{validateObservedRun(plan,chain,stage,observed);}
+          catch{throw Object.assign(new Error('Frozen run readback violates deployment fidelity'),{code:'DEPLOYMENT_FIDELITY_FAILED'});}
+          return observed;
+        };
         try{await client.api('admin/campaign/start_run',{username:plan.username,repo_id:chain.repo_id,approval:request});}
         catch(failure){
           // Acknowledgment loss: discover the same stable run ID, never resubmit under a new ID.
-          try{await detail(chain,stage);}catch{throw failure;}
+          try{await observe();}catch(discovery){
+            if(discovery.code==='DEPLOYMENT_FIDELITY_FAILED')throw discovery;
+            throw failure;
+          }
         }
         const binding=await client.api('admin/campaign/run_status',{username:plan.username,repo_id:chain.repo_id,run_id:stage.run_id});
         saved.server_binding=validateBinding(plan,chain,stage,binding);save(result);
         const deadline=now()+waitMs;
         let observed;
         while(true){
-          observed=await detail(chain,stage);
+          observed=await observe();
           const run=observed.run??observed.runs?.find(run=>run.id===stage.run_id);
           if(terminal.has(run?.status))break;
           if(now()>=deadline)stop('Stage queue/execution wait exceeded bound');
@@ -102,6 +112,9 @@ export async function runCampaign(client,plan,{save=()=>{},sleep=ms=>new Promise
         evidence.cancel_requested=true;
       }
       save(result);
+      if(evidence.failure.code==='DEPLOYMENT_FIDELITY_FAILED'){
+        result.failure={...evidence.failure};save(result);break;
+      }
       // An arm never gets a more expensive retry or a rewritten positive outcome.
     }
   }

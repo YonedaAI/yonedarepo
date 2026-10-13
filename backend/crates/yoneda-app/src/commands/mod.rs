@@ -5,6 +5,7 @@ mod acceptance;
 mod archive;
 mod autonomy;
 mod branches;
+mod budget_availability;
 mod campaign;
 mod capture_completion;
 mod completion;
@@ -80,6 +81,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     }
     context_access::activation(db, now)?;
     match string(&c, "op")?.as_str() {
+        "observe_campaign_model_limit" => budget_availability::observe(db, &c, now),
         "repository_status" => {
             let mut r = crate::storage::repo(db)?;
             r["capabilities"] = repository::capabilities(db, now)?;

@@ -13,6 +13,10 @@ mod retry;
 mod scheduling;
 mod tools;
 
+pub(super) fn recover_budget<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
+    coordination::maybe_start(db, run, now)
+}
+
 pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<TeamPlan>> {
     let mode = c
         .get("mode")

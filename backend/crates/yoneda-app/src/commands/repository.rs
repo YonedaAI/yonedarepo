@@ -140,6 +140,7 @@ fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
         "source_revision": revision(&payload["source_revision"]),
         "execution": {
             "id": execution["id"],
+            "run_id": execution["run_id"],
             "base": revision(&execution["base"]),
             "team_task_revision": execution["team_task_revision"],
         },

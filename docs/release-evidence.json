@@ -660,7 +660,126 @@
       "study_node": 26,
       "linux_runtime": 77,
       "runtime_image": "sha256:6ad8593ac7d25935b59176e7109a60944462219f402b34e3e3d5aa11ea86af39",
-      "deployment_acceptance": false
+      "deployment_acceptance": false,
+      "source": "acbb3b1f0d6782f4fa395af1819e9e6f0cdfeac9"
+    },
+    "followup_deployment": {
+      "platform_version": "f30047f6-8de9-40ff-865e-1c081495a22e",
+      "health_revision": "acbb3b1f0d6782f4fa395af1819e9e6f0cdfeac9",
+      "public_export": "0c4874562ac7b330f61ff155d9ee1b33196b2ccf",
+      "public_ci": 38347542334,
+      "container_rollout": "completed",
+      "paid_work_started": true,
+      "container_version": 27,
+      "healthy_instances_observed": 6,
+      "starting_instances_observed": 1,
+      "failed_instances_observed": 0,
+      "replacement_run": "reviewer-booking-20261012-s1-r2",
+      "replacement_uses_original_chain": "reviewer-booking-20261012-s1",
+      "public_ci_conclusion": "success"
+    },
+    "npm_https_probe": {
+      "recorded_at": "2026-10-13T04:37:37.872Z",
+      "submitted_commit": "7b0c89aa9bf4abd57d6f96d888b9fab282780a84",
+      "checked_revision": "f840e8769a697f5cee2bce2ce7c96393a1cffa0b",
+      "observed_probe": {
+        "target": "https://registry.npmjs.org/is-number/7.0.0",
+        "case": "isolated-npm-https-zero-model-v1",
+        "node": "v24.18.0",
+        "ca_file_present": true,
+        "node_extra_ca_configured": true,
+        "tls_verification_enabled": true,
+        "http_status": 200,
+        "passed": true,
+        "package": "is-number",
+        "version": "7.0.0",
+        "metadata_bytes": 3199,
+        "metadata_sha256": "42288c4971286c252ea16450b0777e67a710a698446faa99e2d8d2344a087c25"
+      },
+      "canonical_publish": false,
+      "new_funding": false,
+      "probe_grant_revoked": true,
+      "model_executions": 0,
+      "scope": "One npm registry HTTPS metadata GET; not npm ci, tarball fetch or install scripts",
+      "proof_sha256": "ede69f742d689a4970c616befdafb9176103b51d28faae91971ea92ad2c04a23"
+    },
+    "managed_app_http_acceptance": {
+      "observed_at": "2026-10-13T05:11:28Z",
+      "study_arm": "notes",
+      "replicate": 1,
+      "stage": "duplicate_registration_bugfix",
+      "revision": "b83fad1e4a9fc506ddea9b69b3773d6fd038dd1d",
+      "bundle_digest": "88ad8f1ae97577e79413e4c04a16bb5edefef085232be97c6039e6217892c06d",
+      "policy_digest": "705583a244d36db899a9c18a85dd399750729980b17c7e366173681da6df037e",
+      "exact_current_candidate_eligible": true,
+      "real_https": true,
+      "authorized_ui_http_status": 200,
+      "registration_fresh_read_replay_and_cancellation": true,
+      "different_attendee_same_request_key_http_status": 409,
+      "wrong_host_http_status": 404,
+      "wrong_origin_write_http_status": 403,
+      "preview_data_cleaned": true,
+      "canonical_publication": false,
+      "browser_render_verified": false,
+      "browser_blocker": "Normal Chrome navigation ERR_BLOCKED_BY_CLIENT; no bypass attempted",
+      "durability_scope": "SQLite row persisted across fresh HTTPS requests; hosted eviction/restart not induced",
+      "coordinated_reviewer_run": false,
+      "context_causal_effect": null,
+      "private_receipt_sha256": "8b0b40949588534fef73bc9fdd201549d6e1372a50be080a4a363ea24ae43a1d"
+    },
+    "context_study_v2_partial": {
+      "scope": "First two three-stage chains only; remaining original capped chains running",
+      "source_only_1": {
+        "stage_protected_verdicts": [
+          "pass",
+          "pass",
+          "fail"
+        ],
+        "requests": 44,
+        "charged_microusd": 170811,
+        "final_failure": "Different attendee reusing the request key returned 200 instead of required 409"
+      },
+      "notes_1": {
+        "stage_protected_verdicts": [
+          "pass",
+          "pass",
+          "pass"
+        ],
+        "requests": 48,
+        "charged_microusd": 207474,
+        "final_revision": "b83fad1e4a9fc506ddea9b69b3773d6fd038dd1d",
+        "final_checks_passed": 7
+      },
+      "historical_v1_charged_microusd_retained": 390353,
+      "at_two_chains_aggregate_charged_microusd": 768638,
+      "provider_invoice_receipt": false,
+      "causal_effect": null,
+      "new_total_campaign_limit": false
+    },
+    "budget_recovery_gate": {
+      "rust": 349,
+      "app_rust": 244,
+      "core_rust": 18,
+      "runtime_rust": 71,
+      "cloudflare_rust": 1,
+      "xtask_rust": 15,
+      "platform_workerd": 323,
+      "apps_workerd": 16,
+      "frontend": 113,
+      "reviewer_node": 15,
+      "study_node": 28,
+      "complete_gate_exit": 0,
+      "gate_log_sha256": "3dfcbc8423a1304bfe00457ade4d183b136fb35c8c1d1e56616363d06ae90f46",
+      "deployed_recovery_verified": false
+    },
+    "current_specialist_concurrency": {
+      "run": "reviewer-booking-20261012-s1-r2",
+      "ledger_execution_overlap_ms": 82010,
+      "ledger_execution_scope": "Includes container boot and checkpoint",
+      "harness_to_transcript_marker_overlap_ms": 67477,
+      "marker_scope": "Includes completion, teardown and transcript upload; not pure provider inference",
+      "final_candidate_verified": false,
+      "proof_sha256": "ff6d43a810224d0bd9b7e6836c2f5beaeb01cdba05c7ee59a8e283209c9fd93c"
     }
   }
 }

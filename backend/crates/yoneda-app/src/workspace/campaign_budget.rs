@@ -79,11 +79,16 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             || budget
                 .spend_limit_microusd
                 .is_some_and(|v| model_charge > v)
-            || budget.max_requests.is_some_and(|v| requests > v)
         {
             return Err(Error::new(
                 "CAMPAIGN_EXHAUSTED",
                 "Campaign, bucket, chain or model allowance exhausted",
+            ));
+        }
+        if budget.max_requests.is_some_and(|v| requests > v) {
+            return Err(Error::new(
+                "CAMPAIGN_MODEL_REQUEST_LIMIT",
+                "This model exhausted its original shared campaign request allowance",
             ));
         }
         state["charged_microusd"] = json!(charged);

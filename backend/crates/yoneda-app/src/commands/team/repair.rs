@@ -132,6 +132,14 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         }
     }
     affected.insert("integrate".into());
+    super::super::budget_availability::require_assignment(&run, next_definition.integrator_agent)?;
+    for task in next_definition
+        .tasks
+        .iter()
+        .filter(|t| affected.contains(&t.id))
+    {
+        super::super::budget_availability::require_assignment(&run, task.agent)?;
+    }
     for local in if agent { &affected } else { &selected } {
         if additions.contains(local) {
             continue;
@@ -182,7 +190,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     run["team_repair_brief"] = json!(brief);
     run["team_plan_amendments"] = json!(amendments);
     run["status"] = json!("exploring");
-    let receipt = json!({"run_id":rid,"plan_revision":next_plan,"repair_round":next_round,"affected_tasks":affected,"status":"repairing"});
+    let receipt = json!({"run_id":rid,"plan_revision":next_plan,"repair_round":next_round,"affected_tasks":affected,"status":"repairing","integrator_agent":next_definition.integrator_agent});
     let mut receipts = run["team_repair_receipts"]
         .as_array()
         .cloned()
@@ -222,6 +230,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
         } else if task["role"] == "integrator" {
             task["depends_on"] = json!(next_definition.order()?);
+            task["agent"] = json!(next_definition.integrator_agent);
         }
         let revision = number(&task, "revision")?
             .checked_add(1)
@@ -246,7 +255,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         db,
         "team.repair_approved",
         now,
-        json!({"run_id":rid,"plan_revision":next_plan,"round":next_round,"tasks":affected,"repair_guidance":brief,"approved_by":authorization["approved_by"]}),
+        json!({"run_id":rid,"plan_revision":next_plan,"round":next_round,"tasks":affected,"repair_guidance":brief,"approved_by":authorization["approved_by"],"integrator_agent":next_definition.integrator_agent}),
     )?;
     scheduling::wake(db, &run, now)?;
     Ok(receipt)
@@ -275,3 +284,7 @@ mod intent_evaluation_tests;
 #[cfg(test)]
 #[path = "tests/plan_scopes.rs"]
 mod plan_scope_tests;
+
+#[cfg(test)]
+#[path = "tests/budget_availability.rs"]
+mod budget_tests;

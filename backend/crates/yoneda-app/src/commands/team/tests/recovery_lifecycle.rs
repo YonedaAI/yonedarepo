@@ -3,6 +3,57 @@ use super::*;
 use crate::execute;
 
 #[test]
+fn terminal_coordinator_failure_reconciles_run_without_consuming_repair_or_budget() {
+    let db = fixture();
+    let mut run = get(&db, "runs", "run").unwrap();
+    run["status"] = json!("coordinating");
+    run["coordinator_execution_id"] = json!("coordinator");
+    run["coordination_pending"] = json!(false);
+    save(&db, "runs", "run", &run).unwrap();
+    execute(&db,json!({"op":"fail","job_id":"job:coordinator","epoch":1,"retryable":false,"error":"Native fixture: approved coordinator allowance exhausted","now":10})).unwrap();
+    assert_eq!(
+        get(&db, "jobs", "job:coordinator").unwrap()["status"],
+        "failed"
+    );
+    assert_eq!(
+        get(&db, "executions", "coordinator").unwrap()["status"],
+        "failed"
+    );
+    let failed = get(&db, "runs", "run").unwrap();
+    assert_eq!(failed["status"], "failed");
+    assert_eq!(failed["model_budgets"], run["model_budgets"]);
+    assert_eq!(failed["team_repair_rounds"], run["team_repair_rounds"]);
+}
+
+#[test]
+fn terminal_coordinator_failure_preserves_pending_intent_and_owner_can_answer() {
+    let db = fixture();
+    let mut run = get(&db, "runs", "run").unwrap();
+    run["status"] = json!("coordinating");
+    run["coordinator_execution_id"] = json!("coordinator");
+    save(&db, "runs", "run", &run).unwrap();
+    let question=execute(&db,json!({"op":"intent_question","job_id":"job:coordinator","epoch":1,"request_id":"failure-pending","question":"Include archived source?","now":10})).unwrap();
+    execute(&db,json!({"op":"fail","job_id":"job:coordinator","epoch":1,"retryable":false,"error":"Native fixture: coordinator terminal failure","now":11})).unwrap();
+    assert_eq!(
+        get(&db, "runs", "run").unwrap()["status"],
+        "awaiting_intent"
+    );
+    assert_eq!(
+        get(&db, "intent_questions", question["id"].as_str().unwrap()).unwrap()["status"],
+        "pending"
+    );
+    execute(&db,json!({"op":"answer_intent","run_id":"run","question_id":question["id"],"answer":"Active only","now":12})).unwrap();
+    assert_eq!(
+        get(&db, "runs", "run").unwrap()["intent_clarifications"][0]["answer"],
+        "Active only"
+    );
+    assert_eq!(
+        get(&db, "runs", "run").unwrap()["team_repair_rounds"],
+        run["team_repair_rounds"]
+    );
+}
+
+#[test]
 fn dag_and_resolver_share_two_rounds_and_final_round_replay_does_not_spend_again() {
     let db = fixture();
     conflict(&db);

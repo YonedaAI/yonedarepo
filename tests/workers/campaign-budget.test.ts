@@ -5,6 +5,7 @@ import { campaignForAttempt } from '../../cloudflare/worker/campaign-usage';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
 import { modelHandler } from '../../cloudflare/worker/models';
 import { campaignModelBudgets } from '../../cloudflare/worker/reviewer-campaign';
+import { fetchRequest } from '../../cloudflare/worker/routes';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -122,4 +123,83 @@ it('retains the complete campaign reservation after upstream acknowledgement los
   expect(status.charged_microusd).toBeGreaterThan(0);
   await evictDurableObject(bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`account:${f.owner}`)));
   expect((await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).charged_microusd).toBe(status.charged_microusd);
+});
+
+it('stops a fresh attempt when its original shared model allowance is already exhausted', async () => {
+  const f = await setup();
+  const upstream = vi.fn(async () => Response.json({ status: 'completed',
+    usage: { input_tokens: 100, output_tokens: 10 } }));
+  vi.stubGlobal('fetch', upstream);
+  for (let i = 0; i < 3; i++) {
+    const result = await f.call();
+    expect(result.status).toBe(200);
+    await result.text();
+  }
+  const before = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  const binding = await workspace(bindings, f.owner, { op: 'campaign_bind_run', ...f.campaign,
+    repo_id: f.repo, run_id: 'next-stage', model_budgets: [budget] });
+  const request = { ...f.request, id: 'next-stage' };
+  const grant = await campaignGrant(bindings, f.owner, f.repo, request, binding);
+  await ledger(bindings, f.repo, { ...request, op: 'start_run', _workspace: f.owner, _campaign_grant: grant });
+  const job = await ledger(bindings, f.repo, { op: 'claim', job_id: 'job:next-stage:agent-1' });
+  const scope: Scope = { repo_id: f.repo, job, supervisor: 'synthetic', model_calls: 0, created_at: Date.now() };
+  const container = containerBindings(f.scoped, scope);
+  const result = await modelHandler('codex')(new Request('http://model.internal/v1/responses', {
+    method: 'POST', body: JSON.stringify({ input: 'Synthetic next stage', max_output_tokens: 256 }),
+  }), container.scoped, { containerId: 'synthetic' } as Parameters<ReturnType<typeof modelHandler>>[2]);
+  expect(result.status).toBe(409);
+  expect(await result.json()).toMatchObject({ error: { code: 'CAMPAIGN_MODEL_REQUEST_LIMIT' } });
+  expect(upstream).toHaveBeenCalledTimes(3);
+  const after = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  expect(after.chains).toEqual(before.chains);
+  expect(after.charged_microusd).toBe(before.charged_microusd);
+  const detail = await ledger(bindings, f.repo, { op: 'run_detail', run_id: 'next-stage' });
+  expect(detail.run.status).toBe('failed');
+  expect(detail.executions[0].status).toBe('failed');
+  expect(detail.run.model_budgets[0].max_requests).toBe(3);
+  expect(detail.run.campaign).toEqual(f.campaign);
+  const forbiddenObservation = await fetchRequest(new Request(
+    `https://yoneda/api/repos/${f.repo}/observe_campaign_model_limit`, {
+      method: 'POST', headers: { cookie: f.cookie, origin: 'https://yoneda', 'content-type': 'application/json' },
+      body: JSON.stringify({ job_id: job.id, epoch: job.epoch, requests: 3, max_requests: 3 }),
+    }), f.scoped);
+  // The funded reviewer boundary rejects this write before generic repository routing.
+  expect(forbiddenObservation.status).toBe(403);
+  expect(await forbiddenObservation.json()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+});
+
+it('never accepts operator-supplied quota counts or ordinary-account reconciliation', async () => {
+  const f = await setup();
+  const input = { username: f.owner, repo_id: f.repo, job_id: f.job.id,
+    requests: 999, max_requests: 1, provider: 'codex', model: 'gpt-5.6-luna' };
+  const denied = await api(f.scoped, '/api/admin/campaign/reconcile_model_limit', f.cookie, input);
+  expect(denied.status).toBe(403);
+  const notExhausted = await api(f.scoped, '/api/admin/campaign/reconcile_model_limit', '', input, true);
+  expect(notExhausted.status).toBe(409);
+  expect(await notExhausted.json()).toMatchObject({ error: { code: 'CAMPAIGN_EXHAUSTED' } });
+  const detail = await ledger(bindings, f.repo, { op: 'run_detail', run_id: 'initial' });
+  expect(detail.executions[0].status).toBe('running');
+  expect(detail.run.unavailable_model_groups ?? []).toEqual([]);
+  expect((await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).charged_microusd).toBe(0);
+});
+
+it('changes only next-version repository scope through the real Wasm workspace without resetting spent chains', async () => {
+  const f = await setup();
+  await workspace(bindings, f.owner, { op: 'campaign_reserve', repo_id: f.repo,
+    run_id: 'initial', reservation_id: 'retained', provider: budget.provider, model: budget.model,
+    input_bytes: 100, output_tokens: 256, amount: 2381, count_only: false });
+  const before = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  await workspace(bindings, f.owner, { op: 'campaign_disable', id: 'fresh', expected_version: 1,
+    expected_revision: before.revision });
+  const next = { ...f.approval, version: 2, repo_ids: ['new-maintenance-project'],
+    buckets: { opus: 10000000, reserve: 5000000, routine: 35000000 } };
+  await workspace(bindings, f.owner, { op: 'campaign_configure', id: 'fresh', expected_version: 1, approval: next });
+  const after = await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' });
+  expect(after.version).toBe(2);
+  expect(after.approval).toEqual(next);
+  expect(after.charged_microusd).toBe(2381);
+  expect(after.chains).toEqual(before.chains);
+  await workspace(bindings, f.owner, { op: 'campaign_configure', id: 'fresh', expected_version: 1, approval: f.approval });
+  await evictDurableObject(bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`account:${f.owner}`)));
+  expect((await workspace(bindings, f.owner, { op: 'campaign_status', id: 'fresh' })).chains).toEqual(before.chains);
 });
