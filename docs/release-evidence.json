@@ -989,7 +989,7 @@
     }
   },
   "simple_workflow_wave_2026_10_13": {
-    "scope": "Source and local gates; deployment and live inference recorded separately",
+    "scope": "Implemented and deployed normal-account workflow; funded follow-up acceptance recorded separately",
     "local_gate": {
       "command": "cargo xtask check",
       "passed": true,
@@ -1021,6 +1021,54 @@
       "configuration": "versioned operator cap; existing charges and uncertain reservations retained",
       "billing": "not implemented; conservative model estimates are not provider invoices"
     },
-    "video": "Existing October 13 R2 walkthrough predates this UI and does not prove this new workflow"
+    "video": "Existing October 13 R2 walkthrough predates this UI and does not prove this new workflow",
+    "implementation_revision": "a598b5e201809aede046ff80a98017e33a95872a",
+    "provider_default_followup": {
+      "frontend_tests": 161,
+      "production_build_passed": true,
+      "adapter_typescript_and_biome_passed": true,
+      "default": "ZAI GLM-5.3-Flash",
+      "scope": "fresh connection form; existing saved/editing providers preserved"
+    },
+    "deployment": {
+      "worker_version": "2a54a312-ffc3-4024-a85b-d1a1f04cc0cc",
+      "health_revision": "a598b5e201809aede046ff80a98017e33a95872a",
+      "origin": "https://yonedarepo.com",
+      "runtime_application_version": 29,
+      "runtime_image_digest": "13860da8c6719b7788ef2413260a297323cc49bb9c4ec3997c4c949708fa6cd9",
+      "runtime_rollout_complete": true,
+      "runtime_failed_instances": 0,
+      "runtime_errors": 0,
+      "provider_default_container_rollout": "none; existing R5 retained"
+    },
+    "live_browser": {
+      "observed_at": "2026-10-13T13:15:00Z",
+      "account": "ordinary existing personal account",
+      "verified": [
+        "Start a Run in empty workspace",
+        "Connect Agents in left navigation",
+        "hosted and own-agent choices",
+        "fresh hosted form defaults to ZAI GLM-5.3-Flash"
+      ],
+      "form_submissions": 0,
+      "inference_started": 0,
+      "independent_human_rehearsal": false
+    },
+    "reviewer_cleanup": {
+      "hidden_old_projects": 19,
+      "hidden_superseded_run": 1,
+      "remaining_visible_project": "reviewer-event-booking-20261012",
+      "method": "reversible ordinary list visibility; source, direct audits and accounting retained",
+      "cap_microusd": 50000000,
+      "activation_retained_charged_microusd": 16922620,
+      "activation_retained_reserved_microusd": 3482651,
+      "activation_remaining_microusd": 29594729
+    },
+    "public_export_verified_before_provider_default": {
+      "implementation_revision": "35e27834d0d1f30f799f3830b025b9bb2ff12f4a",
+      "public_commit": "7d96a788d175440bae043821372bcf57ff47b428",
+      "ci_id": "38396098448",
+      "conclusion": "success"
+    }
   }
 }

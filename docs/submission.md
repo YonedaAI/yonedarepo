@@ -26,14 +26,14 @@ Use `--no-open` for command-line inspection and keep the key private. The review
 4. Start a follow-up from the same project to inspect how earlier context is retrieved and cited. Optional sample buttons prepare editable briefs; they do not claim completed proof.
 5. For conflicting changes, inspect both contributions, the original intent and the freshly checked resolution. The existing recorded result proves integration recovery, not general semantic conflict quality.
 
-The current checked run is `reviewer-booking-20261012-s1-r2`, revision `4c330e084f8d698a4c0ba08f82fd73d108c02f2d`. Its initial-build oracle passed four tests; three future-stage tests were skipped. The checked working branch is at version 1. The canonical repository remains at its original version 0: checked is not published.
+The recorded initial-build run is `reviewer-booking-20261012-s1-r2`, revision `4c330e084f8d698a4c0ba08f82fd73d108c02f2d`. Its initial-build oracle passed four tests; three future-stage tests were skipped. The checked working branch is at version 1. The canonical repository remains at its original version 0: checked is not published.
 
 ## Current package and verification
 
 - **Platform:** [yonedarepo.com](https://yonedarepo.com/), with a separate isolated Apps Worker serving checked JS/TS UI/API applications backed by managed SQLite.
 - **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0. Check [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) for the exported implementation revision and [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions) for that export's result.
 - **Earlier hosted code acceptance:** implementation `82d900f`, Worker `e0cc3b15-ef7c-43bb-af6e-dafd2da11d2d`, R4 container application version 28. The completed rollout had seven healthy instances, none on the old image, and zero startup failures/errors.
-- **Latest local gate:** simplified-flow source passed 387 Rust, 387 platform workerd, 16 isolated-app workerd, 160 frontend and 27 Node runtime/reviewer tests. R5 passed 81 Linux runtime tests. Earlier separate study tooling passed 29 Node tests; those results remain dated evidence.
+- **Latest source and deployment:** simplified-flow source passed 387 Rust, 387 platform workerd, 16 isolated-app workerd, 160 frontend and 27 Node runtime/reviewer tests. R5 passed 81 Linux runtime tests. The fresh-provider follow-up passed 161 frontend tests plus build/adapter checks. Implementation `a598b5e` is live through Worker `2a54a312-ffc3-4024-a85b-d1a1f04cc0cc`; runtime application version 29 completed rollout with zero failed instances/errors. Earlier separate study tooling passed 29 Node tests; those results remain dated evidence.
 - **Hosted app:** exact-revision HTTPS/UI/API/SQLite, capacity/cancellation, wrong-host/origin/unauthenticated isolation and normal browser render/reload checks passed. Browser form mutations and induced hosted DO eviction were not exercised.
 - **Reviewer CLI:** read-only technical check succeeded on the current result without a trial or new inference. This is not an unfamiliar-human rehearsal.
 - **Evidence:** [release verification](release-evidence.md), [machine-readable record](release-evidence.json), [architecture](current-state-architecture.md), [video production](demo-video.md).
