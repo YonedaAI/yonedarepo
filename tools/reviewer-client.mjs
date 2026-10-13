@@ -35,10 +35,10 @@ export async function workspaceEntry(api, options) {
     const latest = checked[0];
     return { repo_id: latest.repo_id, run_id: latest.run.id,
       url: `/?repo=${encodeURIComponent(latest.repo_id)}&run=${encodeURIComponent(latest.run.id)}`,
-      message: 'Read-only review: opening the latest recorded checked run in your owned projects. No work was started or resumed.' };
+      message: `Read-only review: opening the latest current-policy checked run in your owned projects. Candidate ${latest.run.current_checked_candidate.id}, revision ${latest.run.current_checked_candidate.revision.commit}, policy ${latest.run.current_checked_candidate.policy}. No work was started or resumed.` };
   }
-  if (options.checkedOnly) throw new Error('No recorded checked run is available in your owned projects. --checked never starts or resumes work.');
-  return { ...entry, message: 'No checked run is available yet. Open Start a Run in your ordinary workspace; describe a change and approve it in the browser. This command starts no inference.' };
+  if (options.checkedOnly) throw new Error('No current-policy checked run is available in your owned projects. --checked never starts or resumes work.');
+  return { ...entry, message: 'No current-policy checked run is available. Historical runs remain in the workspace. Open Start a Run to describe a change and approve it in the browser. This command starts no inference.' };
 }
 
 export async function campaignEntry(api, campaign, newTrial, requestId, resume = false) {
@@ -59,11 +59,47 @@ export async function campaignEntry(api, campaign, newTrial, requestId, resume =
   return api('reviewer/campaign/trial',{request_id:requestId});
 }
 function isLegacyUnknownOperation(error) {
-  return error?.code === 'NOT_FOUND' && error.message === 'Unknown repository operation';
+  return error?.code === 'NOT_FOUND' && error.message === 'Unknown repository operation'
+    && (error.status == null || [404, 409].includes(error.status));
 }
 
 async function legacySnapshot(api, repo) {
   return api(`repos/${encodeURIComponent(repo)}/snapshot`);
+}
+
+function currentCheckedRun(detail, run) {
+  const policy = detail.repository?.policy;
+  if (!['ready', 'accepted'].includes(run.status)
+      || !['version', 'suite', 'environment'].every(key => typeof policy?.[key] === 'string' && policy[key])
+      || !Array.isArray(policy.required_checks) || !policy.required_checks.length
+      || policy.required_checks.some(name => typeof name !== 'string' || !name)
+      || new Set(policy.required_checks).size !== policy.required_checks.length
+      || !Array.isArray(detail.candidates) || !Array.isArray(detail.evaluations)) return null;
+  for (const candidate of detail.candidates) {
+    if (candidate.run_id !== run.id || candidate.status !== 'eligible'
+        || typeof candidate.id !== 'string' || !candidate.id
+        || typeof candidate.evaluation !== 'string' || !candidate.evaluation
+        || typeof candidate.revision?.repository !== 'string' || !candidate.revision.repository
+        || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i.test(candidate.revision?.commit ?? '')) continue;
+    const matching = detail.evaluations.filter(item => item.id === candidate.evaluation);
+    if (matching.length !== 1) continue;
+    const evaluation = matching[0];
+    if (evaluation.candidate !== candidate.id
+        || evaluation.revision?.repository !== candidate.revision.repository
+        || evaluation.revision?.commit !== candidate.revision.commit
+        || evaluation.policy !== policy.version || evaluation.suite !== policy.suite
+        || evaluation.environment !== policy.environment
+        || !/^[a-f0-9]{64}$/i.test(evaluation.evidence ?? '')
+        || !Array.isArray(evaluation.checks)
+        || !policy.required_checks.every(name => {
+          const checks = evaluation.checks.filter(check => check.name === name);
+          return checks.length === 1 && checks[0].status === 'pass';
+        })) continue;
+    return { ...run, current_checked_candidate: {
+      id: candidate.id, revision: candidate.revision, evaluation_id: evaluation.id, policy: policy.version,
+    } };
+  }
+  return null;
 }
 
 function checkedSnapshotRun(snapshot) {
@@ -72,7 +108,8 @@ function checkedSnapshotRun(snapshot) {
   return snapshot.runs
     .filter(run => ['ready', 'accepted'].includes(run.status))
     .sort((left, right) => (right.created_at ?? 0) - (left.created_at ?? 0)
-      || String(right.id).localeCompare(String(left.id)))[0] ?? null;
+      || String(right.id).localeCompare(String(left.id)))
+    .map(run => currentCheckedRun(snapshot, run)).find(Boolean) ?? null;
 }
 
 export async function findCheckedRun(api, repo) {
@@ -92,13 +129,16 @@ export async function findCheckedRun(api, repo) {
     }
     if (!Array.isArray(page.items) || !Number.isSafeInteger(page.watermark))
       throw new Error('Invalid reviewer history response; open the hosted app.');
-    const checked = page.items.find(run => ['ready', 'accepted'].includes(run.status));
-    if (checked) return checked;
+    if (watermark != null && watermark !== page.watermark)
+      throw new Error('Reviewer history changed while paging; retry.');
+    for (const run of page.items.filter(item => ['ready', 'accepted'].includes(item.status))) {
+      const detail = await readRun(api, repo, run.id);
+      const checked = currentCheckedRun(detail, { ...run, ...detail.runs[0] });
+      if (checked) return checked;
+    }
     if (page.next_cursor == null) return null;
     if (typeof page.next_cursor !== 'string' || !page.next_cursor || seen.has(page.next_cursor))
       throw new Error('Invalid reviewer history cursor; open the hosted app.');
-    if (watermark != null && watermark !== page.watermark)
-      throw new Error('Reviewer history changed while paging; retry.');
     watermark = page.watermark;
     cursor = page.next_cursor;
     seen.add(cursor);
@@ -124,8 +164,11 @@ export async function readRun(api, repo, runId) {
       edges: [],
       graph_paged: true,
     };
-    for (const key of ['team_tasks', 'team_handoffs', 'candidates', 'evaluations', 'decisions', 'artifacts'])
+    for (const key of ['team_tasks', 'team_handoffs', 'candidates', 'decisions', 'artifacts'])
       if (Array.isArray(snapshot[key])) detail[key] = snapshot[key].filter(item => item.run_id === runId);
+    const candidateIds = new Set(detail.candidates?.map(candidate => candidate.id));
+    if (Array.isArray(snapshot.evaluations))
+      detail.evaluations = snapshot.evaluations.filter(item => candidateIds.has(item.candidate));
   }
   if (!Array.isArray(detail.runs) || !Array.isArray(detail.executions)
       || detail.runs.length !== 1 || detail.runs[0].id !== runId

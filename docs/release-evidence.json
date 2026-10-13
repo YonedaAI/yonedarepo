@@ -1069,6 +1069,97 @@
       "public_commit": "7d96a788d175440bae043821372bcf57ff47b428",
       "ci_id": "38396098448",
       "conclusion": "success"
+    },
+    "reviewer_cli_followup": {
+      "node_runtime_reviewer_tests": 36,
+      "current_policy_validation": true,
+      "legacy_http_409_missing_operation_compatibility": true,
+      "read_only_live_exit": 0,
+      "selected_run_id": "run-699e54e0-d070-443c-a0df-9e8272835c5c",
+      "selected_revision": "53033856054d10a35f8c967f39b609c30b629732",
+      "selected_policy": "booking-request-key-maintenance-v1",
+      "inference_started_by_cli": 0
+    },
+    "public_export_verified_before_cli_followup": {
+      "implementation_revision": "7b145c6d1a89c90eb8a04c8c5d2de29f940c818d",
+      "public_commit": "31406f4b8009d464994947deb5b6967dda411fd7",
+      "ci_id": "38403870996",
+      "conclusion": "success"
+    },
+    "funded_maintenance_acceptance": {
+      "observed_at": "2026-10-13T13:27:49.076Z",
+      "run_id": "run-699e54e0-d070-443c-a0df-9e8272835c5c",
+      "status": "ready",
+      "provider": "zai",
+      "model": "glm-5.3-flash",
+      "actual_approved_roster_size": 1,
+      "roles": "sequential planner, specialist, integrator and recovery coordinator; no parallel-team claim",
+      "prior_checked_source": "4c330e084f8d698a4c0ba08f82fd73d108c02f2d",
+      "checked_revision": "53033856054d10a35f8c967f39b609c30b629732",
+      "changed_paths": [
+        "booking.mjs"
+      ],
+      "ui_build_schema_unchanged": true,
+      "policy": "booking-request-key-maintenance-v1",
+      "test_bundle_digest": "d2aeaf3c640a6fc5291d15102522c5a253ff8f2e394ec513b0b4de0e303a49ff",
+      "protected_tests_passed": 6,
+      "future_stage_tests_skipped": 3,
+      "setup_succeeded": true,
+      "protected_changes": [],
+      "failed_evidence_digest": "28ed4ca953432379a3c7a2dc0abcccf9ed053a2c1af09d271a09b255713809ca",
+      "passed_evidence_digest": "8b9128cbf6e12d4378b7232107866939166dc25d9f3edfe2aa8edb5a46d0d858",
+      "initial_failure": "Incorrectly required display-name equality for request-key replay by the same canonical email; other-attendee rejection passed",
+      "automatic_repair_rounds": 1,
+      "model_requests": 68,
+      "upstream_counts": {
+        "upstream_started": 68,
+        "response_headers": 68,
+        "rejected_before_upstream": 0,
+        "transport_failed": 0
+      },
+      "context_counts": {
+        "assigned": 15,
+        "checked": 2,
+        "cited": 20,
+        "opened": 24,
+        "read_calls": 13,
+        "returned": 10
+      },
+      "context_lineage": "Prior R2 source, evaluation and intent plus specialist handoff were delivered/opened/cited and linked to the final checked revision",
+      "causal_context_benefit": null,
+      "charged_delta_microusd": 421615,
+      "reserved_delta_microusd": 0,
+      "final_allowance": {
+        "charged_microusd": 17344235,
+        "limit_microusd": 50000000,
+        "remaining_microusd": 29173114,
+        "reserved_microusd": 3482651,
+        "version": 1
+      },
+      "working_branch": {
+        "id": "campaign-development",
+        "version": 2,
+        "working_commit": "53033856054d10a35f8c967f39b609c30b629732",
+        "status": "active"
+      },
+      "canonical": {
+        "version": 0,
+        "head_commit": "addf46b5dc6422313400a9c13ed3c91a8583b631",
+        "published_commit": "addf46b5dc6422313400a9c13ed3c91a8583b631"
+      },
+      "published_by_this_run": false,
+      "runtime_application_version": 29,
+      "runtime_image_digest": "13860da8c6719b7788ef2413260a297323cc49bb9c4ec3997c4c949708fa6cd9",
+      "worker_deploy_during_run": "35e2783 to a598b5e provider-default UI-only follow-up; runtime unchanged",
+      "verifier_script_cancellation": {
+        "run_id": "run-df253ea2-90c7-45c9-8e9b-204d110bc4cf",
+        "cause": "Client incorrectly required exact requested context list instead of accepting authoritative prior-lineage enrichment",
+        "model_requests": 0,
+        "spending_delta_microusd": 0,
+        "audit_retained": true,
+        "hidden_from_normal_list": true,
+        "retry": "One fresh same-goal request after corrected guard rehearsal and verified terminal zero-inference readback"
+      }
     }
   }
 }
