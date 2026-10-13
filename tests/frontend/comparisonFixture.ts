@@ -5,8 +5,8 @@ import type { Snapshot } from '../../frontend/src/lib/types';
 export function comparisonFixture() {
   const run = { id: 'compare', mode: 'compare', status: 'ready', intent: 'Fix event filtering and preserve anonymous access.',
     criteria: ['Preserve event names'], context: [], context_records: [], working_branch_id: 'work', working_branch_version: 2,
-    base: { repository: 'source', commit: 'base' } };
-  const candidates = ['left', 'right'].map(id => ({ id, run_id: run.id, execution: id, status: 'eligible', summary: `${id} filtering implementation`,
+    base: { repository: 'source', commit: 'base' }, agents: [{provider:'zai',model:'glm-5.3-flash'},{provider:'zai',model:'glm-5.3-flash'}] };
+  const candidates = ['left', 'right'].map((id,index) => ({ id, run_id: run.id, execution: `${run.id}:agent-${index+1}`, status: 'eligible', summary: `${id} filtering implementation`,
     base: run.base, revision: { repository: 'source', commit: id }, evaluation: `check-${id}`, paths: ['app.ts'] }));
   const snapshot = { repository: { id: 'repo', name: 'Synthetic compare fixture', status: 'ready', pending: null,
     head_commit: 'canonical', published_commit: 'canonical', version: 4,

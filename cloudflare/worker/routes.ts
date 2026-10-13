@@ -201,7 +201,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
     if (['approve_comparison_review', 'select_comparison_candidate'].includes(action))
-      return comparisonOwnerRoute(req, env, principal, repo, action);
+      return await comparisonOwnerRoute(req, env, principal, repo, action);
     let input = await ownerCommandInput(req, action);
     if (action === 'job_status') {
       if (typeof input.id !== 'string' || !input.id || input.id.length > 256)
