@@ -1,66 +1,61 @@
 # YonedaRepo submission
 
-YonedaRepo lets agents plan and coordinate application development from a shared intent, carry checked work into later feature and bug runs, and retain why each revision exists. Trusted Git capture, protected independent checks and human publication decisions remain distinct from agent assertions.
+Review a checked event-booking application built by an agent team. Start with the running app, its independent checks and the reasons behind the changes. Git-native specialist forks, protected verification, prior-run context, coordination and human publication decisions remain connected in the evidence trail.
 
-## October 12 autonomous-app update
+## Reviewer: one key, one command
 
-The new implementation is deployed on platform version `d0396173-6d22-494f-8c8e-0db379c07946` and Apps Worker `def961ab-ce4c-4922-9b57-c131153b1c10`. The full local gate passed: 323 Rust, 319 platform Workers, 16 isolated-app workerd, 107 frontend and 15 Node tests. Seven fresh event-booking repositories share a verified incomplete starter. Fresh paid build → waitlist feature → duplicate-registration repair and the matched context study have not yet produced accepted results. The new reviewer entry remains gated on an independently checked GLM-containing collaborative result. Historical static-site runs and the video below are dated evidence, not the new campaign's outcome.
+Use the privately supplied reviewer key at [yonedarepo.com](https://yonedarepo.com/) under **Have a reviewer access key?** No signup or provider key is needed. Alternatively, from the public source with Node 24:
 
-The default reviewer command is read-only; optional execution requires `--new`. The fresh $50 booking allowance is distinct from earlier accounting and the separate $12 controlled study. Humans review app behavior, checks and rationale first; multi-file changes, messages, prior context and provenance are accessible detail. [Current architecture](current-state-architecture.md) describes the deployed boundaries.
+```sh
+node tools/reviewer.mjs --checked
+```
 
-## Earlier submission package baseline
+The command prompts without echoing the key, opens the latest independently checked collaborative result and does not start or resume inference. A private access file is supported:
 
-- **Video:** [Watch the refreshed walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-10/yonedarepo-reviewer.mp4). The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captions, rendered and uploaded. Normal-speed playback of the prior render reached the end; all 12 scenes and 48 captions were reviewed, and revised chapter 6 was reviewed with the honest history summary, exact captured-source view, and four captions. The final re-render passed ffmpeg decode. This edited video is not a continuous recording of a current full run. See [script and production notes](demo-video.md).
-- **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0. Revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`) passed `cargo xtask check` and is running on deployed Worker version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`. The submission source is packaged as a public export. Verify its originating implementation revision in [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) and the corresponding result in [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions). Workflow `38088529282` for earlier source `e884a546` is a dated baseline; final-export CI acceptance is reported separately after publication.
-- **Try it:** [hosted platform](https://yonedarepo.com/). Live paid Git-native repair run `reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4` passed five fresh checks and produced eligible candidate `f5527348509497e87c5942e9fb4fd5094df02d8a`; its earlier integrated candidate `568eb829fd68f856e82616918e14d90cf36f4cd2` is stale. The owner decision is pending; the candidate is not selected or published. See the lead-maintained [repair acceptance record](git-native-repair-acceptance.json). Earlier ownership and failed repair attempts remain in history. The candidate-source view for `f5527348509497e87c5942e9fb4fd5094df02d8a` was verified against the owner API and current files. The historical a4 capture used runtime 24 (`sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6`) and retains seven provenance receipts, but its history contains a summary/stat-only capture rather than a stored full patch. The current review flow labels that history as a summary and offers **View captured source** through the candidate-source API. Source inspection supports selecting up to 500 files/8 MiB, with the inline preview limited to 256 KiB per selected file. Identity guards protect the selected candidate and source. Human rehearsal has not occurred and follows completion of development. From the public source, `node tools/reviewer.mjs` opens the recorded checked example without installing dependencies. For read-only CLI inspection, use `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`; this reads an owner-private access file, does not start a trial, and prints the review URL. Run `--help` for all options. `--new` explicitly approves another funded trial.
-- **Immediate public example:** [Juniper Garden](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/), built by concurrent Luna/Sonnet agents and published after an owner-directed selection.
-- **Run locally:** [README](../README.md#get-running) and [runbook](runbook.md). The local gate needs no inference keys; local Artifacts access requires Cloudflare authentication and configured resources.
-- **Connect your existing agent:** [remote MCP and Git setup](remote-mcp.md), using a revocable repository-scoped key from the website.
-- **Evidence and limits:** [release verification](release-evidence.md) and [machine-readable record](release-evidence.json).
+```sh
+node tools/reviewer.mjs --checked --key-file /path/to/access.json
+```
 
-## Reviewer hands-on path
+Use `--no-open` for command-line inspection. `--new` is an explicit optional funded trial, limited to $5 under the existing $50 campaign; it is not needed to review the recorded result. Keep the access file private. Reviewer access does not permit arbitrary model/provider changes or canonical publication.
 
-1. Enter the reviewer access key. The sandbox opens with configured agents and recorded runs.
-2. Choose **Run prepared example** or use `node tools/reviewer.mjs` to open the recorded checked example immediately. The command prompts for the same key without echoing it. Use `--key-file /path/to/access.json --checked --no-open` for read-only CLI inspection; add `--new` only to approve another trial. One trial may run at a time; each trial is limited to $5 within a shared $50 allowance.
-3. Watch the two specialists' activity and captured handoffs, then review the integrated exact revision and independent checks.
-4. Open **Evidence trail** to read intent, assertions, trusted capture, checks and the owner's rationale at normal text size. **Explore graph** provides the optional relationship view.
-5. Select an eligible candidate, record the decision and wait for verified publication. Reviewer publication affects only the sandbox. A failed or conflicting publish can be reconciled using **Recover repository**, which reads the actual canonical Git HEAD and retains the failed decision as history.
+## What to review
 
-Use a project-specific test profile: the starter HTML smoke check does not prove all browser interactions or product requirements. The app profile supports JS/TS UI/API/SQLite with protected independent checks and isolated preview hosts. Arbitrary external services are not enabled. The earlier static-site walkthrough above remains a historical package baseline.
+1. Open the **checked app** and inspect booking, capacity and cancellation behavior.
+2. Read **checks and why**: the approved intent, exact captured revision, protected independent verification and why publication still awaits a human decision.
+3. Inspect the two specialist captures and the recovery: the coordinator used platform tools, retained both captures and reassigned integration to an available originally approved model. No budget was raised.
+4. Review changed files individually. Use the optional evidence graph and file provenance for deeper inspection.
 
-## Current verification
+The current checked run is `reviewer-booking-20261012-s1-r2`, revision `4c330e084f8d698a4c0ba08f82fd73d108c02f2d`. Its initial-build oracle passed four tests; three future-stage tests were skipped. The checked working branch is at version 1. The canonical repository remains at its original version 0: checked is not published.
 
-`cargo xtask check` passed on source revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`): 284 Rust tests (186 app, 16 core, 66 runtime, 1 Cloudflare and 15 xtask), 290 Workers tests across 59 files, 67 frontend tests across 15 files, and 11 Node tests. The deployed production Worker is version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`, running `a581aaf`. The rolled-out Linux runtime-25 image has seven healthy instances, zero starting, zero failed and no errors; it passed 72 Linux tests at `sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87`, and passed the offline Gemini/Rust MCP smoke test.
+## Current package and verification
 
-The paid run `reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4` used runtime 24 and passed five checks, producing eligible candidate `f5527348509497e87c5942e9fb4fd5094df02d8a`; its earlier integrated candidate `568eb829fd68f856e82616918e14d90cf36f4cd2` is stale. The run retains seven provenance receipts, but only a summary/stat-only history capture, not the full patch. Ledger accounting recorded 31 Codex and 12 Claude requests with conservative estimated charges of $0.159528 and $2.211968 ($2.371496 total within the $5 envelope); these are not provider invoice amounts. No additional paid run is planned. Owner selection and publication remain separate pending actions. See the lead-maintained [repair acceptance record](git-native-repair-acceptance.json).
+- **Platform:** [yonedarepo.com](https://yonedarepo.com/), with a separate isolated Apps Worker serving checked JS/TS UI/API applications backed by managed SQLite.
+- **Source:** [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo), Apache-2.0. Check [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) for the exported implementation revision and [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions) for that export's result.
+- **Current code acceptance:** implementation `82d900f`, Worker `e0cc3b15-ef7c-43bb-af6e-dafd2da11d2d`, R4 container application version 28. The completed rollout had seven healthy instances, none on the old image, and zero startup failures/errors.
+- **Local gate:** 359 Rust, 327 platform workerd, 16 isolated-app workerd, 113 frontend and 15 reviewer Node tests passed. Separate study tooling passed 29 Node tests; R4 passed 80 Linux runtime tests.
+- **Hosted app:** exact-revision HTTPS/UI/API/SQLite, capacity/cancellation, wrong-host/origin/unauthenticated isolation and normal browser render/reload checks passed. Browser form mutations and induced hosted DO eviction were not exercised.
+- **Reviewer CLI:** read-only technical check succeeded on the current result without a trial or new inference. This is not an unfamiliar-human rehearsal.
+- **Evidence:** [release verification](release-evidence.md), [machine-readable record](release-evidence.json), [architecture](current-state-architecture.md), [video production](demo-video.md).
 
-The code stores bounded full Git-native capture patches (`7d8ccd5`) and the review UI honestly separates historical summary from **View captured source** through the existing candidate-source API. Candidate identity guards protect the view. **Select all** supports up to 500 files/8 MiB, with inline preview capped at 256 KiB per selected file. The `f5527348509497e87c5942e9fb4fd5094df02d8a` source view was verified against the owner API and current files.
+**Video:** [Watch the October 13 walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-13/yonedarepo-reviewer.mp4). This six-minute, 12-chapter, 48-caption edit uses actual current browser captures. Normal-speed native playback reached the end without seeking, all captions were visually inspected, and ffmpeg decode passed. It is an edited walkthrough, not a continuous recording of a live run. SHA-256: `494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010`.
 
-The repaired preview was checked in the browser: English “Clear search” and Spanish “Borrar búsqueda” both work, with the keyboard check changing results from zero to four.
+## What the evidence establishes
 
-The submission source is packaged as a public export. Verify its originating implementation revision in [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) and the corresponding result in [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions). Workflow `38088529282` for earlier source `e884a546` is a dated baseline; final-export CI acceptance is reported separately after publication.
-
-The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captions, rendered and uploaded. Normal-speed playback of the prior render reached the end; all 12 scenes and 48 captions were reviewed, and revised chapter 6 was reviewed with the honest history summary, exact captured-source view, and four captions. The final re-render passed ffmpeg decode. This edited video is not a continuous recording of a current full run.
-
-Human reviewer rehearsal remains pending after final handoff; the key sheet is prepared. This remains bounded developer evidence, not human acceptance, broad throughput or semantic-merge proof.
-
-## Direction and remaining gaps
-
-The useful product direction is an evidence and coordination layer for agent-written code: preserve intent and assertions, capture exact source, independently check it, record a human choice, and make the history available to later agents. The market comparison supports prioritizing that evidence trail, conflict recovery and low-friction review. It does not establish that YonedaRepo is unique or that its context graph improves coding outcomes.
-
-| Primary comparison | Existing capability | Implication for YonedaRepo |
+| Question | Measured result | Limit |
 |---|---|---|
-| [Cursor worktrees and best-of-n](https://cursor.com/docs/configuration/worktrees) | Parallel models use isolated checkouts; results can be compared and applied. | Parallel alternatives alone provide little differentiation. Make captured evidence and decision lineage the main product. |
-| [GitHub Copilot agents](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents) | Delegate work on branches or PRs, track sessions, iterate and review output. | Review/progress are expected capabilities. Explain the assertion → capture → check → decision authority chain clearly. |
-| [CAID: Effective Strategies for Asynchronous Software Engineering Agents](https://arxiv.org/abs/2603.21489v2) | Central delegation, dependency plans, concurrent isolated workspaces and tested integration. | Build together follows a supported coordination direction. The current source adds Git-native workspaces, explicit repair and conflict-refresh flows; the paper's reported performance gains are not measurements of this platform. |
+| Concurrent agent work | GLM and Codex specialist harness/transcript markers overlapped 67.477 seconds; both captured revisions contributed to the checked integration. | Marker interval includes completion/teardown/upload, not pure inference time. |
+| Recovery and coordination | Eight coordinator MCP operations completed; one guarded repair produced plan revision 2, repair round 1, with both specialist captures retained. | This is one observed integration recovery, not general semantic-conflict quality. |
+| Costs and authority | Original shared GLM and Codex groups each reached 48/48 requests. All 19 recovery reservations settled; the campaign retained $0.528906 of conservative charges. | Not provider invoices; no allowance or model roster was renewed. Opus was not used. |
+| Features and bug fixes across runs | A separate six-chain maintenance study completed 18 stages: 16 passed, two failed. Plain notes and graph each passed both full chains; both source-only chains failed the final duplicate-registration case. | This is separate maintenance evidence, not a three-stage coordinated-team claim. |
+| Context benefit | Delivery/opening/citation receipts are revision-bound and queryable. | Two repetitions of one seeded fixture, differing information availability and Worker-version variation do not establish a causal graph benefit. Graph had no observed pass advantage over plain notes. |
+| Platform failure behavior | Real bounded capacity deferrals, injected publication-acknowledgement recovery and a disjoint two-parent refresh passed hosted checks without model calls. | Injected fault and small workload; broad scalability is not claimed. |
 
-| Gap | Current delivery | Next recommendation |
-|---|---|---|
-| Reviewer setup and readability | Dedicated sandbox, one-key login, recorded example command and readable evidence trail are prepared; the human rehearsal key sheet is ready, but the rehearsal remains pending until the final handoff. | Conduct the clarified post-development reviewer rehearsal and measure time to first useful review. |
-| Runtime/lifecycle failure | Root-UID Git ownership regression fixed and deployed; controlled hosted capacity deferrals and publication acknowledgment-loss recovery passed. | Exercise sustained contention and restart combinations before making throughput or scale claims. |
-| Agent awareness and conflicts | Same-run peer status, visible task scopes/dependencies, and a controlled disjoint cross-run refresh with a fresh eligible evaluation. | Owner-approved overlapping resolver and broader contention remain unverified. Automatic semantic merge quality is not claimed. |
-| Team iteration | Frozen task inputs, integrated checks and bounded iterative repair are in source; the live repair run passed five fresh checks and produced an eligible candidate under unchanged approval limits. Earlier ownership and missing-fork/legacy-transport failures remain in history. | Owner selection/publication and human rehearsal after the final handoff remain pending. |
-| Scale and Git compatibility | Git-native workspaces, paged reads, archive/detail read-through, full capture patches and the six-live-work cap passed the current source gate; the hosted fixture covered only bounded capacity deferrals. | Measure sustained load and overlapping-agent contention before making runtime-scale claims. |
-| Evaluation and provenance | Exact revision/policy checks, immutable approved test bundles, explicit test-edit approval and file-level provenance are in current source; current local gate passed. | Human reviewer comprehension and controlled comparisons are still needed to establish context-use benefit. |
+The current source includes Git-native transport, paginated history/archive reads, active-work limits instead of lifetime-run limits, bounded team repair, protected test bundles and file provenance. Managed apps currently use the supported JS/TS/SQLite profile; arbitrary external services are not enabled.
 
-No large-scale throughput, semantic merge resolution, or causal context-use benefit is claimed for this prototype.
+## Differentiation and remaining human steps
+
+Agent sessions, searchable decisions and graphs already exist in [Entire](https://docs.entire.io/). Dependency-aware planning, isolated Git workspaces and tested integration appear in [CAID research](https://arxiv.org/abs/2603.21489v2). YonedaRepo's differentiation is the combination of coordination with separate agent assertions, trusted capture, independent checks, bounded approvals and human decisions. This is a product-design claim, not proof of a unique invention or an algorithmic advantage.
+
+The unfamiliar reviewer rehearsal follows development and private key delivery. Canonical publication remains an owner decision. The owner must confirm eligibility/attendance and submit the competition application manually under the [official competition information](https://blog.cloudflare.com/next-git-platform-on-cloudflare/). No submission confirmation is recorded.
+
+Earlier static-site runs and videos remain dated evidence in [release history](release-evidence.md).
