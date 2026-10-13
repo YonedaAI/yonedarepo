@@ -1,6 +1,11 @@
 import { safeId } from './http';
 import type { Env, Json } from './types';
-export async function source(env: Env, revision: Json, expectedTree?: string) {
+export async function source(
+  env: Env,
+  revision: Json,
+  expectedTree?: string,
+  limits = { bytes: 8 * 1024 * 1024, files: 500 },
+) {
   const [namespace, name, extra] = String(revision.repository).split('/');
   if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !safeId(name))
     throw new Error('Revision is outside this namespace');
@@ -34,7 +39,7 @@ export async function source(env: Env, revision: Json, expectedTree?: string) {
       const blob = await repo.readBlob(entry.hash);
       if (!blob) throw new Error('Source blob missing');
       bytes += blob.size;
-      if (bytes > 8 * 1024 * 1024 || Object.keys(files).length >= 500)
+      if (blob.size > 32000000 || bytes > limits.bytes || Object.keys(files).length >= limits.files)
         throw new Error('Source exceeds MVP limit');
       const data = new Uint8Array(await blob.arrayBuffer());
       try {

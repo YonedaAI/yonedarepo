@@ -1,5 +1,16 @@
+import { comparisonReviewAttempt } from './comparison-scope';
 import type { Json } from './types';
 export function checkLedger(snapshot: Json, request?: Json) {
+  if (
+    (request?.comparison != null ||
+      request?.op === 'approve_comparison_review' ||
+      request?.op === 'select_comparison_candidate') &&
+    snapshot?.capabilities?.comparison_review !== 1
+  )
+    throw Object.assign(
+      new Error('Comparison review support is updating; refresh before continuing.'),
+      { code: 'LEDGER_UPDATING' },
+    );
   const requestedEffort = [
     ...(request?.adaptive_team?.requested_agents ?? []),
     ...(request?.agents ?? []),
@@ -60,6 +71,13 @@ export function checkRuntime(health: Json, job: Json) {
   }
 }
 function compatibleRuntime(health: Json, job: Json) {
+  if (
+    (comparisonReviewAttempt(job) || job.payload?.execution?.comparison_approval_id != null) &&
+    health?.capabilities?.comparison_review !== 1
+  )
+    throw new Error(
+      'Container image does not support comparison review; wait for rollout completion',
+    );
   if (
     job.payload?.execution?.reasoning_effort != null &&
     health?.capabilities?.reasoning_efforts !== 1

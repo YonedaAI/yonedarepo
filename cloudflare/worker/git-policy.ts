@@ -1,3 +1,4 @@
+import { comparisonReviewAttempt } from './comparison-scope';
 import type { Scope } from './types';
 
 export type GitRole = { repository: string; writable: boolean };
@@ -5,6 +6,7 @@ export type GitRole = { repository: string; writable: boolean };
 /** Resolve only repositories frozen into this attempt's job payload. */
 export function gitRole(scope: Scope, role: string): GitRole | null {
   const job = scope.job;
+  if (comparisonReviewAttempt(job)) return null;
   if (job.payload?.workspace_transport !== 'git-native-v1') return null;
   const payload = job.payload;
   const refresh = job.kind === 'capture' && payload.capture_subtype === 'refresh_candidate';
@@ -26,6 +28,7 @@ export function gitRole(scope: Scope, role: string): GitRole | null {
     repository = payload.conflict_resolver.merge_workspace_repository;
   else if (role === 'canonical')
     repository =
+      payload.comparison_repair?.source_revision?.repository ??
       payload.execution?.base?.repository ??
       payload.base?.repository ??
       payload.candidate?.base?.repository;

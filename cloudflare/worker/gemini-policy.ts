@@ -3,7 +3,12 @@ import { outputCeiling } from './model-budget';
 import type { Json } from './types';
 
 /** Gemini uses its native GenerateContent protocol, never the Anthropic adapter. */
-export function prepareGeminiRequest(job: Json, path: string, input: Json) {
+export function prepareGeminiRequest(
+  job: Json,
+  path: string,
+  input: Json,
+  approvedCeiling?: number,
+) {
   const definition = providerDefinition(job.payload?.execution?.provider);
   if (
     job.kind !== 'agent' ||
@@ -42,7 +47,7 @@ export function prepareGeminiRequest(job: Json, path: string, input: Json) {
   }
   validate(body);
   if (match[1] !== 'countTokens') {
-    const ceiling = outputCeiling(job);
+    const ceiling = approvedCeiling ?? outputCeiling(job);
     body.generationConfig = {
       ...body.generationConfig,
       candidateCount: 1,

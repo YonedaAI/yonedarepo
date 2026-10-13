@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { RecordedDecisionStory } from './RecordedDecisionStory';
 import { reviewableCandidates } from './runReviewState';
 
@@ -36,6 +37,8 @@ function SharedResearch({ repo, artifact }: { repo: string; artifact: Record<str
 }
 
 export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record<string, any> }) {
+  if (run.comparison?.version === 1 && run.comparison.approval)
+    return <ComparisonWorkflow snapshot={snapshot} run={run} />;
   const executions = snapshot.executions.filter((e) => e.run_id === run.id);
   const research = executions.find((e) => e.role === 'research');
   const coding = executions.filter((e) => e.role === 'coding');

@@ -28,6 +28,11 @@ fn open_at(parent: i32, name: &std::ffi::CStr, flags: i32) -> Result<OwnedFd> {
 }
 
 pub(crate) fn read_regular(root: &Path, path: &str) -> Result<FileEntry> {
+    read_regular_bounded(root, path, yoneda_core::MAX_WORKSPACE_BYTES)
+}
+
+pub(crate) fn read_regular_bounded(root: &Path, path: &str, limit: usize) -> Result<FileEntry> {
+    let limit = u64::try_from(limit).map_err(err)?;
     yoneda_core::validate_path(path)?;
     let root_name = CString::new(root.as_os_str().as_bytes()).map_err(err)?;
     let mut directory = open_at(
@@ -53,14 +58,14 @@ pub(crate) fn read_regular(root: &Path, path: &str) -> Result<FileEntry> {
         )?;
         let file = File::from(fd);
         let metadata = file.metadata().map_err(err)?;
-        if !metadata.is_file() || metadata.len() > yoneda_core::MAX_WORKSPACE_BYTES as u64 {
+        if !metadata.is_file() || metadata.len() > limit {
             return Err(err("Capture requires a bounded regular file"));
         }
         let mut content = Vec::new();
-        file.take(yoneda_core::MAX_WORKSPACE_BYTES as u64 + 1)
+        file.take(limit + 1)
             .read_to_end(&mut content)
             .map_err(err)?;
-        if content.len() > yoneda_core::MAX_WORKSPACE_BYTES {
+        if u64::try_from(content.len()).map_err(err)? > limit {
             return Err(err("File grew beyond capture limit"));
         }
         return Ok(FileEntry::from_bytes(

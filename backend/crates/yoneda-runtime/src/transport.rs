@@ -113,11 +113,15 @@ pub(crate) async fn prepare_agent_workspace(job: &Value, root: &Path) -> Result<
     job["fork"]
         .as_str()
         .ok_or_else(|| err("Attempt fork is unavailable"))?;
-    job["payload"]["execution"]["base"]["repository"]
+    let source = job["payload"]
+        .get("comparison_repair")
+        .and_then(|repair| repair.get("source_revision"))
+        .unwrap_or(&job["payload"]["execution"]["base"]);
+    source["repository"]
         .as_str()
         .or_else(|| job["payload"]["base"]["repository"].as_str())
         .ok_or_else(|| err("Approved canonical repository is unavailable"))?;
-    let base = job["payload"]["execution"]["base"]["commit"]
+    let base = source["commit"]
         .as_str()
         .or_else(|| job["payload"]["base"]["commit"].as_str())
         .ok_or_else(|| err("Approved canonical commit is unavailable"))?;

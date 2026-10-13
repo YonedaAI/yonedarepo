@@ -221,6 +221,10 @@ pub fn validate_effort(provider: &str, model: &str, effort: &str) -> Result<()> 
 
 /// Exact adaptive slot settings are authority; omitted effort preserves legacy defaults.
 pub fn execution_effort<'a>(run: &Value, execution: &'a Value) -> Result<Option<&'a str>> {
+    if !execution["comparison_approval_id"].is_null() || !execution["comparison_role"].is_null() {
+        crate::comparison::validate_execution(run, execution)?;
+        return Ok(execution["reasoning_effort"].as_str());
+    }
     let effort = match execution.get("reasoning_effort").filter(|v| !v.is_null()) {
         Some(value) => Some(
             value

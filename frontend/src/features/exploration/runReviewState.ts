@@ -22,6 +22,17 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
   if (run.status === 'awaiting_intent')
     return 'Record the pending product-intent answer before a publishing decision.';
   if (!candidate) return 'Waiting for a captured result.';
+  if (run.comparison?.version === 1) {
+    if (
+      runHasActiveAttempts(snapshot, run) ||
+      ['building', 'checking', 'reviewing', 'repairing'].includes(run.comparison.status)
+    )
+      return 'Wait for automatic review and repairs to finish before publishing.';
+    if (run.comparison.status === 'stale')
+      return 'The comparison proposal is stale. Refresh current source and checks.';
+    if (run.comparison.selected_candidate_id !== candidate.id)
+      return 'Choose this checked result before publishing it.';
+  }
   if (candidate.status !== 'eligible') return 'This result has not passed the required checks.';
   if (snapshot.repository.pending) return 'Another publication is in progress in this repository.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready for publication.';

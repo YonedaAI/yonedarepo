@@ -119,5 +119,11 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             decision.clone(),
         )?;
     }
+    if let Some(rid) = job["payload"]["execution"]["run_id"]
+        .as_str()
+        .or_else(|| job["payload"]["candidate"]["run_id"].as_str())
+    {
+        super::super::comparison::wake(db, rid, now)?;
+    }
     Ok(())
 }

@@ -162,6 +162,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             super::study::apply(&mut run, super::study::freeze(db, &r)?);
             super::study::select(&c, &r, &mut run)?;
+            super::comparison::freeze(&c, &mut run)?;
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(

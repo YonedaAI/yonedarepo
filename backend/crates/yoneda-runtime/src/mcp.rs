@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use yoneda_core::Result;
 pub const TOOLS: &str = include_str!("mcp_tools.json");
+const COMPARISON_TOOLS: &str = include_str!("comparison_tools.json");
 
 pub async fn mcp() -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
@@ -20,7 +21,9 @@ pub async fn mcp() -> Result<()> {
                 json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"yonedarepo","version":"0.1.0"}}),
             ),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools":serde_json::from_str::<Value>(TOOLS).map_err(err)?})),
+            "tools/list" => Ok(
+                json!({"tools":serde_json::from_str::<Value>(if std::env::var("YONEDA_COMPARISON_REVIEW").as_deref()==Ok("1") {COMPARISON_TOOLS} else {TOOLS}).map_err(err)?}),
+            ),
             "tools/call" => match broker("/mcp", request["params"].clone(), false).await {
                 Ok(value) => Ok(json!({"content":[{"type":"text","text":value.to_string()}]})),
                 Err(error) => {

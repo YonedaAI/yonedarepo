@@ -1,5 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { authorizeAppPreview, publishedApp } from './apps';
+import { comparisonReviewAttempt } from './comparison-scope';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
@@ -89,8 +90,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
           };
           await attemptLog(this.env, scope, 'execution.started');
           if (job.payload?.workspace_transport === 'git-native-v1') {
-            if (job.kind === 'agent') {
-              const base = job.payload.execution?.base;
+            if (job.kind === 'agent' && !comparisonReviewAttempt(job)) {
+              const base =
+                job.payload.comparison_repair?.source_revision ?? job.payload.execution?.base;
               const fork = await provisionAttemptFork(
                 this.env,
                 envelope.repo_id,

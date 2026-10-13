@@ -100,12 +100,18 @@ export const modelHandler =
         job.payload.execution.connection,
         job.model,
         job.payload.execution.routing,
+        job.payload.execution.comparison_approval_id != null
+          ? job.payload.execution.version
+          : undefined,
       );
       const counted = await ledger(env, scope.repo_id, {
         op: 'reserve_request',
         job_id: job.id,
         epoch: job.epoch,
         kind: 'model',
+        ...(sharedContext?.comparison_approval_id
+          ? { comparison_approval_id: sharedContext.comparison_approval_id }
+          : {}),
         ...requestUsage(prepared.body, provider),
         count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
       }).catch(async (failure) => {
@@ -116,7 +122,9 @@ export const modelHandler =
       requestNumber = counted.number;
       countedReservation = counted;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
-      const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
+      const reservationId = await sha(
+        `${sharedContext?.comparison_approval_id ? `${sharedContext.comparison_approval_id}:` : ''}${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`,
+      );
       const ceiling =
         sharedContext || reviewer || campaign ? counted.reservation_microusd : prepared.reservation;
       if ((sharedContext || reviewer || campaign) && !Number.isSafeInteger(ceiling))
@@ -157,6 +165,9 @@ export const modelHandler =
             try {
               await ledger(env, scope.repo_id, {
                 op: 'settle_model_request',
+                ...(sharedContext?.comparison_approval_id
+                  ? { comparison_approval_id: sharedContext.comparison_approval_id }
+                  : {}),
                 job_id: job.id,
                 epoch: job.epoch,
                 reservation_id: counted.reservation_id,
@@ -207,6 +218,9 @@ export const modelHandler =
         ? trackProviderUsage(tracked, provider, async (usage) => {
             const settled = await ledger(env, scope.repo_id, {
               op: 'settle_model_request',
+              ...(sharedContext?.comparison_approval_id
+                ? { comparison_approval_id: sharedContext.comparison_approval_id }
+                : {}),
               job_id: job.id,
               epoch: job.epoch,
               reservation_id: counted.reservation_id,
@@ -244,6 +258,9 @@ export const modelHandler =
         try {
           const unused = await ledger(env, attempt.repo_id, {
             op: 'settle_model_request',
+            ...(sharedContext?.comparison_approval_id
+              ? { comparison_approval_id: sharedContext.comparison_approval_id }
+              : {}),
             job_id: attempt.job.id,
             epoch: attempt.job.epoch,
             reservation_id: countedReservation.reservation_id,

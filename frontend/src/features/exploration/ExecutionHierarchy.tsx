@@ -1,6 +1,8 @@
 import { Bot, CornerDownRight } from 'lucide-react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { modelDisplayName } from '../workspace/providerModels';
+import { ExecutionLogs } from './ExecutionLogs';
 import { executionFailureCode, providerFailureNotice } from './providerFailure';
 
 type Execution = Record<string, any>;
@@ -45,10 +47,17 @@ export function ExecutionHierarchy({
   onInspect: (id: string) => void;
 }) {
   const executions = snapshot.executions.filter(
-    (execution) => execution.run_id === run.id && execution.role === 'coding',
+    (execution) =>
+      execution.run_id === run.id &&
+      (execution.role === 'coding' || execution.comparison_role === 'reviewer'),
   );
-  const roots = executions.filter((execution) => !execution.parent_execution).length;
-  const subagents = executions.length - roots;
+  const roots = executions.filter(
+    (execution) =>
+      execution.role === 'coding' &&
+      !execution.parent_execution &&
+      execution.comparison_role !== 'repair',
+  ).length;
+  const subagents = executions.filter((execution) => !!execution.parent_execution).length;
   const queued = executions.filter((execution) => execution.status === 'queued').length;
   const running = executions.filter((execution) => execution.status === 'running').length;
   const { ordered, byId } = orderedExecutions(executions);
@@ -58,9 +67,15 @@ export function ExecutionHierarchy({
         <div>
           <h2 id="execution-hierarchy-heading">Agent activity</h2>
           <p>
-            {roots} root agent{roots === 1 ? '' : 's'} · {subagents} subagent
-            {subagents === 1 ? '' : 's'}
-            {run.delegation?.enabled && ` · up to ${run.delegation.max_executions} total`}
+            {run.comparison?.version === 1 ? (
+              `${roots} builders · ${executions.filter((e) => e.comparison_role === 'reviewer').length} recorded reviews`
+            ) : (
+              <>
+                {roots} root agent{roots === 1 ? '' : 's'} · {subagents} subagent
+                {subagents === 1 ? '' : 's'}
+                {run.delegation?.enabled && ` · up to ${run.delegation.max_executions} total`}
+              </>
+            )}
           </p>
         </div>
         <span className="execution-capacity">
@@ -69,7 +84,8 @@ export function ExecutionHierarchy({
       </div>
       <p className="subtle">
         Queued agents wait for capacity. Every root and subagent has an isolated workspace and its
-        own captured, independently checked approach.
+        own captured, independently checked approach. Comparison reviewers inspect evidence without
+        writing source.
       </p>
       {!executions.length ? (
         <p className="inline-empty" role="status">
@@ -97,13 +113,20 @@ export function ExecutionHierarchy({
                     className="text-button"
                     onClick={() => onInspect(execution.id)}
                   >
-                    {execution.strategy || execution.task || 'Independent approach'}
+                    {execution.comparison_role === 'reviewer'
+                      ? 'Automatic reviewer'
+                      : execution.strategy || execution.task || 'Independent approach'}
                   </button>
                   <small>
-                    {execution.parent_execution
-                      ? `Subagent · delegated by ${parent?.strategy || short(execution.parent_execution)}`
-                      : 'Root agent'}
-                    {execution.model && ` · ${execution.model}`}
+                    {execution.comparison_role === 'reviewer'
+                      ? 'Read-only reviewer'
+                      : execution.comparison_role === 'repair'
+                        ? 'Repairing an alternative'
+                        : execution.parent_execution
+                          ? `Subagent · delegated by ${parent?.strategy || short(execution.parent_execution)}`
+                          : 'Root agent'}
+                    {execution.model &&
+                      ` · ${modelDisplayName(execution.provider, execution.model)}`}
                   </small>
                   {execution.task && <p>{execution.task}</p>}
                   {execution.status === 'failed' && (
@@ -113,6 +136,9 @@ export function ExecutionHierarchy({
                     </p>
                   )}
                   {execution.status === 'cancelled' && <p>This agent was cancelled.</p>}
+                  {execution.comparison_role === 'reviewer' && (
+                    <ExecutionLogs repo={snapshot.repository.id} execution={execution} />
+                  )}
                 </div>
                 <span className={`status ${status}`}>{status.replaceAll('_', ' ')}</span>
               </li>

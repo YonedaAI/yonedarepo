@@ -1,3 +1,5 @@
+import { comparisonMcp } from './comparison-mcp';
+import { comparisonReviewAttempt } from './comparison-scope';
 import { contextResponse } from './context-access';
 import { guardContextAccess } from './context-policy';
 import { error, response, safeId } from './http';
@@ -8,6 +10,7 @@ import type { Env, Json, Scope } from './types';
 /** Container identity, never model arguments, determines attempt authority. */
 export async function hostedMcp(env: Env, scope: Scope, body: Json): Promise<Response> {
   const job = scope.job;
+  if (comparisonReviewAttempt(job)) return comparisonMcp(env, scope, body);
   if (job.kind !== 'agent') return error('FORBIDDEN', 'This attempt has no agent tools', 403);
   const args = body.arguments ?? {};
   const name = body.name;

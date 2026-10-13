@@ -78,6 +78,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         ));
     }
     let run = get(db, "runs", &string(&candidate, "run_id")?)?;
+    super::comparison::validate_publish(db, &run, &candidate)?;
     super::team::validate_candidate(db, &run, &candidate)?;
     if run["status"] == "cancelled" {
         return Err(Error::new("FENCED", "Run was cancelled"));
@@ -127,7 +128,8 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let rationale = string(c, "rationale")?;
     let did = format!("decision:{request}");
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
-    let d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
+    let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
+    super::comparison::decision_provenance(db, &run, &mut d)?;
     create(db, "decisions", &did, &d)?;
     super::history::link_file_provenance_to_decision(db, &d, now)?;
     r["head_commit"] = json!(revision.commit);
@@ -135,6 +137,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     r["pending"] = json!(did);
     save(db, "repository", "repo", &r)?;
     node(db, &did, "decision", &rationale, authorship, now, d.clone())?;
+    super::comparison::link_decision(db, &d)?;
     for other in all(db, "candidates")?
         .iter()
         .filter(|v| v["run_id"] == candidate["run_id"])

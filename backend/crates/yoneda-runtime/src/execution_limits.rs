@@ -3,12 +3,27 @@ use serde_json::Value;
 use yoneda_core::{Error, Result, model_budget::ModelBudget};
 
 pub(crate) fn model_budget(job: &Value) -> Result<Option<ModelBudget>> {
-    let Some(value) = job["payload"]["run"].get("model_budgets") else {
+    let execution = &job["payload"]["execution"];
+    let run = &job["payload"]["run"];
+    let source = if execution["comparison_approval_id"].is_string() {
+        let approval = &run["comparison"]["approval"];
+        if approval["id"] != execution["comparison_approval_id"] {
+            return Err(Error::new("FENCED", "Comparison budget approval changed"));
+        }
+        Some(approval.get("model_budget_configs").ok_or_else(|| {
+            Error::new(
+                "FENCED",
+                "Comparison model budget configurations are missing",
+            )
+        })?)
+    } else {
+        run.get("model_budgets")
+    };
+    let Some(value) = source else {
         return Ok(None);
     };
     let budgets: Vec<ModelBudget> = serde_json::from_value(value.clone())
         .map_err(|_| Error::new("FENCED", "Invalid frozen model budget"))?;
-    let execution = &job["payload"]["execution"];
     let provider = execution["provider"].as_str();
     let model = execution["model"].as_str();
     if execution["budget"]["provider"].as_str() != provider

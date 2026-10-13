@@ -284,6 +284,7 @@ fn runtime_health_identifies_protocol_and_evaluator_environment() {
     assert_eq!(health["capabilities"]["context_study"], 1);
     assert_eq!(health["capabilities"]["adaptive_teams"], 1);
     assert_eq!(health["capabilities"]["reasoning_efforts"], 1);
+    assert_eq!(health["capabilities"]["comparison_review"], 1);
     assert_eq!(health["capabilities"]["git_native_transport"], 1);
     assert_eq!(health["capabilities"]["test_bundle"], 1);
     assert!(health["capabilities"]["merge_guard"].is_null());

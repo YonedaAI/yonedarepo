@@ -180,10 +180,20 @@ branches, peer messages, delivery receipts and intent questions; migrations rema
 2. In comparison mode, agents work independently from the same frozen base and publish typed context through MCP.
 3. A separate capture job validates regular files and constructs fresh candidate Git objects.
 4. A clean evaluator checks the exact captured revision against the approved policy.
-5. The owner compares eligible candidates and records a shipping decision and alternatives.
-6. Publication verifies ancestry, updates canonical Git with an expected-old-ref lease and
+5. New two-builder comparisons wait for both terminal results, then schedule a separate read-only
+   reviewer. Its immutable manifest binds intent, prior context, both exact revisions, diffs and
+   independent checks. Submission is only an agent assertion until trusted unchanged-source
+   completion validates the current epoch. The ledger then selects an eligible working result,
+   requests a repair of the more promising alternative, or records that attention is needed.
+   At most two repair rounds require fresh capture, evaluation and review. Each logical review
+   round has 12 model requests shared across retries. The approval has at most seven logical
+   executions; all stages remain inside the approved run and workspace funding bounds.
+6. The owner can override the checked selection with a reason and separately approve publication.
+   The human decision stores the exact selection and a graph link to the immutable agent review,
+   keeping reviewer rationale, override reason and publication rationale distinct.
+7. Publication verifies ancestry, updates canonical Git with an expected-old-ref lease and
    reads it back. Verified publication advances the static site or checked app pointer.
-7. Later updates carry forward the published approach, decision and selected context for review.
+8. Later updates carry forward the published approach, decision and selected context for review.
 
 Runs accept one to six initial agents. Optional delegation allows up to 12 total agents through
 two delegation levels. Children inherit approved provider, model, source and context; each
@@ -193,7 +203,12 @@ before run approval and frozen afterward.
 `continuation_of` connects a new update to the decision at the current published commit.
 Restarting a run creates a new approved attempt while retaining the earlier evidence.
 Selection, canonical Git publication and hosted site state remain separately recorded.
-Checked working branches advance automatically under a compare-and-swap guard. Subsequent
+Checked team working branches advance automatically under a compare-and-swap guard. Compare
+checks alone never promote a candidate: selection requires the completed read-only review or a
+guarded owner choice. Older one-to-six-builder runs retain manual selection; existing two-builder
+runs can additionally approve review plus bounded repairs without restarting their builders or
+resetting original charges. This supplemental approval freezes current policy and its own budget
+segment while retaining the original run policy and counters unchanged. Subsequent
 feature and bug runs can build on that unpublished checked revision and receive a frozen,
 bounded packet of ranked prior intent and evidence. Human approval still controls canonical
 publication. A late result from a superseded team plan cannot advance the working branch.

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { campaignEntry, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from './reviewer-client.mjs';
+import { campaignEntry, comparisonSummary, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from './reviewer-client.mjs';
 
 const origin = 'https://yonedarepo.com';
 function keyPrompt() {
@@ -161,6 +161,7 @@ async function main() {
     if(status!==previous) { console.log(status); previous=status; }
     if (['ready','failed','cancelled','accepted'].includes(run?.status)) {
       console.log(run.status==='ready' ? 'Independent checks finished. Review the captured revision and decide in the browser.' : `Run ${run.status}. See recorded evidence in the browser.`);
+      if (run?.comparison) console.log(comparisonSummary(run));
       return;
     }
     await new Promise(r=>setTimeout(r,3000));

@@ -20,6 +20,13 @@ pub(crate) async fn execute_job(
     let root = PathBuf::from("/work/repo");
     std::fs::create_dir_all(&root).map_err(err)?;
     match field(job, "kind")? {
+        "agent"
+            if job["payload"]["review_only"] == true
+                || job["payload"]["comparison_review"] == true
+                || job["payload"]["execution"]["comparison_role"] == "reviewer" =>
+        {
+            crate::comparison_review::execute(job, &root, transcript).await
+        }
         "agent" => crate::agent::execute(job, &root, transcript).await,
         "capture" => {
             if job["payload"]["capture_subtype"] == "refresh_candidate" {

@@ -212,7 +212,7 @@ describe('outcome-first human review', () => {
     expect(html).toContain('Accented events remain visible.');
     expect(html.indexOf('Outcome preview')).toBeLessThan(html.indexOf('Behavior checks'));
     expect(html.indexOf('Behavior checks')).toBeLessThan(html.indexOf('Decision and context'));
-    expect(html).toContain('Record publishing decision');
+    expect(html).toContain('Use this result');
     expect(html).toContain('Inspect evidence graph');
   });
   it('summarizes active repair and dependency blocks in the default review without implying failed parallel work stopped', () => {

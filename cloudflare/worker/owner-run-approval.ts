@@ -1,5 +1,6 @@
 import { runSamples } from '../../shared/run-samples';
 import { resolveAdaptiveApproval } from './adaptive-approval';
+import { approveComparisonStart } from './comparison-approval';
 import { resolveFixedApproval } from './fixed-run-approval';
 import { checkLedger } from './runtime';
 import { ledger } from './storage';
@@ -55,14 +56,21 @@ export async function approveOwnerRun(
       code: 'WORKSPACE_SPEND_LIMIT',
     });
   const resolve = (limit: number) =>
-    input.adaptive_team !== undefined
-      ? resolveAdaptiveApproval(input, settings.providers, limit)
-      : resolveFixedApproval(input, settings.providers, limit);
+    approveComparisonStart(
+      input.adaptive_team !== undefined
+        ? resolveAdaptiveApproval(input, settings.providers, limit)
+        : resolveFixedApproval(input, settings.providers, limit),
+      settings.providers,
+      limit,
+    );
   let approved = resolve(allowance.limit_microusd);
   validateWorkspaceSpendRun(approved);
   checkLedger(repository, approved);
   const checked = new Set<string>();
-  for (const agent of approved._approved_model_pool ?? approved.agents) {
+  for (const agent of [
+    ...(approved._approved_model_pool ?? approved.agents),
+    ...(approved._comparison_reviewer ? [approved._comparison_reviewer] : []),
+  ]) {
     const id = agent.connection ?? agent.provider;
     const connection = settings.providers.find(
       (entry: Json) =>

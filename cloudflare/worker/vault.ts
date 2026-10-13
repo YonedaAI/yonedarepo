@@ -84,6 +84,7 @@ export async function providerCredentials(
   connection?: string,
   model?: string,
   routing?: Json | null,
+  expectedVersion?: number,
 ) {
   const definition = providerDefinition(provider);
   if (owner === '_admin') {
@@ -107,6 +108,14 @@ export async function providerCredentials(
     provider,
     ...(connection ? { connection } : {}),
   });
+  if (
+    expectedVersion != null &&
+    (!Number.isSafeInteger(expectedVersion) ||
+      (value.version === undefined ? 0 : value.version) !== expectedVersion)
+  )
+    throw new Error(
+      'Provider connection changed after comparison approval; refresh Connect Agents',
+    );
   if (model && value.model !== model)
     throw new Error('Provider model changed after run approval; start a new run');
   const savedRoute = mimoRouting(provider, value.routing);

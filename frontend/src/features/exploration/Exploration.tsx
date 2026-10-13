@@ -3,6 +3,7 @@ import { type RunSample, runSamples } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { comparisonBusy } from './comparisonView';
 import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunHistory } from './RunHistory';
@@ -60,7 +61,11 @@ export function Exploration({
     if (run?.id) onSelectedRun(run.id);
   }, [run?.id, onSelectedRun]);
   const restartSource = snapshot.runs.find((record) => record.id === restartId);
-  const canStart = !busy && !repo.pending && repo.status === 'ready';
+  const canStart =
+    !busy &&
+    !repo.pending &&
+    repo.status === 'ready' &&
+    !(run?.mode === 'compare' && comparisonBusy(snapshot, run));
   function openBrief(branch?: WorkingBranch, sample?: RunSample) {
     const base = branch ? workingRun(snapshot, branch) : undefined;
     setBranchSource(sample ? sampleBrief(snapshot, base, sample) : base);
@@ -116,7 +121,16 @@ export function Exploration({
       await onChange();
       return true;
     } catch (error) {
-      if (['start_run', 'accept', 'answer_intent'].includes(action)) throw error;
+      if (
+        [
+          'start_run',
+          'accept',
+          'answer_intent',
+          'approve_comparison_review',
+          'select_comparison_candidate',
+        ].includes(action)
+      )
+        throw error;
       onError((error as Error).message);
       return false;
     } finally {
@@ -209,6 +223,8 @@ export function Exploration({
                   })
                 }
                 onRepairTask={(request) => act('repair_team', request)}
+                onComparisonAction={act}
+                onRefresh={onChange}
                 onAccept={(candidate, rationale, alternatives) =>
                   act('accept', {
                     request_id: crypto.randomUUID(),

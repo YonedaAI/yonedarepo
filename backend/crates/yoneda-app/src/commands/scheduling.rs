@@ -74,6 +74,15 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
             e["routing"] = routing.clone();
         }
         super::adaptive_team::configure_execution(run, agent, index, &mut e)?;
+        if run["comparison"]["approval"].is_object() {
+            e["agent_index"] = json!(index);
+            e["comparison_role"] = json!("builder");
+            e["comparison_round"] = json!(0);
+            e["comparison_approval_id"] = run["comparison"]["approval"]["id"].clone();
+            if let Some(version) = agent.get("version") {
+                e["version"] = version.clone();
+            }
+        }
         if run.get("model_budgets").is_some() {
             e["budget"] = json!({"provider":provider,"model":agent["model"]});
         }
