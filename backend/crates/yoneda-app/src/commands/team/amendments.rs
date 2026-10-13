@@ -11,6 +11,37 @@ pub(super) fn apply<S: SqlStore>(
 ) -> Result<(TeamPlan, BTreeSet<String>)> {
     let mut next = plan(run)?;
     let mut added = BTreeSet::new();
+    if agent
+        && selected.contains("integrate")
+        && run["unavailable_model_groups"]
+            .as_array()
+            .is_some_and(|g| !g.is_empty())
+        && super::super::super::budget_availability::require_assignment(run, next.integrator_agent)
+            .is_err()
+    {
+        let job = get(db, "jobs", &string(c, "job_id")?)?;
+        let execution = &job["payload"]["execution"];
+        if execution["team_role"] == "coordinator" {
+            let agents = run["agents"]
+                .as_array()
+                .ok_or_else(|| bad("Missing approved roster"))?;
+            let index = agents
+                .iter()
+                .position(|a| {
+                    a["provider"] == execution["provider"]
+                        && a["model"] == execution["model"]
+                        && a.get("connection").unwrap_or(&a["provider"])
+                            == execution
+                                .get("connection")
+                                .unwrap_or(&execution["provider"])
+                })
+                .ok_or_else(|| {
+                    Error::new("FORBIDDEN", "Coordinator is outside the original roster")
+                })?;
+            super::super::super::budget_availability::require_assignment(run, index)?;
+            next.integrator_agent = index;
+        }
+    }
     if let Some(definitions) = c.get("task_definitions") {
         let definitions: Vec<TeamTask> =
             serde_json::from_value(definitions.clone()).map_err(|e| bad(&e.to_string()))?;

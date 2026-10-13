@@ -9,7 +9,7 @@ const budget={provider:'codex',model:'gpt-5.6-luna',max_requests:60,max_output_t
     source:'owner-approved conservative rates'}};
 const settings={id:'protocol-test',username:'operator',connection:'frozen',budget,campaign:{id:'server-contract',version:1},
   repositories:Array.from({length:6},(_,i)=>({id:`repo-${i}`,seed_candidate_id:`seed-${i}`}))};
-function fake(plan,{lostAck=false,failedStage=false,wrongSeed=false,oldRuntime=false}={}){
+function fake(plan,{lostAck=false,failedStage=false,wrongSeed=false,oldRuntime=false,earlyMismatch=null}={}){
   const corpus=planCorpus(plan);
   const calls=[],branches=new Map(),runs=new Map(),policies=new Map(),studies=new Map(
     plan.chains.map(chain=>[chain.repo_id,{...studyConfig(plan,chain),records:corpus}]));
@@ -58,7 +58,16 @@ function fake(plan,{lostAck=false,failedStage=false,wrongSeed=false,oldRuntime=f
       if(!failedStage)Object.assign(branch,{working_commit:commit,working_revision:revision(commit),version:number,latest_candidate_id:candidate.id});
       if(lostAck)throw new Error('Simulated lost acknowledgment');return {};
     }
-    if(action==='run_detail')return structuredClone(runs.get(params.get('run_id')));
+    if(action==='run_detail'){
+      const detail=structuredClone(runs.get(params.get('run_id')));
+      if(earlyMismatch){
+        detail.run.status='exploring';detail.candidates=[];detail.evaluations=[];
+        if(earlyMismatch==='corpus')detail.run.context_study.corpus.push('context:booking:future');
+        else detail.run.context_study.records[0].statement='Different immutable constraint';
+        earlyMismatch=null;
+      }
+      return detail;
+    }
     if(action==='context_usage')return {entries:[],citations:[],has_more:false,citations_truncated:false};
     if(action==='cancel_run')return {};
     throw new Error(`Unexpected test protocol path ${action}`);
@@ -122,4 +131,17 @@ it('v2 protocol preserves old spend and accepts only exact stage-scoped frozen c
     assert.deepEqual(stage.detail.run.context_study.corpus,stage.request.current_context_ids);
     assert.deepEqual(stage.detail.run.context_study.records.map(r=>r.id),stage.request.current_context_ids);
   }
+});
+for(const mismatch of ['corpus','records'])it(`cancels exploring ${mismatch} mismatch before waiting and stops the campaign as deployment failure`,async()=>{
+  const plan=makePlan({...settings,stage_scoped_context:true,corpus_version:2});
+  const client=fake(plan,{earlyMismatch:mismatch});let sleeps=0;
+  const result=await runCampaign(client,plan,{sleep:async()=>{sleeps++;}});
+  assert.equal(sleeps,0);
+  assert.equal(client.calls.filter(call=>call.path.endsWith('/start_run')).length,1);
+  assert.equal(client.calls.filter(call=>call.path.endsWith('/cancel_run')).length,1);
+  assert.equal(result.chains[0].failure.code,'DEPLOYMENT_FIDELITY_FAILED');
+  assert.equal(result.failure.code,'DEPLOYMENT_FIDELITY_FAILED');
+  assert.equal(result.chains[0].stages[0].detail.run.status,'exploring');
+  assert.equal(result.chains[0].stages[0].outcome,null);
+  assert.equal(result.complete,false);assert.equal(result.agent_evidence,false);
 });

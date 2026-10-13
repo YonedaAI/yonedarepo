@@ -81,9 +81,22 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
         return Ok(());
     }
     let plan = plan(run)?;
+    let Some(index) = super::super::budget_availability::coordinator(run, plan.integrator_agent)?
+    else {
+        let mut stopped = run.clone();
+        stopped["coordination_pending"] = json!(false);
+        stopped["status"] = json!("failed");
+        save(db, "runs", &rid, &stopped)?;
+        return event(
+            db,
+            "team.coordination_unavailable",
+            now,
+            json!({"run_id":rid,"reason":"All original regular model groups are exhausted"}),
+        );
+    };
     let agent = run["agents"]
         .as_array()
-        .and_then(|a| a.get(plan.integrator_agent))
+        .and_then(|a| a.get(index))
         .ok_or_else(|| bad("Missing frozen coordinator agent"))?;
     let provider = string(agent, "provider")?;
     let mut execution = json!({"id":id,"run_id":rid,"team_role":"coordinator","role":"coding","status":"queued","provider":provider,"model":agent["model"],"connection":agent.get("connection").unwrap_or(&agent["provider"]),"harness":yoneda_core::providers::provider(&provider)?.harness,"strategy":"Coordinate approved team recovery","task":"Inspect failure evidence and peer requests. Negotiate contracts, repair the bounded DAG or ask an intent question within the frozen approval. Source is read-only.","context":run["context"],"base":run["base"],"depth":0,"team_plan_revision":run["team_plan_revision"]});
@@ -134,7 +147,7 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
         db,
         "team.coordinator_scheduled",
         now,
-        json!({"run_id":rid,"execution_id":id,"plan_revision":run["team_plan_revision"]}),
+        json!({"run_id":rid,"execution_id":id,"plan_revision":run["team_plan_revision"],"agent":index,"provider":provider,"model":agent["model"],"original_integrator_agent":plan.integrator_agent}),
     )
 }
 

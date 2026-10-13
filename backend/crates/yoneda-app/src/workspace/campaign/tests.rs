@@ -113,6 +113,30 @@ fn campaign_settlement_is_immutable_and_survives_disable() {
         approval()
     );
 }
+
+#[test]
+fn request_exhaustion_is_distinct_from_financial_exhaustion_and_never_refunds_counts() {
+    let db = setup();
+    bind(&db, "initial", "chain1");
+    for id in ["one", "two", "three"] {
+        call(&db, reserve("initial", id)).unwrap();
+        call(&db, json!({"op":"campaign_settle","repo_id":"booking","run_id":"initial","reservation_id":id,"provider":"codex","model":"gpt-5.6-luna","input_tokens":100,"output_tokens":10})).unwrap();
+    }
+    bind(&db, "feature", "chain1");
+    let before = call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap();
+    assert_eq!(
+        call(&db, reserve("feature", "four")).unwrap_err().code,
+        "CAMPAIGN_MODEL_REQUEST_LIMIT"
+    );
+    assert_eq!(
+        call(&db, json!({"op":"campaign_status","id":"fresh"})).unwrap(),
+        before
+    );
+    assert_eq!(
+        before["chains"][0]["models"]["codex/gpt-5.6-luna"]["requests"],
+        3
+    );
+}
 #[test]
 fn campaign_binding_cannot_switch_old_runs_or_fund_reserve() {
     let db = setup();

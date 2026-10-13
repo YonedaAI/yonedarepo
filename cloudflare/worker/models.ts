@@ -1,5 +1,6 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { providerDefinition } from '../../shared/providers';
+import { observeCampaignModelLimit } from './campaign-model-limit';
 import { campaignForAttempt, reserveCampaignUsage, settleCampaignUsage } from './campaign-usage';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
@@ -71,6 +72,10 @@ export const modelHandler =
         kind: 'model',
         ...requestUsage(prepared.body, provider),
         count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
+      }).catch(async (failure) => {
+        if (campaign && failure?.code === 'MODEL_REQUEST_LIMIT')
+          await observeCampaignModelLimit(env, owner, scope.repo_id, job);
+        throw failure;
       });
       requestNumber = counted.number;
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
@@ -116,6 +121,8 @@ export const modelHandler =
               /* Retain the reservation if the release cannot be confirmed. */
             }
           }
+          if (campaign && (failure as { code?: string }).code === 'CAMPAIGN_MODEL_REQUEST_LIMIT')
+            await observeCampaignModelLimit(env, owner, scope.repo_id, job);
           throw failure;
         }
       }

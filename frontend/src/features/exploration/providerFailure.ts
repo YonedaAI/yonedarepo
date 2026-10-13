@@ -13,6 +13,8 @@ export type ProviderFailureCode =
   | 'PROVIDER_REQUEST_LIMIT'
   | 'MODEL_REQUEST_LIMIT'
   | 'MODEL_SPEND_LIMIT'
+  | 'CAMPAIGN_MODEL_REQUEST_LIMIT'
+  | 'CAMPAIGN_EXHAUSTED'
   | 'HARNESS_BUDGET';
 
 const notices: Record<ProviderFailureCode, { title: string; action: string }> = {
@@ -69,6 +71,16 @@ const notices: Record<ProviderFailureCode, { title: string; action: string }> = 
     title: 'estimated model allowance was reached',
     action:
       'Review the approved pricing and remaining allowance. Use Restart run with a larger allowance or a smaller task; the next request must fit its worst-case reservation.',
+  },
+  CAMPAIGN_MODEL_REQUEST_LIMIT: {
+    title: 'used this model’s shared campaign request allowance',
+    action:
+      'This model’s approved request allowance is used up. Recovery may assign remaining work to another already-approved model with allowance available. Campaign caps do not increase automatically.',
+  },
+  CAMPAIGN_EXHAUSTED: {
+    title: 'cannot cover the next request with the approved campaign allowance',
+    action:
+      'The approved shared campaign allowance cannot cover the next request. Further work needs an owner decision on the budget; restarting does not reset or automatically increase the caps.',
   },
   HARNESS_BUDGET: {
     title: 'execution budget was reached',
@@ -140,6 +152,10 @@ function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
       return 'PROVIDER_CONFIGURATION';
     if (text === 'This provider/model group exhausted its approved request budget')
       return 'MODEL_REQUEST_LIMIT';
+    if (text === 'This model exhausted its original shared campaign request allowance')
+      return 'CAMPAIGN_MODEL_REQUEST_LIMIT';
+    if (text === 'Campaign, bucket, chain or model allowance exhausted')
+      return 'CAMPAIGN_EXHAUSTED';
     if (
       text ===
       'This provider/model group has insufficient approved spend remaining for the conservative request ceiling'
@@ -155,6 +171,8 @@ function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
   const code = record(body.error) ? body.error.code : body.code;
   return code === 'MODEL_REQUEST_LIMIT' ||
     code === 'MODEL_SPEND_LIMIT' ||
+    code === 'CAMPAIGN_MODEL_REQUEST_LIMIT' ||
+    code === 'CAMPAIGN_EXHAUSTED' ||
     code === 'PROVIDER_CONFIGURATION'
     ? code
     : undefined;

@@ -1,5 +1,6 @@
 import { username } from './accounts';
 import { campaignGrant } from './campaign-grant';
+import { reconcileCampaignModelLimit } from './campaign-model-limit';
 import { provisionCampaignProject } from './campaign-provision';
 import { campaignRepository } from './campaign-repository';
 import { error, readJson, response } from './http';
@@ -16,6 +17,8 @@ export async function campaignRoute(req: Request, env: Env, principal: Principal
   if (req.method !== 'POST') return error('FORBIDDEN', 'POST required', 403);
   const input = await readJson(req, path.endsWith('/repository') ? 8 * 1024 * 1024 : 256 * 1024);
   const owner = username(input.username);
+  if (path.endsWith('/reconcile_model_limit'))
+    return response(await reconcileCampaignModelLimit(env, owner, input.repo_id, input.job_id));
   if (path.endsWith('/repository')) return campaignRepository(env, owner, input);
   if (path.endsWith('/provision')) {
     const project = await provisionCampaignProject(env, principal, owner, input);
