@@ -1,12 +1,14 @@
 # Product MVP release evidence — October 8–12, 2026
 
-## Modern model picker — current source, release verification pending
+## Modern model picker — October 13, 2026
 
 The source adds connected-model choices with short provider/model names and optional reasoning levels supported by the exact selected model. Auto omits an explicit reasoning setting and selects only models with validated automatic-selection eligibility. Newly catalogued models require explicit selection until compatibility is validated; no more expensive model is selected through a silent fallback.
 
 The explicit **Add model** action reuses a Cloudflare-sealed provider key through a new immutable model/connection binding, without exposing the key to the browser or changing an existing binding or approval. Samples have a distinct dialog and prefill an editable run brief. Neither action starts inference.
 
 The fresh complete local gate passed: 415 Rust, 399 platform workerd, 16 isolated-app workerd, 184 frontend and 36 Node tests, including the actual workers-rs Wasm build. R7 passed 84 Linux runtime tests. Independent review cleared the frozen changes after reproducing and fixing dropped Compare/manual-team effort and deleted-alias identity reuse. Deployment is recorded separately. There is no new paid modern-model execution proof, and no third comparison reviewer has been implemented. The comparison workflow's current-branch selection race remains identified and pending; the dated results below retain their original scope.
+
+Implementation `380b742` is live through Worker `0ea82682-ad52-4400-af59-fb38d5ac6e91`. R7 completed rollout at application version 30 with six healthy instances, zero failed instances and zero health errors. The deployed Wasm SHA-256 is `d081b7cb81a448e75bc2d92f616ab15cf803abf121a22306e0307063a7083f09`, matching the tested local artifact. The initial workspace instance returned an old-operation error; redeploying the same Worker version with immediate Durable Object code updates resolved it. Creating five modern-model aliases changed neither prior connection bindings nor workspace accounting and made zero inference requests. Live Chrome verified concise choices, supported reasoning levels, safe reset on model change and three distinct editable sample briefs. The read-only reviewer CLI opened the current Compare run without starting work; it does not select a winner or repair the branch-selection issue. Earlier maintenance acceptance below remains historical evidence rather than current workspace inventory.
 
 ## Simplified workflow — October 13, 2026
 

@@ -10,7 +10,7 @@ Use the privately supplied reviewer key at [yonedarepo.com](https://yonedarepo.c
 node tools/reviewer.mjs --checked
 ```
 
-The command prompts without echoing the key, opens the latest independently checked collaborative result and does not start or resume inference. A private access file is supported:
+The command prompts without echoing the key, opens the latest independently checked result in the workspace and does not start or resume inference. A private access file is supported:
 
 ```sh
 node tools/reviewer.mjs --checked --key-file /path/to/access.json
@@ -26,7 +26,7 @@ Use `--no-open` for command-line inspection and keep the key private. The review
 4. Start a follow-up from the same project to inspect how earlier context is retrieved and cited. Optional sample buttons prepare editable briefs; they do not claim completed proof.
 5. For conflicting changes, inspect both contributions, the original intent and the freshly checked resolution. The existing recorded result proves integration recovery, not general semantic conflict quality.
 
-The latest current-policy checked run is `run-699e54e0-d070-443c-a0df-9e8272835c5c`, revision `53033856054d10a35f8c967f39b609c30b629732`. It fixes a request-key ownership bug using prior run context; all six protected tests passed after one automatic repair. Only `booking.mjs` changed. It used one GLM agent in sequential roles, 68 requests and $0.421615 in conservative accounting. The working branch is at version 2; canonical source remains at version 0, awaiting a human decision. The earlier `reviewer-booking-20261012-s1-r2` revision `4c330e0` remains the concurrent GLM/Codex initial-build example.
+The October 13 maintenance acceptance was run `run-699e54e0-d070-443c-a0df-9e8272835c5c`, revision `53033856054d10a35f8c967f39b609c30b629732`. It fixed a request-key ownership bug using prior run context; all six protected tests passed after one automatic repair. Only `booking.mjs` changed. It used one GLM agent in sequential roles, 68 requests and $0.421615 in conservative accounting. At acceptance, its working branch was at version 2 and canonical source remained at version 0, awaiting a human decision. The earlier `reviewer-booking-20261012-s1-r2` revision `4c330e0` remains dated concurrent GLM/Codex initial-build evidence. These identifiers describe recorded acceptance, not a guarantee that the current workspace still lists those projects.
 
 ## Modern model picker — current source
 
@@ -35,6 +35,8 @@ The current source groups connected choices under short provider and model names
 **Add model** explicitly reuses an existing Cloudflare-sealed provider key to create a new immutable model/connection binding. The key is not exposed to the browser, and existing bindings and run approvals remain unchanged. Samples use a separate dialog and prefill an editable run brief; choosing a sample or adding a model does not start inference.
 
 The fresh complete local gate passed: 415 Rust, 399 platform workerd, 16 isolated-app workerd, 184 frontend and 36 Node tests, including the actual workers-rs Wasm build. R7 passed 84 Linux runtime tests. Independent review cleared the frozen changes after reproducing and fixing dropped Compare/manual-team effort and deleted-alias identity reuse. Deployment is recorded separately. No paid execution proof is claimed for newly added modern models. A third comparison reviewer is not implemented, and the comparison workflow's current-branch selection race remains identified and pending.
+
+Implementation `380b742` is live through Worker `0ea82682-ad52-4400-af59-fb38d5ac6e91`. R7 completed rollout at application version 30 with six healthy instances, zero failed instances and zero health errors. Deployed Wasm matched the locally tested module byte for byte. The initial workspace instance answered an old-operation error; explicitly redeploying the same Worker version with immediate Durable Object code updates resolved it. Five modern-model aliases were then created in the ordinary reviewer account with existing bindings and workspace accounting unchanged, and zero inference requests. Live Chrome verified the concise model list, supported reasoning levels, model-change reset and three distinct editable sample briefs. The read-only CLI also opened the current Compare run without starting work; it does not select a winning alternative or resolve the branch-selection defect.
 
 ## Current package and verification
 
