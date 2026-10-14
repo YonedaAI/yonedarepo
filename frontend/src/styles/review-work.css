@@ -86,3 +86,11 @@
   margin: 6px 0;
   overflow-wrap: anywhere;
 }
+.agents-rationale .rationale-lead {
+  font-weight: 600;
+  font-size: 16px;
+}
+.agents-rationale details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
