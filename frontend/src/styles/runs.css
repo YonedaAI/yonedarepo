@@ -237,3 +237,6 @@
   margin-bottom: 26px;
   font-size: 12px;
 }
+.run-heading h2:focus:not(:focus-visible) {
+  outline: none;
+}

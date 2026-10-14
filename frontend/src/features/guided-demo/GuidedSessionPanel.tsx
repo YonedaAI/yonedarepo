@@ -5,6 +5,7 @@ import { GuidedEvidenceList } from './GuidedEvidenceList';
 import { GuidedProgress } from './GuidedProgress';
 import { runningExplanations } from './guidedEvidenceView';
 import { type GuideRefreshState, guideRefreshText } from './guidedRefresh';
+import { type GuidedRunFacts, guidedStepLinks, guidedStepReason } from './guidedStepView';
 import './guided-demo.css';
 
 const statusLabels = {
@@ -21,6 +22,7 @@ export function GuidedSessionPanel({
   onInspect,
   onRefresh,
   refresh = { refreshing: false },
+  runs = {},
 }: {
   session: GuidedSession;
   busy: boolean;
@@ -28,6 +30,8 @@ export function GuidedSessionPanel({
   onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
   onRefresh: () => void;
   refresh?: GuideRefreshState;
+  /** Status and variant of the session's runs, from the repository snapshot. */
+  runs?: Record<string, GuidedRunFacts>;
 }) {
   const next = session.steps.find((step) => step.id === session.next_step);
   const definition = guidedSteps.find((step) => step.id === session.next_step);
@@ -76,6 +80,8 @@ export function GuidedSessionPanel({
           const step = session.steps.find((item) => item.id === definition.id);
           if (!step) return null;
           const runId = lastRun(step);
+          const links = guidedStepLinks(step, runs);
+          const reason = guidedStepReason(step, runs);
           return (
             <li key={step.id} className={session.next_step === step.id ? 'current' : undefined}>
               <div className="guided-stage-heading">
@@ -107,31 +113,27 @@ export function GuidedSessionPanel({
                   onInspect={onInspect}
                 />
               )}
-              {(!!runId || (step.id === 'concurrent' && step.run_ids.length > 1)) && (
+              {reason && (
+                <div className="guided-attention">
+                  <p>{reason}</p>
+                  <small>Start a fresh guided demo to retry this step.</small>
+                </div>
+              )}
+              {!!links.length && (
                 <div className="guided-run-links">
-                  {!!runId && (
+                  {links.map((link) => (
                     <button
-                      className="text-button"
+                      className={
+                        link.primary ? 'quiet guided-step-action' : 'text-button guided-link'
+                      }
                       type="button"
                       disabled={busy}
-                      onClick={() => onInspect(runId, step.id, step.candidate_id ?? undefined)}
+                      key={`${link.label}:${link.runId}`}
+                      onClick={() => onInspect(link.runId, step.id, link.candidate)}
                     >
-                      {step.status === 'running' || !step.candidate_id ? 'View run' : 'View result'}
+                      {link.label} <span aria-hidden="true">→</span>
                     </button>
-                  )}
-                  {step.id === 'concurrent' &&
-                    step.run_ids.length > 1 &&
-                    step.run_ids.map((id, index) => (
-                      <button
-                        className="text-button"
-                        type="button"
-                        disabled={busy}
-                        key={id}
-                        onClick={() => onInspect(id, step.id)}
-                      >
-                        Inspect concurrent run {index + 1}
-                      </button>
-                    ))}
+                  ))}
                 </div>
               )}
             </li>
