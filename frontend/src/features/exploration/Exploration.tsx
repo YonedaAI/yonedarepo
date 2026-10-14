@@ -154,6 +154,7 @@ export function Exploration({
         canStart={canStart}
         onNewRun={onCompose}
         onGuidedDemo={onGuidedDemo}
+        onGuidedContinue={onGuidedContinue}
       />
       <RunSamples
         disabled={!canStart}

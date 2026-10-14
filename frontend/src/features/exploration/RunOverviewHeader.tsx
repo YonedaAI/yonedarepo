@@ -1,4 +1,5 @@
 import { short } from '../../lib/api';
+import { RunIntent } from './RunIntent';
 import { runTitle } from './runTitle';
 
 export function RunOverviewHeader({
@@ -18,9 +19,7 @@ export function RunOverviewHeader({
     <div className="intent-row">
       <div className="run-heading">
         <h2>{runTitle(run.intent)}</h2>
-        <p className="review-intent">
-          <strong>Intent:</strong> {run.intent}
-        </p>
+        <RunIntent intent={String(run.intent ?? '')} />
         {run.criteria?.length > 0 && (
           <details className="review-criteria">
             <summary>Acceptance criteria</summary>
