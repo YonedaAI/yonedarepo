@@ -157,6 +157,10 @@ pub(crate) fn claude_arguments<'a>(
         "--setting-sources",
         "",
         "--dangerously-skip-permissions",
+        // Scheduling and monitoring tools keep the CLI alive after the turn ends; a live
+        // coordinator finished in 100 s, scheduled a wakeup and was killed at the time limit.
+        "--disallowedTools",
+        "ScheduleWakeup,CronCreate,CronDelete,CronList,Monitor,RemoteTrigger,PushNotification",
     ];
     // Only exact catalog-supported levels reach this builder after roster validation.
     let effort = match execution["reasoning_effort"].as_str() {

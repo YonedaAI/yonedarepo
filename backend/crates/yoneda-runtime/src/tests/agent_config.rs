@@ -124,6 +124,27 @@ fn model_budgets_approved_anthropic_run_uses_owner_allowance_without_hidden_cli_
     );
 }
 
+#[test]
+fn claude_harness_cannot_park_itself_after_its_turn_ends() {
+    // A live coordinator finished in 100 s, scheduled a wakeup and held the process until timeout.
+    let args = claude_arguments(
+        &json!({"harness":"claude","provider":"zai"}),
+        true,
+        "glm-5.3-flash",
+    );
+    let position = args
+        .iter()
+        .position(|arg| *arg == "--disallowedTools")
+        .expect("scheduling tools must be disallowed");
+    let blocked = args[position + 1];
+    for tool in ["ScheduleWakeup", "CronCreate", "Monitor", "RemoteTrigger"] {
+        assert!(
+            blocked.split(',').any(|name| name == tool),
+            "{tool} must be blocked"
+        );
+    }
+}
+
 #[tokio::test]
 async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     let entry = json!({"provider":"mimo","model":"flash","max_requests":40,"max_output_tokens":512,
