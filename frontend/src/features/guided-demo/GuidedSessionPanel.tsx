@@ -19,6 +19,7 @@ export function GuidedSessionPanel({
   session,
   busy,
   onStart,
+  onRetry,
   onInspect,
   onRefresh,
   refresh = { refreshing: false },
@@ -27,6 +28,8 @@ export function GuidedSessionPanel({
   session: GuidedSession;
   busy: boolean;
   onStart: (step: GuidedStepId) => void;
+  /** Starts a fresh attempt of a step whose runs all ended without a complete result. */
+  onRetry: (step: GuidedStepId) => void;
   onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
   onRefresh: () => void;
   refresh?: GuideRefreshState;
@@ -116,7 +119,17 @@ export function GuidedSessionPanel({
               {reason && (
                 <div className="guided-attention">
                   <p>{reason}</p>
-                  <small>Start a fresh guided demo to retry this step.</small>
+                  {step.id !== 'review' && (
+                    <button
+                      className="quiet guided-step-action"
+                      type="button"
+                      disabled={busy}
+                      aria-label={`Retry this step: ${definition.title}`}
+                      onClick={() => onRetry(step.id)}
+                    >
+                      Retry this step
+                    </button>
+                  )}
                 </div>
               )}
               {!!links.length && (
@@ -166,7 +179,7 @@ export function GuidedSessionPanel({
           <p role="status">The next step unlocks when this one finishes.</p>
         ) : next?.status === 'needs_attention' ? (
           <p role="status">
-            This stage needs attention. Inspect its result and recorded checks before continuing.
+            This stage needs attention. Inspect its result and recorded checks, or retry the step.
           </p>
         ) : session.next_step === null ? (
           <p role="status">

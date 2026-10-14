@@ -51,7 +51,12 @@ export function readGuidedSession(value: unknown, expectedId?: string): GuidedSe
       !step.run_ids.every((id) => typeof id === 'string' && !!id) ||
       !Array.isArray(step.evidence) ||
       !optionalString(step.candidate_id) ||
-      !optionalString(step.next_action)
+      !optionalString(step.next_action) ||
+      (step.attempt !== undefined &&
+        (!Number.isSafeInteger(step.attempt) || Number(step.attempt) < 1)) ||
+      (step.previous_run_ids !== undefined &&
+        (!Array.isArray(step.previous_run_ids) ||
+          !step.previous_run_ids.every((id) => typeof id === 'string' && !!id)))
     )
       throw new Error('The guide stage response could not be verified. Refresh this project.');
     if (
@@ -83,10 +88,12 @@ export function readGuidedSession(value: unknown, expectedId?: string): GuidedSe
 }
 const uncertainMessage =
   'The start is unconfirmed. Refresh the guide to check existing work. No additional run will be submitted.';
+/** `retryFrom` is the failed attempt a retry replaces; only a later attempt confirms it. */
 export function createGuidedStepStart(
   repo: string,
   transport: GuidedTransport = api,
   journal?: GuidedStartJournal,
+  retryFrom?: number,
 ) {
   let frozen: StartGuidedStep | undefined = journal?.read();
   let pending: Promise<GuidedSession> | undefined;
@@ -101,12 +108,13 @@ export function createGuidedStepStart(
       frozen.session_id,
     );
     const stage = session.steps.find((step) => step.id === frozen?.step_id);
-    if (
-      stage &&
-      stage.status !== 'ready' &&
-      stage.status !== 'locked' &&
-      (stage.run_ids.length || (stage.id === 'review' && !!stage.candidate_id))
-    ) {
+    const confirmed = frozen.retry
+      ? (stage?.attempt ?? 1) > (retryFrom ?? 1)
+      : stage &&
+        stage.status !== 'ready' &&
+        stage.status !== 'locked' &&
+        (stage.run_ids.length || (stage.id === 'review' && !!stage.candidate_id));
+    if (confirmed) {
       uncertain = false;
       journal?.clear();
       result = session;
@@ -130,6 +138,7 @@ export function createGuidedStepStart(
         step_id: input.step_id,
         expected_commit: input.expected_commit,
         expected_version: input.expected_version,
+        ...(input.retry ? { retry: true as const } : {}),
       };
       try {
         journal?.save(frozen);

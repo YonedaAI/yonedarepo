@@ -10,6 +10,7 @@ const render = (changes = {}) =>
       session: sessionFixture(),
       busy: false,
       onStart: () => {},
+      onRetry: () => {},
       onInspect: () => {},
       onRefresh: () => {},
       ...changes,
@@ -54,6 +55,22 @@ describe('fresh guided project stage presentation', () => {
     expect(html).toContain('class="guided-running-note"');
     expect(html).toContain('The next step unlocks when this one finishes.');
     expect(html).toContain('aria-label="Refresh guide"');
+  });
+  it('offers an accessible step retry beside the run link when a step needs attention', () => {
+    const session = sessionFixture();
+    session.steps[0] = {
+      ...session.steps[0],
+      status: 'needs_attention',
+      run_ids: ['failed-run'],
+      next_action: null,
+    };
+    const html = render({ session, runs: { 'failed-run': { status: 'failed' } } });
+    expect(html).toContain('Needs attention');
+    expect(html).toContain('Open run');
+    expect(html).toContain('>Retry this step</button>');
+    expect(html).toContain('aria-label="Retry this step: Build together"');
+    expect(html).not.toContain('Start a fresh guided demo');
+    expect(render({ session, busy: true })).toMatch(/disabled=""[^>]*>Retry this step/);
   });
   it('leads to human review only when server next_step permits it, retaining actual evidence and source ties', () => {
     const session = sessionFixture();
