@@ -29,7 +29,7 @@ fn bind<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         validate_hash(digest, &[64])?;
         let entry = &job["source_bindings"][digest];
         let binding: SourceBinding = decode(&entry["binding"])?;
-        validate_guard(&binding, entry, &context)?;
+        validate_guard(db, &binding, entry, &context)?;
         return granted(&job, c, &binding, None);
     }
     let view: SourceView = decode(&c["_source_view"])?;
@@ -111,7 +111,7 @@ fn bind<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "Source approval changed after first binding",
         ));
     }
-    validate_guard(&b, &job["source_bindings"][&digest], &context)?;
+    validate_guard(db, &b, &job["source_bindings"][&digest], &context)?;
     granted(&job, c, &b, Some(overrides))
 }
 fn granted(
@@ -139,7 +139,12 @@ fn granted(
     Ok(result)
 }
 
-fn validate_guard(b: &SourceBinding, entry: &Value, context: &Value) -> Result<()> {
+fn validate_guard<S: SqlStore>(
+    db: &S,
+    b: &SourceBinding,
+    entry: &Value,
+    context: &Value,
+) -> Result<()> {
     let expected_write = if b.access == SourceAccess::ReadOnly {
         json!([])
     } else {
@@ -147,7 +152,7 @@ fn validate_guard(b: &SourceBinding, entry: &Value, context: &Value) -> Result<(
     };
     if entry["producer_epoch"] != context["epoch"]
         || entry["task_version"] != context["task_version"]
-        || entry["plan_version"] != context["plan_version"] && b.role != SourceRole::Specialist
+        || !plan_current(db, b, entry, context)?
         || json!(b.policy_digest) != context["policy_digest"]
         || json!(b.intent_digest) != context["intent_digest"]
         || json!(b.write_paths) != expected_write
@@ -161,6 +166,46 @@ fn validate_guard(b: &SourceBinding, entry: &Value, context: &Value) -> Result<(
         ));
     }
     Ok(())
+}
+
+/// Specialists are fenced by task revision instead. A read-only coordinator keeps reading only
+/// across plan revisions that it authored itself through `repair_team`; any other change fences.
+fn plan_current<S: SqlStore>(
+    db: &S,
+    b: &SourceBinding,
+    entry: &Value,
+    context: &Value,
+) -> Result<bool> {
+    if entry["plan_version"] == context["plan_version"] || b.role == SourceRole::Specialist {
+        return Ok(true);
+    }
+    let (Some(mut revision), Some(current)) = (
+        entry["plan_version"].as_i64(),
+        context["plan_version"].as_i64(),
+    ) else {
+        return Ok(false);
+    };
+    if b.role != SourceRole::Coordinator || b.access != SourceAccess::ReadOnly {
+        return Ok(false);
+    }
+    let run = get(db, "runs", &b.run_id)?;
+    let amendments = run["team_plan_amendments"].as_array();
+    while revision < current {
+        let Some(next) = amendments
+            .into_iter()
+            .flatten()
+            .find(|a| a["supersedes_revision"] == revision)
+            .filter(|a| {
+                a["approved_by"] == "run_autonomy_policy" && a["execution_id"] == b.execution_id
+            })
+            .and_then(|a| a["plan_revision"].as_i64())
+            .filter(|next| *next > revision)
+        else {
+            return Ok(false);
+        };
+        revision = next;
+    }
+    Ok(revision == current)
 }
 
 /// Internal lineage readback; no grants are minted for application-domain validation.
