@@ -4,6 +4,7 @@ import type { Snapshot } from '../../lib/types';
 import { GuidedSessionPanel } from './GuidedSessionPanel';
 import { type GuideRefreshState, refreshGuideAndSnapshot } from './guidedRefresh';
 import { guideEvidenceRun } from './guideEvidenceRun';
+import { useGuidedRunFacts } from './useGuidedRunFacts';
 import { useGuidedSession } from './useGuidedSession';
 export function GuidedWorkspace({
   snapshot,
@@ -53,6 +54,7 @@ export function GuidedWorkspace({
     remember,
     (run, step, candidate) => void inspect(run, step, candidate),
   );
+  const runFacts = useGuidedRunFacts(snapshot, state.session);
   const [refreshState, setRefreshState] = useState<GuideRefreshState>({ refreshing: false });
   async function refreshGuide() {
     if (refreshState.refreshing) return;
@@ -84,6 +86,7 @@ export function GuidedWorkspace({
           onStart={(step) => void state.start(step)}
           onInspect={(run, step, candidate, kind) => void inspect(run, step, candidate, kind)}
           refresh={refreshState}
+          runs={runFacts}
           onRefresh={() => void refreshGuide()}
         />
       ) : (

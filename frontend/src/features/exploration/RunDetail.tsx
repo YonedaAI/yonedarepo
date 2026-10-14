@@ -52,6 +52,7 @@ export function RunDetail({
   onComparisonAction,
   onRefresh,
   onGuidedContinue,
+  focusRequest = 0,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -75,6 +76,7 @@ export function RunDetail({
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
   onGuidedContinue?: () => void;
+  focusRequest?: number;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
@@ -118,6 +120,7 @@ export function RunDetail({
   return (
     <>
       <RunOverviewHeader
+        focusRequest={focusRequest}
         run={run}
         roots={roots}
         subagents={coding.length - roots}
