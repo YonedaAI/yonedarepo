@@ -132,3 +132,82 @@ fn unacknowledged_dispatch_recovers_and_a_lost_worker_lease_is_redispatched() {
         "SETUP_TIMEOUT"
     );
 }
+
+#[test]
+fn explicit_pending_setup_retries_two_five_then_fifteen_seconds_on_native_clock() {
+    let db = project();
+    let mut now = 1000;
+    for (code, delay) in [
+        ("FORK_IN_PROGRESS", 2),
+        ("IMPORT_IN_PROGRESS", 5),
+        ("CREATE_IN_PROGRESS", 15),
+        ("FORK_IN_PROGRESS", 15),
+    ] {
+        let claimed = call(&db, json!({"op":"project_claim","id":"repo-one"}), now).unwrap();
+        assert_eq!(claimed["claimed"], true);
+        let pending = call(&db,json!({"op":"project_update","id":"repo-one","epoch":claimed["setup_epoch"],"status":"provisioning","pending_code":code,"retry_delay_seconds":0,"setup_pending_count":99}),now+100).unwrap();
+        assert_eq!(pending["retry_delay_seconds"], delay);
+        let due = now + 100 + delay * 1000;
+        assert_eq!(pending["setup_retry_at"], due);
+        assert_eq!(pending["next_dispatch_at"], due);
+        assert_eq!(pending["setup_started_at"], 1000);
+        assert_eq!(
+            call(&db, json!({"op":"project_claim","id":"repo-one"}), due - 1).unwrap()["claimed"],
+            false
+        );
+        // Lost/duplicate pending completion cannot increment the backoff again.
+        assert_eq!(call(&db,json!({"op":"project_update","id":"repo-one","epoch":claimed["setup_epoch"],"status":"provisioning","pending_code":code}),due-1).unwrap_err().code,"FENCED");
+        assert_eq!(
+            call(&db, json!({"op":"project_get","id":"repo-one"}), due - 1).unwrap(),
+            pending
+        );
+        assert_eq!(
+            call(&db, json!({"op":"project_dispatches"}), due).unwrap()["projects"][0]["id"],
+            "repo-one"
+        );
+        // Alarm's acknowledged-send throttle must not block the job it just sent.
+        call(
+            &db,
+            json!({"op":"project_dispatch_sent","id":"repo-one","epoch":claimed["setup_epoch"]}),
+            due,
+        )
+        .unwrap();
+        now = due;
+    }
+}
+
+#[test]
+fn short_pending_retry_cannot_bypass_active_lease_failure_or_deletion() {
+    let db = project();
+    let claim = call(&db, json!({"op":"project_claim","id":"repo-one"}), 1000).unwrap();
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"project_claim","id":"repo-one","retry_delay_seconds":2}),
+            2000
+        )
+        .unwrap()["claimed"],
+        false
+    );
+    let pending = call(&db,json!({"op":"project_update","id":"repo-one","epoch":claim["setup_epoch"],"status":"provisioning","pending_code":"FORK_IN_PROGRESS"}),2100).unwrap();
+    assert_eq!(pending["retry_delay_seconds"], 2);
+    let claim = call(&db, json!({"op":"project_claim","id":"repo-one"}), 4100).unwrap();
+    assert!(claim["retry_delay_seconds"].is_null());
+    let failed = call(&db,json!({"op":"project_update","id":"repo-one","epoch":claim["setup_epoch"],"status":"failed","error_code":"UPSTREAM_UNAVAILABLE"}),4200).unwrap();
+    assert!(failed["retry_delay_seconds"].is_null());
+    assert_eq!(
+        call(&db, json!({"op":"project_claim","id":"repo-one"}), 4300).unwrap()["claimed"],
+        false
+    );
+    call(&db, json!({"op":"project_retry","id":"repo-one"}), 4400).unwrap();
+    let claim = call(&db, json!({"op":"project_claim","id":"repo-one"}), 4400).unwrap();
+    let pending = call(&db,json!({"op":"project_update","id":"repo-one","epoch":claim["setup_epoch"],"status":"provisioning","pending_code":"IMPORT_IN_PROGRESS"}),4500).unwrap();
+    assert_eq!(pending["retry_delay_seconds"], 2);
+    call(&db, json!({"op":"project_delete","id":"repo-one"}), 4600).unwrap();
+    assert_eq!(
+        call(&db, json!({"op":"project_claim","id":"repo-one"}), 6500)
+            .unwrap_err()
+            .code,
+        "REPOSITORY_DELETED"
+    );
+}

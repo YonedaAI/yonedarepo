@@ -87,13 +87,13 @@ export function modelPricingSuggestion(provider: string, model: string) {
       input: '0.14',
       output: '0.28',
       note: 'MiMo overseas real-time rates apply; cache writes are currently free. Review your endpoint and account pricing before approving.',
-      url: 'https://mimo.mi.com/docs/pricing',
+      url: 'https://mimo.mi.com/docs/en-US/price/pay-as-you-go',
     },
     'mimo:mimo-v2.6-pro': {
       input: '0.435',
       output: '0.87',
       note: 'MiMo overseas real-time rates apply. Review your endpoint and account pricing before approving.',
-      url: 'https://mimo.mi.com/docs/pricing',
+      url: 'https://mimo.mi.com/docs/en-US/price/pay-as-you-go',
     },
     'zai:glm-4.7-flash': {
       input: '0',

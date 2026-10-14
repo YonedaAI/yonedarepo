@@ -35,6 +35,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, key: &str, now: i64) -> Res
                 p["setup_started_at"] = json!(now);
                 p["next_dispatch_at"] = json!(0);
                 p["lease_until"] = json!(0);
+                p["setup_pending_count"] = json!(0);
+                p["setup_retry_at"] = Value::Null;
+                p["retry_delay_seconds"] = Value::Null;
                 p["error"] = Value::Null;
                 p["error_code"] = Value::Null;
                 p["updated_at"] = json!(now);
@@ -60,6 +63,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, key: &str, now: i64) -> Res
                 put(db, key, &p)?;
                 return Ok(p);
             }
+            // A duplicate/lost-ack delivery cannot bypass pending backoff. This
+            // deadline is separate from the alarm's acknowledged-send throttle.
+            if p["setup_retry_at"].as_i64().unwrap_or(0) > now {
+                p["claimed"] = json!(false);
+                return Ok(p);
+            }
             let epoch = p["setup_epoch"]
                 .as_u64()
                 .unwrap_or(0)
@@ -68,6 +77,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, key: &str, now: i64) -> Res
             p["setup_started_at"] = json!(started);
             p["setup_epoch"] = json!(epoch);
             p["lease_until"] = json!(now.saturating_add(LEASE_MS));
+            p["setup_retry_at"] = Value::Null;
+            p["retry_delay_seconds"] = Value::Null;
             p["stage"] = json!("checking_remote");
             p["updated_at"] = json!(now);
             put(db, key, &p)?;
@@ -95,6 +106,37 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, key: &str, now: i64) -> Res
             if !["provisioning", "ready", "failed"].contains(&status.as_str()) {
                 return Err(bad("Invalid project state"));
             }
+            let pending = status == "provisioning"
+                && p["setup_epoch"].is_number()
+                && c["pending_code"].as_str().is_some_and(|code| {
+                    [
+                        "FORK_IN_PROGRESS",
+                        "IMPORT_IN_PROGRESS",
+                        "CREATE_IN_PROGRESS",
+                    ]
+                    .contains(&code)
+                });
+            let delay = if pending {
+                let count = p["setup_pending_count"]
+                    .as_u64()
+                    .unwrap_or(0)
+                    .saturating_add(1)
+                    .min(3);
+                p["setup_pending_count"] = json!(count);
+                match count {
+                    1 => 2,
+                    2 => 5,
+                    _ => 15,
+                }
+            } else {
+                15
+            };
+            p["retry_delay_seconds"] = if pending { json!(delay) } else { Value::Null };
+            p["setup_retry_at"] = if pending {
+                json!(now.saturating_add(delay * 1000))
+            } else {
+                Value::Null
+            };
             p["status"] = json!(status);
             p["stage"] = json!(if status == "provisioning" {
                 "importing"
@@ -104,7 +146,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, key: &str, now: i64) -> Res
             p["error"] = c.get("error").cloned().unwrap_or(Value::Null);
             p["error_code"] = c.get("error_code").cloned().unwrap_or(Value::Null);
             p["lease_until"] = json!(0);
-            p["next_dispatch_at"] = json!(now.saturating_add(15_000));
+            p["next_dispatch_at"] = json!(now.saturating_add(delay * 1000));
             p["updated_at"] = json!(now);
             put(db, key, &p)?;
             Ok(p)

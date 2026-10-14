@@ -2,7 +2,6 @@ import { Plus } from 'lucide-react';
 import type { Snapshot } from '../../lib/types';
 
 export function RunToolbar({
-  snapshot,
   canStart,
   onNewRun,
 }: {
@@ -17,12 +16,7 @@ export function RunToolbar({
         <h1>Development runs</h1>
         <p>Describe a change. Build together, then review the result.</p>
       </div>
-      <button
-        type="button"
-        className={snapshot.runs.length ? 'quiet' : undefined}
-        disabled={!canStart}
-        onClick={onNewRun}
-      >
+      <button type="button" className="primary" disabled={!canStart} onClick={onNewRun}>
         <Plus size={17} />
         Start a Run
       </button>

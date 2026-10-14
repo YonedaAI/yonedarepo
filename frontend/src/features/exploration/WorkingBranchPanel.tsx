@@ -36,17 +36,23 @@ export function WorkingBranchPanel({
         version {branch.version}
       </p>
       <p>
-        Canonical source{' '}
-        <code>
-          {short(snapshot.repository.published_commit ?? snapshot.repository.head_commit)}
-        </code>{' '}
-        is separate. Checked work has not been published by advancing this branch.
+        {branch.working_commit === snapshot.repository.published_commit ? (
+          `This ${branch.latest_candidate_id ? 'checked' : 'working'} revision matches your published source. Continue from it to make the next change.`
+        ) : (
+          <>
+            Canonical source{' '}
+            <code>
+              {short(snapshot.repository.published_commit ?? snapshot.repository.head_commit)}
+            </code>{' '}
+            is separate. Checked work has not been published by advancing this branch.
+          </>
+        )}
       </p>
       {!branch.latest_candidate_id && <p>No checked candidate has advanced this branch yet.</p>}
       {!reviewer && onContinue && (
         <button
           type="button"
-          className="quiet"
+          className={branch.latest_candidate_id ? 'primary' : 'quiet'}
           disabled={busy || !canStart || active || branch.status !== 'active'}
           onClick={() => onContinue(branch)}
         >

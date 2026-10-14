@@ -1,5 +1,6 @@
 import { error, readJson, response, safeId } from './http';
-import { scheduleProject } from './project-provisioning';
+import { failureCode, writeLog } from './logging';
+import { provisionAndScheduleProject, scheduleProject } from './project-provisioning';
 import { changeProjectVisibility } from './project-visibility';
 import { sitePolicy } from './site-policy';
 import { sha } from './storage';
@@ -30,6 +31,7 @@ export async function projectRoute(
   req: Request,
   env: Env,
   principal: Principal,
+  ctx?: Pick<ExecutionContext, 'waitUntil'>,
 ): Promise<Response | null> {
   const parts = new URL(req.url).pathname.split('/').filter(Boolean);
   if (parts[1] !== 'projects') return null;
@@ -50,6 +52,17 @@ export async function projectRoute(
       policy: body.policy ?? sitePolicy,
     });
     await scheduleProject(env, principal.workspace, project);
+    // Durable queue/alarm intent exists before the optional latency fast path.
+    // Remote I/O stays in background; its existing lease/deadline is unchanged.
+    if (ctx && project.status === 'provisioning')
+      ctx.waitUntil(
+        provisionAndScheduleProject(env, principal.workspace, project).catch((failure: unknown) => {
+          writeLog('project.background_setup_failed', {
+            repo_id: project.id,
+            error_code: failureCode(failure),
+          });
+        }),
+      );
     return response(project, project.status === 'ready' ? 200 : 202);
   }
   if (

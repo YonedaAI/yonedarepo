@@ -108,10 +108,7 @@ export function ContextChain({
                       </li>
                     ))}
                   </ul>
-                  <p className="context-usage-note">
-                    These checks apply to this source revision. They do not verify the cited
-                    assertion.
-                  </p>
+                  <p className="context-usage-note">Independent checks for this source revision.</p>
                 </div>
               ) : (
                 <small>{captureCheckNote(candidate, citation.candidates)}</small>

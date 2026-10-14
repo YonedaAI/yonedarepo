@@ -77,14 +77,18 @@ it('reschedules a pending import and completes setup from its queue message with
   const message = { body: { v: 1, kind: 'provision', repo_id: project.id, job_id: project.id, workspace: 'alice' }, ack, retry } as unknown as Message<any>;
   await provisionMessage(fake, message);
   expect(ack).toHaveBeenCalledOnce(); expect(retry).not.toHaveBeenCalled();
-  expect(send).not.toHaveBeenCalled();
+  expect(send).toHaveBeenCalledExactlyOnceWith(message.body, { delaySeconds: 2 });
   const intent = await workspace(bindings, 'alice', { op: 'project_get', id: project.id });
   expect(intent.status).toBe('provisioning');
   expect(intent.next_dispatch_at).toBeGreaterThan(Date.now());
+  expect(intent.setup_retry_at - intent.updated_at).toBe(2000);
   importing = false;
+  // Deliver at the real native not-before deadline, without sleeping for the
+  // 15-second alarm or forging different JS and Rust clocks.
+  await new Promise(resolve => setTimeout(resolve, Math.max(0, intent.setup_retry_at - Date.now()) + 20));
   await provisionMessage(fake, message);
   expect((await workspace(bindings, 'alice', { op: 'project_get', id: project.id })).status).toBe('ready');
-  expect(ack).toHaveBeenCalledTimes(2); expect(send).not.toHaveBeenCalled();
+  expect(ack).toHaveBeenCalledTimes(2); expect(send).toHaveBeenCalledOnce();
 });
 it('keeps an alarm and dispatch intent when the first queue send fails', async () => {
   const project = await reserve();
