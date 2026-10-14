@@ -339,3 +339,35 @@ fn guided_extension_citing_integrator_record_without_supersedes_link_does_not_co
     });
     assert_ne!(view["steps"][1]["status"], "complete");
 }
+/// Hosted repo-48a5 shape: the continuation specialist opened the prior decision and cited it
+/// only in its own task handoff (a finding without an intent tag), not in a separate record.
+fn extend_citing_only_in_handoff(handoff_run: impl FnOnce(&str) -> String) -> Value {
+    let (db, view) = through_extend();
+    let rid = view["steps"][1]["run_ids"][0].as_str().unwrap().to_owned();
+    let citation = get(&db, "nodes", &format!("context:citation:{rid}")).unwrap();
+    let prior = citation["data"]["links"][0]["target"].clone();
+    let (author, epoch) = (
+        citation["author"].clone(),
+        citation["data"]["epoch"].clone(),
+    );
+    db.query(
+        "DELETE FROM nodes WHERE id=?",
+        &[json!(format!("context:citation:{rid}"))],
+    )
+    .unwrap();
+    assert_ne!(read(&db)["steps"][1]["status"], "complete");
+    let id = format!("handoff-assertion:{}:{epoch}:f", author.as_str().unwrap());
+    create(&db, "team_handoffs", &id, &json!({"id":id,"run_id":handoff_run(&rid),"task_id":"core","execution_id":author,"epoch":epoch,"authority":"assertion","summary":"Bookmarks keep working because task ids never change","interface_contract":"taskLink(task)","references":[prior],"created_at":9})).unwrap();
+    node(&db, &id, "finding", "Bookmarks keep working because task ids never change", author.as_str().unwrap(), 9, json!({"summary":"Bookmarks keep working","references":[prior],"links":[{"relation":"supports","target":prior}],"epoch":epoch,"authority":"assertion"})).unwrap();
+    read(&db)
+}
+#[test]
+fn guided_extension_citing_prior_decision_in_own_handoff_completes() {
+    let view = extend_citing_only_in_handoff(|rid| rid.to_owned());
+    assert_eq!(view["steps"][1]["status"], "complete");
+}
+#[test]
+fn guided_extension_handoff_citation_from_another_run_does_not_complete() {
+    let view = extend_citing_only_in_handoff(|_| "guide-other-run".to_owned());
+    assert_ne!(view["steps"][1]["status"], "complete");
+}
