@@ -173,15 +173,23 @@ pub(super) fn continuation<S: SqlStore>(
             })
         };
         let nodes = all(db, "nodes")?;
+        let intent = format!(
+            "intent:{}",
+            candidate["run_id"].as_str().unwrap_or_default()
+        );
+        // A task handoff is the agent's own recorded finding; it carries no intent tag, so it
+        // belongs to this run only through its team handoff row.
+        let in_run = |node: &Value| {
+            node["data"]["intent_id"] == intent
+                || (node["data"]["authority"] == "assertion"
+                    && get(db, "team_handoffs", node["id"].as_str().unwrap_or_default())
+                        .is_ok_and(|row| row["run_id"] == candidate["run_id"]))
+        };
         let cited = |id: &Value| {
             nodes.iter().any(|node| {
                 node["author"] == handoff["execution_id"]
                     && node["data"]["epoch"] == handoff["epoch"]
-                    && node["data"]["intent_id"]
-                        == format!(
-                            "intent:{}",
-                            candidate["run_id"].as_str().unwrap_or_default()
-                        )
+                    && in_run(node)
                     && ["finding", "proposed_decision"]
                         .iter()
                         .any(|kind| node["kind"] == *kind)
