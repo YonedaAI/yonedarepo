@@ -23,7 +23,7 @@ export function WorkspaceRail({
         <a className="brand" href="/">
           <span className="brand-glyph">y</span>
           <span>
-            YonedaRepo<small>Context for what comes next.</small>
+            YonedaRepo<small>Agent-First Repository</small>
           </span>
         </a>
         <button

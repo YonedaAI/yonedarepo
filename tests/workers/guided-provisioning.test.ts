@@ -10,6 +10,7 @@ import type { Json } from '../../cloudflare/worker/types';
 import { api, bindings, signup } from './reviewer-fixture';
 import { provisionProject } from '../../cloudflare/worker/project-provisioning';
 import { ledger } from '../../cloudflare/worker/storage';
+import { workspace } from '../../cloudflare/worker/workspace';
 
 afterEach(reset);
 async function fixture() {
@@ -105,4 +106,59 @@ it('a fresh guided fork is ready only after Native init retains the exact profil
   expect(session.steps[0]).toMatchObject({ id: 'build', status: 'ready', run_ids: [] });
   expect(session.source_transport).toBe('git-native-v1');
   expect(session.source_allowlisted).toBe(false);
+});
+
+it('an old Workspace DO that ignores the private marker cannot enqueue guided provisioning', async () => {
+  const f = await fixture();
+  const cookie = await signup('guided_old_workspace');
+  const original = bindings.WORKSPACES;
+  // Simulate the old-version command boundary: unknown _guided_project is
+  // ignored. Actual workspace reservation and alarm intent still use Rust/SQL.
+  f.local.WORKSPACES = { idFromName: (name: string) => original.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body));
+      if (command.op === 'project_reserve') delete command._guided_project;
+      return original.get(id).fetch(url, { ...init, body: JSON.stringify(command) });
+    } }) } as unknown as DurableObjectNamespace;
+  const response = await api(f.local, '/api/projects', cookie, {
+    request_id: 'guided-old-workspace-request-0001', name: 'Unadopted guide', guided_profile_id: 'task-board-v1',
+  });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ error: { code: 'LEDGER_UPDATING' } });
+  expect(f.local.AGENT_QUEUE.send).not.toHaveBeenCalled();
+});
+
+it('alarm or queue recovery of an unmarked guided policy cannot fall back to the ordinary starter', async () => {
+  const f = await fixture();
+  await signup('guided_old_pending');
+  const profile = await publishedGuidedProfile(f.local);
+  const project = await workspace(bindings, 'guided_old_pending', { op: 'project_reserve',
+    id: 'unmarked-guided-project', name: 'Old guided reservation', source: null, policy: profile.policy });
+  f.get.mockClear().mockRejectedValue(new Error('Ordinary starter fallback must not run'));
+  const result = await provisionProject(f.local, 'guided_old_pending', project);
+  expect(result).toMatchObject({ status: 'failed', error_code: 'LEDGER_UPDATING' });
+  expect(f.get).not.toHaveBeenCalled();
+  await expect(ledger(bindings, project.id, { op: 'repository_status' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+});
+
+it('missing Workspace capability fails before reservation, index or starter reads', async () => {
+  const f = await fixture();
+  const owner = 'guided_old_capability';
+  const cookie = await signup(owner);
+  const original = bindings.WORKSPACES;
+  f.local.WORKSPACES = { idFromName: (name: string) => original.idFromName(name),
+    get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
+      const command = JSON.parse(String(init.body));
+      if (command.op === 'workspace_capabilities')
+        return Response.json({ error: { code: 'NOT_FOUND', message: 'Unknown workspace operation' } }, { status: 409 });
+      return original.get(id).fetch(url, init);
+    } }) } as unknown as DurableObjectNamespace;
+  const response = await api(f.local, '/api/projects', cookie, {
+    request_id: 'guided-old-capability-request-0001', name: 'No old-DO setup', guided_profile_id: 'task-board-v1',
+  });
+  expect(response.status).toBe(409);
+  expect(await response.json()).toMatchObject({ error: { code: 'LEDGER_UPDATING' } });
+  expect((await workspace(bindings, owner, { op: 'projects' })).projects).toEqual([]);
+  expect(f.get).not.toHaveBeenCalled();
+  expect(f.local.AGENT_QUEUE.send).not.toHaveBeenCalled();
 });

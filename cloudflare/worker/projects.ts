@@ -1,4 +1,4 @@
-import { guidedProjectInput } from './guided-project';
+import { assertGuidedReservation, guidedProjectInput } from './guided-project';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
 import { provisionAndScheduleProject, scheduleProject } from './project-provisioning';
@@ -55,6 +55,7 @@ export async function projectRoute(
       name: body.name,
       ...configuration,
     });
+    await assertGuidedReservation(project, configuration);
     await scheduleProject(env, principal.workspace, project);
     // Durable queue/alarm intent exists before the optional latency fast path.
     // Remote I/O stays in background; its existing lease/deadline is unchanged.

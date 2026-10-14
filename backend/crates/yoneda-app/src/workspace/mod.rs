@@ -74,7 +74,8 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
                 grants::handle(&db, &command, now)
             }
             "project_dispatches" => project_dispatch::pending(&db, now),
-            "projects"
+            "workspace_capabilities"
+            | "projects"
             | "project_reserve"
             | "project_update"
             | "project_get"
