@@ -371,3 +371,47 @@ fn guided_extension_handoff_citation_from_another_run_does_not_complete() {
     let view = extend_citing_only_in_handoff(|_| "guide-other-run".to_owned());
     assert_ne!(view["steps"][1]["status"], "complete");
 }
+/// Hosted repo-48a5 shape: the interface specialist's summary also mentions stable IDs and sorts
+/// first, but the continuation correctly cites the behavior specialist's actual decision.
+#[test]
+fn guided_extension_citing_the_actual_decision_completes_despite_a_stable_id_summary() {
+    let db = fixture();
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evidence_fixture::checked(&db, &first, "build", true);
+    let ui = get(&db, "executions", &format!("{first}:task:ui")).unwrap();
+    node(
+        &db,
+        "context:0-ui-summary",
+        "finding",
+        "Interface renders three stable-ID seed tasks",
+        ui["id"].as_str().unwrap(),
+        20,
+        json!({"intent_id":format!("intent:{first}"),"epoch":ui["epoch"],"links":[]}),
+    )
+    .unwrap();
+    let build = read(&db);
+    assert_eq!(build["steps"][0]["status"], "complete");
+    assert!(
+        build["steps"][0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["record_id"] == format!("context:choice:{first}")),
+        "build shows the actual decision"
+    );
+    let prior = format!("context:choice:{first}");
+    let mut c = request("extend");
+    c["expected_commit"] = json!("b".repeat(40));
+    c["expected_version"] = json!(1);
+    let extended = execute(&db, c).unwrap();
+    let rid = extended["steps"][1]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evidence_fixture::checked_with_context(&db, &rid, "extend", true, Some(&prior));
+    assert_eq!(read(&db)["steps"][1]["status"], "complete");
+}
