@@ -7,11 +7,14 @@ import { createHash, randomUUID } from 'node:crypto';
 import { reviewerClient, safeOrigin, privateFile } from './guided/credentials.mjs';
 import { driveGuided } from './guided/driver.mjs';
 
-export const usage = `node tools/guided-acceptance.mjs --expected-revision SHA [--transport api-source-v1|git-native-v1] [--run] [--state PATH] [--key-file MODE0600_FILE | --username EXISTING_ACCOUNT]
+export const usage = `node tools/guided-acceptance.mjs --expected-revision SHA [--transport api-source-v1|git-native-v1] [--run] [--state PATH] [--key-file MODE0600_FILE | --username EXISTING_ACCOUNT] [--product-gate [--gate-out DIR]]
 Default: read-only session inspection. --run creates a fresh task-board-v1 project and advances its bounded steps.
 Resume with --run and the SAME --state file; saved session/request IDs are never replaced.
 Key input is hidden terminal/stdin or a mode-0600 file; never an argument.
-No publication, funding reset, provider reconfiguration or context-causality claim.`;
+No publication, funding reset, provider reconfiguration or context-causality claim.
+--product-gate: after read_only_review, run the driver-side browser check (system Chrome) on the
+exact checked final preview and record stage timing in the state file. Failure exits 1 and
+leaves demo_ready false. It is not an in-container check.`;
 
 export function parseArgs(args) {
   const options = {
@@ -26,12 +29,13 @@ export function parseArgs(args) {
     '--username': 'username',
     '--expected-revision': 'expectedRevision',
     '--transport': 'transport',
+    '--gate-out': 'gateOut',
   };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
     if (argument === '--help' && args.length === 1) return { help: true };
-    if (argument === '--run') {
-      options.run = true;
+    if (argument === '--run' || argument === '--product-gate') {
+      options[argument === '--run' ? 'run' : 'productGate'] = true;
       continue;
     }
     if (!names[argument] || !args[index + 1] || args[index + 1].startsWith('--'))
@@ -83,6 +87,16 @@ export async function main(args = process.argv.slice(2)) {
     ...options,
     save: (value) => save(path, value),
   });
+  let gate;
+  if (options.productGate && result.mode === 'read_only_review') {
+    // Loaded lazily: the browser dependency is needed only for this optional post-step.
+    const { productGateStep } = await import('./guided/post-review.mjs');
+    gate = await productGateStep(client, state, {
+      outRoot: options.gateOut,
+      save: (value) => save(path, value),
+    });
+    if (!gate.demo_ready) process.exitCode = 1;
+  }
   // Print only public identifiers and truthful mode, never API bodies or credential state.
   console.log(
     JSON.stringify({
@@ -92,6 +106,15 @@ export async function main(args = process.argv.slice(2)) {
       next_step: result.next_step ?? result.session?.next_step,
       message: result.message,
       context_causal_effect: null,
+      product_gate: options.productGate
+        ? (gate && {
+            outcome: gate.product_gate.outcome,
+            failed: gate.product_gate.failed,
+            result_path: gate.product_gate.result_path,
+          }) ?? 'runs only after read_only_review'
+        : undefined,
+      demo_ready: gate?.demo_ready,
+      bottleneck: gate?.timing?.total?.bottleneck,
       review: result.repo_id
         ? `${options.origin}/?repo=${encodeURIComponent(result.repo_id)}`
         : undefined,
