@@ -58,10 +58,18 @@ export function RepositoryWorkspace({
     if (typeof bound?.guided?.session_id === 'string')
       onGuidedSession(snapshot.repository.id, bound.guided.session_id);
   }, [snapshot.runs, snapshot.repository.id, guidedSessionId, onGuidedSession, nativeGuide]);
+  // Each request to open a run, even the same run again, scrolls to and focuses its heading.
+  const [runFocus, setRunFocus] = useState(0);
   function inspectGuideRun(runId: string, _step: GuidedStepId, _candidate?: string, kind?: string) {
     setGuidedRunId(runId);
     setEvidenceRun(runId);
-    setView(kind?.includes('conflict') ? 'history' : kind?.includes('context') ? 'graph' : 'runs');
+    const next = kind?.includes('conflict')
+      ? 'history'
+      : kind?.includes('context')
+        ? 'graph'
+        : 'runs';
+    if (next === 'runs') setRunFocus((count) => count + 1);
+    setView(next);
   }
   const [evidenceRun, setEvidenceRun] = useState('');
   const [history, setHistory] = useState<Graph | null>(null);
@@ -158,6 +166,7 @@ export function RepositoryWorkspace({
           reviewer={reviewer}
           snapshot={visible}
           focusedRunId={guidedRunId || undefined}
+          focusRequest={runFocus}
           onGuidedDemo={onGuidedDemo}
           onGuidedContinue={guideSession === undefined ? undefined : () => setView('guided')}
           onChange={onChange}
