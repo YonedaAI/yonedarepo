@@ -52,11 +52,12 @@ All hosted items were observed on 2026-10-14 against `yonedarepo.com`.
 | Local gates | `yoneda-app` 403 tests; `yoneda-runtime` lib 132 + `source_http` 12 + `source_write_receipt` 5; focused Workers suites 140–162 tests; frontend 311 tests; Clippy and rustfmt clean. These are focused slices, not one monolithic `cargo xtask check` run. |
 | Public source | Public CI green on export `22481c1`. |
 
+**Demo video:** the [October 14 walkthrough](https://github.com/MagnetonIO/yonedarepo/releases/tag/reviewer-2026-10-14) ([MP4](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-14/yonedarepo-demo.mp4), 6:59.9, SHA-256 `6c8c8d4ffec737594311076202955a6fdf31350e2504d450e71274bf2be2deaa`) covers the current Start a Run, guided demo, coordination, review, context graph and Cloudflare architecture. It is an edited walkthrough of real product captures with motion graphics and an AI narrator voice.
+
 **Not yet verified (TODO — lead to fill in):**
 
 - TODO: full guided canary on the **Git-native** transport — context continuation, conflict reconciliation and final checks (run ID, revisions, check results).
 - TODO: full guided canary on the **lazy-source** transport — context continuation, conflict reconciliation and final checks (run ID, revisions, check results).
-- TODO: demo video link and SHA-256 for the current guided UI.
 
 Until those entries are filled in, only the build stage above is hosted evidence for the guided demo. Earlier dated results are in [release evidence](release-evidence.md) and the [implementation ledger](progress.md).
 
@@ -112,6 +113,6 @@ Agent sessions and searchable decisions exist in [Entire](https://docs.entire.io
 | Features and bug fixes across runs | A six-chain maintenance study completed 18 stages: 16 passed, two failed. Plain notes and graph each passed both full chains; both source-only chains failed the final duplicate-registration case. | Separate maintenance evidence, not a coordinated-team claim. |
 | Platform failure behavior | Real bounded capacity deferrals, injected publication-acknowledgement recovery and a disjoint two-parent refresh passed hosted checks without model calls. | Injected fault and small workload; broad scalability is not claimed. |
 
-The October 13 maintenance acceptance was run `run-699e54e0-d070-443c-a0df-9e8272835c5c`, revision `53033856054d10a35f8c967f39b609c30b629732`: a request-key ownership bug fixed using prior run context; six protected tests passed after one automatic repair. The [October 13 walkthrough video](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-13/yonedarepo-reviewer.mp4) (SHA-256 `494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010`) is an edited walkthrough that predates the guided demo and the Start a Run interface. Full dated history: [release evidence](release-evidence.md), [machine-readable record](release-evidence.json).
+The October 13 maintenance acceptance was run `run-699e54e0-d070-443c-a0df-9e8272835c5c`, revision `53033856054d10a35f8c967f39b609c30b629732`: a request-key ownership bug fixed using prior run context; six protected tests passed after one automatic repair. The earlier [October 13 walkthrough video](https://github.com/MagnetonIO/yonedarepo/releases/download/reviewer-2026-10-13/yonedarepo-reviewer.mp4) (SHA-256 `494a0888600e3fbab362b76387e0842e99fec653936b19bbd01ecdb745402010`) is an edited walkthrough that predates the guided demo and the Start a Run interface. Full dated history: [release evidence](release-evidence.md), [machine-readable record](release-evidence.json).
 
 The competition application, eligibility and attendance are submitted manually by the owner.
