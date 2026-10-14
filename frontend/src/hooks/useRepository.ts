@@ -4,6 +4,7 @@ import type { AccountIdentity, ProjectMetadata, Repository, Snapshot } from '../
 import { coalesceRefresh } from './refreshCoalescer';
 import { RepositoryReads } from './repositoryReads';
 import { refreshRepository } from './repositoryRefresh';
+import { selectRepository, withoutRepositoryLink } from './repositorySelection';
 
 const LIVE_REFRESH_INTERVAL_MS = 3000;
 
@@ -92,16 +93,19 @@ export function useRepository() {
       setSessionEnded(false);
       setIdentity(result.identity ?? null);
       setRepositories(available);
-      if (requestedRepositoryId && !available.some((repo) => repo.id === requestedRepositoryId)) {
+      const { id: next, missing } = selectRepository({
+        requested: requestedRepositoryId,
+        current: selectedId.current,
+        available,
+        deleted: deletedIds.current,
+      });
+      if (missing) {
         selectedId.current = '';
         setCurrentId('');
         setSnapshot(null);
         setError(`Repository "${requestedRepositoryId}" was not found for this link.`);
         return;
       }
-      const next = available.some((repo) => repo.id === selectedId.current)
-        ? selectedId.current
-        : (available[0]?.id ?? '');
       if (next !== selectedId.current) setSnapshot(null);
       selectedId.current = next;
       setCurrentId(next);
@@ -252,6 +256,9 @@ export function useRepository() {
       if (result.status !== 'deleted') throw new Error('Repository deletion was not confirmed.');
       reads.current.cancel();
       deletedIds.current.add(repository.id);
+      // A reload must not follow a link to the repository that no longer exists.
+      if (repository.id === requestedRepositoryId && typeof window !== 'undefined')
+        window.history.replaceState(null, '', withoutRepositoryLink(window.location.href));
       generation.current++;
       const remaining = repositories.filter((repo) => !deletedIds.current.has(repo.id));
       setRepositories(remaining);
@@ -264,7 +271,7 @@ export function useRepository() {
       await discover();
       return { cleanup_pending: result.cleanup_pending !== false };
     },
-    [repositories, discover, setError],
+    [repositories, discover, requestedRepositoryId, setError],
   );
   const signOut = useCallback(async () => {
     reads.current.cancel();
