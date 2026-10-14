@@ -71,6 +71,9 @@ export async function guidedRoute(
     throw guidedFailure('FORBIDDEN', 'Use your normal workspace account for the guide.');
   if (req.method !== (action === 'guided_session' ? 'GET' : 'POST'))
     throw guidedFailure('NOT_FOUND', 'Unknown guided operation.');
+  // Starting guided work spends operator-funded agents; reading a session stays available.
+  if (action === 'start_guided_step' && principal.reviewer !== true)
+    throw guidedFailure('FORBIDDEN', 'The guided demo is available to reviewer accounts only.');
   const repository = await ledger(env, repo, {
     op: 'repository_status',
     _workspace: principal.workspace,

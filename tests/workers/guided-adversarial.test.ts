@@ -9,7 +9,7 @@ import { fetchRequest } from '../../cloudflare/worker/routes';
 import { sourceFingerprint } from '../../cloudflare/worker/source-crypto';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
-import { signup } from './reviewer-fixture';
+import { reviewerSignup, signup } from './reviewer-fixture';
 import { providerRegistry } from '../../shared/provider-registry';
 
 const bindings = env as unknown as Env;
@@ -39,8 +39,8 @@ function prepared(): Json {
         { id: 'ui', title: 'UI', instructions: 'Implement task interface', agent: 1, depends_on: [], write_paths: ['public/app.mjs'] },
       ] } };
 }
-async function fixture(guidedProject = true) {
-  const cookie = await signup(owner);
+async function fixture(guidedProject = true, reviewer = true) {
+  const cookie = reviewer ? await reviewerSignup(owner) : await signup(owner);
   const policy = guidedPolicy(bundle);
   await call({ op: 'init', id: repo, name: 'Offline guided authority fixture', workspace: owner,
     remote: { namespace: 'yoneda-test', name: repo, branch: 'main' }, commit: base, policy,
@@ -162,6 +162,26 @@ it('the actual HTTP guide GET retains the provisioned native marker and rejects 
   expect(rejected.status).toBe(409);
   expect(await rejected.json<Json>()).toMatchObject({ error: { code: 'INVALID_INPUT' } });
   expect(await state()).toEqual(before);
+});
+
+it('a non-reviewer owner can read the guide but cannot start operator-funded guided work', async () => {
+  const cookie = await fixture(true, false);
+  const before = await state();
+  const get = await fetchRequest(new Request(`https://yoneda/api/repos/${repo}/guided_session?session_id=${encodeURIComponent(session)}`, { headers: { cookie } }), bindings);
+  const view = await get.json<Json>();
+  expect(get.status, JSON.stringify(view)).toBe(200);
+  expect(view.steps[0]).toMatchObject({ status: 'ready', run_ids: [] });
+  const start = { request_id: 'ordinary-build-request', session_id: view.session_id,
+    profile_id: 'task-board-v1', step_id: 'build', expected_commit: view.working_revision.commit,
+    expected_version: view.working_version };
+  const rejected = await fetchRequest(new Request(`https://yoneda/api/repos/${repo}/start_guided_step`, {
+    method: 'POST', headers: { cookie }, body: JSON.stringify(start),
+  }), bindings);
+  expect(rejected.status).toBe(403);
+  expect(await rejected.json<Json>()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  // No approval, run, job, event or outbox entry was created.
+  expect(await state()).toEqual(before);
+  expect((await read()).steps[0]).toMatchObject({ status: 'ready', run_ids: [] });
 });
 
 it('real capture, proposed-decision and transcript metadata unlock continuation; replay survives eviction without new work', async () => {

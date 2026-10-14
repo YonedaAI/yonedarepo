@@ -7,7 +7,7 @@ import { publishedGuidedProfile, type GuidedEnv } from '../../cloudflare/worker/
 import { canonicalBundle } from '../../cloudflare/worker/test-bundle';
 import { sha } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
-import { api, bindings, signup } from './reviewer-fixture';
+import { api, bindings, reviewerSignup, signup } from './reviewer-fixture';
 import { provisionProject } from '../../cloudflare/worker/project-provisioning';
 import { ledger } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -51,7 +51,7 @@ it('rejects starter history and corrupted protected bytes before reserving a fre
 
 it('fresh guide creation retains the private marker; retry does not refresh seed identity or create a new repository', async () => {
   const f = await fixture();
-  const cookie = await signup('guided_creation');
+  const cookie = await reviewerSignup('guided_creation');
   const body = { request_id: 'guided-create-request-0001', name: 'Fresh task board', guided_profile_id: 'task-board-v1' };
   const first = await api(f.local, '/api/projects', cookie, body);
   expect(first.status).toBe(202);
@@ -74,7 +74,7 @@ it('fork readback rejects target adoption despite matching commit and tree', asy
 
 it('a fresh guided fork is ready only after Native init retains the exact profile and policy', async () => {
   const f = await fixture();
-  const cookie = await signup('guided_fork_creation');
+  const cookie = await reviewerSignup('guided_fork_creation');
   const response = await api(f.local, '/api/projects', cookie, {
     request_id: 'guided-full-fork-request-0001', name: 'Fresh checked starter', guided_profile_id: 'task-board-v1',
   });
@@ -108,9 +108,23 @@ it('a fresh guided fork is ready only after Native init retains the exact profil
   expect(session.source_allowlisted).toBe(false);
 });
 
+it('a non-reviewer cannot create a guided project and nothing is reserved or read', async () => {
+  const f = await fixture();
+  const owner = 'guided_ordinary_account';
+  const cookie = await signup(owner);
+  const response = await api(f.local, '/api/projects', cookie, {
+    request_id: 'guided-ordinary-request-0001', name: 'Ordinary guide', guided_profile_id: 'task-board-v1',
+  });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ error: { code: 'FORBIDDEN' } });
+  expect((await workspace(bindings, owner, { op: 'projects' })).projects).toEqual([]);
+  expect(f.get).not.toHaveBeenCalled();
+  expect(f.local.AGENT_QUEUE.send).not.toHaveBeenCalled();
+});
+
 it('an old Workspace DO that ignores the private marker cannot enqueue guided provisioning', async () => {
   const f = await fixture();
-  const cookie = await signup('guided_old_workspace');
+  const cookie = await reviewerSignup('guided_old_workspace');
   const original = bindings.WORKSPACES;
   // Simulate the old-version command boundary: unknown _guided_project is
   // ignored. Actual workspace reservation and alarm intent still use Rust/SQL.
@@ -144,7 +158,7 @@ it('alarm or queue recovery of an unmarked guided policy cannot fall back to the
 it('missing Workspace capability fails before reservation, index or starter reads', async () => {
   const f = await fixture();
   const owner = 'guided_old_capability';
-  const cookie = await signup(owner);
+  const cookie = await reviewerSignup(owner);
   const original = bindings.WORKSPACES;
   f.local.WORKSPACES = { idFromName: (name: string) => original.idFromName(name),
     get: (id: DurableObjectId) => ({ fetch: async (url: string, init: RequestInit) => {
