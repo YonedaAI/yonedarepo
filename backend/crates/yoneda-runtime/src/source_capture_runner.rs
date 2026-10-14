@@ -119,7 +119,10 @@ pub(crate) async fn execute_with(
     let strategy = job["payload"]["execution"]["strategy"]
         .as_str()
         .unwrap_or("Candidate");
-    Ok(
-        json!({"id":format!("candidate:{id}:{epoch}"),"revision":verified["revision"],"commit":commit,"tree":tree,"paths":files.edits.keys().collect::<Vec<_>>(),"summary":format!("{strategy} approach"),"parents":context.binding.parents,"diff":diff,"source_changeset_digest":context.digest,"source_manifest_digest":context.digest,"incremental_capture":{"version":1,"recovered_ack":push.recovered_ack,"pack_uploaded":push.uploaded}}),
-    )
+    let mut result = json!({"id":format!("candidate:{id}:{epoch}"),"revision":verified["revision"],"commit":commit,"tree":tree,"paths":files.edits.keys().collect::<Vec<_>>(),"summary":format!("{strategy} approach"),"parents":context.binding.parents,"diff":diff,"source_changeset_digest":context.digest,"source_manifest_digest":context.digest,"incremental_capture":{"version":1,"recovered_ack":push.recovered_ack,"pack_uploaded":push.uploaded}});
+    // Integrator captures attest the frozen integration manifest, as the Git-native path does.
+    if let Some(digest) = job["payload"].get("integration_digest") {
+        result["integration_digest"] = digest.clone();
+    }
+    Ok(result)
 }
