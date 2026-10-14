@@ -14,10 +14,14 @@ pub(super) fn execute<S: SqlStore>(
     if request.is_empty() || request.len() > 128 {
         return Err(bad("Invalid guide request identity"));
     }
+    let retry = retry::requested(c)?;
     let key = yoneda_core::digest(request.as_bytes());
-    let fingerprint = yoneda_core::fingerprint(
-        &json!({"session":session["session_id"],"profile":session["profile_id"],"step":step,"commit":c["expected_commit"],"version":c["expected_version"]}),
-    )?;
+    let mut identity = json!({"session":session["session_id"],"profile":session["profile_id"],"step":step,"commit":c["expected_commit"],"version":c["expected_version"]});
+    if retry {
+        // Only retries carry the flag so receipts recorded before retries existed still replay.
+        identity["retry"] = json!(true);
+    }
+    let fingerprint = yoneda_core::fingerprint(&identity)?;
     if let Some(old) = session["requests"].get(&key) {
         if old["fingerprint"] != fingerprint {
             return Err(Error::new(
@@ -33,14 +37,15 @@ pub(super) fn execute<S: SqlStore>(
     {
         return Err(Error::new("HEAD_MOVED", "Guided checked head changed"));
     }
-    if !session["steps"][index]["run_ids"]
+    if retry {
+        retry::check(db, &session, index, &view)?;
+    } else if !session["steps"][index]["run_ids"]
         .as_array()
         .is_none_or(Vec::is_empty)
         || session["steps"][index]["started"] == true
     {
         return Ok(view);
-    }
-    if view["steps"][index]["status"] != "ready" {
+    } else if view["steps"][index]["status"] != "ready" {
         return Err(Error::new(
             "GUIDED_STEP_LOCKED",
             "Finish verified evidence from the preceding step",
@@ -85,17 +90,14 @@ pub(super) fn execute<S: SqlStore>(
     if prepared.len() != count {
         return Err(bad("Guided step needs its exact trusted run count"));
     }
+    let attempt = if retry {
+        retry::advance(&mut session, index)
+    } else {
+        1
+    };
+    let session_id = string(&session, "session_id")?;
     let ids: Vec<String> = (0..count)
-        .map(|ordinal| {
-            format!(
-                "guide-{}-{step}-{ordinal}",
-                &yoneda_core::digest(
-                    string(&session, "session_id")
-                        .unwrap_or_default()
-                        .as_bytes()
-                )[..24]
-            )
-        })
+        .map(|ordinal| retry::run_id(&session_id, &step, ordinal, attempt))
         .collect();
     session["steps"][index]["run_ids"] = json!(ids);
     session["steps"][index]["started"] = json!(true);
@@ -154,7 +156,11 @@ pub(super) fn execute<S: SqlStore>(
         db,
         "guided.step_started",
         now,
-        json!({"session_id":session["session_id"],"step_id":step,"run_ids":ids}),
+        if retry {
+            json!({"session_id":session["session_id"],"step_id":step,"run_ids":ids,"attempt":attempt,"previous_run_ids":session["steps"][index]["previous_run_ids"]})
+        } else {
+            json!({"session_id":session["session_id"],"step_id":step,"run_ids":ids})
+        },
     )?;
     evidence::view(db, &session)
 }

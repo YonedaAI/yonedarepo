@@ -11,6 +11,7 @@ const panel = (refresh: Parameters<typeof GuidedSessionPanel>[0]['refresh']) =>
       session: sessionFixture(),
       busy: false,
       onStart: () => {},
+      onRetry: () => {},
       onInspect: () => {},
       onRefresh: () => {},
       refresh,

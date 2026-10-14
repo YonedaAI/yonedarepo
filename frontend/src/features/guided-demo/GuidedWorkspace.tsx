@@ -84,6 +84,7 @@ export function GuidedWorkspace({
           session={state.session}
           busy={state.busy || opening}
           onStart={(step) => void state.start(step)}
+          onRetry={(step) => void state.retry(step)}
           onInspect={(run, step, candidate, kind) => void inspect(run, step, candidate, kind)}
           refresh={refreshState}
           runs={runFacts}

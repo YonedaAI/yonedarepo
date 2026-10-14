@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod binding;
 mod evidence;
+mod retry;
 mod start;
 pub(crate) use binding::{evaluation_binding, freeze, validate_report};
 pub(crate) fn validate_publish<S: SqlStore>(db: &S, candidate: &Value) -> Result<()> {

@@ -1,6 +1,15 @@
 use super::*;
 #[path = "proofs.rs"]
 mod proofs;
+/// Run statuses after which a run no longer makes progress on its own.
+pub(super) const TERMINAL: [&str; 6] = [
+    "failed",
+    "cancelled",
+    "ready",
+    "accepted",
+    "rejected",
+    "needs_attention",
+];
 pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
     let r = repo(db)?;
     let mut steps = Vec::new();
@@ -73,17 +82,9 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
                 _ => {}
             }
         }
-        let active = runs.iter().any(|run| {
-            ![
-                "failed",
-                "cancelled",
-                "ready",
-                "accepted",
-                "rejected",
-                "needs_attention",
-            ]
-            .contains(&run["status"].as_str().unwrap_or_default())
-        });
+        let active = runs
+            .iter()
+            .any(|run| !TERMINAL.contains(&run["status"].as_str().unwrap_or_default()));
         let status = if !unlocked {
             "locked"
         } else if complete {
@@ -98,7 +99,7 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
         if next.is_null() && status != "complete" {
             next = json!(id);
         }
-        steps.push(json!({"id":id,"status":status,"run_ids":ids,"candidate_id":candidate.as_ref().map(|c|&c["id"]),"revision":candidate.as_ref().map(|c|&c["revision"]),"evidence":evidence,"next_action":if status=="ready"{Some("start")}else if *id=="review"&&!complete&&unlocked{Some("review_and_publish")}else{None}}));
+        steps.push(json!({"id":id,"status":status,"run_ids":ids,"attempt":super::retry::attempt(saved),"previous_run_ids":saved["previous_run_ids"].as_array().cloned().unwrap_or_default(),"candidate_id":candidate.as_ref().map(|c|&c["id"]),"revision":candidate.as_ref().map(|c|&c["revision"]),"evidence":evidence,"next_action":if status=="ready"{Some("start")}else if *id=="review"&&!complete&&unlocked{Some("review_and_publish")}else{None}}));
         if candidate.is_some() {
             previous = candidate;
         }

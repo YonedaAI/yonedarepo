@@ -30,6 +30,10 @@ export interface GuidedStep {
   revision?: { repository: string; commit: string } | null;
   evidence: GuidedEvidence[];
   next_action?: string | null;
+  /** Attempt that `run_ids` belongs to; 1 until a step is retried. */
+  attempt?: number;
+  /** Runs of earlier attempts, kept as history but no longer judged. */
+  previous_run_ids?: string[];
 }
 export interface GuidedSession {
   session_id: string;
@@ -48,7 +52,12 @@ export interface StartGuidedStep {
   step_id: GuidedStepId;
   expected_commit: string;
   expected_version: number;
+  /** Start a fresh attempt of a step that needs attention; prior runs must all be terminal. */
+  retry?: true;
 }
+/** Deterministic run identity; must match the native ledger's allocation exactly. */
+export const guidedRunId = (prefix: string, step: GuidedStepId, ordinal: number, attempt = 1) =>
+  `guide-${prefix}-${step}-${ordinal}${attempt > 1 ? `-r${attempt}` : ''}`;
 export const guidedSteps: ReadonlyArray<{
   id: GuidedStepId;
   title: string;

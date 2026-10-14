@@ -250,6 +250,8 @@ fn guided_concurrent_starts_exact_two_frozen_variants_and_rolls_back_second_fail
     assert_eq!(all(&db, "jobs").unwrap(), jobs);
 }
 
+#[path = "guided_retry_tests.rs"]
+mod retry;
 #[path = "guided_stale_tests.rs"]
 mod stale;
 

@@ -58,6 +58,17 @@ function fixture(overrides = {}) {
       }
       if (path.endsWith('/start_guided_step')) {
         const step = session.steps.find((step) => step.id === body.step_id);
+        if (body.retry) {
+          if (step.status !== 'needs_attention') throw new Error('Fixture retry was not eligible');
+          step.attempt = (step.attempt ?? 1) + 1;
+        }
+        // Offline fixture of a step whose runs all ended without a complete result.
+        if (overrides.attention?.(step, body)) {
+          step.status = 'needs_attention';
+          step.run_ids = [`${step.id}-run${step.attempt > 1 ? `-r${step.attempt}` : ''}`];
+          step.attempt ??= 1;
+          return structuredClone(session);
+        }
         step.status = 'complete';
         step.run_ids = step.id === 'concurrent' ? ['filter-run', 'sort-run'] : [step.id + '-run'];
         const base = session.working_revision ?? { repository: 'fixture/repo', commit: rootCommit };
@@ -286,4 +297,39 @@ test('receipt paging from another run or a looping cursor never becomes context 
   const f = fixture({ usage: { run_id: 'other-run', has_more: true, next_cursor: 0 } });
   await assert.rejects(driveGuided(f.client, f.state, options), /different run/);
   assert.equal(f.writes.filter((call) => call.path.endsWith('/start_guided_step')).length, 1);
+});
+
+test('a step that needs attention is retried once with a new persisted request, then advances', async () => {
+  const f = fixture({ attention: (step, body) => step.id === 'build' && !body.retry });
+  const persisted = [];
+  const result = await driveGuided(f.client, f.state, {
+    ...options,
+    save: async (state) => persisted.push(structuredClone(state)),
+  });
+  assert.equal(result.next_step, 'review');
+  const builds = f.writes.filter(
+    (call) => call.path.endsWith('/start_guided_step') && call.body.step_id === 'build',
+  );
+  assert.equal(builds.length, 2);
+  assert.equal(builds[0].body.retry, undefined);
+  assert.equal(builds[1].body.retry, true);
+  assert.notEqual(builds[1].body.request_id, builds[0].body.request_id);
+  assert.deepEqual(f.state.retries.build, builds[1].body);
+  assert.ok(
+    persisted.some(
+      (state) => JSON.stringify(state.retries?.build) === JSON.stringify(builds[1].body),
+    ),
+  );
+});
+
+test('a step still needing attention after its one retry stops this invocation without more runs', async () => {
+  const f = fixture({ attention: (step) => step.id === 'build' });
+  await assert.rejects(driveGuided(f.client, f.state, options), /after one retry/);
+  const starts = () => f.writes.filter((call) => call.path.endsWith('/start_guided_step'));
+  assert.equal(starts().length, 2);
+  // A later invocation may retry once more, with a fresh request identity.
+  await assert.rejects(driveGuided(f.client, f.state, options), /after one retry/);
+  assert.equal(starts().length, 3);
+  assert.equal(starts()[2].body.retry, true);
+  assert.notEqual(starts()[2].body.request_id, starts()[1].body.request_id);
 });
