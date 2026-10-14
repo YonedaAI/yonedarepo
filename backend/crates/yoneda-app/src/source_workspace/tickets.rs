@@ -7,7 +7,7 @@ pub(super) fn handle<S: SqlStore>(
     actor: &ActorGrant,
 ) -> Result<Value> {
     if c["op"] == "source_verify_upload" {
-        return verify(db, c, binding);
+        return verify(db, c, state, binding);
     }
     check_version(c, state)?;
     let path = string(c, "path")?;
@@ -42,7 +42,7 @@ pub(super) fn handle<S: SqlStore>(
     state["uploaded_bytes"] = json!(total);
     Ok(json!({"version":1,"workspace_id":binding.workspace_id,"ticket":ticket}))
 }
-fn verify<S: SqlStore>(db: &S, c: &Value, binding: &SourceBinding) -> Result<Value> {
+fn verify<S: SqlStore>(db: &S, c: &Value, state: &Value, binding: &SourceBinding) -> Result<Value> {
     let id = string(c, "ticket_id")?;
     let mut t = get(db, "sw_tickets", &id)?;
     usable(&t, c)?;
@@ -54,7 +54,10 @@ fn verify<S: SqlStore>(db: &S, c: &Value, binding: &SourceBinding) -> Result<Val
     }
     t["state"] = json!("verified");
     save(db, "sw_tickets", &id, &t)?;
-    Ok(json!({"version":1,"workspace_id":binding.workspace_id,"ticket":t}))
+    // The broker returns this value to the source client, which fences on workspace and authority.
+    Ok(
+        json!({"version":1,"workspace_id":binding.workspace_id,"workspace_version":state["workspace_version"],"ticket":t,"authority":"staged_source"}),
+    )
 }
 fn usable(t: &Value, c: &Value) -> Result<()> {
     if !matches!(t["state"].as_str(), Some("issued" | "verified")) {
