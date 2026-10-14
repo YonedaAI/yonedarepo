@@ -48,6 +48,14 @@ pub struct Server {
 }
 impl Server {
     pub fn new(responses: Vec<Response>) -> Self {
+        let mut responses = responses.into_iter();
+        Self::respond(move |_| {
+            responses
+                .next()
+                .unwrap_or_else(|| Response::json(json!({"error":{"code":"FIXTURE_EXHAUSTED"}})))
+        })
+    }
+    pub fn respond(mut respond: impl FnMut(&str) -> Response + Send + 'static) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         listener.set_nonblocking(true).unwrap();
         let origin = format!("http://{}", listener.local_addr().unwrap());
@@ -55,7 +63,6 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let observed = requests.clone();
         let cancelled = stop.clone();
-        let mut responses = responses.into_iter();
         let thread = thread::spawn(move || {
             while !cancelled.load(Ordering::Acquire) {
                 match listener.accept() {
@@ -65,10 +72,8 @@ impl Server {
                             .set_read_timeout(Some(Duration::from_secs(2)))
                             .unwrap();
                         let request = read(&mut socket);
+                        let response = respond(&request);
                         observed.lock().unwrap().push(request);
-                        let response = responses.next().unwrap_or_else(|| {
-                            Response::json(json!({"error":{"code":"FIXTURE_EXHAUSTED"}}))
-                        });
                         let mut header = format!(
                             "HTTP/1.1 {} Fixture\r\nConnection: close\r\nContent-Length: {}\r\n",
                             response.status,
