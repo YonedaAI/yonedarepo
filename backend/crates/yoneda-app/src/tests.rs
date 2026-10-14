@@ -31,6 +31,8 @@ mod model_budgets;
 mod peer_messages;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
+#[path = "tests/publication_recovery.rs"]
+mod publication_recovery;
 #[path = "tests/published_continuation.rs"]
 mod published_continuation;
 #[path = "tests/ranked_context.rs"]

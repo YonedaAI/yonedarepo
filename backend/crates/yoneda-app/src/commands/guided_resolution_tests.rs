@@ -153,3 +153,76 @@ fn guided_registered_clean_refresh_gets_final_checks_without_claiming_conflict_r
     assert_eq!(execute(&db,json!({"op":"accept","request_id":"no-resolution-publication","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"A clean merge alone is not collaboration resolution","now":80})).unwrap_err().code,"GUIDED_NOT_PUBLISHABLE");
     assert_eq!(execute(&db, json!({"op":"snapshot"})).unwrap(), before);
 }
+
+#[test]
+fn guided_publication_leases_canonical_root_not_the_working_base() {
+    let (db, cid) = resolved_capture();
+    evidence_fixture::evaluate(&db, &cid, "final");
+    let candidate = get(&db, "candidates", &cid).unwrap();
+    assert_ne!(candidate["base"]["commit"], "a".repeat(40));
+    call(
+        &db,
+        json!({"op":"accept","request_id":"guide-lease","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed final checked source"}),
+        80,
+    );
+    let job = get(&db, "jobs", "publish:decision:guide-lease").unwrap();
+    assert_eq!(job["payload"]["expected"]["commit"], "a".repeat(40));
+}
+
+#[test]
+fn guided_rejected_final_result_makes_concurrent_retryable_from_extend_checkpoint() {
+    let (db, cid) = resolved_capture();
+    evidence_fixture::evaluate(&db, &cid, "final");
+    let before = read(&db);
+    assert_eq!(before["steps"][2]["status"], "complete");
+    let extend = before["steps"][1]["revision"].clone();
+    let rejected = call(
+        &db,
+        json!({"op":"reject_candidate","request_id":"guide-reject","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"reason":"Sorting drops filtered tasks"}),
+        80,
+    );
+    assert_eq!(rejected["status"], "rejected");
+    let view = read(&db);
+    assert_eq!(view["steps"][2]["status"], "needs_attention");
+    assert_eq!(view["steps"][3]["status"], "locked");
+    assert!(
+        view["steps"][2]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "owner_rejection" && e["decision_id"] == rejected["id"])
+    );
+    // The fixture leaves its claimed coordinator running; settle it as hosted work would.
+    for mut j in all(&db, "jobs").unwrap() {
+        if j["status"] == "queued" || j["status"] == "running" {
+            j["status"] = json!("done");
+            save(&db, "jobs", j["id"].as_str().unwrap(), &j).unwrap();
+        }
+    }
+    let previous = view["steps"][2]["run_ids"].clone();
+    let mut retry = request("concurrent");
+    retry["request_id"] = json!("retry-after-reject");
+    retry["retry"] = json!(true);
+    retry["expected_commit"] = view["working_revision"]["commit"].clone();
+    retry["expected_version"] = view["working_version"].clone();
+    retry["_guided_runs"] = json!([prepared(), prepared()]);
+    retry["now"] = json!(90);
+    let retried = execute(&db, retry).unwrap();
+    assert_eq!(retried["steps"][2]["status"], "running");
+    assert_eq!(retried["steps"][2]["previous_run_ids"], previous);
+    assert_eq!(retried["working_revision"], extend);
+    for id in retried["steps"][2]["run_ids"].as_array().unwrap() {
+        let run = get(&db, "runs", id.as_str().unwrap()).unwrap();
+        assert_eq!(
+            run["base"], extend,
+            "retry forks from the extend checkpoint"
+        );
+    }
+    // Earlier decisions and the rejected result remain as immutable history.
+    assert_eq!(
+        get(&db, "decisions", rejected["id"].as_str().unwrap()).unwrap()["status"],
+        "rejected"
+    );
+    assert!(get(&db, "candidates", &cid).is_ok());
+    assert_eq!(retried["steps"][1]["status"], "complete");
+}

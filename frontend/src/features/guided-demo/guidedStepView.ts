@@ -61,6 +61,9 @@ export function guidedStepLinks(
 /** One plain sentence on why a step needs attention, from recorded run status and evidence. */
 export function guidedStepReason(step: GuidedStep, facts: Record<string, GuidedRunFacts>) {
   if (step.status !== 'needs_attention') return '';
+  const rejection = step.evidence.find((item) => item.kind === 'owner_rejection');
+  if (rejection)
+    return `You rejected the reconciled result${rejection.reason ? `: “${rejection.reason}”` : ''}. Retry the concurrent changes to start again from the checked extend result; the rejected result stays in history.`;
   const failed = step.run_ids.filter((id) => failedStatuses.includes(facts[id]?.status ?? ''));
   const during = (id: string) => (facts[id]?.failedTask ? ` during “${facts[id].failedTask}”` : '');
   if (failed.length) {
@@ -79,4 +82,11 @@ export function guidedStepReason(step: GuidedStep, facts: Record<string, GuidedR
   if (step.evidence.some((item) => !item.verified))
     return 'Some recorded evidence is not verified yet. Open the run to see which checks are missing.';
   return 'This step did not complete. Open the run to see what stopped it.';
+}
+
+/** The retry button names what it restarts; a rejected reconciliation retries both concurrent runs. */
+export function guidedRetryLabel(step: GuidedStep) {
+  return step.id === 'concurrent' && step.evidence.some((item) => item.kind === 'owner_rejection')
+    ? 'Retry concurrent changes'
+    : 'Retry this step';
 }

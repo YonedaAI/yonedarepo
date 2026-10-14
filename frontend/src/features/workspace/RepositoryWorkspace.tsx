@@ -44,6 +44,7 @@ export function RepositoryWorkspace({
   const [view, setView] = useState(guideSession === undefined ? 'runs' : 'guided');
   const [guideState, setGuideState] = useState<GuidedSession>();
   const [guidedRunId, setGuidedRunId] = useState('');
+  const [guidedCandidate, setGuidedCandidate] = useState<string>();
   const guidedRun = useGuidedRun(snapshot, guidedRunId);
   const visible = { ...(guidedRunId ? guidedRun.snapshot : snapshot), guided_session: guideState };
   useEffect(() => {
@@ -64,6 +65,7 @@ export function RepositoryWorkspace({
     // Review names only its candidate; open the run that recorded it, not the default run.
     const target = runId || snapshot.candidates.find((item) => item.id === candidate)?.run_id || '';
     setGuidedRunId(target);
+    setGuidedCandidate(candidate);
     setEvidenceRun(target);
     const next = kind?.includes('conflict')
       ? 'history'
@@ -169,6 +171,7 @@ export function RepositoryWorkspace({
           snapshot={visible}
           focusedRunId={guidedRunId || undefined}
           focusRequest={runFocus}
+          focusedCandidateId={guidedCandidate}
           onGuidedDemo={onGuidedDemo}
           onGuidedContinue={guideSession === undefined ? undefined : () => setView('guided')}
           onChange={onChange}

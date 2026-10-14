@@ -5,7 +5,12 @@ import type { GuidedStep } from '../../../../shared/guided-runs';
 import type { Snapshot } from '../../lib/types';
 import { GuidedSessionPanel } from './GuidedSessionPanel';
 import { sessionFixture } from './guidedFixture';
-import { guidedRunFacts, guidedStepLinks, guidedStepReason } from './guidedStepView';
+import {
+  guidedRetryLabel,
+  guidedRunFacts,
+  guidedStepLinks,
+  guidedStepReason,
+} from './guidedStepView';
 
 const step = (changes: Partial<GuidedStep>): GuidedStep => ({
   id: 'concurrent',
@@ -87,4 +92,23 @@ describe('guided step links', () => {
     expect(html).toContain('aria-label="Retry this step: Reconcile concurrent changes"');
     expect(html).not.toContain('Inspect concurrent run');
   });
+});
+
+it('explains an owner rejection and offers to retry the concurrent changes', () => {
+  const rejected = step({
+    status: 'needs_attention',
+    evidence: [
+      { kind: 'scoped_resolution', label: 'Resolved', verified: true },
+      {
+        kind: 'owner_rejection',
+        label: 'Owner rejected this integrated result',
+        verified: false,
+        decision_id: 'decision:no',
+        reason: 'Sort drops filtered tasks',
+      },
+    ],
+  });
+  expect(guidedStepReason(rejected, {})).toContain('Sort drops filtered tasks');
+  expect(guidedRetryLabel(rejected)).toBe('Retry concurrent changes');
+  expect(guidedRetryLabel(step({ status: 'needs_attention' }))).toBe('Retry this step');
 });

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { ownerCommandInput, repositoryOperationAllowed } from '../../cloudflare/worker/repository-command';
+import { publicationRecoveryInput } from '../../cloudflare/worker/repository-recovery';
 
 it('exposes owner reads and repairs but keeps archive commits and trusted refresh completion internal', () => {
   for (const action of ['repository_overview', 'runs_page', 'run_detail', 'conflict_status', 'why'])
@@ -8,6 +9,20 @@ it('exposes owner reads and repairs but keeps archive commits and trusted refres
   for (const action of ['archive_commit', 'finish', 'verify_finish', 'record_file_provenance'])
     expect(repositoryOperationAllowed('POST', action)).toBe(false);
   expect(repositoryOperationAllowed('DELETE', 'repair_team')).toBe(false);
+});
+
+it('exposes owner rejection generically but keeps publication recovery on its observing route', () => {
+  expect(repositoryOperationAllowed('POST', 'reject_candidate')).toBe(true);
+  expect(repositoryOperationAllowed('GET', 'reject_candidate')).toBe(false);
+  expect(repositoryOperationAllowed('POST', 'recover_publication')).toBe(false);
+  expect(publicationRecoveryInput({ request_id: 'r', decision_id: 'decision:d', expected_version: 3,
+    observed_commit: 'f'.repeat(40), _workspace: 'victim' }))
+    .toEqual({ request_id: 'r', decision_id: 'decision:d', expected_version: 3 });
+  for (const bad of [{}, { request_id: '', decision_id: 'd', expected_version: 1 },
+    { request_id: 'r', decision_id: 'd', expected_version: -1 },
+    { request_id: 'r', decision_id: 'd', expected_version: '1' },
+    { request_id: 'r'.repeat(129), decision_id: 'd', expected_version: 1 }])
+    expect(publicationRecoveryInput(bad)).toBeNull();
 });
 
 it('allows bounded owner capture recovery while preserving guards and stripping caller authority', async () => {

@@ -79,6 +79,11 @@ pub(super) fn execute<S: SqlStore>(
     {
         return Err(Error::new("HEAD_MOVED", "Guided checked head changed"));
     }
+    let branch = if retry {
+        retry::checkpoint(db, &view, index, branch, now)?
+    } else {
+        branch
+    };
     let prepared = c["_guided_runs"]
         .as_array()
         .ok_or_else(|| bad("Trusted guided run approvals required"))?;

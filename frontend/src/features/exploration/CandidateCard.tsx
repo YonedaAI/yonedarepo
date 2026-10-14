@@ -1,5 +1,5 @@
 import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { ChangedPathList } from '../source-workspace/ChangedPathList';
@@ -37,6 +37,10 @@ export function CandidateCard({
   actionLabel = 'Record publishing decision',
   assessment,
   compact = false,
+  rejection,
+  onReject,
+  rejectDisabled = false,
+  focusSignal = 0,
 }: {
   strategy: string;
   repo: string;
@@ -58,7 +62,21 @@ export function CandidateCard({
   actionLabel?: string;
   assessment?: ReactNode;
   compact?: boolean;
+  /** The recorded owner rejection of this exact result. */
+  rejection?: Record<string, any>;
+  onReject?: () => void;
+  rejectDisabled?: boolean;
+  /** Increments for each request to reveal this result, even when it is already shown. */
+  focusSignal?: number;
 }) {
+  const card = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const element = card.current;
+    if (!focusSignal || !element) return;
+    for (const details of element.querySelectorAll('details')) details.open = true;
+    element.scrollIntoView({ block: 'start' });
+    element.focus({ preventScroll: true });
+  }, [focusSignal]);
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
   const published = chosen && decision?.status === 'published';
   const pathCount = capturedPathCount(candidate);
@@ -68,8 +86,10 @@ export function CandidateCard({
     : (candidate?.status ?? 'waiting');
   return (
     <article
-      className={`candidate ${selected ? 'focused' : ''}`}
-      id={execution ? `approach-${execution.id}` : undefined}
+      ref={card}
+      className={`candidate ${selected ? 'focused' : ''} ${focusSignal ? 'inspected' : ''}`}
+      id={execution ? `approach-${execution.id}` : candidate ? `result-${candidate.id}` : undefined}
+      data-candidate={candidate?.id}
       tabIndex={-1}
     >
       <div className="candidate-title">
@@ -94,8 +114,23 @@ export function CandidateCard({
           ) : ['running', 'capturing', 'evaluating'].includes(status) ? (
             <LoaderCircle className="spin" size={13} />
           ) : null}
-          {published ? 'published' : chosen ? 'selected' : status.replaceAll('_', ' ')}
+          {published
+            ? 'published'
+            : chosen
+              ? 'selected'
+              : rejection
+                ? 'rejected by you'
+                : status.replaceAll('_', ' ')}
         </span>
+        {rejection && (
+          <div className="candidate-rejection" role="note">
+            <strong>You rejected this result</strong>
+            <p>{rejection.reason || 'No reason was recorded.'}</p>
+            <small>
+              Recorded decision <code>{rejection.id}</code> · nothing was published
+            </small>
+          </div>
+        )}
         {!candidate && (
           <p>
             {status === 'failed'
@@ -129,7 +164,7 @@ export function CandidateCard({
         )}
         {candidate && (
           <div className="candidate-action-row">
-            {!decision && showPublishAction && (
+            {!decision && !rejection && showPublishAction && (
               <button
                 type="button"
                 className="quiet candidate-review"
@@ -139,12 +174,17 @@ export function CandidateCard({
                 {actionLabel}
               </button>
             )}
+            {!decision && !rejection && onReject && (
+              <button type="button" className="quiet" disabled={rejectDisabled} onClick={onReject}>
+                Reject
+              </button>
+            )}
             {execution && (
               <ExecutionLogs repo={repo} execution={execution} onProviders={onProviders} />
             )}
           </div>
         )}
-        {candidate && !decision && disabledReason && (
+        {candidate && !decision && !rejection && disabledReason && (
           <p className="selection-blocker">{disabledReason}</p>
         )}
         {execution?.status === 'failed' && (
