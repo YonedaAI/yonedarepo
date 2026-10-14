@@ -27,6 +27,14 @@ export function checkLedger(snapshot: Json, request?: Json) {
       new Error('Automatic team planning is updating; refresh before starting.'),
       { code: 'LEDGER_UPDATING' },
     );
+  if (
+    request?.adaptive_team?.specialist_connection != null &&
+    snapshot?.capabilities?.adaptive_specialists !== 1
+  )
+    throw Object.assign(
+      new Error('Specialist model assignment is updating; refresh before starting.'),
+      { code: 'LEDGER_UPDATING' },
+    );
   const limits = snapshot?.capabilities?.agent_limits;
   const roots = request?.agents?.length ?? 0;
   const delegation = request?.delegation;

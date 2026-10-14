@@ -74,3 +74,10 @@ it('refuses a runtime that would silently ignore a frozen explicit reasoning eff
   expect(() => checkRuntime({ protocol: 2, capabilities: { reasoning_efforts: 1 } }, job)).not.toThrow();
   expect(() => checkRuntime({ protocol: 2, capabilities: {} }, { kind: 'agent', payload: { execution: {} } })).not.toThrow();
 });
+
+it('refuses a frozen specialist connection until the ledger can normalize it', () => {
+  const snapshot = { capabilities: { artifact_reads: 2, adaptive_teams: 1, agent_limits: { min_root_agents: 1 } } };
+  const request = { adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'backend' }], specialist_connection: 'codex' } };
+  expect(() => checkLedger(snapshot, request)).toThrow('updating');
+  expect(() => checkLedger({ capabilities: { ...snapshot.capabilities, adaptive_specialists: 1 } }, request)).not.toThrow();
+});

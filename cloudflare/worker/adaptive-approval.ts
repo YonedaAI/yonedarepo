@@ -1,4 +1,5 @@
 import { type ProviderDefinition, providerDefinition } from '../../shared/providers';
+import { ownsTask, parseModelMix, resolveModelMix } from './model-mix';
 import { normalizeReasoningEffort } from './model-reasoning';
 import type { Json } from './types';
 
@@ -28,6 +29,10 @@ export function resolveAdaptiveApproval(
     )
   )
     throw invalid('Choose between one and six agent preferences with valid roles.');
+  const coordinated = input.mode !== 'compare';
+  const automatic = allowAdaptive && coordinated && input.team == null;
+  const mix = parseModelMix(requested.model_mix);
+  if (mix && !coordinated) throw invalid('A model mix requires a coordinated team run.');
   const explicitConnections = new Set(
     requested.requested_agents
       .map((agent: Json) => agent.connection)
@@ -76,10 +81,17 @@ export function resolveAdaptiveApproval(
     throw Object.assign(new Error('Connect a model with verified pricing before starting.'), {
       code: 'PROVIDER_MISSING',
     });
+  const mixed = mix && resolveModelMix(mix, pool);
+  const automaticChoice = (index: number) =>
+    mixed
+      ? !automatic && ownsTask(input.team, index)
+        ? mixed.specialists
+        : mixed.coordination
+      : pool.find((member) => automaticConnections.has(member.connection));
   const agents = requested.requested_agents.map((preference: Json, index: number) => {
     const selected =
       preference.connection === null
-        ? pool.find((member) => automaticConnections.has(member.connection))
+        ? automaticChoice(index)
         : pool.find((model) => model.connection === preference.connection);
     if (!selected)
       throw invalid('A selected model connection is missing or has no verified pricing.');
@@ -97,8 +109,6 @@ export function resolveAdaptiveApproval(
       strategy: `${preference.role} ${input.mode === 'compare' ? 'approach' : 'team participant'} ${index + 1}`,
     };
   });
-  const coordinated = input.mode !== 'compare';
-  const automatic = allowAdaptive && coordinated && input.team == null;
   const budgets = new Map<string, Json>();
   for (const model of pool) {
     if (
@@ -132,6 +142,7 @@ export function resolveAdaptiveApproval(
               ? {}
               : { reasoning_effort: agents[index].reasoning_effort }),
           })),
+          ...(mixed ? { specialist_connection: mixed.specialists.connection } : {}),
         }
       : undefined,
     _approved_model_pool: automatic

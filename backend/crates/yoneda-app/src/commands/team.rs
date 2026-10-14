@@ -245,3 +245,6 @@ pub(super) fn finish_planner<S: SqlStore>(
 ) -> Result<bool> {
     planning::finish(db, job, result, run, now)
 }
+#[cfg(test)]
+#[path = "team/tests/guided_fixed_plans.rs"]
+mod guided_fixed_plans;

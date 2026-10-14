@@ -148,3 +148,7 @@ fn bounded(s: &str, max: usize, label: &str) -> Result<()> {
 fn invalid(s: &str) -> Error {
     Error::new("INVALID_INPUT", s)
 }
+
+#[cfg(test)]
+#[path = "team/guided_plan_tests.rs"]
+mod guided_plan_tests;
