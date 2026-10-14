@@ -280,3 +280,58 @@ fn guided_continuation_read_from_foreign_epoch_cannot_qualify_captured_contribut
         .unwrap();
     assert_ne!(read(&db)["steps"][1]["status"], "complete");
 }
+/// Hosted repo-7fb16a12 shape: extend specialists cite the build integrator's decision, which
+/// explicitly supersedes the specialist choice that the build evidence selected.
+fn extend_citing_integrator_decision(tamper: impl FnOnce(&NativeStore, &str)) -> Value {
+    let db = fixture();
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0].as_str().unwrap();
+    evidence_fixture::checked_with_integrator_decision(&db, first);
+    let session = read(&db);
+    assert_eq!(session["steps"][0]["status"], "complete");
+    assert!(
+        session["steps"][0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["record_id"] == format!("context:choice:{first}"))
+    );
+    let integrated = format!("context:integrated:{first}");
+    tamper(&db, &integrated);
+    let mut c = request("extend");
+    c["expected_commit"] = json!("b".repeat(40));
+    c["expected_version"] = json!(1);
+    let extended = execute(&db, c).unwrap();
+    let rid = extended["steps"][1]["run_ids"][0].as_str().unwrap();
+    evidence_fixture::checked_with_context(&db, rid, "extend", true, Some(&integrated));
+    read(&db)
+}
+#[test]
+fn guided_extension_citing_captured_integrator_supersession_of_choice_completes() {
+    let view = extend_citing_integrator_decision(|_, _| {});
+    assert_eq!(view["steps"][1]["status"], "complete");
+}
+#[test]
+fn guided_extension_citing_supersession_by_uncaptured_author_does_not_complete() {
+    let view = extend_citing_integrator_decision(|db, id| {
+        db.query(
+            "UPDATE nodes SET payload=json_set(payload,'$.author','foreign-execution') WHERE id=?",
+            &[json!(id)],
+        )
+        .unwrap();
+        assert_eq!(get(db, "nodes", id).unwrap()["author"], "foreign-execution");
+    });
+    assert_ne!(view["steps"][1]["status"], "complete");
+}
+#[test]
+fn guided_extension_citing_integrator_record_without_supersedes_link_does_not_complete() {
+    let view = extend_citing_integrator_decision(|db, id| {
+        db.query(
+            "UPDATE nodes SET payload=json_set(payload,'$.data.links',json('[]')) WHERE id=?",
+            &[json!(id)],
+        )
+        .unwrap();
+        assert_eq!(get(db, "nodes", id).unwrap()["data"]["links"], json!([]));
+    });
+    assert_ne!(view["steps"][1]["status"], "complete");
+}
