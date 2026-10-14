@@ -1,7 +1,11 @@
 import { readRun, workspaceAllowance } from '../reviewer-client.mjs';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual as equal } from 'node:util';
-import { profile, starterFiles, protectedBundle, digest } from './profile.mjs';
+import { guidedProfile, starterFiles, protectedBundle, digest } from './profile.mjs';
+
+/** The retained session pins its guided version; new sessions use the requested one. */
+const versionOf = (state) => state.guided_version ?? 1;
+const profileOf = (state) => guidedProfile(versionOf(state));
 import { checkedStep, readHistoryEvidence, readCheckReport } from './evidence.mjs';
 
 const fail = (message) => {
@@ -28,8 +32,8 @@ function adoptId(state, id) {
 
 function sessionGuard(session, state) {
   if (
-    session?.profile_id !== profile.id ||
-    session.version !== profile.version ||
+    session?.profile_id !== profileOf(state).id ||
+    session.version !== versionOf(state) ||
     typeof session.session_id !== 'string' ||
     !session.session_id ||
     !Array.isArray(session.steps) ||
@@ -71,7 +75,7 @@ async function platformGuard(client, expected) {
     fail('Deployed revision differs from approved revision');
 }
 
-function sourceGuard(snapshot, source) {
+function sourceGuard(snapshot, source, version) {
   if (
     snapshot.repository?.status !== 'ready' ||
     snapshot.repository.pending != null ||
@@ -88,7 +92,7 @@ function sourceGuard(snapshot, source) {
   );
   if (
     source.revision?.commit !== snapshot.repository.published_commit ||
-    !equal(sorted, starterFiles())
+    !equal(sorted, starterFiles(version))
   )
     fail('Actual frozen starter bytes/allowlist differ from the unfinished profile');
 }
@@ -98,7 +102,7 @@ async function collectRuns(api, repo, step, state, save) {
   for (const id of step.run_ids) {
     const detail = await readRun(api, repo, id);
     const run = detail.runs[0];
-    if (run.guided?.session_id !== state.session_id || run.guided.profile_id !== profile.id)
+    if (run.guided?.session_id !== state.session_id || run.guided.profile_id !== profileOf(state).id)
       fail('Run was not frozen to this guided session');
     const phase = step.id === 'concurrent' ? 'parallel' : step.id;
     if (run.guided.check_phase !== phase) fail('Run phase differs from protected phase');
@@ -151,6 +155,8 @@ export async function driveGuided(client, state, options = {}) {
   } = options;
   if (!/^[a-f0-9]{7,64}$/.test(expectedRevision ?? ''))
     fail('An exact approved platform revision is required');
+  state.guided_version ??= options.guidedVersion ?? 1;
+  const profile = profileOf(state);
   if (state.profile_id && state.profile_id !== profile.id) fail('Retained profile differs');
   await platformGuard(client, expectedRevision);
   await allowanceGuard(client.api);
@@ -173,11 +179,12 @@ export async function driveGuided(client, state, options = {}) {
     client.simulated === true ? 'offline_protocol_fixture' : 'actual_server_readback';
   state.exercise = 'planned same-base concurrent enhancements';
   state.context_causal_effect = null;
-  state.source_digest ??= digest(starterFiles());
-  state.test_bundle_digest ??= protectedBundle().digest;
+  const version = versionOf(state);
+  state.source_digest ??= digest(starterFiles(version));
+  state.test_bundle_digest ??= protectedBundle(version).digest;
   if (
-    state.source_digest !== digest(starterFiles()) ||
-    state.test_bundle_digest !== protectedBundle().digest
+    state.source_digest !== digest(starterFiles(version)) ||
+    state.test_bundle_digest !== protectedBundle(version).digest
   )
     fail('Fixture or immutable oracle changed since retained session');
   state.requests ??= {};
@@ -218,7 +225,7 @@ export async function driveGuided(client, state, options = {}) {
   await save(state);
   activationGuard(session, transport);
   if (!state.initial_commit) {
-    sourceGuard(snapshot, await client.api(`repos/${repo}/published_source`));
+    sourceGuard(snapshot, await client.api(`repos/${repo}/published_source`), versionOf(state));
     state.initial_commit = snapshot.repository.published_commit;
     await save(state);
   }
