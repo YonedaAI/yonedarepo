@@ -248,3 +248,10 @@ fn err(error: impl std::fmt::Display) -> yoneda_core::Error {
 }
 #[path = "support/source_static_export.rs"]
 mod static_export;
+
+#[path = "support/http.rs"]
+mod http;
+#[path = "support/source_http_export.rs"]
+mod http_export;
+#[path = "support/source_native_http.rs"]
+mod source_native_http;
