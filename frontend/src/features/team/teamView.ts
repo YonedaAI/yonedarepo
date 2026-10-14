@@ -81,8 +81,11 @@ export function runCandidates(snapshot: Snapshot, run?: TeamRecord) {
   const task = (snapshot.team_tasks ?? []).find(
     (item) => item.run_id === run.id && item.role === 'integrator',
   );
-  return candidates.filter(
+  // A recorded conflict resolution supersedes the integrated result it reconciled.
+  const resolved = candidates.filter((candidate) => candidate.conflict_id).reverse();
+  const integrated = candidates.filter(
     (candidate) =>
       candidate.id === task?.candidate_id && candidate.execution === task?.execution_id,
   );
+  return [...resolved, ...integrated];
 }

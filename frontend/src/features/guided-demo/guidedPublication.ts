@@ -20,9 +20,10 @@ export function guidedPublicationBlocker(
     !session.steps
       .filter((step) => step.id !== 'review')
       .every((step) => step.status === 'complete') ||
-    review?.candidate_id !== candidate?.id ||
     !['ready', 'running'].includes(review.status) ||
     !review.next_action
   )
     return 'The guide is still reconciling and checking its final result. Open the guided demo to refresh its evidence before publishing.';
+  if (review.candidate_id !== candidate?.id)
+    return 'This is not the guide’s final result. Use Review & publish in the guided demo to open the reconciled result.';
 }
