@@ -8,6 +8,7 @@ import {
   eventInRun,
   executionElapsed,
 } from './activityView';
+import { RecordedFailure } from './RecordedFailure';
 import { useActivityEvents } from './useActivityEvents';
 
 export function AgentActivityTimeline({
@@ -121,12 +122,12 @@ export function AgentActivityTimeline({
                     </>
                   ))}
                 {event.data.error && (
-                  <RecordedContent
-                    content={
-                      typeof event.data.error === 'string'
-                        ? event.data.error
-                        : JSON.stringify(event.data.error)
-                    }
+                  <RecordedFailure
+                    error={event.data.error}
+                    stage={event.kind === 'job.failed' ? event.data.kind : undefined}
+                    jobId={event.data.id ?? event.data.job_id}
+                    epoch={event.data.epoch}
+                    provider={execution?.provider}
                   />
                 )}
               </div>

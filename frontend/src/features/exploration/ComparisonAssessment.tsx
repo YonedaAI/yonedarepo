@@ -1,7 +1,19 @@
 import type { ComparisonState } from '../../lib/comparison';
+import { comparisonSkipNotice } from './comparisonSkipNotice';
 
 export function ComparisonAssessment({ comparison }: { comparison?: ComparisonState }) {
   const review = comparison?.latest_review;
+  const skip = comparisonSkipNotice(comparison);
+  if (skip && !review)
+    return (
+      <section className="comparison-assessment" aria-label="Platform review status">
+        <h3>{skip.title}</h3>
+        <p>{skip.detail}</p>
+        {comparison?.selected_by === 'owner' && comparison.selection_reason && (
+          <p>Earlier owner choice: {comparison.selection_reason}</p>
+        )}
+      </section>
+    );
   if (!review)
     return comparison?.selected_by === 'owner' && comparison.selection_reason ? (
       <section className="comparison-assessment" aria-label="Recorded owner choice">
@@ -14,15 +26,22 @@ export function ComparisonAssessment({ comparison }: { comparison?: ComparisonSt
     );
   return (
     <section className="comparison-assessment" aria-label="Recorded reviewer assessment">
+      {skip && (
+        <p role="status">
+          {skip.title}. {skip.detail}
+        </p>
+      )}
       <h3>
-        {review.outcome === 'selected'
-          ? comparison?.selected_by === 'owner' &&
-            review.selected_candidate_id !== comparison.selected_candidate_id
-            ? 'Reviewer’s original proposal'
-            : 'Why this approach was proposed'
-          : review.outcome === 'repair_requested'
-            ? 'Why a repair was requested'
-            : 'Why review needs attention'}
+        {skip
+          ? 'Earlier reviewer assessment'
+          : review.outcome === 'selected'
+            ? comparison?.selected_by === 'owner' &&
+              review.selected_candidate_id !== comparison.selected_candidate_id
+              ? 'Reviewer’s original proposal'
+              : 'Why this approach was proposed'
+            : review.outcome === 'repair_requested'
+              ? 'Why a repair was requested'
+              : 'Why review needs attention'}
       </h3>
       <small>Reviewer assessment · agent assertion. Behavior checks are shown separately.</small>
       {review.outcome !== 'selected' && <p>{review.rationale}</p>}

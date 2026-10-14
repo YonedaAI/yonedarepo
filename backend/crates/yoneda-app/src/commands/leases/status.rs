@@ -1,6 +1,9 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::Result;
+#[cfg(test)]
+#[path = "status_tests.rs"]
+mod tests;
 pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
     if job["status"] == "failed" {
         let conflict_id = job["payload"]["conflict_id"]
@@ -38,6 +41,12 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             .get("error")
             .cloned()
             .unwrap_or(json!("Attempt lease expired"));
+        if job["status"] == "failed" {
+            // Stage attribution comes from the authoritative job, never an error body.
+            e["failure_stage"] = job["kind"].clone();
+            e["failure_job_id"] = job["id"].clone();
+            e["failure_job_epoch"] = job["epoch"].clone();
+        }
         save_execution(db, &e, now)?;
         if (!e["team_task"].is_null()
             || e["team_role"] == "planner"

@@ -234,12 +234,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     {
         super::comparison::wake(db, rid, now)?;
     }
-    event(
-        db,
-        "job.completed",
-        now,
-        json!({"id":id,"kind":j["kind"],"epoch":j["epoch"]}),
-    )?;
+    event(db, "job.completed", now, job_event(&j))?;
     Ok(json!({"status":"completed","id":id}))
 }
 

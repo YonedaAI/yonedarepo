@@ -4,7 +4,7 @@ use yoneda_core::agents::*;
 use yoneda_core::{Error, Result};
 pub(super) fn capabilities<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     Ok(
-        json!({"source_api":1,"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
+        json!({"source_api":1,"source_capture_retry":1,"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
     )
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
@@ -125,6 +125,18 @@ fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
             "commit": value.get("commit").cloned().unwrap_or(Value::Null),
         })
     };
+    let source_registration = if payload["workspace_transport"] == "api-source-v1"
+        && payload["capture_subtype"] == "source_changeset"
+        && payload["source_registered"].is_object()
+    {
+        let pointer = &payload["source_registered"];
+        json!({"producer_job_id":pointer["producer_job_id"],
+            "producer_epoch":pointer["producer_epoch"],
+            "registration_id":pointer["registration_id"],
+            "changeset_digest":pointer["changeset_digest"]})
+    } else {
+        Value::Null
+    };
     Ok(json!({
         "id": job["id"],
         "kind": job["kind"],
@@ -138,6 +150,7 @@ fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
         "error": job["error"],
         "workspace_transport": payload["workspace_transport"],
         "source_revision": revision(&payload["source_revision"]),
+        "source_registration": source_registration,
         "execution": {
             "id": execution["id"],
             "run_id": execution["run_id"],
@@ -204,6 +217,32 @@ mod job_status_tests {
         assert_eq!(status["execution"]["team_task_revision"], 2);
         let serialized = status.to_string();
         assert!(!serialized.contains("must-not-leak"));
+        assert!(status.get("payload").is_none());
+    }
+
+    #[test]
+    fn job_status_exposes_only_opaque_registered_source_recovery_guards() {
+        let db = crate::commands::recovery::source_tests::fixture();
+        let pointer = json!({"producer_job_id":"job:execution","producer_epoch":3,
+            "registration_id":"registered-seal","changeset_digest":"a".repeat(64),
+            "attestation":"must-not-leak","_source_signing_key":"must-not-leak"});
+        job(
+            &db,
+            "capture:execution",
+            "capture",
+            1000,
+            json!({"workspace_transport":"api-source-v1","capture_subtype":"source_changeset",
+                "source_registered":pointer,"execution":{"id":"execution","run_id":"run"}}),
+        )
+        .unwrap();
+        let status =
+            crate::execute(&db, json!({"op":"job_status","id":"capture:execution"})).unwrap();
+        assert_eq!(
+            status["source_registration"],
+            json!({"producer_job_id":"job:execution",
+            "producer_epoch":3,"registration_id":"registered-seal","changeset_digest":"a".repeat(64)})
+        );
+        assert!(!status.to_string().contains("must-not-leak"));
         assert!(status.get("payload").is_none());
     }
 

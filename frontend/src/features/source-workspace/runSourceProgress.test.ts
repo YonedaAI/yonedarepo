@@ -178,3 +178,67 @@ it('offers only a read-only status refresh while factual preparation is waiting,
   expect(html).not.toContain('Start a Run');
   expect(requests).toBe(0);
 });
+it('shows a recorded platform capture failure after model work instead of claiming an agent is still working', () => {
+  const failed = {
+    id: 'builder',
+    run_id: run.id,
+    role: 'coding',
+    status: 'failed',
+    failure_stage: 'capture',
+    failure_job_id: 'capture:builder',
+    failure_job_epoch: 3,
+  };
+  const state = { ...snapshot, runs: [run], executions: [failed] };
+  expect(runSourceProgress(state, { ...run, status: 'ready', model_requests: 48 })).toMatchObject({
+    stage: 'capture_failed',
+    title: 'Capture failed',
+    error: true,
+  });
+  expect(runSourceProgress(state, { ...run, status: 'failed', model_requests: 48 })?.title).toBe(
+    'Capture failed',
+  );
+  const continuing = {
+    ...state,
+    executions: [failed, { id: 'peer', run_id: run.id, role: 'coding', status: 'running' }],
+  };
+  expect(runSourceProgress(continuing, { ...run, model_requests: 48 })?.title).toBe(
+    'Agent working',
+  );
+  expect(runSourceProgress(state, { ...run, status: 'cancelled' })?.title).toBe('Run cancelled');
+});
+it('offers human choice for exact recovered eligible checks while retaining current policy and lease guards', async () => {
+  const { comparisonFixture } = await import('../../../../tests/frontend/comparisonFixture');
+  const fixture = comparisonFixture();
+  const recovered = {
+    ...fixture.run,
+    workspace_transport: 'api-source-v1',
+    comparison: {
+      ...fixture.comparison,
+      status: 'needs_attention',
+      selected_candidate_id: null,
+      reviewer_status: 'skipped',
+      review_skip_reason: { code: 'CAPTURE_RECOVERY_CHECK_ONLY', authority: 'platform' },
+      verification_recovery: {
+        version: 1,
+        automatic_review: false,
+        request_id: 'recovery',
+        authority: 'owner_verification_recovery',
+      },
+    },
+  };
+  expect(runSourceProgress(fixture.snapshot, recovered)).toMatchObject({
+    stage: 'choice',
+    title: 'Ready for human choice',
+    error: false,
+  });
+  const policy = fixture.snapshot.repository.policy;
+  if (!policy) throw new Error('The synthetic recovery fixture requires a policy.');
+  const stale = {
+    ...fixture.snapshot,
+    repository: {
+      ...fixture.snapshot.repository,
+      policy: { ...policy, version: 'different' },
+    },
+  };
+  expect(runSourceProgress(stale, recovered)?.title).toBe('Result needs attention');
+});

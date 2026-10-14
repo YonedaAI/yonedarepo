@@ -87,3 +87,31 @@ it('stops terminal agent elapsed time at the recorded failure, including retries
     executionElapsed({ ...execution, status: 'running' }, [failed], snapshot, 'run', 90000),
   ).toBe(89000);
 });
+it('routes a hashed capture-recovery event through exact native execution metadata before a candidate exists', () => {
+  const event = {
+    seq: 7,
+    at: 1000,
+    kind: 'job.progress',
+    data: {
+      id: `capture:source-retry:${'a'.repeat(64)}`,
+      kind: 'capture',
+      run_id: 'run',
+      execution_id: 'execution',
+      epoch: 1,
+    },
+  };
+  const state = {
+    ...snapshot,
+    candidates: [],
+    executions: [
+      { id: 'execution', run_id: 'run', role: 'coding' },
+      { id: 'execution-neighbor', run_id: 'run-neighbor', role: 'coding' },
+    ],
+  };
+  expect(eventExecution(event, state, 'run')?.id).toBe('execution');
+  expect(eventInRun(event, state, 'run')).toBe(true);
+  expect(eventInRun(event, state, 'run-neighbor')).toBe(false);
+  const unbound = { ...event, data: { id: event.data.id, kind: 'capture' } };
+  expect(eventExecution(unbound, state, 'run')).toBeUndefined();
+  expect(eventInRun(unbound, state, 'run')).toBe(false);
+});

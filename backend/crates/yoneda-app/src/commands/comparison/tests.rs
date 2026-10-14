@@ -9,6 +9,8 @@ mod comparison_legacy_selection_tests;
 mod delegation_compat_tests;
 #[path = "tests/fixtures.rs"]
 pub(super) mod fixtures;
+#[path = "tests/comparison_no_result_tests.rs"]
+mod no_result_tests;
 #[path = "tests/provenance_tests.rs"]
 mod provenance_tests;
 #[path = "tests/retrieval_tests.rs"]

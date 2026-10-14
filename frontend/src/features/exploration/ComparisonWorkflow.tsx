@@ -1,4 +1,5 @@
 import type { Snapshot } from '../../lib/types';
+import { comparisonSkipNotice } from './comparisonSkipNotice';
 import { comparisonPhase, comparisonState, latestBuilderCandidates } from './comparisonView';
 
 export function ComparisonWorkflow({
@@ -9,6 +10,7 @@ export function ComparisonWorkflow({
   run: Record<string, any>;
 }) {
   const comparison = comparisonState(run);
+  const skip = comparisonSkipNotice(comparison);
   const candidates = latestBuilderCandidates(snapshot, run);
   const stages = [
     { name: 'Building', detail: `${candidates.length} captured alternatives` },
@@ -18,9 +20,11 @@ export function ComparisonWorkflow({
     },
     {
       name: 'Reviewing alternatives',
-      detail: comparison?.latest_review
-        ? 'Reviewer assessment recorded'
-        : 'Awaiting recorded review',
+      detail: skip
+        ? skip.title
+        : comparison?.latest_review
+          ? 'Reviewer assessment recorded'
+          : 'Awaiting recorded review',
     },
     { name: 'Repairing', detail: `${comparison?.round ?? 0} of 2 repair rounds used` },
   ];

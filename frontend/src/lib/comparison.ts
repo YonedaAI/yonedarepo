@@ -27,6 +27,14 @@ export interface ComparisonState {
   selection_version?: number;
   selection_request_id?: string;
   manifest_digest?: string;
+  reviewer_status?: string;
+  review_skip_reason?: { code: string; authority: string; message?: string } | null;
+  verification_recovery?: {
+    version: 1;
+    automatic_review: false;
+    request_id: string;
+    authority: 'owner_verification_recovery';
+  };
   approval?: { id: string; digest: string; request_id?: string } | null;
 }
 export type ComparisonOwnerOperation = 'approve_comparison_review' | 'select_comparison_candidate';

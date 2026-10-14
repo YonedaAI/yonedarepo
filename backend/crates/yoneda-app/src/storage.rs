@@ -10,7 +10,7 @@ pub(crate) use history::{
     checked_watermark, prune_outbox_payloads, repository_overview, run_detail, run_graph_page,
     run_page,
 };
-pub(crate) use jobs::job;
+pub(crate) use jobs::{job, job_event};
 pub(crate) use lineage::{
     cancel_job, check_lineage, descendant_ids, fence_descendants, run_executions, run_jobs,
 };
