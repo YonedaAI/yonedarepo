@@ -1,4 +1,10 @@
-import type { ConflictStatusContract } from '../../../../shared/provenance';
+import {
+  type ConflictPathSection,
+  type ConflictPathSet,
+  conflictPathSet,
+  conflictPathSets,
+  isRecord,
+} from './conflictPaths';
 
 export interface ConflictInventoryItem {
   key: string;
@@ -9,52 +15,56 @@ export interface ConflictInventoryItem {
   resolver_candidate_id?: string;
   head_commit?: string;
   expected_version?: number;
+  /** Only complete legacy inline paths may enter the existing mutation envelope; never page results. */
   conflict_paths: string[];
+  path_sets: Record<ConflictPathSection, ConflictPathSet>;
   evidence?: Record<string, unknown>;
   status?: string;
 }
-
 export interface ConflictOverlapItem {
   key: string;
   conflict_id?: string;
   candidate_id: string;
   paths: string[];
+  path_set: ConflictPathSet;
   status: string;
 }
-
 export interface ConflictInventoryView {
   records: ConflictInventoryItem[];
   overlaps: ConflictOverlapItem[];
   seq: number;
 }
 
-/** Convert the backend inventory shape to renderable rows without assuming IDs on stale entries. */
+/** Preserve paged/unknown path metadata independently of legacy inline mutation scopes. */
 export function normalizeConflictInventory(raw: unknown): ConflictInventoryView {
-  const inventory =
-    raw && typeof raw === 'object'
-      ? (raw as Partial<ConflictStatusContract> & {
-          conflicts?: ConflictStatusContract['conflicts'];
-        })
-      : {};
-  const records: ConflictInventoryItem[] = [];
-  const normalized = new Map<string, ConflictInventoryItem>();
+  const inventory = isRecord(raw) ? raw : {},
+    normalized = new Map<string, ConflictInventoryItem>();
   const rows = [
     ...(Array.isArray(inventory.records) ? inventory.records : []),
     ...(Array.isArray(inventory.conflicts) ? inventory.conflicts : []),
   ];
   for (const row of rows) {
-    if (!row || typeof row.candidate_id !== 'string' || !row.candidate_id) continue;
+    if (!isRecord(row) || typeof row.candidate_id !== 'string' || !row.candidate_id) continue;
     const stale = row.kind === 'stale_candidate';
     if (!stale && (typeof row.id !== 'string' || !row.id)) continue;
-    const unresolved = !stale && row.status === 'unresolved';
-    const headCommit = [row.head_commit, row.expected_head, row.expected_commit].find(
-      (value): value is string => typeof value === 'string',
-    );
+    const headCommit = [
+      row.head_commit,
+      row.expected_head,
+      row.expected_commit,
+      row.candidate_base,
+    ].find((value): value is string => typeof value === 'string');
+    const sets = conflictPathSets(row);
+    if (sets.conflict_paths.state === 'unknown' && Array.isArray(row.paths))
+      sets.conflict_paths = conflictPathSet(row, 'paths');
     const item: ConflictInventoryItem = {
       key: stale ? `candidate:${row.candidate_id}` : `conflict:${row.id}`,
-      kind: stale ? 'stale_candidate' : unresolved ? 'unresolved_conflict' : 'refresh_record',
+      kind: stale
+        ? 'stale_candidate'
+        : row.status === 'unresolved'
+          ? 'unresolved_conflict'
+          : 'refresh_record',
       candidate_id: row.candidate_id,
-      ...(!stale ? { conflict_id: row.id } : {}),
+      ...(!stale ? { conflict_id: String(row.id) } : {}),
       ...(typeof row.refreshed_candidate_id === 'string'
         ? { refreshed_candidate_id: row.refreshed_candidate_id }
         : {}),
@@ -65,36 +75,34 @@ export function normalizeConflictInventory(raw: unknown): ConflictInventoryView 
       ...(typeof row.expected_version === 'number'
         ? { expected_version: row.expected_version }
         : {}),
-      conflict_paths: (Array.isArray(row.conflict_paths)
-        ? row.conflict_paths
-        : Array.isArray(row.paths)
-          ? row.paths
-          : []
-      ).filter((path): path is string => typeof path === 'string'),
-      ...(row.evidence && typeof row.evidence === 'object' ? { evidence: row.evidence } : {}),
+      conflict_paths: sets.conflict_paths.state === 'inline' ? sets.conflict_paths.items : [],
+      path_sets: sets,
+      ...(isRecord(row.evidence) ? { evidence: row.evidence } : {}),
       ...(typeof row.status === 'string' ? { status: row.status } : {}),
     };
     normalized.set(item.key, item);
   }
-  records.push(...normalized.values());
-  const overlaps: ConflictOverlapItem[] = [];
+  const records = [...normalized.values()],
+    overlaps: ConflictOverlapItem[] = [];
   for (const row of Array.isArray(inventory.overlaps) ? inventory.overlaps : []) {
-    if (!row || typeof row.candidate_id !== 'string' || typeof row.status !== 'string') continue;
-    const paths = Array.isArray(row.paths)
-      ? row.paths.filter((path): path is string => typeof path === 'string')
-      : [];
+    if (!isRecord(row) || typeof row.candidate_id !== 'string' || typeof row.status !== 'string')
+      continue;
     const conflictId = typeof row.conflict_id === 'string' ? row.conflict_id : undefined;
+    let paths = conflictPathSet(row, 'paths');
+    if (paths.state === 'unknown' && conflictId)
+      paths =
+        records.find((item) => item.conflict_id === conflictId)?.path_sets.overlapping_paths ??
+        paths;
+    if (row.status === 'not_analyzed') paths = { state: 'unknown', items: [] };
+    const inline = paths.state === 'inline' ? paths.items : [];
     overlaps.push({
-      key: `${conflictId ?? row.candidate_id}:${paths.join('|')}:${row.status}`,
+      key: `${conflictId ?? row.candidate_id}:${paths.state === 'paged' ? paths.reference.digest : inline.join('|')}:${row.status}`,
       ...(conflictId ? { conflict_id: conflictId } : {}),
       candidate_id: row.candidate_id,
-      paths,
+      paths: inline,
+      path_set: paths,
       status: row.status,
     });
   }
-  return {
-    records,
-    overlaps,
-    seq: typeof inventory.seq === 'number' ? inventory.seq : 0,
-  };
+  return { records, overlaps, seq: typeof inventory.seq === 'number' ? inventory.seq : 0 };
 }

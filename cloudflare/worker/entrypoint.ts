@@ -9,6 +9,10 @@ import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
 import { authorizePreview } from './sites';
+import type { SourceGcDue, SourceIndexEnvelope } from './source-contract';
+import { prepareSourceDispatch } from './source-dispatch';
+import { sourceIndex } from './source-index-queue';
+import { sourceCleanup } from './source-storage';
 import { ledger, sha } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
 export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
@@ -41,6 +45,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   async enqueueProjects(owner: string, projects: Json[]) {
     return enqueueProjects(this.env, owner, projects);
   }
+  async sourceCleanup(due: SourceGcDue) {
+    return sourceCleanup(this.env, due);
+  }
 
   protected async launchExecution(name: string, scope: Scope) {
     await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
@@ -59,6 +66,13 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
           }
           if (envelope.kind === 'provision') {
             await provisionMessage(this.env, message);
+            return;
+          }
+          if (envelope.kind === 'source_index') {
+            const indexed = await sourceIndex(this.env, envelope as SourceIndexEnvelope);
+            if (indexed.state === 'preparing')
+              await this.env.AGENT_QUEUE.send(envelope, { delaySeconds: 1 });
+            message.ack();
             return;
           }
           const job = await ledger(this.env, envelope.repo_id, {
@@ -89,7 +103,12 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             created_at: now(),
           };
           await attemptLog(this.env, scope, 'execution.started');
-          if (job.payload?.workspace_transport === 'git-native-v1') {
+          if (job.payload?.workspace_transport === 'api-source-v1') {
+            if ((await prepareSourceDispatch(this.env, scope)) === 'deferred') {
+              message.ack();
+              return;
+            }
+          } else if (job.payload?.workspace_transport === 'git-native-v1') {
             if (job.kind === 'agent' && !comparisonReviewAttempt(job)) {
               const base =
                 job.payload.comparison_repair?.source_revision ?? job.payload.execution?.base;

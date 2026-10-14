@@ -13,7 +13,7 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       return error('FORBIDDEN', 'Trusted Git client required', 403);
     const url = new URL(req.url);
     const [_, role, ...tail] = url.pathname.split('/');
-    const gitNative = job.payload?.workspace_transport === 'git-native-v1';
+    const gitNative = ['git-native-v1', 'api-source-v1'].includes(job.payload?.workspace_transport);
     if (gitNative) {
       const capability = role ? gitRole(scope, role) : null;
       if (!capability) return error('FORBIDDEN', 'Attempt Git capability unavailable', 403);

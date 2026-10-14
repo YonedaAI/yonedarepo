@@ -311,3 +311,5 @@ fn publication_pending_prevents_refresh_and_exhausted_capture_is_terminal() {
         "failed"
     );
 }
+#[path = "conflict_source_limits.rs"]
+mod source_limits;

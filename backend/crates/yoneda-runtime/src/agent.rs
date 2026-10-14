@@ -7,6 +7,16 @@ use yoneda_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     validate_reasoning_job(job)?;
     let approved_budget = crate::execution_limits::model_budget(job)?;
+    if crate::source_workspace_job::enabled(job) {
+        return crate::source_workspace_agent::execute(
+            job,
+            root,
+            transcript,
+            &agent_prompt(job)?,
+            approved_budget.as_ref(),
+        )
+        .await;
+    }
     let git_native = crate::transport::enabled(job);
     let baseline = if git_native {
         crate::transport::prepare_agent_workspace(job, root).await?;
@@ -131,6 +141,9 @@ fn agent_prompt(job: &Value) -> Result<String> {
     } else {
         body
     };
+    if crate::source_workspace_job::enabled(job) {
+        prompt.push_str("\n\nWorkspace transport: api-source-v1. Normal file operations and scoped source_* MCP tools use one staged SourceWorkspace authority. Inspect files on demand. Do not clone, Git commit, push or publish; the supervisor seals changes and a separate capture/evaluator checks exact Git source. Generated dependencies/build output are local scratch only. Staged writes are not checked or published evidence.\n");
+    }
     if crate::transport::enabled(job) && !read_only {
         prompt.push_str("\n\nWorkspace transport: git-native-v1. Commit your completed changes on branch main and push them to origin. Preserve the existing history and do not modify remote URLs or credentials.\n");
     }

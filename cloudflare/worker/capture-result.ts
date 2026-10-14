@@ -1,5 +1,6 @@
 import { CANDIDATE_DIFF_LIMIT } from './evidence';
 import { captureFileProvenance } from './provenance';
+import { sourceCaptureCompletion } from './source-completion';
 import { ledger, object } from './storage';
 import type { Env, Json, Scope } from './types';
 
@@ -43,6 +44,11 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
   const identity = { job_id: job.id, epoch: job.epoch };
   if (!scope.fork) invalid('Captured repository is unavailable');
   const refresh = job.payload.capture_subtype === 'refresh_candidate';
+  const sourceCapture =
+    job.payload.workspace_transport === 'api-source-v1' &&
+    job.payload.capture_subtype === 'source_changeset'
+      ? await sourceCaptureCompletion(env, scope, body)
+      : undefined;
   const commitHash =
     refresh && body.status === 'unresolved' ? body.merge_workspace_commit : body.revision?.commit;
   if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(commitHash ?? ''))
@@ -51,10 +57,15 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     throw Object.assign(new Error('Captured repository mismatch'), { code: 'FORBIDDEN' });
   using captured = await env.ARTIFACTS.get(scope.fork.split('/')[1]);
   const commit = await captured.readCommit(commitHash);
-  const base = refresh ? job.payload.expected_head : job.payload.base.commit;
-  const parents = refresh ? [base, job.payload.candidate.revision.commit] : [base];
+  const base =
+    sourceCapture?.context.base.commit ??
+    (refresh ? job.payload.expected_head : job.payload.base.commit);
+  const parents =
+    sourceCapture?.context.parents ??
+    (refresh ? [base, job.payload.candidate.revision.commit] : [base]);
   if (
     !commit ||
+    commit.hash !== commitHash ||
     commit.treeHash !== (refresh ? (body.merge_tree ?? body.tree) : body.tree) ||
     JSON.stringify(commit.parents) !== JSON.stringify(parents)
   )
@@ -69,11 +80,20 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     readback: _readback,
     workspace_revision: _workspace,
     resolver_delta_paths: _resolverDelta,
+    source_lineage: _sourceLineage,
+    source_verified: _sourceVerified,
     ...metadata
   } = body;
   const result: Json = { ...metadata, paths, file_provenance: fileProvenance };
+  if (sourceCapture) {
+    result.source_lineage = sourceCapture.lineage;
+    result.source_verified = true;
+  }
   if (refresh) {
     const { observed, version } = await targetReadback(env, scope);
+    const expectedHead = await captured.readCommit(job.payload.expected_head);
+    if (!expectedHead || expectedHead.hash !== job.payload.expected_head)
+      invalid('Frozen refresh head is unavailable');
     const candidatePaths = changedPaths(
       await captureFileProvenance(
         captured,
@@ -88,10 +108,12 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
       observed_head: observed,
       version,
       parents: commit.parents,
+      expected_head_tree: expectedHead.treeHash,
+      merged_paths: paths,
       candidate_paths: candidatePaths,
       intervening_paths: interveningPaths,
       ...(body.status === 'clean'
-        ? { merge_commit: commitHash, merged_paths: paths }
+        ? { merge_commit: commitHash }
         : { workspace_commit: commitHash, conflict_paths: body.conflict_paths }),
     };
     if (body.status === 'unresolved') {
@@ -102,7 +124,10 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     }
     return { op: 'conflict_refresh_complete', ...identity, result };
   }
-  if (job.payload.capture_subtype === 'resolve_conflict') {
+  if (
+    job.payload.capture_subtype === 'resolve_conflict' ||
+    job.payload.source_resolution === true
+  ) {
     const workspace = job.payload.merge_workspace_revision;
     if (typeof workspace?.repository !== 'string' || typeof workspace?.commit !== 'string')
       invalid('Frozen resolver merge workspace is missing');

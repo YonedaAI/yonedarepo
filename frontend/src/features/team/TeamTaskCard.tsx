@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { ExecutionLogs } from '../exploration/ExecutionLogs';
+import { capturedPathCount } from '../source-workspace/sourcePathCount';
 import { TeamHandoff } from './TeamHandoff';
 import { TeamSource } from './TeamSource';
 import {
@@ -41,6 +42,7 @@ export function TeamTaskCard({
   const { assertions, captures, superseded } = classifyTeamHandoffs(taskHandoffs);
   const blockers = dependencyBlockers(task, tasks);
   const error = taskError(task, execution);
+  const outputPathCount = capturedPathCount(task.output);
   const [repairBrief, setRepairBrief] = useState('');
   const [repairRequest, setRepairRequest] = useState<Record<string, unknown> | null>(null);
   const [repairSending, setRepairSending] = useState(false);
@@ -107,7 +109,9 @@ export function TeamTaskCard({
       {task.output && (
         <p>
           Captured <code>{short(task.output.revision?.commit)}</code> ·{' '}
-          {task.output.paths?.length ?? 0} changed paths
+          {outputPathCount == null
+            ? 'Changed-path count unavailable'
+            : `${outputPathCount} changed paths`}
         </p>
       )}
       {(task.status === 'failed' ||
@@ -220,7 +224,13 @@ export function TeamTaskCard({
         {task.output && (
           <>
             <p>Captured changed paths:</p>
-            <pre>{(task.output.paths ?? []).join('\n') || 'No changed paths'}</pre>
+            <pre>
+              {Array.isArray(task.output.paths)
+                ? task.output.paths.join('\n') || 'No changed paths'
+                : outputPathCount == null
+                  ? 'Changed-path list unavailable.'
+                  : 'Changed paths are stored in a paged list.'}
+            </pre>
           </>
         )}
         {assertions.map((handoff) => (

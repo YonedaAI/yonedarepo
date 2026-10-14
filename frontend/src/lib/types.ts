@@ -7,6 +7,7 @@ import type {
   RunsPageContract,
 } from '../../../shared/provenance';
 import type { ComparisonState } from './comparison';
+import type { SourcePreparationJob } from './sourceWorkspace';
 
 export interface DevelopmentRun extends Record<string, any> {
   comparison?: ComparisonState | null;
@@ -68,6 +69,7 @@ export type ProjectMetadata = Pick<
   'id' | 'name' | 'status' | 'error' | 'error_code' | 'stage' | 'setup_started_at' | 'updated_at'
 >;
 export interface Snapshot {
+  source_preparation?: SourcePreparationJob[];
   repository: Repository;
   runs: DevelopmentRun[];
   executions: Record<string, any>[];
@@ -84,6 +86,7 @@ export interface Snapshot {
   team_handoffs?: Record<string, any>[];
   working_branches?: Record<string, any>[];
   capabilities?: {
+    source_api?: number;
     agent_limits?: AgentLimits;
     model_budgets?: number;
     optional_model_requests?: number;
@@ -117,6 +120,7 @@ export type RunGraphPage = RunGraphPageContract;
 export type CandidateDiffPage = CandidateDiffPageContract;
 /** A run detail stays Snapshot-compatible and contains only data scoped to that run. */
 export interface RunDetail extends Omit<Snapshot, 'runs'> {
+  run?: DevelopmentRun;
   runs: [Record<string, any>];
   watermark?: number;
 }

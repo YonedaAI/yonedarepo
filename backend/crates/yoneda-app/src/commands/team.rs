@@ -83,6 +83,8 @@ pub(super) fn capture_payload<S: SqlStore>(
         "team_inputs",
         "team_owned_paths",
         "team_write_paths",
+        "team_write_paths_ref",
+        "team_write_paths_count",
         "integration_manifest",
         "integration_digest",
         "manifest_record",

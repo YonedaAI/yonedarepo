@@ -115,6 +115,7 @@ pub(crate) fn run_detail<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
     }
     let evaluations = run_evaluations(db, id)?;
     let decisions = scoped("decisions")?;
+    let source_preparation = source_preparation(db, id)?;
     let team_tasks = scoped("team_tasks")?;
     let team_handoffs = scoped("team_handoffs")?;
     let artifacts = run_artifacts(db, id)?;
@@ -130,7 +131,7 @@ pub(crate) fn run_detail<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
         })
         .transpose()?;
     Ok(
-        json!({"v":1,"repository":repo(db)?,"run":run,"runs":[run],"executions":executions,"candidates":candidates,"evaluations":evaluations,"decisions":decisions,"team_tasks":team_tasks,"team_handoffs":team_handoffs,"artifacts":artifacts,"nodes":[],"edges":[],"graph_paged":true,"source_diffs":"digest_only","archive":archive}),
+        json!({"v":1,"repository":repo(db)?,"run":run,"runs":[run],"executions":executions,"candidates":candidates,"evaluations":evaluations,"decisions":decisions,"team_tasks":team_tasks,"team_handoffs":team_handoffs,"artifacts":artifacts,"nodes":[],"edges":[],"graph_paged":true,"source_diffs":"digest_only","source_preparation":source_preparation,"archive":archive}),
     )
 }
 
@@ -289,4 +290,9 @@ pub(crate) fn run_graph_page<S: SqlStore>(
         })
         .collect::<Vec<_>>();
     Ok(json!({"nodes":nodes,"edges":edges,"next_cursor":next,"watermark":high,"has_more":has_more}))
+}
+
+fn source_preparation<S: SqlStore>(db: &S, id: &str) -> Result<Vec<Value>> {
+    let rows=db.query("SELECT payload FROM jobs WHERE json_extract(payload,'$.payload.workspace_transport')='api-source-v1' AND json_extract(payload,'$.source_preparation.stage')='source_preparing' AND (json_extract(payload,'$.payload.execution.run_id')=? OR json_extract(payload,'$.payload.candidate.run_id')=?) ORDER BY id",&[json!(id),json!(id)])?;
+    rows.into_iter().map(|row|{let j:Value=serde_json::from_str(row["payload"].as_str().ok_or_else(||bad("Corrupt preparation job"))?).map_err(|_|bad("Corrupt preparation job"))?;Ok(json!({"job_id":j["id"],"kind":j["kind"],"status":j["source_preparation"]["status"],"stage":"source_preparing","epoch":j["source_preparation"]["epoch"],"observed_at":j["source_preparation"]["observed_at"],"not_before":j["not_before"],"runtime_started_at":j["runtime_started_at"]}))}).collect()
 }

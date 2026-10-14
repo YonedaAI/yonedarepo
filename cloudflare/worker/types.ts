@@ -5,6 +5,8 @@ export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; wo
 export interface Env {
   REPOSITORIES: DurableObjectNamespace;
   WORKSPACES: DurableObjectNamespace;
+  /** Source staging is separate from workspace accounts and spending authority. */
+  SOURCES?: DurableObjectNamespace;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   SELF: Service<YonedaEntrypoint>;
@@ -37,6 +39,8 @@ export interface Env {
   APPS?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
+  /** Operator activation only; every run freezes its selected transport. */
+  SOURCE_TRANSPORT?: 'api-source-v1';
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
   ACCEPTANCE_FAULTS?: 'publish-ack-once';
   ACCEPTANCE_REPOSITORY?: string;

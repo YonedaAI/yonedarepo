@@ -109,7 +109,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .get("workspace_transport")
                 .or_else(|| r.get("workspace_transport"))
             {
-                if transport != "git-native-v1" {
+                if transport != "git-native-v1" && transport != "api-source-v1" {
                     return Err(bad("Unsupported workspace transport"));
                 }
                 run["workspace_transport"] = transport.clone();
@@ -139,6 +139,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["working_branch_version"] = branch["version"].clone();
                 run["base"] = branch["working_revision"].clone();
             }
+            super::source_transport::freeze(&c, &mut run)?;
             super::adaptive_team::freeze(&c, &mut run)?;
             super::autonomy::freeze(&c, &mut run)?;
             super::campaign::freeze(db, &c, &mut run, now)?;

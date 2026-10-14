@@ -20,6 +20,8 @@ const reads = new Set([
   'execution_logs',
   'conflict_status',
   'job_status',
+  'candidate_paths',
+  'conflict_paths',
 ]);
 const writes = new Set([
   'init',
@@ -52,7 +54,7 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
       ? Object.fromEntries(new URL(req.url).searchParams)
       : await readJson(req, 256 * 1024);
   for (const key of [
-    'after',
+    ...(['candidate_paths', 'conflict_paths'].includes(action) ? [] : ['after']),
     'depth',
     'limit',
     'watermark',
@@ -94,8 +96,15 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     'review_only',
     'comparison_review',
     'comparison_manifest',
+    'workspace_transport',
+    'source_workspace',
+    'source_mounts',
+    'source_changeset',
+    'source_view',
+    'source_approval',
   ])
     delete input[key];
-  for (const key of Object.keys(input)) if (key.startsWith('_comparison_')) delete input[key];
+  for (const key of Object.keys(input))
+    if (key.startsWith('_comparison_') || key.startsWith('_source_')) delete input[key];
   return input;
 }

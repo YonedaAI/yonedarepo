@@ -25,7 +25,10 @@ pub(super) fn by_request<S: SqlStore>(db: &S, request: &str) -> Result<Option<Va
         .transpose()
 }
 
-pub(super) fn attach_typed(record: &mut Value) -> Result<()> {
+pub(super) fn attach_typed<S: SqlStore>(db: &S, record: &mut Value) -> Result<()> {
+    let expanded = super::source::hydrate(db, record)?;
+    let original = record;
+    let record = &expanded;
     let status = match record["status"].as_str().unwrap_or_default() {
         "clean" => ConflictStatus::Clean,
         "unresolved" => ConflictStatus::Unresolved,
@@ -56,7 +59,8 @@ pub(super) fn attach_typed(record: &mut Value) -> Result<()> {
             .collect(),
         resolver_run_id: record["resolver_run_id"].as_str().map(str::to_owned),
     };
-    record["trusted_record"] = serde_json::to_value(typed).map_err(|e| bad(&e.to_string()))?;
+    original["trusted_record"] = serde_json::to_value(typed).map_err(|e| bad(&e.to_string()))?;
+    super::source::compact(db, original)?;
     Ok(())
 }
 
@@ -64,6 +68,12 @@ pub(super) fn declared_scopes<S: SqlStore>(
     db: &S,
     candidate: &Value,
 ) -> Result<(Vec<String>, String)> {
+    if candidate["declared_paths_ref"].is_object() {
+        return Ok((
+            crate::path_lists::load(db, candidate, "declared_paths")?,
+            "candidate_declaration".into(),
+        ));
+    }
     if let Some(paths) = candidate.get("declared_paths").and_then(Value::as_array) {
         let scopes = paths
             .iter()
@@ -85,17 +95,7 @@ pub(super) fn declared_scopes<S: SqlStore>(
             .into_iter()
             .chain(plan.tasks.into_iter().flat_map(|t| t.write_paths))
             .collect();
-        let paths = candidate["paths"]
-            .as_array()
-            .ok_or_else(|| bad("Candidate lacks captured paths"))?;
-        let paths: Vec<String> = paths
-            .iter()
-            .map(|p| {
-                p.as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| bad("Invalid captured path"))
-            })
-            .collect::<Result<_>>()?;
+        let paths = crate::path_lists::load(db, candidate, "paths")?;
         if paths.iter().any(|path| {
             !declared
                 .iter()
@@ -109,24 +109,14 @@ pub(super) fn declared_scopes<S: SqlStore>(
         validate_path_list(&paths)?;
         return Ok((paths, "frozen_team_plan".into()));
     }
-    let paths = candidate["paths"]
-        .as_array()
-        .ok_or_else(|| bad("Candidate lacks captured paths"))?;
-    let scopes: Vec<String> = paths
-        .iter()
-        .map(|p| {
-            p.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| bad("Invalid captured path"))
-        })
-        .collect::<Result<_>>()?;
+    let scopes = crate::path_lists::load(db, candidate, "paths")?;
     validate_path_list(&scopes)?;
     Ok((scopes, "captured_candidate_paths".into()))
 }
 
 pub(super) fn validate_path_list(paths: &[String]) -> Result<()> {
-    if paths.is_empty() || paths.len() > yoneda_core::MAX_FILES {
-        return Err(bad("Candidate path manifest must contain 1–500 paths"));
+    if paths.is_empty() || paths.len() > crate::path_lists::MAX_PATHS {
+        return Err(bad("Candidate path manifest must contain 1–20000 paths"));
     }
     let unique: BTreeSet<_> = paths.iter().collect();
     if unique.len() != paths.len() {

@@ -1,4 +1,22 @@
-# Product MVP release evidence — October 8–12, 2026
+# Product MVP release evidence — October 8–13, 2026
+
+## API source transport — local verification, October 13, 2026
+
+The complete local gate passed **554 Rust**, **541 platform workerd**, **16 isolated-app workerd**, **272 frontend** and **43 Node** tests, including formatting, Clippy, TypeScript, the actual workers-rs Wasm build and production frontend build. The R11 Linux image passed **166 nonignored runtime tests**; separate kernel tests exercised seven lazy FUSE cases, unprivileged capability removal, runtime health guards and a zero-candidate reviewer lifecycle. Registry image digest is `sha256:3a421078ce1184911d6eb9b50542979b866dd5313c917dbcf7b5640afdc68d78`.
+
+Independent Worker security tests passed **53/53**, including signed indexing progress, completed manifests, poisoned-cache rejection, actor scope and root invalidation authentication. A controlled workerd/R2 benchmark assembled the certified metadata view in 146 ms after a 15.870 s cold index and requested 20,480 bytes of file bodies from a 40,960,000-byte fixture. Its Artifacts SDK is a fixture: these are local measurements, not deployed throughput or a production monorepo benchmark.
+
+The source layer retains Git authority while adding lazy file access, immutable server-side changesets, incremental capture and sparse cross-run refresh. Zero, one and two captured alternatives are supported without inventing source views. Deployment, activation and a new hosted acceptance remain separate pending steps; the prior R9 run does not prove this transport.
+
+## R9 hosted comparison and reviewer cleanup — October 13, 2026
+
+Implementation `ef311f6179c832a7b02f0b08eb81816f480a426a` is deployed at `yonedarepo.com` through Worker `9a50ae5f-42ed-4d05-9e5a-261319c303f7`. Runtime R9 is pinned at `sha256:5a72527f7768545e091f893aa00282c9c8f3c525cf15125ee088c769e6248420`; container application version 32 completed its rollout with zero errors. The complete gate passed **449 Rust**, **425 platform workerd**, **16 app workerd**, **207 frontend** and **43 Node** tests. R9 passed **91 Linux runtime tests**. The public export `cca34d41d97ef4a3dd5db07bdccd4bdd13ef9fe4` passed [CI run 38486970911](https://github.com/MagnetonIO/yonedarepo/actions/runs/38486970911).
+
+Fresh paid run `run-25f2c3a7-432d-468a-bae8-53396fcfc655` used two GLM-5.3-Flash builders and a separate reviewer to implement a small `normalizeQuery` feature. Both alternatives passed all eight independent protected tests against bundle `abd5d662526c6f50c7ecbdcc8c5dd81c52838514205052cd465664f3aa10c7b0`. The reviewer selected revision `4be4c8da250d34703ed0eb5d5ec4c709d718905c` and recorded its reasons; the other checked revision was `b8c1988581c55b3cf2e26985de85c9f57872e0c2`. It used 44 model requests and $0.174506 conservative accounting, not a provider invoice.
+
+Hosted browser verification inspected the checks, changed files and explanation, overrode the recommendation to the other result, then restored the original choice. Working-branch versions advanced 1 → 2 → 3. The original agent review remained byte-identical, no inference requests were added, and canonical revision `40b7170ec643ec0cab48afadaa8acdb2011c94f5` remained at version 0 with no publishing decision. This was implementer acceptance, not unfamiliar-human rehearsal.
+
+At the owner's request, previous reviewer test repositories, including this completed fixture, were deleted after verification. The ordinary reviewer workspace now has zero repositories; its login, 12 provider connections and existing workspace spending remain unchanged. Hosted browser verification covered the empty workspace and Connect Agents. Audit receipts remain private; these recorded runs are no longer available in the live repository list. New source-transport work is still a separate, undeployed verification wave.
 
 ## Reviewed comparisons — October 13, 2026
 

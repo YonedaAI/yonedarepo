@@ -7,6 +7,7 @@ mod refresh;
 mod repair_authority;
 mod resolver;
 mod resolver_capture;
+mod source;
 mod support;
 mod target;
 pub(super) fn complete_resolver_capture<S: SqlStore>(
@@ -32,9 +33,14 @@ mod tests;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match string(c, "op")?.as_str() {
         "conflict_status" => inventory::status(db, c),
+        "conflict_paths" => source::paths(db, c),
         "refresh_candidate" => refresh::refresh(db, c, now),
         "resolve_conflict" => resolver::resolve(db, c, now),
         "conflict_refresh_complete" => refresh::complete(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown conflict operation")),
     }
+}
+
+pub(crate) fn validate_source_resolution<S: SqlStore>(db: &S, record: &Value) -> Result<()> {
+    repair_authority::validate_capture(db, &source::hydrate(db, record)?)
 }

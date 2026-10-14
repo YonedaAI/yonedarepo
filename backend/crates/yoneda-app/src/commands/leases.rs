@@ -1,6 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+pub(super) mod source;
 mod status;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
@@ -61,6 +62,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["epoch"] = json!(number(&j, "epoch")? + 1);
             j["status"] = json!("running");
             j["not_before"] = Value::Null;
+            source::claimed(&mut j, now)?;
             j["runtime_started_at"] = Value::Null;
             j["progress"] = Value::Null;
             let duration = duration(db, &j)?;
@@ -110,6 +112,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             let id = string(&j, "id")?;
             if c["progress"]["stage"] == "container_ready" && j["runtime_started_at"].is_null() {
                 j["runtime_started_at"] = json!(now);
+                source::runtime_ready(&mut j, now);
                 let duration = duration(db, &j)?;
                 j["attempt_deadline"] = json!((now + duration).min(number(&j, "deadline")?));
             }
@@ -139,6 +142,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             } else {
                 "failed"
             });
+            source::terminal(&mut j, now);
             j["error"] = c["error"].clone();
             j["lease_until"] = json!(0);
             save(db, "jobs", &id, &j)?;
@@ -178,6 +182,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     } else {
                         "failed"
                     });
+                    source::terminal(&mut j, now);
                     save(db, "jobs", &id, &j)?;
                     reflect_status(db, &j, now)?;
                     if j["status"] == "queued" {

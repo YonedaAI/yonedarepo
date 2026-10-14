@@ -26,6 +26,7 @@ import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
+import { sourceRoute } from './source-route';
 import { ledger, sha } from './storage';
 import { teamTaskSource } from './team-source';
 import { approveTestPolicy } from './test-policy';
@@ -155,6 +156,8 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
       await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    const sourceResponse = await sourceRoute(req, env, principal, repo);
+    if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')
       return await resynchronize(req, env, principal, repo);
     if (action === 'approve_test_bundle' && req.method === 'POST')

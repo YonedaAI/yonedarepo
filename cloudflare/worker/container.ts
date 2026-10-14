@@ -3,6 +3,11 @@ import { capacityUnavailable } from './container-capacity';
 import { now } from './http';
 import { writeLog } from './logging';
 import { checkRuntime } from './runtime';
+import {
+  invalidateSourceSession,
+  type SourceInvalidation,
+  type SourceInvalidationReceipt,
+} from './source-invalidation';
 import { ledger } from './storage';
 import type { Env, Json, Scope } from './types';
 export class ExecutionContainer extends Container<Env> {
@@ -84,6 +89,36 @@ export class ExecutionContainer extends Container<Env> {
     const scope = await this.ctx.storage.get<Scope>('scope');
     if (!scope) throw new Error('Container has no execution scope');
     return scope;
+  }
+  async invalidateSource(input: SourceInvalidation): Promise<SourceInvalidationReceipt> {
+    const scope = await this.scope();
+    return invalidateSourceSession(
+      scope,
+      input,
+      () =>
+        ledger(this.env, scope.repo_id, {
+          op: 'check_attempt',
+          job_id: scope.job.id,
+          epoch: scope.job.epoch,
+        }),
+      async (body) => {
+        const result = await this.containerFetch(
+          new Request('http://supervisor/source/invalidate', {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${scope.supervisor}`,
+            },
+            body: JSON.stringify(body),
+          }),
+        );
+        if (!result.ok)
+          throw Object.assign(new Error('Source cache invalidation is unconfirmed'), {
+            code: 'SOURCE_UNCERTAIN',
+          });
+        return result.json<Json>();
+      },
+    );
   }
   async stop() {
     await this.lifecycle(

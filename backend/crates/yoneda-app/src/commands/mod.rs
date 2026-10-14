@@ -9,9 +9,10 @@ mod branches;
 mod budget_availability;
 mod campaign;
 mod capture_completion;
+mod capture_source;
 mod comparison;
 mod completion;
-mod conflicts;
+pub(crate) mod conflicts;
 mod context_access;
 mod context_evidence;
 mod context_packet;
@@ -40,6 +41,8 @@ mod run_visibility;
 mod runs;
 mod scheduling;
 mod sites;
+mod source_refresh;
+mod source_transport;
 mod study;
 mod team;
 mod transcripts;
@@ -90,6 +93,13 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         return Ok(result);
     }
     match string(&c, "op")?.as_str() {
+        "source_refresh_context" => source_refresh::context(db, &c, now),
+        "source_refresh_paths" => source_refresh::paths(db, &c, now),
+        "source_read_context"
+        | "source_bind"
+        | "source_register_changeset"
+        | "source_registered"
+        | "source_capture_context" => crate::source_binding::handle(db, &c, now),
         "approve_comparison_review"
         | "select_comparison_candidate"
         | "comparison_context"
@@ -97,6 +107,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "comparison_approval" => comparison::handle(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "observe_campaign_model_limit" => budget_availability::observe(db, &c, now),
+        "candidate_paths" => crate::path_lists::page(db, &c),
         "repository_status" => {
             let mut r = crate::storage::repo(db)?;
             r["capabilities"] = repository::capabilities(db, now)?;
@@ -104,6 +115,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         }
         "resync_repository" | "defer_job" => recovery::handle(db, &c, now),
         "conflict_status"
+        | "conflict_paths"
         | "refresh_candidate"
         | "resolve_conflict"
         | "conflict_refresh_complete" => conflicts::handle(db, &c, now),

@@ -4,6 +4,8 @@ use yoneda_app::{SqlStore, execute};
 use yoneda_cloudflare::CloudStore;
 mod workspace;
 pub use workspace::WorkspaceAuthority;
+mod source_workspace;
+pub use source_workspace::SourceWorkspaceAuthority;
 
 fn now() -> i64 {
     Date::now().as_millis() as i64
@@ -131,11 +133,21 @@ impl DurableObject for RepositoryAuthority {
         // Caller authority is discarded. This key exists only in the transient DO command.
         if let Some(object) = command.as_object_mut() {
             object.remove("_campaign_signing_key");
+            object.remove("_source_signing_key");
         }
         if command.get("_campaign_grant").is_some() {
             let vault = self.env.secret("VAULT_KEY")?.to_string();
             command["_campaign_signing_key"] = json!(yoneda_core::digest(
                 format!("yoneda:campaign-grant:v1:{vault}").as_bytes()
+            ));
+        }
+        if command["op"]
+            .as_str()
+            .is_some_and(|op| op.starts_with("source_"))
+        {
+            let vault = self.env.secret("VAULT_KEY")?.to_string();
+            command["_source_signing_key"] = json!(yoneda_core::digest(
+                format!("yoneda:source-grant:v1:{vault}").as_bytes()
             ));
         }
         self.ensure_alarm().await?;

@@ -145,18 +145,13 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         edge(db, &string(other, "id")?, &did, "considered_by", comparison)?;
     }
     edge(db, &cid, &did, "selected_by", selection)?;
-    for path in candidate["paths"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-    {
+    for path in crate::path_lists::load(db, &candidate, "paths")? {
         let anchor = format!("source:{}:{path}", revision.commit);
         node(
             db,
             &anchor,
             "source",
-            path,
+            &path,
             "platform_capture",
             now,
             json!({"commit":revision.commit,"path":path,"repository":r["remote"],"decision":did}),

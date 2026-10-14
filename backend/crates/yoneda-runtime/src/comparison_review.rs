@@ -40,6 +40,9 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     }
     let budget = crate::execution_limits::model_budget(job)?
         .ok_or_else(|| err("Comparison review requires an approved model budget"))?;
+    if crate::source_workspace_job::enabled(job) {
+        return crate::source_workspace_review::execute(job, root, transcript, &budget).await;
+    }
     let delivered = broker("/comparison-source", json!({}), true).await?;
     if delivered["manifest_digest"] != frozen["manifest_digest"] {
         return Err(err("Comparison source manifest changed"));

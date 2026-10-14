@@ -1,5 +1,6 @@
 import { short } from '../../lib/api';
 import type { Graph, GraphNode, Snapshot } from '../../lib/types';
+import { capturedPathCount } from '../source-workspace/sourcePathCount';
 import { TeamHandoff } from '../team/TeamHandoff';
 import { classifyTeamHandoffs } from '../team/teamView';
 import { EvidenceFields } from './EvidenceFields';
@@ -126,8 +127,18 @@ export function EvidenceTrail({
                 </strong>
               </p>
               <details>
-                <summary>Changed paths ({candidate.paths?.length ?? 0})</summary>
-                <EvidenceFields value={candidate.paths ?? []} />
+                <summary>
+                  Changed paths ({capturedPathCount(candidate) ?? 'count unavailable'})
+                </summary>
+                {Array.isArray(candidate.paths) ? (
+                  <EvidenceFields value={candidate.paths} />
+                ) : (
+                  <p>
+                    {capturedPathCount(candidate) == null
+                      ? 'Changed-path list unavailable.'
+                      : 'Changed paths are stored in a paged list. Open the captured result to inspect them.'}
+                  </p>
+                )}
               </details>
               {inspect(candidate.id)}
             </section>

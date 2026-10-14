@@ -31,6 +31,10 @@
       {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority"
+      },
+      {
+        "name": "SOURCES",
+        "class_name": "SourceWorkspaceAuthority"
       }
     ]
   },
@@ -46,6 +50,12 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "WorkspaceAuthority"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "SourceWorkspaceAuthority"
       ]
     }
   ],
