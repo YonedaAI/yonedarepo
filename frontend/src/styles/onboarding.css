@@ -226,26 +226,119 @@ details.account-panel[open] {
   color: #244da1;
   background: #edf3ff;
 }
-.provider-list {
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 10px;
-  margin: 24px 0;
+.provider-settings > .subtle {
+  margin: 0 0 14px;
 }
-.provider-list li {
+button.provider-new-toggle {
+  gap: 6px;
+}
+.provider-new,
+.provider-inline-form {
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafbfd;
+}
+.provider-groups {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0 0;
+}
+.provider-group {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: visible;
+}
+.provider-group-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--line);
-  padding: 12px;
-  border-radius: 8px;
+  padding: 10px 12px 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f6f8fb;
+  border-radius: 8px 8px 0 0;
 }
-.provider-list small {
+.provider-group-heading h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.provider-group-heading small,
+.provider-row-name small {
   display: block;
-  margin-top: 4px;
+  margin-top: 2px;
   color: var(--muted);
+  font-size: 12px;
+}
+.provider-group-heading button.quiet,
+.provider-add-menu > summary {
+  gap: 6px;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.provider-add-menu {
+  position: relative;
+}
+.provider-add-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #8090a4;
+  border-radius: 7px;
+  background: #fff;
+  color: #203a5b;
+  font-weight: 500;
+  list-style: none;
+}
+.provider-add-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.provider-add-menu > div {
+  position: absolute;
+  right: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 200px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px #12243b1f;
+}
+.provider-add-menu p {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.provider-add-menu button.text-button {
+  justify-content: flex-start;
+}
+.provider-inline-form {
+  margin: 12px;
+}
+.provider-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.provider-rows li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px 36px;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 6px 8px 14px;
+}
+.provider-rows li + li {
+  border-top: 1px solid var(--line);
+}
+.provider-row-name {
+  min-width: 0;
+}
+.provider-row-name strong,
+.provider-row-name small {
+  overflow-wrap: anywhere;
 }
 .provider-model-picker,
 .provider-billing-picker {
