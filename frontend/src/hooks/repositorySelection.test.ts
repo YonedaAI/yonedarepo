@@ -7,7 +7,19 @@ describe('repository selection after discovery', () => {
   it('reports a deep link to a repository that is not in the workspace', () => {
     expect(
       selectRepository({ requested: 'repo-x', current: 'repo-x', available, deleted: new Set() }),
-    ).toEqual({ id: '', missing: true });
+    ).toEqual({ id: 'repo-a', missing: true });
+  });
+
+  it('ignores the original link once it has been followed', () => {
+    expect(
+      selectRepository({
+        requested: 'repo-x',
+        current: 'repo-b',
+        available,
+        deleted: new Set(),
+        linkFollowed: true,
+      }),
+    ).toEqual({ id: 'repo-b', missing: false });
   });
 
   it('moves on without an error when the linked repository was deleted in this session', () => {

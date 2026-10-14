@@ -36,6 +36,7 @@ export function useRepository() {
   const generation = useRef(0);
   const selectedId = useRef(requestedRepositoryId);
   const deletedIds = useRef(new Set<string>());
+  const linkFollowed = useRef(false);
   const reads = useRef(new RepositoryReads());
   const requests = useRef(new Map<string, { promise: Promise<void>; signal?: AbortSignal }>());
   const clear = useCallback(() => {
@@ -98,18 +99,18 @@ export function useRepository() {
         current: selectedId.current,
         available,
         deleted: deletedIds.current,
+        linkFollowed: linkFollowed.current,
       });
-      if (missing) {
-        selectedId.current = '';
-        setCurrentId('');
-        setSnapshot(null);
-        setError(`Repository "${requestedRepositoryId}" was not found for this link.`);
-        return;
+      if (requestedRepositoryId && !linkFollowed.current) {
+        linkFollowed.current = true;
+        // A stale link must not reappear on reload or after the next delete.
+        if (missing && typeof window !== 'undefined')
+          window.history.replaceState(null, '', withoutRepositoryLink(window.location.href));
       }
       if (next !== selectedId.current) setSnapshot(null);
       selectedId.current = next;
       setCurrentId(next);
-      setError('');
+      setError(missing ? `Repository "${requestedRepositoryId}" was not found for this link.` : '');
     } catch (e) {
       if (generation.current === current && !controller.signal.aborted) fail(e);
     } finally {
