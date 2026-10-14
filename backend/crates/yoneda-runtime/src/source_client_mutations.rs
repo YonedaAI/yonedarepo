@@ -30,6 +30,9 @@ pub(super) fn apply(
         ));
     }
     let mut args = json!({"request_id":id,"path":change.path(),"expected_workspace_version":workspace_version,"expected_file_version":file_version});
+    // File versions advance per path, independently of the workspace version.
+    let mut receipt_versions = serde_json::Map::new();
+    receipt_versions.insert(change.path().into(), json!(next(file_version)?));
     let operation = match change {
         SourceChange::Create { mode, .. } => {
             if current["kind"] != "missing" {
@@ -111,6 +114,7 @@ pub(super) fn apply(
             }
             args = json!({"request_id":id,"from":change.path(),"to":target,"expected_workspace_version":workspace_version,
                 "expected_from_version":file_version,"expected_to_version":target_version,"overwrite":exists});
+            receipt_versions.insert(target.clone(), json!(next(target_version)?));
             "source_rename"
         }
     };
@@ -118,20 +122,16 @@ pub(super) fn apply(
     if receipt["workspace_id"] != client.expected_workspace
         || receipt["request_id"] != id
         || receipt["authority"] != "staged_source"
-        || integer(&receipt, "workspace_version")? != workspace_version + 1
+        || integer(&receipt, "workspace_version")? != next(workspace_version)?
     {
         return Err(failure("SOURCE_FENCED", "Source mutation receipt changed"));
     }
-    if receipt["version"] != 1 || receipt["file_versions"][change.path()] != workspace_version + 1 {
+    // Exactly the touched paths, each advanced once from the version this client checked.
+    if receipt["version"] != 1 || receipt["file_versions"] != Value::Object(receipt_versions) {
         return Err(failure(
             "SOURCE_FENCED",
             "Source mutation path receipt changed",
         ));
-    }
-    if let SourceChange::Rename { target, .. } = change
-        && receipt["file_versions"][target] != workspace_version + 1
-    {
-        return Err(failure("SOURCE_FENCED", "Source rename receipt changed"));
     }
     if matches!(change, SourceChange::Delete { .. }) {
         return Ok(None);
@@ -144,10 +144,15 @@ pub(super) fn apply(
     // Unrelated concurrent writes must not reinterpret our acknowledged per-file version.
     let after = client.stat_value(path, None)?;
     let result = node(&after)?;
-    if result.version != workspace_version + 1 {
+    if receipt["file_versions"][path] != result.version {
         return Err(failure("SOURCE_FENCED", "Source file receipt changed"));
     }
     Ok(Some(result))
+}
+fn next(version: u64) -> Result<u64> {
+    version
+        .checked_add(1)
+        .ok_or_else(|| failure("SOURCE_FENCED", "Source version overflow"))
 }
 fn contents(client: &ApiSourceClient, node: &SourceNode, length: u64) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
