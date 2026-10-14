@@ -203,3 +203,18 @@ pre {
     scroll-behavior: auto;
   }
 }
+/* ClampedText: long recorded text previews a few lines and fades into its toggle. */
+[data-clamp].collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--clamp-lines, 3);
+  line-clamp: var(--clamp-lines, 3);
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
+}
+[data-clamp]:has(+ .clamp-toggle) {
+  margin-bottom: 2px;
+}
+button.clamp-toggle {
+  margin: 0;
+}
