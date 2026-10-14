@@ -179,6 +179,29 @@ details.account-panel[open] {
   margin: 0 auto 16px;
   font-size: 26px;
 }
+.session-ended {
+  display: grid;
+  gap: 14px;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: clamp(40px, 8vh, 88px) 16px;
+}
+.session-ended .intent-symbol {
+  justify-self: start;
+  margin-bottom: 4px;
+}
+.session-ended h1 {
+  margin: 0;
+  font-size: 26px;
+}
+.session-ended h1:focus {
+  outline: none;
+}
+.session-ended > p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  line-height: 1.6;
+}
 .context-tools {
   display: flex;
   flex-wrap: wrap;

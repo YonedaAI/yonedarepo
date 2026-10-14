@@ -1,4 +1,4 @@
-import { GitBranch, GitCompareArrows, Network } from 'lucide-react';
+import { ArrowLeft, GitBranch, GitCompareArrows, Network } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { GuidedSession, GuidedStepId } from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
@@ -120,10 +120,16 @@ export function RepositoryWorkspace({
           onProviders={() => onPanel('agents')}
         />
       )}
-      {guideSession !== undefined && view !== 'guided' && (
+      {/* The Runs toolbar carries its own back link beside its actions. */}
+      {guideSession !== undefined && !['guided', 'runs'].includes(view) && (
         <p className="guided-reference">
-          <button type="button" className="quiet" onClick={() => setView('guided')}>
-            Return to guided demo
+          <button
+            type="button"
+            className="text-button guided-back"
+            onClick={() => setView('guided')}
+          >
+            <ArrowLeft size={15} aria-hidden="true" />
+            Back to guided demo
           </button>
         </p>
       )}

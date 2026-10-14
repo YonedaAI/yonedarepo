@@ -6,6 +6,14 @@ export class ApiError extends Error {
     super(message);
   }
 }
+const unauthorizedListeners = new Set<() => void>();
+/** Notifies when any API call is rejected because the browser session is no longer valid. */
+export function onUnauthorized(listener: () => void) {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
 export async function api<T>(
   path: string,
   body?: unknown,
@@ -44,11 +52,15 @@ export async function api<T>(
       signal: controller.signal,
     });
     const value = await response.json();
-    if (!response.ok)
-      throw new ApiError(
+    if (!response.ok) {
+      const error = new ApiError(
         value.error?.code ?? 'REQUEST_FAILED',
         value.error?.message ?? 'Request failed',
       );
+      if (response.status === 401 && error.code === 'UNAUTHORIZED')
+        for (const listener of unauthorizedListeners) listener();
+      throw error;
+    }
     return value as T;
   })();
   try {
