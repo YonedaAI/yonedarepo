@@ -51,6 +51,68 @@ fn all_failed_compare_agents_finish_the_run() {
     );
 }
 
+#[test]
+fn externally_stopped_agent_requeues_once_in_a_fresh_epoch_then_fails_terminally() {
+    let db = repo_with_policy(super::single_agent::policy());
+    call(&db,json!({"op":"start_run","id":"stopped","intent":"Compare bounded approaches","agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}]})).unwrap();
+    let id = "job:stopped:agent-1";
+    let stopped = "HARNESS_INTERRUPTED: The container platform stopped the agent harness (SIGTERM, exit 143).";
+    let first = call(&db, json!({"op":"claim","job_id":id})).unwrap();
+    assert_eq!(
+        (first["attempt"].clone(), first["epoch"].clone()),
+        (json!(1), json!(1))
+    );
+    let requeued = call(
+        &db,
+        json!({"op":"fail","job_id":id,"epoch":1,"retryable":true,"error":stopped}),
+    )
+    .unwrap();
+    assert_eq!(requeued["status"], "queued");
+    let execution = crate::storage::get(&db, "executions", "stopped:agent-1").unwrap();
+    assert_eq!(execution["status"], "queued");
+    assert!(
+        call(&db, json!({"op":"outbox"})).unwrap()["jobs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["id"] == format!("dispatch:{id}:1") && j["payload"]["job_id"] == id),
+        "a requeued attempt is redispatched to a fresh container"
+    );
+    assert_eq!(
+        crate::storage::get(&db, "runs", "stopped").unwrap()["status"],
+        "exploring"
+    );
+    let second = call(&db, json!({"op":"claim","job_id":id})).unwrap();
+    assert_eq!(
+        (second["attempt"].clone(), second["epoch"].clone()),
+        (json!(2), json!(2))
+    );
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"fail","job_id":id,"epoch":1,"retryable":true,"error":stopped})
+        )
+        .unwrap_err()
+        .code,
+        "FENCED",
+        "the stopped epoch cannot fail or requeue its successor"
+    );
+    let terminal = call(
+        &db,
+        json!({"op":"fail","job_id":id,"epoch":2,"retryable":true,"error":stopped}),
+    )
+    .unwrap();
+    assert_eq!(terminal["status"], "failed");
+    let execution = crate::storage::get(&db, "executions", "stopped:agent-1").unwrap();
+    assert_eq!(execution["status"], "failed");
+    assert_eq!(
+        call(&db, json!({"op":"claim","job_id":id}))
+            .unwrap_err()
+            .code,
+        "FENCED"
+    );
+}
+
 fn blocked(db: &NativeStore, conflict: bool) -> Value {
     let receipt = call(db, ready(db)).unwrap();
     let id = format!("publish:{}", receipt["id"].as_str().unwrap());

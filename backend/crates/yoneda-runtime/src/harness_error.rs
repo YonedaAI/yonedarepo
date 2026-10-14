@@ -3,6 +3,57 @@
 use serde_json::Value;
 use yoneda_core::Error;
 
+/// Error code for a harness stopped from outside the attempt. It is the only runtime
+/// failure a hosted agent attempt may retry; see `attempt_failure`.
+pub(crate) const INTERRUPTED: &str = "HARNESS_INTERRUPTED";
+const SIGINT: i64 = 2;
+const SIGTERM: i64 = 15;
+/// Shells and Node-based CLIs report a handled fatal signal as exit 128 + signal.
+const SIGNAL_EXIT_BASE: i64 = 128;
+
+/// A stop request delivered from outside the attempt (container rollout, eviction or an
+/// operator interrupt). The runtime itself only ever fences harnesses with SIGKILL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StopSignal {
+    Terminate,
+    Interrupt,
+}
+impl StopSignal {
+    fn from_number(signal: i64) -> Option<Self> {
+        match signal {
+            SIGTERM => Some(Self::Terminate),
+            SIGINT => Some(Self::Interrupt),
+            _ => None,
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Self::Terminate => "SIGTERM",
+            Self::Interrupt => "SIGINT",
+        }
+    }
+}
+
+/// Why an unsuccessful harness process ended, from its exit evidence alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HarnessFailure {
+    /// SIGTERM/SIGINT, either uncaught or handled and reported as exit 128 + signal.
+    ExternalStop(StopSignal),
+    /// Any other exit status or signal: an outcome of the attempt itself.
+    Exited,
+}
+
+pub(crate) fn classify(output: &Value) -> HarnessFailure {
+    let stop = match output["signal"].as_i64() {
+        Some(signal) => StopSignal::from_number(signal),
+        None => output["exit"]
+            .as_i64()
+            .and_then(|exit| exit.checked_sub(SIGNAL_EXIT_BASE))
+            .and_then(StopSignal::from_number),
+    };
+    stop.map_or(HarnessFailure::Exited, HarnessFailure::ExternalStop)
+}
+
 const MAX_TERMINAL_LINES: usize = 128;
 const MAX_EVENT_BYTES: usize = 64 * 1024;
 
@@ -21,16 +72,25 @@ pub(crate) fn failure(output: &Value, evidence: &Value) -> Error {
         .as_i64()
         .filter(|exit| (-1..=255).contains(exit));
     let exit = exit.map_or_else(|| "unknown".into(), |exit| exit.to_string());
-    if let Some(signal) = output["signal"]
+    let observed = match output["signal"]
         .as_i64()
         .filter(|signal| (1..=64).contains(signal))
     {
-        return Error::new(
-            "RUNTIME",
-            format!("Harness terminated by signal {signal}. {evidence_note}"),
-        );
+        Some(signal) => format!("Harness terminated by signal {signal}"),
+        None => format!("Harness exited {exit}"),
+    };
+    // Explicit provider and budget results returned above outrank a stop: they are not
+    // transient, so a retry would only spend more of the approved allowance.
+    match classify(output) {
+        HarnessFailure::ExternalStop(stop) => Error::new(
+            INTERRUPTED,
+            format!(
+                "{observed} ({}). The agent harness was stopped from outside the attempt; hosted agent attempts retry once in a fresh container. {evidence_note}",
+                stop.name()
+            ),
+        ),
+        HarnessFailure::Exited => Error::new("RUNTIME", format!("{observed}. {evidence_note}")),
     }
-    Error::new("RUNTIME", format!("Harness exited {exit}. {evidence_note}"))
 }
 
 fn terminal_diagnostic(output: &Value) -> Option<(&'static str, &'static str)> {
