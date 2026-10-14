@@ -169,3 +169,19 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
     actionLabel: 'View agent activity',
   };
 }
+
+const statusByTone: Record<RunAttentionState['tone'], string> = {
+  published: 'Published',
+  review: 'Ready for review',
+  blocked: 'Needs attention',
+  working: 'Running',
+  neutral: 'Cancelled',
+};
+
+/** Short plain-language run status for lists; presentation only, derived from `runAttention`. */
+export function runStatusLabel(snapshot: Snapshot, run: RecordValue) {
+  const { tone } = runAttention(snapshot, run);
+  if (tone === 'working' && snapshot.decisions.some((item) => item.run_id === run.id))
+    return 'Publishing';
+  return statusByTone[tone];
+}

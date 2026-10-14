@@ -10,6 +10,21 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+/* Guided briefs run to many lines; preview three and fade into the toggle. */
+.review-intent.collapsed {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
+}
+.review-intent:has(+ .review-intent-toggle) {
+  margin-bottom: 2px;
+}
+.review-intent-toggle {
+  margin: 0;
+}
 .review-criteria {
   margin: 12px 0;
 }

@@ -1,5 +1,5 @@
 import type { Snapshot } from '../../lib/types';
-import { runAttention } from './runReviewState';
+import { runStatusLabel } from './runReviewState';
 import { runTitle } from './runTitle';
 
 export function RunHistory({
@@ -20,7 +20,7 @@ export function RunHistory({
           .reverse()
           .map((run) => (
             <option key={run.id} value={run.id}>
-              {runTitle(run.intent)} · {runAttention(snapshot, run).title.toLowerCase()} ·{' '}
+              {runTitle(run.intent)} · {runStatusLabel(snapshot, run)} ·{' '}
               {new Date(run.created_at).toLocaleDateString()}
             </option>
           ))}
