@@ -42,7 +42,8 @@ export function guidedPublicationState(
   candidate?: Record<string, any>,
 ): GuidedBlocker | undefined {
   const guide = run.guided;
-  if (!guide || guide.profile_id !== guidedProfileId || !isGuidedProfileVersion(guide.version)) return;
+  if (!guide || guide.profile_id !== guidedProfileId || !isGuidedProfileVersion(guide.version))
+    return;
   if (candidate?.owner_rejection)
     return blocker(
       'recorded_decision',
