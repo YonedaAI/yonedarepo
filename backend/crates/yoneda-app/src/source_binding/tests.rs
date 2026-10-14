@@ -284,6 +284,44 @@ fn unrelated_plan_amendment_preserves_unchanged_specialist_but_changed_task_fenc
     assert_eq!(call(&db, refresh).unwrap_err().code, "FENCED");
 }
 #[test]
+fn coordinator_own_repair_keeps_readonly_source_but_foreign_plan_change_fences() {
+    let db = db();
+    let mut run = get(&db, "runs", "run").unwrap();
+    run["team_plan_revision"] = json!(1);
+    save(&db, "runs", "run", &run).unwrap();
+    let mut execution = get(&db, "executions", "execution").unwrap();
+    execution["team_role"] = json!("coordinator");
+    execution["team_plan_revision"] = json!(1);
+    save(&db, "executions", "execution", &execution).unwrap();
+    let mut job = get(&db, "jobs", "job").unwrap();
+    job["payload"]["execution"] = execution;
+    job["payload"]["team_planning"] = json!(true);
+    save(&db, "jobs", "job", &job).unwrap();
+    let bound = call(
+        &db,
+        json!({"op":"source_bind","job_id":"job","epoch":1,"_source_view":view()}),
+    )
+    .unwrap();
+    assert_eq!(bound["binding"]["access"], "read_only");
+    assert_eq!(bound["binding"]["write_paths"], json!([]));
+    // The coordinator's own repair_team call advances the plan while its agent keeps reading.
+    run["team_plan_revision"] = json!(2);
+    run["team_plan_amendments"] = json!([{"plan_revision":2,"supersedes_revision":1,"approved_by":"run_autonomy_policy","execution_id":"execution"}]);
+    save(&db, "runs", "run", &run).unwrap();
+    let refresh = json!({"op":"source_bind","job_id":"job","epoch":1,"_source_view_digest":bound["binding"]["view_digest"]});
+    let refreshed = call(&db, refresh.clone()).unwrap();
+    assert_eq!(refreshed["binding"], bound["binding"]);
+    assert_eq!(refreshed["actor_grant"]["claims"]["access"], "read_only");
+    // Any plan revision this coordinator did not author still fences its source.
+    run["team_plan_revision"] = json!(3);
+    run["team_plan_amendments"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"plan_revision":3,"supersedes_revision":2,"approved_by":"repository_owner","execution_id":null}));
+    save(&db, "runs", "run", &run).unwrap();
+    assert_eq!(call(&db, refresh).unwrap_err().code, "FENCED");
+}
+#[test]
 fn api_resolver_uses_current_target_and_premerged_clean_paths_not_original_run_tree() {
     let db = db();
     let mut r = repo(&db).unwrap();
