@@ -77,6 +77,7 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "RESOURCE_LIMIT",
                     "FENCED",
                     "RUNTIME",
+                    "HARNESS_INTERRUPTED",
                     "EXECUTION_TIMEOUT",
                     "MODEL_PROXY",
                     "UNKNOWN",

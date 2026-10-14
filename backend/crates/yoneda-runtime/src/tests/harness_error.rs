@@ -11,20 +11,69 @@ fn evidence() -> Value {
 }
 
 #[test]
-fn signal_evidence_is_distinct_from_shell_exit_143_and_not_a_provider_diagnosis() {
+fn external_stop_signal_and_shell_exit_are_distinct_interruptions_without_raw_text() {
     let signal = failure(
         &json!({"exit":-1,"signal":15,"stdout":"private raw text"}),
         &evidence(),
     );
+    assert_eq!(signal.code, INTERRUPTED);
     assert!(signal.message.contains("signal 15"));
-    assert_eq!(signal.code, "RUNTIME");
+    assert!(!signal.message.contains("private"));
     let exit = failure(
         &json!({"exit":143,"signal":null,"stdout":"private raw text"}),
         &evidence(),
     );
+    assert_eq!(exit.code, INTERRUPTED);
     assert!(exit.message.contains("exited 143"));
-    assert!(!exit.message.contains("signal"));
+    assert!(!exit.message.contains("signal 15"));
     assert!(!exit.message.contains("private"));
+    assert!(exit.message.contains(&"a".repeat(64)));
+}
+
+#[test]
+fn only_sigterm_and_sigint_terminations_classify_as_external_stops() {
+    for (output, signal) in [
+        (json!({"exit":143}), StopSignal::Terminate),
+        (json!({"exit":130}), StopSignal::Interrupt),
+        (json!({"exit":-1,"signal":15}), StopSignal::Terminate),
+        (json!({"exit":-1,"signal":2}), StopSignal::Interrupt),
+    ] {
+        assert_eq!(
+            classify(&output),
+            HarnessFailure::ExternalStop(signal),
+            "{output}"
+        );
+    }
+    // SIGKILL is how this runtime itself fences attempts; other exits are agent outcomes.
+    for output in [
+        json!({"exit":1}),
+        json!({"exit":124}),
+        json!({"exit":137}),
+        json!({"exit":-1,"signal":9}),
+        json!({"exit":-1,"signal":6}),
+        json!({"exit":-1}),
+        json!({"exit":"143"}),
+        json!({"exit":-1,"signal":"15"}),
+    ] {
+        assert_eq!(classify(&output), HarnessFailure::Exited, "{output}");
+        assert_eq!(failure(&output, &evidence()).code, "RUNTIME", "{output}");
+    }
+}
+
+#[test]
+fn explicit_provider_and_budget_results_outrank_an_external_stop_exit() {
+    let mut provider = output(401, "private raw provider response");
+    provider["exit"] = json!(143);
+    assert_eq!(failure(&provider, &evidence()).code, "PROVIDER_AUTH");
+    let budget = json!({"type":"result","is_error":true,"terminal_reason":"budget_exhausted"});
+    assert_eq!(
+        failure(
+            &json!({"exit":143,"stdout":format!("{budget}\n")}),
+            &evidence()
+        )
+        .code,
+        "HARNESS_BUDGET"
+    );
 }
 
 #[test]

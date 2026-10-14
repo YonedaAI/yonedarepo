@@ -1,5 +1,5 @@
 //! Attempt lifecycle instrumentation never records job payloads or raw errors.
-use crate::{agent_transcript::Transcript, broker::broker, jobs::execute_job};
+use crate::{agent_transcript::Transcript, attempt_failure, broker::broker, jobs::execute_job};
 use serde_json::{Value, json};
 use std::time::{Duration, Instant};
 use tracing::Instrument;
@@ -64,9 +64,12 @@ async fn run(job: Value) {
         Ok(Err(error)) => {
             tracing::error!(event = "attempt.failed", error_code = %error.code,
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0);
+            let retryable =
+                attempt_failure::disposition(job["kind"].as_str().unwrap_or_default(), &error)
+                    .retryable();
             broker(
                 "/failed",
-                json!({"error":error.to_string(),"retryable":job["kind"]!="agent"}),
+                json!({"error":error.to_string(),"retryable":retryable}),
                 true,
             )
             .await
