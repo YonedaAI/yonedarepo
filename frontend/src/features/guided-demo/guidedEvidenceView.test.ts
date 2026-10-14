@@ -38,7 +38,7 @@ describe('guided evidence wording', () => {
     ).toBe('Keep IDs stable');
   });
 
-  it('renders a status icon, accessible status text, one Details link and a clamped decision', () => {
+  it('renders a status icon, accessible status text, one Details link and a plain decision lead', () => {
     const decision = `Keep task IDs stable. ${'Replacing IDs during edits would lose bookmark references. '.repeat(5)}`;
     const html = renderToStaticMarkup(
       createElement(GuidedEvidenceList, {
@@ -65,9 +65,8 @@ describe('guided evidence wording', () => {
     expect(html).toContain('(Not yet verified)');
     expect(html.match(/>Details</g)).toHaveLength(3);
     expect(html).toContain('aria-label="Details: Passed independent checks"');
-    expect(html).toContain('class="guided-decision collapsed"');
-    expect(html).toContain('Show decision');
-    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('<p class="rationale-lead">Keep task IDs stable.</p>');
+    expect(html).toContain('<summary>Technical details</summary>');
   });
 });
 
