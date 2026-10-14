@@ -145,6 +145,29 @@ fn claude_harness_cannot_park_itself_after_its_turn_ends() {
     }
 }
 
+#[test]
+fn read_only_coordinator_has_no_shell_to_sleep_in() {
+    // A live GLM coordinator submitted its repair, then ran `sleep 120/180/240` until the
+    // execution limit despite the prompt forbidding polling. It inspects with Read/Grep/Glob.
+    let blocked = |execution: serde_json::Value| {
+        let args = claude_arguments(&execution, true, "glm-5.3-flash");
+        let position = args
+            .iter()
+            .position(|arg| *arg == "--disallowedTools")
+            .unwrap();
+        args[position + 1].split(',').any(|name| name == "Bash")
+    };
+    assert!(blocked(
+        json!({"harness":"claude","provider":"zai","team_role":"coordinator"})
+    ));
+    assert!(!blocked(
+        json!({"harness":"claude","provider":"zai","team_role":"worker"})
+    ));
+    assert!(!blocked(
+        json!({"harness":"claude","provider":"zai","team_role":"integrator"})
+    ));
+}
+
 #[tokio::test]
 async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     let entry = json!({"provider":"mimo","model":"flash","max_requests":40,"max_output_tokens":512,
