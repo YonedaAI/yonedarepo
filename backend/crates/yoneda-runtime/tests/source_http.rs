@@ -9,6 +9,81 @@ use http::{Response, Server, file, read_meta, status};
 use serde_json::json;
 use source_client::{SourceBackend, SourceChange};
 use source_client_api::ApiSourceClient;
+fn strict_root_server() -> Server {
+    Server::respond(|request| {
+        let auth: Vec<_> = request
+            .lines()
+            .take_while(|line| !line.is_empty())
+            .filter_map(|line| line.split_once(':'))
+            .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+            .map(|(_, value)| value.trim())
+            .collect();
+        // Workers Headers.get coalesces repeated Authorization values with a comma.
+        if auth.join(", ") != "Bearer root-only-fixture" {
+            let mut denied = Response::json(json!({"error":{"code":"FORBIDDEN"}}));
+            denied.status = 403;
+            return denied;
+        }
+        if request.starts_with("POST /v1/repo/source_seal ") {
+            Response::json(json!({"seal_id":"seal"}))
+        } else if request.starts_with("POST /v1/repo/source_checkpoint ") {
+            Response::json(json!({"checkpoint_id":"checkpoint","changeset_digest":"digest"}))
+        } else {
+            Response::json(status())
+        }
+    })
+}
+#[test]
+fn actual_root_seal_has_one_authorization_value_and_preserves_fuse_guard() {
+    let server = strict_root_server();
+    let root = ApiSourceClient::test_root_at(
+        &server.origin,
+        "repo",
+        "ws",
+        "view",
+        false,
+        "root-only-fixture",
+    )
+    .unwrap();
+    let result = root.seal("final", "root-only-fixture");
+    let requests = server.requests.lock().unwrap();
+    for request in requests.iter() {
+        assert_eq!(
+            request
+                .lines()
+                .filter(|line| line.to_ascii_lowercase().starts_with("authorization:"))
+                .count(),
+            1
+        );
+        assert!(request.contains("x-yoneda-source-fuse: 1"));
+    }
+    assert_eq!(requests.len(), 4);
+    assert_eq!(result.unwrap()["seal_id"], "seal");
+}
+#[test]
+fn mismatched_explicit_root_seal_authorization_is_rejected_before_seal_http() {
+    let server = strict_root_server();
+    let root = ApiSourceClient::test_root_at(
+        &server.origin,
+        "repo",
+        "ws",
+        "view",
+        false,
+        "root-only-fixture",
+    )
+    .unwrap();
+    assert_eq!(
+        root.seal("final", "wrong-fixture").unwrap_err().code,
+        "FORBIDDEN"
+    );
+    let requests = server.requests.lock().unwrap();
+    assert_eq!(requests.len(), 3);
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request.starts_with("POST /v1/repo/source_seal "))
+    );
+}
 
 #[test]
 fn source_identity_and_readonly_are_fenced_before_content_or_write() {

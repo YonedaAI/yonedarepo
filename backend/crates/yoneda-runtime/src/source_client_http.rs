@@ -131,6 +131,7 @@ async fn send(
     root: Option<&str>,
 ) -> Result<HttpReply> {
     let mut expected_read = None;
+    let mut explicit_supervisor = None;
     let builder = match request {
         WireRequest::Json {
             op,
@@ -143,17 +144,14 @@ async fn send(
             if !op.starts_with("source_") || op.contains('/') {
                 return Err(failure("INVALID_SOURCE", "Invalid source operation"));
             }
-            let mut request = client
+            explicit_supervisor = supervisor;
+            client
                 .post(
                     origin
                         .join(&op)
                         .map_err(|_| failure("INVALID_SOURCE", "Invalid source operation"))?,
                 )
-                .json(&args);
-            if let Some(token) = supervisor {
-                request = request.bearer_auth(token);
-            }
-            request
+                .json(&args)
         }
         WireRequest::Upload {
             request_id,
@@ -179,12 +177,22 @@ async fn send(
                 .body(bytes)
         }
     };
-    let builder = if let Some(supervisor) = root {
-        builder
+    if root
+        .zip(explicit_supervisor.as_deref())
+        .is_some_and(|(root, explicit)| root != explicit)
+    {
+        return Err(failure(
+            "FORBIDDEN",
+            "Source supervisor authorization differs",
+        ));
+    }
+    // reqwest appends Authorization values; choose one authority before adding the header.
+    let builder = match (root, explicit_supervisor.as_deref()) {
+        (Some(supervisor), _) => builder
             .bearer_auth(supervisor)
-            .header("x-yoneda-source-fuse", "1")
-    } else {
-        builder
+            .header("x-yoneda-source-fuse", "1"),
+        (None, Some(supervisor)) => builder.bearer_auth(supervisor),
+        (None, None) => builder,
     };
     let mut response = builder
         .send()
