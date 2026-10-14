@@ -106,3 +106,19 @@ test('missing phase/variant and candidate forged verdict or process access canno
     control(module, (directory) => assert.equal(checkTaskBoard(directory, 'final').pass, false));
   }
 });
+
+test('UI wiring accepts the root-relative module path the starter itself uses', () => {
+  const wiring = (specifier) =>
+    control(baseline, (directory) => {
+      writeFileSync(
+        resolve(directory, 'public/app.mjs'),
+        `import {addTask,completeTask,visibleTasks} from '${specifier}';\naddTask([],'a','1');completeTask([],'1');visibleTasks([]);`,
+      );
+      return checkTaskBoard(directory, 'build').checks.find((c) => c.name === 'ui_module_wiring')
+        .status;
+    });
+  assert.equal(wiring('./tasks.mjs'), 'pass');
+  assert.equal(wiring('/tasks.mjs'), 'pass');
+  assert.equal(wiring('./lib/tasks.mjs'), 'fail');
+  assert.equal(wiring('https://example.com/tasks.mjs'), 'fail');
+});
