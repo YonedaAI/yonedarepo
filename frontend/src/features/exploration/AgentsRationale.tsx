@@ -1,5 +1,6 @@
 import type { Snapshot } from '../../lib/types';
 import { recordedRationale } from './agentsPick';
+import { splitRationale } from './rationaleText';
 
 /** Agent rationale exactly as recorded in handoffs; absent records are stated, never filled in. */
 export function AgentsRationale({
@@ -17,12 +18,21 @@ export function AgentsRationale({
       <h3>Why the agents picked this</h3>
       {rationale.length ? (
         <ul>
-          {rationale.map((item) => (
-            <li key={item.id}>
-              <p>{item.text}</p>
-              <small>{item.source} · agent assertion</small>
-            </li>
-          ))}
+          {rationale.map((item) => {
+            const { lead, detail } = splitRationale(item.text);
+            return (
+              <li key={item.id}>
+                <p className="rationale-lead">{lead}</p>
+                {detail && (
+                  <details>
+                    <summary>Technical details</summary>
+                    <p>{detail}</p>
+                  </details>
+                )}
+                <small>{item.source} · agent assertion</small>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <p className="subtle">No agent rationale was recorded for this result.</p>
