@@ -32,9 +32,24 @@ export function AgentWorkSummary({
         taskError(task, execution) || (waiting.length ? `Waiting for ${waiting.join(', ')}` : ''),
     };
   });
+  const settled = ['ready', 'complete', 'completed', 'published'].includes(run.status);
   for (const execution of executions.filter(
     (item) => !tasks.some((task) => task.execution_id === item.id),
-  ))
+  )) {
+    // A failed attempt is history, not a blocker, once later work replaced it or the run settled.
+    if (execution.status === 'failed' && (settled || laterAttempt(execution, executions))) {
+      const timedOut = /TIMEOUT/.test(executionFailureCode(execution) ?? String(execution.error));
+      rows.push({
+        id: execution.id,
+        name: execution.strategy ?? execution.model ?? execution.id,
+        status: 'superseded',
+        repairing: false,
+        detail: timedOut
+          ? 'This attempt timed out; later work completed.'
+          : 'A later attempt replaced this one.',
+      });
+      continue;
+    }
     rows.push({
       id: execution.id,
       name:
@@ -47,6 +62,7 @@ export function AgentWorkSummary({
         ? 'The approved request limit or workspace allowance is exhausted. No extra inference is scheduled.'
         : taskError({}, execution),
     });
+  }
   if (!rows.length) return null;
   return (
     <section className="agent-work-summary" aria-label="Agent work">
@@ -67,7 +83,11 @@ export function AgentWorkSummary({
                   : 'Working'
                 : ['failed', 'blocked'].includes(row.status)
                   ? 'Blocked'
-                  : row.status?.replaceAll('_', ' ')}
+                  : row.status === 'superseded'
+                    ? 'Superseded'
+                    : row.status === 'completed'
+                      ? 'complete'
+                      : row.status?.replaceAll('_', ' ')}
             </span>
             {row.detail && <p>{row.detail}</p>}
             {active.includes(row.status) && <small>Recorded stage: {row.status}</small>}
@@ -77,6 +97,16 @@ export function AgentWorkSummary({
       <p className="subtle">Agent progress is separate from independent checks and publication.</p>
       <AutonomySummary run={run} />
     </section>
+  );
+}
+
+function laterAttempt(execution: Record<string, any>, executions: Record<string, any>[]) {
+  const started = execution.started_at ?? execution.created_at ?? 0;
+  return executions.some(
+    (other) =>
+      other.id !== execution.id &&
+      other.team_role === execution.team_role &&
+      (other.started_at ?? other.created_at ?? 0) > started,
   );
 }
 
