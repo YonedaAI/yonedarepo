@@ -198,9 +198,18 @@ main {
   color: var(--blue);
   border-bottom-color: var(--blue);
 }
+.live-updating {
+  align-self: center;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
 .tab-site {
   margin-left: auto;
   font-size: 12px;
+}
+.live-updating + .tab-site {
+  margin-left: 12px;
 }
 .tab-site .site-link {
   margin: 0;

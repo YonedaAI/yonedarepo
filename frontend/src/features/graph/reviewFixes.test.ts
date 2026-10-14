@@ -54,6 +54,8 @@ function find(element: ReactNode, type: string): ReactElement<Record<string, any
   const item = element as ReactElement<Record<string, any>>;
   return item.type === type ? item : find(item.props.children, type);
 }
+// useState order in GraphWorkspace: its own six states, then useRunGraphPages.
+const slot = { graph: 6, runId: 7, cursor: 9, loading: 11 };
 beforeEach(() => {
   hooks.states = [];
   hooks.cursor = 0;
@@ -106,7 +108,7 @@ describe('review evidence views', () => {
         expect.objectContaining({ method: 'GET' }),
       ),
     );
-    await vi.waitFor(() => expect(hooks.states[5]).toMatchObject({ nodes: [assertion] }));
+    await vi.waitFor(() => expect(hooks.states[slot.graph]).toMatchObject({ nodes: [assertion] }));
     tree = render(() => GraphWorkspace({ snapshot, runId: 'run-1' }));
     expect(renderToStaticMarkup(tree)).toContain('assertion-1');
   });

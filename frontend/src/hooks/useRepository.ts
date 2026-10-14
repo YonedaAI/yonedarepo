@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, api, onUnauthorized } from '../lib/api';
 import type { AccountIdentity, ProjectMetadata, Repository, Snapshot } from '../lib/types';
+import { coalesceRefresh } from './refreshCoalescer';
 import { RepositoryReads } from './repositoryReads';
 import { refreshRepository } from './repositoryRefresh';
+
+const LIVE_REFRESH_INTERVAL_MS = 3000;
 
 export function useRepository() {
   const [deepLink] = useState(
@@ -290,9 +293,14 @@ export function useRepository() {
     const url = new URL(`/api/repos/${id}/live`, location.href);
     url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const ws = new WebSocket(url);
-    ws.onmessage = () => void refresh();
-    ws.onopen = () => void refresh();
-    return () => ws.close();
+    // Busy runs emit many resync signals; refresh at most every few seconds, keeping the last.
+    const live = coalesceRefresh(refresh, LIVE_REFRESH_INTERVAL_MS);
+    ws.onmessage = () => live.signal();
+    ws.onopen = () => live.signal();
+    return () => {
+      live.stop();
+      ws.close();
+    };
   }, [id, project?.status, refresh]);
   return {
     repositories,

@@ -88,6 +88,11 @@ export function RepositoryWorkspace({
             {label}
           </button>
         ))}
+        {guidedRun.refreshing && (
+          <span className="live-updating" role="status">
+            Updating…
+          </span>
+        )}
         {repo.site && (
           <div className="tab-site">
             <SiteLink repo={repo.id} publishedCommit={repo.site.commit} />

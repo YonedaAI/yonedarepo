@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
-import type { Graph, GraphNode, RunGraphPage, Snapshot } from '../../lib/types';
+import type { Graph, GraphNode, Snapshot } from '../../lib/types';
 import { ContextGraph } from './ContextGraph';
 import { EvidencePanel } from './EvidencePanel';
 import { EvidenceTrail } from './EvidenceTrail';
 import { focusedNeighborhood, initialNeighborhood, runEvidenceGraph } from './evidenceView';
 import { GraphTools } from './GraphTools';
-import { mergeRunGraphPage } from './runGraphPages';
+import { useRunGraphPages } from './useRunGraphPages';
 
 export function GraphWorkspace({
   snapshot,
@@ -24,13 +23,9 @@ export function GraphWorkspace({
   const [customGraph, setCustomGraph] = useState<Graph | null>(null);
   const [full, setFull] = useState(false);
   const [nodeId, setNodeId] = useState('');
-  const [loadedRunGraph, setLoadedRunGraph] = useState<Graph>({ nodes: [], edges: [] });
-  const [loadedGraphRunId, setLoadedGraphRunId] = useState('');
-  const [graphError, setGraphError] = useState('');
-  const [graphCursor, setGraphCursor] = useState<string | null>(null);
-  const [graphWatermark, setGraphWatermark] = useState<number | null>(null);
-  const [loadingGraph, setLoadingGraph] = useState(false);
-  const [graphRequest] = useState({ current: { key: '', generation: 0 } });
+  // The run shown by default, kept so a run created during a live update does not switch the
+  // view and discard its loaded graph.
+  const [defaultRun] = useState({ id: '' });
   useEffect(() => {
     if (!initialGraph) return;
     setCustomGraph(null);
@@ -42,77 +37,23 @@ export function GraphWorkspace({
     .sort((a, b) => b.created_at - a.created_at)
     .find((run) => initialGraph?.nodes.some((node) => node.id === run.id));
   const activeRun =
-    snapshot.runs.find((run) => run.id === (chosenRun || runId)) ?? historyRun ?? latest;
-  const requestKey = `${snapshot.repository.id}:${activeRun?.id ?? ''}:${initialGraph ? 'external' : 'paged'}`;
-  if (graphRequest.current.key !== requestKey) {
-    graphRequest.current.key = requestKey;
-    graphRequest.current.generation += 1;
-  }
-  useEffect(() => {
-    if (initialGraph || !snapshot.graph_paged || !activeRun?.id) return;
-    let current = true;
-    const generation = graphRequest.current.generation;
-    setLoadedRunGraph({ nodes: [], edges: [] });
-    setLoadedGraphRunId('');
-    setGraphError('');
-    setGraphCursor(null);
-    setGraphWatermark(null);
-    setLoadingGraph(true);
-    const query = new URLSearchParams({ run_id: activeRun.id, limit: '200' });
-    void api<RunGraphPage>(`repos/${snapshot.repository.id}/run_graph_page?${query}`)
-      .then((page) => {
-        if (current && graphRequest.current.generation === generation) {
-          setLoadedRunGraph(mergeRunGraphPage({ nodes: [], edges: [] }, page));
-          setLoadedGraphRunId(activeRun.id);
-          setGraphCursor(page.has_more ? page.next_cursor : null);
-          setGraphWatermark(page.watermark);
-        }
-      })
-      .catch((error: unknown) => {
-        if (current && graphRequest.current.generation === generation)
-          setGraphError((error as Error).message);
-      })
-      .finally(() => {
-        if (current && graphRequest.current.generation === generation) setLoadingGraph(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [graphRequest, initialGraph, snapshot.graph_paged, snapshot.repository.id, activeRun?.id]);
-  async function loadMoreRunGraph() {
-    if (
-      !activeRun?.id ||
-      loadedGraphRunId !== activeRun.id ||
-      !graphCursor ||
-      graphWatermark === null ||
-      loadingGraph
-    )
-      return;
-    const generation = graphRequest.current.generation;
-    const requestedRunId = activeRun.id;
-    setLoadingGraph(true);
-    setGraphError('');
-    const query = new URLSearchParams({
-      run_id: requestedRunId,
-      limit: '200',
-      cursor: graphCursor,
-      watermark: String(graphWatermark),
-    });
-    try {
-      const page = await api<RunGraphPage>(
-        `repos/${snapshot.repository.id}/run_graph_page?${query}`,
-      );
-      if (graphRequest.current.generation === generation) {
-        setLoadedRunGraph((before) => mergeRunGraphPage(before, page));
-        setGraphCursor(page.has_more ? page.next_cursor : null);
-        setGraphWatermark(page.watermark);
-      }
-    } catch (error) {
-      if (graphRequest.current.generation === generation) setGraphError((error as Error).message);
-    } finally {
-      if (graphRequest.current.generation === generation) setLoadingGraph(false);
-    }
-  }
+    snapshot.runs.find(
+      (run) => run.id === (chosenRun || runId || (initialGraph ? '' : defaultRun.id)),
+    ) ??
+    historyRun ??
+    latest;
+  if (!initialGraph && !defaultRun.id && activeRun?.id) defaultRun.id = activeRun.id;
+  const {
+    graph: loadedRunGraph,
+    runId: loadedGraphRunId,
+    error: graphError,
+    cursor: graphCursor,
+    loading: loadingGraph,
+    loadMore: loadMoreRunGraph,
+  } = useRunGraphPages(
+    snapshot.repository.id,
+    !initialGraph && snapshot.graph_paged ? activeRun?.id : undefined,
+  );
   const runGraphPaged = Boolean(snapshot.graph_paged && !initialGraph);
   const activeLoadedGraph =
     loadedGraphRunId === activeRun?.id ? loadedRunGraph : { nodes: [], edges: [] };
@@ -270,7 +211,14 @@ export function GraphWorkspace({
           <div className="graph-workspace">
             <div className="graph-canvas">
               <ContextGraph
-                key={displayed.nodes.map((node) => node.id).join('|')}
+                // Remount (and refit) only when the user changes scope; records arriving from a
+                // live update are added in place, keeping pan and zoom.
+                key={[
+                  activeRun?.id,
+                  nodeId,
+                  full,
+                  customGraph?.nodes.map((node) => node.id).join('|'),
+                ].join(':')}
                 graph={displayed}
                 selectedId={nodeId}
                 onSelect={select}
