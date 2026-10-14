@@ -54,9 +54,17 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
                     evidence.push(json!({"kind":"shared_contract","label":"Recorded shared contract with captured specialist inputs","verified":contract,"authority":"frozen_platform_plan"}));
                     let collaboration = proofs::collaboration(db, candidate)?;
                     evidence.push(json!({"kind":"collaboration","label":"Captured specialists with overlapping trusted harness windows","verified":collaboration}));
-                    choice = proofs::choice(db, candidate)?;
+                    let qualifying = proofs::choices(db, candidate)?;
+                    choice = qualifying.first().cloned();
+                    lineage.clear();
+                    for record in &qualifying {
+                        for id in proofs::lineage(db, candidate, record)? {
+                            if !lineage.contains(&id) {
+                                lineage.push(id);
+                            }
+                        }
+                    }
                     if let Some(record) = &choice {
-                        lineage = proofs::lineage(db, candidate, record)?;
                         evidence.push(json!({"kind":"design_choice","label":format!("Recorded design choice: {}",record["label"].as_str().unwrap_or_default()),"verified":true,"record_id":record["id"],"author":record["author"],"authority":"assertion","source_association_verified":true}));
                     }
                     complete = contract && collaboration && choice.is_some();
