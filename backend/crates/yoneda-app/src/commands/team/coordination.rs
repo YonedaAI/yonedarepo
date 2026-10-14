@@ -176,6 +176,12 @@ pub(super) fn evaluated<S: SqlStore>(
                 && coordinator["status"] != "completed"
                 && coordinator["coordination_observed"][string(candidate, "id")?] == signal
             {
+                // Evaluation callers can finish saving their local ready state
+                // after branch promotion has already scheduled this coordinator.
+                if latest["status"] == "ready" {
+                    latest["status"] = json!("coordinating");
+                    save(db, "runs", &string(run, "id")?, &latest)?;
+                }
                 return Ok(());
             }
         }

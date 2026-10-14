@@ -107,9 +107,14 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     'source_changeset',
     'source_view',
     'source_approval',
+    'guided',
+    'guided_project',
+    'guided_session',
+    'guided_profile_id',
   ])
     delete input[key];
   for (const key of Object.keys(input))
-    if (key.startsWith('_comparison_') || key.startsWith('_source_')) delete input[key];
+    if (key.startsWith('_comparison_') || key.startsWith('_source_') || key.startsWith('_guided_'))
+      delete input[key];
   return input;
 }

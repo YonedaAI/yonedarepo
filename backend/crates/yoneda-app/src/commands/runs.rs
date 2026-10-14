@@ -142,6 +142,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             super::source_transport::freeze(&c, &mut run)?;
             super::adaptive_team::freeze(&c, &mut run)?;
             super::autonomy::freeze(&c, &mut run)?;
+            super::guided::freeze(db, &c, &mut run)?;
             super::campaign::freeze(db, &c, &mut run, now)?;
             if run["autonomy_approval"].is_object() {
                 run["autonomy_approval"]["model_budgets"] = run["model_budgets"].clone();

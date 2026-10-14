@@ -1,3 +1,4 @@
+import { guidedProjectInput } from './guided-project';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
 import { provisionAndScheduleProject, scheduleProject } from './project-provisioning';
@@ -44,12 +45,15 @@ export async function projectRoute(
     if (typeof body.request_id !== 'string' || !/^[a-zA-Z0-9-]{16,64}$/.test(body.request_id))
       return error('INVALID_INPUT', 'A stable request ID is required');
     const id = `repo-${(await sha(`${principal.workspace}:${body.request_id}`)).slice(0, 32)}`;
+    const configuration =
+      body.guided_profile_id !== undefined
+        ? await guidedProjectInput(env, principal.workspace, id, body)
+        : { source: importSource(body.source), policy: body.policy ?? sitePolicy };
     const project = await workspace(env, principal.workspace, {
       op: 'project_reserve',
       id,
       name: body.name,
-      source: importSource(body.source),
-      policy: body.policy ?? sitePolicy,
+      ...configuration,
     });
     await scheduleProject(env, principal.workspace, project);
     // Durable queue/alarm intent exists before the optional latency fast path.

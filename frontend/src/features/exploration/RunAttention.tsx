@@ -1,6 +1,7 @@
 import { CircleAlert, CircleCheck, ClipboardCheck, LoaderCircle } from 'lucide-react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
 import { runAttention } from './runReviewState';
 import { runTitle } from './runTitle';
 import { SiteLink } from './SiteLink';
@@ -10,13 +11,38 @@ export function RunAttention({
   run,
   busy,
   onAction,
+  onGuidedContinue,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
   busy: boolean;
+  onGuidedContinue?: () => void;
   onAction: (action: 'review' | 'activity' | 'results' | 'details', candidate?: string) => void;
 }) {
-  const attention = runAttention(snapshot, run);
+  const recorded = runAttention(snapshot, run);
+  const guidedPartial = !!guidedPublicationBlocker(
+    snapshot,
+    run,
+    snapshot.candidates.find((item) => item.run_id === run.id && item.status === 'eligible'),
+  );
+  const guideAction =
+    guidedPartial &&
+    snapshot.candidates.some((item) => item.run_id === run.id && item.status === 'eligible') &&
+    !snapshot.decisions.some((item) => item.run_id === run.id);
+  const attention = guideAction
+    ? {
+        ...recorded,
+        tone: 'working' as const,
+        title:
+          run.guided?.step_id === 'concurrent'
+            ? 'Reconciling concurrent changes'
+            : 'Continue the guided demo',
+        detail:
+          'Inspect the recorded source and checks freely. Publication waits for the guide’s full resolved result.',
+        actionLabel: 'Continue guided demo',
+        action: 'results' as const,
+      }
+    : recorded;
   const decision = snapshot.decisions.find((item) => item.run_id === run.id);
   const evaluation = snapshot.evaluations.find(
     (item) => item.id === attention.candidate?.evaluation,
@@ -51,9 +77,13 @@ export function RunAttention({
         {attention.action && (
           <button
             type="button"
-            className={attention.tone === 'review' ? undefined : 'quiet'}
+            className={guideAction ? 'primary' : attention.tone === 'review' ? undefined : 'quiet'}
             disabled={busy}
             onClick={() => {
+              if (guideAction && onGuidedContinue) {
+                onGuidedContinue();
+                return;
+              }
               if (attention.action) onAction(attention.action, attention.candidate?.id);
             }}
           >

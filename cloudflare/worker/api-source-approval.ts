@@ -1,9 +1,28 @@
+import type { GuidedEnv } from './guided-profile';
+import { isGuidedProject } from './guided-project';
+import { sourceFingerprint } from './source-crypto';
 import { ledger } from './storage';
 import type { Env, Json, Principal } from './types';
 
 const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
+
+/** New approvals only: operator-selected repos or explicitly activated verified guides. */
+export async function sourceApprovalSelected(
+  env: GuidedEnv,
+  repo: string,
+  repository: Json,
+): Promise<boolean> {
+  if (env.SOURCE_TRANSPORT !== 'api-source-v1') return false;
+  const configured = env.SOURCE_TRANSPORT_REPOS;
+  return (
+    (typeof configured === 'string' && configured.split(',').some((id) => id.trim() === repo)) ||
+    (env.SOURCE_GUIDED_ENABLED === 'true' &&
+      isGuidedProject(repository.guided_project) &&
+      (await sourceFingerprint(repository.policy)) === repository.guided_project.policy_digest)
+  );
+}
 
 /** Only operator configuration activates the transport; source identity is independently read back. */
 export async function freezeSourceApproval(
@@ -16,7 +35,7 @@ export async function freezeSourceApproval(
   delete input._source_base;
   delete input._source_transport_approved;
   input.workspace_transport = 'git-native-v1';
-  if (env.SOURCE_TRANSPORT !== 'api-source-v1') return;
+  if (!(await sourceApprovalSelected(env, repo, repository))) return;
   if (!env.SOURCES || repository.capabilities?.source_api !== 1)
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
   let revision = {

@@ -72,12 +72,18 @@ it('blocks a legacy Token Plan key on the API route before scheduling and repair
   expect(secret.sealed).toEqual(sealed);
   expect(secret.routing).toEqual(routing);
   expect((await update()).status).toBe(409);
-  const pricedGate = await start();
-  expect(pricedGate.status).toBe(409);
-  expect(await pricedGate.json()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
-  expect((await ledger(bindings, repo, { op: 'snapshot' })).runs).toEqual([]);
-  expect((await workspace(bindings, owner, { op: 'workspace_spend_status' })).version).toBe(0);
-  const fixed = await approvedLegacyFixture(owner, repo, { id: 'repaired', intent: 'Prior approved routing fixture',
+  const pricedStart = await start();
+  expect(pricedStart.status).toBe(200);
+  const ordinary = await pricedStart.json<Json>();
+  expect(ordinary.workspace_spend).toEqual({ version: 1 });
+  expect(ordinary.agents.every((agent: Json) => agent.routing.region === 'sgp')).toBe(true);
+  expect(ordinary.model_budgets).toEqual([expect.objectContaining({ provider: 'mimo', model: 'mimo-v2.6-flash',
+    max_requests: 144, max_output_tokens: 4096, spend_limit_microusd: 50000000,
+    pricing: expect.objectContaining({ input_microusd_per_million: 140000, output_microusd_per_million: 280000 }) })]);
+  expect(await workspace(bindings, owner, { op: 'workspace_spend_status' })).toMatchObject({
+    version: 1, limit_microusd: 50000000, charged_microusd: 0, reserved_microusd: 0, remaining_microusd: 50000000,
+  });
+  const fixed = await approvedLegacyFixture(owner, repo, { id: 'legacy-repaired', intent: 'Prior approved routing fixture',
     agents: ['minimal', 'accessible'].map(strategy => ({ strategy, provider: 'mimo', model: 'mimo-v2.6-flash' })) });
   expect(fixed.workspace_spend).toBeUndefined();
   expect((await ledger(bindings, repo, { op: 'snapshot' })).executions.every((e: any) => e.routing.region === 'sgp')).toBe(true);
@@ -118,15 +124,21 @@ it('stores only encrypted plan keys, exposes the route and fences changed routin
       delegation: { enabled: true, max_depth: 1, max_executions: 3 },
     }),
   });
-  expect(started.status).toBe(409);
-  expect(await started.json()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
-  expect((await workspace(bindings, 'token_plan_user', { op: 'workspace_spend_status' })).version).toBe(0);
-  expect((await ledger(bindings, repo, { op: 'snapshot' })).runs).toEqual([]);
-  await approvedLegacyFixture('token_plan_user', repo, { id: 'routed', intent: 'Prior approved delegation routing fixture',
+  expect(started.status).toBe(200);
+  const ordinary = await started.json<Json>();
+  expect(ordinary.workspace_spend).toEqual({ version: 1 });
+  expect(ordinary.agents.every((agent: Json) => agent.routing.region === 'sgp')).toBe(true);
+  expect(ordinary.model_budgets).toEqual([expect.objectContaining({ provider: 'mimo', model: 'mimo-v2.6-flash',
+    max_requests: 144, max_output_tokens: 4096, spend_limit_microusd: 50000000 })]);
+  expect(await workspace(bindings, 'token_plan_user', { op: 'workspace_spend_status' })).toMatchObject({
+    version: 1, limit_microusd: 50000000, charged_microusd: 0, reserved_microusd: 0, remaining_microusd: 50000000,
+  });
+  const legacy = await approvedLegacyFixture('token_plan_user', repo, { id: 'legacy-routed', intent: 'Prior approved delegation routing fixture',
     agents: ['minimal', 'accessible'].map(strategy => ({ strategy, connection: connection.id,
       provider: 'mimo', model: 'mimo-v2.6-flash', routing: { plan: 'token_plan', region: 'cn' } })),
     delegation: { enabled: true, max_depth: 1, max_executions: 3 } });
-  const parent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:routed:agent-1' });
+  expect(legacy.workspace_spend).toBeUndefined();
+  const parent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:legacy-routed:agent-1' });
   expect(parent.payload.execution.routing).toEqual(routing);
   const child = await ledger(bindings, repo, { op: 'delegate_agent', job_id: parent.id,
     epoch: parent.epoch, request_id: 'child', task: 'Build an independent approach', strategy: 'keyboard-first' });

@@ -1,5 +1,6 @@
 import { isCanonicalAccountIdentifier } from '../../shared/account';
 import { validateSourceMetadata } from './artifacts';
+import { assertGuidedFork, guidedProvisionEnvironment } from './guided-project';
 import { safeId } from './http';
 import { writeLog } from './logging';
 import {
@@ -11,6 +12,7 @@ import {
   sourceBranch,
 } from './project-remote';
 import { cleanupLateRemote } from './repository-deletion';
+import { sourceFingerprint } from './source-crypto';
 import { ledger } from './storage';
 import type { Env, Envelope, Json } from './types';
 import { workspace } from './workspace';
@@ -22,13 +24,14 @@ async function initializeProject(
   progress: (stage: string) => Promise<Json>,
 ) {
   await progress(project.source ? 'importing' : 'creating');
-  await prepareRemote(env, project);
+  await prepareRemote(await guidedProvisionEnvironment(env, project), project);
   const current = await workspace(env, owner, { op: 'project_get', id: project.id });
   if (current.status === 'deleted') {
     await cleanupLateRemote(env, project.id, project.id);
     throw setupError('REPOSITORY_DELETED', 'This repository has been deleted');
   }
   using remote = await env.ARTIFACTS.get(project.id);
+  await assertGuidedFork(remote, project);
   // Lost creation acknowledgments may leave the initial Git capability active.
   for (const token of (await remote.listTokens()).tokens)
     if (token.state === 'active') await remote.revokeToken(token.id);
@@ -61,12 +64,34 @@ async function initializeProject(
       workspace_transport: 'git-native-v1',
       remote: { namespace: env.ARTIFACTS_NAMESPACE, name: project.id, branch },
       policy: project.policy,
+      ...(project.guided_project ? { _guided_project: project.guided_project } : {}),
     });
   } catch (error: any) {
     if (error.code !== 'ALREADY_EXISTS') throw error;
     const existing = await ledger(env, project.id, { op: 'snapshot', _workspace: owner });
     if (existing.repository.remote.name !== project.id)
       throw new Error('Repository identity mismatch');
+    if (
+      project.guided_project &&
+      (!existing.repository.guided_project ||
+        (await sourceFingerprint(existing.repository.guided_project)) !==
+          (await sourceFingerprint(project.guided_project)))
+    )
+      throw setupError('IDEMPOTENCY_CONFLICT', 'Existing repository has another guided profile');
+  }
+  if (project.guided_project) {
+    const stored = await ledger(env, project.id, { op: 'repository_status', _workspace: owner });
+    if (stored.capabilities?.guided_runs !== 1 || !stored.guided_project)
+      throw setupError('LEDGER_UPDATING', 'Guided repository setup is updating; retry shortly.');
+    if (
+      (await sourceFingerprint(stored.guided_project)) !==
+        (await sourceFingerprint(project.guided_project)) ||
+      (await sourceFingerprint(stored.policy)) !== project.guided_project.policy_digest
+    )
+      throw setupError(
+        'IDEMPOTENCY_CONFLICT',
+        'The initialized guided profile differs from its fixed reservation',
+      );
   }
 }
 

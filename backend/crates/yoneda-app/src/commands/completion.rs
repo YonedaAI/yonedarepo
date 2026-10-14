@@ -2,6 +2,8 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod agent;
+#[cfg(test)]
+mod guided_evaluation_tests;
 mod source;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
@@ -15,6 +17,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             let policy = &j["payload"]["policy"];
+            let guided = &j["payload"]["guided"];
+            super::guided::validate_report(&j, &c["report"])?;
             if c["report"]["environment"] != policy["environment"]
                 || c["report"]["suite"] != policy["suite"]
             {
@@ -40,8 +44,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 });
             }
             let evidence = hash(&c, "evidence", &[64])?;
-            let result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence,"deployment":j["site"]});
-            let mut result = result;
+            let mut result = json!({"id":format!("evaluation:{}:{}",string(&j,"id")?,number(&j,"epoch")?),"candidate":candidate["id"],"revision":candidate["revision"],"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"checks":checks,"evidence":evidence,"deployment":j["site"]});
+            if guided.is_object() {
+                result["guided"] = guided.clone();
+            }
             if policy["build"]["app"].is_object() && c["report"]["app_bundle_digest"].is_string() {
                 if c["report"]["app_revision"] != candidate["revision"]["commit"] {
                     return Err(Error::new(

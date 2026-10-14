@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { useGuidedNavigation } from './features/guided-demo/useGuidedNavigation';
 import { DeleteRepositoryDialog } from './features/workspace/DeleteRepositoryDialog';
 import { RepositoryRecovery } from './features/workspace/RepositoryRecovery';
 import { RepositoryWorkspace } from './features/workspace/RepositoryWorkspace';
@@ -12,6 +13,7 @@ import type { Repository } from './lib/types';
 
 export function App() {
   const state = useRepository();
+  const guided = useGuidedNavigation(state.id, state.authenticated);
   const [panel, setPanel] = useState<WorkspacePanel>(null);
   const [deleting, setDeleting] = useState<Repository | null>(null);
   const [notice, setNotice] = useState('');
@@ -77,6 +79,9 @@ export function App() {
           <RepositoryWorkspace
             key={state.id}
             snapshot={state.snapshot}
+            guidedSessionId={guided.session}
+            onGuidedSession={guided.remember}
+            onGuidedDemo={() => setPanel('guided-project')}
             initialRunId={state.requestedRunId}
             requestedRunError={state.requestedRunError}
             onChange={state.refresh}
@@ -91,12 +96,14 @@ export function App() {
           <WorkspaceWelcome
             state={state}
             onProject={() => setPanel('project')}
+            onGuidedDemo={() => setPanel('guided-project')}
             onProviders={() => setPanel('agents')}
           />
         )}
       </main>
       <WorkspacePanels
         panel={panel}
+        onGuidedCreated={guided.remember}
         state={state}
         onPanel={setPanel}
         onClose={() => {

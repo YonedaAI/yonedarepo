@@ -11,6 +11,7 @@ import { comparisonOwnerRoute } from './comparison-owner-route';
 import { evidence } from './evidence';
 import { externalGit } from './external-git';
 import { grantRoute } from './grants';
+import { guidedRoute } from './guided-route';
 import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
@@ -160,6 +161,8 @@ export async function fetchRequest(
       await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
     else if (principal.role !== 'admin')
       return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    const guided = await guidedRoute(req, env, principal, repo, action);
+    if (guided) return guided;
     const sourceResponse = await sourceRoute(req, env, principal, repo);
     if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')

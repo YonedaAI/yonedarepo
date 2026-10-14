@@ -1,4 +1,5 @@
 import type { Snapshot } from '../../lib/types';
+import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
 import { runCandidates } from '../team/teamView';
 import { runHasActiveAttempts } from './runControlState';
 import { branchPublishable } from './workingBranchView';
@@ -33,6 +34,8 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
     if (run.comparison.selected_candidate_id !== candidate.id)
       return 'Choose this checked result before publishing it.';
   }
+  const guideBlocker = guidedPublicationBlocker(snapshot, run, candidate);
+  if (guideBlocker) return guideBlocker;
   if (candidate.status !== 'eligible') return 'This result has not passed the required checks.';
   if (snapshot.repository.pending) return 'Another publication is in progress in this repository.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready for publication.';

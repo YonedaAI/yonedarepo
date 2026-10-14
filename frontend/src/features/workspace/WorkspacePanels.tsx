@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
+import { GuidedProject } from '../guided-demo/GuidedProject';
 import { AccountPanel } from './AccountPanel';
 import { ConnectAgents } from './ConnectAgents';
 import { DemoGuide } from './DemoGuide';
@@ -15,6 +16,7 @@ export type WorkspacePanel =
   | 'agents'
   | 'providers'
   | 'project'
+  | 'guided-project'
   | 'owner'
   | 'guide'
   | 'account'
@@ -23,6 +25,7 @@ const titles = {
   agents: 'Connect Agents',
   providers: 'Agent providers',
   project: 'Add repository',
+  'guided-project': 'Try guided demo',
   owner: 'Administrator access',
   guide: 'How YonedaRepo works',
   account: 'Sign in to YonedaRepo',
@@ -34,11 +37,13 @@ export function WorkspacePanels({
   state,
   onClose,
   onPanel,
+  onGuidedCreated,
 }: {
   reviewer?: boolean;
   panel: WorkspacePanel;
   state: ReturnType<typeof useRepository>;
   onClose: () => void;
+  onGuidedCreated?: (repo: string, session?: string) => void;
   onPanel?: (panel: WorkspacePanel) => void;
 }) {
   if (!panel || (reviewer && ['agents', 'providers', 'project'].includes(panel))) return null;
@@ -70,6 +75,17 @@ export function WorkspacePanels({
           onClose={onClose}
           onCreated={async (id) => {
             await state.discover();
+            state.setId(id);
+            onClose();
+          }}
+        />
+      )}
+      {panel === 'guided-project' && state.authenticated && (
+        <GuidedProject
+          onClose={onClose}
+          onCreated={async (id, session) => {
+            await state.discover();
+            onGuidedCreated?.(id, session);
             state.setId(id);
             onClose();
           }}
