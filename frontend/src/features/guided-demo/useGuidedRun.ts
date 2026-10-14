@@ -9,6 +9,7 @@ export function useGuidedRun(snapshot: Snapshot, runId: string) {
     run: string;
     detail?: RunDetail;
     error?: string;
+    refreshError?: string;
   }>();
   const repo = snapshot.repository.id;
   useEffect(() => {
@@ -32,8 +33,15 @@ export function useGuidedRun(snapshot: Snapshot, runId: string) {
         setLoaded({ repo, run: runId, detail });
       })
       .catch((error) => {
-        if (!controller.signal.aborted)
-          setLoaded({ repo, run: runId, error: (error as Error).message });
+        if (controller.signal.aborted) return;
+        const message = (error as Error).message;
+        // A failed background revalidation keeps the verified detail on screen; only a run that
+        // never loaded shows the error in place of its view.
+        setLoaded((previous) =>
+          previous?.repo === repo && previous.run === runId && previous.detail
+            ? { ...previous, error: undefined, refreshError: message }
+            : { repo, run: runId, error: message },
+        );
       });
     return () => controller.abort();
   }, [repo, runId, snapshot.seq]);
@@ -61,5 +69,7 @@ export function useGuidedRun(snapshot: Snapshot, runId: string) {
     loading: !!runId && !detail && !current?.error,
     refreshing: !!runId && !!detail && !fresh && !current?.error,
     error: current?.error ?? '',
+    /** The last background read failed; the rendered detail may be behind. */
+    refreshError: detail && !fresh ? (current?.refreshError ?? '') : '',
   };
 }

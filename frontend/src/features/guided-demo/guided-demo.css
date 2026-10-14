@@ -8,7 +8,7 @@
 }
 .guided-demo {
   max-width: 1000px;
-  padding: 20px;
+  padding: 20px 24px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -95,6 +95,24 @@
 }
 .guided-demo > .section-heading {
   align-items: flex-start;
+}
+.guided-demo > .section-heading h2 {
+  margin: 0 0 4px;
+}
+.guided-refresh {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.guided-refresh-status {
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: right;
+}
+.guided-refresh-status.failed {
+  color: #9b2c2c;
 }
 .guided-stages {
   padding: 0;
