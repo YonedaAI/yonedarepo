@@ -5,7 +5,12 @@ import { GuidedEvidenceList } from './GuidedEvidenceList';
 import { GuidedProgress } from './GuidedProgress';
 import { runningExplanations } from './guidedEvidenceView';
 import { type GuideRefreshState, guideRefreshText } from './guidedRefresh';
-import { type GuidedRunFacts, guidedStepLinks, guidedStepReason } from './guidedStepView';
+import {
+  type GuidedRunFacts,
+  guidedRetryLabel,
+  guidedStepLinks,
+  guidedStepReason,
+} from './guidedStepView';
 import './guided-demo.css';
 
 const statusLabels = {
@@ -124,10 +129,10 @@ export function GuidedSessionPanel({
                       className="quiet guided-step-action"
                       type="button"
                       disabled={busy}
-                      aria-label={`Retry this step: ${definition.title}`}
+                      aria-label={`${guidedRetryLabel(step)}: ${definition.title}`}
                       onClick={() => onRetry(step.id)}
                     >
-                      Retry this step
+                      {guidedRetryLabel(step)}
                     </button>
                   )}
                 </div>

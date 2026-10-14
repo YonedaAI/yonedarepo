@@ -1,6 +1,7 @@
 import type { Snapshot } from '../../lib/types';
 import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
 import { runCandidates } from '../team/teamView';
+import { activeDecision, rejectionOf } from './agentsPick';
 import { runHasActiveAttempts } from './runControlState';
 import { branchPublishable } from './workingBranchView';
 
@@ -16,8 +17,10 @@ export type RunAttentionState = {
 
 /** Presentation guard only. Selection is revalidated by the repository authority. */
 export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate?: RecordValue) {
-  const decision = snapshot.decisions.find((item) => item.run_id === run.id);
-  if (decision) return 'A shipping decision has already been recorded for this run.';
+  if (activeDecision(snapshot, run))
+    return 'A shipping decision has already been recorded for this run.';
+  if (candidate?.owner_rejection || rejectionOf(snapshot, candidate))
+    return 'You rejected this result. Its decision and reason are recorded; it cannot be published.';
   if (run.status === 'cancelled') return 'This run was cancelled.';
   if (run.status === 'accepted') return 'This run has already been selected.';
   if (run.status === 'awaiting_intent')
@@ -61,7 +64,7 @@ export function reviewableCandidates(snapshot: Snapshot, run: RecordValue) {
 
 /** Prioritize a recorded publication, then a usable result, then failure recovery and progress. */
 export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttentionState {
-  const decision = snapshot.decisions.find((item) => item.run_id === run.id);
+  const decision = activeDecision(snapshot, run);
   if (decision?.status === 'published')
     return {
       tone: 'published',
@@ -79,6 +82,15 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
         'The decision was recorded, but publication did not complete. Inspect the failure before continuing.',
       action: 'details',
       actionLabel: 'View publication details',
+    };
+  if (decision?.status === 'publication_conflict')
+    return {
+      tone: 'blocked',
+      title: 'Publication blocked by a remote conflict',
+      detail:
+        'Your decision is recorded, but the publisher reported that the canonical remote differed from its lease. Use the repository banner to retry publication or recover.',
+      action: 'details',
+      actionLabel: 'View recorded decision',
     };
   if (decision)
     return {
@@ -104,6 +116,17 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
         'Coordinating work is paused for the recorded product question. Review the question above; captured source remains available.',
       action: 'results',
       actionLabel: 'Inspect current results',
+    };
+  const current = runCandidates(snapshot, run);
+  const rejected = current.find((candidate) => rejectionOf(snapshot, candidate));
+  if (current.length && current.every((candidate) => rejectionOf(snapshot, candidate)))
+    return {
+      tone: 'neutral',
+      title: 'You rejected this result',
+      detail: `${rejectionOf(snapshot, rejected)?.reason ?? 'The rejection is recorded.'} Nothing was published; canonical source is unchanged.`,
+      action: 'details',
+      actionLabel: 'View recorded decision',
+      candidate: rejected,
     };
   const executions = snapshot.executions.filter((execution) => execution.run_id === run.id);
   const failed = executions.filter((execution) => execution.status === 'failed').length;
@@ -132,6 +155,7 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
       detail: selectionBlocker(snapshot, run, eligible) ?? 'This result cannot be selected yet.',
       action: 'results',
       actionLabel: 'Inspect result',
+      candidate: eligible,
     };
   if (failed || run.status === 'failed')
     return {
@@ -181,7 +205,6 @@ const statusByTone: Record<RunAttentionState['tone'], string> = {
 /** Short plain-language run status for lists; presentation only, derived from `runAttention`. */
 export function runStatusLabel(snapshot: Snapshot, run: RecordValue) {
   const { tone } = runAttention(snapshot, run);
-  if (tone === 'working' && snapshot.decisions.some((item) => item.run_id === run.id))
-    return 'Publishing';
+  if (tone === 'working' && activeDecision(snapshot, run)) return 'Publishing';
   return statusByTone[tone];
 }

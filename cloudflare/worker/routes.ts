@@ -22,7 +22,7 @@ import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
 import { ownerCommandInput, repositoryOperationAllowed } from './repository-command';
 import { deleteRepository } from './repository-deletion';
-import { resynchronize } from './repository-recovery';
+import { recoverPublication, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
 import { ownerSession } from './session';
@@ -167,6 +167,8 @@ export async function fetchRequest(
     if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')
       return await resynchronize(req, env, principal, repo);
+    if (action === 'recover_publication' && req.method === 'POST')
+      return await recoverPublication(req, env, principal, repo);
     if (action === 'approve_test_bundle' && req.method === 'POST')
       return await approveTestPolicy(req, env, principal, repo);
     if (action === 'grants') return grantRoute(req, env, principal, repo);

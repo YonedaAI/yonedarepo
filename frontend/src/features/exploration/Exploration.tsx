@@ -35,6 +35,7 @@ export function Exploration({
   onGuidedDemo,
   focusedRunId,
   focusRequest = 0,
+  focusedCandidateId,
   onGuidedContinue,
 }: {
   reviewer?: boolean;
@@ -51,6 +52,8 @@ export function Exploration({
   focusedRunId?: string;
   /** Increments when the focused run should be scrolled to and focused. */
   focusRequest?: number;
+  /** A result within the focused run to reveal on each focus request. */
+  focusedCandidateId?: string;
   onGuidedContinue?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -138,6 +141,7 @@ export function Exploration({
         [
           'start_run',
           'accept',
+          'reject_candidate',
           'answer_intent',
           'approve_comparison_review',
           'select_comparison_candidate',
@@ -219,6 +223,7 @@ export function Exploration({
                 snapshot={snapshot}
                 run={run}
                 focusRequest={run.id === focusedRunId ? focusRequest : 0}
+                focusCandidate={run.id === focusedRunId ? focusedCandidateId : undefined}
                 busy={busy}
                 canStart={canStart}
                 onGuidedContinue={onGuidedContinue}
@@ -250,6 +255,15 @@ export function Exploration({
                     expected_version: repo.version,
                     rationale,
                     alternatives,
+                  })
+                }
+                onReject={(candidate, reason) =>
+                  act('reject_candidate', {
+                    request_id: crypto.randomUUID(),
+                    candidate,
+                    expected_commit: repo.head_commit,
+                    expected_version: repo.version,
+                    reason,
                   })
                 }
                 onProviders={onProviders}

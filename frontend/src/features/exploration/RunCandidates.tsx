@@ -3,10 +3,13 @@ import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
 import { IntegrationInputs } from '../team/IntegrationInputs';
 import { integratedExecutions } from '../team/teamView';
+import { AgentsRationale } from './AgentsRationale';
+import { activeDecision, rejectionOf, supersededResults } from './agentsPick';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
 import { ComparisonResults } from './ComparisonResults';
 import { selectionBlocker } from './runReviewState';
+import { SupersededResults } from './SupersededResults';
 
 export function RunCandidates({
   snapshot,
@@ -23,6 +26,8 @@ export function RunCandidates({
   onGraph,
   onComparisonAction,
   onRefresh,
+  onReject,
+  focus,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
@@ -38,6 +43,9 @@ export function RunCandidates({
   onGraph: () => void;
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
+  onReject?: (id: string) => void;
+  /** The result to reveal; `request` increments for each inspect action. */
+  focus?: { candidate: string; request: number };
 }) {
   const team = run.mode === 'collaborate';
   const repo = snapshot.repository;
@@ -45,14 +53,19 @@ export function RunCandidates({
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
   const integrators = team ? integratedExecutions(snapshot, run) : [];
-  // A reconciled run shows only the integrator whose result is current, not the superseded one.
+  // A reconciled run shows only the result that is current; earlier ones move to history.
   const executions = team
     ? candidates.length
-      ? integrators.filter((execution) =>
-          candidates.some((item) => item.execution === execution.id),
+      ? candidates.map(
+          (item) =>
+            integrators.find((execution) => execution.id === item.execution) ??
+            snapshot.executions.find((execution) => execution.id === item.execution) ?? {
+              id: item.execution,
+            },
         )
       : integrators
     : coding;
+  const decision = activeDecision(snapshot, run);
   if (run.mode === 'compare')
     return (
       <ComparisonResults
@@ -86,6 +99,7 @@ export function RunCandidates({
           )}
         </div>
       )}
+      {team && candidates.length > 0 && <h2 className="agents-pick-heading">Agents’ pick</h2>}
       {team && !executions.length && (
         <p role="status" className="inline-empty">
           {run.status === 'planning'
@@ -102,6 +116,7 @@ export function RunCandidates({
         {executions.map((execution) => {
           const candidate = candidates.find((item) => item.execution === execution.id);
           const evaluation = snapshot.evaluations.find((item) => item.id === candidate?.evaluation);
+          const rejection = rejectionOf(snapshot, candidate);
           return (
             <CandidateCard
               key={execution.id}
@@ -117,7 +132,19 @@ export function RunCandidates({
               execution={execution}
               candidate={candidate}
               evaluation={evaluation}
-              decision={snapshot.decisions.find((item) => item.run_id === run.id)}
+              decision={decision}
+              rejection={rejection}
+              actionLabel={team ? 'Approve & publish' : undefined}
+              assessment={
+                team && candidate ? (
+                  <AgentsRationale snapshot={snapshot} run={run} candidate={candidate} />
+                ) : undefined
+              }
+              onReject={candidate && onReject ? () => onReject(candidate.id) : undefined}
+              rejectDisabled={busy}
+              focusSignal={
+                candidate && focus && focus.candidate === candidate.id ? focus.request : 0
+              }
               selected={!!candidate && selected === candidate.id}
               disabled={busy || !!selectionBlocker(snapshot, run, candidate)}
               disabledReason={selectionBlocker(snapshot, run, candidate)}
@@ -131,6 +158,12 @@ export function RunCandidates({
           );
         })}
       </div>
+      {team && (
+        <SupersededResults
+          snapshot={snapshot}
+          results={supersededResults(snapshot, run, candidates)}
+        />
+      )}
       {team &&
         candidates.map((candidate) => (
           <IntegrationInputs

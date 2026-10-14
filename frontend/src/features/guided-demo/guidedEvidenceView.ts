@@ -7,6 +7,7 @@ const plainLabels: Record<string, string> = {
   design_choice: 'Design decision recorded',
   scoped_resolution: 'Overlapping changes reconciled and re-checked',
   publication_readback: 'Published by you',
+  owner_rejection: 'Rejected by you',
 };
 
 /** Plain wording for a recorded evidence kind; unknown kinds keep the server's own label. */
