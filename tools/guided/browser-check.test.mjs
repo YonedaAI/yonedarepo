@@ -71,10 +71,10 @@ test('missing stylesheet fails asset checks and still runs the agent test', { ti
   assert.match(result.steps[0].detail, /style\.css/);
 });
 
-test('missing agent tests is reported as a failure', { timeout: 90000 }, async () => {
+test('missing agent tests is reported without failing the generic check', { timeout: 90000 }, async () => {
   const { result } = await check((root) => rm(join(root, 'tests'), { recursive: true }));
-  assert.equal(result.outcome, 'fail');
-  assert.deepEqual(result.failed, ['agent_browser_tests']);
+  assert.equal(result.outcome, 'pass');
+  assert.equal(result.agent_tests.status, 'absent');
   assert.equal(result.agent_tests.output, 'agents provided no browser tests');
   assert.equal(result.agent_tests.present, false);
 });

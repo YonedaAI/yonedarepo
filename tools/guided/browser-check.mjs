@@ -110,7 +110,8 @@ export async function runBrowserCheck({ url, siteDir, testFile = null, revision 
   const server = await chromium.launchServer({ channel: 'chrome', headless: true, ...launch });
   const screenshots = [];
   const present = Boolean(testFile) && (await access(testFile).then(() => true, () => false));
-  let agent = { present, status: 'fail', output: 'agents provided no browser tests' };
+  // The guided prompts do not ask agents for tests, so absence is reported, not failed.
+  let agent = { present, status: 'absent', output: 'agents provided no browser tests' };
   let browserVersion = null;
   try {
     const browser = await chromium.connect(server.wsEndpoint());
@@ -186,8 +187,7 @@ export async function runBrowserCheck({ url, siteDir, testFile = null, revision 
       });
     await context.close();
     await browser.close();
-    await step('agent_browser_tests', async () => {
-      check(present, 'agents provided no browser tests');
+    if (present) await step('agent_browser_tests', async () => {
       agent = { present: true, ...(await agentTest({ endpoint: server.wsEndpoint(), url: target, testFile, timeoutMs, redact })) };
       agent.status = agent.exit_code === 0 && !agent.timed_out ? 'pass' : 'fail';
       check(!agent.timed_out, `Agent browser test exceeded ${timeoutMs} ms`);
