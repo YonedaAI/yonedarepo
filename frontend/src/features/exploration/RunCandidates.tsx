@@ -44,7 +44,15 @@ export function RunCandidates({
   const coding = snapshot.executions.filter(
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
-  const executions = team ? integratedExecutions(snapshot, run) : coding;
+  const integrators = team ? integratedExecutions(snapshot, run) : [];
+  // A reconciled run shows only the integrator whose result is current, not the superseded one.
+  const executions = team
+    ? candidates.length
+      ? integrators.filter((execution) =>
+          candidates.some((item) => item.execution === execution.id),
+        )
+      : integrators
+    : coding;
   if (run.mode === 'compare')
     return (
       <ComparisonResults
@@ -97,7 +105,13 @@ export function RunCandidates({
           return (
             <CandidateCard
               key={execution.id}
-              strategy={team ? 'Integrated team result' : execution.strategy}
+              strategy={
+                team
+                  ? candidate?.conflict_id
+                    ? 'Reconciled team result'
+                    : 'Integrated team result'
+                  : execution.strategy
+              }
               team={team}
               repo={repo.id}
               execution={execution}

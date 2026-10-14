@@ -87,5 +87,6 @@ export function runCandidates(snapshot: Snapshot, run?: TeamRecord) {
     (candidate) =>
       candidate.id === task?.candidate_id && candidate.execution === task?.execution_id,
   );
-  return [...resolved, ...integrated];
+  // Show one result per run: once reconciled, the earlier integration stays in history only.
+  return resolved.length ? resolved.slice(0, 1) : integrated;
 }
