@@ -62,7 +62,7 @@ describe('guided step links', () => {
     expect(guidedStepReason(step({ status: 'running' }), facts)).toBe('');
   });
 
-  it('renders clickable outcome links, the reason and the retry note in the panel', () => {
+  it('renders clickable outcome links, the reason and the step retry in the panel', () => {
     const session = sessionFixture();
     session.next_step = 'concurrent';
     session.steps = session.steps.map((item) =>
@@ -76,6 +76,7 @@ describe('guided step links', () => {
         busy: false,
         runs: facts,
         onStart: () => {},
+        onRetry: () => {},
         onInspect: () => {},
         onRefresh: () => {},
       }),
@@ -83,7 +84,7 @@ describe('guided step links', () => {
     expect(html).toContain('class="quiet guided-step-action"');
     expect(html).toContain('Filter run <span aria-hidden="true">→</span>');
     expect(html).toContain('Sort finished; the filter run failed');
-    expect(html).toContain('Start a fresh guided demo to retry this step.');
+    expect(html).toContain('aria-label="Retry this step: Reconcile concurrent changes"');
     expect(html).not.toContain('Inspect concurrent run');
   });
 });

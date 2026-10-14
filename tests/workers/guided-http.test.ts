@@ -58,7 +58,7 @@ it('fresh concurrent start prepares both approvals only after Native requests th
     .mockResolvedValueOnce(session).mockResolvedValueOnce({ steps: [{ id: 'concurrent', run_ids: ['filter', 'sort'] }] });
   prepare.mockResolvedValueOnce(runs);
   await guidedRoute(f.request(), env, owner, 'fresh', 'start_guided_step');
-  expect(prepare).toHaveBeenCalledExactlyOnceWith(env, owner, 'fresh', session, 'concurrent', f.body.expected_commit, 0);
+  expect(prepare).toHaveBeenCalledExactlyOnceWith(env, owner, 'fresh', session, 'concurrent', f.body.expected_commit, 0, 1);
   expect(call.mock.calls[3][2]).toMatchObject({ ...f.body, _guided_runs: runs });
 });
 
@@ -79,4 +79,34 @@ it('session GET is read-only and browser authority fields cannot reach a start',
     .rejects.toMatchObject({ code: 'INVALID_INPUT' });
   expect(call).toHaveBeenCalledTimes(1);
   expect(prepare).not.toHaveBeenCalled();
+});
+
+it('retry passes the next attempt to preparation and the flag to both native calls', async () => {
+  const f = await fixture();
+  const body = { ...f.body, request_id: 'retry-build', retry: true };
+  const session = { session_id: f.body.session_id, working_version: 0,
+    steps: [{ id: 'build', status: 'needs_attention', attempt: 2, run_ids: ['old-r2'] }] };
+  call.mockResolvedValueOnce(f.repository)
+    .mockRejectedValueOnce(Object.assign(new Error('Guided step needs its exact trusted run count'), { code: 'INVALID_INPUT' }))
+    .mockResolvedValueOnce(session).mockResolvedValueOnce({ steps: [{ id: 'build', run_ids: ['old-r3'] }] });
+  prepare.mockResolvedValueOnce([{ id: 'old-r3' }]);
+  await guidedRoute(f.request(body as typeof f.body), env, owner, 'fresh', 'start_guided_step');
+  expect(prepare).toHaveBeenCalledExactlyOnceWith(env, owner, 'fresh', session, 'build', f.body.expected_commit, 0, 3);
+  expect(call.mock.calls[1][2]).toMatchObject({ ...body, _guided_runs: [] });
+  expect(call.mock.calls[3][2]).toMatchObject({ ...body, _guided_runs: [{ id: 'old-r3' }] });
+});
+
+it('a refused retry never reaches provider approval and a non-true flag is rejected at the boundary', async () => {
+  const f = await fixture();
+  call.mockResolvedValueOnce(f.repository).mockRejectedValueOnce(
+    Object.assign(new Error('Only a step that needs attention can be retried'), { code: 'GUIDED_STEP_NOT_RETRYABLE' }));
+  await expect(guidedRoute(f.request({ ...f.body, retry: true } as typeof f.body), env, owner, 'fresh', 'start_guided_step'))
+    .rejects.toMatchObject({ code: 'GUIDED_STEP_NOT_RETRYABLE' });
+  expect(prepare).not.toHaveBeenCalled();
+  for (const retry of [false, 'yes', 1, null]) {
+    call.mockReset().mockResolvedValueOnce(f.repository);
+    await expect(guidedRoute(f.request({ ...f.body, retry } as typeof f.body), env, owner, 'fresh', 'start_guided_step'))
+      .rejects.toMatchObject({ code: 'INVALID_INPUT' });
+    expect(call).toHaveBeenCalledTimes(1);
+  }
 });

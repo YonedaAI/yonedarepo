@@ -4,6 +4,7 @@ import {
   guidedBuildIntent,
   guidedConcurrentIntents,
   guidedExtendIntent,
+  guidedRunId,
 } from '../../shared/guided-runs';
 import { guidedFailure } from './guided-profile';
 import { approveOwnerRun } from './owner-run-approval';
@@ -11,7 +12,8 @@ import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
 
 /** The ordinary planner defines independent specialist scopes and coordination;
- * saved connections, funding and compatibility use the normal owner approval. */
+ * saved connections, funding and compatibility use the normal owner approval.
+ * An `attempt` above 1 prepares a retry whose run ids the native ledger suffixes identically. */
 export async function prepareGuidedRuns(
   env: Env,
   principal: Principal,
@@ -20,6 +22,7 @@ export async function prepareGuidedRuns(
   step: GuidedStepId,
   commit: string,
   version: number,
+  attempt = 1,
 ): Promise<Json[]> {
   if (step === 'review') return [];
   const intents =
@@ -36,7 +39,7 @@ export async function prepareGuidedRuns(
       : 'Use context_get to open the relevant prior design choice from your assigned context, then cite its record ID in a context_publish link and explain how it influenced your implementation.';
   for (const [ordinal, intent] of intents.entries()) {
     const input: Json = {
-      id: `guide-${prefix}-${step}-${ordinal}`,
+      id: guidedRunId(prefix, step, ordinal, attempt),
       intent: `${intent} ${contextInstructions} Plan two independent specialist scopes: task behavior in public/tasks.mjs and the interface in public/index.html, public/app.mjs and public/style.css. Establish the shared API contract upfront using the exact function signatures in this brief. Start both specialists in parallel. Do not wait for the core capture before starting interface work; implement against the known contract and coordinate discrepancies through peer_message while both work. Record and capture the shared contract. The integrator must wait for both captured contributions before integration and independent checks.`,
       mode: 'collaborate',
       criteria: [

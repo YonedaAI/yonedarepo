@@ -24,6 +24,7 @@ function startInput(body: Json, sessionId: string): StartGuidedStep {
     'step_id',
     'expected_commit',
     'expected_version',
+    'retry',
   ];
   if (
     Object.keys(body).some((key) => !allowed.includes(key)) ||
@@ -35,7 +36,8 @@ function startInput(body: Json, sessionId: string): StartGuidedStep {
     typeof body.expected_commit !== 'string' ||
     !/^[a-f0-9]{40}$/.test(body.expected_commit) ||
     !Number.isSafeInteger(body.expected_version) ||
-    body.expected_version < 0
+    body.expected_version < 0 ||
+    ('retry' in body && body.retry !== true)
   )
     throw guidedFailure(
       'INVALID_INPUT',
@@ -110,6 +112,8 @@ export async function guidedRoute(
   if ((await sourceFingerprint(repository.policy)) !== repository.guided_project.policy_digest)
     throw guidedFailure('POLICY_CHANGED', 'The guided policy differs from its immutable profile.');
   const session = (await read()) as GuidedSession;
+  // Native refused an ineligible retry above; a retry prepares the next attempt's run ids.
+  const current = session.steps.find((step) => step.id === input.step_id)?.attempt ?? 1;
   const runs = await prepareGuidedRuns(
     env,
     principal,
@@ -118,6 +122,7 @@ export async function guidedRoute(
     input.step_id,
     input.expected_commit,
     input.expected_version,
+    input.retry ? current + 1 : 1,
   );
   return reply(env, repo, repository, await ledger(env, repo, { ...command, _guided_runs: runs }));
 }

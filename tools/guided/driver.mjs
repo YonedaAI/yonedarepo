@@ -14,7 +14,7 @@ const provisional = (state) =>
     state.session_id ?? '',
   ) &&
   !state.initial_commit &&
-  ['requests', 'observed_runs', 'steps', 'history', 'check_reports'].every(
+  ['requests', 'retries', 'observed_runs', 'steps', 'history', 'check_reports'].every(
     (key) => !Object.keys(state[key] ?? {}).length,
   );
 function adoptId(state, id) {
@@ -224,45 +224,55 @@ export async function driveGuided(client, state, options = {}) {
   }
   if (snapshot.repository.policy?.build?.test_bundle?.digest !== state.test_bundle_digest)
     fail('Server protected bundle is not the approved immutable oracle');
+  const begin = async (id, retry) => {
+    await platformGuard(client, expectedRevision);
+    await allowanceGuard(client.api);
+    activationGuard(session, transport);
+    const current = await client.api(`repos/${repo}/repository_overview`);
+    if (current.repository?.published_commit !== state.initial_commit)
+      fail('Canonical publication changed during this private exercise');
+    const attempt = session.steps.find((step) => step.id === id).attempt ?? 1;
+    const request = {
+      request_id: randomUUID(),
+      session_id: state.session_id,
+      profile_id: profile.id,
+      step_id: id,
+      expected_commit: session.working_revision?.commit ?? current.repository.head_commit,
+      expected_version: session.working_version ?? current.repository.version,
+    };
+    // A retry is new paid work: one fresh identity per invocation, persisted before sending.
+    if (retry) (state.retries ??= {})[id] = { ...request, retry: true };
+    else state.requests[id] ??= request;
+    const sent = retry ? state.retries[id] : state.requests[id];
+    await save(state);
+    try {
+      session = sessionGuard(await client.api(`repos/${repo}/start_guided_step`, sent), state);
+    } catch (failure) {
+      // Read the exact retained session after lost acknowledgement; never rotate IDs.
+      session = sessionGuard(await client.api(sessionPath(repo, state)), state);
+      const after = session.steps.find((step) => step.id === id);
+      if (retry ? (after?.attempt ?? 1) <= attempt : after?.status === 'ready') throw failure;
+    }
+    return session.steps.find((step) => step.id === id);
+  };
+  const retried = new Set();
   for (const id of ['build', 'extend', 'concurrent']) {
     let step = session.steps.find((step) => step.id === id);
-    if (step.status === 'needs_attention')
-      fail('Guided step needs inspection; no new run or budget reset');
     if (step.status === 'locked') fail('Previous guided evidence has not unlocked this step');
-    if (step.status === 'ready') {
-      await platformGuard(client, expectedRevision);
-      await allowanceGuard(client.api);
-      activationGuard(session, transport);
-      const current = await client.api(`repos/${repo}/repository_overview`);
-      if (current.repository?.published_commit !== state.initial_commit)
-        fail('Canonical publication changed during this private exercise');
-      state.requests[id] ??= {
-        request_id: randomUUID(),
-        session_id: state.session_id,
-        profile_id: profile.id,
-        step_id: id,
-        expected_commit: session.working_revision?.commit ?? current.repository.head_commit,
-        expected_version: session.working_version ?? current.repository.version,
-      };
-      await save(state);
-      try {
-        session = sessionGuard(
-          await client.api(`repos/${repo}/start_guided_step`, state.requests[id]),
-          state,
-        );
-      } catch (failure) {
-        // Read the exact retained session after lost acknowledgement; never rotate IDs.
+    if (step.status === 'ready') step = await begin(id, false);
+    for (;;) {
+      while (step.status === 'running') {
+        if (now() >= deadline) fail('Wait bound reached; resume only this retained session');
+        await collectRuns(client.api, repo, step, state, save);
+        await sleep(2000);
         session = sessionGuard(await client.api(sessionPath(repo, state)), state);
-        if (session.steps.find((step) => step.id === id)?.status === 'ready') throw failure;
+        step = session.steps.find((step) => step.id === id);
       }
-      step = session.steps.find((step) => step.id === id);
-    }
-    while (step.status === 'running') {
-      if (now() >= deadline) fail('Wait bound reached; resume only this retained session');
-      await collectRuns(client.api, repo, step, state, save);
-      await sleep(2000);
-      session = sessionGuard(await client.api(sessionPath(repo, state)), state);
-      step = session.steps.find((step) => step.id === id);
+      if (step.status !== 'needs_attention') break;
+      if (retried.has(id))
+        fail('Guided step still needs inspection after one retry; no further run this invocation');
+      retried.add(id);
+      step = await begin(id, true);
     }
     if (step.status !== 'complete') fail('Guided step has no complete authoritative evidence');
     const runs = await collectRuns(client.api, repo, step, state, save);

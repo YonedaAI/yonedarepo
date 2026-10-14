@@ -63,3 +63,11 @@ it('fresh continuation with a stale working lease fails before provider approval
     .rejects.toMatchObject({ code: 'HEAD_MOVED' });
   expect(approve).not.toHaveBeenCalled();
 });
+
+it('a retry attempt suffixes run ids exactly as the native ledger allocates them', async () => {
+  normalApproval();
+  const first = await prepareGuidedRuns({} as Env, principal, 'fresh', session, 'concurrent', 'a'.repeat(40), 3);
+  const retried = await prepareGuidedRuns({} as Env, principal, 'fresh', session, 'concurrent', 'a'.repeat(40), 3, 2);
+  expect(retried.map(run => run.id)).toEqual(first.map(run => `${run.id}-r2`));
+  expect(first[0].id).toMatch(/^guide-[a-f0-9]{24}-concurrent-0$/);
+});
