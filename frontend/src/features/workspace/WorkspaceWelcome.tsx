@@ -119,15 +119,17 @@ export function WorkspaceWelcome({
         <br />A shared starting point.
       </h1>
       <p>Create a repository, give your agents a brief, and explore what they build together.</p>
-      <button type="button" onClick={onProject}>
-        <Plus size={17} />
-        Add repository
-      </button>
-      {onGuidedDemo && (
-        <button type="button" className="quiet" onClick={onGuidedDemo}>
-          Try guided demo
+      <div className="workspace-start-actions">
+        <button type="button" onClick={onProject}>
+          <Plus size={17} />
+          Add repository
         </button>
-      )}
+        {onGuidedDemo && (
+          <button type="button" className="quiet" onClick={onGuidedDemo}>
+            Try guided demo
+          </button>
+        )}
+      </div>
       <div className="getting-started">
         <div>
           <GitBranch size={21} />
