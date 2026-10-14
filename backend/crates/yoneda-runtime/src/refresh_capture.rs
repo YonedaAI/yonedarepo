@@ -8,6 +8,9 @@ use yoneda_core::Result;
 const REVIEW_DIFF_LIMIT: usize = 24 * 1024 * 1024;
 
 pub(crate) async fn execute(job: &Value, _work_root: &Path) -> Result<Value> {
+    if crate::source_workspace_job::enabled(job) {
+        return crate::source_refresh::execute(job).await;
+    }
     if !transport::enabled(job) {
         return Err(err(
             "Refresh capture requires frozen git-native-v1 transport",
@@ -169,6 +172,15 @@ fn changed_paths(
 
 #[cfg(test)]
 mod resolver_scope_tests {
+    #[tokio::test]
+    async fn api_refresh_dispatches_to_sparse_attempt_validation_not_git_native() {
+        let root = tempfile::tempdir().unwrap();
+        let job = serde_json::json!({"kind":"capture","payload":{"workspace_transport":"api-source-v1","capture_subtype":"refresh_candidate"}});
+        // Missing trusted attempt fields must fail before credentials or any transport request.
+        let error = super::execute(&job, root.path()).await.unwrap_err();
+        assert_eq!(error.code, "SOURCE_REFRESH");
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    }
     use super::{REVIEW_DIFF_LIMIT, changed_paths, decode_review_diff, reviewable_diff};
     use crate::{
         capture, git,

@@ -510,7 +510,7 @@ fn migration_eleven_upgrades_a_real_v8_schema_and_repeats_cleanly() {
     assert_eq!(
         db.query("SELECT MAX(version) AS version FROM schema_migrations", &[])
             .unwrap()[0]["version"],
-        13
+        14
     );
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('outbox') WHERE name IN ('created_at','payload_pruned')",&[]).unwrap()[0]["count"],2);
     assert_eq!(db.query("SELECT COUNT(*) AS count FROM pragma_table_info('execution_logs') WHERE name='data_pruned'", &[]).unwrap()[0]["count"], 1);

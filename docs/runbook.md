@@ -1,6 +1,6 @@
 # Runbook
 
-## Current source wave status
+## Dated baseline — October 10, 2026
 
 `cargo xtask check` passed on source revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`): 284 Rust tests (186 app, 16 core, 66 runtime, 1 Cloudflare and 15 xtask), 290 Workers tests across 59 files, 67 frontend tests across 15 files, and 11 Node tests. The deployed production Worker is version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`, running `a581aaf`. The rolled-out Linux runtime-25 image has seven healthy instances, zero starting, zero failed and no errors; it passed 72 Linux tests at `sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87`, and passed the offline Gemini/Rust MCP smoke test.
 
@@ -17,6 +17,29 @@ The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captio
 Human reviewer rehearsal remains pending after the final handoff; the key sheet is prepared. The separate [no-paid hosted fixture](platform-acceptance.json) is bounded evidence for refunded capacity deferrals, publication acknowledgment-loss recovery and disjoint refresh, not broad capacity or semantic merge quality.
 
 ## History, archives and Git conflicts
+
+New source-transport deployments require the additive `SOURCES` binding and `v3` SQLite
+class migration, the matching runtime image and all four health markers:
+`source_api`, `lazy_source`, `source_capture` and `child_privilege_drop`. The last marker
+requires an observed UID/GID 1000 process with zero capability masks and `NoNewPrivs=1`.
+Enable `SOURCE_TRANSPORT=api-source-v1` only for new approvals after rollout, then complete
+bounded hosted acceptance before claiming readiness. Never rewrite an existing run's
+transport or funding. Missing capabilities fail before inference. The operator flag is
+not a user-facing run setting.
+
+Source indexing progresses through bounded queue messages before launching models. Signed
+metadata journals and completed index manifests bind the verified Git root, immutable
+chunks and complete counts. Cache proofs must authenticate their exact object identity;
+unsigned older caches require verified reconstruction. Do not grant authority to a cached
+flag or an agent-supplied source pointer. First activation may assemble 625 metadata chunks
+for each of up to 20 frozen inputs, so the platform sets `limits.subrequests=50000` explicitly.
+This is a bounded configuration allowance, not a throughput measurement. See
+[Cloudflare's subrequest limits](https://developers.cloudflare.com/workers/platform/limits/).
+
+Source and changed-path pages use opaque filename cursors and pinned digests. A missing
+page or provenance record is unavailable evidence, not an empty change or a clean merge.
+API resolver scopes exceeding the current 64-scope binding limit are rejected before an
+execution is created. Root refresh can retain larger path manifests through private pages.
 
 The repository history interface separates compact metadata from run detail. `runs_page` returns `items`, `next_cursor` and a numeric `watermark`; continuation must preserve the opaque cursor and watermark so inserts during browsing do not cause gaps or duplicates. Pages sort newest `created_at` first, then run ID descending, with a default page size of 50 and a maximum of 200. `run_detail` is requested for one run and hydrates its executions, candidates, evaluations, decisions, team records, artifacts and lineage on demand. Metadata pages do not carry source diffs or graph nodes. These operations are deployed; keep clients on the paged contract and verify the requested repository scope when diagnosing an origin-specific failure.
 

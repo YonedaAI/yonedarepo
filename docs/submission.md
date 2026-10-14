@@ -32,7 +32,7 @@ The October 13 maintenance acceptance was run `run-699e54e0-d070-443c-a0df-9e827
 
 Choose **Compare two approaches** for two builders plus a separate read-only Auto reviewer. Review begins after both captured alternatives have independent checks. The selected output shows why it won, why the other approach lost and remaining risks. If neither meets the intent, the reviewer may repair the more promising alternative up to twice; fresh capture, checks and review are required. You can override a checked choice with a reason and decide separately whether to publish. **Review now** adds an explicitly approved review to existing two-builder results without resetting previous usage.
 
-The complete local gate passed 446 Rust, 423 platform workerd, 16 app workerd, 207 frontend and 43 Node tests. R8 passed 88 Linux runtime tests. Independent review cleared the frozen changes. Hosted acceptance and deployment are recorded separately in [release evidence](release-evidence.md). The video predates the new automatic comparison reviewer.
+The deployed R9 gate passed 449 Rust, 425 platform workerd, 16 app workerd, 207 frontend and 43 Node tests. R9 passed 91 Linux runtime tests. Fresh hosted acceptance covered two checked alternatives, automatic review, human override and restoration without canonical publication. Previous reviewer test repositories were removed at the owner's request; saved providers, login and spending remain. Hosted acceptance and deployment are recorded separately in [release evidence](release-evidence.md). The video predates the automatic comparison reviewer. New source-transport work requires its own verification and deployment evidence.
 
 ## Modern model picker — earlier verified wave
 

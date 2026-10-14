@@ -136,6 +136,26 @@ migration histories with stable resource identities.
 
 ## Development workflow
 
+The new, operator-selected `api-source-v1` transport adds a separate Rust SQLite
+`SourceWorkspaceAuthority` for each approved attempt and immutable view. Workers serve
+scoped source APIs, R2 stores verified immutable content, and Linux builders use a lazy
+FUSE working tree. Builders receive no Git clone or Git credential. Metadata, uploads,
+file mutations, checkpoints and seals use server-authorized identities and version checks;
+staged changesets do not confer checked or published authority.
+
+Trusted capture reads the sealed delta and constructs Git objects for Artifacts, retaining
+unread base files and approved dependency overlays. A fresh evaluator reads the exact
+captured revision with local disposable build scratch. Sparse refresh retains both Git
+parents; a resolver receives a writable conflict scope plus read-only views of both inputs.
+Human selection and publication remain separate. Existing Git-native approvals continue
+using their original transport.
+
+This is an incremental source transport alongside Git, not a distributed replacement for
+Git history. Source views are bounded to 10,000 regular files, 100 MiB total and 32 MiB per
+file. Links and submodules are unsupported. Local filesystem, ledger and Git tests are
+separate from hosted acceptance; consult release evidence before treating this new transport
+as deployed or validated at scale.
+
 Signup and login create an opaque session backed by Workspace DO SQLite. Project creation
 reserves a stable ID there, schedules background setup and returns promptly. A Workspace DO
 alarm retains dispatch intent and retries queue sends, pending imports and expired claims,

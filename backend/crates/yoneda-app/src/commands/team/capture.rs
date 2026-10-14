@@ -18,15 +18,13 @@ pub(super) fn captured<S: SqlStore>(db: &S, job: &Value, result: &Value, now: i6
     let paths = result["paths"]
         .as_array()
         .ok_or_else(|| bad("Capture must enumerate paths"))?;
-    let scopes = job["payload"]["team_write_paths"]
-        .as_array()
-        .ok_or_else(|| bad("Capture is missing trusted team scope"))?;
+    let scopes = crate::path_lists::load(db, &job["payload"], "team_write_paths")?;
     for path in paths {
         let path = path.as_str().ok_or_else(|| bad("Invalid changed path"))?;
         yoneda_core::validate_path(path)?;
         if !scopes
             .iter()
-            .filter_map(Value::as_str)
+            .map(String::as_str)
             .any(|scope| owns_path(scope, path))
         {
             return Err(Error::new(
@@ -91,7 +89,11 @@ pub(super) fn captured<S: SqlStore>(db: &S, job: &Value, result: &Value, now: i6
                 && h["epoch"] == task["epoch"]
         })
         .collect();
-    let output = json!({"task_id":task["task_id"],"task_revision":task["revision"],"execution_id":id,"revision":result["revision"],"tree":result["tree"],"paths":owned,"write_paths":task["write_paths"],"capture_paths":paths,"capture_job":job["id"],"capture_epoch":job["epoch"],"handoff_id":handoff_id});
+    let mut output = json!({"task_id":task["task_id"],"task_revision":task["revision"],"execution_id":id,"revision":result["revision"],"tree":result["tree"],"paths":owned,"write_paths":task["write_paths"],"capture_paths":paths,"capture_job":job["id"],"capture_epoch":job["epoch"],"handoff_id":handoff_id});
+    if job["payload"]["workspace_transport"] == "api-source-v1" {
+        crate::path_lists::compact(db, &mut output, "paths")?;
+        crate::path_lists::compact(db, &mut output, "capture_paths")?;
+    }
     let handoff = json!({"id":handoff_id,"run_id":task["run_id"],"task_id":task["task_id"],"execution_id":id,"epoch":task["epoch"],"authority":"captured_revision","output":output,"assertions":assertions,"created_at":now});
     create(db, "team_handoffs", &handoff_id, &handoff)?;
     node(

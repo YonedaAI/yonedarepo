@@ -21,7 +21,7 @@ async function fixture() {
   await ledger(bindings, repo, { op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: 'd'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:diff-run:agent-1' });
   const scope: Scope = { repo_id: repo, job: capture, supervisor, fork: revision.repository, model_calls: 0, created_at: Date.now() };
-  const readCommit = vi.fn(async (hash: string) => ({ treeHash: hash === 'a'.repeat(40) ? 'a'.repeat(40) : tree, parents: ['a'.repeat(40)] }));
+  const readCommit = vi.fn(async (hash: string) => ({ hash, treeHash: hash === 'a'.repeat(40) ? 'a'.repeat(40) : tree, parents: ['a'.repeat(40)] }));
   const readTree = async (hash: string) => hash === 'a'.repeat(40) ? [] : hash === tree
     ? [{name:'public',type:'tree',hash:'d'.repeat(40)}]
     : [{name:'index.html',type:'blob',hash:'e'.repeat(40)}];
@@ -87,7 +87,7 @@ it('rejects missing full diff, foreign captured revision and untrusted superviso
 
 it('rejects a forged commit parent and rolls back completion on simulated R2 upload failure', async () => {
   const f = await fixture();
-  f.readCommit.mockResolvedValueOnce({ treeHash: tree, parents: ['e'.repeat(40)] });
+  f.readCommit.mockResolvedValueOnce({ hash: revision.commit, treeHash: tree, parents: ['e'.repeat(40)] });
   const invalid = await f.complete(f.result('Rejected parent'));
   expect(invalid.status).toBe(409);
   expect((await invalid.json<Json>()).error.code).toBe('INVALID_CAPTURE');

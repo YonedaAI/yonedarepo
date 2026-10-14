@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
+import { PublishedSourceViewer } from '../source-workspace/PublishedSourceViewer';
+import { RunSourceProgress } from '../source-workspace/RunSourceProgress';
 import { TeamWorkflow } from '../team/TeamWorkflow';
 import { runCandidates } from '../team/teamView';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
@@ -120,6 +122,7 @@ export function RunDetail({
         previousRun={previousRun}
         onSelectRun={onSelectRun}
       />
+      <RunSourceProgress snapshot={snapshot} run={run} busy={busy} onRefresh={onRefresh} />
       <IntentQuestion
         key={`${run.intent_question?.id}:${run.intent_question?.status}`}
         run={run}
@@ -253,6 +256,7 @@ export function RunDetail({
               </div>
               <RunBrief intent={run.intent} criteria={run.criteria} />
               <RunWorkflow snapshot={snapshot} run={run} />
+              <PublishedSourceViewer snapshot={snapshot} runId={run.id} />
               <p className="subtle">
                 Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
               </p>

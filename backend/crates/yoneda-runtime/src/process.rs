@@ -33,15 +33,16 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
         if unsafe { libc::geteuid() } == 0 {
             command.uid(1000).gid(1000);
         }
-        // SAFETY: only async-signal-safe prctl runs in the forked child, before exec.
+        // SAFETY: helper uses only async-signal-safe capability/prctl syscalls before exec.
         unsafe {
-            command.pre_exec(|| {
-                if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
+            command.pre_exec(crate::process_privileges::restrict_untrusted);
         }
+    }
+    if crate::source_workspace_registry::active() {
+        command
+            .env("YONEDA_SOURCE_API", "1")
+            .env("TMPDIR", "/work/tmp")
+            .env("npm_config_cache", "/home/agent/.npm");
     }
     command.kill_on_drop(true);
 }

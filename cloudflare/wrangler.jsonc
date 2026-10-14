@@ -7,11 +7,21 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "limits": { "subrequests": 50000 },
   "workers_dev": true,
   "routes": [
-    { "pattern": "yonedarepo.com", "custom_domain": true },
-    { "pattern": "www.yonedarepo.com", "custom_domain": true },
-    { "pattern": "https://www.yonedarepo.com/*", "zone_name": "yonedarepo.com" }
+    {
+      "pattern": "yonedarepo.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.yonedarepo.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "https://www.yonedarepo.com/*",
+      "zone_name": "yonedarepo.com"
+    }
   ],
   "preview_urls": false,
   "observability": {
@@ -90,6 +100,10 @@
       {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority"
+      },
+      {
+        "name": "SOURCES",
+        "class_name": "SourceWorkspaceAuthority"
       }
     ]
   },
@@ -106,6 +120,12 @@
       "tag": "v2",
       "new_sqlite_classes": [
         "WorkspaceAuthority"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "SourceWorkspaceAuthority"
       ]
     }
   ],

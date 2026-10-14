@@ -9,11 +9,14 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     result: &Value,
     now: i64,
 ) -> Result<Value> {
-    if job["payload"]["capture_subtype"] != "resolve_conflict" {
+    let api = job["payload"]["source_resolution"] == true
+        && job["payload"]["capture_subtype"] == "source_changeset";
+    if job["payload"]["capture_subtype"] != "resolve_conflict" && !api {
         return Err(Error::new("FORBIDDEN", "Not a conflict resolver capture"));
     }
     let conflict_id = string(&job["payload"], "conflict_id")?;
-    let mut record = get(db, "conflicts", &conflict_id)?;
+    let stored = get(db, "conflicts", &conflict_id)?;
+    let mut record = super::source::hydrate(db, &stored)?;
     super::repair_authority::validate_capture(db, &record)?;
     if job["payload"]["expected_head"] != record["head_commit"]
         || job["payload"]["expected_version"] != record["expected_version"]
@@ -28,6 +31,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     }
     if !target::matches(db, &record)? {
         record["status"] = json!("stale");
+        super::source::compact(db, &mut record)?;
         save(db, "conflicts", &conflict_id, &record)?;
         event(
             db,
@@ -43,12 +47,16 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         .flatten()
         .filter_map(Value::as_str)
         .collect();
-    yoneda_core::conflict_capture::validate_capture_result(
-        job,
-        &string(job, "id")?,
-        number(job, "epoch")?,
-        result,
-    )?;
+    if api {
+        super::source::validate_capture(db, job, result, now)?;
+    } else {
+        yoneda_core::conflict_capture::validate_capture_result(
+            job,
+            &string(job, "id")?,
+            number(job, "epoch")?,
+            result,
+        )?;
+    }
     let captured = result["resolver_delta_paths"]
         .as_array()
         .ok_or_else(|| bad("Resolver capture omitted its Git paths"))?;
@@ -84,6 +92,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     save(db, "candidates", &cid, &candidate)?;
     record["status"] = json!("evaluating");
     record["resolver_candidate_id"] = result["id"].clone();
+    super::source::compact(db, &mut record)?;
     save(db, "conflicts", &conflict_id, &record)?;
     Ok(json!({"conflict_id":conflict_id,"candidate_id":result["id"],"status":"evaluating"}))
 }
@@ -120,7 +129,7 @@ pub(super) fn resolver_evaluated<S: SqlStore>(
     if record["status"] == "resolved" {
         record["resolver_run_id"] = record["candidate"]["run_id"].clone();
     }
-    attach_typed(&mut record)?;
+    attach_typed(db, &mut record)?;
     save(db, "conflicts", id, &record)?;
     event(
         db,

@@ -108,6 +108,63 @@ const inventory = {
 };
 
 describe('backend conflict inventory normalization and repair actions', () => {
+  it('shows ref counts and unknown overlap without inventing an empty scope or fetching pages on render', async () => {
+    const ref = { version: 1, id: 'paths:conflict', digest: 'a'.repeat(64), count: 20000 };
+    apiMock.mockResolvedValueOnce({
+      conflicts: [
+        {
+          id: 'conflict',
+          candidate_id: 'candidate',
+          status: 'unresolved',
+          conflict_paths_ref: ref,
+        },
+      ],
+      overlaps: [{ candidate_id: 'stale', paths: [], status: 'not_analyzed' }],
+    });
+    render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    const html = renderToStaticMarkup(render());
+    expect(html).toContain('Affected paths (20000)');
+    expect(html).toContain('Overlap has not been analyzed');
+    expect(html).not.toContain('No stale candidates or path overlaps');
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+  it('leaves a paged resolver scope native and preserves the owner CAS request instead of sending an empty or partial array', async () => {
+    const ref = { version: 1, id: 'paths:conflict', digest: 'a'.repeat(64), count: 20000 };
+    apiMock
+      .mockResolvedValueOnce({
+        conflicts: [
+          {
+            id: 'conflict',
+            candidate_id: 'candidate',
+            status: 'unresolved',
+            conflict_paths_ref: ref,
+          },
+        ],
+        overlaps: [],
+      })
+      .mockRejectedValueOnce(new Error('Acknowledgment lost'));
+    render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    let tree = render();
+    find(tree, 'textarea')?.props.onChange({
+      target: {
+        value: 'Preserve the original intent and verify the complete native conflict scope.',
+      },
+    });
+    tree = render();
+    find(tree, 'button', 'Resolve with fresh capture and checks')?.props.onClick();
+    await vi.waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+    expect(apiMock.mock.calls[1][1]).toMatchObject({
+      conflict_id: 'conflict',
+      candidate_id: 'candidate',
+      expected_commit: 'head-8',
+      expected_version: 8,
+    });
+    expect(apiMock.mock.calls[1][1]).not.toHaveProperty('declared_paths');
+  });
   it('uses an owner brief and retries the identical CAS request after an uncertain failure', async () => {
     apiMock
       .mockResolvedValueOnce(inventory)

@@ -2,6 +2,8 @@ import { Check, GitCommitHorizontal, LoaderCircle, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { ChangedPathList } from '../source-workspace/ChangedPathList';
+import { capturedPathCount, capturedPathRef } from '../source-workspace/sourcePathCount';
 import { modelDisplayName } from '../workspace/providerModels';
 import { CandidateOutcome } from './CandidateOutcome';
 import { ExecutionFailure } from './ExecutionFailure';
@@ -59,6 +61,8 @@ export function CandidateCard({
 }) {
   const chosen = !!candidate && decision?.target?.commit === candidate.revision.commit;
   const published = chosen && decision?.status === 'published';
+  const pathCount = capturedPathCount(candidate);
+  const pathRef = capturedPathRef(candidate);
   const status = execution
     ? executionStatus(execution, candidate)
     : (candidate?.status ?? 'waiting');
@@ -160,10 +164,26 @@ export function CandidateCard({
               <GitCommitHorizontal size={15} />
               <code>{short(candidate.revision.commit)}</code>
               <span>
-                {candidate.paths.length} {candidate.paths.length === 1 ? 'path' : 'paths'}
+                {pathCount == null
+                  ? 'Path count unavailable'
+                  : `${pathCount} ${pathCount === 1 ? 'path' : 'paths'}`}
               </span>
             </div>
-            <LazyCandidateDiff key={candidate.id} repo={repo} candidate={candidate} />
+            {pathRef && snapshot.capabilities?.source_api === 1 && (
+              <ChangedPathList
+                key={`${candidate.id}:${pathRef.id}:${pathRef.digest}`}
+                repo={repo}
+                candidateId={candidate.id}
+                pathRef={pathRef}
+              />
+            )}
+            <LazyCandidateDiff
+              key={candidate.id}
+              repo={repo}
+              candidate={candidate}
+              sourceApi={snapshot.capabilities?.source_api}
+              evaluation={evaluation}
+            />
           </>
         )}
       </div>

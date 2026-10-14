@@ -7,6 +7,20 @@ export type GitRole = { repository: string; writable: boolean };
 export function gitRole(scope: Scope, role: string): GitRole | null {
   const job = scope.job;
   if (comparisonReviewAttempt(job)) return null;
+  if (job.payload?.workspace_transport === 'api-source-v1') {
+    if (job.kind === 'capture' && job.payload.capture_subtype === 'refresh_candidate') {
+      if (role === 'fork' && scope.fork) return { repository: scope.fork, writable: true };
+      if (role === 'refresh-candidate' && job.payload.candidate?.revision?.repository)
+        return { repository: job.payload.candidate.revision.repository, writable: false };
+      return null;
+    }
+    return job.kind === 'capture' &&
+      job.payload.capture_subtype === 'source_changeset' &&
+      role === 'candidate' &&
+      scope.fork
+      ? { repository: scope.fork, writable: true }
+      : null;
+  }
   if (job.payload?.workspace_transport !== 'git-native-v1') return null;
   const payload = job.payload;
   const refresh = job.kind === 'capture' && payload.capture_subtype === 'refresh_candidate';

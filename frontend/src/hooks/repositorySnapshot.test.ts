@@ -9,6 +9,39 @@ import {
 } from './repositorySnapshot';
 
 describe('scoped snapshot refresh', () => {
+  it('replaces preparation markers for one run without retaining stale markers or mixing another run', () => {
+    const overview = {
+      repository: { id: 'repo' },
+      watermark: 1,
+      capabilities: { source_api: 1 },
+    } as unknown as RepositoryOverview;
+    const initial = emptySnapshot(overview);
+    const marker = {
+      job_id: 'job:source',
+      kind: 'agent',
+      status: 'pending',
+      stage: 'source_preparing',
+      epoch: 1,
+      observed_at: 10,
+      not_before: 20,
+      runtime_started_at: null,
+    };
+    const detail = (id: string, markers: unknown[]) =>
+      ({
+        ...emptySnapshot(overview),
+        run: { id },
+        runs: [{ id }],
+        source_preparation: markers,
+      }) as unknown as RunDetail;
+    const first = mergeRunDetails(
+      initial,
+      [detail('first', [marker]), detail('second', [{ ...marker, job_id: 'job:other' }])],
+      overview,
+    );
+    expect(first.source_preparation?.map((entry) => entry.run_id)).toEqual(['first', 'second']);
+    const refreshed = mergeRunDetails(first, [detail('first', [])], overview);
+    expect(refreshed.source_preparation?.map((entry) => entry.job_id)).toEqual(['job:other']);
+  });
   it('finds a deep-linked run on older history pages and reports missing runs explicitly', async () => {
     const pages = [
       { items: [{ id: 'newest' }], next_cursor: 'older-1', watermark: 8, has_more: true },

@@ -60,6 +60,6 @@ fn real_version_twelve_upgrades_without_changing_history_and_repeats() {
     assert_eq!(
         db.query("SELECT MAX(version) AS version FROM schema_migrations", &[])
             .unwrap()[0]["version"],
-        13
+        14
     );
 }

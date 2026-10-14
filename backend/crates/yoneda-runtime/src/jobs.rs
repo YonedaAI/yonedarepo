@@ -29,6 +29,9 @@ pub(crate) async fn execute_job(
         }
         "agent" => crate::agent::execute(job, &root, transcript).await,
         "capture" => {
+            if job["payload"]["capture_subtype"] == "source_changeset" {
+                return crate::source_capture::execute(job).await;
+            }
             if job["payload"]["capture_subtype"] == "refresh_candidate" {
                 return crate::refresh_capture::execute(job, &root).await;
             }

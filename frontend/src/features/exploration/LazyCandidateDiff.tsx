@@ -15,9 +15,13 @@ interface DiffError {
 export function LazyCandidateDiff({
   repo,
   candidate,
+  sourceApi,
+  evaluation,
 }: {
   repo: string;
   candidate: Record<string, any>;
+  sourceApi?: number;
+  evaluation?: Record<string, any>;
 }) {
   const [open, setOpen] = useState(false);
   const identity = JSON.stringify([repo, candidate.id, candidate.revision?.commit]);
@@ -95,7 +99,12 @@ export function LazyCandidateDiff({
           <p role="status">Loading captured diff…</p>
         )}
       </details>
-      <CandidateSourcePreview repo={repo} candidate={candidate} />
+      <CandidateSourcePreview
+        repo={repo}
+        candidate={candidate}
+        sourceApi={sourceApi}
+        evaluation={evaluation}
+      />
     </>
   );
 }

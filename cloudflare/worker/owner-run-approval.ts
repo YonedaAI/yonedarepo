@@ -1,5 +1,6 @@
 import { runSamples } from '../../shared/run-samples';
 import { resolveAdaptiveApproval } from './adaptive-approval';
+import { freezeSourceApproval } from './api-source-approval';
 import { approveComparisonStart } from './comparison-approval';
 import { resolveFixedApproval } from './fixed-run-approval';
 import { checkLedger } from './runtime';
@@ -24,6 +25,7 @@ export async function approveOwnerRun(
     op: 'repository_status',
     _workspace: principal.workspace,
   });
+  await freezeSourceApproval(env, principal, repo, input, repository);
   checkLedger(repository, input);
   if (principal.role !== 'user') return input;
   if (

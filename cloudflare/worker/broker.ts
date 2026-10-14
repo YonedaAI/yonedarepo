@@ -9,6 +9,7 @@ import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
+import { sourceAgentCompletion } from './source-completion';
 import { ledger, object, readObject } from './storage';
 import { teamAttemptSource } from './team-source';
 import { testBundle } from './test-bundle';
@@ -42,6 +43,11 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     if (path !== '/mcp' && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
     const body = await readJson(req, path === '/mcp' ? 1024 * 1024 : 32 * 1024 * 1024);
+    if (
+      job.payload?.workspace_transport === 'api-source-v1' &&
+      ['/source', '/team_source', '/workspace', '/comparison-source'].includes(path)
+    )
+      return error('FORBIDDEN', 'Use the scoped lazy source workspace', 403);
     // Await inside this boundary so ledger rejections reach the agent as typed JSON.
     if (path === '/mcp') return await hostedMcp(env, scope, body);
     if (path === '/comparison-source')
@@ -214,6 +220,19 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
         const stored = await object(env, JSON.stringify(body));
         command = { op: 'verify_finish', ...identity, report: body, evidence: stored.digest };
       }
+      if (
+        !reviewOnly &&
+        job.kind === 'agent' &&
+        job.payload?.workspace_transport === 'api-source-v1' &&
+        job.payload.execution?.role === 'coding' &&
+        !job.payload.team_planning &&
+        !['planner', 'coordinator'].includes(job.payload.execution?.team_role)
+      )
+        command = {
+          op: 'finish',
+          ...identity,
+          result: await sourceAgentCompletion(env, scope, body),
+        };
       if (job.kind === 'capture') command = await captureResult(env, scope, body);
       await attemptLog(env, scope, 'execution.completion_received');
       const result = await ledger(env, scope.repo_id, command);

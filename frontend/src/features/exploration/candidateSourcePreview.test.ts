@@ -25,7 +25,7 @@ vi.mock('react', async (original) => ({
   },
 }));
 
-import { CandidateSourcePreview } from './CandidateSourcePreview';
+import { LegacyCandidateSourcePreview as CandidateSourcePreview } from './CandidateSourcePreview';
 
 function render(
   candidate: Record<string, any> = { id: 'candidate-1', revision: { commit: 'a'.repeat(40) } },

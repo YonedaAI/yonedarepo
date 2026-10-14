@@ -21,7 +21,10 @@ pub(crate) fn job<S: SqlStore>(
             Some(Err(error)) => return Err(error),
             None => None,
         };
-        if payload["comparison_review"] != true
+        if (payload["comparison_review"] != true
+            || run
+                .as_ref()
+                .is_some_and(|run| run["workspace_transport"] == "api-source-v1"))
             && let Some(transport) = run.as_ref().and_then(|r| r.get("workspace_transport"))
         {
             payload["workspace_transport"] = transport.clone();

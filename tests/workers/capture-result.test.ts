@@ -11,7 +11,7 @@ const tree = (revision: string) => revision[0].repeat(40);
 function fixture(parents: string[]) {
   const repository = {
     [Symbol.dispose]() {},
-    async readCommit(commit: string) { return { treeHash: tree(commit), parents: commit === target ? parents : [] }; },
+    async readCommit(commit: string) { return { hash: commit, treeHash: tree(commit), parents: commit === target ? parents : [] }; },
     async readTree(hash: string) { return [{ name: 'file.txt', type: 'blob', hash: (hash === tree(base) ? 'd' : 'e').repeat(40) }]; },
     async info() { return { defaultBranch: 'main' }; },
     async log() { return [{ hash: head }]; },
@@ -66,4 +66,22 @@ it('refresh readback binds both parents and independently observes canonical hea
     readback: { observed_head: 'forged', version: 99 }, merge_tree: tree(target) });
   expect(command.op).toBe('conflict_refresh_complete');
   expect(command.result.readback).toMatchObject({ observed_head: head, version: 0, parents: [head, base] });
+});
+
+it('unresolved sparse refresh preserves independently verified head and merged paths for the resolver', async () => {
+  const { bindings, scope, result } = fixture([head, base]);
+  await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Sparse resolver baseline', commit: head,
+    remote: { namespace: 'yoneda-test', name: 'canonical' },
+    policy: { version: 'v1', required_checks: ['retry'], suite: 'retry-contract-v1', environment: 'linux-rust-1.94-v1' } });
+  scope.job.payload = { workspace_transport: 'api-source-v1', capture_subtype: 'refresh_candidate',
+    expected_base: base, expected_head: head, expected_version: 0,
+    candidate: { revision: { repository: 'yoneda-test/original', commit: base } } };
+  const command = await captureResult(bindings, scope, { ...result, status: 'unresolved',
+    merge_workspace_commit: target, merge_tree: tree(target), conflict_paths: ['file.txt'],
+    readback: { expected_head_tree: 'forged', merged_paths: ['forged.txt'] } });
+  expect(command.op).toBe('conflict_refresh_complete');
+  expect(command.result.readback).toMatchObject({ observed_head: head, version: 0, expected_head_tree: tree(head),
+    parents: [head, base], merged_paths: [], workspace_commit: target });
+  expect(command.result.workspace_revision).toEqual({ repository: scope.fork, commit: target });
+  expect(command.result.diff_digest).toBeUndefined();
 });

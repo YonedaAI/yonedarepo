@@ -28,6 +28,25 @@ it('preserves opaque page cursors, parses watermark, and keeps context usage epo
   expect(usage).toEqual({ epoch: 2, cursor: 3 });
 });
 
+it('keeps immutable changed-file paging read-only and preserves its path cursor and digest', async () => {
+  expect(repositoryOperationAllowed('GET', 'candidate_paths')).toBe(true);
+  expect(repositoryOperationAllowed('POST', 'candidate_paths')).toBe(false);
+  const query = new URLSearchParams({ candidate_id: 'candidate:captured', after: 'src/🚀.ts', limit: '50', expected_digest: 'a'.repeat(64), _source_signing_key: 'forged' });
+  expect(await ownerCommandInput(new Request(`https://example.com/?${query}`), 'candidate_paths'))
+    .toEqual({ candidate_id: 'candidate:captured', after: 'src/🚀.ts', limit: 50, expected_digest: 'a'.repeat(64) });
+});
+
+it('pages conflict evidence with an opaque filename cursor without granting capture authority', async () => {
+  expect(repositoryOperationAllowed('GET', 'conflict_paths')).toBe(true);
+  expect(repositoryOperationAllowed('POST', 'conflict_paths')).toBe(false);
+  const query = new URLSearchParams({ conflict_id: 'conflict:reserved', section: 'overlapping_paths',
+    after: 'src/🚀.ts', limit: '50', expected_digest: 'a'.repeat(64),
+    job_id: 'foreign', _source_signing_key: 'forged' });
+  expect(await ownerCommandInput(new Request(`https://example.com/?${query}`), 'conflict_paths'))
+    .toEqual({ conflict_id: 'conflict:reserved', section: 'overlapping_paths', after: 'src/🚀.ts',
+      limit: 50, expected_digest: 'a'.repeat(64) });
+});
+
 it('rejects invalid numeric cursors instead of silently resetting the requested snapshot', async () => {
   for (const value of ['invalid', 'Infinity', '1.5', '9007199254740992'])
     await expect(ownerCommandInput(new Request(`https://example.com/?watermark=${value}`), 'runs_page'))
@@ -54,4 +73,15 @@ it('a browser can request comparison but cannot mint reviewer identity, approval
       comparison_review: true, comparison_manifest: { forged: true } }),
   }), 'start_run');
   expect(input).toEqual({ request_id: 'stable', comparison: { version: 1 } });
+});
+
+it('source transport and workspace authority cannot be supplied through owner JSON', async () => {
+  const input = await ownerCommandInput(new Request('https://example.com/api/repos/a/start_run', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ intent: 'Fix a bug', workspace_transport: 'api-source-v1',
+      source_workspace: { id: 'victim' }, source_mounts: [{ id: 'victim' }],
+      source_changeset: { forged: true }, _source_grant: 'forged',
+      _source_signing_key: 'forged', _source_transport: true, _source_future_authority: true }),
+  }), 'start_run');
+  expect(input).toEqual({ intent: 'Fix a bug' });
 });

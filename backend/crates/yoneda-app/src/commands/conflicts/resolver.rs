@@ -4,7 +4,8 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     if c.get("job_id").is_none() {
         owner(c)?;
     }
-    let mut record = get(db, "conflicts", &string(c, "conflict_id")?)?;
+    let stored = get(db, "conflicts", &string(c, "conflict_id")?)?;
+    let mut record = super::source::hydrate(db, &stored)?;
     let request = string(c, "request_id")?;
     let request_input = json!({"conflict_id":c["conflict_id"],"expected_commit":c["expected_commit"],"expected_version":c["expected_version"],"expected_plan_revision":c["expected_plan_revision"],"expected_task_revisions":c["expected_task_revisions"],"owner_brief":c["owner_brief"]});
     if record["resolver_request_id"] == request && record.get("resolver_request_input").is_some() {
@@ -86,6 +87,13 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         })
         .collect::<Result<_>>()?;
     validate_path_list(&scopes)?;
+    // SourceBinding v1 freezes at most 64 write scopes; reject before scheduling or charging.
+    if run["workspace_transport"] == "api-source-v1" && scopes.len() > 64 {
+        return Err(Error::new(
+            "SOURCE_SCOPE_LIMIT",
+            "API source conflict resolution requires at most 64 approved write scopes",
+        ));
+    }
     hash(&record["workspace_revision"], "commit", &[40, 64])?;
     string(&record["workspace_revision"], "repository")?;
     if record["workspace_revision"]["commit"] != record["merge_workspace_commit"] {
@@ -144,7 +152,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         ));
     }
     let resolver_id = format!("conflict-resolver:{request}");
-    let resolver_task = format!(
+    let legacy_task = format!(
         "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The source checkout is the trusted merge workspace at {}, with checked target head {} and immutable candidate {} as its two Git parents. Its conflict markers contain both sides, and its tree already preserves cleanly merged candidate changes. Read and integrate both sides semantically; do not discard either side by choosing current or candidate wholesale. Edit only these conflict paths: {}. The trusted capture and independent evaluator will inspect the resulting revision against the checked target head.",
         record["id"],
         brief,
@@ -153,6 +161,19 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         record["candidate_revision"],
         scopes.join(", ")
     );
+    let resolver_task = if run["workspace_transport"] == "api-source-v1" {
+        format!(
+            "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The repo workspace is rooted at target {} with the trusted premerged changes from {} already applied; unresolved paths may still contain target bytes, without conflict markers. Read ../candidate-0 for the exact original candidate {} and ../candidate-1 for the exact preserved premerge workspace. Both views are read-only. Integrate both sides semantically and preserve clean premerged changes; do not select either side wholesale. Edit only these approved conflict paths: {}. Trusted capture preserves the ordered target and original candidate parents, then independent checks evaluate the exact result.",
+            record["id"],
+            brief,
+            record["head_commit"],
+            record["merge_workspace_commit"],
+            record["candidate_revision"],
+            scopes.join(", ")
+        )
+    } else {
+        legacy_task
+    };
     let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":if autonomous {"Autonomous three-way conflict resolver"} else {"Owner-approved three-way conflict resolver"},"role":"coding","status":"queued","context":if autonomous { &run["context"] } else { &source_execution["context"] },"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
@@ -223,12 +244,14 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     } else {
         repository["policy"].clone()
     };
+    let mut compact_record = record.clone();
+    super::source::compact(db, &mut compact_record)?;
     job(
         db,
         &job_id,
         "agent",
         now,
-        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"team_owned_paths":scopes,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":record["evidence"],"serverguard":"own_repository_only"}}),
+        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"team_owned_paths":scopes,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":compact_record["evidence"],"serverguard":"own_repository_only"}}),
     )?;
     record["resolver_request_input"] = request_input;
     record["resolver_authorization"] = authorization;
@@ -238,6 +261,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     record["resolver_job_id"] = json!(job_id);
     record["resolver_execution_id"] = json!(resolver_id);
     record["resolver_model"] = json!({"provider":execution["provider"],"model":execution["model"]});
+    super::source::compact(db, &mut record)?;
     save(db, "conflicts", &string(&record, "id")?, &record)?;
     event(
         db,

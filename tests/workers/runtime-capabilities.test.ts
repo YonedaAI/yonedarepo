@@ -18,6 +18,16 @@ const checkFailureCode = (health: any, job: any) => {
   expect(failure).toMatchObject({ code: 'RUNTIME_UPDATING' });
 };
 
+it('requires lazy source, incremental capture and child privilege isolation before API-source work', () => {
+  const job = { kind: 'agent', payload: { workspace_transport: 'api-source-v1' } };
+  const capabilities = { source_api: 1, lazy_source: 1, source_capture: 1, child_privilege_drop: 1 };
+  for (const missing of Object.keys(capabilities)) {
+    const incomplete = { ...capabilities, [missing]: 0 };
+    checkFailureCode({ protocol: 2, capabilities: incomplete }, job);
+  }
+  expect(() => checkRuntime({ protocol: 2, capabilities }, job)).not.toThrow();
+});
+
 it('defers frozen Git-native jobs until the runtime image advertises Git transport', () => {
   const job = { kind: 'agent', payload: { workspace_transport: 'git-native-v1' } };
   checkFailureCode({ protocol: 2, capabilities: {} }, job);

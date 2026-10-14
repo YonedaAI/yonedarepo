@@ -1,4 +1,4 @@
-export { RepositoryAuthority,LiveRoom,WorkspaceAuthority } from '../../backend/crates/yoneda-worker/build/index.js';
+export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceWorkspaceAuthority } from '../../backend/crates/yoneda-worker/build/index.js';
 import { YonedaEntrypoint } from '../../cloudflare/worker/entrypoint';
 import type { Envelope, Scope } from '../../cloudflare/worker/types';
 export default class TestEntrypoint extends YonedaEntrypoint {

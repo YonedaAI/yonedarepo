@@ -2,6 +2,7 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod agent;
+mod source;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "finish" => finish(db, &c, now),
@@ -66,7 +67,9 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match j["kind"].as_str().unwrap_or_default() {
         "agent" => agent::complete(db, &j, result, now)?,
         "capture" => {
-            if j["payload"]["capture_subtype"] == "resolve_conflict" {
+            if j["payload"]["capture_subtype"] == "resolve_conflict"
+                || j["payload"]["source_resolution"] == true
+            {
                 super::conflicts::complete_resolver_capture(db, &j, result, now)?;
             } else {
                 super::capture_completion::complete(db, &j, result, now)?;
@@ -269,12 +272,7 @@ pub(super) fn record_publication<S: SqlStore>(
     if evaluation["app"]["revision"] == commit && evaluation["app"]["bundle_digest"].is_string() {
         repository["app"] = evaluation["app"].clone();
     }
-    for path in candidate["paths"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-    {
+    for path in crate::path_lists::load(db, &candidate, "paths")? {
         edge(
             db,
             &did,
@@ -285,3 +283,5 @@ pub(super) fn record_publication<S: SqlStore>(
     }
     Ok(())
 }
+#[cfg(test)]
+pub(super) mod source_tests;

@@ -154,14 +154,7 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         .map(str::to_owned)
         .collect();
     for input in team_inputs.as_array().into_iter().flatten() {
-        for path in input["paths"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-        {
-            write.insert(path.to_owned());
-        }
+        write.extend(crate::path_lists::load(db, input, "paths")?);
         edge(
             db,
             &string(input, "handoff_id")?,
@@ -171,6 +164,9 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         )?;
     }
     let mut payload = json!({"execution":execution,"run":run,"policy":run["policy"],"team_inputs":team_inputs,"team_owned_paths":task["write_paths"],"team_write_paths":write});
+    if run["workspace_transport"] == "api-source-v1" {
+        crate::path_lists::compact(db, &mut payload, "team_write_paths")?;
+    }
     if let Some(transport) = run.get("workspace_transport") {
         payload["workspace_transport"] = transport.clone();
     }

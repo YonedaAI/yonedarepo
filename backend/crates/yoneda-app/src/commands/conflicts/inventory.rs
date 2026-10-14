@@ -39,7 +39,7 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         if candidate["base"]["commit"] != repository["head_commit"]
             && !existing.contains(candidate["id"].as_str().unwrap_or_default())
         {
-            stale_candidates.push(json!({"candidate_id":candidate["id"],"candidate_base":candidate["base"]["commit"],"captured_paths":candidate["paths"],"status":candidate["status"],"overlap_status":"not_analyzed"}));
+            stale_candidates.push(json!({"candidate_id":candidate["id"],"candidate_base":candidate["base"]["commit"],"captured_paths":candidate["paths"],"captured_paths_ref":candidate["paths_ref"],"captured_paths_count":candidate["paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed"}));
         }
     }
     // The inventory is useful before refresh only if stale candidates are visible
@@ -47,9 +47,9 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     // until a trusted Git refresh computes it.
     let mut inventory = conflicts.clone();
     inventory.extend(stale_candidates.iter().map(|candidate| {
-        json!({"kind":"stale_candidate","candidate_id":candidate["candidate_id"],"candidate_base":candidate["candidate_base"],"captured_paths":candidate["captured_paths"],"status":candidate["status"],"overlap_status":"not_analyzed"})
+        json!({"kind":"stale_candidate","candidate_id":candidate["candidate_id"],"candidate_base":candidate["candidate_base"],"captured_paths":candidate["captured_paths"],"captured_paths_ref":candidate["captured_paths_ref"],"captured_paths_count":candidate["captured_paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed"})
     }));
-    let mut overlaps: Vec<Value> = conflicts.iter().filter(|v| v.get("evidence").is_some()).map(|v| json!({"conflict_id":v["id"],"candidate_id":v["candidate_id"],"paths":v["evidence"]["overlapping_paths"],"status":v["status"]})).collect();
+    let mut overlaps: Vec<Value> = conflicts.iter().filter(|v| v.get("evidence").is_some()).map(|v| json!({"conflict_id":v["id"],"candidate_id":v["candidate_id"],"paths":v["evidence"]["overlapping_paths"],"paths_ref":v["evidence"]["overlapping_paths_ref"],"paths_count":v["evidence"]["overlapping_paths_count"],"status":v["status"]})).collect();
     overlaps.extend(stale_candidates.iter().map(|candidate| {
         json!({"candidate_id":candidate["candidate_id"],"paths":[],"status":"not_analyzed"})
     }));

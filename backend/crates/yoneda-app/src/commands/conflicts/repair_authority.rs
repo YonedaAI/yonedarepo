@@ -23,16 +23,7 @@ pub(super) fn prepare<S: SqlStore>(
     if c["expected_commit"] != record["head_commit"] {
         return Err(Error::new("HEAD_MOVED", "Resolver target head changed"));
     }
-    let paths = record["conflict_paths"]
-        .as_array()
-        .ok_or_else(|| bad("Invalid conflict paths"))?
-        .iter()
-        .map(|p| {
-            p.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| bad("Invalid conflict path"))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let paths = crate::path_lists::load(db, record, "conflict_paths")?;
     super::super::autonomy::validate_scopes(&run, &paths)?;
     for task in affected(db, &run, &paths)? {
         let local = string(&task, "task_id")?;
@@ -87,16 +78,7 @@ pub(super) fn validate_capture<S: SqlStore>(db: &S, record: &Value) -> Result<()
             "Autonomous resolver approval or plan changed",
         ));
     }
-    let paths = record["conflict_paths"]
-        .as_array()
-        .ok_or_else(|| bad("Invalid conflict paths"))?
-        .iter()
-        .map(|p| {
-            p.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| bad("Invalid conflict path"))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let paths = crate::path_lists::load(db, record, "conflict_paths")?;
     for task in affected(db, &run, &paths)? {
         if record["resolver_task_revisions"][string(&task, "task_id")?] != task["revision"] {
             return Err(Error::new(

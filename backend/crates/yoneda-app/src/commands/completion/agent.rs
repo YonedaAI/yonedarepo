@@ -39,7 +39,9 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         run["status"] = json!("exploring");
     } else {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
-        if j["payload"]["workspace_transport"] == "git-native-v1" {
+        if j["payload"]["workspace_transport"] == "api-source-v1" {
+            payload = super::source::payload(db, j, result, now)?;
+        } else if j["payload"]["workspace_transport"] == "git-native-v1" {
             if result["git_verified"] != true {
                 return Err(Error::new(
                     "INVALID_CAPTURE",
@@ -55,7 +57,11 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         }
         if let Some(resolver) = j["payload"].get("conflict_resolver") {
             payload["conflict_resolver"] = resolver.clone();
-            payload["capture_subtype"] = json!("resolve_conflict");
+            if payload["capture_subtype"] == "source_changeset" {
+                payload["source_resolution"] = json!(true);
+            } else {
+                payload["capture_subtype"] = json!("resolve_conflict");
+            }
             payload["conflict_id"] = resolver["conflict_id"].clone();
             payload["candidate"] = resolver["candidate"].clone();
             payload["expected_head"] = resolver["expected_head"].clone();

@@ -3,6 +3,7 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
+    let source_lineage = super::capture_source::validate(db, j, result, now)?;
     super::comparison::validate_capture(db, j, result)?;
     let cid = string(result, "id")?;
     let execution = &j["payload"]["execution"];
@@ -24,6 +25,9 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         return Ok(());
     }
     let mut candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"summary":result["summary"],"status":"evaluating","capture_job":j["id"]});
+    if let Some(lineage) = source_lineage {
+        candidate["source_lineage"] = lineage;
+    }
     // Hosted capture stores the diff in R2 before submitting this digest. Legacy
     // native completion fixtures may omit it; inline source never enters the candidate/job.
     if result.get("diff_digest").is_some() {
@@ -32,6 +36,9 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     if let Some(manifest) = j["payload"].get("integration_manifest") {
         candidate["integration_manifest"] = manifest.clone();
         candidate["integration_digest"] = j["payload"]["integration_digest"].clone();
+    }
+    if j["payload"]["workspace_transport"] == "api-source-v1" {
+        crate::path_lists::compact(db, &mut candidate, "paths")?;
     }
     create(db, "candidates", &cid, &candidate)?;
     node(
@@ -50,13 +57,12 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     // Coding keeps its approved brief, while eligibility must use current
     // owner policy even if that policy changed before capture existed.
     let policy = repo(db)?["policy"].clone();
-    job(
-        db,
-        &format!("evaluate:{cid}"),
-        "evaluate",
-        now,
-        json!({"candidate":candidate,"run_id":run_id,"policy":policy}),
-    )?;
+    let mut payload = json!({"candidate":candidate,"run_id":run_id,"policy":policy});
+    if j["payload"]["workspace_transport"] == "api-source-v1" {
+        payload["source_integrity"] =
+            crate::path_lists::integrity::fields(db, &candidate, &policy)?;
+    }
+    job(db, &format!("evaluate:{cid}"), "evaluate", now, payload)?;
     Ok(())
 }
 
@@ -99,4 +105,47 @@ mod tests {
             result["revision"]
         );
     }
+}
+
+#[test]
+fn api_large_capture_keeps_candidate_and_evaluator_small_and_checks_protected_ancestors() {
+    let db = crate::commands::recovery::source_tests::fixture();
+    let paths = json!(
+        (0..10000)
+            .map(|i| format!("{i:04}/{}/{}", "x".repeat(240), "y".repeat(240)))
+            .chain(["tests".to_owned()])
+            .collect::<Vec<_>>()
+    );
+    let mut policy = crate::storage::repo(&db).unwrap()["policy"].clone();
+    policy["build"] = json!({"test_bundle":{"protected_paths":["tests/immutable.rs"]}});
+    let mut repo = crate::storage::repo(&db).unwrap();
+    repo["policy"] = policy.clone();
+    crate::storage::save(&db, "repository", "repo", &repo).unwrap();
+    let job = json!({"id":"capture","payload":{"workspace_transport":"api-source-v1","execution":{"id":"execution","run_id":"run"},"base":{"repository":"test/source","commit":"a".repeat(40)}}});
+    let result = json!({"id":"large","revision":{"repository":"test/captured","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":paths,"summary":"Large delta"});
+    crate::commands::capture_completion::complete(&db, &job, &result, 1000).unwrap();
+    let candidate = crate::storage::get(&db, "candidates", "large").unwrap();
+    let evaluator = crate::storage::get(&db, "jobs", "evaluate:large").unwrap();
+    assert!(
+        candidate.to_string().len() < 2048,
+        "candidate must not store a multimegabyte path array"
+    );
+    assert!(
+        evaluator.to_string().len() < 1024 * 1024,
+        "job exceeds supervisor payload cap"
+    );
+    assert_eq!(
+        crate::path_lists::load(&db, &candidate, "paths")
+            .unwrap()
+            .len(),
+        10001
+    );
+    assert_eq!(
+        evaluator["payload"]["source_integrity"]["protected_changes"],
+        json!(["tests/immutable.rs"])
+    );
+    assert_eq!(
+        evaluator["payload"]["source_integrity"]["paths_digest"],
+        candidate["paths_ref"]["digest"]
+    );
 }

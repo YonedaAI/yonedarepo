@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
+import { RecordedSourceViewer } from '../source-workspace/RecordedSourceViewer';
 
 const MAX_PREVIEW_FILE_BYTES = 256 * 1024;
 const OWNER_SOURCE_LIMIT = '500 files / 8 MiB';
@@ -22,6 +23,23 @@ interface SourceError {
 }
 
 export function CandidateSourcePreview({
+  sourceApi,
+  evaluation,
+  ...props
+}: {
+  repo: string;
+  candidate: Record<string, any>;
+  sourceApi?: number;
+  evaluation?: Record<string, any>;
+}) {
+  return sourceApi === 1 ? (
+    <RecordedSourceViewer {...props} evaluation={evaluation} />
+  ) : (
+    <LegacyCandidateSourcePreview {...props} />
+  );
+}
+
+export function LegacyCandidateSourcePreview({
   repo,
   candidate,
 }: {

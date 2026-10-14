@@ -93,6 +93,13 @@ export function mergeRunDetails(
     working_branches: overview.working_branches ?? [],
   };
   for (const detail of details) {
+    const runId = detail.run?.id ?? (detail.runs.length === 1 ? detail.runs[0].id : undefined);
+    if (typeof runId === 'string') {
+      next.source_preparation = [
+        ...(next.source_preparation ?? []).filter((entry) => entry.run_id !== runId),
+        ...(detail.source_preparation ?? []).map((entry) => ({ ...entry, run_id: runId })),
+      ];
+    }
     next.runs = mergeRows(next.runs, detail.runs);
     next.executions = mergeRows(next.executions, detail.executions);
     next.candidates = mergeRows(next.candidates, detail.candidates);

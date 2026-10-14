@@ -19,16 +19,7 @@ pub(in crate::commands) fn launch<S: SqlStore>(
     let parent = get(db, "executions", &string(&candidate, "execution")?)?;
     let index = manifest::slot(run, &parent)?;
     let agent = &run["agents"][usize::try_from(index).map_err(|_| bad("Invalid builder slot"))?];
-    let paths = candidate["paths"]
-        .as_array()
-        .ok_or_else(|| bad("Missing captured paths"))?
-        .iter()
-        .map(|p| {
-            p.as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| bad("Invalid repair path"))
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let paths = crate::path_lists::load(db, &candidate, "paths")?;
     super::super::autonomy::validate_plan_scopes(&run["comparison"]["approval"]["policy"], &paths)?;
     let id = format!(
         "comparison-repair:{}:r{round}:{}",
@@ -66,13 +57,11 @@ pub(in crate::commands) fn launch<S: SqlStore>(
         now,
         e.clone(),
     )?;
-    job(
-        db,
-        &format!("job:{id}"),
-        "agent",
-        now,
-        json!({"execution":e,"run":run,"policy":run["comparison"]["approval"]["policy"],"comparison_repair":{"version":1,"approval_id":run["comparison"]["approval"]["id"],"round":round,"candidate_id":candidate["id"],"source_revision":candidate["revision"],"write_paths":paths,"instructions":review["repair_instructions"]}}),
-    )?;
+    let mut payload = json!({"execution":e,"run":run,"policy":run["comparison"]["approval"]["policy"],"comparison_repair":{"version":1,"approval_id":run["comparison"]["approval"]["id"],"round":round,"candidate_id":candidate["id"],"source_revision":candidate["revision"],"write_paths":paths,"instructions":review["repair_instructions"]}});
+    if run["workspace_transport"] == "api-source-v1" {
+        crate::path_lists::compact(db, &mut payload["comparison_repair"], "write_paths")?;
+    }
+    job(db, &format!("job:{id}"), "agent", now, payload)?;
     event(
         db,
         "comparison.repair_scheduled",

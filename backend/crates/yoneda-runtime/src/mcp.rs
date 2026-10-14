@@ -21,10 +21,8 @@ pub async fn mcp() -> Result<()> {
                 json!({"protocolVersion":"2025-06-18","capabilities":{"tools":{}},"serverInfo":{"name":"yonedarepo","version":"0.1.0"}}),
             ),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(
-                json!({"tools":serde_json::from_str::<Value>(if std::env::var("YONEDA_COMPARISON_REVIEW").as_deref()==Ok("1") {COMPARISON_TOOLS} else {TOOLS}).map_err(err)?}),
-            ),
-            "tools/call" => match broker("/mcp", request["params"].clone(), false).await {
+            "tools/list" => tool_list(),
+            "tools/call" => match call(request["params"].clone()).await {
                 Ok(value) => Ok(json!({"content":[{"type":"text","text":value.to_string()}]})),
                 Err(error) => {
                     Ok(json!({"isError":true,"content":[{"type":"text","text":error.to_string()}]}))
@@ -45,4 +43,34 @@ pub async fn mcp() -> Result<()> {
         stdout.flush().await.map_err(err)?;
     }
     Ok(())
+}
+
+fn tool_list() -> Result<Value> {
+    let comparison = std::env::var("YONEDA_COMPARISON_REVIEW").as_deref() == Ok("1");
+    let mut tools: Vec<Value> =
+        serde_json::from_str(if comparison { COMPARISON_TOOLS } else { TOOLS }).map_err(err)?;
+    if std::env::var("YONEDA_SOURCE_API").as_deref() == Ok("1") {
+        tools.extend(crate::source_mcp::tools(comparison)?);
+    }
+    Ok(json!({"tools":tools}))
+}
+
+async fn call(params: Value) -> Result<Value> {
+    if params["name"]
+        .as_str()
+        .is_some_and(|name| name.starts_with("source_"))
+    {
+        if std::env::var("YONEDA_SOURCE_API").as_deref() != Ok("1") {
+            return Err(yoneda_core::Error::new(
+                "FORBIDDEN",
+                "Source tooling is unavailable for this attempt",
+            ));
+        }
+        return crate::source_mcp::call(
+            params,
+            std::env::var("YONEDA_COMPARISON_REVIEW").as_deref() == Ok("1"),
+        )
+        .await;
+    }
+    broker("/mcp", params, false).await
 }

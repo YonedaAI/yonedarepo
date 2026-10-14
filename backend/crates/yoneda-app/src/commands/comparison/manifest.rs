@@ -25,7 +25,7 @@ pub(in crate::commands) fn current<S: SqlStore>(db: &S, run: &Value) -> Result<V
             Some(id) => get(db, "evaluations", id)?,
             None => Value::Null,
         };
-        metadata.push(json!({"candidate_id":c["id"],"execution_id":e["id"],"agent_index":slot(run,e)?,"round":e["comparison_round"].as_i64().unwrap_or(0),"revision":c["revision"],"base":c["base"],"status":c["status"],"summary":c["summary"],"paths":c["paths"],"diff_digest":c["diff_digest"],"evaluation":evaluation}));
+        metadata.push(json!({"candidate_id":c["id"],"execution_id":e["id"],"agent_index":slot(run,e)?,"round":e["comparison_round"].as_i64().unwrap_or(0),"revision":c["revision"],"base":c["base"],"status":c["status"],"summary":c["summary"],"paths":c["paths"],"paths_ref":c["paths_ref"],"paths_count":c["paths_count"],"diff_digest":c["diff_digest"],"evaluation":evaluation}));
     }
     for index in 0..2 {
         let producer = executions

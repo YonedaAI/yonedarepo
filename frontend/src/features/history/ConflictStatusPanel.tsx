@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import type { ConflictStatus, Repository } from '../../lib/types';
+import { ConflictOverlapEvidence, ConflictPathEvidence } from './ConflictPathEvidence';
 import {
   type ConflictInventoryItem,
   type ConflictInventoryView,
@@ -117,11 +118,8 @@ export function ConflictStatusPanel({
           <ul>
             {status.overlaps.map((overlap) => (
               <li key={overlap.key}>
-                {overlap.paths.map((path) => (
-                  <code key={path}>{path}</code>
-                ))}{' '}
-                · candidate <code>{overlap.candidate_id}</code> ·{' '}
-                {overlap.status.replaceAll('_', ' ')}
+                <ConflictOverlapEvidence repo={repository.id} overlap={overlap} />· candidate{' '}
+                <code>{overlap.candidate_id}</code> · {overlap.status.replaceAll('_', ' ')}
               </li>
             ))}
           </ul>
@@ -166,14 +164,7 @@ export function ConflictStatusPanel({
                   Resolver candidate: <code>{conflict.resolver_candidate_id}</code>
                 </p>
               )}
-              {conflict.conflict_paths.length > 0 && (
-                <p>
-                  Affected paths:{' '}
-                  {conflict.conflict_paths.map((path) => (
-                    <code key={path}>{path} </code>
-                  ))}
-                </p>
-              )}
+              <ConflictPathEvidence repo={repository.id} record={conflict} />
               <div className="conflict-actions">
                 {conflict.kind === 'stale_candidate' ||
                 (conflict.kind === 'refresh_record' &&

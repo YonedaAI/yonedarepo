@@ -72,6 +72,13 @@ export function checkRuntime(health: Json, job: Json) {
 }
 function compatibleRuntime(health: Json, job: Json) {
   if (
+    job.payload?.workspace_transport === 'api-source-v1' &&
+    ['source_api', 'lazy_source', 'source_capture', 'child_privilege_drop'].some(
+      (capability) => health?.capabilities?.[capability] !== 1,
+    )
+  )
+    throw new Error('Container image lacks lazy source isolation; wait for rollout completion');
+  if (
     (comparisonReviewAttempt(job) || job.payload?.execution?.comparison_approval_id != null) &&
     health?.capabilities?.comparison_review !== 1
   )

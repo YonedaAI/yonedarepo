@@ -8,6 +8,31 @@ const scope = (job: Record<string, any>, fork = 'ns/attempt') =>
     fork,
   }) as Scope;
 
+it('allows incremental source capture to upload only its assigned candidate fork', () => {
+  const attempt = scope({ kind: 'capture', payload: {
+    workspace_transport: 'api-source-v1', capture_subtype: 'source_changeset',
+    base: { repository: 'ns/canonical' },
+  } });
+  expect(gitRole(attempt, 'candidate')).toEqual({ repository: 'ns/attempt', writable: true });
+  for (const role of ['canonical', 'fork', 'target', 'team-0'])
+    expect(gitRole(attempt, role)).toBeNull();
+  expect(gitRole(scope({ ...attempt.job, kind: 'agent' }), 'candidate')).toBeNull();
+  expect(gitRole(scope({ ...attempt.job, kind: 'evaluate' }), 'candidate')).toBeNull();
+});
+
+it('allows sparse refresh to preload only the frozen candidate and write only its assigned fork', () => {
+  const attempt = scope({ kind: 'capture', payload: {
+    workspace_transport: 'api-source-v1', capture_subtype: 'refresh_candidate',
+    candidate: { revision: { repository: 'ns/frozen-candidate' } },
+  } });
+  expect(gitRole(attempt, 'fork')).toEqual({ repository: 'ns/attempt', writable: true });
+  expect(gitRole(attempt, 'refresh-candidate')).toEqual({ repository: 'ns/frozen-candidate', writable: false });
+  for (const role of ['current', 'head', 'canonical', 'candidate', 'target', 'team-0'])
+    expect(gitRole(attempt, role)).toBeNull();
+  expect(gitRole(scope({ ...attempt.job, kind: 'agent' }), 'fork')).toBeNull();
+  expect(gitRole(scope({ ...attempt.job, kind: 'evaluate' }), 'refresh-candidate')).toBeNull();
+});
+
 it('fences refresh reads to frozen current, head, candidate and output fork repositories', () => {
   const attempt = scope({
     kind: 'capture',

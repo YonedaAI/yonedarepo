@@ -7,9 +7,25 @@ use std::{path::Path, time::Duration};
 use tokio::process::Command;
 use yoneda_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
+    let api_source = crate::source_workspace_job::enabled(job);
+    let source_session = if api_source {
+        Some(crate::source_workspace_run::SourceRun::prepare(
+            job,
+            root.parent()
+                .ok_or_else(|| err("Evaluation source parent missing"))?,
+            true,
+        )?)
+    } else {
+        None
+    };
+    let root = source_session
+        .as_ref()
+        .map_or(root, |session| session.root());
     let git_native = crate::transport::enabled(job);
     let mut changed_protected = None;
-    if git_native {
+    if api_source {
+        // Exact captured metadata was checked before mount; COW checker output is disposable.
+    } else if git_native {
         let revision = &job["payload"]["candidate"]["revision"];
         let commit = field(revision, "commit")?;
         let base = field(&job["payload"]["candidate"]["base"], "commit")?;
@@ -41,13 +57,25 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
         super::jobs::workspace(job, root).await?;
     }
     #[cfg(target_os = "linux")]
-    {
+    if !api_source {
         Command::new("/usr/bin/chown")
             .args(["-R", "1000:1000", "/work", "/home/agent"])
             .status()
             .await
             .map_err(err)?;
     }
+    let result = run_evaluation(job, root, git_native, changed_protected).await;
+    if let Some(session) = source_session {
+        session.close_evaluation()?;
+    }
+    result
+}
+async fn run_evaluation(
+    job: &Value,
+    root: &Path,
+    git_native: bool,
+    changed_protected: Option<Vec<String>>,
+) -> Result<Value> {
     if !job["payload"]["policy"]["build"].is_null() {
         let policy: yoneda_core::Policy =
             serde_json::from_value(job["payload"]["policy"].clone()).map_err(err)?;
@@ -56,6 +84,18 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             .build
             .as_ref()
             .ok_or_else(|| err("Missing build profile"))?;
+        let api_integrity = if crate::source_workspace_job::enabled(job) {
+            Some(crate::source_workspace_integrity::fields(
+                job, profile, None,
+            )?)
+        } else {
+            None
+        };
+        if let Some(fields) = api_integrity
+            .and_then(|fields| crate::source_workspace_integrity::blocked_report(fields, &policy))
+        {
+            return Ok(fields);
+        }
         let bundle_digest = crate::test_bundle::install(profile.test_bundle.as_ref()).await?;
         let mut report = run_profile(root, profile).await?;
         if profile.app.is_some() {
@@ -93,6 +133,10 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             bundle_digest.as_deref(),
             job,
         );
+        if crate::source_workspace_job::enabled(job) {
+            fields =
+                crate::source_workspace_integrity::fields(job, profile, bundle_digest.as_deref())?;
+        }
         if git_native {
             fields["protected_changes"] =
                 json!(changed_protected.unwrap_or_else(|| protected_changes(job, profile)));
@@ -313,5 +357,55 @@ mod bundle_security_tests {
         let forged = json!({"payload":{"candidate":{"base":{"commit":head},
             "approved_parents":[head,source]}}});
         assert!(approved_parents(&forged, &head).is_err());
+    }
+}
+#[cfg(test)]
+mod api_integrity_tests {
+    use super::*;
+    #[tokio::test]
+    async fn dirty_api_protected_oracle_runs_zero_candidate_commands_or_bundle_downloads() {
+        let root = tempfile::tempdir().unwrap();
+        let marker = root.path().join("must-not-run");
+        let profile = yoneda_core::build::BuildProfile {
+            app: None,
+            setup: vec![],
+            checks: vec![yoneda_core::build::CommandSpec {
+                name: "protected".into(),
+                argv: vec![
+                    "/bin/sh".into(),
+                    "-c".into(),
+                    format!(
+                        "touch {}; # /opt/yoneda/test-bundle/run.mjs",
+                        marker.display()
+                    ),
+                ],
+                timeout_seconds: 30,
+            }],
+            static_dir: None,
+            test_bundle: Some(yoneda_core::build::TestBundlePolicy {
+                digest: "a".repeat(64),
+                protected_paths: vec!["tests".into()],
+            }),
+        };
+        let policy = yoneda_core::Policy {
+            suite: "commands-v1".into(),
+            environment: yoneda_core::build::ENVIRONMENT.into(),
+            required_checks: vec!["protected".into()],
+            build: Some(profile),
+            ..yoneda_core::Policy::default()
+        };
+        let policy_json = serde_json::to_value(&policy).unwrap();
+        let revision = json!({"repository":"repo","commit":"1".repeat(40)});
+        let job = json!({"payload":{"workspace_transport":"api-source-v1","policy":policy_json,"candidate":{"id":"candidate","revision":revision,"paths_ref":{"version":1,"id":"paths","count":10000,"digest":"d".repeat(64)}},"source_integrity":{"version":1,"candidate_id":"candidate","revision":revision,"paths_digest":"d".repeat(64),"protected_changes":["tests"],"policy_digest":yoneda_core::fingerprint(&policy_json).unwrap()}}});
+        let report = run_evaluation(&job, root.path(), false, None)
+            .await
+            .unwrap();
+        assert_eq!(report["commands"], json!([]));
+        assert_eq!(report["protected_changes"], json!(["tests"]));
+        assert!(!marker.exists());
+        assert_eq!(
+            yoneda_core::build::checks_from_report(&policy, &report).unwrap()[0].status,
+            "fail"
+        );
     }
 }

@@ -2,7 +2,19 @@ use crate::err;
 use serde_json::{Value, json};
 use yoneda_core::Result;
 pub(crate) fn health() -> Value {
-    json!({"protocol":2,"capabilities":{"comparison_review":1,"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1,"adaptive_teams":1,"reasoning_efforts":1,"git_native_transport":1,"test_bundle":1,"app_bundle":1,"app_planning":1,"agent_coordination":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]})
+    let mut health = json!({"protocol":2,"capabilities":{"comparison_review":1,"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1,"adaptive_teams":1,"reasoning_efforts":1,"git_native_transport":1,"test_bundle":1,"app_bundle":1,"app_planning":1,"agent_coordination":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_core::Policy::default().environment,"environments":[yoneda_core::Policy::default().environment,yoneda_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]});
+    let proof = crate::child_privileges::probe();
+    health["child_privileges"] = proof.clone();
+    #[cfg(target_os = "linux")]
+    {
+        health["capabilities"]["child_privilege_drop"] =
+            json!(if proof["verified"] == true { 1 } else { 0 });
+        health["child_privileges"] = proof;
+        for capability in ["source_api", "lazy_source", "source_capture"] {
+            health["capabilities"][capability] = json!(1);
+        }
+    }
+    health
 }
 pub async fn serve() -> Result<()> {
     #[cfg(target_os = "linux")]
@@ -35,7 +47,9 @@ pub(crate) fn router(
         atomic::{AtomicBool, Ordering},
     };
     let started = Arc::new(AtomicBool::new(false));
+    let source_invalidation = crate::source_workspace_registry::route(secret.clone());
     Router::new()
+        .merge(source_invalidation)
         .route("/health", get(|| async { Json(health()) }))
         .route(
             "/job",

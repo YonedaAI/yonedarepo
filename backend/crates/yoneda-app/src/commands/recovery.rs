@@ -136,9 +136,12 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "External attempts cannot defer hosted dispatch",
         ));
     }
-    if c["reason"] != "container_capacity" && c["reason"] != "runtime_rollout" {
+    if c["reason"] != "container_capacity"
+        && c["reason"] != "runtime_rollout"
+        && c["reason"] != "source_preparing"
+    {
         return Err(bad(
-            "Only known capacity or runtime rollout failures can defer a job",
+            "Only known capacity, runtime rollout, or source preparation failures can defer a job",
         ));
     }
     if !job["runtime_started_at"].is_null() {
@@ -146,6 +149,9 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "INVALID_STATE",
             "Started execution cannot refund an attempt",
         ));
+    }
+    if c["reason"] == "source_preparing" {
+        super::leases::source::validate_defer(db, &job)?;
     }
     let id = string(&job, "id")?;
     let epoch = number(&job, "epoch")?;
@@ -178,9 +184,14 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     job["defer_count"] = json!(count);
     job["error"] = json!(if c["reason"] == "runtime_rollout" {
         "Container image updating before execution"
+    } else if c["reason"] == "source_preparing" {
+        "Preparing approved immutable source before execution"
     } else {
         "Container capacity unavailable before execution"
     });
+    if c["reason"] == "source_preparing" {
+        super::leases::source::deferred(&mut job, now);
+    }
     save(db, "jobs", &id, &job)?;
     super::leases::reflect_status(db, &job, now)?;
     outbox(
@@ -203,3 +214,5 @@ fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     )?;
     Ok(job)
 }
+#[cfg(test)]
+pub(super) mod source_tests;

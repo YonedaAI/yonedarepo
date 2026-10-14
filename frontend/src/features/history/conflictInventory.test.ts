@@ -2,6 +2,50 @@ import { describe, expect, it } from 'vitest';
 import { normalizeConflictInventory } from './conflictInventory';
 
 describe('conflict inventory boundary', () => {
+  it('retains paged conflict/evidence counts and distinguishes missing paths from actual empty legacy scopes', () => {
+    const ref = { version: 1, id: 'paths:affected', digest: 'a'.repeat(64), count: 20000 };
+    const view = normalizeConflictInventory({
+      conflicts: [
+        {
+          id: 'conflict',
+          candidate_id: 'candidate',
+          status: 'unresolved',
+          conflict_paths_ref: ref,
+          evidence: { overlapping_paths_ref: { ...ref, id: 'paths:overlap', count: 4 } },
+        },
+        { id: 'missing', candidate_id: 'candidate-missing', status: 'failed' },
+        { id: 'empty', candidate_id: 'candidate-empty', status: 'clean', conflict_paths: [] },
+      ],
+      overlaps: [{ conflict_id: 'conflict', candidate_id: 'candidate', status: 'unresolved' }],
+    });
+    expect(view.records[0].path_sets.conflict_paths).toMatchObject({
+      state: 'paged',
+      count: 20000,
+      reference: ref,
+    });
+    expect(view.records[1].path_sets.conflict_paths.state).toBe('unknown');
+    expect(view.records[2].path_sets.conflict_paths).toMatchObject({ state: 'inline', count: 0 });
+    expect(view.overlaps[0].path_set).toMatchObject({ state: 'paged', count: 4 });
+  });
+  it('does not interpret the empty paths placeholder of a not-analyzed stale candidate as no overlap', () => {
+    const view = normalizeConflictInventory({
+      conflicts: [
+        {
+          kind: 'stale_candidate',
+          candidate_id: 'candidate',
+          captured_paths_ref: {
+            version: 1,
+            id: 'paths:captured',
+            digest: 'b'.repeat(64),
+            count: 123,
+          },
+        },
+      ],
+      overlaps: [{ candidate_id: 'candidate', paths: [], status: 'not_analyzed' }],
+    });
+    expect(view.records[0].path_sets.captured_paths).toMatchObject({ state: 'paged', count: 123 });
+    expect(view.overlaps[0].path_set.state).toBe('unknown');
+  });
   it('normalizes both `records` and route-alias `conflicts` shapes without duplicate rows', () => {
     const normalized = normalizeConflictInventory({
       records: [
