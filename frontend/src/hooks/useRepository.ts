@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, onUnauthorized } from '../lib/api';
 import type { AccountIdentity, ProjectMetadata, Repository, Snapshot } from '../lib/types';
 import { RepositoryReads } from './repositoryReads';
 import { refreshRepository } from './repositoryRefresh';
@@ -16,6 +16,10 @@ export function useRepository() {
   const snapshotRef = useRef<Snapshot | null>(snapshot);
   snapshotRef.current = snapshot;
   const [authenticated, setAuthenticated] = useState(false);
+  const authenticatedRef = useRef(authenticated);
+  authenticatedRef.current = authenticated;
+  // A signed-in session that the server stopped accepting, e.g. evicted by a newer sign-in.
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [identity, setIdentity] = useState<AccountIdentity | null>(null);
   const [actionError, setActionError] = useState('');
   const [pollError, setPollError] = useState('');
@@ -36,6 +40,7 @@ export function useRepository() {
     deletedIds.current.clear();
     reads.current.cancel();
     setAuthenticated(false);
+    authenticatedRef.current = false;
     setIdentity(null);
     setRepositories([]);
     setCurrentId('');
@@ -45,13 +50,25 @@ export function useRepository() {
     setError('');
     setLoading(false);
   }, [requestedRepositoryId, setError]);
+  const endSession = useCallback(() => {
+    const wasSignedIn = authenticatedRef.current;
+    clear();
+    if (wasSignedIn) setSessionEnded(true);
+  }, [clear]);
   const fail = useCallback(
     (e: unknown, polling = false) => {
-      if (e instanceof ApiError && e.code === 'UNAUTHORIZED') clear();
+      if (e instanceof ApiError && e.code === 'UNAUTHORIZED') endSession();
       else if (polling) setPollError((e as Error).message);
       else setError((e as Error).message);
     },
-    [clear, setError],
+    [endSession, setError],
+  );
+  useEffect(
+    () =>
+      onUnauthorized(() => {
+        if (authenticatedRef.current) endSession();
+      }),
+    [endSession],
   );
   const discover = useCallback(async () => {
     reads.current.cancel();
@@ -69,6 +86,7 @@ export function useRepository() {
         (repo) => repo.status !== 'deleted' && !deletedIds.current.has(repo.id),
       );
       setAuthenticated(true);
+      setSessionEnded(false);
       setIdentity(result.identity ?? null);
       setRepositories(available);
       if (requestedRepositoryId && !available.some((repo) => repo.id === requestedRepositoryId)) {
@@ -253,6 +271,7 @@ export function useRepository() {
     if (!result.ok && result.status !== 401)
       throw new Error('Could not disconnect administrator access. Try signing out again.');
     clear();
+    setSessionEnded(false);
   }, [clear]);
   useEffect(() => {
     void discover();
@@ -282,6 +301,7 @@ export function useRepository() {
     setId,
     snapshot: snapshot?.repository.id === id && !deletedIds.current.has(id) ? snapshot : null,
     authenticated,
+    sessionEnded,
     identity,
     error: actionError || pollError,
     setError,

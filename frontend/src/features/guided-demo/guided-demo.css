@@ -78,10 +78,20 @@
 .guided-launch-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  gap: 8px 16px;
 }
 .guided-reference {
-  margin: 20px 0;
+  margin: 16px 32px 0;
+}
+button.guided-back {
+  gap: 6px;
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .guided-reference {
+    margin: 12px 20px 0;
+  }
 }
 @media (max-width: 600px) {
   .guided-demo {
