@@ -32,6 +32,9 @@ export function Exploration({
   onSelectedRun,
   initialRunId = '',
   requestedRunError = '',
+  onGuidedDemo,
+  focusedRunId,
+  onGuidedContinue,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -43,9 +46,15 @@ export function Exploration({
   onSelectedRun: (runId: string) => void;
   initialRunId?: string;
   requestedRunError?: string;
+  onGuidedDemo?: () => void;
+  focusedRunId?: string;
+  onGuidedContinue?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [runId, setRunId] = useState(initialRunId);
+  const [runId, setRunId] = useState(focusedRunId || initialRunId);
+  useEffect(() => {
+    if (focusedRunId) setRunId(focusedRunId);
+  }, [focusedRunId]);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const [branchSource, setBranchSource] = useState<InitialRun>();
@@ -144,6 +153,7 @@ export function Exploration({
         snapshot={snapshot}
         canStart={canStart}
         onNewRun={onCompose}
+        onGuidedDemo={onGuidedDemo}
       />
       <RunSamples
         disabled={!canStart}
@@ -205,6 +215,7 @@ export function Exploration({
                 run={run}
                 busy={busy}
                 canStart={canStart}
+                onGuidedContinue={onGuidedContinue}
                 onSelectRun={setRunId}
                 onRestart={() => {
                   launcher.current = createRunStart(repo.id);

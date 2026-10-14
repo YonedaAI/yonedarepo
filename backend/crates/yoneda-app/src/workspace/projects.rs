@@ -45,6 +45,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 serde_json::from_value(c["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
             yoneda_core::build::validate_policy(&policy)?;
             let source = c.get("source").cloned().unwrap_or(Value::Null);
+            let guided = guided_project(c)?;
             if let Ok(existing) = get(db, TABLE, &key) {
                 if existing["status"] == "deleted" {
                     return Err(Error::new(
@@ -55,6 +56,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 if existing["name"] != name
                     || existing["source"] != source
                     || existing["policy"] != c["policy"]
+                    || existing["guided_project"] != guided
                 {
                     return Err(bad("Project request ID reused with different input"));
                 }
@@ -67,7 +69,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             if n[0]["n"].as_i64().unwrap_or_default() >= 100 {
                 return Err(bad("Workspace project limit reached"));
             }
-            let p = json!({"id":id,"name":name,"status":"provisioning","stage":"queued","setup_started_at":now,"created_at":now,"updated_at":now,"source":source,"policy":c["policy"]});
+            let mut p = json!({"id":id,"name":name,"status":"provisioning","stage":"queued","setup_started_at":now,"created_at":now,"updated_at":now,"source":source,"policy":c["policy"]});
+            if !guided.is_null() {
+                if !source.is_null() {
+                    return Err(bad("Guided projects must fork their fixed starter"));
+                }
+                p["guided_project"] = guided;
+            }
             create(db, TABLE, &key, &p)?;
             Ok(p)
         }
@@ -90,3 +98,62 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         _ => Err(bad("Unknown project operation")),
     }
 }
+
+// Only the Worker adapter supplies this private marker after SDK/R2 readback.
+fn guided_project(c: &Value) -> Result<Value> {
+    let value = c.get("_guided_project").cloned().unwrap_or(Value::Null);
+    if value.is_null() {
+        return Ok(value);
+    }
+    let oid = |v: &Value| {
+        v.as_str().is_some_and(|s| {
+            s.len() == 40
+                && s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    };
+    if value["profile_id"] != "task-board-v1"
+        || value["version"] != 1
+        || !oid(&value["starter"]["commit"])
+        || !oid(&value["starter"]["tree"])
+        || value["starter"]["repository"].as_str().is_none_or(|s| {
+            s.len() > 256
+                || s.split('/').count() != 2
+                || s.split('/').any(|part| {
+                    part.is_empty()
+                        || part == "."
+                        || part == ".."
+                        || !part
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"-_.".contains(&b))
+                })
+        })
+        || value["starter"]["branch"].as_str().is_none_or(|s| {
+            s.is_empty()
+                || s.len() > 255
+                || s.contains("..")
+                || s.contains("@{")
+                || s.split('/').any(|part| {
+                    part.is_empty()
+                        || part.starts_with('.')
+                        || part.ends_with('.')
+                        || part.ends_with(".lock")
+                })
+                || s.bytes()
+                    .any(|b| b <= b' ' || b == 127 || b"~^:?*[\\".contains(&b))
+        })
+        || value["policy_digest"] != yoneda_core::fingerprint(&c["policy"])?
+        || c["policy"]["version"] != "task-board-v1"
+        || value["test_bundle_digest"] != c["policy"]["build"]["test_bundle"]["digest"]
+        || value["test_bundle_digest"]
+            .as_str()
+            .is_none_or(|s| s.len() != 64)
+    {
+        return Err(bad("Invalid fixed guided project metadata"));
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+#[path = "guided_project_tests.rs"]
+mod guided_project_tests;

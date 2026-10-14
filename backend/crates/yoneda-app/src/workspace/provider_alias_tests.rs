@@ -139,11 +139,11 @@ fn aliases_reject_stale_source_models_unpriced_targets_and_existing_connection_r
     let mut reused = alias();
     reused["connection"] = json!("source-claude");
     assert_eq!(call(&db, reused).unwrap_err().code, "IDEMPOTENCY_CONFLICT");
-    call(&db, json!({"op":"provider_put","provider":"mimo","connection":"source-mimo","model":"mimo-v2.6-flash","sealed":{"iv":"iv","ciphertext":"encrypted"}})).unwrap();
     let mut unpriced = alias();
-    unpriced["source_connection"] = json!("source-mimo");
-    unpriced["provider"] = json!("mimo");
-    unpriced["model"] = json!("mimo-v2.6-flash");
+    // This supported historical model has no current conservative catalog price.
+    // MiMo 2.6 is now priced and is no longer a valid denial fixture.
+    unpriced["model"] = json!("claude-sonnet-4-6");
+    yoneda_core::providers::validate_model("claude", "claude-sonnet-4-6").unwrap();
     assert_eq!(call(&db, unpriced).unwrap_err().code, "INVALID_INPUT");
 }
 

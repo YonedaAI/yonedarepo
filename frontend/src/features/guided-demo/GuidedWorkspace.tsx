@@ -1,0 +1,88 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { GuidedStepId } from '../../../../shared/guided-runs';
+import type { Snapshot } from '../../lib/types';
+import { GuidedSessionPanel } from './GuidedSessionPanel';
+import { guideEvidenceRun } from './guideEvidenceRun';
+import { useGuidedSession } from './useGuidedSession';
+export function GuidedWorkspace({
+  snapshot,
+  sessionId,
+  onSession,
+  onInspect,
+  onProviders,
+  onState,
+}: {
+  snapshot: Snapshot;
+  sessionId: string;
+  onSession: (repo: string, session: string) => void;
+  onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
+  onProviders: () => void;
+  onState?: (session: import('../../../../shared/guided-runs').GuidedSession) => void;
+}) {
+  const remember = useCallback(
+    (id: string) => onSession(snapshot.repository.id, id),
+    [snapshot.repository.id, onSession],
+  );
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState('');
+  const inspect = async (run: string, step: GuidedStepId, candidate?: string, kind?: string) => {
+    if (opening) return;
+    setOpening(true);
+    setOpenError('');
+    try {
+      const id =
+        run ||
+        (state.session && candidate
+          ? await guideEvidenceRun(snapshot, state.session, candidate)
+          : '');
+      if (!id) throw new Error('Refresh the guide to confirm the result’s recorded run.');
+      onInspect(id, step, candidate, kind);
+    } catch (error) {
+      setOpenError((error as Error).message);
+    } finally {
+      setOpening(false);
+    }
+  };
+  const state = useGuidedSession(
+    snapshot,
+    sessionId,
+    remember,
+    (run, step, candidate) => void inspect(run, step, candidate),
+  );
+  useEffect(() => {
+    if (state.session) onState?.(state.session);
+  }, [state.session, onState]);
+  return (
+    <>
+      <p className="subtle">
+        Models and roles are selected automatically from your connections.{' '}
+        <button type="button" className="text-button" onClick={onProviders}>
+          Manage connections
+        </button>
+      </p>
+      {(state.error || openError) && <p role="alert">{state.error || openError}</p>}
+      {opening && <p role="status">Opening the result’s current source and checks…</p>}
+      {state.session ? (
+        <GuidedSessionPanel
+          session={state.session}
+          busy={state.busy || opening}
+          onStart={(step) => void state.start(step)}
+          onInspect={(run, step, candidate, kind) => void inspect(run, step, candidate, kind)}
+          onRefresh={() => void state.refresh()}
+        />
+      ) : (
+        <section className="guided-demo" aria-label="Guided demo">
+          <h2>Your guided task board</h2>
+          <p role="status">
+            {state.loading
+              ? 'Preparing your guide…'
+              : 'The guide is not available yet. Refresh to check project setup.'}
+          </p>
+          <button type="button" className="quiet" onClick={() => void state.refresh()}>
+            Refresh guide
+          </button>
+        </section>
+      )}
+    </>
+  );
+}

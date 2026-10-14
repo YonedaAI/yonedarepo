@@ -6,7 +6,13 @@ use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 use tokio::process::Command;
 use yoneda_core::Result;
+#[path = "evaluation_commands.rs"]
+mod commands;
+#[path = "evaluation_guided.rs"]
+mod guided;
+pub(crate) use commands::run_profile;
 pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
+    guided::validate(job)?;
     let api_source = crate::source_workspace_job::enabled(job);
     let source_session = if api_source {
         Some(crate::source_workspace_run::SourceRun::prepare(
@@ -76,6 +82,7 @@ async fn run_evaluation(
     git_native: bool,
     changed_protected: Option<Vec<String>>,
 ) -> Result<Value> {
+    let guide = guided::validate(job)?;
     if !job["payload"]["policy"]["build"].is_null() {
         let policy: yoneda_core::Policy =
             serde_json::from_value(job["payload"]["policy"].clone()).map_err(err)?;
@@ -94,10 +101,15 @@ async fn run_evaluation(
         if let Some(fields) = api_integrity
             .and_then(|fields| crate::source_workspace_integrity::blocked_report(fields, &policy))
         {
+            let mut fields = fields;
+            guided::record(&mut fields, guide.as_ref());
             return Ok(fields);
         }
         let bundle_digest = crate::test_bundle::install(profile.test_bundle.as_ref()).await?;
-        let mut report = run_profile(root, profile).await?;
+        let mut report = match guide.as_ref() {
+            Some(guide) => commands::run_profile_with_guide(root, profile, Some(guide)).await?,
+            None => run_profile(root, profile).await?,
+        };
         if profile.app.is_some() {
             let commit = field(&job["payload"]["candidate"]["revision"], "commit")?;
             match crate::app_bundle::encode(root, commit, &policy) {
@@ -120,10 +132,11 @@ async fn run_evaluation(
             }
         }
         if let Some(directory) = &profile.static_dir {
-            if let Ok(files) = crate::site::assets(root, directory) {
-                crate::broker::broker("/site", json!({"files":files}), true).await?;
-            } else {
-                report["static_error"] = json!("Static output missing, unsafe or exceeds limits");
+            match crate::site::assets(root, directory) {
+                Ok(files) => {
+                    crate::broker::broker("/site", json!({"files":files}), true).await?;
+                }
+                Err(error) => crate::site::record_failure(&mut report, &error),
             }
         }
         report["environment"] = json!(yoneda_core::build::ENVIRONMENT);
@@ -253,159 +266,9 @@ fn approved_parents<'a>(job: &'a Value, base: &'a str) -> Result<Vec<&'a str>> {
     Ok(values)
 }
 
-pub(crate) async fn run_profile(
-    root: &Path,
-    profile: &yoneda_core::build::BuildProfile,
-) -> Result<Value> {
-    let mut setup = Vec::new();
-    let mut commands = Vec::new();
-    let mut setup_ok = true;
-    for spec in &profile.setup {
-        let output = run_command(root, spec).await?;
-        setup_ok &= output["exit"] == 0;
-        setup.push(json!({"name":spec.name,"output":output}));
-        if !setup_ok {
-            break;
-        }
-    }
-    if setup_ok {
-        for spec in &profile.checks {
-            let output = run_command(root, spec).await?;
-            commands.push(json!({"name":spec.name,"output":output}));
-        }
-    }
-    Ok(json!({"setup":setup,"commands":commands}))
-}
-async fn run_command(root: &Path, spec: &yoneda_core::build::CommandSpec) -> Result<Value> {
-    let program = spec.argv.first().ok_or_else(|| err("Empty command"))?;
-    let mut command = Command::new(program);
-    untrusted(&mut command, root);
-    command.env("YONEDA_TEST_BUNDLE", "/opt/yoneda/test-bundle");
-    command.args(&spec.argv[1..]);
-    match tokio::time::timeout(
-        Duration::from_secs(spec.timeout_seconds),
-        bounded_output(&mut command),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Ok(
-            json!({"exit":null,"timeout":true,"stdout":"","stderr":"Command exceeded approved timeout"}),
-        ),
-    }
-}
-
 #[cfg(test)]
-mod bundle_security_tests {
-    use super::{approved_parents, protected_delta};
-    use crate::transport::{GitFile, GitWorkspace};
-    use serde_json::json;
-    use yoneda_core::{Policy, build::checks_from_report};
-
-    #[test]
-    fn rewriting_or_deleting_the_runner_fails_even_when_candidate_exits_zero() {
-        let original = GitWorkspace::from([(
-            "tests/run.sh".into(),
-            GitFile {
-                bytes: b"#!/bin/sh\nrun-tests\n".to_vec(),
-                executable: true,
-            },
-        )]);
-        for changed in [
-            GitWorkspace::from([(
-                "tests/run.sh".into(),
-                GitFile {
-                    bytes: b"#!/bin/sh\nexit 0\n".to_vec(),
-                    executable: true,
-                },
-            )]),
-            GitWorkspace::new(),
-        ] {
-            let protected = protected_delta(&original, &changed, ["tests/run.sh"].into_iter());
-            let policy: Policy = serde_json::from_value(json!({
-                "version":"owner-v1","suite":"commands-v1","environment":yoneda_core::build::ENVIRONMENT,
-                "required_checks":["owner-tests"],"build":{"checks":[{"name":"owner-tests","argv":["sh","/opt/yoneda/test-bundle/tests/run.sh"],"timeout_seconds":10}],
-                "test_bundle":{"digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","protected_paths":["tests/run.sh"]}}
-            })).unwrap();
-            let report = json!({"test_bundle_digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                "protected_changes":protected,"commands":[{"name":"owner-tests","output":{"exit":0}}],"setup":[]});
-            assert_eq!(
-                checks_from_report(&policy, &report).unwrap()[0].status,
-                "fail"
-            );
-        }
-    }
-
-    #[test]
-    fn only_refreshed_candidates_may_use_two_frozen_parents() {
-        let head = "a".repeat(40);
-        let source = "b".repeat(40);
-        let ordinary = json!({"payload":{"candidate":{"base":{"commit":head}}}});
-        assert_eq!(
-            approved_parents(&ordinary, &head).unwrap(),
-            vec![head.as_str()]
-        );
-        let refreshed = json!({"payload":{"candidate":{"base":{"commit":head},
-            "refresh_of":"candidate:old","approved_parents":[head,source]}}});
-        assert_eq!(
-            approved_parents(&refreshed, &head).unwrap(),
-            vec![head.as_str(), source.as_str()]
-        );
-        let missing =
-            json!({"payload":{"candidate":{"base":{"commit":head},"refresh_of":"candidate:old"}}});
-        assert!(approved_parents(&missing, &head).is_err());
-        let forged = json!({"payload":{"candidate":{"base":{"commit":head},
-            "approved_parents":[head,source]}}});
-        assert!(approved_parents(&forged, &head).is_err());
-    }
-}
+#[path = "tests/evaluation_api_integrity.rs"]
+mod api_integrity_tests;
 #[cfg(test)]
-mod api_integrity_tests {
-    use super::*;
-    #[tokio::test]
-    async fn dirty_api_protected_oracle_runs_zero_candidate_commands_or_bundle_downloads() {
-        let root = tempfile::tempdir().unwrap();
-        let marker = root.path().join("must-not-run");
-        let profile = yoneda_core::build::BuildProfile {
-            app: None,
-            setup: vec![],
-            checks: vec![yoneda_core::build::CommandSpec {
-                name: "protected".into(),
-                argv: vec![
-                    "/bin/sh".into(),
-                    "-c".into(),
-                    format!(
-                        "touch {}; # /opt/yoneda/test-bundle/run.mjs",
-                        marker.display()
-                    ),
-                ],
-                timeout_seconds: 30,
-            }],
-            static_dir: None,
-            test_bundle: Some(yoneda_core::build::TestBundlePolicy {
-                digest: "a".repeat(64),
-                protected_paths: vec!["tests".into()],
-            }),
-        };
-        let policy = yoneda_core::Policy {
-            suite: "commands-v1".into(),
-            environment: yoneda_core::build::ENVIRONMENT.into(),
-            required_checks: vec!["protected".into()],
-            build: Some(profile),
-            ..yoneda_core::Policy::default()
-        };
-        let policy_json = serde_json::to_value(&policy).unwrap();
-        let revision = json!({"repository":"repo","commit":"1".repeat(40)});
-        let job = json!({"payload":{"workspace_transport":"api-source-v1","policy":policy_json,"candidate":{"id":"candidate","revision":revision,"paths_ref":{"version":1,"id":"paths","count":10000,"digest":"d".repeat(64)}},"source_integrity":{"version":1,"candidate_id":"candidate","revision":revision,"paths_digest":"d".repeat(64),"protected_changes":["tests"],"policy_digest":yoneda_core::fingerprint(&policy_json).unwrap()}}});
-        let report = run_evaluation(&job, root.path(), false, None)
-            .await
-            .unwrap();
-        assert_eq!(report["commands"], json!([]));
-        assert_eq!(report["protected_changes"], json!(["tests"]));
-        assert!(!marker.exists());
-        assert_eq!(
-            yoneda_core::build::checks_from_report(&policy, &report).unwrap()[0].status,
-            "fail"
-        );
-    }
-}
+#[path = "tests/evaluation_bundle_security.rs"]
+mod bundle_security_tests;

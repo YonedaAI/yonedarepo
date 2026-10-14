@@ -25,6 +25,9 @@ mod deletion;
 mod events;
 mod execution_logs;
 mod external;
+pub(crate) mod guided;
+#[cfg(test)]
+mod guided_tests;
 mod history;
 mod leases;
 mod mcp;
@@ -51,6 +54,7 @@ mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
     let op = string(&c, "op")?;
+    guided::guard(&c)?;
     if op == "delete_repository" {
         return deletion::delete(db, &c, now);
     }
@@ -94,6 +98,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         return Ok(result);
     }
     match string(&c, "op")?.as_str() {
+        "guided_session" | "start_guided_step" => guided::handle(db, &c, now),
         "retry_capture" => source_capture_retry::handle(db, &c, now),
         "source_refresh_context" => source_refresh::context(db, &c, now),
         "source_refresh_paths" => source_refresh::paths(db, &c, now),

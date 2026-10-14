@@ -130,6 +130,13 @@ pub(super) fn promote<S: SqlStore>(
         || branch["working_revision"] != candidate["base"]
     {
         candidate["working_branch_state"] = json!("stale");
+        let coordinate = run["mode"] == "collaborate" && run["autonomy_policy"]["enabled"] == true;
+        if coordinate {
+            candidate["coordination_signal"] = json!(yoneda_core::fingerprint(&json!({
+                "branch_id":id,"version":branch["version"],
+                "target":branch["working_revision"],"candidate":candidate["id"]
+            }))?);
+        }
         save(db, "candidates", &string(candidate, "id")?, candidate)?;
         event(
             db,
@@ -137,6 +144,14 @@ pub(super) fn promote<S: SqlStore>(
             now,
             json!({"run_id":run["id"],"branch_id":id,"candidate_id":candidate["id"],"working_revision":branch["working_revision"]}),
         )?;
+        if coordinate {
+            let rid = string(run, "id")?;
+            // The caller retains this mutable run for its later evaluation save.
+            // Persist its current state first, then retain the recovery transition.
+            save(db, "runs", &rid, run)?;
+            super::team::evaluated(db, run, candidate, true, now)?;
+            *run = get(db, "runs", &rid)?;
+        }
         return Ok(());
     }
     branch["working_revision"] = candidate["revision"].clone();

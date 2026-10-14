@@ -87,6 +87,7 @@ it('operator-enabled approval rejects a mismatched commit readback before fundin
   const local = {
     ...f.scoped,
     SOURCE_TRANSPORT: 'api-source-v1',
+    SOURCE_TRANSPORT_REPOS: f.repo,
     ARTIFACTS: {
       get: async () => ({
         readCommit,
@@ -127,6 +128,7 @@ it('operator-enabled approval derives source only from canonical readback and ke
   const local = {
     ...f.scoped,
     SOURCE_TRANSPORT: 'api-source-v1',
+    SOURCE_TRANSPORT_REPOS: f.repo,
     ARTIFACTS: {
       get: async (name: string) => {
         expect(name).toBe(f.repo);

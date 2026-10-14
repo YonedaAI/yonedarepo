@@ -51,6 +51,7 @@ export function RunDetail({
   onAnswerIntent,
   onComparisonAction,
   onRefresh,
+  onGuidedContinue,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -73,6 +74,7 @@ export function RunDetail({
   onAnswerIntent?: (question: string, answer: string) => Promise<boolean>;
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
+  onGuidedContinue?: () => void;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
@@ -134,6 +136,7 @@ export function RunDetail({
         snapshot={snapshot}
         run={run}
         busy={busy}
+        onGuidedContinue={onGuidedContinue}
         onAction={(action, candidate) => {
           if (action === 'review')
             openEvidence(

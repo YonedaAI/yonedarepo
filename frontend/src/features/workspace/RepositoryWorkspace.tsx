@@ -1,10 +1,13 @@
 import { GitBranch, GitCompareArrows, Network } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { GuidedSession, GuidedStepId } from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
 import type { Graph, Snapshot } from '../../lib/types';
 import { Exploration } from '../exploration/Exploration';
 import { SiteLink } from '../exploration/SiteLink';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
+import { GuidedWorkspace } from '../guided-demo/GuidedWorkspace';
+import { useGuidedRun } from '../guided-demo/useGuidedRun';
 import { ConflictStatusPanel } from '../history/ConflictStatusPanel';
 import { HistoryTools } from '../history/HistoryTools';
 import type { WorkspacePanel } from './WorkspacePanels';
@@ -18,6 +21,9 @@ export function RepositoryWorkspace({
   onError,
   onPanel,
   onProviders,
+  onGuidedDemo,
+  guidedSessionId,
+  onGuidedSession,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -27,8 +33,36 @@ export function RepositoryWorkspace({
   onError: (message: string) => void;
   onPanel: (panel: WorkspacePanel) => void;
   onProviders?: (refresh?: () => void) => void;
+  onGuidedDemo?: () => void;
+  guidedSessionId?: string;
+  onGuidedSession?: (repo: string, session: string) => void;
 }) {
-  const [view, setView] = useState('runs');
+  const nativeGuide =
+    snapshot.repository.guided_project?.profile_id === 'task-board-v1' &&
+    snapshot.repository.guided_project.version === 1;
+  const guideSession = guidedSessionId ?? (nativeGuide ? '' : undefined);
+  const [view, setView] = useState(guideSession === undefined ? 'runs' : 'guided');
+  const [guideState, setGuideState] = useState<GuidedSession>();
+  const [guidedRunId, setGuidedRunId] = useState('');
+  const guidedRun = useGuidedRun(snapshot, guidedRunId);
+  const visible = { ...(guidedRunId ? guidedRun.snapshot : snapshot), guided_session: guideState };
+  useEffect(() => {
+    if (guidedSessionId !== undefined || !onGuidedSession) return;
+    if (nativeGuide) {
+      onGuidedSession(snapshot.repository.id, '');
+      return;
+    }
+    const bound = snapshot.runs.find(
+      (run) => run.guided?.version === 1 && run.guided?.profile_id === 'task-board-v1',
+    );
+    if (typeof bound?.guided?.session_id === 'string')
+      onGuidedSession(snapshot.repository.id, bound.guided.session_id);
+  }, [snapshot.runs, snapshot.repository.id, guidedSessionId, onGuidedSession, nativeGuide]);
+  function inspectGuideRun(runId: string, _step: GuidedStepId, _candidate?: string, kind?: string) {
+    setGuidedRunId(runId);
+    setEvidenceRun(runId);
+    setView(kind?.includes('conflict') ? 'history' : kind?.includes('context') ? 'graph' : 'runs');
+  }
   const [evidenceRun, setEvidenceRun] = useState('');
   const [history, setHistory] = useState<Graph | null>(null);
   const repo = snapshot.repository;
@@ -36,6 +70,9 @@ export function RepositoryWorkspace({
     <>
       <nav className="workspace-tabs" aria-label="Repository views">
         {[
+          ...(guidedSessionId === undefined
+            ? []
+            : [{ id: 'guided', label: 'Guided demo', Icon: GitBranch }]),
           { id: 'runs', label: 'Runs', Icon: GitCompareArrows },
           { id: 'graph', label: 'Evidence trail', Icon: Network },
           { id: 'history', label: 'Source history', Icon: GitBranch },
@@ -73,10 +110,34 @@ export function RepositoryWorkspace({
           onError={onError}
         />
       )}
-      {view === 'runs' && (
+      {view === 'guided' && guideSession !== undefined && onGuidedSession && (
+        <GuidedWorkspace
+          snapshot={snapshot}
+          sessionId={guideSession}
+          onSession={onGuidedSession}
+          onState={setGuideState}
+          onInspect={inspectGuideRun}
+          onProviders={() => onPanel('agents')}
+        />
+      )}
+      {guideSession !== undefined && view !== 'guided' && (
+        <p className="guided-reference">
+          <button type="button" className="quiet" onClick={() => setView('guided')}>
+            Return to guided demo
+          </button>
+        </p>
+      )}
+      {view === 'runs' && guidedRun.loading && (
+        <p role="status">Loading this run’s current source and checks…</p>
+      )}
+      {view === 'runs' && guidedRun.error && <p role="alert">{guidedRun.error}</p>}
+      {view === 'runs' && !guidedRun.loading && !guidedRun.error && (
         <Exploration
           reviewer={reviewer}
-          snapshot={snapshot}
+          snapshot={visible}
+          focusedRunId={guidedRunId || undefined}
+          onGuidedDemo={onGuidedDemo}
+          onGuidedContinue={guideSession === undefined ? undefined : () => setView('guided')}
           onChange={onChange}
           onError={onError}
           onProviders={(refresh) => (onProviders ? onProviders(refresh) : onPanel('providers'))}
@@ -90,17 +151,17 @@ export function RepositoryWorkspace({
           }}
         />
       )}
-      {view === 'graph' && <GraphWorkspace snapshot={snapshot} runId={evidenceRun || undefined} />}
+      {view === 'graph' && <GraphWorkspace snapshot={visible} runId={evidenceRun || undefined} />}
       {view === 'history' && (
         <>
           <HistoryTools
             reviewer={reviewer}
-            snapshot={snapshot}
+            snapshot={visible}
             onGraph={setHistory}
             onError={onError}
           />
           {history && (
-            <GraphWorkspace snapshot={snapshot} initialGraph={history} title="Revision context" />
+            <GraphWorkspace snapshot={visible} initialGraph={history} title="Revision context" />
           )}
         </>
       )}
