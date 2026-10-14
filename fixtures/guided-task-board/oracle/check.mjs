@@ -140,7 +140,10 @@ export function checkTaskBoard(root, phase, variant) {
       /<html[\s>]/i.test(html) &&
       /<title[\s>]/i.test(html) &&
       /<meta[^>]*viewport/i.test(html) &&
-      /<script[^>]*type=["']module["'][^>]*src=["']\/?app\.mjs["']/i.test(html) &&
+      [...html.matchAll(/<script\b[^>]*>/gi)].some(
+        ([tag]) =>
+          /\btype=["']module["']/i.test(tag) && /\bsrc=["'](?:\.?\/)?app\.mjs["']/i.test(tag),
+      ) &&
       /(?:from\s*|import\s*)["']\.?\/tasks\.mjs["']/.test(app) &&
       ['addTask', 'completeTask', 'visibleTasks'].every((name) =>
         new RegExp(`\\b${name}\\s*\\(`).test(app),

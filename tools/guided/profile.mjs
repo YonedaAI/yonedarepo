@@ -58,19 +58,22 @@ export function starterFiles(version = 1) {
   return sort(files);
 }
 
-/** Immutable owner bundle; these files never become editable candidate source.
- * Every version shares the same oracle; only its profile and briefs differ. */
+/** Version 1's published oracle is frozen byte-for-byte; later versions use the current one.
+ * Both are served at the same bundle path the evaluator policy names. */
+const oracleSource = (version) =>
+  version === 1 ? 'fixtures/guided-task-board/oracle-v1' : 'fixtures/guided-task-board/oracle';
+
+/** Immutable owner bundle; these files never become editable candidate source. */
 export function protectedBundle(version = 1) {
   const selected = guidedProfile(version);
   const files = {};
-  for (const path of [
-    selected.briefs,
-    profilePath(version),
-    ...['run.mjs', 'check.mjs', 'observe.mjs'].map(
-      (file) => `fixtures/guided-task-board/oracle/${file}`,
-    ),
-  ])
+  for (const path of [selected.briefs, profilePath(version)])
     files[path] = { content: readFileSync(resolve(root, path), 'utf8'), executable: false };
+  for (const file of ['run.mjs', 'check.mjs', 'observe.mjs'])
+    files[`fixtures/guided-task-board/oracle/${file}`] = {
+      content: readFileSync(resolve(root, oracleSource(version), file), 'utf8'),
+      executable: false,
+    };
   const sorted = sort(files);
   return { files: sorted, digest: digest(sorted) };
 }
