@@ -1,4 +1,4 @@
-import { Bot, Terminal } from 'lucide-react';
+import { ArrowLeft, Bot, Terminal } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import { AgentConnections } from './AgentConnections';
 
@@ -19,7 +19,8 @@ export function ConnectAgents({
   return (
     <section className="connect-agents">
       {choice ? (
-        <button type="button" className="quiet" onClick={() => setChoice(null)}>
+        <button type="button" className="text-button connect-back" onClick={() => setChoice(null)}>
+          <ArrowLeft size={15} aria-hidden="true" />
           Back to connection options
         </button>
       ) : (

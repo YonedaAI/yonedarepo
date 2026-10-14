@@ -184,7 +184,10 @@
     font-size: 11px;
     gap: 4px;
   }
-  .provider-list li {
-    flex-wrap: wrap;
+  .provider-group-heading {
+    padding-left: 12px;
+  }
+  .provider-rows li {
+    padding-left: 12px;
   }
 }
