@@ -21,8 +21,8 @@ pub(super) fn validate(job: &Value) -> Result<Option<Value>> {
     ];
     let object = binding.as_object().ok_or_else(invalid)?;
     if object.keys().any(|key| !fields.contains(&key.as_str()))
-        || binding["version"] != 1
-        || binding["profile_id"] != "task-board-v1"
+        || !yoneda_core::guided::supported_version(&binding["version"])
+        || binding["profile_id"] != yoneda_core::guided::PROFILE_ID
         || binding["session_id"].as_str().is_none_or(|id| {
             !id.strip_prefix("guide-session:").is_some_and(|suffix| {
                 !suffix.is_empty()
@@ -93,10 +93,20 @@ mod tests {
             binding("concurrent", "final", Some("filter")),
             json!({"payload":{"guided":{"session_id":"guided-session","profile_id":"task-board-v1","version":1,"step_id":"build","check_phase":"build"}}}),
             json!({"payload":{"guided":null}}),
+            json!({"payload":{"guided":{"session_id":"guide-session:test","profile_id":"task-board-v1","version":3,"step_id":"build","check_phase":"build"}}}),
             json!({"payload":{"guided":{"profile_id":"forged","version":1,"step_id":"build","check_phase":"build"}}}),
         ] {
             assert!(validate(&job).is_err());
         }
+    }
+    #[test]
+    fn version_two_binding_uses_the_same_oracle_phases() {
+        let mut job = binding("concurrent", "parallel", Some("sort"));
+        job["payload"]["guided"]["version"] = json!(2);
+        assert_eq!(
+            validate(&job).unwrap(),
+            Some(job["payload"]["guided"].clone())
+        );
     }
     #[test]
     fn absent_legacy_binding_ignores_candidate_phase_claims() {

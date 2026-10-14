@@ -1,4 +1,4 @@
-import { guidedProfileId, guidedProfileVersion } from '../../shared/guided-runs';
+import { type GuidedProfileVersion, guidedProfileId } from '../../shared/guided-runs';
 import { safeId } from './http';
 import { testBundle } from './test-bundle';
 import type { Env, Json, Scope } from './types';
@@ -6,6 +6,8 @@ import type { Env, Json, Scope } from './types';
 export type GuidedEnv = Env & {
   GUIDED_TASK_BOARD_STARTER_REPO?: string;
   GUIDED_TASK_BOARD_BUNDLE_DIGEST?: string;
+  GUIDED_TASK_BOARD_V2_STARTER_REPO?: string;
+  GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST?: string;
   SOURCE_TRANSPORT_REPOS?: string;
   SOURCE_GUIDED_ENABLED?: string;
 };
@@ -39,11 +41,34 @@ export function guidedPolicy(digest: string): Json {
   };
 }
 
+/** New projects use version 2 once both of its settings exist, otherwise version 1.
+ * A half-configured version 2 fails closed instead of silently mixing versions. */
+export function selectedGuidedProfile(env: GuidedEnv): {
+  version: GuidedProfileVersion;
+  starter?: string;
+  digest?: string;
+} {
+  const v2 = [env.GUIDED_TASK_BOARD_V2_STARTER_REPO, env.GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST];
+  if (v2.every((value) => !value))
+    return {
+      version: 1,
+      starter: env.GUIDED_TASK_BOARD_STARTER_REPO,
+      digest: env.GUIDED_TASK_BOARD_BUNDLE_DIGEST,
+    };
+  if (v2.some((value) => !value))
+    throw guidedFailure(
+      'GUIDED_PROFILE_UNAVAILABLE',
+      'The version 2 guided starter is only partly configured.',
+    );
+  return { version: 2, starter: v2[0], digest: v2[1] };
+}
+
 export async function publishedGuidedProfile(env: GuidedEnv) {
-  const name = env.GUIDED_TASK_BOARD_STARTER_REPO;
+  const selected = selectedGuidedProfile(env);
+  const name = selected.starter;
   if (!name || !safeId(name))
     throw guidedFailure('GUIDED_PROFILE_UNAVAILABLE', 'The guided starter is not published yet.');
-  const policy = guidedPolicy(env.GUIDED_TASK_BOARD_BUNDLE_DIGEST ?? '');
+  const policy = guidedPolicy(selected.digest ?? '');
   const scope: Scope = {
     repo_id: 'guided-profile',
     supervisor: '',
@@ -87,7 +112,7 @@ export async function publishedGuidedProfile(env: GuidedEnv) {
       throw new Error('Guided starter must have one initial commit');
     return {
       profile_id: guidedProfileId,
-      version: guidedProfileVersion,
+      version: selected.version,
       policy,
       starter: {
         repository: `${env.ARTIFACTS_NAMESPACE}/${name}`,

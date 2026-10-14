@@ -1,4 +1,4 @@
-import type { GuidedSession } from '../../../shared/guided-runs';
+import type { GuidedProfileVersion, GuidedSession } from '../../../shared/guided-runs';
 import type {
   CandidateDiffPageContract,
   ConflictStatusContract,
@@ -42,7 +42,7 @@ export interface GraphEdge {
   evidence: string;
 }
 export interface Repository {
-  guided_project?: { profile_id: 'task-board-v1'; version: 1 };
+  guided_project?: { profile_id: 'task-board-v1'; version: GuidedProfileVersion };
   id: string;
   name: string;
   created_at?: number;

@@ -4,7 +4,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { checkTaskBoard } from '../../fixtures/guided-task-board/oracle/check.mjs';
-import { starterFiles, profile, protectedBundle, guidedPolicy, root } from './profile.mjs';
+import {
+  starterFiles,
+  profile,
+  protectedBundle,
+  guidedPolicy,
+  guidedProfile,
+  root,
+} from './profile.mjs';
 
 // Offline module controls, not an app fixture, agent result or context-benefit measurement.
 const baseline = `
@@ -58,6 +65,20 @@ test('starter is actually unfinished and owner oracle is disjoint/digest pinned'
   );
   assert.equal(protectedBundle().digest, guidedPolicy().build.test_bundle.digest);
   assert.ok(Object.keys(protectedBundle().files).every((path) => !Object.hasOwn(files, path)));
+});
+
+test('version 2 changes only the brief: same bare starter, same unfinished scaffold', () => {
+  assert.equal(guidedProfile(2).starter, profile.starter);
+  assert.deepEqual(starterFiles(2), starterFiles(1));
+  const starter = resolve(root, guidedProfile(2).starter);
+  for (const phase of ['build', 'extend', 'final']) {
+    const result = checkTaskBoard(starter, phase);
+    assert.equal(result.pass, false);
+    assert.equal(result.checks.find((c) => c.name === 'add_task').status, 'fail');
+  }
+  assert.ok(
+    Object.keys(protectedBundle(2).files).every((path) => !Object.hasOwn(starterFiles(2), path)),
+  );
 });
 
 test('build has no future bookmark criteria; extension must preserve the same task after completion/reorder', () => {

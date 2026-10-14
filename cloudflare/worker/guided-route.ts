@@ -112,6 +112,12 @@ export async function guidedRoute(
   if ((await sourceFingerprint(repository.policy)) !== repository.guided_project.policy_digest)
     throw guidedFailure('POLICY_CHANGED', 'The guided policy differs from its immutable profile.');
   const session = (await read()) as GuidedSession;
+  // Later steps keep the briefs of the version the project was created with.
+  if (session.version !== repository.guided_project.version)
+    throw guidedFailure(
+      'GUIDED_VERSION_MISMATCH',
+      'The guide session differs from the project starter version.',
+    );
   // Native refused an ineligible retry above; a retry prepares the next attempt's run ids.
   const current = session.steps.find((step) => step.id === input.step_id)?.attempt ?? 1;
   const runs = await prepareGuidedRuns(

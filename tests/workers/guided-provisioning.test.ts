@@ -176,3 +176,66 @@ it('missing Workspace capability fails before reservation, index or starter read
   expect(f.get).not.toHaveBeenCalled();
   expect(f.local.AGENT_QUEUE.send).not.toHaveBeenCalled();
 });
+
+/** Version 2 settings name a second single-root starter with its own protected digest. */
+function withVersionTwo(f: Awaited<ReturnType<typeof fixture>>, starter?: Json) {
+  const v2 = starter ?? { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter-v2', defaultBranch: 'main' }),
+    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual };
+  const original = f.get.getMockImplementation();
+  f.get.mockImplementation(async (name: string) => (name === 'guided-starter-v2' ? v2 : original?.(name)) as never);
+  return { ...f.local, GUIDED_TASK_BOARD_V2_STARTER_REPO: 'guided-starter-v2',
+    GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST: f.digest } as GuidedEnv;
+}
+
+it('new projects use version 2 once both of its settings exist; half a configuration fails closed', async () => {
+  const f = await fixture();
+  expect(await publishedGuidedProfile(f.local)).toMatchObject({ version: 1,
+    starter: { repository: 'yoneda-test/guided-starter' } });
+  const local = withVersionTwo(f);
+  expect(await publishedGuidedProfile(local)).toMatchObject({ version: 2,
+    starter: { repository: 'yoneda-test/guided-starter-v2' } });
+  for (const missing of ['GUIDED_TASK_BOARD_V2_STARTER_REPO', 'GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST'] as const)
+    await expect(publishedGuidedProfile({ ...local, [missing]: undefined }))
+      .rejects.toMatchObject({ code: 'GUIDED_PROFILE_UNAVAILABLE' });
+});
+
+it('a version 1 project stays pinned to version 1 after version 2 is configured', async () => {
+  const f = await fixture();
+  const cookie = await reviewerSignup('guided_pinned_v1');
+  const body = { request_id: 'guided-pinned-request-0001', name: 'Pinned board', guided_profile_id: 'task-board-v1' };
+  const project = await (await api(f.local, '/api/projects', cookie, body)).json<Json>();
+  expect(project.guided_project.version).toBe(1);
+  const replay = await api(withVersionTwo(f), '/api/projects', cookie, body);
+  expect(await replay.json()).toEqual(project);
+});
+
+it('a version 2 project records version 2 in Native and in its guide session', async () => {
+  const f = await fixture();
+  let copied = false;
+  const starter = { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter-v2', defaultBranch: 'main' }),
+    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
+    fork: async () => { copied = true; return { token: 'synthetic-setup-only' }; } };
+  const local = withVersionTwo(f, starter);
+  const cookie = await reviewerSignup('guided_v2_project');
+  const project = await (await api(local, '/api/projects', cookie, {
+    request_id: 'guided-v2-project-request-0001', name: 'Version two board', guided_profile_id: 'task-board-v1',
+  })).json<Json>();
+  expect(project.guided_project).toMatchObject({ version: 2, starter: { repository: 'yoneda-test/guided-starter-v2' } });
+  const target = { [Symbol.dispose]() {}, info: async () => ({ name: project.id, defaultBranch: 'main', readOnly: false,
+    source: 'artifacts:yoneda-test/guided-starter-v2' }),
+    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
+    readTree: async () => [{ name: 'README.md', type: 'blob', hash: 'c'.repeat(40) }],
+    readBlob: async () => new Blob(['Synthetic version 2 starter']),
+    listTokens: async () => ({ tokens: [] }), revokeToken: async () => true };
+  f.get.mockImplementation(async (name: string) => {
+    if (name === 'guided-starter-v2') return starter;
+    if (!copied) throw Object.assign(new Error('Target absent before copy'), { code: 'NOT_FOUND' });
+    return target;
+  });
+  expect((await provisionProject(local, 'guided_v2_project', project)).status).toBe('ready');
+  const repository = await ledger(local, project.id, { op: 'repository_status', _workspace: 'guided_v2_project' });
+  expect(repository.guided_project.version).toBe(2);
+  const session = await (await api(local, `/api/repos/${project.id}/guided_session`, cookie)).json<Json>();
+  expect(session).toMatchObject({ version: 2 });
+  expect(session.steps[0]).toMatchObject({ id: 'build', status: 'ready' });
+});
