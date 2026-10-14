@@ -11,7 +11,8 @@ vi.mock('../../cloudflare/worker/storage', async importOriginal => ({
 }));
 vi.mock('../../cloudflare/worker/guided-preparation', () => ({ prepareGuidedRuns: prepare }));
 afterEach(() => { call.mockReset(); prepare.mockReset(); });
-const owner = { role: 'user' as const, workspace: 'ordinary' };
+// Starting the guided demo spends operator-funded agents and needs a reviewer account.
+const owner = { role: 'user' as const, workspace: 'ordinary', reviewer: true };
 const env = {} as Env;
 
 async function fixture(step = 'build') {

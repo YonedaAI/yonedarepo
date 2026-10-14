@@ -24,6 +24,13 @@ export async function signup(owner: string) {
   }
   return (response.headers.get('set-cookie') ?? '').split(';')[0];
 }
+/** A signed-up account whose sessions are reviewer sessions, without a provisioned sandbox. */
+export async function reviewerSignup(owner: string) {
+  const cookie = await signup(owner);
+  await workspace(bindings, owner, { op: 'reviewer_configure', repo_id: `reviewer-${owner}`,
+    expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+  return cookie;
+}
 export async function reviewerFixture(owner = 'review_alice') {
   const cookie = await signup(owner);
   // External Secrets Store and Queue are fake. Signup, vault sealing and both

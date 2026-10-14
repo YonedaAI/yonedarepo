@@ -19,6 +19,11 @@ export function App() {
   const [deleting, setDeleting] = useState<Repository | null>(null);
   const [notice, setNotice] = useState('');
   const providerReturn = useRef<(() => void) | undefined>(undefined);
+  // The guided demo spends operator-funded agents, so only reviewer accounts are offered it.
+  const openGuidedDemo =
+    state.identity?.role === 'user' && state.identity.reviewer === true
+      ? () => setPanel('guided-project')
+      : undefined;
   useEffect(() => {
     if (!state.sessionEnded) return;
     setPanel(null);
@@ -96,7 +101,7 @@ export function App() {
                 snapshot={state.snapshot}
                 guidedSessionId={guided.session}
                 onGuidedSession={guided.remember}
-                onGuidedDemo={() => setPanel('guided-project')}
+                onGuidedDemo={openGuidedDemo}
                 initialRunId={state.requestedRunId}
                 requestedRunError={state.requestedRunError}
                 onChange={state.refresh}
@@ -111,7 +116,7 @@ export function App() {
               <WorkspaceWelcome
                 state={state}
                 onProject={() => setPanel('project')}
-                onGuidedDemo={() => setPanel('guided-project')}
+                onGuidedDemo={openGuidedDemo}
                 onProviders={() => setPanel('agents')}
               />
             )}
