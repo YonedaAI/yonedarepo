@@ -125,10 +125,12 @@ impl SourceBackend for ApiSourceClient {
         let version = integer(&self.status()?, "workspace_version")?;
         // source_list is a textual prefix query, while SourceBackend lists directory children.
         // Include the delimiter so the directory itself and similarly named siblings stay out.
-        let prefix = if path.is_empty() {
+        // Callers may already pass a slash-terminated directory; never send a doubled delimiter.
+        let directory = path.trim_end_matches('/');
+        let prefix = if directory.is_empty() {
             String::new()
         } else {
-            format!("{path}/")
+            format!("{directory}/")
         };
         let mut cursor = Value::Null;
         let mut entries = Vec::new();
