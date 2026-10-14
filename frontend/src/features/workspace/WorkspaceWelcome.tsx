@@ -1,8 +1,9 @@
 import {
   ArrowRight,
   Bot,
-  CheckCircle2,
+  Download,
   GitBranch,
+  History,
   LoaderCircle,
   Network,
   Plus,
@@ -61,33 +62,33 @@ export function WorkspaceWelcome({
             <GitBranch size={32} strokeWidth={1.6} />
           </div>
           <h1>
-            Build together.
+            Agent-First
             <br />
-            Keep the why.
+            Repository.
           </h1>
           <p>
-            Describe a goal. Agents coordinate the work. Review one checked result, with the context
-            behind it.
+            An API-first, Git-like transactional model where agents fetch only what they need,
+            coordinate changes, and preserve context.
           </p>
           <div className="welcome-flow" aria-hidden="true">
             <span>
-              <GitBranch size={16} />
-              Intent
+              <Download size={16} />
+              Fetch
             </span>
             <ArrowRight size={16} />
             <span>
-              <Bot size={16} />
-              Build together
+              <Network size={16} />
+              Coordinate
             </span>
             <ArrowRight size={16} />
             <span>
-              <CheckCircle2 size={16} />
-              Review
+              <History size={16} />
+              Preserve
             </span>
           </div>
           <p className="welcome-note">Bring your agent. Give the next one a head start.</p>
         </div>
-        <div>
+        <div className="welcome-access">
           <ReviewerAccess
             onConnected={() => {
               void state.discover();
