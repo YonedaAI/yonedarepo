@@ -85,7 +85,10 @@ pub(super) fn collaboration<S: SqlStore>(db: &S, candidate: &Value) -> Result<bo
                 .any(|(other, left, right)| id != other && (*start).max(*left) < (*end).min(*right))
         }))
 }
-pub(super) fn choice<S: SqlStore>(db: &S, candidate: &Value) -> Result<Option<Value>> {
+/// Every captured specialist record that states the stable-identity choice, decisions first.
+/// Several can qualify (a UI summary may mention stable IDs); a continuation may cite any of them.
+pub(super) fn choices<S: SqlStore>(db: &S, candidate: &Value) -> Result<Vec<Value>> {
+    let mut found = Vec::new();
     let sources = handoffs(db, candidate)?;
     for record in all(db, "nodes")?.into_iter().filter(|node| {
         ["proposed_decision", "finding"]
@@ -108,10 +111,11 @@ pub(super) fn choice<S: SqlStore>(db: &S, candidate: &Value) -> Result<Option<Va
                     && handoff["epoch"] == record["data"]["epoch"]
             })
         {
-            return Ok(Some(record));
+            found.push(record);
         }
     }
-    Ok(None)
+    found.sort_by_key(|record| record["kind"] != "proposed_decision");
+    Ok(found)
 }
 /// The selected choice plus records that transitively and explicitly supersede it, each authored
 /// in the build intent by a captured specialist or by the integrator whose capture is the candidate.
