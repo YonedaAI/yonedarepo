@@ -2,6 +2,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { YonedaEntrypoint } from '../worker/entrypoint';
 import { readObject } from '../worker/storage';
+import { rebase } from './rebase';
 export interface SitesEnv {
   OBJECTS: R2Bucket;
   PLATFORM: Service<YonedaEntrypoint>;
@@ -38,15 +39,18 @@ export async function serveSite(req: Request, env: SitesEnv): Promise<Response> 
     const parts = url.pathname.split('/').filter(Boolean);
     let digest: string;
     let path: string;
+    let prefix: string;
     if (parts[0] === 'v' && /^[a-f0-9]{64}$/.test(parts[1] ?? '') && parts[2]) {
       if (!(await env.PLATFORM.authorizePreview(parts[1], parts[2]))) return missing();
       digest = parts[1];
       path = parts.slice(3).join('/');
+      prefix = `/${parts.slice(0, 3).join('/')}/`;
     } else if (parts[0] === 'p' && /^[a-zA-Z0-9-]{1,120}$/.test(parts[1] ?? '')) {
       const site = await env.PLATFORM.siteManifest(parts[1]);
       if (!site?.digest) return missing();
       digest = site.digest;
       path = parts.slice(2).join('/');
+      prefix = `/${parts.slice(0, 2).join('/')}/`;
     } else return missing();
     if (!path && !url.pathname.endsWith('/')) {
       url.pathname += '/';
@@ -58,13 +62,14 @@ export async function serveSite(req: Request, env: SitesEnv): Promise<Response> 
     const manifest = JSON.parse(await readObject(env, digest));
     const file = manifest.files?.[path];
     if (!file) return missing();
+    const extension = path.split('.').at(-1) ?? '';
     const body =
       file.encoding === 'base64'
         ? Uint8Array.from(atob(file.content), (c) => c.charCodeAt(0))
-        : new TextEncoder().encode(file.content);
+        : new TextEncoder().encode(rebase(extension, file.content, prefix));
     return new Response(req.method === 'HEAD' ? null : body, {
       headers: {
-        'content-type': mime[path.split('.').at(-1) ?? ''] ?? 'application/octet-stream',
+        'content-type': mime[extension] ?? 'application/octet-stream',
         'cache-control': 'no-store',
         'content-security-policy':
           "sandbox allow-scripts allow-forms; default-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'none'; worker-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'",
