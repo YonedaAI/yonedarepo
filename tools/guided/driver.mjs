@@ -42,7 +42,12 @@ function sessionGuard(session, state) {
 }
 
 /** These are server-read deployment facts, never CLI/model assertions authorizing transport. */
-export function activationGuard(session) {
+export function activationGuard(session, transport = 'api-source-v1') {
+  if (transport === 'git-native-v1') {
+    if (session.source_transport !== 'git-native-v1')
+      fail('Server must confirm Git-native transport for this exact project before paid work');
+    return;
+  }
   if (session.source_transport !== 'api-source-v1' || session.source_allowlisted !== true)
     fail('Server must confirm this exact project is allowlisted for source API before paid work');
 }
@@ -51,11 +56,11 @@ async function allowanceGuard(api) {
   const allowance = await workspaceAllowance(api);
   if (
     allowance?.version < 1 ||
-    allowance?.limit_microusd !== 50_000_000 ||
+    !(allowance?.limit_microusd >= 50_000_000) ||
     allowance.remaining_microusd <= 0
   )
     fail(
-      'Existing active $50 workspace allowance required; this driver never activates or resets funding',
+      'Existing active workspace allowance of at least $50 required; this driver never activates or resets funding',
     );
   return allowance;
 }
@@ -138,6 +143,7 @@ export async function driveGuided(client, state, options = {}) {
   const {
     run = false,
     expectedRevision,
+    transport = 'api-source-v1',
     save = async () => {},
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now = Date.now,
@@ -210,7 +216,7 @@ export async function driveGuided(client, state, options = {}) {
   );
   adoptId(state, session.session_id);
   await save(state);
-  activationGuard(session);
+  activationGuard(session, transport);
   if (!state.initial_commit) {
     sourceGuard(snapshot, await client.api(`repos/${repo}/published_source`));
     state.initial_commit = snapshot.repository.published_commit;
@@ -226,7 +232,7 @@ export async function driveGuided(client, state, options = {}) {
     if (step.status === 'ready') {
       await platformGuard(client, expectedRevision);
       await allowanceGuard(client.api);
-      activationGuard(session);
+      activationGuard(session, transport);
       const current = await client.api(`repos/${repo}/repository_overview`);
       if (current.repository?.published_commit !== state.initial_commit)
         fail('Canonical publication changed during this private exercise');
