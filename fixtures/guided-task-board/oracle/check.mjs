@@ -141,7 +141,7 @@ export function checkTaskBoard(root, phase, variant) {
       /<title[\s>]/i.test(html) &&
       /<meta[^>]*viewport/i.test(html) &&
       /<script[^>]*type=["']module["'][^>]*src=["']\/?app\.mjs["']/i.test(html) &&
-      /(?:from\s*|import\s*)["']\.\/tasks\.mjs["']/.test(app) &&
+      /(?:from\s*|import\s*)["']\.?\/tasks\.mjs["']/.test(app) &&
       ['addTask', 'completeTask', 'visibleTasks'].every((name) =>
         new RegExp(`\\b${name}\\s*\\(`).test(app),
       );
