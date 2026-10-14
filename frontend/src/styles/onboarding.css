@@ -131,8 +131,16 @@ details.account-panel[open] {
   max-width: 55ch;
   font-size: 16px;
 }
-.workspace-start > button {
+.workspace-start-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 12px;
   margin: 12px 0 32px;
+}
+.workspace-start-actions > button {
+  min-height: 44px;
+  padding: 0 18px;
 }
 .getting-started {
   display: grid;
