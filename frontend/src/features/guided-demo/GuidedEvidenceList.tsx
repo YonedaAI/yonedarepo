@@ -1,6 +1,6 @@
 import { Check, Circle } from 'lucide-react';
 import type { GuidedEvidence, GuidedStepId } from '../../../../shared/guided-runs';
-import { ClampedText } from '../../components/ClampedText';
+import { splitRationale } from '../exploration/rationaleText';
 import { designChoiceText, evidenceInspectKind, evidenceLabel } from './guidedEvidenceView';
 
 export function GuidedEvidenceList({
@@ -53,16 +53,21 @@ export function GuidedEvidenceList({
                 </button>
               )}
             </div>
-            {decision && (
-              <ClampedText
-                text={decision}
-                lines={2}
-                characters={160}
-                className="guided-decision"
-                showLabel="Show decision"
-                hideLabel="Hide"
-              />
-            )}
+            {decision &&
+              (() => {
+                const { lead, detail } = splitRationale(decision);
+                return (
+                  <div className="guided-decision">
+                    <p className="rationale-lead">{lead}</p>
+                    {detail && (
+                      <details>
+                        <summary>Technical details</summary>
+                        <p>{detail}</p>
+                      </details>
+                    )}
+                  </div>
+                );
+              })()}
           </li>
         );
       })}
