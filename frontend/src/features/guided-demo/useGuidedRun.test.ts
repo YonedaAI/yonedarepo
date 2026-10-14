@@ -12,7 +12,15 @@ vi.mock('react', async (original) => ({
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.states)) hooks.states[index] = initial;
-    return [hooks.states[index], (value: unknown) => (hooks.states[index] = value)];
+    return [
+      hooks.states[index],
+      (value: unknown) => {
+        hooks.states[index] =
+          typeof value === 'function'
+            ? (value as (current: unknown) => unknown)(hooks.states[index])
+            : value;
+      },
+    ];
   },
   useEffect: (effect: () => unknown) => {
     hooks.effects.push(effect);
@@ -76,5 +84,21 @@ describe('guided run detail during live updates', () => {
     expect(newer.snapshot.runs.map((item) => item.id)).toEqual(['guided-run']);
     expect(newer.snapshot.repository.head_commit).toBe('new-head');
     expect(newer.snapshot.seq).toBe(2);
+  });
+
+  it('keeps the rendered run when a background revalidation fails', async () => {
+    apiMock.mockResolvedValueOnce(detail(1));
+    run(snapshot(1));
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(run(snapshot(1)).loading).toBe(false));
+    apiMock.mockRejectedValueOnce(new Error('The request timed out.'));
+    hooks.effects.length = 0;
+    run(snapshot(2));
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(run(snapshot(2)).refreshError).toBe('The request timed out.'));
+    const after = run(snapshot(2));
+    expect(after.error).toBe('');
+    expect(after.loading).toBe(false);
+    expect(after.snapshot.runs.map((item) => item.id)).toEqual(['guided-run']);
   });
 });

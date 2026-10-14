@@ -214,3 +214,21 @@ main {
 .tab-site .site-link {
   margin: 0;
 }
+.workspace-inline-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 30px 32px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.workspace-inline-status > svg {
+  color: var(--blue);
+  flex-shrink: 0;
+}
+@media (max-width: 760px) {
+  .workspace-inline-status {
+    padding: 24px 20px;
+  }
+}

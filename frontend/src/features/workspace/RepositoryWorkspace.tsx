@@ -1,4 +1,4 @@
-import { ArrowLeft, GitBranch, GitCompareArrows, Network } from 'lucide-react';
+import { ArrowLeft, GitBranch, GitCompareArrows, LoaderCircle, Network } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { GuidedSession, GuidedStepId } from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
@@ -88,9 +88,11 @@ export function RepositoryWorkspace({
             {label}
           </button>
         ))}
-        {guidedRun.refreshing && (
+        {(guidedRun.refreshing || guidedRun.refreshError) && (
           <span className="live-updating" role="status">
-            Updating…
+            {guidedRun.refreshError
+              ? 'Could not update; showing the last loaded state'
+              : 'Updating…'}
           </span>
         )}
         {repo.site && (
@@ -123,6 +125,7 @@ export function RepositoryWorkspace({
           onState={setGuideState}
           onInspect={inspectGuideRun}
           onProviders={() => onPanel('agents')}
+          onRefreshSnapshot={onChange}
         />
       )}
       {/* The Runs toolbar carries its own back link beside its actions. */}
@@ -138,10 +141,18 @@ export function RepositoryWorkspace({
           </button>
         </p>
       )}
+      {/* Only the first read of a selected run replaces its view; live updates keep it rendered. */}
       {view === 'runs' && guidedRun.loading && (
-        <p role="status">Loading this run’s current source and checks…</p>
+        <p className="workspace-inline-status" role="status">
+          <LoaderCircle size={16} className="spin" aria-hidden="true" />
+          Loading this run’s current source and checks…
+        </p>
       )}
-      {view === 'runs' && guidedRun.error && <p role="alert">{guidedRun.error}</p>}
+      {view === 'runs' && guidedRun.error && (
+        <p className="workspace-inline-status" role="alert">
+          {guidedRun.error}
+        </p>
+      )}
       {view === 'runs' && !guidedRun.loading && !guidedRun.error && (
         <Exploration
           reviewer={reviewer}

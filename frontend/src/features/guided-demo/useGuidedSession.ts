@@ -19,7 +19,8 @@ export function useGuidedSession(
   const starts = useRef(new Map<GuidedStepId, ReturnType<typeof createGuidedStepStart>>());
   const active = useRef(true),
     read = useRef<AbortController | undefined>(undefined);
-  const refresh = useCallback(async () => {
+  /** `superseded` means a newer read (e.g. the running-step poll) replaced this one. */
+  const refresh = useCallback(async (): Promise<'applied' | 'superseded' | 'failed'> => {
     read.current?.abort();
     const controller = new AbortController();
     read.current = controller;
@@ -35,9 +36,13 @@ export function useGuidedSession(
         setSession(result);
         onSession(result.session_id);
         setError('');
+        return 'applied';
       }
+      return 'superseded';
     } catch (failure) {
-      if (active.current && !controller.signal.aborted) setError((failure as Error).message);
+      if (!active.current || controller.signal.aborted) return 'superseded';
+      setError((failure as Error).message);
+      return 'failed';
     } finally {
       if (active.current && !controller.signal.aborted) setLoading(false);
     }

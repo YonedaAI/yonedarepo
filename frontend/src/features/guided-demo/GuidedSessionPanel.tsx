@@ -4,6 +4,7 @@ import { short } from '../../lib/api';
 import { GuidedEvidenceList } from './GuidedEvidenceList';
 import { GuidedProgress } from './GuidedProgress';
 import { runningExplanations } from './guidedEvidenceView';
+import { type GuideRefreshState, guideRefreshText } from './guidedRefresh';
 import './guided-demo.css';
 
 const statusLabels = {
@@ -19,12 +20,14 @@ export function GuidedSessionPanel({
   onStart,
   onInspect,
   onRefresh,
+  refresh = { refreshing: false },
 }: {
   session: GuidedSession;
   busy: boolean;
   onStart: (step: GuidedStepId) => void;
   onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
   onRefresh: () => void;
+  refresh?: GuideRefreshState;
 }) {
   const next = session.steps.find((step) => step.id === session.next_step);
   const definition = guidedSteps.find((step) => step.id === session.next_step);
@@ -43,16 +46,29 @@ export function GuidedSessionPanel({
           <h2>Your guided task board</h2>
           <p>A fresh project. Progress comes from this session’s recorded work and checks.</p>
         </div>
-        <button
-          className="icon-button"
-          type="button"
-          disabled={busy}
-          onClick={onRefresh}
-          aria-label="Refresh guide"
-          title="Refresh guide"
-        >
-          <RefreshCw size={16} aria-hidden="true" />
-        </button>
+        <div className="guided-refresh">
+          <button
+            className="icon-button"
+            type="button"
+            disabled={busy || refresh.refreshing}
+            aria-busy={refresh.refreshing}
+            onClick={onRefresh}
+            aria-label="Refresh guide"
+            title="Refresh guide"
+          >
+            <RefreshCw
+              size={16}
+              aria-hidden="true"
+              className={refresh.refreshing ? 'spin' : undefined}
+            />
+          </button>
+          <small
+            className={`guided-refresh-status${refresh.error && !refresh.refreshing ? ' failed' : ''}`}
+            aria-live="polite"
+          >
+            {guideRefreshText(refresh)}
+          </small>
+        </div>
       </div>
       <GuidedProgress session={session} />
       <ol className="guided-stages">
