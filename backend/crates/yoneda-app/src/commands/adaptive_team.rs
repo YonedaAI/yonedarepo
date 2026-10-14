@@ -6,6 +6,7 @@ use yoneda_core::{
     adaptive_team::{AdaptiveTeam, AgentSelection, ApprovedModel},
 };
 mod effort;
+mod specialists;
 pub(super) use effort::configure_execution;
 
 pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
@@ -110,7 +111,12 @@ fn validate_member(pool: &[ApprovedModel], agent: &Value) -> Result<()> {
     }
     Ok(())
 }
-pub(super) fn select(run: &Value, value: Option<&Value>) -> Result<Option<Value>> {
+/// Builds the planned roster; may normalize `plan.integrator_agent` for the approved model mix.
+pub(super) fn select(
+    run: &Value,
+    value: Option<&Value>,
+    plan: &mut yoneda_core::team::TeamPlan,
+) -> Result<Option<Value>> {
     if run["adaptive_team"].is_null() {
         if value.is_some() {
             return Err(Error::new(
@@ -148,6 +154,7 @@ pub(super) fn select(run: &Value, value: Option<&Value>) -> Result<Option<Value>
                 .and_then(|r| r.reasoning_effort);
         }
     }
+    specialists::assign(run, &request, &pool, &mut selections, plan)?;
     request.validate_selection(&pool, &selections)?;
     let agents = selections
         .into_iter()

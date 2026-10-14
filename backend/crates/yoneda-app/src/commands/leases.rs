@@ -62,6 +62,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["epoch"] = json!(number(&j, "epoch")? + 1);
             j["status"] = json!("running");
             j["not_before"] = Value::Null;
+            // Attempt times are observational evidence for stage durations, never authority.
+            j["started_at"] = json!(now);
+            j["finished_at"] = Value::Null;
             source::claimed(&mut j, now)?;
             j["runtime_started_at"] = Value::Null;
             j["progress"] = Value::Null;
@@ -77,6 +80,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 let mut e = get(db, "executions", &eid)?;
                 e["status"] = json!("running");
                 e["started_at"] = json!(now);
+                e["finished_at"] = Value::Null;
                 e["epoch"] = j["epoch"].clone();
                 let harness = string(&e, "harness")?;
                 let model = e["model"]
@@ -135,6 +139,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 "failed"
             });
             source::terminal(&mut j, now);
+            finished(&mut j, now);
             j["error"] = c["error"].clone();
             j["lease_until"] = json!(0);
             save(db, "jobs", &id, &j)?;
@@ -173,6 +178,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                         "failed"
                     });
                     source::terminal(&mut j, now);
+                    finished(&mut j, now);
                     save(db, "jobs", &id, &j)?;
                     reflect_status(db, &j, now)?;
                     if j["status"] == "queued" {
@@ -212,3 +218,13 @@ fn dispatch_expired(job: &Value, now: i64) -> bool {
 pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
     status::reflect_status(db, job, now)
 }
+
+fn finished(j: &mut Value, now: i64) {
+    if j["status"] == "failed" {
+        j["finished_at"] = json!(now);
+    }
+}
+
+#[cfg(test)]
+#[path = "leases/timing_tests.rs"]
+mod timing_tests;

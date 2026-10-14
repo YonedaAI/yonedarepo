@@ -42,6 +42,7 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             .cloned()
             .unwrap_or(json!("Attempt lease expired"));
         if job["status"] == "failed" {
+            e["finished_at"] = json!(now);
             // Stage attribution comes from the authoritative job, never an error body.
             e["failure_stage"] = job["kind"].clone();
             e["failure_job_id"] = job["id"].clone();

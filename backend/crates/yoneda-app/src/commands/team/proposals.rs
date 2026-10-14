@@ -4,6 +4,9 @@ use super::*;
 #[cfg(test)]
 #[path = "tests/adaptive_team.rs"]
 mod adaptive_tests;
+#[cfg(test)]
+#[path = "tests/adaptive_specialists.rs"]
+mod specialist_tests;
 
 pub(super) const MAX_DRAFTS: i64 = 8;
 
@@ -120,9 +123,9 @@ pub(super) fn propose<S: SqlStore>(
     run: &Value,
     now: i64,
 ) -> Result<Value> {
-    let plan: TeamPlan =
+    let mut plan: TeamPlan =
         serde_json::from_value(c["plan"].clone()).map_err(|e| bad(&e.to_string()))?;
-    let agents = super::super::adaptive_team::select(run, c.get("agents"))?;
+    let agents = super::super::adaptive_team::select(run, c.get("agents"), &mut plan)?;
     plan.validate(
         agents
             .as_ref()
