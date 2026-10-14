@@ -60,9 +60,11 @@ export function RepositoryWorkspace({
   }, [snapshot.runs, snapshot.repository.id, guidedSessionId, onGuidedSession, nativeGuide]);
   // Each request to open a run, even the same run again, scrolls to and focuses its heading.
   const [runFocus, setRunFocus] = useState(0);
-  function inspectGuideRun(runId: string, _step: GuidedStepId, _candidate?: string, kind?: string) {
-    setGuidedRunId(runId);
-    setEvidenceRun(runId);
+  function inspectGuideRun(runId: string, _step: GuidedStepId, candidate?: string, kind?: string) {
+    // Review names only its candidate; open the run that recorded it, not the default run.
+    const target = runId || snapshot.candidates.find((item) => item.id === candidate)?.run_id || '';
+    setGuidedRunId(target);
+    setEvidenceRun(target);
     const next = kind?.includes('conflict')
       ? 'history'
       : kind?.includes('context')
