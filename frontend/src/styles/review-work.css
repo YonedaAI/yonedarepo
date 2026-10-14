@@ -94,3 +94,10 @@
   cursor: pointer;
   color: var(--muted);
 }
+.guided-decision .rationale-lead {
+  font-weight: 600;
+}
+.guided-decision details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
