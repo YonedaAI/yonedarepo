@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
-import { PublishedSourceViewer } from '../source-workspace/PublishedSourceViewer';
 import { RunSourceProgress } from '../source-workspace/RunSourceProgress';
 import { TeamWorkflow } from '../team/TeamWorkflow';
 import { runCandidates } from '../team/teamView';
@@ -11,15 +10,13 @@ import { AgentWorkSummary } from './AgentWorkSummary';
 import { comparisonState } from './comparisonView';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { IntentQuestion } from './IntentQuestion';
-import { ModelBudgetUsage } from './ModelBudgetUsage';
 import { PublishingDecision } from './PublishingDecision';
+import { RejectDialog } from './RejectDialog';
 import { RunAttention } from './RunAttention';
-import { RunBrief } from './RunBrief';
 import { RunCandidates } from './RunCandidates';
-import { RunControls } from './RunControls';
+import { RunDetailsPanel } from './RunDetailsPanel';
 import { RunOverviewHeader } from './RunOverviewHeader';
 import { type RunTab, RunTabs } from './RunTabs';
-import { RunWorkflow } from './RunWorkflow';
 import { runHasActiveAttempts } from './runControlState';
 import { selectionBlocker } from './runReviewState';
 import { StaleCandidateRepair } from './StaleCandidateRepair';
@@ -52,7 +49,9 @@ export function RunDetail({
   onComparisonAction,
   onRefresh,
   onGuidedContinue,
+  onReject,
   focusRequest = 0,
+  focusCandidate,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -76,13 +75,17 @@ export function RunDetail({
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
   onGuidedContinue?: () => void;
+  onReject?: (candidate: string, reason: string) => Promise<boolean>;
   focusRequest?: number;
+  /** A result to reveal when `focusRequest` changes, e.g. from the guided demo. */
+  focusCandidate?: string;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
   const [selected, setSelected] = useState('');
   const [comparing, setComparing] = useState(false);
-  const repo = snapshot.repository;
+  const [rejecting, setRejecting] = useState('');
+  const [resultFocus, setResultFocus] = useState<{ candidate: string; request: number }>();
   const team = run.mode === 'collaborate';
   const activeAttempts = runHasActiveAttempts(snapshot, run);
   const coding = snapshot.executions.filter(
@@ -112,6 +115,15 @@ export function RunDetail({
     setTab(next);
     setFocusTarget(target);
   }
+  // Each inspect request reveals the exact result again, even when Results is already open.
+  function openResult(candidate: string) {
+    setTab('results');
+    setResultFocus((current) => ({ candidate, request: (current?.request ?? 0) + 1 }));
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each request reveals the result again.
+  useEffect(() => {
+    if (focusRequest && focusCandidate) openResult(focusCandidate);
+  }, [focusRequest, focusCandidate]);
   useEffect(() => {
     if (!focusTarget) return;
     const element = document.getElementById(focusTarget);
@@ -143,13 +155,8 @@ export function RunDetail({
         busy={busy}
         onGuidedContinue={onGuidedContinue}
         onAction={(action, candidate) => {
-          if (action === 'review')
-            openEvidence(
-              'results',
-              candidate
-                ? `approach-${candidates.find((item) => item.id === candidate)?.execution}`
-                : 'run-panel-results',
-            );
+          if ((action === 'review' || action === 'results') && candidate) openResult(candidate);
+          else if (action === 'review') openEvidence('results');
           else if (
             action === 'details' &&
             snapshot.decisions.some((decision) => decision.run_id === run.id)
@@ -193,6 +200,8 @@ export function RunDetail({
                 onGraph={onContext}
                 onComparisonAction={onComparisonAction}
                 onRefresh={onRefresh}
+                onReject={onReject ? setRejecting : undefined}
+                focus={resultFocus}
               />
               <AgentWorkSummary
                 snapshot={snapshot}
@@ -237,42 +246,29 @@ export function RunDetail({
               </Suspense>
             </>
           ) : (
-            <>
-              <div className="run-detail-controls">
-                <div>
-                  <h3>Run controls</h3>
-                  <p>
-                    Recorded status: {run.status.replaceAll('_', ' ')}
-                    {reviewer
-                      ? '.'
-                      : activeAttempts
-                        ? '. Finish or cancel active work before restarting.'
-                        : '. Restart opens a new attempt with these settings.'}
-                  </p>
-                </div>
-                <RunControls
-                  reviewer={reviewer}
-                  run={run}
-                  busy={busy}
-                  canStart={canStart}
-                  activeAttempts={activeAttempts}
-                  hasRoots={roots > 0 || (team && !!run.agents?.length)}
-                  supportsRestart={snapshot.capabilities?.model_budgets === 1}
-                  onRestart={onRestart}
-                  onCancel={onCancel}
-                />
-              </div>
-              <RunBrief intent={run.intent} criteria={run.criteria} />
-              <RunWorkflow snapshot={snapshot} run={run} />
-              <PublishedSourceViewer snapshot={snapshot} runId={run.id} />
-              <p className="subtle">
-                Independent evaluator: {repo.policy?.suite ?? 'configured policy'}
-              </p>
-              <ModelBudgetUsage run={run} />
-            </>
+            <RunDetailsPanel
+              reviewer={reviewer}
+              snapshot={snapshot}
+              run={run}
+              busy={busy}
+              canStart={canStart}
+              activeAttempts={activeAttempts}
+              hasRoots={roots > 0 || (team && !!run.agents?.length)}
+              onRestart={onRestart}
+              onCancel={onCancel}
+            />
           )
         }
       </RunTabs>
+      {rejecting && onReject && candidates.some((item) => item.id === rejecting) && (
+        <RejectDialog
+          key={rejecting}
+          candidate={candidates.find((item) => item.id === rejecting) ?? {}}
+          busy={busy}
+          onClose={() => setRejecting('')}
+          onReject={onReject}
+        />
+      )}
       {selected && (
         <PublishingDecision
           key={selected}

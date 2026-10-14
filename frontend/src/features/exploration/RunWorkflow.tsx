@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { activeDecision } from './agentsPick';
 import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { RecordedDecisionStory } from './RecordedDecisionStory';
 import { reviewableCandidates } from './runReviewState';
@@ -45,7 +46,9 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const candidates = snapshot.candidates.filter((c) => c.run_id === run.id);
   const checked = candidates.filter((c) => c.evaluation);
   const eligible = candidates.filter((c) => c.status === 'eligible');
-  const decision = snapshot.decisions.find((d) => d.run_id === run.id);
+  // A selection outranks owner rejections, which otherwise show as the latest recorded decision.
+  const decision =
+    activeDecision(snapshot, run) ?? snapshot.decisions.findLast((d) => d.run_id === run.id);
   const shared = snapshot.artifacts.filter((a) => a.producer === research?.id);
   const done = coding.filter((e) => e.finished_at).length;
   const queued = coding.filter((e) => e.status === 'queued').length;

@@ -21,6 +21,9 @@ export interface GuidedEvidence {
   candidate_id?: string;
   record_id?: string;
   revision?: string;
+  /** Owner rejection evidence: the recorded decision and its reason. */
+  decision_id?: string;
+  reason?: string;
 }
 export interface GuidedStep {
   id: GuidedStepId;

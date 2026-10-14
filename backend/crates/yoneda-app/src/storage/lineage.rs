@@ -57,12 +57,20 @@ pub(crate) fn check_lineage<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resul
         let did = string(&job["payload"], "decision_id")?;
         let decision = get(db, "decisions", &did)?;
         let repository = repo(db)?;
-        if job["id"] != format!("publish:{did}")
+        // Owner recovery issues a new publisher identity and lease; earlier decisions leased
+        // their candidate base under the original identity.
+        let publisher = decision["publisher_job"]
+            .as_str()
+            .map_or_else(|| format!("publish:{did}"), str::to_owned);
+        let expected = decision
+            .get("publication_expected")
+            .unwrap_or(&decision["base"]);
+        if job["id"] != publisher
             || decision["status"] != "publication_pending"
             || repository["pending"] != did
             || repository["head_commit"] != decision["target"]["commit"]
             || job["payload"]["target"] != decision["target"]
-            || job["payload"]["expected"] != decision["base"]
+            || job["payload"]["expected"] != *expected
         {
             return Err(Error::new("FENCED", "Publication reservation changed"));
         }

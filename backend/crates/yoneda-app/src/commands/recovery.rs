@@ -108,7 +108,7 @@ fn resync<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     Ok(receipt)
 }
 
-fn fence_publication<S: SqlStore>(db: &S, pending: &Value) -> Result<()> {
+pub(super) fn fence_publication<S: SqlStore>(db: &S, pending: &Value) -> Result<()> {
     for row in db.query(
         "SELECT payload FROM jobs WHERE json_extract(payload,'$.kind')='publish' AND (json_extract(payload,'$.payload.decision_id')=? OR json_extract(payload,'$.status') IN ('queued','running')) ORDER BY id",
         std::slice::from_ref(pending),
