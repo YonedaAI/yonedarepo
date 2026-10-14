@@ -18,6 +18,12 @@ pub(super) fn checked_with_context(
     evaluate(db, &cid, phase);
     cid
 }
+/// Hosted shape: the integrator records a decision that explicitly supersedes the specialist's choice.
+pub(super) fn checked_with_integrator_decision(db: &NativeStore, rid: &str) -> String {
+    let cid = captured(db, rid, true, None, true);
+    evaluate(db, &cid, "build");
+    cid
+}
 pub(super) fn evaluate(db: &NativeStore, cid: &str, phase: &str) {
     let evaluation = call(
         db,
@@ -38,6 +44,15 @@ pub(super) fn captured_with_context(
     rid: &str,
     overlap: bool,
     prior: Option<&str>,
+) -> String {
+    captured(db, rid, overlap, prior, false)
+}
+fn captured(
+    db: &NativeStore,
+    rid: &str,
+    overlap: bool,
+    prior: Option<&str>,
+    integrator_decision: bool,
 ) -> String {
     let workers = ["core", "ui"];
     let mut claimed = Vec::new();
@@ -115,6 +130,17 @@ pub(super) fn captured_with_context(
     }
     let eid = format!("{rid}:task:integrate");
     let integrator = call(db, json!({"op":"claim","job_id":format!("job:{eid}")}), 50);
+    if integrator_decision {
+        call(
+            db,
+            json!({"op":"context_publish","job_id":integrator["id"],"epoch":integrator["epoch"],
+            "record":{"id":format!("context:integrated:{rid}"),"kind":"proposed_decision",
+            "statement":"Stable-identity decision: task ids are assigned once and never replaced",
+            "purpose":"Reconcile the specialists' identity choice in the integrated tree","intent_id":format!("intent:{rid}"),
+            "file_paths":["public/tasks.mjs"],"links":[{"relation":"supersedes","target":format!("context:choice:{rid}")}]}}),
+            50,
+        );
+    }
     call(
         db,
         json!({"op":"record_transcript","job_id":integrator["id"],"epoch":integrator["epoch"],"digest":"d".repeat(64)}),

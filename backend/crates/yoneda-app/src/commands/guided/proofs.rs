@@ -113,37 +113,84 @@ pub(super) fn choice<S: SqlStore>(db: &S, candidate: &Value) -> Result<Option<Va
     }
     Ok(None)
 }
-pub(super) fn continuation<S: SqlStore>(db: &S, candidate: &Value, record: &Value) -> Result<bool> {
+/// The selected choice plus records that transitively and explicitly supersede it, each authored
+/// in the build intent by a captured specialist or by the integrator whose capture is the candidate.
+pub(super) fn lineage<S: SqlStore>(
+    db: &S,
+    candidate: &Value,
+    record: &Value,
+) -> Result<Vec<Value>> {
+    let mut authors = handoffs(db, candidate)?
+        .into_iter()
+        .map(|handoff| (handoff["execution_id"].clone(), handoff["epoch"].clone()))
+        .collect::<Vec<_>>();
+    let producer = &get(db, "jobs", &string(candidate, "capture_job")?)?["payload"]["execution"];
+    if producer["id"] == candidate["execution"] && producer["epoch"].is_u64() {
+        authors.push((producer["id"].clone(), producer["epoch"].clone()));
+    }
+    let intent = json!(format!("intent:{}", string(candidate, "run_id")?));
+    let nodes = all(db, "nodes")?;
+    let mut ids = vec![record["id"].clone()];
+    while let Some(next) = nodes.iter().find(|node| {
+        !ids.contains(&node["id"])
+            && ["proposed_decision", "finding"]
+                .iter()
+                .any(|kind| node["kind"] == *kind)
+            && node["data"]["intent_id"] == intent
+            && authors
+                .iter()
+                .any(|(id, epoch)| node["author"] == *id && node["data"]["epoch"] == *epoch)
+            && node["data"]["links"].as_array().is_some_and(|links| {
+                links
+                    .iter()
+                    .any(|link| link["relation"] == "supersedes" && ids.contains(&link["target"]))
+            })
+    }) {
+        ids.push(next["id"].clone());
+    }
+    Ok(ids)
+}
+/// A continuation specialist must open and cite the same record from the choice's lineage.
+pub(super) fn continuation<S: SqlStore>(
+    db: &S,
+    candidate: &Value,
+    lineage: &[Value],
+) -> Result<bool> {
     for handoff in handoffs(db, candidate)? {
         let reads = db.query(
             "SELECT data FROM context_access WHERE execution_id=? AND epoch=? AND run_id=? AND stage='opened'",
             &[handoff["execution_id"].clone(), handoff["epoch"].clone(), candidate["run_id"].clone()],
         )?;
-        let opened = reads.iter().any(|row| {
-            serde_json::from_str::<Value>(row["data"].as_str().unwrap_or_default()).is_ok_and(
-                |read| {
-                    read["targets"].as_array().is_some_and(|targets| {
-                        targets.iter().any(|target| target["id"] == record["id"])
-                    })
-                },
-            )
-        });
-        let cited = all(db, "nodes")?.iter().any(|node| {
-            node["author"] == handoff["execution_id"]
-                && node["data"]["epoch"] == handoff["epoch"]
-                && node["data"]["intent_id"]
-                    == format!(
-                        "intent:{}",
-                        candidate["run_id"].as_str().unwrap_or_default()
-                    )
-                && ["finding", "proposed_decision"]
-                    .iter()
-                    .any(|kind| node["kind"] == *kind)
-                && node["data"]["links"]
-                    .as_array()
-                    .is_some_and(|links| links.iter().any(|link| link["target"] == record["id"]))
-        });
-        if opened && cited {
+        let opened = |id: &Value| {
+            reads.iter().any(|row| {
+                serde_json::from_str::<Value>(row["data"].as_str().unwrap_or_default()).is_ok_and(
+                    |read| {
+                        read["targets"]
+                            .as_array()
+                            .is_some_and(|targets| targets.iter().any(|target| target["id"] == *id))
+                    },
+                )
+            })
+        };
+        let nodes = all(db, "nodes")?;
+        let cited = |id: &Value| {
+            nodes.iter().any(|node| {
+                node["author"] == handoff["execution_id"]
+                    && node["data"]["epoch"] == handoff["epoch"]
+                    && node["data"]["intent_id"]
+                        == format!(
+                            "intent:{}",
+                            candidate["run_id"].as_str().unwrap_or_default()
+                        )
+                    && ["finding", "proposed_decision"]
+                        .iter()
+                        .any(|kind| node["kind"] == *kind)
+                    && node["data"]["links"]
+                        .as_array()
+                        .is_some_and(|links| links.iter().any(|link| link["target"] == *id))
+            })
+        };
+        if lineage.iter().any(|id| opened(id) && cited(id)) {
             return Ok(true);
         }
     }

@@ -7,6 +7,7 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
     let mut unlocked = yoneda_core::fingerprint(&r["policy"])? == session["policy_digest"];
     let mut next = Value::Null;
     let mut choice = None;
+    let mut lineage = Vec::new();
     let mut previous: Option<Value> = None;
     for (index, id) in STEPS.iter().enumerate() {
         let saved = &session["steps"][index];
@@ -46,16 +47,13 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
                     evidence.push(json!({"kind":"collaboration","label":"Captured specialists with overlapping trusted harness windows","verified":collaboration}));
                     choice = proofs::choice(db, candidate)?;
                     if let Some(record) = &choice {
+                        lineage = proofs::lineage(db, candidate, record)?;
                         evidence.push(json!({"kind":"design_choice","label":format!("Recorded design choice: {}",record["label"].as_str().unwrap_or_default()),"verified":true,"record_id":record["id"],"author":record["author"],"authority":"assertion","source_association_verified":true}));
                     }
                     complete = contract && collaboration && choice.is_some();
                 }
                 "extend" => {
-                    let cited = choice
-                        .as_ref()
-                        .map(|record| proofs::continuation(db, candidate, record))
-                        .transpose()?
-                        .unwrap_or(false);
+                    let cited = choice.is_some() && proofs::continuation(db, candidate, &lineage)?;
                     evidence.push(json!({"kind":"context_continuation","label":"Earlier design choice opened and cited by this continuation","verified":cited}));
                     complete = cited;
                 }
