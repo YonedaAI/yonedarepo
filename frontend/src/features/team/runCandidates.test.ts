@@ -3,7 +3,7 @@ import type { Snapshot } from '../../lib/types';
 import { runCandidates } from './teamView';
 
 describe('team run results', () => {
-  it('lists the recorded conflict resolution beside the integrated result', () => {
+  it('shows only the latest recorded conflict resolution once the run is reconciled', () => {
     const run = { id: 'run-1', mode: 'collaborate' };
     const snapshot = {
       team_tasks: [
@@ -18,7 +18,6 @@ describe('team run results', () => {
     } as unknown as Snapshot;
     expect(runCandidates(snapshot, run).map((candidate) => candidate.id)).toEqual([
       'cand-resolved',
-      'cand-int',
     ]);
   });
 });
