@@ -6,7 +6,7 @@ use yoneda_core::{Error, Result};
 mod guided_init;
 pub(super) fn capabilities<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     Ok(
-        json!({"guided_runs":1,"source_api":1,"source_capture_retry":1,"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
+        json!({"guided_runs":1,"source_api":1,"source_capture_retry":1,"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"adaptive_specialists":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
     )
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
@@ -55,7 +55,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     .unwrap_or_default(),
             )?;
             Ok(
-                json!({"v":1,"capabilities":capabilities(db,now)?,"repository":r,"working_branches":all(db,"working_branches")?,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"team_tasks":all(db,"team_tasks")?,"team_handoffs":all(db,"team_handoffs")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"edge_count":edge_count,"edges_truncated":edges_truncated,"seq":seq}),
+                json!({"v":1,"capabilities":capabilities(db,now)?,"repository":r,"working_branches":all(db,"working_branches")?,"runs":all(db,"runs")?,"executions":all(db,"executions")?,"jobs":job_times(db)?,"team_tasks":all(db,"team_tasks")?,"team_handoffs":all(db,"team_handoffs")?,"candidates":all(db,"candidates")?,"evaluations":all(db,"evaluations")?,"decisions":all(db,"decisions")?,"artifacts":all(db,"artifacts")?,"nodes":all(db,"nodes")?,"edges":edges,"edge_count":edge_count,"edges_truncated":edges_truncated,"seq":seq}),
             )
         }
         "repository_overview" => {
@@ -161,6 +161,28 @@ fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
             "team_task_revision": execution["team_task_revision"],
         },
     }))
+}
+
+/// Lifecycle times only; job payloads stay private to the dispatcher and runtime.
+fn job_times<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+    all(db, "jobs").map(|jobs| {
+        jobs.iter()
+            .map(|j| {
+                let mut view = crate::storage::job_event(j);
+                for key in [
+                    "status",
+                    "attempt",
+                    "created_at",
+                    "started_at",
+                    "runtime_started_at",
+                    "finished_at",
+                ] {
+                    view[key] = j[key].clone();
+                }
+                view
+            })
+            .collect()
+    })
 }
 
 #[cfg(test)]

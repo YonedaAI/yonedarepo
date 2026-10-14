@@ -6,13 +6,15 @@ import {
   guidedExtendIntent,
   guidedRunId,
 } from '../../shared/guided-runs';
+import { guidedFixedPlan, guidedModelMix, guidedPlanVersion } from './guided-plan';
 import { guidedFailure } from './guided-profile';
 import { approveOwnerRun } from './owner-run-approval';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
 
-/** The ordinary planner defines independent specialist scopes and coordination;
- * saved connections, funding and compatibility use the normal owner approval.
+/** Guide v1: the ordinary planner defines specialist scopes. Guide v2: a fixed, validated
+ * team plan replaces the planner. Both approve the guide model mix (specialists on Codex,
+ * planning/integration/coordination on GLM) and fail before start if either is not connected.
  * An `attempt` above 1 prepares a retry whose run ids the native ledger suffixes identically. */
 export async function prepareGuidedRuns(
   env: Env,
@@ -37,10 +39,17 @@ export async function prepareGuidedRuns(
     step === 'build'
       ? 'Publish the stable-identity design choice through context_publish as a proposed_decision with file_paths [public/tasks.mjs], explaining why replacing IDs during edits would lose references.'
       : 'Use context_get to open the relevant prior design choice from your assigned context, then cite its record ID in a context_publish link and explain how it influenced your implementation.';
+  const fixed = Number(session.version) === guidedPlanVersion;
   for (const [ordinal, intent] of intents.entries()) {
+    const entry = fixed ? guidedFixedPlan(step, ordinal) : undefined;
+    const coordination = entry
+      ? 'The platform supplies this run’s fixed team plan and shared contract. Implement only your assigned scope and start immediately in parallel; coordinate discrepancies through peer_message. The integrator waits for every captured specialist contribution before integration and independent checks.'
+      : null;
     const input: Json = {
       id: guidedRunId(prefix, step, ordinal, attempt),
-      intent: `${intent} ${contextInstructions} Plan two independent specialist scopes: task behavior in public/tasks.mjs and the interface in public/index.html, public/app.mjs and public/style.css. Establish the shared API contract upfront using the exact function signatures in this brief. Start both specialists in parallel. Do not wait for the core capture before starting interface work; implement against the known contract and coordinate discrepancies through peer_message while both work. Record and capture the shared contract. The integrator must wait for both captured contributions before integration and independent checks.`,
+      intent: coordination
+        ? `${intent} ${contextInstructions} ${coordination}`
+        : `${intent} ${contextInstructions} Plan two independent specialist scopes: task behavior in public/tasks.mjs and the interface in public/index.html, public/app.mjs and public/style.css. Establish the shared API contract upfront using the exact function signatures in this brief. Start both specialists in parallel. Do not wait for the core capture before starting interface work; implement against the known contract and coordinate discrepancies through peer_message while both work. Record and capture the shared contract. The integrator must wait for both captured contributions before integration and independent checks.`,
       mode: 'collaborate',
       criteria: [
         'Preserve all earlier behavior',
@@ -54,11 +63,15 @@ export async function prepareGuidedRuns(
       ),
       adaptive_team: {
         version: 1,
-        requested_agents: [
-          { connection: null, role: 'backend' },
-          { connection: null, role: 'frontend' },
-        ],
+        requested_agents: entry
+          ? entry.roles.map((role) => ({ connection: null, role }))
+          : [
+              { connection: null, role: 'backend' },
+              { connection: null, role: 'frontend' },
+            ],
+        model_mix: guidedModelMix,
       },
+      ...(entry ? { team: entry.plan } : {}),
     };
     if (step !== 'build') {
       if (

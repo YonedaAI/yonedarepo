@@ -15,8 +15,14 @@ const principal = { workspace: 'ordinary', role: 'user' as const };
 
 function normalApproval() {
   approve.mockImplementation(async (_env: Env, _principal: unknown, _repo: string, input: Json) =>
-    resolveAdaptiveApproval(input, [{ id: 'saved-glm', provider: 'zai', model: 'glm-5.3-flash' }]));
+    resolveAdaptiveApproval(input, connections));
 }
+const connections = [
+  { id: 'saved-glm', provider: 'zai', model: 'glm-5.3-flash' },
+  { id: 'saved-codex', provider: 'codex', model: 'gpt-5.6-luna' },
+];
+const v2 = { ...session, version: 2 } as unknown as GuidedSession;
+const slots = (run: Json) => run.agents.map((agent: Json) => agent.connection);
 
 it('build leaves the DAG to the ordinary planner with two parallel specialist preferences and a shared contract', async () => {
   normalApproval();
@@ -27,7 +33,9 @@ it('build leaves the DAG to the ordinary planner with two parallel specialist pr
   expect(run.adaptive_team.requested_agents).toEqual([
     { connection: null, role: 'backend' }, { connection: null, role: 'frontend' },
   ]);
-  expect(run._approved_model_pool).toHaveLength(1);
+  expect(run._approved_model_pool).toHaveLength(2);
+  expect(run.agents[0].connection).toBe('saved-glm'); // v1 still plans on the coordination model.
+  expect(run.adaptive_team.specialist_connection).toBe('saved-codex');
   expect(run.intent).toContain('addTask(tasks,title,id)');
   expect(run.intent).toContain('independent');
   expect(run.intent).toContain('Do not wait for the core');
@@ -70,4 +78,40 @@ it('a retry attempt suffixes run ids exactly as the native ledger allocates them
   const retried = await prepareGuidedRuns({} as Env, principal, 'fresh', session, 'concurrent', 'a'.repeat(40), 3, 2);
   expect(retried.map(run => run.id)).toEqual(first.map(run => `${run.id}-r2`));
   expect(first[0].id).toMatch(/^guide-[a-f0-9]{24}-concurrent-0$/);
+});
+
+it('v2 build supplies the fixed parallel plan: Codex specialists and a GLM integrator, no planner', async () => {
+  normalApproval();
+  const [run] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'build', 'a'.repeat(40), 0);
+  expect(run.adaptive_team).toBeUndefined();
+  expect(run.team.tasks.map((task: Json) => [task.id, task.agent, task.write_paths])).toEqual([
+    ['behavior', 0, ['public/tasks.mjs']],
+    ['interface', 1, ['public/app.mjs', 'public/index.html', 'public/style.css']],
+  ]);
+  expect(run.team.integrator_agent).toBe(2);
+  expect(run.team.contract).toContain('visibleTasks(tasks,options={})');
+  expect(slots(run)).toEqual(['saved-codex', 'saved-codex', 'saved-glm']);
+  expect(run.intent).not.toMatch(/Plan two/);
+  expect(run.intent).toContain('fixed team plan');
+});
+
+it('v2 continuation and concurrent runs each pair one Codex specialist with a GLM integrator', async () => {
+  normalApproval();
+  const [extend] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'extend', 'a'.repeat(40), 3);
+  expect(extend.team.tasks.map((task: Json) => task.id)).toEqual(['bookmarks']);
+  expect(slots(extend)).toEqual(['saved-codex', 'saved-glm']);
+  const runs = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'concurrent', 'a'.repeat(40), 3);
+  expect(runs.map((run) => run.team.tasks[0].id)).toEqual(['status-filter', 'title-sort']);
+  for (const run of runs) {
+    expect(slots(run)).toEqual(['saved-codex', 'saved-glm']);
+    expect(run.working_branch_id).toBe('guide-working');
+  }
+});
+
+it('a guide without the required Codex connection fails clearly before any run starts', async () => {
+  approve.mockImplementation(async (_env: Env, _principal: unknown, _repo: string, input: Json) =>
+    resolveAdaptiveApproval(input, [connections[0]]));
+  for (const guide of [session, v2])
+    await expect(prepareGuidedRuns({} as Env, principal, 'fresh', guide, 'build', 'a'.repeat(40), 0))
+      .rejects.toMatchObject({ code: 'PROVIDER_MISSING' });
 });
