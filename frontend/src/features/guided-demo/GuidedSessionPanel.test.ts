@@ -49,7 +49,7 @@ describe('fresh guided project stage presentation', () => {
     const html = render({ session });
     expect(html).not.toContain('class="primary"');
     expect(html).toContain('In progress');
-    expect(html).toContain('View run');
+    expect(html).toContain('Open run');
     expect(html).not.toContain('>Continue from context</button>');
     expect(html).toContain('class="guided-running-note"');
     expect(html).toContain('The next step unlocks when this one finishes.');

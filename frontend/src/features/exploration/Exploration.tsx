@@ -34,6 +34,7 @@ export function Exploration({
   requestedRunError = '',
   onGuidedDemo,
   focusedRunId,
+  focusRequest = 0,
   onGuidedContinue,
 }: {
   reviewer?: boolean;
@@ -48,13 +49,16 @@ export function Exploration({
   requestedRunError?: string;
   onGuidedDemo?: () => void;
   focusedRunId?: string;
+  /** Increments when the focused run should be scrolled to and focused. */
+  focusRequest?: number;
   onGuidedContinue?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [runId, setRunId] = useState(focusedRunId || initialRunId);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a repeated request reselects the same run.
   useEffect(() => {
     if (focusedRunId) setRunId(focusedRunId);
-  }, [focusedRunId]);
+  }, [focusedRunId, focusRequest]);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const [branchSource, setBranchSource] = useState<InitialRun>();
@@ -214,6 +218,7 @@ export function Exploration({
                 key={run.id}
                 snapshot={snapshot}
                 run={run}
+                focusRequest={run.id === focusedRunId ? focusRequest : 0}
                 busy={busy}
                 canStart={canStart}
                 onGuidedContinue={onGuidedContinue}
