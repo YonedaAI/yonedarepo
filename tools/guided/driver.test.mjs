@@ -181,7 +181,7 @@ test('platform, allowance, actual source bytes/allowlist and oracle guard before
     if (kind === 'oracle') f.repository.policy.build.test_bundle.digest = '0'.repeat(64);
     f.client.api = async (path, body) => {
       if (kind === 'allowance' && path === 'workspace/allowance')
-        return { version: 1, limit_microusd: 60000000, remaining_microusd: 60000000 };
+        return { version: 1, limit_microusd: 100000000, remaining_microusd: 0 };
       if (kind === 'source' && path.endsWith('/published_source'))
         return { revision: { commit: rootCommit }, files: {} };
       return original(path, body);

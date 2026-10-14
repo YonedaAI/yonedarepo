@@ -7,7 +7,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { reviewerClient, safeOrigin, privateFile } from './guided/credentials.mjs';
 import { driveGuided } from './guided/driver.mjs';
 
-export const usage = `node tools/guided-acceptance.mjs --expected-revision SHA [--run] [--state PATH] [--key-file MODE0600_FILE | --username EXISTING_ACCOUNT]
+export const usage = `node tools/guided-acceptance.mjs --expected-revision SHA [--transport api-source-v1|git-native-v1] [--run] [--state PATH] [--key-file MODE0600_FILE | --username EXISTING_ACCOUNT]
 Default: read-only session inspection. --run creates a fresh task-board-v1 project and advances its bounded steps.
 Resume with --run and the SAME --state file; saved session/request IDs are never replaced.
 Key input is hidden terminal/stdin or a mode-0600 file; never an argument.
@@ -25,6 +25,7 @@ export function parseArgs(args) {
     '--key-file': 'keyFile',
     '--username': 'username',
     '--expected-revision': 'expectedRevision',
+    '--transport': 'transport',
   };
   for (let index = 0; index < args.length; index++) {
     const argument = args[index];
@@ -38,6 +39,9 @@ export function parseArgs(args) {
     options[names[argument]] = args[++index];
   }
   options.origin = safeOrigin(options.origin);
+  options.transport ??= 'api-source-v1';
+  if (!['api-source-v1', 'git-native-v1'].includes(options.transport))
+    throw new Error('Transport must be api-source-v1 or git-native-v1');
   if (!/^[a-f0-9]{7,64}$/.test(options.expectedRevision ?? ''))
     throw new Error('Explicit approved platform revision required');
   return options;
