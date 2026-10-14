@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { mergeRunDetails } from '../../hooks/repositorySnapshot';
+import { mergeRunDetails, preferSnapshotRows } from '../../hooks/repositorySnapshot';
 import { api } from '../../lib/api';
 import type { RunDetail, Snapshot } from '../../lib/types';
 /** A historical guide link reads exact current owner-scoped detail before mounting decision controls. */
@@ -40,19 +40,26 @@ export function useGuidedRun(snapshot: Snapshot, runId: string) {
   const current = loaded?.repo === repo && loaded.run === runId ? loaded : undefined;
   const detail = current?.detail;
   const fresh = !!detail && detail.seq >= snapshot.seq;
-  const view = fresh
-    ? mergeRunDetails(snapshot, [detail], {
-        repository: detail.repository,
-        v: 1,
-        counts: {},
-        watermark: detail.seq,
-        capabilities: detail.capabilities ?? snapshot.capabilities ?? {},
-        working_branches: detail.working_branches ?? snapshot.working_branches,
-      })
+  // A live update makes the last verified detail older than the snapshot. Keep showing it while
+  // the newer read is in flight, letting rows the snapshot already holds win, instead of
+  // unmounting the run view behind a loading state on every resync.
+  const view = detail
+    ? fresh
+      ? mergeRunDetails(snapshot, [detail], {
+          repository: detail.repository,
+          v: 1,
+          counts: {},
+          watermark: detail.seq,
+          capabilities: detail.capabilities ?? snapshot.capabilities ?? {},
+          working_branches: detail.working_branches ?? snapshot.working_branches,
+        })
+      : preferSnapshotRows(snapshot, detail)
     : snapshot;
   return {
     snapshot: view,
-    loading: !!runId && !fresh && !current?.error,
+    /** Only the first read of a run blocks its view. */
+    loading: !!runId && !detail && !current?.error,
+    refreshing: !!runId && !!detail && !fresh && !current?.error,
     error: current?.error ?? '',
   };
 }

@@ -39,6 +39,8 @@ import { ContextGraph } from './ContextGraph';
 import { GraphTools } from './GraphTools';
 import { GraphWorkspace } from './GraphWorkspace';
 
+// useState order in GraphWorkspace: its own six states, then useRunGraphPages.
+const slot = { graph: 6, runId: 7, cursor: 9, loading: 11 };
 beforeEach(() => {
   hooks.states = [];
   hooks.cursor = 0;
@@ -86,9 +88,9 @@ describe('run graph page merging', () => {
     let tree = render(view);
     for (const effect of hooks.effects.splice(0)) effect();
     await vi.waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(hooks.states[8]).toBe('cursor-1'));
-    await vi.waitFor(() => expect(hooks.states[10]).toBe(false));
-    expect(hooks.states[6]).toBe('run-1');
+    await vi.waitFor(() => expect(hooks.states[slot.cursor]).toBe('cursor-1'));
+    await vi.waitFor(() => expect(hooks.states[slot.loading]).toBe(false));
+    expect(hooks.states[slot.runId]).toBe('run-1');
     tree = render(view);
     const more = find(tree, 'button', 'Load more run context');
     expect(more).toBeDefined();
@@ -98,7 +100,7 @@ describe('run graph page merging', () => {
     expect(apiMock.mock.calls[1][0]).toContain('watermark=27');
     await vi.waitFor(() =>
       expect(
-        (hooks.states[5] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
+        (hooks.states[slot.graph] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
       ).toEqual(['intent', 'assertion-1', 'assertion-2']),
     );
 
@@ -133,8 +135,10 @@ describe('run graph page merging', () => {
     let tree = render(view);
     const firstEffects = hooks.effects.splice(0);
     const cleanupOldRun = firstEffects[1]?.() as (() => void) | undefined;
-    await vi.waitFor(() => expect((hooks.states[5] as Graph).nodes[0]?.id).toBe('run1-intent'));
-    await vi.waitFor(() => expect(hooks.states[8]).toBe('run1-next'));
+    await vi.waitFor(() =>
+      expect((hooks.states[slot.graph] as Graph).nodes[0]?.id).toBe('run1-intent'),
+    );
+    await vi.waitFor(() => expect(hooks.states[slot.cursor]).toBe('run1-next'));
 
     tree = render(view);
     hooks.effects.splice(0);
@@ -146,14 +150,49 @@ describe('run graph page merging', () => {
     cleanupOldRun?.();
     const newRunEffects = hooks.effects.splice(0);
     newRunEffects[1]?.();
-    await vi.waitFor(() => expect((hooks.states[5] as Graph).nodes[0]?.id).toBe('run2-intent'));
+    await vi.waitFor(() =>
+      expect((hooks.states[slot.graph] as Graph).nodes[0]?.id).toBe('run2-intent'),
+    );
     resolveOldPage(graphPage(['stale-run1-node'], null, false, 31));
     await vi.waitFor(() =>
       expect(
-        (hooks.states[5] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
+        (hooks.states[slot.graph] as Graph).nodes.map((item: Graph['nodes'][number]) => item.id),
       ).toEqual(['run2-intent']),
     );
     expect(renderToStaticMarkup(render(view))).toContain('run-2');
+  });
+});
+
+describe('live updates in the evidence graph', () => {
+  it('keeps the default run, its loaded graph and the graph view across a background update', async () => {
+    apiMock.mockResolvedValueOnce(graphPage(['intent', 'assertion-1'], null, false, 5));
+    let snapshot = pagedSnapshot(['run-1']);
+    const view = () => GraphWorkspace({ snapshot });
+    render(view);
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[slot.runId]).toBe('run-1'));
+    let tree = render(view);
+    find(tree, 'nav')?.props.children[1].props.onClick();
+    tree = render(view);
+    find(tree, GraphTools)?.props.onGraph(null);
+    tree = render(view);
+    const before = find(tree, ContextGraph);
+    expect(before?.props.graph.nodes.length).toBeGreaterThan(0);
+
+    // A live resync brings a newly created run and a new snapshot record.
+    snapshot = {
+      ...pagedSnapshot(['run-1', 'run-2']),
+      seq: 2,
+      nodes: [{ ...node('live-record'), kind: 'finding' }],
+    };
+    tree = render(view);
+    hooks.effects.splice(0);
+    const after = find(tree, ContextGraph);
+    expect(find(tree, 'select')?.props.value).toBe('run-1');
+    expect(after?.key).toBe(before?.key);
+    expect(after?.props.graph.nodes.length).toBe(before?.props.graph.nodes.length);
+    expect(renderToStaticMarkup(tree)).not.toContain('Loading run graph');
+    expect(apiMock).toHaveBeenCalledTimes(1);
   });
 });
 

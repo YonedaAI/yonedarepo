@@ -120,3 +120,33 @@ export function mergeRunDetails(
   }
   return next;
 }
+
+/**
+ * Overlay an older run detail beneath a newer snapshot: repository state and every row the
+ * snapshot already has stay current; the detail only fills rows the snapshot has not loaded.
+ */
+export function preferSnapshotRows(snapshot: Snapshot, detail: RunDetail): Snapshot {
+  const merged = mergeRunDetails(snapshot, [detail], {
+    repository: snapshot.repository,
+    v: 1,
+    counts: {},
+    watermark: snapshot.seq,
+    capabilities: snapshot.capabilities ?? {},
+    working_branches: snapshot.working_branches,
+  });
+  const keep = <T extends Record<string, any>>(rows: T[], current: T[]) =>
+    mergeRows(rows, current) as T[];
+  return {
+    ...merged,
+    source_preparation: snapshot.source_preparation ?? merged.source_preparation,
+    runs: keep(merged.runs, snapshot.runs),
+    executions: keep(merged.executions, snapshot.executions),
+    candidates: keep(merged.candidates, snapshot.candidates),
+    evaluations: keep(merged.evaluations, snapshot.evaluations),
+    decisions: keep(merged.decisions, snapshot.decisions),
+    artifacts: keep(merged.artifacts, snapshot.artifacts),
+    team_tasks: keep(merged.team_tasks ?? [], snapshot.team_tasks ?? []),
+    team_handoffs: keep(merged.team_handoffs ?? [], snapshot.team_handoffs ?? []),
+    nodes: keep(merged.nodes, snapshot.nodes),
+  };
+}
