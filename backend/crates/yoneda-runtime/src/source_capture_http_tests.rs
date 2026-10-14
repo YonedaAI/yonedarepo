@@ -22,6 +22,8 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     let root = root(f).await;
     let mut job = job();
     job["source_capture_ref"]["expected_head"] = json!(base);
+    // Integrator captures must attest the frozen integration input manifest digest.
+    job["payload"]["integration_digest"] = json!("integration-digest-fixture");
     let api = CaptureApi::new(&root.origin, TOKEN).unwrap();
     let client = SourceGitHttp::new(&git_server.url, None).unwrap();
     let source_origin = root.origin.clone();
@@ -63,6 +65,7 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     git_server.lose_ack.store(true, Ordering::SeqCst);
     let result = execute_with(&job, &api, &client).await.unwrap();
     assert_eq!(result["id"], "candidate:capture:1");
+    assert_eq!(result["integration_digest"], "integration-digest-fixture");
     assert_eq!(
         result["source_changeset_digest"],
         root.fixture.seal["changeset_digest"]
