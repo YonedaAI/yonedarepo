@@ -29,6 +29,7 @@ const writes = new Set([
   'create_working_branch',
   'answer_intent',
   'accept',
+  'reject_candidate',
   'cancel_run',
   'observe',
   'update_policy',

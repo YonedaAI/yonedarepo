@@ -5,6 +5,7 @@ const publicationStates: Record<string, string> = {
   publication_pending: 'Publication pending',
   publication_failed: 'Publication failed',
   publication_conflict: 'Publication conflict',
+  rejected: 'Rejected · nothing was published and canonical source is unchanged',
 };
 
 /** Show stored selection and tradeoffs even when alternative captures are no longer loaded. */
@@ -14,10 +15,13 @@ export function RecordedDecisionStory({ decision }: { decision: Record<string, a
       <strong>
         {decision.decision_kind === 'development_verification'
           ? 'Automated development selection · fixture verification'
-          : 'Owner decision'}
+          : decision.status === 'rejected'
+            ? 'Owner rejection'
+            : 'Owner decision'}
       </strong>
       <p>
-        Selected revision <code>{short(decision.target?.commit)}</code>
+        {decision.status === 'rejected' ? 'Rejected revision' : 'Selected revision'}{' '}
+        <code>{short(decision.target?.commit)}</code>
         {decision.target?.repository && (
           <>
             {' '}
@@ -40,10 +44,12 @@ export function RecordedDecisionStory({ decision }: { decision: Record<string, a
           ' · selection is recorded; publication did not complete.'}
         {decision.status === 'publication_conflict' &&
           ' · inspect the source conflict before continuing.'}
+        {decision.publication_history?.length > 0 &&
+          ` · ${decision.publication_history.length} earlier publication attempt${decision.publication_history.length === 1 ? '' : 's'} retained`}
       </p>
       {decision.error && <p role="alert">{decision.error}</p>}
-      <strong>Rejected alternatives and reasons</strong>
-      {decision.alternatives?.length ? (
+      {decision.status !== 'rejected' && <strong>Rejected alternatives and reasons</strong>}
+      {decision.status === 'rejected' ? null : decision.alternatives?.length ? (
         <ul>
           {decision.alternatives.map((alternative: Record<string, any>) => (
             <li key={alternative.candidate}>

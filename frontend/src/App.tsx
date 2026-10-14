@@ -91,6 +91,7 @@ export function App() {
             {state.snapshot && (
               <RepositoryRecovery
                 repository={state.snapshot.repository}
+                decisions={state.snapshot.decisions}
                 onChange={state.refresh}
                 onError={state.setError}
               />

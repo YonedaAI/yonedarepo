@@ -36,6 +36,7 @@ mod model_reservations;
 mod peer_messages;
 mod peers;
 mod policy;
+mod publication;
 mod recovery;
 mod repository;
 mod resources;
@@ -178,6 +179,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
+        "reject_candidate" | "recover_publication" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
         "record_transcript" => transcripts::record(db, c, now),
         "record_execution_log" => execution_logs::record(db, c, now),

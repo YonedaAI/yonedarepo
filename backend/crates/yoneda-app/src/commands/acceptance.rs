@@ -57,6 +57,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let cid = string(c, "candidate")?;
     let candidate = get(db, "candidates", &cid)?;
+    super::publication::not_rejected(&candidate)?;
     super::guided::validate_publish(db, &candidate)?;
     let working_publishable = super::branches::publishable(db, &candidate, &r)?;
     if !working_publishable
@@ -89,47 +90,15 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         &json!({"payload":{"execution":{"id":candidate["execution"]}}}),
         now,
     )?;
-    let eid = string(&candidate, "evaluation").map_err(|_| {
-        Error::new(
-            "MISSING_EVIDENCE",
-            "Candidate has not been independently evaluated",
-        )
-    })?;
-    let evaluation: yoneda_core::Evaluation =
-        serde_json::from_value(get(db, "evaluations", &eid)?).map_err(|e| bad(&e.to_string()))?;
-    let policy: yoneda_core::Policy =
-        serde_json::from_value(r["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-    let revision: yoneda_core::Revision =
-        serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_evaluation(&evaluation, &cid, &revision, &policy)?;
-    if policy
-        .build
-        .as_ref()
-        .and_then(|b| b.static_dir.as_ref())
-        .is_some()
-    {
-        let stored = get(db, "evaluations", &eid)?;
-        if stored["deployment"]["commit"] != candidate["revision"]["commit"]
-            || stored["deployment"]["digest"].as_str().is_none()
-        {
-            return Err(Error::new(
-                "CHECKS_FAILED",
-                "Static output must be recaptured before publication",
-            ));
-        }
-    }
-
-    if candidate["status"] != "eligible" {
-        return Err(Error::new(
-            "CHECKS_FAILED",
-            "Candidate is not currently eligible",
-        ));
-    }
+    let revision = current_checks(db, &candidate, &cid, &r)?;
 
     let rationale = string(c, "rationale")?;
     let did = format!("decision:{request}");
+    // A checked working head's base may be an intermediate commit; the publisher leases the
+    // canonical head observed before this selection reserves the target.
+    let lease = super::publication::canonical_lease(&r)?;
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
-    let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now});
+    let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now,"publication_expected":lease,"published_before":r["published_commit"]});
     super::comparison::decision_provenance(db, &run, &mut d)?;
     create(db, "decisions", &did, &d)?;
     super::history::link_file_provenance_to_decision(db, &d, now)?;
@@ -174,8 +143,56 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         &format!("publish:{did}"),
         "publish",
         now,
-        json!({"decision_id":did,"expected":candidate["base"],"target":candidate["revision"],"canonical":r["remote"],"execution":{"id":candidate["execution"],"run_id":candidate["run_id"]}}),
+        json!({"decision_id":did,"expected":lease,"target":candidate["revision"],"canonical":r["remote"],"execution":{"id":candidate["execution"],"run_id":candidate["run_id"]}}),
     )?;
     event(db, "decision.selected", now, receipt.clone())?;
     Ok(receipt)
+}
+
+/// The candidate's independent evaluation must still satisfy the repository's current policy.
+pub(super) fn current_checks<S: SqlStore>(
+    db: &S,
+    candidate: &Value,
+    cid: &str,
+    r: &Value,
+) -> Result<yoneda_core::Revision> {
+    super::publication::not_rejected(candidate)?;
+    let eid = string(candidate, "evaluation").map_err(|_| {
+        Error::new(
+            "MISSING_EVIDENCE",
+            "Candidate has not been independently evaluated",
+        )
+    })?;
+    let evaluation: yoneda_core::Evaluation =
+        serde_json::from_value(get(db, "evaluations", &eid)?).map_err(|e| bad(&e.to_string()))?;
+    let policy: yoneda_core::Policy =
+        serde_json::from_value(r["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
+    let revision: yoneda_core::Revision =
+        serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
+    yoneda_core::validate_evaluation(&evaluation, cid, &revision, &policy)?;
+    if policy
+        .build
+        .as_ref()
+        .and_then(|b| b.static_dir.as_ref())
+        .is_some()
+    {
+        let stored = get(db, "evaluations", &eid)?;
+        if stored["deployment"]["commit"] != candidate["revision"]["commit"]
+            || stored["deployment"]["digest"].as_str().is_none()
+        {
+            return Err(Error::new(
+                "CHECKS_FAILED",
+                "Static output must be recaptured before publication",
+            ));
+        }
+    }
+
+    if candidate["status"] != "eligible" {
+        return Err(Error::new(
+            "CHECKS_FAILED",
+            "Candidate is not currently eligible",
+        ));
+    }
+
+    Ok(revision)
 }

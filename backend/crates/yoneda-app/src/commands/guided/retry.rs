@@ -83,3 +83,45 @@ pub(super) fn advance(session: &mut Value, index: usize) -> u64 {
     saved["attempt"] = json!(next);
     next
 }
+
+/// A concurrent retry forks both variants from the checked extend revision, the saved
+/// pre-concurrency checkpoint, even when an earlier attempt advanced (or a rejected result
+/// occupies) the working head. Earlier candidates and decisions remain as history.
+pub(super) fn checkpoint<S: SqlStore>(
+    db: &S,
+    view: &Value,
+    index: usize,
+    mut branch: Value,
+    now: i64,
+) -> Result<Value> {
+    if STEPS[index] != "concurrent" {
+        return Ok(branch);
+    }
+    let previous = &view["steps"][index - 1];
+    let revision = &previous["revision"];
+    if previous["status"] != "complete" || !revision.is_object() {
+        return Err(refused("The extend checkpoint is not verified"));
+    }
+    if branch["working_revision"] == *revision {
+        return Ok(branch);
+    }
+    let from = branch["working_revision"].clone();
+    branch["working_revision"] = revision.clone();
+    branch["working_commit"] = revision["commit"].clone();
+    branch["latest_candidate_id"] = previous["candidate_id"].clone();
+    branch["version"] = json!(
+        number(&branch, "version")?
+            .checked_add(1)
+            .ok_or_else(|| bad("Branch version overflow"))?
+    );
+    branch["updated_at"] = json!(now);
+    let id = string(&branch, "id")?;
+    save(db, "working_branches", &id, &branch)?;
+    event(
+        db,
+        "working_branch.checkpoint_restored",
+        now,
+        json!({"branch_id":id,"from":from,"revision":revision,"version":branch["version"]}),
+    )?;
+    Ok(branch)
+}

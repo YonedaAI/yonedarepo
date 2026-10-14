@@ -69,6 +69,12 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
                 "concurrent" => {
                     complete = proofs::resolved(db, &ids, candidate)?;
                     evidence.push(json!({"kind":"scoped_resolution","label":"Real overlapping conflict resolved and freshly checked with both enhancements","verified":complete}));
+                    // An owner rejection keeps the result as history and reopens this step for
+                    // an explicit retry from the pre-concurrency checkpoint.
+                    if let Some(rejection) = candidate["owner_rejection"].as_object() {
+                        complete = false;
+                        evidence.push(json!({"kind":"owner_rejection","label":"Owner rejected this integrated result","verified":false,"decision_id":rejection.get("decision_id"),"reason":rejection.get("reason")}));
+                    }
                 }
                 "review" => {
                     complete = all(db, "decisions")?.iter().any(|decision| {

@@ -73,6 +73,29 @@ it('allows owner review and recovery on the legacy repository without rewriting 
   expect(await recovered.json()).toMatchObject({ status: 'ready', head_commit: 'a'.repeat(40) });
 });
 
+it('routes owner rejection and publication recovery to the real ledger with an observed remote', async () => {
+  const f = await readyReviewer();
+  const status = await ledger(bindings, f.repo, { op: 'repository_status' });
+  // A missing reason is refused by the ledger, proving the route reaches the domain rule.
+  const reject = await api(f.scoped, `/api/repos/${f.repo}/reject_candidate`, f.cookie, {
+    request_id: 'reject-absent', candidate: 'absent', expected_commit: status.head_commit,
+    expected_version: status.version, reason: '',
+  });
+  expect(reject.status).toBe(409);
+  expect((await reject.json<Json>()).error.code).toBe('INVALID_INPUT');
+  const invalid = await api(f.scoped, `/api/repos/${f.repo}/recover_publication`, f.cookie, { request_id: 'x' });
+  expect(invalid.status).toBe(400);
+  const observed: string[] = [];
+  const remote = { [Symbol.dispose]() {}, info: async () => ({ defaultBranch: 'main' }), log: async () => { observed.push('read'); return [{ hash: 'a'.repeat(40) }]; } };
+  const recoveryEnv = { ...f.scoped, ARTIFACTS: { get: async () => remote } } as unknown as typeof f.scoped;
+  const recover = await api(recoveryEnv, `/api/repos/${f.repo}/recover_publication`, f.cookie, {
+    request_id: 'recover-absent', decision_id: 'decision:absent', expected_version: status.version, observed_commit: 'f'.repeat(40),
+  });
+  expect(observed).toEqual(['read']);
+  expect(recover.status).toBe(409);
+  expect((await recover.json<Json>()).error.code).toBe('NOT_FOUND');
+});
+
 it('creates exactly one fixed two-agent $5 trial on concurrent replay and rejects another active trial', async () => {
   const f = await readyReviewer();
   expect((await api(f.scoped, '/api/reviewer/trial', f.cookie, {})).status).toBe(400);
