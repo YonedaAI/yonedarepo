@@ -3,6 +3,19 @@ use super::{SqlStore, bad, create, get, outbox};
 use serde_json::{Value, json};
 use yoneda_core::Result;
 
+/// Attribute lifecycle evidence using the saved job, independent of transport IDs.
+pub(crate) fn job_event(job: &Value) -> Value {
+    let payload = &job["payload"];
+    json!({
+        "id":job["id"], "kind":job["kind"], "epoch":job["epoch"],
+        "run_id":payload["execution"]["run_id"].as_str()
+            .or_else(|| payload["candidate"]["run_id"].as_str())
+            .or_else(|| payload["run_id"].as_str()),
+        "execution_id":payload["execution"]["id"].as_str()
+            .or_else(|| payload["candidate"]["execution"].as_str())
+    })
+}
+
 pub(crate) fn job<S: SqlStore>(
     db: &S,
     id: &str,

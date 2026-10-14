@@ -60,6 +60,8 @@ export function ExecutionHierarchy({
   const subagents = executions.filter((execution) => !!execution.parent_execution).length;
   const queued = executions.filter((execution) => execution.status === 'queued').length;
   const running = executions.filter((execution) => execution.status === 'running').length;
+  const reviewers = executions.filter((execution) => execution.comparison_role === 'reviewer');
+  const runningReviewers = reviewers.filter((execution) => execution.status === 'running').length;
   const { ordered, byId } = orderedExecutions(executions);
   return (
     <section className="execution-hierarchy" aria-labelledby="execution-hierarchy-heading">
@@ -68,7 +70,7 @@ export function ExecutionHierarchy({
           <h2 id="execution-hierarchy-heading">Agent activity</h2>
           <p>
             {run.comparison?.version === 1 ? (
-              `${roots} builders · ${executions.filter((e) => e.comparison_role === 'reviewer').length} recorded reviews`
+              `${roots} builder${roots === 1 ? '' : 's'} · ${reviewers.length} reviewer${reviewers.length === 1 ? '' : 's'}`
             ) : (
               <>
                 {roots} root agent{roots === 1 ? '' : 's'} · {subagents} subagent
@@ -79,7 +81,9 @@ export function ExecutionHierarchy({
           </p>
         </div>
         <span className="execution-capacity">
-          {running} running · {queued} queued
+          {run.comparison?.version === 1
+            ? `${running - runningReviewers} builder${running - runningReviewers === 1 ? '' : 's'} running · ${runningReviewers} reviewer${runningReviewers === 1 ? '' : 's'} running · ${queued} queued`
+            : `${running} running · ${queued} queued`}
         </span>
       </div>
       <p className="subtle">

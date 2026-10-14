@@ -95,12 +95,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 save_execution(db, &e, now)?;
                 super::team::reflect(db, &e, "running", j["epoch"].clone(), now)?;
             }
-            event(
-                db,
-                "job.started",
-                now,
-                json!({"id":id,"kind":j["kind"],"epoch":j["epoch"]}),
-            )?;
+            event(db, "job.started", now, job_event(&j))?;
             Ok(j)
         }
         "check_attempt" => {
@@ -124,12 +119,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             j["lease_until"] = json!(lease.min(number(&j, "attempt_deadline")?));
             if c.get("progress").is_some() && j["progress"] != c["progress"] {
                 j["progress"] = c["progress"].clone();
-                event(
-                    db,
-                    "job.progress",
-                    now,
-                    json!({"id":id,"epoch":j["epoch"],"progress":j["progress"]}),
-                )?;
+                let mut data = job_event(&j);
+                data["progress"] = j["progress"].clone();
+                event(db, "job.progress", now, data)?;
             }
             save(db, "jobs", &id, &j)?;
             Ok(json!({"lease_until":j["lease_until"]}))
@@ -155,12 +147,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 )?;
             }
             reflect_status(db, &j, now)?;
-            event(
-                db,
-                "job.failed",
-                now,
-                json!({"id":id,"status":j["status"],"epoch":j["epoch"],"error":c["error"]}),
-            )?;
+            let mut data = job_event(&j);
+            data["status"] = j["status"].clone();
+            data["error"] = j["error"].clone();
+            event(db, "job.failed", now, data)?;
             Ok(j)
         }
         "recover" => {
@@ -194,12 +184,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                         )?;
                     }
                     recovered += 1;
-                    event(
-                        db,
-                        "job.recovered",
-                        now,
-                        json!({"id":id,"status":j["status"],"epoch":j["epoch"]}),
-                    )?;
+                    let mut data = job_event(&j);
+                    data["status"] = j["status"].clone();
+                    event(db, "job.recovered", now, data)?;
                 }
             }
             Ok(json!({"recovered":recovered}))

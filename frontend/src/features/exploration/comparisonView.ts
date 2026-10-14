@@ -1,5 +1,6 @@
 import type { ComparisonState } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
+import { comparisonSkipNotice } from './comparisonSkipNotice';
 import { runHasActiveAttempts } from './runControlState';
 import { runWorkingBranch } from './workingBranchView';
 
@@ -15,6 +16,8 @@ export function comparisonBusy(snapshot: Snapshot, run: Record<string, any>) {
 export function comparisonPhase(snapshot: Snapshot, run: Record<string, any>) {
   if (run.status === 'cancelled') return 'Cancelled';
   const state = comparisonState(run);
+  const skip = comparisonSkipNotice(state);
+  if (skip) return skip.title;
   const labels = {
     building: 'Building',
     checking: 'Checking',

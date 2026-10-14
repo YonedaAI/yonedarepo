@@ -41,6 +41,7 @@ mod run_visibility;
 mod runs;
 mod scheduling;
 mod sites;
+mod source_capture_retry;
 mod source_refresh;
 mod source_transport;
 mod study;
@@ -93,6 +94,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         return Ok(result);
     }
     match string(&c, "op")?.as_str() {
+        "retry_capture" => source_capture_retry::handle(db, &c, now),
         "source_refresh_context" => source_refresh::context(db, &c, now),
         "source_refresh_paths" => source_refresh::paths(db, &c, now),
         "source_read_context"

@@ -10,6 +10,23 @@ it('exposes owner reads and repairs but keeps archive commits and trusted refres
   expect(repositoryOperationAllowed('DELETE', 'repair_team')).toBe(false);
 });
 
+it('allows bounded owner capture recovery while preserving guards and stripping caller authority', async () => {
+  expect(repositoryOperationAllowed('POST', 'retry_capture')).toBe(true);
+  expect(repositoryOperationAllowed('GET', 'retry_capture')).toBe(false);
+  const body = { request_id: 'one-recovery', capture_job_id: 'capture:producer',
+    expected_producer_epoch: 3, expected_registration_id: 'registered-seal',
+    expected_commit: 'a'.repeat(40), expected_version: 0,
+    expected_policy_digest: 'b'.repeat(64),
+    _workspace: 'victim', _source_signing_key: 'forged', source_registered: { forged: true },
+    job_id: 'forged', epoch: 99, actor: 'supervisor', _grant: 'forged' };
+  expect(await ownerCommandInput(new Request('https://example.com/api/repos/a/retry_capture', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+  }), 'retry_capture')).toEqual({ request_id: body.request_id, capture_job_id: body.capture_job_id,
+    expected_producer_epoch: 3, expected_registration_id: body.expected_registration_id,
+    expected_commit: body.expected_commit, expected_version: 0,
+    expected_policy_digest: body.expected_policy_digest });
+});
+
 it('strips caller authority while preserving expected revisions and owner repair intent', async () => {
   const input = await ownerCommandInput(new Request('https://example.com/api/repos/a/repair_team', {
     method: 'POST', headers: { 'content-type': 'application/json' },

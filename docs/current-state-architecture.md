@@ -1,6 +1,6 @@
 # YonedaRepo current-state architecture
 
-Source snapshot: October 12, 2026. This document describes the current code and Cloudflare
+Source snapshot: October 13, 2026. This document describes the current code and Cloudflare
 configuration. Deployment and live acceptance evidence are recorded separately in
 [UI workflow evidence](ui-workflow-evidence.md).
 
@@ -149,6 +149,13 @@ captured revision with local disposable build scratch. Sparse refresh retains bo
 parents; a resolver receives a writable conflict scope plus read-only views of both inputs.
 Human selection and publication remain separate. Existing Git-native approvals continue
 using their original transport.
+
+Capture handoffs retain the trusted producer epoch separately from the capture job epoch;
+file provenance verifies both identities. The owner can request one same-seal capture/check
+recovery for an exhausted original Compare capture under unchanged policy and branch guards.
+Recovery retains spending and the original agent assertions, creates no new builder or
+automatic-review inference, and leaves checked results for human choice. Ordinary comparison
+review also requires at least one independently eligible checked result.
 
 This is an incremental source transport alongside Git, not a distributed replacement for
 Git history. Source views are bounded to 10,000 regular files, 100 MiB total and 32 MiB per

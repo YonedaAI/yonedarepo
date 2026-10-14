@@ -5,6 +5,7 @@ import {
   type ProviderFailureCode,
   providerFailureNotice,
 } from './providerFailure';
+import { platformFailureNotice } from './workflowFailure';
 
 export function ExecutionFailure({
   repo,
@@ -21,7 +22,8 @@ export function ExecutionFailure({
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
   useEffect(() => () => request.current?.abort(), []);
-  const code = executionFailureCode(execution) ?? diagnosis;
+  const platform = platformFailureNotice(execution);
+  const code = platform ? undefined : (executionFailureCode(execution) ?? diagnosis);
   const providerIssue = code?.startsWith('PROVIDER_');
   const notice = providerFailureNotice(execution, code);
   const transcript = typeof execution.transcript === 'string' ? execution.transcript : '';
@@ -51,15 +53,15 @@ export function ExecutionFailure({
     <section className="execution-failure" aria-label="Execution failure details">
       <strong>{notice.title}</strong>
       <p>{notice.action}</p>
-      {!code && checked && (
+      {!platform && !code && checked && (
         <p>The recorded outcome does not identify a supported provider error.</p>
       )}
-      {!code && !transcript && (
+      {!platform && !code && !transcript && (
         <p>No harness transcript was recorded. View logs shows any retained execution activity.</p>
       )}
       {error && <p role="alert">{error}</p>}
       <div className="execution-failure-actions">
-        {!code && transcript && (!checked || error) && (
+        {!platform && !code && transcript && (!checked || error) && (
           <button type="button" className="quiet" disabled={loading} onClick={() => void explain()}>
             {loading ? 'Reading outcome…' : error ? 'Retry explanation' : 'Explain failure'}
           </button>
@@ -70,11 +72,15 @@ export function ExecutionFailure({
           </button>
         )}
       </div>
-      <small>
-        {providerIssue
-          ? 'Review the provider issue, then use Restart run to approve another attempt.'
-          : 'Use Restart run to review your limits and approve another attempt.'}
-      </small>
+      {!platform && (
+        <small>
+          {!code
+            ? 'Inspect the recorded failure before approving further work.'
+            : providerIssue
+              ? 'Review the provider issue, then use Restart run to approve another attempt.'
+              : 'Use Restart run to review your limits and approve another attempt.'}
+        </small>
+      )}
     </section>
   );
 }

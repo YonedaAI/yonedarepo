@@ -50,6 +50,53 @@ pub(in crate::commands) fn wake<S: SqlStore>(db: &S, rid: &str, now: i64) -> Res
         }
     }
     let manifest = manifest::current(db, &run)?;
+    let candidates = manifest["candidates"]
+        .as_array()
+        .ok_or_else(|| bad("Missing comparison candidate manifest"))?;
+    let mut has_checked_result = false;
+    for entry in candidates {
+        let candidate = get(db, "candidates", &string(entry, "candidate_id")?)?;
+        if manifest::checked(db, &run, &candidate).is_ok() {
+            has_checked_result = true;
+            break;
+        }
+    }
+    // Pending capture/evaluation and existing reviews are handled above. A new
+    // review requires independently checked source, not merely terminal jobs.
+    if !has_checked_result {
+        let reason = json!({"code":"NO_CHECKED_RESULTS","authority":"platform","message":"Review skipped — no checked results"});
+        run["comparison"]["status"] = json!("needs_attention");
+        run["comparison"]["reviewer_status"] = json!("skipped");
+        run["comparison"]["review_skip_reason"] = reason.clone();
+        run["status"] = json!("failed");
+        persist(db, &run, now)?;
+        event(
+            db,
+            "comparison.review_skipped",
+            now,
+            json!({"run_id":rid,"round":run["comparison"]["round"],"reason":reason}),
+        )?;
+        return Ok(());
+    }
+    let recovery = &run["comparison"]["verification_recovery"];
+    if recovery["version"] == 1
+        && recovery["automatic_review"] == false
+        && recovery["authority"] == "owner_verification_recovery"
+    {
+        let reason = json!({"code":"CAPTURE_RECOVERY_CHECK_ONLY","authority":"platform","message":"Checked captures are ready for human choice"});
+        run["comparison"]["status"] = json!("needs_attention");
+        run["comparison"]["reviewer_status"] = json!("skipped");
+        run["comparison"]["review_skip_reason"] = reason.clone();
+        run["status"] = json!("ready");
+        persist(db, &run, now)?;
+        event(
+            db,
+            "comparison.verification_recovery_completed",
+            now,
+            json!({"run_id":rid,"request_id":run["comparison"]["verification_recovery"]["request_id"],"automatic_review":false,"reason":reason}),
+        )?;
+        return Ok(());
+    }
     let digest = yoneda_core::fingerprint(&manifest)?;
     let round = number(&run["comparison"], "round")?;
     let id = format!("comparison-review:{rid}:r{round}:{digest}");

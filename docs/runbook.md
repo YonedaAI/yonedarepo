@@ -41,6 +41,17 @@ page or provenance record is unavailable evidence, not an empty change or a clea
 API resolver scopes exceeding the current 64-scope binding limit are rejected before an
 execution is created. Root refresh can retain larger path manifests through private pages.
 
+An exhausted source capture with an already registered immutable seal can use the owner-only
+`retry_capture` command after inspecting `job_status.source_registration`. Supply a stable
+`request_id`, the original `capture_job_id`, `expected_producer_epoch`,
+`expected_registration_id`, the current working branch `expected_commit`/`expected_version`
+and `expected_policy_digest`. The command only supports the original fixed Compare builders,
+requires idle jobs and unchanged source/policy/intent, and permits one recovery per seal.
+Recover builders sequentially: wait for capture and evaluation to finish before the next
+request. Replaying the exact request returns its receipt; changed requests are rejected.
+This does not start builders or renew inference allowances. Automatic review is disabled
+for this recovery, even after successful checks; the human chooses a checked result.
+
 The repository history interface separates compact metadata from run detail. `runs_page` returns `items`, `next_cursor` and a numeric `watermark`; continuation must preserve the opaque cursor and watermark so inserts during browsing do not cause gaps or duplicates. Pages sort newest `created_at` first, then run ID descending, with a default page size of 50 and a maximum of 200. `run_detail` is requested for one run and hydrates its executions, candidates, evaluations, decisions, team records, artifacts and lineage on demand. Metadata pages do not carry source diffs or graph nodes. These operations are deployed; keep clients on the paged contract and verify the requested repository scope when diagnosing an origin-specific failure.
 
 Terminal runs older than 30 days are eligible for archive only after the immutable archive object is uploaded and read back with its digest verified. Commit/compaction must follow that acknowledgment; replay after a lost acknowledgment must be idempotent, and a digest mismatch must leave hot records intact. Archived detail is read through the verified bundle and overlaid with current authoritative repository state. The ledger retains summaries, receipts, provenance and the archive index. Outbox payload cleanup applies only after seven days and preserves replay guards. Unknown or globally shared content-addressed objects are retained. Archive behavior is implemented and deployed, but the current isolated acceptance record does not establish a live archive/replay cycle; verify that separately before making operational retention claims.

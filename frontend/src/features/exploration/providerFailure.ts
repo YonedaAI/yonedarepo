@@ -1,4 +1,5 @@
 import { providerNames } from '../workspace/providerModels';
+import { platformFailureNotice } from './workflowFailure';
 
 export type ProviderFailureCode =
   | 'EXECUTION_TIMEOUT'
@@ -111,6 +112,8 @@ export function executionFailureCode(execution: Record<string, any>) {
 }
 
 export function providerFailureNotice(execution: Record<string, any>, code?: ProviderFailureCode) {
+  const platform = platformFailureNotice(execution);
+  if (platform) return platform;
   const provider = providerNames[execution.provider ?? execution.harness] ?? 'Agent provider';
   return code
     ? {
@@ -122,7 +125,7 @@ export function providerFailureNotice(execution: Record<string, any>, code?: Pro
             : ''),
       }
     : {
-        title: `${provider} execution failed`,
+        title: 'Run failed',
         action: 'This agent stopped before completing its approach.',
       };
 }

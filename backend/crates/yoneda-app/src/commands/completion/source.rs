@@ -36,6 +36,16 @@ pub(super) fn payload<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) 
             "Source completion differs from current approved producer seal",
         ));
     }
+    let live = get(db, "executions", &binding.execution_id)?;
+    if live["epoch"] != binding.epoch
+        || live["run_id"] != binding.run_id
+        || live["status"] != "running"
+    {
+        return Err(Error::new(
+            "FENCED",
+            "Registered source producer execution identity changed",
+        ));
+    }
     // Refresh verifies current task, policy, input and lease guards without changing cached binding.
     crate::source_binding::handle(
         db,
@@ -81,6 +91,8 @@ pub(super) fn payload<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) 
             execution.insert(key.into(), value.clone());
         }
     }
+    // Queued job payloads omit epoch; only the registered, currently leased producer supplies it.
+    execution.insert("epoch".into(), json!(binding.epoch));
     Ok(
         json!({"workspace_transport":"api-source-v1","capture_subtype":"source_changeset","execution":execution,"run_id":binding.run_id,"base":j["payload"]["execution"]["base"],"sourceCaptureBase":binding.base,"source_registered":expected,"policy":policy}),
     )

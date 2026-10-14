@@ -1,5 +1,8 @@
 import type { Snapshot } from '../../lib/types';
+import { comparisonSkipNotice } from '../exploration/comparisonSkipNotice';
+import { comparisonChoiceBlocker, comparisonState } from '../exploration/comparisonView';
 import { reviewableCandidates } from '../exploration/runReviewState';
+import { platformFailureNotice } from '../exploration/workflowFailure';
 
 /** Advisory UI from observed workflow records, never from SourceDO open/sealed state. */
 export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknown>) {
@@ -20,6 +23,18 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
       Number.isSafeInteger(marker.runtime_started_at) &&
       marker.runtime_started_at >= 0,
   );
+  const executions = snapshot.executions.filter((execution) => execution.run_id === run.id);
+  const captureFailed =
+    !snapshot.decisions.some(
+      (decision) => decision.run_id === run.id && decision.status === 'published',
+    ) &&
+    executions.some((execution) => platformFailureNotice(execution)?.title === 'Capture failed') &&
+    !executions.some(
+      (execution) =>
+        execution.role === 'coding' &&
+        ['queued', 'running', 'capturing', 'evaluating'].includes(execution.status),
+    ) &&
+    !snapshot.candidates.some((candidate) => candidate.run_id === run.id);
   const view = (stage: string, title: string, detail: string, error = false) => ({
     stage,
     title,
@@ -30,6 +45,13 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
   });
   if (run.status === 'cancelled')
     return view('cancelled', 'Run cancelled', 'Recorded source and checks remain available.');
+  if (captureFailed && !pending.length)
+    return view(
+      'capture_failed',
+      'Capture failed',
+      'Agent work stopped during platform source capture. No checked result was produced. Inspect Agent activity; any separately recorded reviewer activity remains visible there.',
+      true,
+    );
   if (run.status === 'failed')
     return view(
       'failed',
@@ -53,6 +75,16 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
       `${pending.length} source preparation${pending.length === 1 ? ' is' : 's are'} pending.${failed.length ? ` ${failed.length} preparation${failed.length === 1 ? ' has' : 's have'} stopped; inspect Agent activity.` : ''} Other agents or checks may already be working. Refresh run status to see progress.`,
       failed.length > 0,
     );
+  if (run.status === 'ready')
+    if (
+      comparisonSkipNotice(comparisonState(run))?.code === 'CAPTURE_RECOVERY_CHECK_ONLY' &&
+      snapshot.candidates.some((candidate) => !comparisonChoiceBlocker(snapshot, run, candidate))
+    )
+      return view(
+        'choice',
+        'Ready for human choice',
+        'Saved source passed the current checks. Automatic review was skipped for this recovery. Inspect the exact evidence and choose a checked result; publication still requires your decision.',
+      );
   if (run.status === 'ready')
     return reviewableCandidates(snapshot, run).length
       ? view(

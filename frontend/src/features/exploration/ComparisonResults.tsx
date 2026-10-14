@@ -6,6 +6,7 @@ import { CandidateCard } from './CandidateCard';
 import { ComparisonAssessment } from './ComparisonAssessment';
 import { ComparisonChoiceDialog } from './ComparisonChoiceDialog';
 import { createComparisonMutation } from './comparisonMutation';
+import { comparisonSkipNotice } from './comparisonSkipNotice';
 import {
   comparisonBusy,
   comparisonChoiceBlocker,
@@ -46,6 +47,8 @@ export function ComparisonResults({
     new Map<ComparisonOwnerOperation, ReturnType<typeof createComparisonMutation>>(),
   );
   const comparison = comparisonState(run);
+  const skip = comparisonSkipNotice(comparison);
+  const skipped = !!skip;
   const builderCandidates = latestBuilderCandidates(snapshot, run);
   const candidates = comparison?.approval
     ? builderCandidates
@@ -120,7 +123,7 @@ export function ComparisonResults({
             setChoice(candidate.id);
           }}
         >
-          {comparison?.approval ? 'Use other result' : 'Use this result'}
+          {comparison?.approval && selected ? 'Use other result' : 'Use this result'}
         </button>
         {blocker && <p className="selection-blocker">{blocker}</p>}
       </div>
@@ -168,7 +171,7 @@ export function ComparisonResults({
           yourself{reviewCompatible ? ' or approve a review.' : '.'}
         </p>
       )}
-      {comparison?.status === 'needs_attention' && run.status !== 'cancelled' && (
+      {comparison?.status === 'needs_attention' && !skipped && run.status !== 'cancelled' && (
         <p role="alert">
           Automatic review stopped without a new winner. Inspect the checks and recorded reasons;
           eligible results can still be chosen manually.
@@ -219,7 +222,13 @@ export function ComparisonResults({
           ))}
       </div>
       {!candidates.length && (
-        <p role="status">No captured alternatives yet. Follow their progress in Agent activity.</p>
+        <p role="status">
+          {skip?.code === 'CAPTURE_RECOVERY_CHECK_ONLY'
+            ? 'Checked captures are recorded. Refresh status to load their source and check evidence.'
+            : skipped
+              ? 'No checked alternative was produced. Recorded failures remain in Agent activity.'
+              : 'No captured alternatives yet. Follow their progress in Agent activity.'}
+        </p>
       )}
       {reviewing && (
         <LegacyReviewApproval
@@ -235,7 +244,7 @@ export function ComparisonResults({
       {choosing && (
         <ComparisonChoiceDialog
           candidate={choosing}
-          reviewed={!!comparison?.latest_review}
+          reviewed={!!selected && !!comparison?.latest_review}
           busy={busy || acting}
           uncertain={chooseController?.uncertain ?? false}
           blocker={comparisonChoiceBlocker(snapshot, run, choosing)}

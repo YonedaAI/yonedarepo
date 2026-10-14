@@ -4,6 +4,9 @@ use crate::source_workspace;
 use yoneda_core::source_workspace::{SourceRevision, SourceView};
 pub(super) const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 pub(super) fn registered(db: &crate::native::NativeStore) -> Value {
+    registered_at(db, 1, 1000, false)
+}
+fn registered_at(db: &crate::native::NativeStore, epoch: i64, now: i64, changed: bool) -> Value {
     let base = SourceRevision {
         repository: "test/source".into(),
         commit: "a".repeat(40),
@@ -14,25 +17,32 @@ pub(super) fn registered(db: &crate::native::NativeStore) -> Value {
         base,
         files: vec![],
     };
-    let bound=f::call(db,json!({"op":"source_bind","job_id":"job:execution","epoch":1,"_source_view":view,"_supervisor":true,"_source_signing_key":KEY}),1000).unwrap();
+    let bound=f::call(db,json!({"op":"source_bind","job_id":"job:execution","epoch":epoch,"_source_view":view,"_supervisor":true,"_source_signing_key":KEY}),now).unwrap();
     let source = crate::native::NativeStore::memory().unwrap();
     let actor = bound["actor_grant"].clone();
     let call = |mut c: Value| {
-        c["now"] = json!(1000);
+        c["now"] = json!(now);
         c["_source_signing_key"] = json!(KEY);
         c["_actor"] = actor.clone();
         source_workspace::execute_source_workspace(&source, c)
     };
     call(json!({"op":"source_init","request_id":"init","binding":bound["binding"],"view":view,"baseline_overrides":[]})).unwrap();
+    if changed {
+        let sha = yoneda_core::digest(b"captured source");
+        let ticket=call(json!({"op":"source_upload_ticket","request_id":"upload","path":"file.txt","sha256":sha,"size":15,"mode":"100644","expected_workspace_version":0,"expected_file_version":0})).unwrap();
+        call(json!({"op":"source_verify_upload","request_id":"verify","ticket_id":ticket["ticket"]["id"],"sha256":sha,"size":15})).unwrap();
+        call(json!({"op":"source_create","request_id":"create","path":"file.txt","ticket_id":ticket["ticket"]["id"],"expected_workspace_version":0,"expected_file_version":0})).unwrap();
+    }
+    let version = i64::from(changed);
     let checkpoint = call(
-        json!({"op":"source_checkpoint","request_id":"checkpoint","expected_workspace_version":0}),
+        json!({"op":"source_checkpoint","request_id":"checkpoint","expected_workspace_version":version}),
     )
     .unwrap();
-    let seal=call(json!({"op":"source_seal","request_id":"seal","expected_workspace_version":0,"checkpoint_id":checkpoint["checkpoint_id"],"expected_checkpoint_digest":checkpoint["changeset_digest"]})).unwrap();
-    f::call(db,json!({"op":"source_register_changeset","job_id":"job:execution","epoch":1,"request_id":"register","view_digest":bound["binding"]["view_digest"],"_source_seal":seal,"_source_signing_key":KEY}),1000).unwrap()
+    let seal=call(json!({"op":"source_seal","request_id":"seal","expected_workspace_version":version,"checkpoint_id":checkpoint["checkpoint_id"],"expected_checkpoint_digest":checkpoint["changeset_digest"]})).unwrap();
+    f::call(db,json!({"op":"source_register_changeset","job_id":"job:execution","epoch":epoch,"request_id":"register","view_digest":bound["binding"]["view_digest"],"_source_seal":seal,"_source_signing_key":KEY}),now).unwrap()
 }
 pub(super) fn pointer(r: &Value) -> Value {
-    json!({"producer_job_id":"job:execution","producer_epoch":1,"registration_id":r["registration_id"],"changeset_digest":r["changeset_digest"]})
+    json!({"producer_job_id":"job:execution","producer_epoch":r["binding"]["epoch"],"registration_id":r["registration_id"],"changeset_digest":r["changeset_digest"]})
 }
 #[test]
 fn api_agent_completion_uses_registered_seal_compact_refs_and_rejects_forged_pointer() {
@@ -176,4 +186,68 @@ fn api_resolver_completion_retains_source_changeset_and_resolution_route() {
         get(&db, "conflicts", "conflict").unwrap()["status"],
         "evaluating"
     );
+}
+
+#[test]
+fn deferred_epoch_three_registered_source_finishes_capture_with_real_file_provenance() {
+    let db = f::fixture();
+    f::call(&db, json!({"op":"claim","job_id":"job:execution"}), 1000).unwrap();
+    f::call(
+        &db,
+        json!({"op":"defer_job","job_id":"job:execution","epoch":1,"reason":"source_preparing"}),
+        1000,
+    )
+    .unwrap();
+    let producer = f::call(&db, json!({"op":"claim","job_id":"job:execution"}), 6000).unwrap();
+    assert_eq!(producer["epoch"], 3);
+    assert!(
+        producer["payload"]["execution"].get("epoch").is_none(),
+        "queued payload must remain epoch-free like hosted claims"
+    );
+    let registration = registered_at(&db, 3, 6000, true);
+    let mut live = get(&db, "executions", "execution").unwrap();
+    live["epoch"] = json!(2);
+    save_execution(&db, &live, 6000).unwrap();
+    let completion = json!({"op":"finish","job_id":"job:execution","epoch":3,"result":{"source_verified":true,"source_registered":pointer(&registration)}});
+    assert_eq!(
+        f::call(&db, completion.clone(), 6000).unwrap_err().code,
+        "FENCED"
+    );
+    assert!(get(&db, "jobs", "capture:execution").is_err());
+    live["epoch"] = json!(3);
+    save_execution(&db, &live, 6000).unwrap();
+
+    f::call(&db,json!({"op":"finish","job_id":"job:execution","epoch":3,"result":{"source_verified":true,"source_registered":pointer(&registration),"execution_epoch":999}}),6000).unwrap();
+    let capture = f::call(
+        &db,
+        json!({"op":"claim","job_id":"capture:execution"}),
+        6000,
+    )
+    .unwrap();
+    let b = &registration["binding"];
+    let lineage = json!({"version":1,"authority":"registered_source_changeset","workspace_id":b["workspace_id"],"registration_id":registration["registration_id"],"producer_job_id":"job:execution","producer_epoch":3,"seal_id":registration["seal_id"],"checkpoint_id":registration["checkpoint_id"],"changeset_digest":registration["changeset_digest"],"view_digest":b["view_digest"],"baseline_overrides_digest":b["baseline_overrides_digest"]});
+    let result = json!({"id":"epoch-three","revision":{"repository":"test/captured","commit":"c".repeat(40)},"tree":"d".repeat(40),"parents":b["parents"],"paths":["file.txt"],"summary":"Actual registered change","source_verified":true,"source_lineage":lineage,"source_changeset_digest":registration["changeset_digest"],"source_manifest_digest":registration["changeset_digest"],"file_provenance":[{"path":"file.txt","change":"add","old_blob":null,"new_blob":"e".repeat(40)}]});
+    f::call(
+        &db,
+        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":result}),
+        6000,
+    )
+    .unwrap();
+    assert_eq!(capture["payload"]["execution"]["epoch"], 3);
+    let receipt = get(&db, "nodes", "file-receipt:epoch-three:0").unwrap();
+    assert_eq!(receipt["data"]["execution_epoch"], 3);
+    assert_eq!(receipt["data"]["capture_epoch"], 1);
+    assert_eq!(
+        get(&db, "candidates", "epoch-three").unwrap()["source_lineage"],
+        lineage
+    );
+    assert_eq!(
+        get(&db, "jobs", "evaluate:epoch-three").unwrap()["status"],
+        "queued"
+    );
+    assert_eq!(
+        get(&db, "jobs", "job:execution").unwrap()["source_registered"]["registration"],
+        registration
+    );
+    assert_eq!(get(&db, "runs", "run").unwrap()["model_requests"], 0);
 }
