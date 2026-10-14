@@ -4,7 +4,7 @@ import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { createGuidedStepStart, readGuidedSession } from './guidedClient';
 import { guidedStartJournal } from './guidedStartJournal';
-import { guidedStepInput } from './guidedStepInput';
+import { guidedRetryInput, guidedStepInput } from './guidedStepInput';
 export function useGuidedSession(
   snapshot: Snapshot,
   sessionId: string,
@@ -16,7 +16,7 @@ export function useGuidedSession(
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(true);
-  const starts = useRef(new Map<GuidedStepId, ReturnType<typeof createGuidedStepStart>>());
+  const starts = useRef(new Map<string, ReturnType<typeof createGuidedStepStart>>());
   const active = useRef(true),
     read = useRef<AbortController | undefined>(undefined);
   /** `superseded` means a newer read (e.g. the running-step poll) replaced this one. */
@@ -60,30 +60,28 @@ export function useGuidedSession(
     const timer = setInterval(() => void refresh(), 5000);
     return () => clearInterval(timer);
   }, [session, refresh]);
-  const start = async (stepId: GuidedStepId) => {
-    const step = session?.steps.find((item) => item.id === stepId);
-    if (
-      busy ||
-      !session ||
-      session.next_step !== stepId ||
-      step?.status !== 'ready' ||
-      !step.next_action ||
-      session.steps.some((item) => item.status === 'running')
-    )
-      return;
+  /** One frozen request per first start, and per retry of each failed attempt. */
+  const submit = async (stepId: GuidedStepId, retryFrom?: number) => {
+    if (!session) return;
     setBusy(true);
     setError('');
     try {
-      let controller = starts.current.get(stepId);
+      const key = retryFrom === undefined ? stepId : `${stepId}:retry-${retryFrom}`;
+      let controller = starts.current.get(key);
       if (!controller) {
         controller = createGuidedStepStart(
           repo,
           api,
-          guidedStartJournal(repo, session.session_id, stepId, window.sessionStorage),
+          guidedStartJournal(repo, session.session_id, stepId, window.sessionStorage, retryFrom),
+          retryFrom,
         );
-        starts.current.set(stepId, controller);
+        starts.current.set(key, controller);
       }
-      const result = await controller.start(guidedStepInput(session, stepId, snapshot.repository));
+      const result = await controller.start(
+        retryFrom === undefined
+          ? guidedStepInput(session, stepId, snapshot.repository)
+          : guidedRetryInput(session, stepId, snapshot.repository),
+      );
       if (!active.current) return;
       setSession(result);
       onSession(result.session_id);
@@ -97,5 +95,23 @@ export function useGuidedSession(
       if (active.current) setBusy(false);
     }
   };
-  return { session, error, busy, loading, refresh, start };
+  const start = async (stepId: GuidedStepId) => {
+    const step = session?.steps.find((item) => item.id === stepId);
+    if (
+      busy ||
+      !session ||
+      session.next_step !== stepId ||
+      step?.status !== 'ready' ||
+      !step.next_action ||
+      session.steps.some((item) => item.status === 'running')
+    )
+      return;
+    await submit(stepId);
+  };
+  const retry = async (stepId: GuidedStepId) => {
+    const step = session?.steps.find((item) => item.id === stepId);
+    if (busy || !session || step?.status !== 'needs_attention') return;
+    await submit(stepId, step.attempt ?? 1);
+  };
+  return { session, error, busy, loading, refresh, start, retry };
 }
