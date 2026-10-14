@@ -51,7 +51,7 @@ it('an older ledger cannot expose a session or receive a start until the guided 
 
 it('fresh concurrent start prepares both approvals only after Native requests the exact trusted run count', async () => {
   const f = await fixture('concurrent');
-  const session = { session_id: f.body.session_id, steps: [], working_version: 0 };
+  const session = { session_id: f.body.session_id, version: 1, steps: [], working_version: 0 };
   const runs = [{ id: 'filter' }, { id: 'sort' }];
   call.mockResolvedValueOnce(f.repository)
     .mockRejectedValueOnce(Object.assign(new Error('Guided step needs its exact trusted run count'), { code: 'INVALID_INPUT' }))
@@ -60,6 +60,18 @@ it('fresh concurrent start prepares both approvals only after Native requests th
   await guidedRoute(f.request(), env, owner, 'fresh', 'start_guided_step');
   expect(prepare).toHaveBeenCalledExactlyOnceWith(env, owner, 'fresh', session, 'concurrent', f.body.expected_commit, 0, 1);
   expect(call.mock.calls[3][2]).toMatchObject({ ...f.body, _guided_runs: runs });
+});
+
+it('a session whose version differs from the project marker never reaches preparation', async () => {
+  const f = await fixture('extend');
+  const repository = { ...f.repository, guided_project: { ...f.repository.guided_project, version: 2 } };
+  call.mockResolvedValueOnce(repository)
+    .mockRejectedValueOnce(Object.assign(new Error('Guided step needs its exact trusted run count'), { code: 'INVALID_INPUT' }))
+    .mockResolvedValueOnce({ session_id: f.body.session_id, version: 1, steps: [], working_version: 0 });
+  await expect(guidedRoute(f.request(), env, owner, 'fresh', 'start_guided_step'))
+    .rejects.toMatchObject({ code: 'GUIDED_VERSION_MISMATCH' });
+  expect(prepare).not.toHaveBeenCalled();
+  expect(call).toHaveBeenCalledTimes(3);
 });
 
 it('Native stale/failure errors never trigger a new approval', async () => {
@@ -84,7 +96,7 @@ it('session GET is read-only and browser authority fields cannot reach a start',
 it('retry passes the next attempt to preparation and the flag to both native calls', async () => {
   const f = await fixture();
   const body = { ...f.body, request_id: 'retry-build', retry: true };
-  const session = { session_id: f.body.session_id, working_version: 0,
+  const session = { session_id: f.body.session_id, version: 1, working_version: 0,
     steps: [{ id: 'build', status: 'needs_attention', attempt: 2, run_ids: ['old-r2'] }] };
   call.mockResolvedValueOnce(f.repository)
     .mockRejectedValueOnce(Object.assign(new Error('Guided step needs its exact trusted run count'), { code: 'INVALID_INPUT' }))

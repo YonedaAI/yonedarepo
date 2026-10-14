@@ -45,7 +45,7 @@ pub(super) fn make(session: &Value, step: &str, ordinal: usize) -> Result<Value>
         "concurrent" => "parallel",
         _ => return Err(bad("Review creates no coding job")),
     };
-    let mut binding = json!({"session_id":session["session_id"],"profile_id":PROFILE,"version":1,"step_id":step,"check_phase":phase});
+    let mut binding = json!({"session_id":session["session_id"],"profile_id":PROFILE,"version":session["version"],"step_id":step,"check_phase":phase});
     if step == "concurrent" {
         binding["variant"] = json!(match ordinal {
             0 => "filter",
@@ -137,7 +137,7 @@ pub(crate) fn validate_report(job: &Value, report: &Value) -> Result<()> {
             .as_str()
             .is_none_or(|id| !id.starts_with("guide-session:"))
         || guide["profile_id"] != PROFILE
-        || guide["version"] != 1
+        || !yoneda_core::guided::supported_version(&guide["version"])
         || !matches!(
             (guide["step_id"].as_str(), phase),
             (Some("build"), Some("build"))

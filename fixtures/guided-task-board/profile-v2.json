@@ -1,0 +1,13 @@
+{
+  "id": "task-board-v1",
+  "version": 2,
+  "starter": "fixtures/guided-task-board/source",
+  "source_paths": ["README.md", "public/app.mjs", "public/index.html", "public/style.css", "public/tasks.mjs"],
+  "briefs": "fixtures/guided-task-board/briefs/v2.json",
+  "phases": ["build", "extend", "parallel", "final"],
+  "parallel_variants": ["filter", "sort"],
+  "trusted_environment": {"phase": "GUIDED_CHECK_PHASE", "variant": "GUIDED_CHECK_VARIANT"},
+  "candidate_module": "public/tasks.mjs",
+  "publication": "Human decision only; this acceptance driver never publishes",
+  "experiment": "Same bare starter and immutable oracle as version 1; only the brief asks for a finished app with its own tests"
+}
