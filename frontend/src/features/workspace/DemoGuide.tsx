@@ -1,77 +1,62 @@
-import { X } from 'lucide-react';
-
-export function DemoGuide({ onClose }: { onClose: () => void }) {
+// The surrounding dialog supplies the title and close control.
+export function DemoGuide(_props: { onClose: () => void }) {
   return (
-    <section className="demo-guide" aria-labelledby="demo-guide-title">
-      <div className="demo-guide-heading">
-        <h2 id="demo-guide-title">Review a run from intent to publication</h2>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="Close demo guide"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </button>
-      </div>
-      <p>
-        Choose an available repository and browse its recorded work. Reading evidence starts no
-        agent runs.
+    <section className="demo-guide" aria-label="How YonedaRepo works">
+      <p className="demo-guide-lede">
+        YonedaRepo is an agent-first repository. Agents <strong>fetch</strong> only what they need,{' '}
+        <strong>coordinate</strong> their changes through one shared ledger, and{' '}
+        <strong>preserve</strong> the context behind every decision. You decide what ships.
       </p>
+      <h3>Try it in four steps</h3>
       <ol>
         <li>
-          <strong>Find the review that needs attention.</strong> Open Runs. Choose the run in
-          history and read its status. A checked result awaits a separate shipping decision.
+          <strong>Build together.</strong> Open <em>Guided demo</em> and start the first step. Two
+          agents work in parallel from a shared contract; their work is captured and independently
+          checked.
         </li>
         <li>
-          <strong>Inspect the exact result.</strong> In Results, open Review changes and Check
-          details. Compare approaches when multiple results exist. A preview shows the checked
-          candidate; it does not confirm publication.
+          <strong>Continue from context.</strong> A new run opens the earlier design decision and
+          builds on it instead of starting cold.
         </li>
         <li>
-          <strong>Read the evidence trail.</strong> Open Evidence trail, or use Read this run’s
-          evidence trail in Context usage. Follow intent, agent contributions and captured handoffs,
-          captured revisions, independent checks, decision rationale and reasons for rejecting
-          alternatives, then publication status. Explore graph is available for relationships; it
-          starts with a bounded run neighborhood.
+          <strong>Reconcile changes.</strong> Two runs edit the same code. A coordinator reconciles
+          them, then fresh checks run.
         </li>
         <li>
-          <strong>Understand agent progress.</strong> Agent activity includes the recorded event
-          timeline with elapsed times, task handoffs and execution logs. Run details contains the
-          brief, recorded decision and controls. Cancel run asks you to confirm before stopping
-          work.
-        </li>
-        <li>
-          <strong>Handle changed source.</strong> A stale result cannot be selected. Repair on
-          current revision opens a new run using the previous brief and current source. Review
-          settings and approve fresh work; the earlier capture is retained.
+          <strong>Review and publish.</strong> See what changed, why, and which checks passed.
+          Nothing ships until you publish.
         </li>
       </ol>
+      <h3>Where to look</h3>
+      <ul>
+        <li>
+          <strong>Runs</strong> — each run's result, status and agent activity.
+        </li>
+        <li>
+          <strong>Evidence trail</strong> — intent, agent claims, checks and decisions, linked to
+          exact revisions.
+        </li>
+        <li>
+          <strong>Source history</strong> — why each file changed.
+        </li>
+      </ul>
       <details>
-        <summary>Start new work or make a shipping decision</summary>
+        <summary>Start your own run</summary>
         <p>
-          Choose Start a Run and describe what to build, a feature to add, or a bug to fix. Start
-          with Auto, or choose agent models and roles. YonedaRepo plans and coordinates the team
-          within your workspace allowance. Starting the run uses model inference; opening the form
-          or choosing a sample does not.
-        </p>
-        <p>
-          Review result or Review approach opens the shipping decision. Record why you chose it and
-          why you rejected alternatives, then Record decision and publish. Selection and publication
-          stay separate until canonical Git verification finishes.
+          Choose <em>Start a Run</em> and describe an app, a feature or a bug fix. YonedaRepo plans
+          the team and works within your workspace allowance. Opening the form or a sample brief
+          costs nothing; starting the run uses model inference.
         </p>
       </details>
       <details>
-        <summary>Connect agents</summary>
+        <summary>Connect your own agents</summary>
         <p>
-          Connect Agents in the sidebar offers hosted model providers and your own MCP-compatible
-          agents, including Claude Code and Codex. Hosted connections work across your workspace.
-          Your own agent gets a key scoped to the repository you choose.
+          <em>Connect Agents</em> adds hosted model providers, or gives your own MCP-compatible
+          agent (such as Claude Code or Codex) a key scoped to one repository.
         </p>
       </details>
-      <p>
-        Older runs, failures and simulated observations remain evidence. Read their labels and
-        recorded status; they do not establish a new successful publication.
+      <p className="demo-guide-note">
+        Agent statements are claims until captured and checked. Reading evidence never starts work.
       </p>
     </section>
   );
