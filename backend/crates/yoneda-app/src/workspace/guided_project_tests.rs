@@ -65,6 +65,20 @@ fn guided_project_invalid_starter_identity_is_rejected_before_reservation() {
 }
 
 #[test]
+fn guided_project_marker_records_a_supported_starter_version_only() {
+    let (db, request) = fixture();
+    for version in [json!(0), json!(3), json!("2"), Value::Null] {
+        let mut invalid = request.clone();
+        invalid["_guided_project"]["version"] = version.clone();
+        assert!(call(&db, invalid).is_err(), "accepted version {version}");
+    }
+    let mut current = request;
+    current["_guided_project"]["version"] = json!(2);
+    let project = call(&db, current).unwrap();
+    assert_eq!(project["guided_project"]["version"], 2);
+}
+
+#[test]
 fn guided_project_capability_read_is_pure_and_claim_lifecycle_retains_marker() {
     let (db, request) = fixture();
     let before = db

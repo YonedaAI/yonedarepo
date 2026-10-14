@@ -2,6 +2,7 @@ import {
   type GuidedSession,
   guidedProfileId,
   guidedSteps,
+  isGuidedProfileVersion,
   type StartGuidedStep,
 } from '../../../../shared/guided-runs';
 import { ApiError, api } from '../../lib/api';
@@ -16,7 +17,7 @@ export function readGuidedSession(value: unknown, expectedId?: string): GuidedSe
   if (
     !record(value) ||
     value.profile_id !== guidedProfileId ||
-    value.version !== 1 ||
+    !isGuidedProfileVersion(value.version) ||
     typeof value.session_id !== 'string' ||
     !value.session_id ||
     (expectedId && value.session_id !== expectedId) ||

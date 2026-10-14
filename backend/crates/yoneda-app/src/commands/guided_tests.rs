@@ -254,6 +254,8 @@ fn guided_concurrent_starts_exact_two_frozen_variants_and_rolls_back_second_fail
 mod retry;
 #[path = "guided_stale_tests.rs"]
 mod stale;
+#[path = "guided_version_tests.rs"]
+mod version;
 
 #[test]
 fn guided_initial_lease_uses_current_canonical_version_before_branch_exists() {

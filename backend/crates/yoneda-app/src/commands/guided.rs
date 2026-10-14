@@ -32,7 +32,7 @@ pub(crate) fn validate_publish<S: SqlStore>(db: &S, candidate: &Value) -> Result
     }
     Ok(())
 }
-const PROFILE: &str = "task-board-v1";
+const PROFILE: &str = yoneda_core::guided::PROFILE_ID;
 const STEPS: [&str; 4] = ["build", "extend", "concurrent", "review"];
 pub(super) fn guard(c: &Value) -> Result<()> {
     if !["guided_session", "start_guided_step", "context_get"]
@@ -78,15 +78,38 @@ fn identity(c: &Value) -> Result<String> {
     }) || c.get("id").is_some_and(|other| other != id)
         || c.get("profile_id")
             .is_some_and(|profile| profile != PROFILE)
-        || c.get("version").is_some_and(|version| version != 1)
+        || c.get("version")
+            .is_some_and(|version| !yoneda_core::guided::supported_version(version))
     {
         return Err(bad("Invalid guided session/profile identity"));
     }
     Ok(id.into())
 }
+fn mismatch() -> Error {
+    Error::new(
+        "GUIDED_VERSION_MISMATCH",
+        "Guided session differs from the project's starter version",
+    )
+}
+/// The profile version the repository was created with. Guided repositories without a
+/// project marker predate versioning and are version 1.
+fn repository_version(r: &Value) -> Result<Value> {
+    let version = match &r["guided_project"] {
+        Value::Null => json!(1),
+        marker => marker["version"].clone(),
+    };
+    if !yoneda_core::guided::supported_version(&version) {
+        return Err(mismatch());
+    }
+    Ok(version)
+}
+/// A session keeps the version, briefs and proofs of the project it was created for.
 fn load<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
     match get(db, "nodes", id) {
         Ok(node) if node["kind"] == "guided_session" && node["author"] == "platform" => {
+            if node["data"]["version"] != repository_version(&repo(db)?)? {
+                return Err(mismatch());
+            }
             Ok(node["data"].clone())
         }
         Ok(_) => Err(Error::new(
@@ -96,7 +119,7 @@ fn load<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
         Err(e) if e.code == "NOT_FOUND" => {
             let r = repo(db)?;
             Ok(
-                json!({"session_id":id,"profile_id":PROFILE,"version":1,"policy_digest":yoneda_core::fingerprint(&r["policy"])? ,"root_commit":r["published_commit"],"root_version":r["version"],"working_branch_id":format!("guide-{}",&yoneda_core::digest(id.as_bytes())[..24]),"steps":STEPS.iter().map(|id|json!({"id":id,"run_ids":[]})).collect::<Vec<_>>(),"requests":{}}),
+                json!({"session_id":id,"profile_id":PROFILE,"version":repository_version(&r)?,"policy_digest":yoneda_core::fingerprint(&r["policy"])? ,"root_commit":r["published_commit"],"root_version":r["version"],"working_branch_id":format!("guide-{}",&yoneda_core::digest(id.as_bytes())[..24]),"steps":STEPS.iter().map(|id|json!({"id":id,"run_ids":[]})).collect::<Vec<_>>(),"requests":{}}),
             )
         }
         Err(e) => Err(e),
@@ -117,6 +140,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     owner(c)?;
     let id = identity(c)?;
     let session = load(db, &id)?;
+    if c.get("version")
+        .is_some_and(|version| *version != session["version"])
+    {
+        return Err(mismatch());
+    }
     match string(c, "op")?.as_str() {
         "guided_session" => evidence::view(db, &session),
         "start_guided_step" => start::execute(db, c, session, now),

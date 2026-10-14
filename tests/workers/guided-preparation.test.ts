@@ -1,6 +1,6 @@
 // Adapter preparation only. Provider execution and overlap are separate live evidence.
 import { afterEach, expect, it, vi } from 'vitest';
-import type { GuidedSession } from '../../shared/guided-runs';
+import { type GuidedSession, guidedIntents } from '../../shared/guided-runs';
 import { resolveAdaptiveApproval } from '../../cloudflare/worker/adaptive-approval';
 import { prepareGuidedRuns } from '../../cloudflare/worker/guided-preparation';
 import type { Env, Json } from '../../cloudflare/worker/types';
@@ -64,6 +64,32 @@ it('continuation opens prior context without restating the earlier design choice
   expect(run.intent).toContain('context_publish');
   expect(run.intent).not.toMatch(/stable|assigned once|replac.*IDs/i);
   expect(run.criteria.join(' ')).not.toMatch(/stable task identity/i);
+});
+
+it('version 1 sessions keep their original briefs and planner wording', async () => {
+  normalApproval();
+  const [build] = await prepareGuidedRuns({} as Env, principal, 'fresh', session, 'build', 'a'.repeat(40), 0);
+  expect(build.intent.startsWith(`${guidedIntents(1).build} Publish the stable-identity`)).toBe(true);
+  expect(build.intent).toContain('Plan two independent specialist scopes');
+});
+
+it('version 2 sessions use the version 2 briefs at every step', async () => {
+  normalApproval();
+  const [build] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'build', 'a'.repeat(40), 0);
+  expect(build.intent.startsWith(`${guidedIntents(2).build} Publish the stable-identity`)).toBe(true);
+  const [extend] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'extend', 'a'.repeat(40), 3);
+  expect(extend.intent.startsWith(guidedIntents(2).extend)).toBe(true);
+  expect(extend.intent).not.toMatch(/stable|assigned once|replac.*IDs/i);
+  const runs = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'concurrent', 'a'.repeat(40), 3);
+  expect(runs.map((run, index) => run.intent.startsWith(guidedIntents(2).concurrent[index])))
+    .toEqual([true, true]);
+});
+
+it('an unknown session version fails before provider approval', async () => {
+  const forged = { ...session, version: 3 } as unknown as GuidedSession;
+  await expect(prepareGuidedRuns({} as Env, principal, 'fresh', forged, 'build', 'a'.repeat(40), 0))
+    .rejects.toMatchObject({ code: 'GUIDED_VERSION_MISMATCH' });
+  expect(approve).not.toHaveBeenCalled();
 });
 
 it('fresh continuation with a stale working lease fails before provider approval', async () => {

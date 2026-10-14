@@ -121,6 +121,6 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
         Err(e) => return Err(e),
     };
     Ok(
-        json!({"session_id":session["session_id"],"profile_id":PROFILE,"version":1,"working_branch_id":session["working_branch_id"],"working_revision":revision,"working_version":version,"steps":steps,"next_step":next}),
+        json!({"session_id":session["session_id"],"profile_id":PROFILE,"version":session["version"],"working_branch_id":session["working_branch_id"],"working_revision":revision,"working_version":version,"steps":steps,"next_step":next}),
     )
 }

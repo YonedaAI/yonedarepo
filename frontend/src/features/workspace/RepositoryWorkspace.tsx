@@ -1,6 +1,10 @@
 import { ArrowLeft, GitBranch, GitCompareArrows, LoaderCircle, Network } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { GuidedSession, GuidedStepId } from '../../../../shared/guided-runs';
+import {
+  type GuidedSession,
+  type GuidedStepId,
+  isGuidedProfileVersion,
+} from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
 import type { Graph, Snapshot } from '../../lib/types';
 import { Exploration } from '../exploration/Exploration';
@@ -39,7 +43,7 @@ export function RepositoryWorkspace({
 }) {
   const nativeGuide =
     snapshot.repository.guided_project?.profile_id === 'task-board-v1' &&
-    snapshot.repository.guided_project.version === 1;
+    isGuidedProfileVersion(snapshot.repository.guided_project.version);
   const guideSession = guidedSessionId ?? (nativeGuide ? '' : undefined);
   const [view, setView] = useState(guideSession === undefined ? 'runs' : 'guided');
   const [guideState, setGuideState] = useState<GuidedSession>();
@@ -53,7 +57,8 @@ export function RepositoryWorkspace({
       return;
     }
     const bound = snapshot.runs.find(
-      (run) => run.guided?.version === 1 && run.guided?.profile_id === 'task-board-v1',
+      (run) =>
+        isGuidedProfileVersion(run.guided?.version) && run.guided?.profile_id === 'task-board-v1',
     );
     if (typeof bound?.guided?.session_id === 'string')
       onGuidedSession(snapshot.repository.id, bound.guided.session_id);

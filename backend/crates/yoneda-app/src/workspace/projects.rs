@@ -115,8 +115,8 @@ fn guided_project(c: &Value) -> Result<Value> {
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         })
     };
-    if value["profile_id"] != "task-board-v1"
-        || value["version"] != 1
+    if value["profile_id"] != yoneda_core::guided::PROFILE_ID
+        || !yoneda_core::guided::supported_version(&value["version"])
         || !oid(&value["starter"]["commit"])
         || !oid(&value["starter"]["tree"])
         || value["starter"]["repository"].as_str().is_none_or(|s| {
@@ -146,7 +146,7 @@ fn guided_project(c: &Value) -> Result<Value> {
                     .any(|b| b <= b' ' || b == 127 || b"~^:?*[\\".contains(&b))
         })
         || value["policy_digest"] != yoneda_core::fingerprint(&c["policy"])?
-        || c["policy"]["version"] != "task-board-v1"
+        || c["policy"]["version"] != yoneda_core::guided::PROFILE_ID
         || value["test_bundle_digest"] != c["policy"]["build"]["test_bundle"]["digest"]
         || value["test_bundle_digest"]
             .as_str()
