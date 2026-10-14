@@ -1,6 +1,6 @@
 # YonedaRepo current-state architecture
 
-Source snapshot: October 13, 2026. This document describes the current code and Cloudflare
+Source snapshot: October 14, 2026 (implementation `fa07681`). This document describes the current code and Cloudflare
 configuration. Deployment and live acceptance evidence are recorded separately in
 [UI workflow evidence](ui-workflow-evidence.md).
 
@@ -66,13 +66,15 @@ flowchart TD
     Worker --> Workspace["Workspace DO: accounts, connections, access"]
     Worker --> Repo["Repository DO: authoritative state and graph"]
     Worker --> Live["Live DO: WebSocket notifications"]
+    Worker --> Source["Source DO: per-attempt lazy source views"]
+    Source --> R2
     Workspace --> Setup["Background project setup via agent queue"]
     Setup --> Artifacts
     Setup --> Repo
     Setup --> Workspace
 
     Repo --> Outbox["Transactional outbox and recovery alarms"]
-    Outbox --> Queues["Agent, capture, evaluate and publish queues"]
+    Outbox --> Queues["Agent, capture, evaluate and publish queues; DLQ"]
     Outbox --> D1["D1: repository discovery index"]
     Outbox --> Live
 
@@ -96,23 +98,28 @@ flowchart TD
     AppState --> Loader
 ```
 
-The platform Worker serves the browser assets and handles `/api`, `/mcp` and `/git`. The sites
-Worker serves published static output on a separate origin and reads the verified site pointer
-through an internal service binding.
+The platform Worker (`yonedarepo-dev`, served at `yonedarepo.com` and `www.yonedarepo.com`)
+serves the browser assets and handles `/api`, `/mcp`, `/git` and the scoped source APIs. Its
+`SELF` service binding calls back into the same Worker and its `APPS` binding reaches the Apps
+Worker. The Sites Worker (`yonedarepo-sites-dev`) serves published static output on its own
+`workers.dev` origin and reads the verified site pointer through a `PLATFORM` service binding.
+The Apps Worker (`yonedarepo-apps-dev`) serves checked apps on `apps.yonedarepo.com` and
+`*.yonedarepo.com`, also through a `PLATFORM` binding.
 
 | Component | Current role |
 |---|---|
 | Workspace DO (`WorkspaceAuthority`) | Accounts, hashed sessions, recovery, encrypted provider connections, access grants, project setup leases/stages, durable dispatch intent and workspace allowances. |
 | Repository DO (`RepositoryAuthority`) | Runs, executions, jobs, graph nodes/edges, evaluations, decisions, logical HEAD and publication state. SQLite is authoritative. |
+| Source DO (`SourceWorkspaceAuthority`) | One Rust SQLite authority per approved lazy-source attempt and immutable view: metadata, uploads, compare-and-swap file mutations with per-file receipts, checkpoints and seals. |
 | Live DO (`LiveRoom`) | Hibernating WebSocket connections and payload-free refresh signals. Clients reauthenticate when fetching data. |
 | Execution DO (`ExecutionContainer`) | Stores one attempt's scope and manages its container, watchdog, startup and cancellation. This adapter uses the TypeScript Container SDK. |
-| Queues | Separate dispatch queues for agent, capture, evaluate and publish work, with a dead-letter queue. Project provisioning also uses the agent queue and does not start a model or container. |
+| Queues | Separate dispatch queues for agent, capture, evaluate and publish work. The agent queue also carries `provision` (project setup) and `source_index` (lazy-source indexing) jobs; neither starts a model or container. All four consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
 | Containers | Run the native Rust supervisor and agent CLIs. Coding, capture, evaluation and publication run with separate capabilities. The current configuration allows 16 instances. |
 | Artifacts | Canonical Git repositories and isolated candidate forks. |
 | R2 | Immutable context objects, workspace snapshots, transcripts, verification evidence and static asset manifests. |
 | D1 | Rebuildable repository discovery projection. It does not authorize selection or publication. |
-| Sites Worker | Serves checked static assets after verified canonical publication. |
-| Apps Worker | Authorizes exact checked previews or the canonical published app through a platform service binding. Each app gets a distinct host; platform cookies are stripped. |
+| Sites Worker | `yonedarepo-sites-dev` on `workers.dev`. Serves checked static assets after verified canonical publication. |
+| Apps Worker | `yonedarepo-apps-dev` on `apps.yonedarepo.com` and `*.yonedarepo.com`. Authorizes exact checked previews or the canonical published app through a platform service binding. Each app gets a distinct host; platform cookies are stripped. |
 | Worker Loader and AppRunner | Load the checked JS/TS application bundle with outbound network disabled and a managed SQLite capability. Preview and published data are separate. Additive schema migration preserves application data across revisions. |
 | Observability | Structured operational Worker/container logs. Safe owner-visible execution timelines also persist in Repository DO SQLite. |
 
@@ -266,7 +273,8 @@ OpenAI/Codex, Anthropic/Claude, MiMo, ZAI and Gemini. Harnesses are Codex, Claud
 CLI; a provider's protocol selects the compatible harness and egress adapter.
 
 Personal provider keys are encrypted for their workspace. Operator keys use Cloudflare Secrets
-Store bindings. The Worker resolves and injects credentials into allowlisted upstream requests;
+Store bindings for Codex, Claude, MiMo and ZAI. Gemini is registered as a provider but has no
+operator key bound; Gemini runs need a personal key. The Worker resolves and injects credentials into allowlisted upstream requests;
 agent processes do not receive the provider keys. Saved connections determine billing route,
 model and region. Request and dollar caps are optional for new runs; execution duration,
 response bounds, provider quotas and the Claude workspace allowance still apply.

@@ -1,22 +1,36 @@
-# YonedaRepo
+# YonedaRepo — Agent-First Repository
 
-A Git and Context Graph platform for agent-built applications. Agents plan complementary work, exchange contracts, repair integration and continue from checked development revisions. Humans review the working result, independent checks and the reasons behind it before canonical publication.
+An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.
 
-[Try the development platform](https://yonedarepo.com/) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/) · [Video and submission](docs/submission.md) · [Verified release evidence](docs/release-evidence.md)
+[Try it at yonedarepo.com](https://yonedarepo.com/) · [Submission and verification](docs/submission.md) · [Architecture](docs/current-state-architecture.md) · [Release evidence](docs/release-evidence.md) · [Published agent-built website](https://yonedarepo-sites-dev.mlong-f01.workers.dev/p/yoneda-garden-live/)
 
-**Reviewers:** open the hosted platform and choose **Have a reviewer access key?** Use the privately supplied key; no signup or provider-key setup is needed. Open the latest checked result, or from this checkout run:
+## Try it
+
+1. Open [yonedarepo.com](https://yonedarepo.com/). Choose **Have a reviewer access key?** and enter the privately supplied key, or sign up with a username/password and connect your own provider key. Reviewers need no signup or provider key.
+2. Start the **guided task-board demo**. It walks one fresh project through four stages: build together → continue from context → reconcile concurrent changes → review and publish.
+3. Or choose **Start a Run** and describe an app, feature or bug fix. Leave the first agent on **Auto**; YonedaRepo plans the team, coordinates it and returns one checked result for review.
+4. Publication is always a separate human decision.
+
+Read-only CLI (Node 24, no dependencies, starts no inference):
 
 ```sh
-node tools/reviewer.mjs
+node tools/reviewer.mjs --checked
 ```
 
-The command prompts for the key without echoing it and opens recorded checked work. It never starts inference by default. Node 24 is sufficient; no dependencies or local deployment are needed. A private file is supported: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`.
+It prompts for the key without echoing it and opens the latest independently checked result. A private file is supported: `node tools/reviewer.mjs --key-file /path/to/access.json --checked --no-open`. After the workspace switches to shared accounting, `--new` and `--resume` open the ordinary workspace for browser approval.
 
-The reviewer uses the ordinary workspace with preconfigured model connections. Choose **Start a Run**, describe a change, and leave the first agent on **Auto**. Add model/role preferences if useful; YonedaRepo plans the actual team. Optional samples prepare briefs for coordinated work, prior-context continuation or existing conflict resolution. Selecting a sample starts no work and is not evidence that the requested behavior occurred. New work shares a configurable $50 conservative workspace allowance with retained spending; provider charges may differ. Billing comes later. Canonical publication remains a separate human decision.
+Reviewer work draws on a configurable shared workspace allowance (currently $100), counted conservatively with retained spending; provider charges may differ. Optional sample briefs only prefill a form: selecting one starts no work and is not evidence that the requested behavior occurred.
 
-After the workspace switches to shared accounting, `--new` and `--resume` open the ordinary workspace for browser approval. Historical campaign approvals, counters and receipts remain unchanged; old fixed-trial endpoints do not renew them.
+## What it does
 
-Recorded maintenance acceptance includes the bug fix on `53033856`, continuing from the earlier GLM/Codex build on `4c330e0`. Six protected tests passed after an automatic repair. The fresh Git-native Compare acceptance produced two alternatives with eight protected checks each and a separate reviewer that recorded its choice. Human override and restoration preserved that explanation and left canonical source unchanged. Those earlier test repositories were removed at the owner's request; saved providers and existing spending were retained. Current source-transport verification fixtures and their failures are recorded separately in [release evidence](docs/release-evidence.md).
+- **Fetch only what you need.** Each agent receives a frozen, bounded packet of prior context and either an isolated Git fork or a lazy, server-side source view that loads files on demand without a clone.
+- **Coordinate changes.** One transactional ledger per repository holds the planned task graph, durable peer messages and working branches that advance only when the expected version still matches. Stale or conflicting results wake a coordinator that reconciles them and obtains fresh checks.
+- **Preserve context.** Intent, agent claims, independent checks and human decisions are linked to exact revisions in a typed graph. The next run inherits that history.
+- **Agent claims are not authority.** Trusted capture builds fresh Git objects, a clean evaluator checks that exact revision against a protected test bundle, and a human decides what ships. Git remains the canonical, compatible history.
+
+Verification history and dated test counts live in [release evidence](docs/release-evidence.md) and the [implementation ledger](docs/progress.md).
+
+## Product details
 
 Sign up with a username/password, save the recovery code, connect your own provider key, add a repository and approve a brief. Hosted agents use your paid provider account. Choose **Connect Agents** in the sidebar to connect a hosted model provider or your own MCP/Git agent, wherever it runs. The public Garden website is viewable without an account.
 
@@ -41,23 +55,7 @@ Later runs start from the current working branch or published source and retain 
 
 Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare hosts the Worker, Durable Objects, Queues, R2, D1, Containers and Artifacts. React 19 and React Flow provide the browser. A small TypeScript adapter connects SDK capabilities absent from workers-rs.
 
-### Current source wave and deployment status
-
-The deployed automatic Compare review wave passed the complete local gate: 449 Rust, 425 platform workerd, 16 app workerd, 207 frontend and 43 Node tests, including the actual Wasm build. R9 passed 91 Linux runtime tests. Its hosted acceptance covered both checked alternatives, automatic review, human override and restoration without publication. Deployment and dated acceptance are recorded separately in [release evidence](docs/release-evidence.md). The video predates this comparison workflow. New source-transport development is not covered by these deployed results.
-
-The October 13 simplified-workflow source passed the complete `cargo xtask check` gate: 387 Rust tests (278 app, 18 core, 75 runtime, 1 Cloudflare, 15 xtask), 387 platform Workers tests, 16 isolated-app workerd tests, 160 frontend tests and 27 Node runtime/reviewer tests. The R5 image passed 81 Linux runtime tests. Local browser checks covered the real components with simulated authenticated responses at 1280px, 390px and 320px, including fresh Connect Agents navigation, provider setup, repository-scoped agent access, sample drafts and zero inference on opening forms. The provider-default follow-up passed 161 frontend tests, production build and adapter checks. The current-policy reviewer CLI follow-up passed 36 Node runtime/reviewer tests and selected the latest exact checked revision live without inference. The ordinary workflow is deployed at [yonedarepo.com](https://yonedarepo.com) on implementation `a598b5e`, with R5 application version 29 and zero rollout failures/errors. Live Chrome verified the sidebar and fresh hosted setup without starting inference. Live funded results and unfamiliar-human rehearsal remain separate acceptance boundaries.
-
-The October 12 autonomous-app implementation and follow-up safeguards passed `cargo xtask check`: 359 Rust tests (251 app, 18 core, 74 runtime, 1 Cloudflare, 15 xtask), 327 platform Workers tests, 16 isolated-app workerd tests, 113 frontend tests and 15 reviewer Node tests. The separate stage-scoped study tools passed 29 Node tests. The R4 Linux runtime passed 80 tests and is pinned at `sha256:bd773a85f434e0d43727c2b6cf7db72a38e6db478e595fb034091450a48db713`; rollout acceptance is recorded separately. The platform and separate Apps Worker are deployed; current image rollout, fresh paid build/feature/bug outcomes and the corrected context study are recorded separately in [release evidence](docs/release-evidence.md). Local checks and provisioning receipts do not prove an agent-built app outcome or human acceptance.
-
 The source includes Git-native workspaces, paged history, active-work limits, frozen prior context, guarded checked working branches, peer conversations, bounded agent-defined plan amendments and repairs, protected evaluation bundles and file-level provenance. The app profile serves JS/TS UI/API/SQLite on isolated hosts through Worker Loader and AppRunner DOs. See [the current architecture](docs/current-state-architecture.md) and [campaign contract](docs/campaign-contract.md).
-
-The following paragraph records the earlier static-site baseline; its revision, run, deployment and video are historical evidence:
-
-`cargo xtask check` passed on source revision `a581aaf` (`a581aaf82a8253943c90b5cfd2d71382f6b7ea22`): 284 Rust tests (186 app, 16 core, 66 runtime, 1 Cloudflare and 15 xtask), 290 Workers tests across 59 files, 67 frontend tests across 15 files, and 11 Node tests. The deployed production Worker is version `b4ffc0b4-e801-4271-b119-1d32db58ecd3`, running `a581aaf`. The rolled-out Linux runtime-25 image has seven healthy instances, zero starting, zero failed and no errors; it passed 72 Linux tests at `sha256:04f2029c3d331e7d33bf5f41d9cdc7ee80e4d497905ae79bcb1d92f3251c2f87`, and passed the offline Gemini/Rust MCP smoke test.
-
-The candidate-source view for `f5527348509497e87c5942e9fb4fd5094df02d8a` was verified against the owner API and current files. Historical paid run `reviewer-a4ec7f83-c0c5-486e-8760-62a677edcbd4` retains seven provenance receipts and five passing checks on runtime 24 (`sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6`), but its captured history is summary/stat-only; no full patch was stored. No additional paid run is planned. The code now stores bounded full Git-native capture patches (`7d8ccd5`) and the review UI honestly separates the historical summary from **View captured source** via the existing candidate-source API. Candidate identity guards protect the view; source selection supports up to 500 files/8 MiB, with inline preview capped at 256 KiB per selected file.
-
-The repaired preview was checked in the browser: Keyboard activation of English “Clear search” restored results from zero to four, and switching to Spanish showed “Borrar búsqueda”. The submission source is packaged as a public export. Verify its originating implementation revision in [`PUBLIC_SOURCE.md`](https://github.com/MagnetonIO/yonedarepo/blob/main/PUBLIC_SOURCE.md) and the corresponding result in [GitHub Actions](https://github.com/MagnetonIO/yonedarepo/actions). Workflow `38088529282` for earlier source `e884a546` is a dated baseline; final-export CI acceptance is reported separately after publication. The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captions, rendered and uploaded. Normal-speed playback of the prior render reached the end; all 12 scenes and 48 captions were reviewed, and revised chapter 6 was reviewed with the honest history summary, exact captured-source view, and four captions. The final re-render passed ffmpeg decode. This edited video is not a continuous recording of a current full run. Human reviewer rehearsal remains pending after the final handoff; the key sheet is prepared. The owner has not selected or published candidate `f5527348509497e87c5942e9fb4fd5094df02d8a`. No additional paid run or broad throughput/semantic-merge claim is implied.
 
 ## Get running
 
@@ -154,7 +152,7 @@ cargo xtask seed-template --url http://localhost:8787
 
 Local DO/D1/R2 state is isolated under `.local/deploy/my-yoneda/state`; the local sites origin is `http://localhost:8788`. Local authentication/vault variables are private and separate from deployed credentials. Artifacts still uses your remote namespace and Cloudflare authentication. `cargo xtask check` works without provider keys or remote inference.
 
-Use low cost MiMo/ZAI models for testing. Codex defaults to `gpt-5.6-luna`, Claude to `claude-sonnet-5-5` under the durable $20 workspace allowance, and Gemini to `gemini-3.8-flash`. These are recorded model choices; no more expensive fallback is selected silently. Gemini's CLI/proxy path has local integration coverage; paid Gemini completion must be verified with a funded user key.
+Use low cost MiMo/ZAI models for testing. Codex defaults to `gpt-5.6-luna`, Claude to `claude-sonnet-5-5`, and Gemini to `gemini-3.8-flash`. These are recorded model choices; no more expensive fallback is selected silently. New runs draw on the shared workspace allowance, which defaults to $50 for a new workspace and can be changed through the admin allowance API. Gemini's CLI/proxy path has local integration coverage; paid Gemini completion must be verified with a funded user key.
 
 To connect a local agent instead, use **Connect local agent** and follow the scoped MCP/Git instructions shown there and in [the MCP guide](docs/remote-mcp.md). After publication, **Source history** traces the exact revision to its intent, alternatives and decision. **Context graph** is the browsable memory; future agents retrieve it through MCP.
 
