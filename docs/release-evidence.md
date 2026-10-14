@@ -1,12 +1,16 @@
-# Product MVP release evidence — October 8–13, 2026
+# Product MVP release evidence — October 8–14, 2026
 
 ## Repository speed, MiMo and clearer actions — October 14, 2026
 
-Repository setup starts through `waitUntil` after its durable queue dispatch is confirmed, retaining the existing native lease and alarm recovery. Explicit pending fork/import responses use native-controlled 2s, 5s and then 15s retries. Both background and queue paths consume the same receipt; duplicate deliveries cannot bypass the lease or backoff. A hosted baseline took 13.40s to observed readiness, including 6.04s before the first provisioning claim; that sample had no pending fork. A postdeployment timing comparison remains a separate measurement.
+R14 implementation `1e38d5338459285e70e78f742b652eed69bab291` is deployed at `yonedarepo.com` through Worker `510b363c-8053-4f7a-9ee4-cefb4ba7cdc0`; production health returned that exact implementation revision. The runtime image remains the separately verified R12 image, and new experimental source-transport approvals remain disabled.
+
+Repository setup starts through `waitUntil` after its durable queue dispatch is confirmed, retaining the existing native lease and alarm recovery. Explicit pending fork/import responses use native-controlled 2s, 5s and then 15s retries. Both background and queue paths consume the same receipt; duplicate deliveries cannot bypass the lease or backoff. A hosted baseline took 13.40s to observed readiness, including 6.04s before the first provisioning claim. One R14 sample took 7.19s, including 557ms before the first claim; overview and run-list requests took 435ms and 436ms. Neither sample encountered a pending fork, so they do not verify that live retry path or establish general latency. The measurement created no run and made no model call, deleted only its own disposable repository, confirmed HTTP 410 and restored the original inventory. Concurrent wallet changes were observed and are not attributed to this no-model measurement.
 
 Repository switching renders the requested/latest run before other active-run detail requests finish, and cancels obsolete GETs on navigation, deletion, logout and unmount. Mutations retain their acknowledgment protocol. A served controlled fixture rendered the primary detail in 172ms while another detail was delayed 4.5s; this is a controlled UI result, not production latency.
 
 MiMo 2.6 Flash/Pro now have published conservative pricing metadata required by the executable model picker. The narrow admin-only managed-key operation adds their connections to an existing reviewer without reprovisioning the account, changing funding or replacing existing versions. Token Plan routing requires an explicit region. No MiMo inference is started by configuration. Main context-history text now describes received, opened and cited records, and action styling distinguishes primary, secondary, disabled and destructive controls. Served desktop/mobile checks covered keyboard focus, overflow and published-versus-working copy. These changes use focused checks and builds; the last full gate is the separately recorded R13 gate below.
+
+Hosted managed-key configuration returned HTTP 200 and added Flash/Pro API-credit connections at version 1. Existing connections and the workspace cap were unchanged; no inference or account-key replacement occurred. Final focused checks passed 27 workerd tests across five files and 26 frontend tests across six files, plus TypeScript, Biome, Rust formatting and actual Wasm/frontend builds. These are targeted R14 results, not a new complete-gate count.
 
 ## API source transport — local verification, October 13, 2026
 
