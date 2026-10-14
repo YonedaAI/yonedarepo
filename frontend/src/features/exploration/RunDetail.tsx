@@ -97,7 +97,9 @@ export function RunDetail({
   const candidates: Record<string, any>[] = runCandidates(snapshot, run).map((candidate) => ({
     ...candidate,
     strategy: team
-      ? 'Integrated team result'
+      ? candidate.conflict_id
+        ? 'Reconciled team result'
+        : 'Integrated team result'
       : (snapshot.executions.find((execution) => execution.id === candidate.execution)?.strategy ??
         candidate.summary),
   }));
