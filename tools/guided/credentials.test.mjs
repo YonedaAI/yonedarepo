@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, writeFileSync, chmodSync, symlinkSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, chmodSync, symlinkSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { privateFile, safeOrigin } from './credentials.mjs';
 import { parseArgs } from '../guided-acceptance.mjs';
-import { briefs, guidedBriefs, guidedPolicy, protectedBundle } from './profile.mjs';
+import { briefs, guidedBriefs, guidedPolicy, protectedBundle, root } from './profile.mjs';
 import {
   guidedBuildIntent,
   guidedExtendIntent,
@@ -119,7 +119,7 @@ test('version 2 briefs are short plain prompts that keep only what the checks ne
   assert.match(v2.concurrent[1].intent, /options\.sort set to title-asc or title-desc/);
 });
 
-test('version 1 keeps its published bundle while version 2 adds its own briefs over the same oracle', () => {
+test('version 1 keeps its published bundle while version 2 adds its own briefs and current oracle', () => {
   assert.equal(
     protectedBundle(1).digest,
     'c7c3237e3ef948795dffefabc9596eacfcbb8a37761892f172741d6d145f16e7',
@@ -128,10 +128,17 @@ test('version 1 keeps its published bundle while version 2 adds its own briefs o
   const v2 = protectedBundle(2).files;
   assert.ok(Object.hasOwn(v2, 'fixtures/guided-task-board/briefs/v2.json'));
   assert.ok(!Object.hasOwn(v2, 'fixtures/guided-task-board/briefs/v1.json'));
-  for (const file of ['run.mjs', 'check.mjs', 'observe.mjs']) {
+  // v1 serves its frozen copy; v2 serves the current oracle at the same evaluator path.
+  for (const file of ['run.mjs', 'observe.mjs']) {
     const path = `fixtures/guided-task-board/oracle/${file}`;
     assert.deepEqual(v2[path], v1[path]);
   }
+  const check = 'fixtures/guided-task-board/oracle/check.mjs';
+  assert.equal(v2[check].content, readFileSync(resolve(root, check), 'utf8'));
+  assert.equal(
+    v1[check].content,
+    readFileSync(resolve(root, 'fixtures/guided-task-board/oracle-v1/check.mjs'), 'utf8'),
+  );
   assert.notEqual(protectedBundle(2).digest, protectedBundle(1).digest);
   assert.equal(guidedPolicy(2).build.test_bundle.digest, protectedBundle(2).digest);
   assert.throws(() => protectedBundle(3));

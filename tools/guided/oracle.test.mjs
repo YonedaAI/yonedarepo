@@ -143,3 +143,25 @@ test('UI wiring accepts the root-relative module path the starter itself uses', 
   assert.equal(wiring('./lib/tasks.mjs'), 'fail');
   assert.equal(wiring('https://example.com/tasks.mjs'), 'fail');
 });
+
+test('UI wiring accepts any same-directory spelling of the app module script', () => {
+  const page = (script) =>
+    control(baseline, (directory) => {
+      writeFileSync(
+        resolve(directory, 'public/index.html'),
+        `<!doctype html><html lang="en"><head><meta name="viewport" content="width=device-width"><title>T</title></head><body>${script}</body></html>`,
+      );
+      writeFileSync(
+        resolve(directory, 'public/app.mjs'),
+        `import {addTask,completeTask,visibleTasks} from './tasks.mjs';\naddTask([],'a','1');completeTask([],'1');visibleTasks([]);`,
+      );
+      return checkTaskBoard(directory, 'build').checks.find((c) => c.name === 'ui_module_wiring')
+        .status;
+    });
+  assert.equal(page('<script type="module" src="./app.mjs"></script>'), 'pass');
+  assert.equal(page('<script type="module" src="/app.mjs"></script>'), 'pass');
+  assert.equal(page('<script type="module" src="app.mjs"></script>'), 'pass');
+  assert.equal(page('<script src="./app.mjs" type="module"></script>'), 'pass');
+  assert.equal(page('<script src="./app.mjs"></script>'), 'fail');
+  assert.equal(page('<script type="module" src="./lib/app.mjs"></script>'), 'fail');
+});
