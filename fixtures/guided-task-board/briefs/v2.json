@@ -1,0 +1,16 @@
+{
+  "profile_id": "task-board-v1",
+  "version": 2,
+  "build": "Build a simple, polished task board website: add, complete, delete and search tasks, with three sample tasks, clean responsive cards and dark mode. Put the task logic in public/tasks.mjs as addTask(tasks,title,id), completeTask(tasks,id) and visibleTasks(tasks,options) using {id,title,completed}, where options.query searches titles case-insensitively; keep each task's id stable, and note why. Save tasks in localStorage when the browser allows it and keep working in memory when it is blocked.",
+  "extend": "Add bookmark links to the task board so each task can be shared and opened directly, with the linked task highlighted. In public/tasks.mjs, add taskLink(task) returning a #task= URL fragment and resolveTaskLink(tasks,fragment) returning the matching task or null. Keep everything that already works, and check the earlier design note before you start.",
+  "concurrent": [
+    {
+      "variant": "filter",
+      "intent": "Add a status filter to the task board so people can show all, active or completed tasks. Support it in public/tasks.mjs through visibleTasks(tasks,options) with options.status set to all, active or completed, and keep search working. Someone else is adding title sorting at the same time, so if your changes overlap, keep both features working."
+    },
+    {
+      "variant": "sort",
+      "intent": "Add title sorting to the task board so people can sort tasks A to Z or Z to A. Support it in public/tasks.mjs through visibleTasks(tasks,options) with options.sort set to title-asc or title-desc, keep the original order when no sort is chosen, and keep search working. Someone else is adding a status filter at the same time, so if your changes overlap, keep both features working."
+    }
+  ]
+}

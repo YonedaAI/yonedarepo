@@ -1,10 +1,9 @@
 import {
   type GuidedSession,
   type GuidedStepId,
-  guidedBuildIntent,
-  guidedConcurrentIntents,
-  guidedExtendIntent,
+  guidedIntents,
   guidedRunId,
+  isGuidedProfileVersion,
 } from '../../shared/guided-runs';
 import { guidedFixedPlan, guidedModelMix, guidedPlanVersion } from './guided-plan';
 import { guidedFailure } from './guided-profile';
@@ -27,12 +26,16 @@ export async function prepareGuidedRuns(
   attempt = 1,
 ): Promise<Json[]> {
   if (step === 'review') return [];
+  // Each session keeps the briefs of the version its project was created with.
+  if (!isGuidedProfileVersion(session.version))
+    throw guidedFailure('GUIDED_VERSION_MISMATCH', 'Unknown guided profile version.');
+  const briefs = guidedIntents(session.version);
   const intents =
     step === 'build'
-      ? [guidedBuildIntent]
+      ? [briefs.build]
       : step === 'extend'
-        ? [guidedExtendIntent]
-        : [...guidedConcurrentIntents];
+        ? [briefs.extend]
+        : [...briefs.concurrent];
   const prefix = (await sha(session.session_id)).slice(0, 24);
   const approvals: Json[] = [];
   const contextInstructions =

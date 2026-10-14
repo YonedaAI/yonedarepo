@@ -1,4 +1,4 @@
-import { guidedProfileId } from '../../../../shared/guided-runs';
+import { guidedProfileId, isGuidedProfileVersion } from '../../../../shared/guided-runs';
 import type { Snapshot } from '../../lib/types';
 /** Presentation only. Native publication independently validates the full resolved guide chain. */
 export function guidedPublicationBlocker(
@@ -7,7 +7,8 @@ export function guidedPublicationBlocker(
   candidate?: Record<string, any>,
 ) {
   const guide = run.guided;
-  if (!guide || guide.profile_id !== guidedProfileId || guide.version !== 1) return;
+  if (!guide || guide.profile_id !== guidedProfileId || !isGuidedProfileVersion(guide.version))
+    return;
   if (guide.step_id !== 'concurrent')
     return 'Continue the guided demo before publishing this stage.';
   const session = snapshot.guided_session;

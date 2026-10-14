@@ -19,9 +19,9 @@ pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> 
             "test_bundle_digest",
         ]
         .contains(&key.as_str())
-    }) || marker["profile_id"] != "task-board-v1"
-        || marker["version"] != 1
-        || repository["policy"]["version"] != "task-board-v1"
+    }) || marker["profile_id"] != yoneda_core::guided::PROFILE_ID
+        || !yoneda_core::guided::supported_version(&marker["version"])
+        || repository["policy"]["version"] != yoneda_core::guided::PROFILE_ID
         || marker["policy_digest"] != yoneda_core::fingerprint(&repository["policy"])?
         || marker["test_bundle_digest"] != repository["policy"]["build"]["test_bundle"]["digest"]
         || marker["starter"]["commit"] != repository["published_commit"]
@@ -83,6 +83,15 @@ mod tests {
     }
 
     #[test]
+    fn records_the_version_two_starter_marker() {
+        let db = NativeStore::memory().unwrap();
+        let mut command = command();
+        command["_guided_project"]["version"] = json!(2);
+        execute(&db, command).unwrap();
+        assert_eq!(repo(&db).unwrap()["guided_project"]["version"], 2);
+    }
+
+    #[test]
     fn altered_source_and_checks_leave_no_repository_or_project_authority() {
         for (path, value) in [
             ("/policy_digest", json!("e".repeat(64))),
@@ -90,6 +99,8 @@ mod tests {
             ("/starter/commit", json!("c".repeat(40))),
             ("/starter/repository", json!("other/starter")),
             ("/starter/branch", json!("changed")),
+            ("/version", json!(3)),
+            ("/version", json!("2")),
         ] {
             let db = NativeStore::memory().unwrap();
             let mut command = command();

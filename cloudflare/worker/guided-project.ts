@@ -1,4 +1,4 @@
-import { guidedProfileId, guidedProfileVersion } from '../../shared/guided-runs';
+import { guidedProfileId, isGuidedProfileVersion } from '../../shared/guided-runs';
 import { type GuidedEnv, guidedFailure, publishedGuidedProfile } from './guided-profile';
 import { setupCode } from './project-remote';
 import { sourceFingerprint } from './source-crypto';
@@ -9,7 +9,7 @@ import { workspace } from './workspace';
 export function isGuidedProject(value: Json | undefined): boolean {
   return (
     value?.profile_id === guidedProfileId &&
-    value.version === guidedProfileVersion &&
+    isGuidedProfileVersion(value.version) &&
     typeof value.policy_digest === 'string' &&
     /^[a-f0-9]{64}$/.test(value.policy_digest) &&
     typeof value.test_bundle_digest === 'string' &&
