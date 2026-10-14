@@ -5,7 +5,7 @@ pub(super) fn register<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     let digest = string(c, "view_digest")?;
     let entry = &job["source_bindings"][&digest];
     let binding: SourceBinding = decode(&entry["binding"])?;
-    validate_guard(&binding, entry, &ctx)?;
+    validate_guard(db, &binding, entry, &ctx)?;
     validate_head(db, &binding)?;
     let seal = &c["_source_seal"];
     let proof: SealAttestation = decode(&seal["attestation"])?;
