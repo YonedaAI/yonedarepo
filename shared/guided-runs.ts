@@ -112,7 +112,7 @@ export const guidedConcurrentIntents = [
 /** Version 2: one short plain prompt per step; the starter and the oracle are the same as version 1. */
 export const guidedIntentsV2 = {
   build:
-    "Build a simple, polished task board website: add, complete, delete and search tasks, with three sample tasks, clean responsive cards and dark mode. Put the task logic in public/tasks.mjs as addTask(tasks,title,id), completeTask(tasks,id) and visibleTasks(tasks,options) using {id,title,completed}, where options.query searches titles case-insensitively; keep each task's id stable, and note why. Save tasks in localStorage when the browser allows it and keep working in memory when it is blocked.",
+    "Build a simple, polished task board website: add, complete, delete and search tasks, with three sample tasks, clean responsive cards and dark mode. Put the task logic in public/tasks.mjs as addTask(tasks,title,id), completeTask(tasks,id) and visibleTasks(tasks,options) using {id,title,completed}, where options.query searches titles case-insensitively; keep each task's id stable, and record that decision with your reason so later agents can build on it. Save tasks in localStorage when the browser allows it and keep working in memory when it is blocked.",
   extend:
     'Add bookmark links to the task board so each task can be shared and opened directly, with the linked task highlighted. In public/tasks.mjs, add taskLink(task) returning a #task= URL fragment and resolveTaskLink(tasks,fragment) returning the matching task or null. Keep everything that already works, and check the earlier design note before you start.',
   concurrent: [
