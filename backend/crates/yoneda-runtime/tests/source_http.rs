@@ -338,3 +338,8 @@ fn root_fuse_transport_marks_authenticated_requests_and_model_bridge_cannot_inhe
         "FORBIDDEN"
     );
 }
+
+#[path = "support/source_directory_http.rs"]
+mod directory_http;
+#[path = "support/source_native_http.rs"]
+mod source_native_http;

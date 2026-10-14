@@ -19,6 +19,23 @@ export function isGuidedProject(value: Json | undefined): boolean {
   );
 }
 
+/** Older Workspace binaries ignore unknown private fields. Prove retention
+ * before enqueueing either the fast path or durable provisioning work. */
+export async function assertGuidedReservation(project: Json, configuration: Json): Promise<void> {
+  if (!configuration._guided_project) return;
+  if (
+    !isGuidedProject(project.guided_project) ||
+    project.source != null ||
+    (await sourceFingerprint(project.guided_project)) !==
+      (await sourceFingerprint(configuration._guided_project)) ||
+    (await sourceFingerprint(project.policy)) !== configuration._guided_project.policy_digest
+  )
+    throw guidedFailure(
+      'LEDGER_UPDATING',
+      'The workspace has not retained the fixed guided profile; repository setup is updating.',
+    );
+}
+
 /** Existing request replays retain their original marker; other repositories cannot be adopted. */
 export async function guidedProjectInput(
   env: GuidedEnv,
@@ -35,6 +52,15 @@ export async function guidedProjectInput(
       'INVALID_INPUT',
       'Choose the fixed task-board profile without source or policy overrides.',
     );
+  let authority: Json;
+  try {
+    authority = await workspace(env, owner, { op: 'workspace_capabilities' });
+  } catch (failure) {
+    if (setupCode(failure) !== 'NOT_FOUND') throw failure;
+    throw guidedFailure('LEDGER_UPDATING', 'Guided workspace support is updating; retry shortly.');
+  }
+  if (authority.version !== 1 || authority.capabilities?.guided_projects !== 1)
+    throw guidedFailure('LEDGER_UPDATING', 'Guided workspace support is updating; retry shortly.');
   let existing: Json | null = null;
   try {
     existing = await workspace(env, owner, { op: 'project_get', id });
@@ -90,7 +116,16 @@ export async function guidedProjectInput(
 
 export async function guidedProvisionEnvironment(env: Env, project: Json): Promise<Env> {
   const marker = project.guided_project;
-  if (!marker) return env;
+  if (!marker) {
+    // An alarm may dispatch a reservation committed by an older Workspace DO.
+    // Never interpret its guided policy as permission to fork a generic starter.
+    if (project.policy?.version === guidedProfileId)
+      throw guidedFailure(
+        'LEDGER_UPDATING',
+        'The workspace has not retained the fixed guided profile; repository setup is updating.',
+      );
+    return env;
+  }
   if (
     !isGuidedProject(marker) ||
     project.source != null ||

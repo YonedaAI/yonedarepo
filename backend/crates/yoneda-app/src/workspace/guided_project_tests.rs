@@ -1,4 +1,4 @@
-use crate::{execute_workspace, native::NativeStore};
+use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
 fn call(db: &NativeStore, mut command: Value) -> yoneda_core::Result<Value> {
@@ -62,4 +62,34 @@ fn guided_project_invalid_starter_identity_is_rejected_before_reservation() {
             "NOT_FOUND"
         );
     }
+}
+
+#[test]
+fn guided_project_capability_read_is_pure_and_claim_lifecycle_retains_marker() {
+    let (db, request) = fixture();
+    let before = db
+        .query("SELECT id,payload FROM workspace_records ORDER BY id", &[])
+        .unwrap();
+    assert_eq!(
+        call(&db, json!({"op":"workspace_capabilities"})).unwrap(),
+        json!({"version":1,"capabilities":{"guided_projects":1}})
+    );
+    assert_eq!(
+        db.query("SELECT id,payload FROM workspace_records ORDER BY id", &[])
+            .unwrap(),
+        before
+    );
+    let project = call(&db, request).unwrap();
+    let marker = project["guided_project"].clone();
+    let claim = call(&db, json!({"op":"project_claim","id":"fresh-guide"})).unwrap();
+    assert_eq!(claim["guided_project"], marker);
+    for stage in ["creating", "checking_source", "initializing"] {
+        assert_eq!(call(&db, json!({"op":"project_progress","id":"fresh-guide","epoch":claim["setup_epoch"],"stage":stage})).unwrap()["guided_project"], marker);
+    }
+    let ready = call(&db, json!({"op":"project_update","id":"fresh-guide","epoch":claim["setup_epoch"],"status":"ready"})).unwrap();
+    assert_eq!(ready["guided_project"], marker);
+    assert_eq!(
+        call(&db, json!({"op":"project_get","id":"fresh-guide"})).unwrap(),
+        ready
+    );
 }
