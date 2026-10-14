@@ -2,6 +2,9 @@ use super::*;
 use crate::storage::create;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
+    if c["op"] == "workspace_capabilities" {
+        return Ok(json!({"version":1,"capabilities":{"guided_projects":1}}));
+    }
     if c["op"] == "projects" {
         let include_hidden = c["include_hidden"] == true;
         let rows = db.query(
