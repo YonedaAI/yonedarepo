@@ -51,6 +51,9 @@ describe('fresh guided project stage presentation', () => {
     expect(html).toContain('In progress');
     expect(html).toContain('View run');
     expect(html).not.toContain('>Continue from context</button>');
+    expect(html).toContain('class="guided-running-note"');
+    expect(html).toContain('The next step unlocks when this one finishes.');
+    expect(html).toContain('aria-label="Refresh guide"');
   });
   it('leads to human review only when server next_step permits it, retaining actual evidence and source ties', () => {
     const session = sessionFixture();
@@ -75,7 +78,7 @@ describe('fresh guided project stage presentation', () => {
     expect(html).toContain('Review result');
     expect(html).toContain('Final independent checks');
     expect(html).toContain('Verified');
-    expect(html).toContain('aaaaaaaaa');
+    expect(html).toContain('rev aaaaaaaaa');
     expect(html).not.toContain('>Publish</button>');
   });
 });

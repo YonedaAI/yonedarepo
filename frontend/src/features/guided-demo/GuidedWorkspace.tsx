@@ -53,8 +53,8 @@ export function GuidedWorkspace({
     if (state.session) onState?.(state.session);
   }, [state.session, onState]);
   return (
-    <>
-      <p className="subtle">
+    <div className="guided-page">
+      <p className="subtle guided-connections">
         Models and roles are selected automatically from your connections.{' '}
         <button type="button" className="text-button" onClick={onProviders}>
           Manage connections
@@ -83,6 +83,6 @@ export function GuidedWorkspace({
           </button>
         </section>
       )}
-    </>
+    </div>
   );
 }

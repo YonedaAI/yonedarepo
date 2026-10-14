@@ -1,5 +1,9 @@
+import { RefreshCw } from 'lucide-react';
 import { type GuidedSession, type GuidedStepId, guidedSteps } from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
+import { GuidedEvidenceList } from './GuidedEvidenceList';
+import { GuidedProgress } from './GuidedProgress';
+import { runningExplanations } from './guidedEvidenceView';
 import './guided-demo.css';
 
 const statusLabels = {
@@ -39,17 +43,25 @@ export function GuidedSessionPanel({
           <h2>Your guided task board</h2>
           <p>A fresh project. Progress comes from this session’s recorded work and checks.</p>
         </div>
-        <button className="quiet" type="button" disabled={busy} onClick={onRefresh}>
-          Refresh guide
+        <button
+          className="icon-button"
+          type="button"
+          disabled={busy}
+          onClick={onRefresh}
+          aria-label="Refresh guide"
+          title="Refresh guide"
+        >
+          <RefreshCw size={16} aria-hidden="true" />
         </button>
       </div>
+      <GuidedProgress session={session} />
       <ol className="guided-stages">
         {guidedSteps.map((definition) => {
           const step = session.steps.find((item) => item.id === definition.id);
           if (!step) return null;
           const runId = lastRun(step);
           return (
-            <li key={step.id} aria-current={session.next_step === step.id ? 'step' : undefined}>
+            <li key={step.id} className={session.next_step === step.id ? 'current' : undefined}>
               <div className="guided-stage-heading">
                 <h3>{definition.title}</h3>
                 <span className={`guided-status guided-${step.status}`}>
@@ -61,75 +73,49 @@ export function GuidedSessionPanel({
                 </span>
               </div>
               <p>{definition.description}</p>
+              {step.status === 'running' &&
+                !(step.id === 'review' && step.next_action === 'review_and_publish') && (
+                  <p className="guided-running-note">{runningExplanations[step.id]}</p>
+                )}
               {step.revision && (
-                <p className="subtle">
-                  Recorded revision <code>{short(step.revision.commit)}</code>
+                <p className="guided-revision">
+                  <code title={step.revision.commit}>rev {short(step.revision.commit)}</code>
                 </p>
               )}
               {!!step.evidence.length && (
-                <ul className="guided-evidence">
-                  {step.evidence.map((item, index) => {
-                    const kind =
-                      item.kind.includes('context') || item.kind === 'design_choice'
-                        ? 'context'
-                        : item.kind.includes('resolution') && item.verified
-                          ? 'conflict'
-                          : item.kind;
-                    const evidenceRun = item.run_id ?? (item.candidate_id ? '' : runId);
-                    return (
-                      <li key={`${item.kind}:${item.record_id ?? index}`}>
-                        <span>{item.label}</span>
-                        <small>
-                          {item.kind === 'design_choice'
-                            ? 'Source-linked decision'
-                            : item.verified
-                              ? 'Verified'
-                              : 'Not yet verified'}
-                        </small>
-                        {(evidenceRun || item.candidate_id) && (
-                          <button
-                            className="text-button"
-                            type="button"
-                            disabled={busy}
-                            onClick={() =>
-                              onInspect(evidenceRun ?? '', step.id, item.candidate_id, kind)
-                            }
-                          >
-                            {kind === 'conflict'
-                              ? 'Inspect conflict'
-                              : kind === 'context'
-                                ? 'Inspect context'
-                                : 'Inspect evidence'}
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                <GuidedEvidenceList
+                  stepId={step.id}
+                  evidence={step.evidence}
+                  fallbackRun={runId}
+                  busy={busy}
+                  onInspect={onInspect}
+                />
               )}
-              {!!runId && (
-                <button
-                  className="text-button"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => onInspect(runId, step.id, step.candidate_id ?? undefined)}
-                >
-                  {step.status === 'running' || !step.candidate_id ? 'View run' : 'View result'}
-                </button>
-              )}
-              {step.id === 'concurrent' && step.run_ids.length > 1 && (
+              {(!!runId || (step.id === 'concurrent' && step.run_ids.length > 1)) && (
                 <div className="guided-run-links">
-                  {step.run_ids.map((id, index) => (
+                  {!!runId && (
                     <button
                       className="text-button"
                       type="button"
                       disabled={busy}
-                      key={id}
-                      onClick={() => onInspect(id, step.id)}
+                      onClick={() => onInspect(runId, step.id, step.candidate_id ?? undefined)}
                     >
-                      Inspect concurrent run {index + 1}
+                      {step.status === 'running' || !step.candidate_id ? 'View run' : 'View result'}
                     </button>
-                  ))}
+                  )}
+                  {step.id === 'concurrent' &&
+                    step.run_ids.length > 1 &&
+                    step.run_ids.map((id, index) => (
+                      <button
+                        className="text-button"
+                        type="button"
+                        disabled={busy}
+                        key={id}
+                        onClick={() => onInspect(id, step.id)}
+                      >
+                        Inspect concurrent run {index + 1}
+                      </button>
+                    ))}
                 </div>
               )}
             </li>
@@ -159,10 +145,7 @@ export function GuidedSessionPanel({
             </button>
           </>
         ) : active ? (
-          <p role="status">
-            This stage is in progress. You can inspect its run; the next stage waits for recorded
-            evidence.
-          </p>
+          <p role="status">The next step unlocks when this one finishes.</p>
         ) : next?.status === 'needs_attention' ? (
           <p role="status">
             This stage needs attention. Inspect its result and recorded checks before continuing.
