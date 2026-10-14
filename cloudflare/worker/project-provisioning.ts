@@ -121,7 +121,8 @@ export async function provisionProject(env: Env, owner: string, project: Json) {
       await cleanupLateRemote(env, project.id, project.id);
       throw setupError('REPOSITORY_DELETED', 'This repository has been deleted');
     }
-    if (current.status === 'ready' || error.code === 'FENCED') return current;
+    if (current.status === 'ready' || error.code === 'FENCED')
+      return { ...current, claimed: false };
     const pending = pendingSetup(error);
     const code = setupCode(error);
     const result = await workspace(env, owner, {
@@ -129,6 +130,7 @@ export async function provisionProject(env: Env, owner: string, project: Json) {
       id: project.id,
       epoch: claimed.setup_epoch,
       status: pending ? 'provisioning' : 'failed',
+      pending_code: pending ? code : null,
       error_code: pending ? null : code,
       error: pending ? null : setupMessage(error),
     });
@@ -157,6 +159,19 @@ export async function scheduleProject(env: Env, owner: string, project: Json, de
   );
 }
 
+/** Background HTTP and queue work share the native pending-retry receipt. */
+export async function provisionAndScheduleProject(env: Env, owner: string, project: Json) {
+  const result = await provisionProject(env, owner, project);
+  if (
+    result.status === 'provisioning' &&
+    result.claimed !== false &&
+    result.lease_until === 0 &&
+    [2, 5, 15].includes(result.retry_delay_seconds)
+  )
+    await scheduleProject(env, owner, result, result.retry_delay_seconds);
+  return result;
+}
+
 export async function provisionMessage(env: Env, message: Message<Envelope>) {
   const body = message.body;
   if (!body.workspace || !isCanonicalAccountIdentifier(body.workspace)) {
@@ -169,7 +184,7 @@ export async function provisionMessage(env: Env, message: Message<Envelope>) {
       message.ack();
       return;
     }
-    await provisionProject(env, body.workspace, current);
+    await provisionAndScheduleProject(env, body.workspace, current);
     // Workspace DO alarms retain dispatch intent through pending imports, expired leases
     // and missing acknowledgments, independently of the queue's delivery retry limit.
     message.ack();

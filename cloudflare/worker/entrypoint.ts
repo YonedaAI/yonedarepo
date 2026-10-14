@@ -17,7 +17,7 @@ import { ledger, sha } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
 export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(req: Request): Promise<Response> {
-    return fetchRequest(req, this.env);
+    return fetchRequest(req, this.env, this.ctx);
   }
 
   async authorizePreview(digest: string, token: string) {

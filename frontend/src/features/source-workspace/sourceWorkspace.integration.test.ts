@@ -211,6 +211,8 @@ it('presents capture attempts, actual prior context and historical check policy 
   expect(html).toContain('No prior context references');
   expect(html).not.toContain('Recorded version 4');
   expect(html).toContain('old-policy');
-  expect(html).toContain('does not establish current publication eligibility');
-  expect(html).toContain('does not establish outcome benefit');
+  expect(html).toContain('Historical checks for the recorded revision and policy');
+  expect(html).toContain(
+    'Context history records which references were delivered, opened or cited',
+  );
 });

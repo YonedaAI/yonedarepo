@@ -11,10 +11,7 @@ export function ContextUsageRows({
   return (
     <>
       <h3>Recorded retrieval calls</h3>
-      <p className="context-usage-note">
-        Chronological events on this page. A returned or opened record is delivery evidence, not
-        proof of reasoning.
-      </p>
+      <p className="context-usage-note">Context returned or opened, in chronological order.</p>
       {!data.entries.length ? (
         <p className="context-usage-empty">
           {data.coverage.status === 'recorded'
@@ -75,9 +72,7 @@ export function ContextUsageRows({
       )}
       <details className="context-lineage-group">
         <summary>Frozen assigned context</summary>
-        <p className="context-usage-note">
-          Run-wide assignments. Assigned input does not mean an agent opened or cited it.
-        </p>
+        <p className="context-usage-note">Frozen context assigned to each agent.</p>
         {!data.assigned.length && <p>No frozen context assignments are recorded.</p>}
         {data.assigned.map((assignment) => (
           <section key={assignment.execution_id}>
@@ -130,7 +125,7 @@ export function ContextUsageRows({
       <details className="context-lineage-group">
         <summary>Exact revision checks · {data.checked.length} recorded</summary>
         <p className="context-usage-note">
-          Run-wide checks. Checking source does not turn agent context into verified knowledge.
+          Independent check results for each captured source revision.
         </p>
         {!data.checked.length && (
           <p>No independently checked revision is recorded for this run yet.</p>

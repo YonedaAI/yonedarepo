@@ -3,6 +3,7 @@ import { error, readJson, response } from './http';
 import { scheduleProject } from './project-provisioning';
 import { ownerCommandInput } from './repository-command';
 import { reviewerCampaignStatus } from './reviewer-campaign';
+import { reviewerManagedMiMo } from './reviewer-managed-mimo';
 import { reviewerPolicy } from './reviewer-policy';
 import {
   resumeTrial,
@@ -18,6 +19,7 @@ import { workspace } from './workspace';
 
 export async function reviewerRoute(req: Request, env: Env, principal: Principal) {
   const path = new URL(req.url).pathname;
+  if (path === '/api/admin/reviewer/managed-mimo') return reviewerManagedMiMo(req, env, principal);
   if (path.startsWith('/api/admin/reviewer/')) {
     if (principal.role !== 'admin') return error('FORBIDDEN', 'Administrator required', 403);
     const body = await readJson(req);

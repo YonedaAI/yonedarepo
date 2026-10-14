@@ -44,14 +44,11 @@ button:hover {
   filter: brightness(0.96);
 }
 button:disabled {
-  opacity: 0.45;
   cursor: not-allowed;
 }
 button.quiet {
-  background: transparent;
-  color: var(--muted);
   padding: 6px 10px;
-  font-weight: 400;
+  font-weight: 500;
 }
 button.icon-button {
   padding: 6px;
@@ -73,7 +70,7 @@ textarea:focus-visible,
 select:focus-visible,
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid #87bce7;
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 code,
@@ -112,8 +109,12 @@ p {
 
 button.quiet {
   background: #fff;
-  border-color: var(--line);
-  color: #33455c;
+  border-color: #8090a4;
+  color: #203a5b;
+}
+button.quiet:not(:disabled):hover {
+  background: #edf3ff;
+  border-color: var(--blue);
 }
 button.text-button {
   padding: 4px 0;
@@ -148,7 +149,7 @@ summary {
   padding: 8px 0;
 }
 summary:focus-visible {
-  outline: 3px solid #87bce7;
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
 }
 pre {

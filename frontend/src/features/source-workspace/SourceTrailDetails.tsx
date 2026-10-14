@@ -17,8 +17,8 @@ export function SourceTrailDetails({
     <>
       {trail.coverage === 'unknown' && (
         <p>
-          File attribution is unavailable for this version. Missing history does not prove that
-          prior context was unused.
+          File attribution is unavailable for this version. Available context references appear
+          below.
         </p>
       )}
       <h4>Recorded reasons</h4>
@@ -29,8 +29,8 @@ export function SourceTrailDetails({
               <p>{reason.text}</p>
               <small>
                 {reason.authority === 'agent_assertion'
-                  ? 'Agent assertion · independent checks shown separately.'
-                  : 'Recorded owner decision · not an independent behavior check.'}
+                  ? 'Agent assertion'
+                  : 'Recorded owner decision'}
               </small>
             </li>
           ))}
@@ -61,7 +61,7 @@ export function SourceTrailDetails({
               <p>
                 Report <code>{trail.evaluation.evidence_digest}</code>
               </p>
-              <p>This historical receipt does not establish current publication eligibility.</p>
+              <p>Historical checks for the recorded revision and policy.</p>
             </details>
           )}
         </>
@@ -86,9 +86,7 @@ export function SourceTrailDetails({
             <li key={receipt.id}>
               {receipt.change} <code>{receipt.path}</code> · <code>{receipt.commit}</code>
               {receipt.capture_epoch != null && (
-                <small>
-                  Capture attempt {receipt.capture_epoch} · not a context record version.
-                </small>
+                <small>Capture attempt {receipt.capture_epoch}</small>
               )}
             </li>
           ))}
@@ -133,8 +131,7 @@ export function SourceTrailDetails({
         <p>No prior context references were supplied for this file.</p>
       )}
       <p className="subtle">
-        A delivered, opened or cited record establishes access evidence; it does not establish
-        outcome benefit.
+        Context history records which references were delivered, opened or cited.
       </p>
     </>
   );

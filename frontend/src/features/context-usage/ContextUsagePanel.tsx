@@ -49,8 +49,8 @@ export function ContextUsagePanel({
     <section className="context-usage" aria-labelledby={heading}>
       <div className="context-usage-heading">
         <div>
-          <h2 id={heading}>Context for this work</h2>
-          <p>Prior context and recorded agent access.</p>
+          <h2 id={heading}>Context history</h2>
+          <p>See the context each agent received, opened and cited during this run.</p>
         </div>
         <button type="button" className="quiet" disabled={loading || !path} onClick={refresh}>
           <RefreshCw size={15} />
@@ -58,8 +58,7 @@ export function ContextUsagePanel({
         </button>
       </div>
       <p className="context-usage-note">
-        Review the recorded constraints before evaluating this run’s changes. Assignment, retrieval
-        and citation describe different evidence of access.
+        Explore assigned context, recorded retrievals, agent citations and revision checks.
       </p>
       <FrozenPriorContext snapshot={snapshot} run={run} data={data} labels={labels} />
       <div className="context-usage-filters">
@@ -117,16 +116,15 @@ export function ContextUsagePanel({
           <div className={`context-coverage context-coverage-${data.coverage.status}`}>
             <strong>
               {data.coverage.status === 'recorded'
-                ? 'Access tracking recorded'
+                ? 'Context history'
                 : data.coverage.status === 'partial'
-                  ? 'Access tracking is partial'
-                  : 'Historical access tracking unavailable'}
+                  ? 'Partial context history'
+                  : 'Historical context access unavailable'}
             </strong>
             <p>
-              {data.coverage.reason ||
-                (data.coverage.status === 'recorded'
-                  ? 'Successful scoped retrieval calls are recorded. Delivery does not prove reasoning or influence.'
-                  : 'Earlier returned or opened records may be untracked. Missing events do not mean the agent read nothing.')}
+              {data.coverage.status === 'recorded'
+                ? 'See the context each agent received, opened and cited during this run.'
+                : 'Explore the available context records from this run.'}
             </p>
           </div>
           <dl className="context-usage-metrics">
@@ -144,8 +142,7 @@ export function ContextUsagePanel({
           </dl>
           <p className="context-usage-note">
             Counts and lineage cover this whole run; filters apply to retrieval calls.{' '}
-            {contextUsageMetric(data, 'read_calls').value} recorded retrieval calls. Assertions
-            remain assertions after source checks.
+            {contextUsageMetric(data, 'read_calls').value} recorded retrieval calls.
           </p>
           <details className="context-lineage-group">
             <summary>Retrieval and revision evidence</summary>

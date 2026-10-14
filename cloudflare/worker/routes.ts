@@ -35,7 +35,11 @@ import { websiteAssets } from './website-metadata';
 import { workspace } from './workspace';
 import { workspaceAllowanceRoute } from './workspace-allowance-route';
 
-export async function fetchRequest(req: Request, env: Env): Promise<Response> {
+export async function fetchRequest(
+  req: Request,
+  env: Env,
+  ctx?: Pick<ExecutionContext, 'waitUntil'>,
+): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health')
     return response({
@@ -73,7 +77,7 @@ export async function fetchRequest(req: Request, env: Env): Promise<Response> {
           op: 'budget_status',
         }),
       );
-    const project = await projectRoute(req, env, principal);
+    const project = await projectRoute(req, env, principal, ctx);
     if (project) return project;
     if (url.pathname === '/api/session' && ['POST', 'DELETE'].includes(req.method))
       return principal.role === 'admin'

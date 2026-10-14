@@ -17,11 +17,33 @@ export const providerRegistry = [
         id: 'mimo-v2.6-flash',
         label: 'MiMo 2.6 Flash',
         auto_seed_eligible: false,
+        conservative_pricing: {
+          input_microusd_per_million: 140000,
+          output_microusd_per_million: 280000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://mimo.mi.com/docs/en-US/price/pay-as-you-go',
+        pricing_verified_at: '2026-10-13',
+        pricing_input_token_ceiling: 270336,
+        pricing_basis:
+          'Overseas real-time text cache-miss and output rates; cache writes are currently free. Token Plan quota and API credits remain separate; these metered-equivalent budget rates do not authorize changing the saved billing route.',
+        reasoning_source_url: 'https://mimo.mi.com/docs/en-US/api/chat/anthropic-api',
       },
       {
         id: 'mimo-v2.6-pro',
         label: 'MiMo 2.6 Pro',
         auto_seed_eligible: false,
+        conservative_pricing: {
+          input_microusd_per_million: 435000,
+          output_microusd_per_million: 870000,
+          source: 'owner-approved conservative rates',
+        },
+        pricing_source_url: 'https://mimo.mi.com/docs/en-US/price/pay-as-you-go',
+        pricing_verified_at: '2026-10-13',
+        pricing_input_token_ceiling: 270336,
+        pricing_basis:
+          'Overseas real-time text cache-miss and output rates; cache writes are currently free. Token Plan quota and API credits remain separate; these metered-equivalent budget rates do not authorize changing the saved billing route.',
+        reasoning_source_url: 'https://mimo.mi.com/docs/en-US/api/chat/anthropic-api',
       },
     ],
     token_plan_regions: {
