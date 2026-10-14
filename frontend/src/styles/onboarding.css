@@ -1,12 +1,19 @@
 .welcome-onboarding {
   display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(300px, 400px);
-  align-items: center;
-  gap: clamp(32px, 6vw, 100px);
-  max-width: 1180px;
-  margin: auto;
-  padding: clamp(36px, 7vw, 100px) 48px;
-  min-height: calc(100dvh - 68px);
+  grid-template-columns: minmax(0, 520px) minmax(320px, 400px);
+  justify-content: center;
+  align-items: start;
+  gap: clamp(32px, 4vw, 64px);
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: clamp(28px, 4vw, 56px) 40px;
+}
+.welcome-story {
+  padding-top: 8px;
+}
+.welcome-access {
+  display: grid;
+  gap: 12px;
 }
 .welcome-story h1,
 .workspace-start h1 {
@@ -14,26 +21,26 @@
   font-weight: 600;
   line-height: 1.12;
   letter-spacing: -2px;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 .welcome-story > p {
-  max-width: 42ch;
+  max-width: 50ch;
   font-size: 16px;
-  line-height: 1.8;
+  line-height: 1.6;
 }
 .intent-symbol {
   display: inline-flex;
-  padding: 13px;
-  border-radius: 14px;
+  padding: 10px;
+  border-radius: 12px;
   background: #eaf0ff;
   color: var(--blue);
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 .welcome-flow {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin: 36px 0;
+  margin: 22px 0 18px;
   color: #90a0b4;
 }
 .welcome-flow span {
@@ -52,21 +59,27 @@
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
-  padding: 30px;
+  padding: 24px;
   box-shadow: 0 12px 32px #15243606;
 }
+details.account-panel {
+  padding: 14px 20px;
+}
+details.account-panel[open] {
+  padding: 20px 24px 24px;
+}
 .account-panel h2 {
-  font-size: 24px;
+  font-size: 22px;
   letter-spacing: -0.6px;
-  margin: 20px 0 12px;
+  margin: 18px 0 8px;
 }
 .account-panel > p {
   font-size: 13px;
 }
 .account-panel form {
   display: grid;
-  gap: 18px;
-  margin-top: 24px;
+  gap: 14px;
+  margin-top: 18px;
 }
 .account-panel label,
 .workspace-panel label {
@@ -111,15 +124,15 @@
 }
 .workspace-start {
   max-width: 1000px;
-  margin: 64px auto;
-  padding: 0 48px;
+  margin: 40px auto;
+  padding: 0 40px;
 }
 .workspace-start > p {
   max-width: 55ch;
   font-size: 16px;
 }
 .workspace-start > button {
-  margin: 12px 0 48px;
+  margin: 12px 0 32px;
 }
 .getting-started {
   display: grid;

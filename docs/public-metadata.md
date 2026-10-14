@@ -1,6 +1,6 @@
 # Public brand assets and link previews
 
-The public app title is **YonedaRepo — Context for the agentic era**. Its description is **Build with multiple agents, preserve decisions and context, and choose what ships.** These describe the platform; no private repository, account, prompt, graph or screenshot is included in the public assets.
+The public app title is **YonedaRepo — Agent-First Repository**. Its description is **An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.** These describe the platform; no private repository, account, prompt, graph or screenshot is included in the public assets.
 
 `frontend/index.html` contains Open Graph, Twitter large-card and canonical metadata before React starts. The platform Worker replaces `__YONEDA_PUBLIC_ORIGIN__` with the absolute public URL and `__YONEDA_SOCIAL_IMAGE_URL__` with the absolute `/brand/social-card.png` URL. It escapes HTML attribute values and leaves static assets available without a session. Local Vite alone serves the template placeholders; the platform Worker supplies deployment origins.
 

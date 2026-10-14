@@ -8,8 +8,8 @@
     font-size: 17px;
   }
   .welcome-onboarding {
-    gap: 30px;
-    padding: 48px 28px;
+    gap: 28px;
+    padding: 32px 24px;
   }
   .workflow-stages {
     grid-template-columns: repeat(3, 1fr);
@@ -69,9 +69,8 @@
   }
   .welcome-onboarding {
     grid-template-columns: 1fr;
-    padding: 36px 24px;
-    gap: 24px;
-    min-height: auto;
+    padding: 24px 20px;
+    gap: 20px;
     max-width: 540px;
   }
   .welcome-story h1 {
@@ -81,16 +80,16 @@
     font-size: 14px;
   }
   .welcome-flow {
-    margin: 22px 0;
+    margin: 18px 0 0;
   }
   .welcome-story .welcome-note {
     display: none;
   }
   .account-panel {
-    padding: 24px;
+    padding: 20px;
   }
   .workspace-start {
-    margin: 40px auto;
+    margin: 28px auto;
     padding: 0 24px;
   }
   .getting-started {
