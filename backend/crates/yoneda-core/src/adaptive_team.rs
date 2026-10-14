@@ -64,6 +64,10 @@ pub struct RequestedAgent {
 pub struct AdaptiveTeam {
     pub version: u32,
     pub requested_agents: Vec<RequestedAgent>,
+    /// Owner-approved pool connection for slots that own specialist tasks. Integration,
+    /// coordination and planning keep their planned connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub specialist_connection: Option<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -93,6 +97,15 @@ impl AdaptiveTeam {
             return Err(invalid("Request 1–6 agents with adaptive version 1"));
         }
         validate_pool(pool)?;
+        if let Some(connection) = &self.specialist_connection {
+            bounded(connection, 120)?;
+            if !pool.iter().any(|m| &m.connection == connection) {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "Specialist connection is outside the frozen pool",
+                ));
+            }
+        }
         for request in &self.requested_agents {
             if let Some(connection) = &request.connection {
                 bounded(connection, 120)?;
@@ -288,3 +301,7 @@ fn invalid(message: &str) -> Error {
 #[cfg(test)]
 #[path = "adaptive_team/reasoning_tests.rs"]
 mod reasoning_tests;
+
+#[cfg(test)]
+#[path = "adaptive_team/specialist_tests.rs"]
+mod specialist_tests;

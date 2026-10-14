@@ -93,7 +93,7 @@ pub(crate) fn job<S: SqlStore>(
         db,
         "jobs",
         id,
-        &json!({"id":id,"kind":kind,"status":"queued","attempt":0,"epoch":0,"lease_until":0,"deadline":deadline,"dispatch_deadline":dispatch_deadline,"payload":payload}),
+        &json!({"id":id,"kind":kind,"status":"queued","attempt":0,"epoch":0,"lease_until":0,"deadline":deadline,"dispatch_deadline":dispatch_deadline,"created_at":now,"payload":payload}),
     )?;
     outbox(db, &format!("dispatch:{id}:0"), kind, json!({"job_id":id}))
 }
