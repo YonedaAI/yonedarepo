@@ -5,6 +5,7 @@ mod agent;
 mod agent_harness;
 mod agent_transcript;
 pub mod app_bundle;
+mod attempt_failure;
 mod broker;
 mod child_privileges;
 mod comparison_checkout;
