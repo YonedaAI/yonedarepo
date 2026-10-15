@@ -165,8 +165,10 @@ pub(super) fn read<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     } else {
         None
     };
-    let write = if let Some(record) = &resolution {
-        record["conflict_paths"].clone()
+    let write = if resolution.is_some() {
+        // A resolver may edit any path; `protected_paths` below still forbids
+        // verification paths and capture re-checks the resolver delta.
+        json!(["**"])
     } else if readonly {
         json!([])
     } else if let Some(task) = &task {

@@ -202,7 +202,11 @@ fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
     assert_eq!(result["status"], "resolving");
     let job = get(&db, "jobs", "job:conflict-resolver:resolve-1").unwrap();
     assert_eq!(job["kind"], "agent");
-    assert_eq!(job["payload"]["team_owned_paths"], json!(["src/change.rs"]));
+    assert!(job["payload"].get("team_owned_paths").is_none());
+    assert_eq!(
+        job["payload"]["execution"]["conflict_paths"],
+        json!(["src/change.rs"])
+    );
     assert_eq!(
         job["payload"]["conflict_resolver"]["candidate"]["revision"]["commit"],
         "c".repeat(40)

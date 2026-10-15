@@ -1,6 +1,5 @@
 use super::support::attach_typed;
 use super::*;
-use std::collections::BTreeSet;
 /// Complete a resolver's ordinary trusted capture, fencing stale heads before
 /// candidate creation and limiting the resulting diff to the approved conflicts.
 pub(super) fn complete_resolver_capture<S: SqlStore>(
@@ -41,12 +40,6 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         )?;
         return Ok(json!({"conflict_id":conflict_id,"status":"stale","reason":"HEAD_MOVED"}));
     }
-    let approved: BTreeSet<_> = record["conflict_paths"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .collect();
     if api {
         super::source::validate_capture(db, job, result, now)?;
     } else {
@@ -60,19 +53,23 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     let captured = result["resolver_delta_paths"]
         .as_array()
         .ok_or_else(|| bad("Resolver capture omitted its Git paths"))?;
-    for path in captured {
-        let path = path.as_str().ok_or_else(|| bad("Invalid resolver path"))?;
-        yoneda_core::validate_path(path)?;
-        if !approved.contains(path) {
-            return Err(Error::new(
-                "WRITE_SCOPE",
-                "Resolver capture exceeded conflict paths",
-            ));
-        }
-    }
     if captured.is_empty() {
-        return Err(bad("Resolver capture did not change a conflict path"));
+        return Err(bad("Resolver capture did not change any path"));
     }
+    // Any valid path may be edited except protected verification paths under
+    // the current policy (also enforced for API resolvers, which skip the core check).
+    let policy = repo(db)?["policy"].clone();
+    let protected: Vec<&str> = policy["build"]["test_bundle"]["protected_paths"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    let paths = captured
+        .iter()
+        .map(|path| path.as_str().ok_or_else(|| bad("Invalid resolver path")))
+        .collect::<Result<Vec<_>>>()?;
+    yoneda_core::resolver_scope::validate_edits(paths.iter().copied(), &protected)?;
     super::super::capture_completion::complete(db, job, result, now)?;
     let cid = string(result, "id")?;
     let mut candidate = get(db, "candidates", &cid)?;
@@ -92,6 +89,8 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     save(db, "candidates", &cid, &candidate)?;
     record["status"] = json!("evaluating");
     record["resolver_candidate_id"] = result["id"].clone();
+    // Display-only record of what the resolver actually changed in its merge workspace.
+    record["resolver_delta_paths"] = result["resolver_delta_paths"].clone();
     super::source::compact(db, &mut record)?;
     save(db, "conflicts", &conflict_id, &record)?;
     // The final phase is authorized only after the exact resolver capture is

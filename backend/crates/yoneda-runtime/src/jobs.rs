@@ -48,9 +48,8 @@ pub(crate) async fn execute_job(
                 crate::transport::from_legacy(files)?
             };
             let resolver_delta = if job["payload"]["capture_subtype"] == "resolve_conflict" {
-                let (before, scope, delta) =
-                    crate::refresh_capture::resolver_capture_scope(job, &files).await?;
-                crate::team_workspace::validate_changes_git(&before, &files, &scope)?;
+                let delta = crate::refresh_capture::resolver_capture_scope(job, &files).await?;
+                crate::team_workspace::validate_git_shape(&files)?;
                 Some(delta)
             } else if let Some(scope) = job["payload"].get("team_owned_paths") {
                 let before = crate::team_source::load_git(job).await?;
