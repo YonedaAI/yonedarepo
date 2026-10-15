@@ -16,14 +16,25 @@ export function normalizeReasoningEffort(
   return value;
 }
 
+function supportsEffort(provider: string, model: string, effort: string) {
+  try {
+    return !!providerDefinition(provider)
+      .models.find((option) => option.id === model)
+      ?.reasoning_efforts?.includes(effort);
+  } catch {
+    return false;
+  }
+}
+
 /** Provider payloads cannot change the effort frozen by the authoritative execution. */
 export function enforceFrozenReasoning(job: Json, body: Json, harness: string) {
   const execution = job.payload?.execution;
-  const effort = normalizeReasoningEffort(
-    execution?.provider ?? execution?.harness,
-    job.model,
-    execution?.reasoning_effort,
-  );
+  const provider = execution?.provider ?? execution?.harness;
+  // GLM's own default is maximum thinking, which made every turn take 5–20 s; an unchosen
+  // effort runs low. Other providers keep their defaults when no effort was chosen.
+  const effort =
+    normalizeReasoningEffort(provider, job.model, execution?.reasoning_effort) ??
+    (provider === 'zai' && supportsEffort(provider, job.model, 'low') ? 'low' : undefined);
   if (effort === undefined) return;
   delete body.reasoning_effort;
   if (harness === 'codex') {
