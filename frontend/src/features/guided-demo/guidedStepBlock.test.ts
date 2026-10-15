@@ -74,3 +74,25 @@ describe('guided step progress', () => {
     );
   });
 });
+
+describe('guided step failed checks', () => {
+  it('says a run result failed its checks and that the coordinator is repairing it', () => {
+    const facts = guidedRunFacts({
+      runs: [
+        { id: 'run-f', status: 'ready', guided: { variant: 'filter' } },
+        { id: 'run-s', status: 'coordinating', guided: { variant: 'sort' } },
+      ],
+      team_tasks: [],
+      jobs: [],
+      candidates: [{ id: 'c', run_id: 'run-s', status: 'rejected' }],
+      executions: [
+        { id: 'k', run_id: 'run-s', status: 'running', team_role: 'coordinator', started_at: 1 },
+      ],
+    } as unknown as Snapshot);
+    const block = guidedStepBlock(step, facts);
+    expect(block?.message).toBe(
+      'Sort run: its result failed a required check; the coordinator is repairing it.',
+    );
+    expect(block?.stuck).toBe(false);
+  });
+});
