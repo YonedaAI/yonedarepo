@@ -31,7 +31,8 @@ it('build leaves the DAG to the ordinary planner with two parallel specialist pr
   const input = approve.mock.calls[0][3];
   expect(input.team).toBeUndefined();
   expect(run.adaptive_team.requested_agents).toEqual([
-    { connection: null, role: 'backend' }, { connection: null, role: 'frontend' },
+    { connection: null, role: 'backend', reasoning_effort: 'low' },
+    { connection: null, role: 'frontend', reasoning_effort: 'low' },
   ]);
   expect(run._approved_model_pool).toHaveLength(2);
   expect(run.agents[0].connection).toBe('saved-glm'); // v1 still plans on the coordination model.
@@ -142,12 +143,12 @@ it('a guide without the required Codex connection fails clearly before any run s
       .rejects.toMatchObject({ code: 'PROVIDER_MISSING' });
 });
 
-it('v2 GLM coordination slots think at low effort; Codex specialists keep their default', async () => {
+it('every guided v2 role thinks at low effort for quick turns', async () => {
   normalApproval();
   const [run] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'build', 'a'.repeat(40), 0);
   expect(run.agents.map((agent: Json) => [agent.connection, agent.reasoning_effort])).toEqual([
-    ['saved-codex', undefined],
-    ['saved-codex', undefined],
+    ['saved-codex', 'low'],
+    ['saved-codex', 'low'],
     ['saved-glm', 'low'],
   ]);
 });
