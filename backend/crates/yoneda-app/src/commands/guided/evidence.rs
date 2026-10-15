@@ -18,6 +18,9 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
     let mut choice = None;
     let mut lineage = Vec::new();
     let mut previous: Option<Value> = None;
+    // Version 1 gates each step on demonstration evidence. From version 2 a checked result
+    // completes the step and that evidence is shown for information only.
+    let gated = session["version"].as_u64().unwrap_or(1) < 2;
     for (index, id) in STEPS.iter().enumerate() {
         let saved = &session["steps"][index];
         let ids = saved["run_ids"].as_array().cloned().unwrap_or_default();
@@ -67,16 +70,17 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
                     if let Some(record) = &choice {
                         evidence.push(json!({"kind":"design_choice","label":format!("Recorded design choice: {}",record["label"].as_str().unwrap_or_default()),"verified":true,"record_id":record["id"],"author":record["author"],"authority":"assertion","source_association_verified":true}));
                     }
-                    complete = contract && collaboration && choice.is_some();
+                    complete = !gated || (contract && collaboration && choice.is_some());
                 }
                 "extend" => {
                     let cited = choice.is_some() && proofs::continuation(db, candidate, &lineage)?;
                     evidence.push(json!({"kind":"context_continuation","label":"Earlier design choice opened and cited by this continuation","verified":cited}));
-                    complete = cited;
+                    complete = !gated || cited;
                 }
                 "concurrent" => {
-                    complete = proofs::resolved(db, &ids, candidate)?;
-                    evidence.push(json!({"kind":"scoped_resolution","label":"Real overlapping conflict resolved and freshly checked with both enhancements","verified":complete}));
+                    let resolved = proofs::resolved(db, &ids, candidate)?;
+                    evidence.push(json!({"kind":"scoped_resolution","label":"Real overlapping conflict resolved and freshly checked with both enhancements","verified":resolved}));
+                    complete = !gated || resolved;
                     // An owner rejection keeps the result as history and reopens this step for
                     // an explicit retry from the pre-concurrency checkpoint.
                     if let Some(rejection) = candidate["owner_rejection"].as_object() {

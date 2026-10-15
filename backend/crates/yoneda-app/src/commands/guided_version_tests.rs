@@ -66,3 +66,53 @@ fn guided_version_mismatch_is_rejected_without_partial_state() {
         "GUIDED_VERSION_MISMATCH"
     );
 }
+
+/// Version 2: a checked result completes each step; demonstration evidence is shown, never a gate.
+#[test]
+fn guided_version_two_evidence_informs_but_never_blocks_a_checked_result() {
+    let db = versioned(json!(2));
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // No overlapping harness windows and no recorded decision.
+    evidence_fixture::checked(&db, &first, "build", false);
+    db.query(
+        "DELETE FROM nodes WHERE id=?",
+        &[json!(format!("context:choice:{first}"))],
+    )
+    .unwrap();
+    let view = read(&db);
+    assert_eq!(view["steps"][0]["status"], "complete");
+    assert!(
+        view["steps"][0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "collaboration" && e["verified"] == false)
+    );
+    let mut c = request("extend");
+    c["expected_commit"] = json!("b".repeat(40));
+    c["expected_version"] = json!(1);
+    let extended = execute(&db, c).unwrap();
+    let rid = extended["steps"][1]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // Checked continuation that neither opened nor cited the earlier decision.
+    evidence_fixture::checked_with_context(&db, &rid, "extend", true, None);
+    assert_eq!(read(&db)["steps"][1]["status"], "complete");
+}
+
+#[test]
+fn guided_version_one_still_gates_on_demonstration_evidence() {
+    let db = versioned(json!(1));
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evidence_fixture::checked(&db, &first, "build", false);
+    assert_ne!(read(&db)["steps"][0]["status"], "complete");
+}
