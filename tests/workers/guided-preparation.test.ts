@@ -152,3 +152,17 @@ it('every guided v2 role thinks at low effort for quick turns', async () => {
     ['saved-glm', 'low'],
   ]);
 });
+
+it('a retry after the owner rejected the result gives the agents that feedback', async () => {
+  normalApproval();
+  const rejected = {
+    ...v2,
+    steps: [
+      { id: 'concurrent', status: 'needs_attention', run_ids: [], evidence: [{ kind: 'owner_rejection', verified: false, reason: 'Theme button is too big. Needs to be smaller' }] },
+    ],
+  } as unknown as GuidedSession;
+  const runs = await prepareGuidedRuns({} as Env, principal, 'fresh', rejected, 'concurrent', 'a'.repeat(40), 3, 2);
+  for (const run of runs) expect(run.intent).toContain('Theme button is too big. Needs to be smaller');
+  const first = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'concurrent', 'a'.repeat(40), 3);
+  for (const run of first) expect(run.intent).not.toContain('rejected');
+});
