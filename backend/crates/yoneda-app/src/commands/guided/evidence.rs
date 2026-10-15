@@ -18,6 +18,7 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
     let mut choice = None;
     let mut lineage = Vec::new();
     let mut previous: Option<Value> = None;
+    let mut previous_passed = false;
     // Version 1 gates each step on demonstration evidence. From version 2 a checked result
     // completes the step and that evidence is shown for information only.
     let gated = session["version"].as_u64().unwrap_or(1) < 2;
@@ -39,15 +40,18 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
             "extend" => "extend",
             _ => "final",
         };
-        let candidate = if *id == "review" {
-            previous.clone()
+        let (candidate, checks_passed) = if *id == "review" {
+            (previous.clone(), previous_passed)
         } else {
-            proofs::candidate(db, &ids, phase)?
+            match proofs::candidate(db, &ids, phase, gated)? {
+                Some((candidate, passed)) => (Some(candidate), passed),
+                None => (None, false),
+            }
         };
         let mut evidence = Vec::new();
         let mut complete = false;
         if let Some(candidate) = &candidate {
-            evidence.push(json!({"kind":"checked_source","label":"Captured source independently checked for this phase","verified":true,"candidate_id":candidate["id"],"revision":candidate["revision"]["commit"]}));
+            evidence.push(json!({"kind":"checked_source","label":"Captured source independently checked for this phase","verified":checks_passed,"candidate_id":candidate["id"],"revision":candidate["revision"]["commit"]}));
             match *id {
                 "build" => {
                     let run = get(db, "runs", &string(candidate, "run_id")?)?;
@@ -120,6 +124,7 @@ pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
         steps.push(json!({"id":id,"status":status,"run_ids":ids,"attempt":super::retry::attempt(saved),"previous_run_ids":saved["previous_run_ids"].as_array().cloned().unwrap_or_default(),"candidate_id":candidate.as_ref().map(|c|&c["id"]),"revision":candidate.as_ref().map(|c|&c["revision"]),"evidence":evidence,"next_action":if status=="ready"{Some("start")}else if *id=="review"&&!complete&&unlocked{Some("review_and_publish")}else{None}}));
         if candidate.is_some() {
             previous = candidate;
+            previous_passed = checks_passed;
         }
         unlocked = unlocked && complete;
     }
