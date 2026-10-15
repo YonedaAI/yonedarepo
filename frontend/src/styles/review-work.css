@@ -112,3 +112,9 @@
   margin: 0;
   flex: 1 1 320px;
 }
+.guided-progress {
+  margin: 4px 0 8px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

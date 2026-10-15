@@ -1,4 +1,5 @@
 import { RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { type GuidedSession, type GuidedStepId, guidedSteps } from '../../../../shared/guided-runs';
 import { short } from '../../lib/api';
 import { GuidedEvidenceList } from './GuidedEvidenceList';
@@ -10,6 +11,7 @@ import {
   guidedRetryLabel,
   guidedStepBlock,
   guidedStepLinks,
+  guidedStepProgress,
   guidedStepReason,
 } from './guidedStepView';
 import './guided-demo.css';
@@ -51,6 +53,13 @@ export function GuidedSessionPanel({
 }) {
   const next = session.steps.find((step) => step.id === session.next_step);
   const definition = guidedSteps.find((step) => step.id === session.next_step);
+  const running = session.steps.some((step) => step.status === 'running');
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [running]);
   const humanReview =
     next?.id === 'review' &&
     next.status === 'running' &&
@@ -99,6 +108,7 @@ export function GuidedSessionPanel({
           const links = guidedStepLinks(step, runs);
           const reason = guidedStepReason(step, runs);
           const block = guidedStepBlock(step, runs);
+          const progress = guidedStepProgress(step, runs, now);
           return (
             <li key={step.id} className={session.next_step === step.id ? 'current' : undefined}>
               <div className="guided-stage-heading">
@@ -112,6 +122,11 @@ export function GuidedSessionPanel({
                 </span>
               </div>
               <p>{definition.description}</p>
+              {progress && (
+                <p className="guided-progress" aria-live="off">
+                  {progress}
+                </p>
+              )}
               {block && (
                 <div className="guided-attention" role="alert">
                   <p>
