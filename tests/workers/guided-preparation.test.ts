@@ -141,3 +141,13 @@ it('a guide without the required Codex connection fails clearly before any run s
     await expect(prepareGuidedRuns({} as Env, principal, 'fresh', guide, 'build', 'a'.repeat(40), 0))
       .rejects.toMatchObject({ code: 'PROVIDER_MISSING' });
 });
+
+it('v2 GLM coordination slots think at low effort; Codex specialists keep their default', async () => {
+  normalApproval();
+  const [run] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'build', 'a'.repeat(40), 0);
+  expect(run.agents.map((agent: Json) => [agent.connection, agent.reasoning_effort])).toEqual([
+    ['saved-codex', undefined],
+    ['saved-codex', undefined],
+    ['saved-glm', 'low'],
+  ]);
+});
