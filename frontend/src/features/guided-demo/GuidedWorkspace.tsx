@@ -85,6 +85,8 @@ export function GuidedWorkspace({
           busy={state.busy || opening}
           onStart={(step) => void state.start(step)}
           onRetry={(step) => void state.retry(step)}
+          autopilot={state.autopilot}
+          onAutopilot={state.setAutopilot}
           onInspect={(run, step, candidate, kind) => void inspect(run, step, candidate, kind)}
           refresh={refreshState}
           runs={runFacts}
