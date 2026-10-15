@@ -129,16 +129,18 @@ test('version 1 keeps its published bundle while version 2 adds its own briefs a
   assert.ok(Object.hasOwn(v2, 'fixtures/guided-task-board/briefs/v2.json'));
   assert.ok(!Object.hasOwn(v2, 'fixtures/guided-task-board/briefs/v1.json'));
   // v1 serves its frozen copy; v2 serves the current oracle at the same evaluator path.
-  for (const file of ['run.mjs', 'observe.mjs']) {
+  for (const file of ['run.mjs']) {
     const path = `fixtures/guided-task-board/oracle/${file}`;
     assert.deepEqual(v2[path], v1[path]);
   }
-  const check = 'fixtures/guided-task-board/oracle/check.mjs';
-  assert.equal(v2[check].content, readFileSync(resolve(root, check), 'utf8'));
-  assert.equal(
-    v1[check].content,
-    readFileSync(resolve(root, 'fixtures/guided-task-board/oracle-v1/check.mjs'), 'utf8'),
-  );
+  for (const file of ['check.mjs', 'observe.mjs']) {
+    const path = `fixtures/guided-task-board/oracle/${file}`;
+    assert.equal(v2[path].content, readFileSync(resolve(root, path), 'utf8'));
+    assert.equal(
+      v1[path].content,
+      readFileSync(resolve(root, `fixtures/guided-task-board/oracle-v1/${file}`), 'utf8'),
+    );
+  }
   assert.notEqual(protectedBundle(2).digest, protectedBundle(1).digest);
   assert.equal(guidedPolicy(2).build.test_bundle.digest, protectedBundle(2).digest);
   assert.throws(() => protectedBundle(3));
