@@ -18,6 +18,10 @@ import { ledger, sha } from './storage';
 import type { Env, Json, Scope } from './types';
 import { providerCredentials } from './vault';
 import { workspace } from './workspace';
+
+/** Long agent conversations grow past a few hundred KB; spend is capped by tokens and budgets. */
+export const MODEL_REQUEST_LIMIT = 16 * 1024 * 1024;
+
 import {
   reserveWorkspaceSpend,
   settleWorkspaceSpend,
@@ -50,7 +54,7 @@ export const modelHandler =
         job,
         provider,
         path,
-        await readJson(req, 256 * 1024),
+        await readJson(req, MODEL_REQUEST_LIMIT),
         sharedContext,
       );
       for (const key of [
