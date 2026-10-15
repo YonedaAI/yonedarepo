@@ -1,8 +1,10 @@
 import type { Snapshot } from '../../lib/types';
 import { restoreTeam, runMode } from '../team/teamDraft';
+import { readTeamPlan } from '../team/teamPlanRecord';
 import type { Provider } from '../workspace/ProviderSettings';
 import type { AdaptiveAgentDraft } from './adaptiveDraft';
 import { preservePublishedCriteria, publishedContext, publishedRun } from './publishedRun';
+import { textList } from './recordFields';
 import { type InitialRun, restoreModelBudgets } from './restartRun';
 import { defaultRunAgents } from './runDefaults';
 
@@ -16,8 +18,8 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
   const agents: AdaptiveAgentDraft[] = source
     ? structuredClone(source.agents)
     : defaultRunAgents(snapshot);
-  const criteria: string[] = source?.criteria ??
-    publication?.run.criteria ?? [
+  const criteria: string[] = textList(source?.criteria) ??
+    textList(publication?.run.criteria) ?? [
       'Preserve existing behavior and checks',
       'Verify the requested change with meaningful tests',
     ];
@@ -25,7 +27,7 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     publication && criteria.length < 32
       ? [...new Set([...criteria, preservePublishedCriteria])]
       : criteria;
-  const previousTeamPlan = source?.team ?? publication?.run.team_plan;
+  const previousTeamPlan = readTeamPlan(source?.team ?? publication?.run.team_plan);
   const previousAutomatic =
     (source?.teamPlanning ?? publication?.run.team_planning) === 'automatic';
   return {
@@ -43,7 +45,7 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
       source?.id && mode === 'collaborate' && !previousAutomatic && previousTeamPlan
         ? restoreTeam(previousTeamPlan, agents)
         : undefined,
-    context: [...(source?.context ?? inheritedContext.ids)],
+    context: [...(textList(source?.context) ?? inheritedContext.ids)],
     budgets: structuredClone(
       source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),
     ),
