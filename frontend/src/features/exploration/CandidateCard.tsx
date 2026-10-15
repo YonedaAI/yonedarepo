@@ -120,7 +120,10 @@ export function CandidateCard({
               ? 'selected'
               : rejection
                 ? 'rejected by you'
-                : status.replaceAll('_', ' ')}
+                : status === 'rejected'
+                  ? // A failed required check, not an owner decision.
+                    'checks failed'
+                  : status.replaceAll('_', ' ')}
         </span>
         {rejection && (
           <div className="candidate-rejection" role="note">
