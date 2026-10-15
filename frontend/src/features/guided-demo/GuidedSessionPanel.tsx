@@ -8,6 +8,7 @@ import { type GuideRefreshState, guideRefreshText } from './guidedRefresh';
 import {
   type GuidedRunFacts,
   guidedRetryLabel,
+  guidedStepBlock,
   guidedStepLinks,
   guidedStepReason,
 } from './guidedStepView';
@@ -25,6 +26,7 @@ export function GuidedSessionPanel({
   busy,
   onStart,
   onRetry,
+  onStopRetry,
   autopilot = false,
   onAutopilot,
   onInspect,
@@ -37,6 +39,8 @@ export function GuidedSessionPanel({
   onStart: (step: GuidedStepId) => void;
   /** Starts a fresh attempt of a step whose runs all ended without a complete result. */
   onRetry: (step: GuidedStepId) => void;
+  /** Ends a blocked step's open runs and retries it. */
+  onStopRetry?: (step: GuidedStepId) => void;
   autopilot?: boolean;
   onAutopilot?: (on: boolean) => void;
   onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
@@ -94,6 +98,7 @@ export function GuidedSessionPanel({
           const runId = lastRun(step);
           const links = guidedStepLinks(step, runs);
           const reason = guidedStepReason(step, runs);
+          const block = guidedStepBlock(step, runs);
           return (
             <li key={step.id} className={session.next_step === step.id ? 'current' : undefined}>
               <div className="guided-stage-heading">
@@ -107,7 +112,29 @@ export function GuidedSessionPanel({
                 </span>
               </div>
               <p>{definition.description}</p>
+              {block && (
+                <div className="guided-attention" role="alert">
+                  <p>
+                    <strong>Blocked.</strong> {block.message}
+                  </p>
+                  {block.stuck ? (
+                    onStopRetry && (
+                      <button
+                        className="quiet guided-step-action"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => onStopRetry(step.id)}
+                      >
+                        Stop and retry
+                      </button>
+                    )
+                  ) : (
+                    <p className="subtle">Other agents are still working and may recover it.</p>
+                  )}
+                </div>
+              )}
               {step.status === 'running' &&
+                !block &&
                 !(step.id === 'review' && step.next_action === 'review_and_publish') && (
                   <p className="guided-running-note">{runningExplanations[step.id]}</p>
                 )}
