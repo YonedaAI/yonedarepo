@@ -113,3 +113,45 @@ describe('checked working branch review', () => {
     expect(draft.publication).toBeUndefined();
   });
 });
+
+describe('guided working branch continuation', () => {
+  it('leaves continuation to the guide instead of offering a free-form brief', async () => {
+    const { renderToStaticMarkup } = await import('react-dom/server');
+    const { createElement } = await import('react');
+    const { WorkingBranchPanel } = await import('./WorkingBranchPanel');
+    const run = {
+      id: 'guide-run',
+      status: 'ready',
+      working_branch_id: 'guide-b',
+      guided: { profile_id: 'task-board-v1', version: 2 },
+    };
+    const snapshot = {
+      repository: { published_commit: 'a'.repeat(40), head_commit: 'a'.repeat(40) },
+      runs: [run, { id: 'guide-other', status: 'exploring', working_branch_id: 'guide-b' }],
+      executions: [{ id: 'x', run_id: 'guide-other', status: 'running' }],
+      working_branches: [
+        {
+          id: 'guide-b',
+          status: 'active',
+          working_commit: 'b'.repeat(40),
+          working_revision: { repository: 'yoneda-dev/attempt', commit: 'b'.repeat(40) },
+          canonical_base_commit: 'a'.repeat(40),
+          version: 13,
+          latest_candidate_id: 'c',
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      createElement(WorkingBranchPanel, {
+        snapshot: snapshot as never,
+        run,
+        reviewer: false,
+        busy: false,
+        canStart: true,
+        onContinue: () => {},
+      }),
+    );
+    expect(html).not.toContain('Continue checked work');
+    expect(html).toContain('The guided demo continues this branch');
+  });
+});
