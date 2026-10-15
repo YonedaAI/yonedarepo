@@ -2,7 +2,15 @@ import type { GuidedStep } from '../../../../shared/guided-runs';
 import type { Snapshot } from '../../lib/types';
 
 /** What the panel may know about a step's runs from the repository snapshot. */
-export type GuidedRunFacts = { variant?: string; status?: string; failedTask?: string };
+export type GuidedRunFacts = {
+  variant?: string;
+  status?: string;
+  failedTask?: string;
+  /** A failed agent in a run that has not ended yet, with its recorded error. */
+  blocked?: string;
+  /** Whether any agent or job of the run is still queued or working. */
+  active?: boolean;
+};
 export type GuidedStepLink = { runId: string; label: string; candidate?: string; primary: boolean };
 
 const failedStatuses = ['failed', 'cancelled'];
@@ -13,10 +21,23 @@ export function guidedRunFacts(snapshot: Snapshot): Record<string, GuidedRunFact
     const failedTask = (snapshot.team_tasks ?? []).find(
       (task) => task.run_id === run.id && task.status === 'failed',
     )?.title;
+    const executions = (snapshot.executions ?? []).filter((item) => item.run_id === run.id);
+    const failedAgent = executions.find((item) => item.status === 'failed');
+    const firstLine = String(failedAgent?.error ?? '')
+      .split('\n')[0]
+      .slice(0, 200);
     facts[run.id] = {
       variant: typeof run.guided?.variant === 'string' ? run.guided.variant : undefined,
       status: typeof run.status === 'string' ? run.status : undefined,
       failedTask: typeof failedTask === 'string' ? failedTask : undefined,
+      blocked: failedAgent
+        ? `${failedAgent.strategy ?? failedAgent.team_role ?? 'An agent'}${firstLine ? `: ${firstLine}` : ''}`
+        : undefined,
+      active:
+        executions.some((item) => ['queued', 'starting', 'running'].includes(item.status)) ||
+        ((snapshot as { jobs?: Record<string, any>[] }).jobs ?? []).some(
+          (job) => job.run_id === run.id && ['queued', 'running', 'deferred'].includes(job.status),
+        ),
     };
   }
   return facts;
@@ -89,4 +110,22 @@ export function guidedRetryLabel(step: GuidedStep) {
   return step.id === 'concurrent' && step.evidence.some((item) => item.kind === 'owner_rejection')
     ? 'Retry concurrent changes'
     : 'Retry this step';
+}
+
+/**
+ * A running step whose run has a failed agent shows that block immediately. It is `stuck` when no
+ * agent or job of the step is still working, so nothing will move it forward on its own.
+ */
+export function guidedStepBlock(step: GuidedStep, facts: Record<string, GuidedRunFacts>) {
+  if (step.status !== 'running') return null;
+  const blocked = step.run_ids.filter((id) => facts[id]?.blocked);
+  if (!blocked.length) return null;
+  return {
+    message: blocked
+      .map(
+        (id) => `${capitalize(runName(facts, step.run_ids, id))} is blocked. ${facts[id]?.blocked}`,
+      )
+      .join(' '),
+    stuck: step.run_ids.every((id) => !facts[id]?.active),
+  };
 }
