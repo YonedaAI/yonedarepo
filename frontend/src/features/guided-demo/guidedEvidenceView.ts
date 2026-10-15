@@ -60,13 +60,13 @@ export function guidedProgress(session: GuidedSession) {
   return { steps, complete: steps.filter((step) => step.state === 'done').length };
 }
 
-/** Plain description of what a running step is doing; durations are typical, not promised. */
+/** Plain description of what a running step is doing; the live runtime is shown separately. */
 export const runningExplanations: Record<GuidedStepId, string> = {
   build:
-    'Specialist agents are building the task logic and its interface against a shared contract, then independent checks run on the combined result. Usually 10–30 min.',
+    'Specialist agents are building the task logic and its interface against a shared contract, then independent checks run on the combined result.',
   extend:
-    'New agents are adding bookmarks, reusing the earlier decision about stable task IDs, then fresh checks run. Usually 10–20 min.',
+    'New agents are adding bookmarks, reusing the earlier decision about stable task IDs, then fresh checks run.',
   concurrent:
-    'Two agents are making overlapping changes from the same starting point. A coordinator will reconcile them, then fresh checks run. Usually 20–40 min.',
-  review: 'Publishing your decision and confirming it in the repository. Usually under a minute.',
+    'Two agents are making overlapping changes from the same starting point. A coordinator will reconcile them, then fresh checks run.',
+  review: 'Publishing your decision and confirming it in the repository.',
 };
