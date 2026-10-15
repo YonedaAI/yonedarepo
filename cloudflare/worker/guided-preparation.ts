@@ -43,6 +43,14 @@ export async function prepareGuidedRuns(
       ? 'Publish the stable-identity design choice through context_publish as a proposed_decision with file_paths [public/tasks.mjs], explaining why replacing IDs during edits would lose references.'
       : 'Use context_get to open the relevant prior design choice from your assigned context, then cite its record ID in a context_publish link and explain how it influenced your implementation.';
   const fixed = Number(session.version) === guidedPlanVersion;
+  // A retry after the owner rejected the result carries that feedback to the agents.
+  const rejection = session.steps
+    .find((entry) => entry.id === step)
+    ?.evidence.find((evidence) => evidence.kind === 'owner_rejection');
+  const ownerFeedback =
+    attempt > 1 && typeof rejection?.reason === 'string' && rejection.reason.trim()
+      ? ` The owner rejected the previous result with this feedback: “${rejection.reason.trim().slice(0, 1000)}”. Address it while keeping every feature working.`
+      : '';
   for (const [ordinal, intent] of intents.entries()) {
     const entry = fixed ? guidedFixedPlan(step, ordinal) : undefined;
     const coordination = entry
@@ -51,8 +59,8 @@ export async function prepareGuidedRuns(
     const input: Json = {
       id: guidedRunId(prefix, step, ordinal, attempt),
       intent: coordination
-        ? `${intent} ${contextInstructions} ${coordination}`
-        : `${intent} ${contextInstructions} Plan two independent specialist scopes: task behavior in public/tasks.mjs and the interface in public/index.html, public/app.mjs and public/style.css. Establish the shared API contract upfront using the exact function signatures in this brief. Start both specialists in parallel. Do not wait for the core capture before starting interface work; implement against the known contract and coordinate discrepancies through peer_message while both work. Record and capture the shared contract. The integrator must wait for both captured contributions before integration and independent checks.`,
+        ? `${intent}${ownerFeedback} ${contextInstructions} ${coordination}`
+        : `${intent}${ownerFeedback} ${contextInstructions} Plan two independent specialist scopes: task behavior in public/tasks.mjs and the interface in public/index.html, public/app.mjs and public/style.css. Establish the shared API contract upfront using the exact function signatures in this brief. Start both specialists in parallel. Do not wait for the core capture before starting interface work; implement against the known contract and coordinate discrepancies through peer_message while both work. Record and capture the shared contract. The integrator must wait for both captured contributions before integration and independent checks.`,
       mode: 'collaborate',
       criteria: [
         'Preserve all earlier behavior',
