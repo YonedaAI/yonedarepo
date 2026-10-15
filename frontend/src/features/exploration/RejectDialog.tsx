@@ -62,7 +62,7 @@ export function RejectDialog({
             Reject result
           </button>
           <button type="button" className="quiet" disabled={busy} onClick={onClose}>
-            Keep reviewing
+            Cancel
           </button>
         </div>
       </form>
