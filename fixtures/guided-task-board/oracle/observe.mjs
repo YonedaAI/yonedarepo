@@ -48,14 +48,15 @@ try {
       throw new Error('Only scoped relative modules');
     return load(resolve(dirname(referring.identifier), specifier));
   });
-  await module.evaluate({ timeout: 1000 });
+  await module.evaluate({ timeout: 5000 });
   context.__subject = module.namespace;
   for (const call of calls) {
     const expression = `(function(){const args=${JSON.stringify(call.args)};
       try {return {value:__subject[${JSON.stringify(call.method)}](...args)}}
       catch {return {error:'subject_error'}}})()`;
     try {
-      observations.push(structuredClone(runInContext(expression, context, { timeout: 500 })));
+      // A cold container can spend most of a second loading collation data on first use.
+      observations.push(structuredClone(runInContext(expression, context, { timeout: 3000 })));
     } catch {
       observations.push({ error: 'subject_error' });
     }

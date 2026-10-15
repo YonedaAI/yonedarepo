@@ -165,3 +165,18 @@ test('UI wiring accepts any same-directory spelling of the app module script', (
   assert.equal(page('<script src="./app.mjs"></script>'), 'fail');
   assert.equal(page('<script type="module" src="./lib/app.mjs"></script>'), 'fail');
 });
+
+test('a correct sort whose first call is slow (cold collation data) still passes', () => {
+  const slowFirstSort = `${baseline.replace('export const visibleTasks', 'const filtered')}
+let warmed = false;
+export const visibleTasks = (tasks, options = {}) => {
+  if (!warmed && options.sort) { warmed = true; const until = Date.now() + 800; while (Date.now() < until); }
+  const list = filtered(tasks, options);
+  if (options.sort !== 'title-asc' && options.sort !== 'title-desc') return list;
+  const sorted = [...list].sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }));
+  return options.sort === 'title-desc' ? sorted.reverse() : sorted;
+};
+${links}`;
+  const result = control(slowFirstSort, (directory) => checkTaskBoard(directory, 'parallel', 'sort'));
+  assert.equal(result.checks.find((c) => c.name === 'title_ascending').status, 'pass');
+});
