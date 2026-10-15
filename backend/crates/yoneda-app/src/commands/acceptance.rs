@@ -90,7 +90,8 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         &json!({"payload":{"execution":{"id":candidate["execution"]}}}),
         now,
     )?;
-    let revision = current_checks(db, &candidate, &cid, &r)?;
+    let override_checks = c["accept_failed_checks"] == true;
+    let revision = current_checks(db, &candidate, &cid, &r, override_checks)?;
 
     let rationale = string(c, "rationale")?;
     let did = format!("decision:{request}");
@@ -98,7 +99,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     // canonical head observed before this selection reserves the target.
     let lease = super::publication::canonical_lease(&r)?;
     let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
-    let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now,"publication_expected":lease,"published_before":r["published_commit"]});
+    let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now,"publication_expected":lease,"published_before":r["published_commit"],"checks_overridden":override_checks});
     super::comparison::decision_provenance(db, &run, &mut d)?;
     create(db, "decisions", &did, &d)?;
     super::history::link_file_provenance_to_decision(db, &d, now)?;
@@ -155,6 +156,7 @@ pub(super) fn current_checks<S: SqlStore>(
     candidate: &Value,
     cid: &str,
     r: &Value,
+    accept_failed_checks: bool,
 ) -> Result<yoneda_core::Revision> {
     super::publication::not_rejected(candidate)?;
     let eid = string(candidate, "evaluation").map_err(|_| {
@@ -169,7 +171,11 @@ pub(super) fn current_checks<S: SqlStore>(
         serde_json::from_value(r["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
     let revision: yoneda_core::Revision =
         serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_evaluation(&evaluation, cid, &revision, &policy)?;
+    yoneda_core::validate_evaluation_binding(&evaluation, cid, &revision, &policy)?;
+    // Failed required checks block publication unless the owner explicitly overrides them.
+    if !accept_failed_checks {
+        yoneda_core::validate_required_checks(&evaluation, &policy)?;
+    }
     if policy
         .build
         .as_ref()
@@ -187,7 +193,9 @@ pub(super) fn current_checks<S: SqlStore>(
         }
     }
 
-    if candidate["status"] != "eligible" {
+    if candidate["status"] != "eligible"
+        && !(accept_failed_checks && candidate["status"] == "rejected")
+    {
         return Err(Error::new(
             "CHECKS_FAILED",
             "Candidate is not currently eligible",
