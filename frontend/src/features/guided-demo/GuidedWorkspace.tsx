@@ -93,6 +93,7 @@ export function GuidedWorkspace({
           onStart={(step) => void state.start(step)}
           onRetry={(step) => void state.retry(step)}
           onStopRetry={(step) => void state.stopAndRetry(step)}
+          onStop={(step) => void state.stop(step)}
           autopilot={state.autopilot}
           onAutopilot={state.setAutopilot}
           onInspect={(run, step, candidate, kind) => void inspect(run, step, candidate, kind)}
