@@ -14,6 +14,8 @@ export type GuidedRunFacts = {
   startedAt?: number;
   /** Agents working right now, by their recorded role or strategy. */
   working?: string[];
+  /** The run's newest captured result failed its required checks. */
+  checksFailed?: boolean;
 };
 export type GuidedStepLink = { runId: string; label: string; candidate?: string; primary: boolean };
 
@@ -43,6 +45,9 @@ export function guidedRunFacts(snapshot: Snapshot): Record<string, GuidedRunFact
       working: executions
         .filter((item) => item.status === 'running')
         .map((item) => String(item.team_role ?? item.strategy ?? 'agent')),
+      checksFailed:
+        (snapshot.candidates ?? []).filter((item) => item.run_id === run.id).at(-1)?.status ===
+        'rejected',
       blocked: failedAgent
         ? `${failedAgent.strategy ?? failedAgent.team_role ?? 'An agent'}${firstLine ? `: ${firstLine}` : ''}`
         : undefined,
@@ -131,15 +136,20 @@ export function guidedRetryLabel(step: GuidedStep) {
  */
 export function guidedStepBlock(step: GuidedStep, facts: Record<string, GuidedRunFacts>) {
   if (step.status !== 'running') return null;
-  const blocked = step.run_ids.filter((id) => facts[id]?.blocked);
+  const blocked = step.run_ids.filter((id) => facts[id]?.blocked || facts[id]?.checksFailed);
   if (!blocked.length) return null;
+  const stuck = step.run_ids.every((id) => !facts[id]?.active);
   return {
     message: blocked
-      .map(
-        (id) => `${capitalize(runName(facts, step.run_ids, id))} is blocked. ${facts[id]?.blocked}`,
-      )
+      .map((id) => {
+        const name = capitalize(runName(facts, step.run_ids, id));
+        if (facts[id]?.blocked) return `${name} is blocked. ${facts[id]?.blocked}`;
+        return stuck
+          ? `${name}: its result failed a required check.`
+          : `${name}: its result failed a required check; the coordinator is repairing it.`;
+      })
       .join(' '),
-    stuck: step.run_ids.every((id) => !facts[id]?.active),
+    stuck,
   };
 }
 

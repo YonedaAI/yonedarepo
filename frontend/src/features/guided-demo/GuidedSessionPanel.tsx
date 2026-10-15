@@ -130,7 +130,7 @@ export function GuidedSessionPanel({
               {block && (
                 <div className="guided-attention" role="alert">
                   <p>
-                    <strong>Blocked.</strong> {block.message}
+                    <strong>{block.stuck ? 'Blocked.' : 'Needs repair.'}</strong> {block.message}
                   </p>
                   {block.stuck ? (
                     onStopRetry && (
