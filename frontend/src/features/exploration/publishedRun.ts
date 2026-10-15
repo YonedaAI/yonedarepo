@@ -1,5 +1,6 @@
 import type { Snapshot } from '../../lib/types';
 import type { AgentDraft } from './agentLimits';
+import { textList } from './recordFields';
 
 type RecordData = Record<string, any>;
 export interface PublishedRun {
@@ -67,8 +68,8 @@ export function publishedContext(snapshot: Snapshot, publication: PublishedRun) 
     publication.candidate.evaluation,
     publication.execution?.id,
     ...artifactIds,
-    ...(publication.run.context ?? []),
-    ...(publication.execution?.context ?? []),
+    ...(textList(publication.run.context) ?? []),
+    ...(textList(publication.execution?.context) ?? []),
     ...snapshot.nodes.filter((item) => lineage.has(item.author)).map((item) => item.id),
     ...snapshot.edges
       .filter((edge) => artifactIds.has(edge.source) && edge.relation === 'states')
