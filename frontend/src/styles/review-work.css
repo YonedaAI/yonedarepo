@@ -101,3 +101,14 @@
   cursor: pointer;
   color: var(--muted);
 }
+.guided-autopilot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.guided-autopilot p {
+  margin: 0;
+  flex: 1 1 320px;
+}

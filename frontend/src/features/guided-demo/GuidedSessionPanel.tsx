@@ -25,6 +25,8 @@ export function GuidedSessionPanel({
   busy,
   onStart,
   onRetry,
+  autopilot = false,
+  onAutopilot,
   onInspect,
   onRefresh,
   refresh = { refreshing: false },
@@ -35,6 +37,8 @@ export function GuidedSessionPanel({
   onStart: (step: GuidedStepId) => void;
   /** Starts a fresh attempt of a step whose runs all ended without a complete result. */
   onRetry: (step: GuidedStepId) => void;
+  autopilot?: boolean;
+  onAutopilot?: (on: boolean) => void;
   onInspect: (run: string, step: GuidedStepId, candidate?: string, kind?: string) => void;
   onRefresh: () => void;
   refresh?: GuideRefreshState;
@@ -159,6 +163,31 @@ export function GuidedSessionPanel({
         })}
       </ol>
       <div className="guided-next" aria-live="polite">
+        {onAutopilot && (autopilot || (actionable && next && next.id !== 'review')) && (
+          <div className="guided-autopilot">
+            {autopilot ? (
+              <>
+                <p role="status">
+                  <strong>Autopilot on.</strong> Agents move from stage to stage without waiting,
+                  and failed stages retry automatically. It stops at review: publishing is your
+                  decision. Keep this tab open.
+                </p>
+                <button type="button" className="quiet" onClick={() => onAutopilot(false)}>
+                  Stop autopilot
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => onAutopilot(true)}
+              >
+                Run all stages automatically
+              </button>
+            )}
+          </div>
+        )}
         {actionable && next && definition ? (
           <>
             <h3>Next: {definition.title}</h3>
