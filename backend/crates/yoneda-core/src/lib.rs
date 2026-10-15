@@ -219,6 +219,18 @@ pub fn validate_evaluation(
     revision: &Revision,
     policy: &Policy,
 ) -> Result<()> {
+    validate_evaluation_binding(e, candidate, revision, policy)?;
+    validate_required_checks(e, policy)
+}
+
+/// The evaluation is bound to the exact candidate, revision, policy and evidence object,
+/// whatever its check outcomes.
+pub fn validate_evaluation_binding(
+    e: &Evaluation,
+    candidate: &str,
+    revision: &Revision,
+    policy: &Policy,
+) -> Result<()> {
     if e.candidate != candidate
         || &e.revision != revision
         || e.policy != policy.version
@@ -236,6 +248,11 @@ pub fn validate_evaluation(
             "Evaluation requires a SHA-256 evidence object",
         ));
     }
+    Ok(())
+}
+
+/// Every required check must be present exactly once and pass.
+pub fn validate_required_checks(e: &Evaluation, policy: &Policy) -> Result<()> {
     for required in &policy.required_checks {
         let matching: Vec<_> = e.checks.iter().filter(|c| &c.name == required).collect();
         if matching.len() != 1 || matching[0].status != "pass" {

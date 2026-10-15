@@ -231,3 +231,33 @@ fn rejection_guards_stale_heads_agents_and_selected_candidates() {
     selected["expected_version"] = json!(1);
     assert_eq!(call(&db, selected).unwrap_err().code, "INVALID_STATE");
 }
+
+/// A result whose required checks failed can still be published, but only on the owner's
+/// explicit override, which the decision records.
+fn failed_result() -> NativeStore {
+    let db = repo();
+    call(&db,json!({"op":"start_run","id":"run-failed","intent":"Implement registration","expected_commit":"a".repeat(40),"expected_version":0})).unwrap();
+    checked_step(&db, "run-failed", "candidate-f", &"c".repeat(40));
+    db.query(
+        "UPDATE evaluations SET payload=json_set(payload,'$.checks[1].status','fail')",
+        &[],
+    )
+    .unwrap();
+    db.query("UPDATE candidates SET payload=json_set(payload,'$.status','rejected') WHERE id='candidate-f'", &[]).unwrap();
+    db
+}
+fn publish(db: &NativeStore, override_checks: bool) -> Result<Value> {
+    call(
+        db,
+        json!({"op":"accept","request_id":format!("publish-failed-{override_checks}"),"candidate":"candidate-f","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed the failing check","alternatives":[],"accept_failed_checks":override_checks}),
+    )
+}
+#[test]
+fn failed_checks_block_publication_without_an_explicit_owner_override() {
+    let db = failed_result();
+    assert_eq!(publish(&db, false).unwrap_err().code, "CHECKS_FAILED");
+    let receipt = publish(&db, true).unwrap();
+    assert_eq!(receipt["status"], "publication_pending");
+    let decision = crate::storage::get(&db, "decisions", receipt["id"].as_str().unwrap()).unwrap();
+    assert_eq!(decision["checks_overridden"], true);
+}
