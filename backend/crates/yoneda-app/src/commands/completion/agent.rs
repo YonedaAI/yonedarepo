@@ -67,8 +67,10 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             payload["expected_head"] = resolver["expected_head"].clone();
             payload["expected_version"] = resolver["expected_version"].clone();
             payload["merge_workspace_revision"] = resolver["merge_workspace_revision"].clone();
+            // The resolver may edit any valid path except these; `conflict_paths`
+            // records only the actually conflicting paths.
             payload["conflict_paths"] = e["conflict_paths"].clone();
-            payload["team_owned_paths"] = e["conflict_paths"].clone();
+            payload["resolver_protected_paths"] = e["resolver_protected_paths"].clone();
         }
         super::super::team::capture_payload(db, j, &mut payload, now)?;
         let capture_id = if e["team_task_revision"].as_i64().is_some_and(|r| r > 1) {

@@ -83,27 +83,20 @@ pub fn validate_capture_result(
                 "Resolver capture is not based on the reserved canonical head",
             ));
         }
-        let allowed: Vec<&str> = job["payload"]["conflict_paths"]
-            .as_array()
-            .ok_or_else(|| bad("Missing approved conflict paths"))?
-            .iter()
-            .filter_map(|path| path.as_str())
-            .collect();
+        // Any valid, unprotected path may be edited (see `resolver_scope`).
+        let protected = crate::resolver_scope::frozen_protected(&job["payload"])?;
         let captured = result["resolver_delta_paths"]
             .as_array()
             .ok_or_else(|| bad("Resolver capture omitted Git paths"))?;
-        if captured.is_empty()
-            || captured.iter().any(|path| {
-                path.as_str().is_none_or(|path| {
-                    crate::validate_path(path).is_err() || !allowed.contains(&path)
-                })
-            })
-            || candidate_commit.is_empty()
-        {
-            return Err(bad(
-                "Resolver capture exceeds its approved conflict path manifest",
-            ));
+        if captured.is_empty() {
+            return Err(bad("Resolver capture did not change any path"));
         }
+        let captured = captured
+            .iter()
+            .map(|path| path.as_str().ok_or_else(|| bad("Invalid resolver path")))
+            .collect::<Result<Vec<_>>>()?;
+        crate::resolver_scope::validate_edits(captured.iter().copied(), &protected)
+            .map_err(|e| bad(&e.message))?;
         if result["id"].as_str().is_none_or(str::is_empty)
             || result["tree"].as_str().is_none_or(str::is_empty)
         {
@@ -204,3 +197,7 @@ fn git_hash(value: &str) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "conflict_capture_tests.rs"]
+mod tests;

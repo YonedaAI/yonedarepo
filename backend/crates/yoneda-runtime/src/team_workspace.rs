@@ -207,7 +207,7 @@ fn changed_git(
         .collect()
 }
 
-fn validate_git_shape(files: &crate::transport::GitWorkspace) -> Result<()> {
+pub(crate) fn validate_git_shape(files: &crate::transport::GitWorkspace) -> Result<()> {
     for path in files.keys() {
         validate_path(path)?;
         let mut prefix = path.as_str();
