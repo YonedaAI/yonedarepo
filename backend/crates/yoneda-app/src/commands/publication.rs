@@ -172,7 +172,7 @@ fn recover<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     if candidate["revision"] != d["target"] || r["head_commit"] != d["target"]["commit"] {
         return Err(Error::new("FENCED", "The selected target changed"));
     }
-    super::acceptance::current_checks(db, &candidate, &cid, &r)?;
+    super::acceptance::current_checks(db, &candidate, &cid, &r, d["checks_overridden"] == true)?;
     if get(db, "runs", &string(&candidate, "run_id")?)?["status"] == "cancelled" {
         return Err(Error::new("FENCED", "Run was cancelled"));
     }
