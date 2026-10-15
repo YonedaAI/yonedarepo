@@ -1,9 +1,20 @@
 use super::*;
-pub(super) fn candidate<S: SqlStore>(db: &S, ids: &[Value], phase: &str) -> Result<Option<Value>> {
+/// The newest evaluated result for this phase with whether its required checks passed. When
+/// `require_pass` (version 1) only passing results count; otherwise checks are reported only.
+pub(super) fn candidate<S: SqlStore>(
+    db: &S,
+    ids: &[Value],
+    phase: &str,
+    require_pass: bool,
+) -> Result<Option<(Value, bool)>> {
     for candidate in all(db, "candidates")?
         .into_iter()
         .rev()
-        .filter(|candidate| ids.contains(&candidate["run_id"]) && candidate["status"] == "eligible")
+        .filter(|candidate| {
+            ids.contains(&candidate["run_id"])
+                && (candidate["status"] == "eligible"
+                    || (!require_pass && candidate["status"] == "rejected"))
+        })
     {
         let evaluation = get(db, "evaluations", &string(&candidate, "evaluation")?)?;
         let capture = get(db, "jobs", &string(&candidate, "capture_job")?)?;
@@ -28,8 +39,8 @@ pub(super) fn candidate<S: SqlStore>(db: &S, ids: &[Value], phase: &str) -> Resu
                     .any(|check| check["name"] == *name && check["status"] == "pass")
             })
         });
-        if passed {
-            return Ok(Some(candidate));
+        if passed || !require_pass {
+            return Ok(Some((candidate, passed)));
         }
     }
     Ok(None)
@@ -241,11 +252,15 @@ pub(super) fn resolved<S: SqlStore>(db: &S, ids: &[Value], candidate: &Value) ->
                 .filter(|id| **id != conflict["candidate"]["run_id"])
                 .cloned()
                 .collect::<Vec<_>>();
-            let Some(other) = self::candidate(db, &other_ids, "parallel")? else {
+            let Some((other, _)) = self::candidate(db, &other_ids, "parallel", true)? else {
                 return Ok(false);
             };
-            let Some(original) =
-                self::candidate(db, &[conflict["candidate"]["run_id"].clone()], "parallel")?
+            let Some((original, _)) = self::candidate(
+                db,
+                &[conflict["candidate"]["run_id"].clone()],
+                "parallel",
+                true,
+            )?
             else {
                 return Ok(false);
             };
