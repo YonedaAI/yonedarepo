@@ -92,3 +92,9 @@ Repository deletion and editable 1–6-agent run rosters are implemented and dep
 - Public source: CI green on export `22481c1`.
 - Open: TODO (lead) — full guided canary (context continuation, conflict reconciliation, final checks) on Git-native and lazy-source transports; unfamiliar-human rehearsal of the guided demo.
 - Docs: README leads with the agent-first positioning and a Try it section; [submission](submission.md) rewritten to current state with the Delta-Lake-style source roadmap labeled as not built; dated README status paragraphs relocated to [release evidence](release-evidence.md).
+
+## Feature backlog
+
+- **Harness recovery (requested 2026-10-14).** Today a stopped agent harness (rollout, eviction, SIGTERM) is retried once from scratch in a fresh container (`HARNESS_INTERRUPTED`, r20), so the agent loses its in-progress work and conversation. Goal: resume a stopped harness from its last checkpoint: recover the uncaptured workspace edits, replay the transcript/session into the restarted harness, and re-attach to the same task revision without a duplicate capture or a second budget reservation. Also: graceful drain on planned rollouts (finish or checkpoint running attempts before replacing instances).
+- **Cross-run file claims.** Concurrent runs should see which files another run is editing (task, agent, feature) so agents coordinate before colliding, instead of discovering overlaps only at merge time.
+- **Server-side guided autopilot.** Autopilot currently runs from the open guide tab; move stage advancement to the server so it continues with the tab closed.
