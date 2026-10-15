@@ -17,7 +17,7 @@ import { RunCandidates } from './RunCandidates';
 import { RunDetailsPanel } from './RunDetailsPanel';
 import { RunOverviewHeader } from './RunOverviewHeader';
 import { type RunTab, RunTabs } from './RunTabs';
-import { runHasActiveAttempts } from './runControlState';
+import { canCancelRun, runHasActiveAttempts } from './runControlState';
 import { selectionBlocker } from './runReviewState';
 import { StaleCandidateRepair } from './StaleCandidateRepair';
 import '../../styles/review-work.css';
@@ -154,6 +154,7 @@ export function RunDetail({
         run={run}
         busy={busy}
         onGuidedContinue={onGuidedContinue}
+        onCancel={canCancelRun(run, activeAttempts) ? onCancel : undefined}
         onAction={(action, candidate) => {
           if ((action === 'review' || action === 'results') && candidate) openResult(candidate);
           else if (action === 'review') openEvidence('results');

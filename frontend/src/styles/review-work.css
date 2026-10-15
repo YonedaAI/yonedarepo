@@ -118,3 +118,9 @@
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
+.guided-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}

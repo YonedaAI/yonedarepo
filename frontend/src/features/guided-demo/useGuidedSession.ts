@@ -118,6 +118,21 @@ export function useGuidedSession(
   actionsRef.current = { start, retry };
   /** Ends a stuck step's open runs, then retries the step once it reports needs attention. */
   const retryAfterStop = useRef<GuidedStepId | null>(null);
+  const stop = async (stepId: GuidedStepId) => {
+    const step = session?.steps.find((item) => item.id === stepId);
+    if (busy || !session || step?.status !== 'running') return;
+    setBusy(true);
+    setError('');
+    try {
+      for (const runId of step.run_ids)
+        await api(`repos/${encodeURIComponent(repo)}/cancel_run`, { run_id: runId }).catch(
+          () => {},
+        );
+    } finally {
+      if (active.current) setBusy(false);
+    }
+    await refresh();
+  };
   const stopAndRetry = async (stepId: GuidedStepId) => {
     const step = session?.steps.find((item) => item.id === stepId);
     if (busy || !session || step?.status !== 'running') return;
@@ -178,6 +193,7 @@ export function useGuidedSession(
     refresh,
     start,
     retry,
+    stop,
     stopAndRetry,
     autopilot,
     setAutopilot,
