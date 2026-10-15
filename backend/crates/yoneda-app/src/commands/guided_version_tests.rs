@@ -116,3 +116,44 @@ fn guided_version_one_still_gates_on_demonstration_evidence() {
     evidence_fixture::checked(&db, &first, "build", false);
     assert_ne!(read(&db)["steps"][0]["status"], "complete");
 }
+
+/// Version 2: checks are reported, never a gate; a captured result whose checks failed still
+/// completes the step, and the failed checks stay visible for the owner's decision.
+#[test]
+fn guided_version_two_failed_checks_are_reported_without_blocking_the_step() {
+    let db = versioned(json!(2));
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evidence_fixture::checked(&db, &first, "build", true);
+    db.query("UPDATE candidates SET payload=json_set(payload,'$.status','rejected') WHERE json_extract(payload,'$.run_id')=?", &[json!(first)]).unwrap();
+    db.query(
+        "UPDATE evaluations SET payload=json_set(payload,'$.checks[0].status','fail')",
+        &[],
+    )
+    .unwrap();
+    let view = read(&db);
+    assert_eq!(view["steps"][0]["status"], "complete");
+    assert!(
+        view["steps"][0]["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["kind"] == "checked_source" && e["verified"] == false)
+    );
+}
+
+#[test]
+fn guided_version_one_still_requires_passing_checks() {
+    let db = versioned(json!(1));
+    let started = execute(&db, request("build")).unwrap();
+    let first = started["steps"][0]["run_ids"][0]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    evidence_fixture::checked(&db, &first, "build", true);
+    db.query("UPDATE candidates SET payload=json_set(payload,'$.status','rejected') WHERE json_extract(payload,'$.run_id')=?", &[json!(first)]).unwrap();
+    assert_ne!(read(&db)["steps"][0]["status"], "complete");
+}
