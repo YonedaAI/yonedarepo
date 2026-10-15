@@ -114,6 +114,34 @@ export function useGuidedSession(
     if (busy || !session || step?.status !== 'needs_attention') return;
     await submit(stepId, step.attempt ?? 1);
   };
+  const actionsRef = useRef({ start, retry });
+  actionsRef.current = { start, retry };
+  /** Ends a stuck step's open runs, then retries the step once it reports needs attention. */
+  const retryAfterStop = useRef<GuidedStepId | null>(null);
+  const stopAndRetry = async (stepId: GuidedStepId) => {
+    const step = session?.steps.find((item) => item.id === stepId);
+    if (busy || !session || step?.status !== 'running') return;
+    setBusy(true);
+    setError('');
+    try {
+      for (const runId of step.run_ids)
+        await api(`repos/${encodeURIComponent(repo)}/cancel_run`, { run_id: runId }).catch(
+          () => {},
+        );
+      retryAfterStop.current = stepId;
+    } finally {
+      if (active.current) setBusy(false);
+    }
+    await refresh();
+  };
+  useEffect(() => {
+    const stepId = retryAfterStop.current;
+    if (!stepId || busy || !session) return;
+    const step = session.steps.find((item) => item.id === stepId);
+    if (step?.status !== 'needs_attention') return;
+    retryAfterStop.current = null;
+    void actionsRef.current.retry(stepId);
+  }, [busy, session]);
   const autopilotKey = `yoneda-guided-autopilot:${repo}`;
   const [autopilot, setAutopilotState] = useState(() => {
     try {
@@ -133,8 +161,7 @@ export function useGuidedSession(
     },
     [autopilotKey],
   );
-  const actions = useRef({ start, retry });
-  actions.current = { start, retry };
+  const actions = actionsRef;
   // Autopilot moves agent stages forward without waiting for a click; review stays manual.
   useEffect(() => {
     if (!autopilot || busy || !session) return;
@@ -143,5 +170,16 @@ export function useGuidedSession(
     else if (action.kind === 'retry') void actions.current.retry(action.step);
     else if (action.kind === 'stop') setAutopilot(false);
   }, [autopilot, busy, session, setAutopilot]);
-  return { session, error, busy, loading, refresh, start, retry, autopilot, setAutopilot };
+  return {
+    session,
+    error,
+    busy,
+    loading,
+    refresh,
+    start,
+    retry,
+    stopAndRetry,
+    autopilot,
+    setAutopilot,
+  };
 }
