@@ -10,6 +10,10 @@ export type GuidedRunFacts = {
   blocked?: string;
   /** Whether any agent or job of the run is still queued or working. */
   active?: boolean;
+  /** When the run's first agent started (epoch ms). */
+  startedAt?: number;
+  /** Agents working right now, by their recorded role or strategy. */
+  working?: string[];
 };
 export type GuidedStepLink = { runId: string; label: string; candidate?: string; primary: boolean };
 
@@ -30,6 +34,15 @@ export function guidedRunFacts(snapshot: Snapshot): Record<string, GuidedRunFact
       variant: typeof run.guided?.variant === 'string' ? run.guided.variant : undefined,
       status: typeof run.status === 'string' ? run.status : undefined,
       failedTask: typeof failedTask === 'string' ? failedTask : undefined,
+      startedAt:
+        executions
+          .map((item) => Number(item.started_at))
+          .filter((at) => Number.isFinite(at) && at > 0)
+          .sort((a, b) => a - b)[0] ??
+        (Number.isFinite(Number(run.created_at)) ? Number(run.created_at) : undefined),
+      working: executions
+        .filter((item) => item.status === 'running')
+        .map((item) => String(item.team_role ?? item.strategy ?? 'agent')),
       blocked: failedAgent
         ? `${failedAgent.strategy ?? failedAgent.team_role ?? 'An agent'}${firstLine ? `: ${firstLine}` : ''}`
         : undefined,
@@ -128,4 +141,33 @@ export function guidedStepBlock(step: GuidedStep, facts: Record<string, GuidedRu
       .join(' '),
     stuck: step.run_ids.every((id) => !facts[id]?.active),
   };
+}
+
+const roleNames: Record<string, string> = {
+  worker: 'specialist',
+  integrator: 'integrator',
+  coordinator: 'coordinator',
+  planner: 'planner',
+};
+
+/** Elapsed time of a running step and who is working now, e.g. "Running 6 min 12 s · now: integrator". */
+export function guidedStepProgress(
+  step: GuidedStep,
+  facts: Record<string, GuidedRunFacts>,
+  now: number,
+) {
+  if (step.status !== 'running') return '';
+  const started = step.run_ids
+    .map((id) => facts[id]?.startedAt)
+    .filter((at): at is number => typeof at === 'number')
+    .sort((a, b) => a - b)[0];
+  if (started === undefined) return '';
+  const seconds = Math.max(0, Math.floor((now - started) / 1000));
+  const elapsed = `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+  const working = [
+    ...new Set(
+      step.run_ids.flatMap((id) => facts[id]?.working ?? []).map((role) => roleNames[role] ?? role),
+    ),
+  ];
+  return `Running ${elapsed}${working.length ? ` · now: ${working.join(', ')}` : ''}`;
 }

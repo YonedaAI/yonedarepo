@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GuidedStep } from '../../../../shared/guided-runs';
 import type { Snapshot } from '../../lib/types';
-import { guidedRunFacts, guidedStepBlock } from './guidedStepView';
+import { guidedRunFacts, guidedStepBlock, guidedStepProgress } from './guidedStepView';
 
 const step = {
   id: 'concurrent',
@@ -46,5 +46,31 @@ describe('guided step block', () => {
   });
   it('shows nothing when no agent failed', () => {
     expect(guidedStepBlock(step, guidedRunFacts(snapshot('running')))).toBeNull();
+  });
+});
+
+describe('guided step progress', () => {
+  it('shows elapsed time and who is working now', () => {
+    const facts = guidedRunFacts({
+      runs: [
+        { id: 'run-f', status: 'exploring' },
+        { id: 'run-s', status: 'exploring' },
+      ],
+      team_tasks: [],
+      jobs: [],
+      executions: [
+        { id: 'a', run_id: 'run-f', status: 'completed', team_role: 'worker', started_at: 1_000 },
+        {
+          id: 'b',
+          run_id: 'run-s',
+          status: 'running',
+          team_role: 'integrator',
+          started_at: 60_000,
+        },
+      ],
+    } as unknown as Snapshot);
+    expect(guidedStepProgress(step, facts, 1_000 + 372_000)).toBe(
+      'Running 6 min 12 s · now: integrator',
+    );
   });
 });
