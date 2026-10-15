@@ -32,6 +32,7 @@ vi.mock('react', async (original) => ({
 import { runSamples } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
 import { Exploration } from './Exploration';
+import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
 
@@ -109,6 +110,16 @@ describe('first working build', () => {
     expect(state.api).toHaveBeenCalledOnce();
     expect(state.api.mock.calls[0][0]).toBe('repos/repo/create_working_branch');
     expect(composer(render())).toBeDefined();
+  });
+  it('isolates a composer failure inside the dialog with a Close action', async () => {
+    state.api.mockResolvedValueOnce(branch);
+    await find(render(), RunToolbar)?.props.onNewRun();
+    const dialog = find(render(), Dialog);
+    const boundary = find(dialog?.props.children, RunEvidenceBoundary);
+    expect(boundary?.props.label).toBe('run settings');
+    expect(composer(boundary?.props.children)).toBeDefined();
+    boundary?.props.onClose();
+    expect(composer(render())).toBeUndefined();
   });
   it('keeps the draft mounted during a provider detour and forwards the refresh callback', async () => {
     state.api.mockResolvedValue(branch);
