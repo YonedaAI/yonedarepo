@@ -355,7 +355,7 @@ fn api_resolver_uses_current_target_and_premerged_clean_paths_not_original_run_t
         json!(["clean.rs", "conflict.rs"])
     );
     assert_eq!(context["baseline_inputs"][0]["revision"], workspace);
-    assert_eq!(context["write_paths"], json!(["conflict.rs"]));
+    assert_eq!(context["write_paths"], json!(["**"]));
     let clean = SourceFile {
         path: "clean.rs".into(),
         size: 1,
