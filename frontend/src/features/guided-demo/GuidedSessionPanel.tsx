@@ -29,6 +29,7 @@ export function GuidedSessionPanel({
   onStart,
   onRetry,
   onStopRetry,
+  onStop,
   autopilot = false,
   onAutopilot,
   onInspect,
@@ -41,6 +42,8 @@ export function GuidedSessionPanel({
   onStart: (step: GuidedStepId) => void;
   /** Starts a fresh attempt of a step whose runs all ended without a complete result. */
   onRetry: (step: GuidedStepId) => void;
+  /** Ends a running step's open runs; the step then offers Retry. */
+  onStop?: (step: GuidedStepId) => void;
   /** Ends a blocked step's open runs and retries it. */
   onStopRetry?: (step: GuidedStepId) => void;
   autopilot?: boolean;
@@ -123,9 +126,22 @@ export function GuidedSessionPanel({
               </div>
               <p>{definition.description}</p>
               {progress && (
-                <p className="guided-progress" aria-live="off">
-                  {progress}
-                </p>
+                <div className="guided-progress-row">
+                  <p className="guided-progress" aria-live="off">
+                    {progress}
+                  </p>
+                  {onStop && !block?.stuck && step.id !== 'review' && (
+                    <button
+                      type="button"
+                      className="quiet"
+                      disabled={busy}
+                      aria-label={`Stop: ${definition.title}`}
+                      onClick={() => onStop(step.id)}
+                    >
+                      Stop
+                    </button>
+                  )}
+                </div>
               )}
               {block && (
                 <div className="guided-attention" role="alert">

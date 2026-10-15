@@ -26,11 +26,14 @@ export function RunAttention({
   busy,
   onAction,
   onGuidedContinue,
+  onCancel,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
   busy: boolean;
   onGuidedContinue?: () => void;
+  /** Shown beside the status while the run can still be stopped. */
+  onCancel?: () => void;
   onAction: (action: 'review' | 'activity' | 'results' | 'details', candidate?: string) => void;
 }) {
   const recorded = runAttention(snapshot, run);
@@ -99,6 +102,11 @@ export function RunAttention({
             }}
           >
             {attention.actionLabel}
+          </button>
+        )}
+        {onCancel && (
+          <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+            Cancel run
           </button>
         )}
         {(evaluation?.deployment?.digest || evaluation?.app?.bundle_digest) && (
