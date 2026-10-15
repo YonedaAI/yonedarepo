@@ -66,17 +66,12 @@ export async function prepareGuidedRuns(
       ),
       adaptive_team: {
         version: 1,
+        // The guided demo favours quick turns: every role thinks at low effort.
         requested_agents: entry
-          ? entry.roles.map((role, index) =>
-              // Coordination slots (integrator, coordinator, resolver) do bookkeeping, not design:
-              // the GLM default of maximum thinking made every merge turn take 5–20 s.
-              entry.plan.tasks.some((task: Json) => task.agent === index)
-                ? { connection: null, role }
-                : { connection: null, role, reasoning_effort: 'low' },
-            )
+          ? entry.roles.map((role) => ({ connection: null, role, reasoning_effort: 'low' }))
           : [
-              { connection: null, role: 'backend' },
-              { connection: null, role: 'frontend' },
+              { connection: null, role: 'backend', reasoning_effort: 'low' },
+              { connection: null, role: 'frontend', reasoning_effort: 'low' },
             ],
         model_mix: guidedModelMix,
       },
