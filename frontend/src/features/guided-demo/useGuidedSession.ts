@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GuidedSession, GuidedStepId } from '../../../../shared/guided-runs';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { autopilotAction } from './guidedAutopilot';
 import { createGuidedStepStart, readGuidedSession } from './guidedClient';
 import { guidedStartJournal } from './guidedStartJournal';
 import { guidedRetryInput, guidedStepInput } from './guidedStepInput';
@@ -113,5 +114,34 @@ export function useGuidedSession(
     if (busy || !session || step?.status !== 'needs_attention') return;
     await submit(stepId, step.attempt ?? 1);
   };
-  return { session, error, busy, loading, refresh, start, retry };
+  const autopilotKey = `yoneda-guided-autopilot:${repo}`;
+  const [autopilot, setAutopilotState] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(autopilotKey) === 'on';
+    } catch {
+      return false;
+    }
+  });
+  const setAutopilot = useCallback(
+    (on: boolean) => {
+      setAutopilotState(on);
+      try {
+        window.sessionStorage.setItem(autopilotKey, on ? 'on' : 'off');
+      } catch {
+        /* Storage is optional; autopilot still runs for this page. */
+      }
+    },
+    [autopilotKey],
+  );
+  const actions = useRef({ start, retry });
+  actions.current = { start, retry };
+  // Autopilot moves agent stages forward without waiting for a click; review stays manual.
+  useEffect(() => {
+    if (!autopilot || busy || !session) return;
+    const action = autopilotAction(session);
+    if (action.kind === 'start') void actions.current.start(action.step);
+    else if (action.kind === 'retry') void actions.current.retry(action.step);
+    else if (action.kind === 'stop') setAutopilot(false);
+  }, [autopilot, busy, session, setAutopilot]);
+  return { session, error, busy, loading, refresh, start, retry, autopilot, setAutopilot };
 }
