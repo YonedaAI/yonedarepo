@@ -2,10 +2,12 @@ import type { RunMode, TeamPlan } from '../../../../shared/team';
 import type { Snapshot } from '../../lib/types';
 import { teamAgents } from '../team/teamAgents';
 import { runMode } from '../team/teamDraft';
+import { readTeamPlan } from '../team/teamPlanRecord';
 import type { Provider } from '../workspace/ProviderSettings';
 import { modelIsRunnable } from '../workspace/providerModels';
 import type { AgentDraft, DelegationDraft } from './agentLimits';
 import { defaultModelBudget, type ModelBudgetConfig, type ModelBudgetDraft } from './modelBudgets';
+import { textList } from './recordFields';
 import type { WorkingBranch } from './workingBranchView';
 
 export interface InitialRun {
@@ -75,8 +77,8 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
   return {
     id: run.id,
     intent: run.intent ?? '',
-    criteria: run.criteria ?? [],
-    context: run.context ?? [],
+    criteria: textList(run.criteria) ?? [],
+    context: textList(run.context) ?? [],
     agents,
     // Historical policy is evidence; restarting must preserve the repository's current checks.
     policy: JSON.stringify(snapshot.repository.policy?.build, null, 2),
@@ -85,8 +87,8 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
       : { enabled: false, max_depth: 1, max_executions: agents.length },
     budgets,
     mode: runMode(run.mode),
-    team: run.team_plan,
-    teamPlanning: run.team_planning,
+    team: readTeamPlan(run.team_plan),
+    teamPlanning: typeof run.team_planning === 'string' ? run.team_planning : undefined,
   };
 }
 
@@ -95,7 +97,10 @@ export function restoreModelBudgets(
   agents: AgentDraft[],
 ): Record<string, ModelBudgetDraft> {
   const budgets: Record<string, ModelBudgetDraft> = {};
-  for (const budget of (run.model_budgets ?? []) as ModelBudgetConfig[]) {
+  const recorded: unknown[] = Array.isArray(run.model_budgets) ? run.model_budgets : [];
+  for (const budget of recorded as ModelBudgetConfig[]) {
+    if (!budget || typeof budget.provider !== 'string' || typeof budget.model !== 'string')
+      continue;
     const key = JSON.stringify([budget.provider, budget.model]);
     const rootCount = agents.filter(
       (agent) => agent.expectedProvider === budget.provider && agent.expectedModel === budget.model,

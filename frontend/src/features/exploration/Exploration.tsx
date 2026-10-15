@@ -182,34 +182,36 @@ export function Exploration({
           locked={busy}
           wide
         >
-          <Suspense fallback={<p role="status">Loading run settings…</p>}>
-            <RunComposer
-              key={`${sampleProfileId ?? 'custom'}:${branchSource?.workingBranch ? `${branchSource.workingBranch.id}:${branchSource.workingBranch.version}` : (restartSource?.id ?? 'new-run')}`}
-              initialRun={
-                branchSource ?? (restartSource ? initialRun(snapshot, restartSource) : undefined)
-              }
-              sampleProfileId={sampleProfileId}
-              startUncertain={launcher.current?.uncertain}
-              busy={busy}
-              snapshot={snapshot}
-              onProviders={onProviders}
-              onClose={() => setComposing(false)}
-              onStart={async (brief) => {
-                setBusy(true);
-                try {
-                  launcher.current ??= createRunStart(repo.id);
-                  const id = await launcher.current.start(brief);
-                  setRunId(id);
-                  setComposing(false);
-                  setRestartId('');
-                  setBranchSource(undefined);
-                  await onChange();
-                } finally {
-                  setBusy(false);
+          <RunEvidenceBoundary label="run settings" onClose={() => setComposing(false)}>
+            <Suspense fallback={<p role="status">Loading run settings…</p>}>
+              <RunComposer
+                key={`${sampleProfileId ?? 'custom'}:${branchSource?.workingBranch ? `${branchSource.workingBranch.id}:${branchSource.workingBranch.version}` : (restartSource?.id ?? 'new-run')}`}
+                initialRun={
+                  branchSource ?? (restartSource ? initialRun(snapshot, restartSource) : undefined)
                 }
-              }}
-            />
-          </Suspense>
+                sampleProfileId={sampleProfileId}
+                startUncertain={launcher.current?.uncertain}
+                busy={busy}
+                snapshot={snapshot}
+                onProviders={onProviders}
+                onClose={() => setComposing(false)}
+                onStart={async (brief) => {
+                  setBusy(true);
+                  try {
+                    launcher.current ??= createRunStart(repo.id);
+                    const id = await launcher.current.start(brief);
+                    setRunId(id);
+                    setComposing(false);
+                    setRestartId('');
+                    setBranchSource(undefined);
+                    await onChange();
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              />
+            </Suspense>
+          </RunEvidenceBoundary>
         </Dialog>
       )}
       {run ? (

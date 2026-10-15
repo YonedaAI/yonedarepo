@@ -16,6 +16,19 @@ describe('app crash guard', () => {
     expect(reloads).toBe(1);
   });
 
+  it('reloads again for a later deploy, but never loops on a failing reload', () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    let reloads = 0;
+    expect(reloadAfterStaleChunk(storage, () => reloads++, 1_000)).toBe(true);
+    expect(reloadAfterStaleChunk(storage, () => reloads++, 5_000)).toBe(false);
+    expect(reloadAfterStaleChunk(storage, () => reloads++, 3_600_000)).toBe(true);
+    expect(reloads).toBe(2);
+  });
+
   it('shows a reload screen instead of a blank page', () => {
     const boundary = new AppErrorBoundary({ children: null });
     boundary.state = AppErrorBoundary.getDerivedStateFromError();

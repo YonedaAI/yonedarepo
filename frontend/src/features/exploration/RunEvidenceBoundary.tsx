@@ -1,8 +1,11 @@
 import { Component, type ReactNode } from 'react';
 
-/** An unavailable lazy asset must not remove the workspace or the pending decision. */
+/**
+ * An unavailable lazy asset or an unreadable record must not remove the workspace or the pending
+ * decision. With `onClose`, the failure stays inside its dialog, which the owner can dismiss.
+ */
 export class RunEvidenceBoundary extends Component<
-  { children: ReactNode; label: string },
+  { children: ReactNode; label: string; onClose?: () => void },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -23,6 +26,11 @@ export class RunEvidenceBoundary extends Component<
           <button type="button" className="quiet" onClick={() => window.location.reload()}>
             Reload workspace
           </button>
+          {this.props.onClose && (
+            <button type="button" className="quiet" onClick={this.props.onClose}>
+              Close
+            </button>
+          )}
         </div>
       );
     return this.props.children;
