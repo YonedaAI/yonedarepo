@@ -68,6 +68,6 @@ it('mounts the native resolver target with preserved clean edits and both actual
   const primary = await sourceScope(local, scope, 'repo');
   const clean = await sourceAuthority<any>(local, primary.binding.workspace_id, { op: 'source_stat', path: 'clean.rs', _actor: primary.actor });
   expect(clean.content.repository).toBe(merge.repository);
-  expect(primary.binding.write_paths).toEqual(['conflict.rs']);
+  expect(primary.binding.write_paths).toEqual(['**']);
   expect(scope.model_calls).toBe(0);
 });

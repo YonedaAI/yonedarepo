@@ -98,3 +98,6 @@ fn guided_stale_evaluation_completion_retains_queued_coordinator_state() {
     );
     assert_eq!(run["model_budgets"], original["model_budgets"]);
 }
+
+#[path = "guided_resolver_scope_tests.rs"]
+mod resolver_scope;

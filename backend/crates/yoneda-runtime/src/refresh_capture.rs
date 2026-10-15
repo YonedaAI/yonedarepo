@@ -116,12 +116,14 @@ fn decode_review_diff(bytes: Vec<u8>) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| err("Refresh diff is not valid UTF-8"))
 }
 
-/// Validate the resolver result against the expected head while permitting the
-/// clean, owner-approved candidate paths already present in its merge baseline.
+/// Return the resolver's edits relative to its frozen merge workspace. A
+/// resolver may edit any valid path except protected verification paths
+/// (`yoneda_core::resolver_scope`); the captured revision is still based on the
+/// reserved head and receives fresh independent checks.
 pub(crate) async fn resolver_capture_scope(
     job: &Value,
     output: &transport::GitWorkspace,
-) -> Result<(transport::GitWorkspace, Value, Vec<String>)> {
+) -> Result<Vec<String>> {
     let resolver = &job["payload"]["conflict_resolver"];
     let commit = resolver["merge_workspace_commit"]
         .as_str()
@@ -132,25 +134,20 @@ pub(crate) async fn resolver_capture_scope(
     if repository.is_empty() {
         return Err(err("Invalid frozen merge-workspace repository"));
     }
-    let base = job["payload"]["execution"]["base"]["commit"]
-        .as_str()
-        .ok_or_else(|| err("Resolver job is missing its expected canonical head"))?;
-    let head = crate::git::read_git_revision("http://git.yoneda.internal/canonical", base).await?;
     let merged =
         crate::git::read_git_revision("http://git.yoneda.internal/merge-workspace", commit).await?;
-    let mut allowed = changed_paths(&head, &merged);
-    let conflict_paths = job["payload"]["team_owned_paths"]
-        .as_array()
-        .ok_or_else(|| err("Resolver job is missing its approved conflict paths"))?;
-    for path in conflict_paths {
-        let path = path
-            .as_str()
-            .ok_or_else(|| err("Invalid approved conflict path"))?;
-        yoneda_core::validate_path(path)?;
-        allowed.insert(path.to_owned());
-    }
-    let delta = changed_paths(&merged, output).into_iter().collect();
-    Ok((head, json!(allowed.into_iter().collect::<Vec<_>>()), delta))
+    resolver_delta(job, &merged, output)
+}
+
+fn resolver_delta(
+    job: &Value,
+    merged: &transport::GitWorkspace,
+    output: &transport::GitWorkspace,
+) -> Result<Vec<String>> {
+    let protected = yoneda_core::resolver_scope::frozen_protected(&job["payload"])?;
+    let delta: Vec<String> = changed_paths(merged, output).into_iter().collect();
+    yoneda_core::resolver_scope::validate_edits(delta.iter().map(String::as_str), &protected)?;
+    Ok(delta)
 }
 
 fn changed_paths(
@@ -255,6 +252,32 @@ mod resolver_scope_tests {
             changed_paths(&merge, &resolved),
             ["conflict.txt"].into_iter().map(str::to_owned).collect()
         );
+    }
+
+    #[test]
+    fn resolver_may_edit_any_unprotected_path_beyond_the_conflict_paths() {
+        let merge = GitWorkspace::from([
+            ("conflict.txt".into(), file(b"marker")),
+            ("one-side.txt".into(), file(b"old")),
+            ("README.md".into(), file(b"guide")),
+        ]);
+        let mut resolved = merge.clone();
+        resolved.insert("conflict.txt".into(), file(b"resolved"));
+        resolved.insert("one-side.txt".into(), file(b"wired"));
+        resolved.insert("new.txt".into(), file(b"new"));
+        let job = serde_json::json!({"payload":{"conflict_paths":["conflict.txt"],"resolver_protected_paths":["tests/oracle"]}});
+        assert_eq!(
+            super::resolver_delta(&job, &merge, &resolved).unwrap(),
+            ["conflict.txt", "new.txt", "one-side.txt"]
+        );
+        for protected in ["README.md", "tests/oracle/run.mjs"] {
+            let mut edited = resolved.clone();
+            edited.insert(protected.into(), file(b"changed"));
+            assert!(
+                super::resolver_delta(&job, &merge, &edited).is_err(),
+                "{protected}"
+            );
+        }
     }
 
     fn file(bytes: &[u8]) -> GitFile {

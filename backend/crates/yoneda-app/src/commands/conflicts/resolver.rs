@@ -152,29 +152,39 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         ));
     }
     let resolver_id = format!("conflict-resolver:{request}");
+    let protected = protected_paths(if autonomous {
+        &run["policy"]
+    } else {
+        &repository["policy"]
+    });
+    let scope_rule = format!(
+        "The Git-conflicting paths are: {}. You may edit any repository file needed to integrate both sides, such as a file only one side changed, except these protected paths, which you must not edit: {}.",
+        scopes.join(", "),
+        protected.join(", ")
+    );
     let legacy_task = format!(
-        "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The source checkout is the trusted merge workspace at {}, with checked target head {} and immutable candidate {} as its two Git parents. Its conflict markers contain both sides, and its tree already preserves cleanly merged candidate changes. Read and integrate both sides semantically; do not discard either side by choosing current or candidate wholesale. Edit only these conflict paths: {}. The trusted capture and independent evaluator will inspect the resulting revision against the checked target head.",
+        "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The source checkout is the trusted merge workspace at {}, with checked target head {} and immutable candidate {} as its two Git parents. Its conflict markers contain both sides, and its tree already preserves cleanly merged candidate changes. Read and integrate both sides semantically; do not discard either side by choosing current or candidate wholesale. {} The trusted capture and independent evaluator will inspect the resulting revision against the checked target head.",
         record["id"],
         brief,
         record["merge_workspace_commit"],
         record["head_commit"],
         record["candidate_revision"],
-        scopes.join(", ")
+        scope_rule
     );
     let resolver_task = if run["workspace_transport"] == "api-source-v1" {
         format!(
-            "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The repo workspace is rooted at target {} with the trusted premerged changes from {} already applied; unresolved paths may still contain target bytes, without conflict markers. Read ../candidate-0 for the exact original candidate {} and ../candidate-1 for the exact preserved premerge workspace. Both views are read-only. Integrate both sides semantically and preserve clean premerged changes; do not select either side wholesale. Edit only these approved conflict paths: {}. Trusted capture preserves the ordered target and original candidate parents, then independent checks evaluate the exact result.",
+            "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The repo workspace is rooted at target {} with the trusted premerged changes from {} already applied; unresolved paths may still contain target bytes, without conflict markers. Read ../candidate-0 for the exact original candidate {} and ../candidate-1 for the exact preserved premerge workspace. Both views are read-only. Integrate both sides semantically and preserve clean premerged changes; do not select either side wholesale. {} Trusted capture preserves the ordered target and original candidate parents, then independent checks evaluate the exact result.",
             record["id"],
             brief,
             record["head_commit"],
             record["merge_workspace_commit"],
             record["candidate_revision"],
-            scopes.join(", ")
+            scope_rule
         )
     } else {
         legacy_task
     };
-    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":if autonomous {"Autonomous three-way conflict resolver"} else {"Owner-approved three-way conflict resolver"},"role":"coding","status":"queued","context":if autonomous { &run["context"] } else { &source_execution["context"] },"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
+    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":if autonomous {"Autonomous three-way conflict resolver"} else {"Owner-approved three-way conflict resolver"},"role":"coding","status":"queued","context":if autonomous { &run["context"] } else { &source_execution["context"] },"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"resolver_protected_paths":protected,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
     }
@@ -251,7 +261,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         &job_id,
         "agent",
         now,
-        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"team_owned_paths":scopes,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":compact_record["evidence"],"serverguard":"own_repository_only"}}),
+        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":compact_record["evidence"],"serverguard":"own_repository_only"}}),
     )?;
     record["resolver_request_input"] = request_input;
     record["resolver_authorization"] = authorization;
@@ -272,4 +282,24 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     Ok(
         json!({"conflict_id":record["id"],"status":"resolving","job_id":job_id,"execution_id":resolver_id,"model":record["resolver_model"]}),
     )
+}
+
+/// Paths a resolver must never edit: the guided verification floor plus the
+/// policy's protected test-bundle paths. Every other valid path is editable.
+fn protected_paths(policy: &Value) -> Vec<String> {
+    let mut paths: Vec<String> = yoneda_core::resolver_scope::ALWAYS_PROTECTED
+        .iter()
+        .map(|path| (*path).to_owned())
+        .collect();
+    for path in policy["build"]["test_bundle"]["protected_paths"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        if !paths.iter().any(|known| known == path) {
+            paths.push(path.to_owned());
+        }
+    }
+    paths
 }
