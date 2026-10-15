@@ -69,6 +69,15 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     if (receive && !write) return error('FORBIDDEN', 'Read-only Git capability', 403);
     return proxyArtifacts(req, env, name, tail.join('/'), url.search, receive);
   } catch (e: any) {
+    // Agents only see git's generic "HTTP 409"; record the actual failing step for operators.
+    console.error(
+      JSON.stringify({
+        event: 'git_proxy.failed',
+        path: new URL(req.url).pathname,
+        stage: e?.stage ?? 'scope',
+        error: String(e?.message ?? e).slice(0, 300),
+      }),
+    );
     return error('GIT_PROXY', e.message, 409);
   }
 };
@@ -81,9 +90,18 @@ async function proxyArtifacts(
   search: string,
   receive: boolean,
 ) {
-  using repo = await env.ARTIFACTS.get(name);
-  const info = await repo.info();
-  const token = await repo.createToken(receive ? 'write' : 'read', 60);
+  const staged = async <T>(stage: string, work: () => Promise<T>) => {
+    try {
+      return await work();
+    } catch (e: any) {
+      throw Object.assign(new Error(`${stage} ${name}: ${e?.message ?? e}`), { stage });
+    }
+  };
+  using repo = await staged('artifacts.get', () => env.ARTIFACTS.get(name));
+  const info = await staged('artifacts.info', () => repo.info());
+  const token = await staged('artifacts.token', () =>
+    repo.createToken(receive ? 'write' : 'read', 60),
+  );
   try {
     const remote = new URL(`${info.remote}/${path}`);
     remote.search = search;
