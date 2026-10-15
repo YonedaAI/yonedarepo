@@ -111,3 +111,10 @@ it('excludes manual-only models from an Auto planner pool until explicitly selec
   const explicit = resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: 'new-sol', role: 'builder', reasoning_effort: 'low' }] } }, pool);
   expect(explicit._approved_model_pool.map((entry: Json) => entry.connection)).toContain('new-sol');
 });
+
+it('runs GLM at low effort when no effort was chosen, instead of the provider maximum', () => {
+  const result = prepareModelRequest(job('zai', 'glm-5.3-flash'), 'claude', '/v1/messages', { output_config: { effort: 'max' } });
+  expect(result.body.output_config.effort).toBe('low');
+  const chosen = prepareModelRequest(job('zai', 'glm-5.3-flash', 'high'), 'claude', '/v1/messages', {});
+  expect(chosen.body.output_config.effort).toBe('high');
+});
