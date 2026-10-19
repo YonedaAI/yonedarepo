@@ -2,6 +2,7 @@
 use crate::storage::{SqlStore, bad, string};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
     git_object::ObjectId,
@@ -9,11 +10,54 @@ use yoneda_core::{
 };
 
 /// Landing policy: which checks must pass and how many independent approvals are needed.
+/// `runners` are owner-defined commands the platform executes itself; definitions come
+/// from policy, never from the commit under test, so a change cannot weaken its own check.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     pub required_checks: Vec<String>,
     pub approvals: u32,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub runners: BTreeMap<String, Runner>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct Runner {
+    /// argv, executed without a shell unless the owner writes `["sh", "-c", ...]`.
+    pub command: Vec<String>,
+    #[serde(default = "default_timeout")]
+    pub timeout_seconds: u32,
+}
+fn default_timeout() -> u32 {
+    600
+}
+
+impl Policy {
+    pub fn parse(value: &Value) -> Result<(Self, Value, String)> {
+        let policy: Policy = serde_json::from_value(value.clone())
+            .map_err(|e| bad(&format!("Invalid policy: {e}")))?;
+        policy
+            .required_checks
+            .iter()
+            .chain(policy.runners.keys())
+            .try_for_each(|name| check_name(name))?;
+        if policy.runners.len() > 32
+            || policy.runners.values().any(|r| {
+                r.command.is_empty()
+                    || r.command.len() > 64
+                    || r.command.iter().any(|a| a.len() > 4096 || a.contains('\0'))
+                    || !(1..=3600).contains(&r.timeout_seconds)
+            })
+        {
+            return Err(bad(
+                "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
+            ));
+        }
+        let json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
+        let digest = yoneda_core::fingerprint(&json)?;
+        Ok((policy, json, digest))
+    }
 }
 
 pub struct Settings {
@@ -68,14 +112,7 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         ));
     }
     let object_store = string(c, "object_store")?;
-    let policy: Policy = serde_json::from_value(c["policy"].clone())
-        .map_err(|e| bad(&format!("Invalid policy: {e}")))?;
-    policy
-        .required_checks
-        .iter()
-        .try_for_each(|name| check_name(name))?;
-    let policy_json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
-    let digest = yoneda_core::fingerprint(&policy_json)?;
+    let (_, policy_json, digest) = Policy::parse(&c["policy"])?;
     db.query(
         "INSERT INTO repo_settings(id,workspace,owner,object_store,policy,policy_digest,created_at) VALUES('repository',?,?,?,?,?,?)",
         &[json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone()],

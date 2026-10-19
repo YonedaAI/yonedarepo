@@ -1,6 +1,7 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
+import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
 import {
   type CachedObject,
@@ -14,7 +15,10 @@ import type { Env } from './types';
 export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string } }
-  | { _token: string };
+  | { _token: string }
+  | { _system: 'checks' };
+// Identity fields come only from the authenticating adapter, never from arguments.
+const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -30,7 +34,12 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   return async (command) => {
     const result = await stub.fetch('https://source-repository/', {
       method: 'POST',
-      body: JSON.stringify({ ...command, ...auth }),
+      body: JSON.stringify({
+        ...Object.fromEntries(
+          Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k)),
+        ),
+        ...auth,
+      }),
     });
     const value = await result.json<Json>();
     if (value.error) throw new ApiError(value.error.code, value.error.message);
@@ -97,18 +106,20 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
     const report = await objects.push(fromBase64(prepared.push_b64));
     await objects.cache(prepared.objects as CachedObject[]);
     const readback = await objects.readback(prepared.commit);
-    await ctx.call({
+    const recorded = await ctx.call({
       op: 'repo_record_commit',
       commit: prepared.commit,
       push_report_b64: toBase64(report),
       readback,
     });
+    await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
     return {
       commit: prepared.commit,
       tree: prepared.tree,
       parents: prepared.parents,
       touches: prepared.touches,
       base_version: base_version ?? 0,
+      check_runs: recorded.check_runs ?? [],
     };
   }
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');

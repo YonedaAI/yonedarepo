@@ -12,6 +12,7 @@ use yoneda_core::git_object::{
 const OWNER: &str = "user:owner";
 const AGENT: &str = "token:agent";
 const CI: &str = "token:ci";
+const SYSTEM: &str = "platform:checks";
 
 struct Harness {
     db: NativeStore,
@@ -44,6 +45,7 @@ impl Harness {
         c["now"] = json!(*self.now.borrow());
         match principal.strip_prefix("token:") {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
+            None if principal == SYSTEM => c["_system"] = json!("checks"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -512,5 +514,156 @@ fn merge_base_of_diverged_commits_is_their_fork_point() {
             json!({"op":"repo_merge_base","left":left,"right":unknown})
         )),
         "NOT_FOUND"
+    );
+}
+
+fn runner_policy(timeout: u32) -> Value {
+    json!({"policy": {"required_checks": ["unit"], "approvals": 1,
+        "runners": {"unit": {"command": ["sh", "-c", "cargo test"], "timeout_seconds": timeout}}}})
+}
+
+#[test]
+fn platform_check_runs_are_fenced_by_epoch_and_bound_to_policy() {
+    let (h, root) = seeded();
+    let mut set = runner_policy(60);
+    set["op"] = json!("repo_set_policy");
+    assert_eq!(code(h.run(AGENT, set.clone())), "FORBIDDEN");
+    let digest = h.ok(OWNER, set)["policy_digest"].clone();
+
+    // Recording a commit queues every policy runner automatically.
+    let id = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("a.txt", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let detail = h.ok(OWNER, json!({"op":"repo_commit","commit":id}));
+    let run = detail["check_runs"][0]["id"].as_str().unwrap().to_owned();
+    assert_eq!(detail["check_runs"][0]["status"], "queued");
+    assert_eq!(
+        h.ok(AGENT, json!({"op":"repo_check_request","commit":id}))["runs"][0]["existing"],
+        true
+    );
+
+    assert_eq!(
+        code(h.run(AGENT, json!({"op":"repo_check_claim","run_id":run}))),
+        "FORBIDDEN"
+    );
+    let claimed = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}));
+    assert_eq!(claimed["epoch"], 1);
+    assert_eq!(claimed["command"], json!(["sh", "-c", "cargo test"]));
+    assert_eq!(claimed["tree"], detail["tree"]);
+    assert!(h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["busy"] == true);
+
+    // The lease expires: a second executor takes over and the first is fenced off.
+    *h.now.borrow_mut() += 60_000 + 5 * 60_000;
+    assert_eq!(
+        h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["epoch"],
+        2
+    );
+    let complete = |epoch: u64, outcome: &str| {
+        h.run(
+            SYSTEM,
+            json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,
+            "outcome":outcome,"evidence":{"exit_code":0,"log":"platform/v1/r/checks/x"}}),
+        )
+    };
+    assert_eq!(code(complete(1, "pass")), "STALE_EPOCH");
+    assert_eq!(complete(2, "pass").unwrap()["status"], "passed");
+    assert_eq!(complete(2, "fail").unwrap()["already"], true);
+    let gates = &h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["gates"];
+    assert_eq!(gates["missing_checks"], json!([]));
+    let recorded = h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["checks"][0].clone();
+    assert_eq!(recorded["principal"], SYSTEM);
+
+    // A new policy invalidates results produced under the old one.
+    let mut stricter = runner_policy(120);
+    stricter["op"] = json!("repo_set_policy");
+    assert_ne!(h.ok(OWNER, stricter)["policy_digest"], digest);
+    let gates = &h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["gates"];
+    assert_eq!(gates["missing_checks"], json!(["unit"]));
+
+    // Infrastructure errors record no result and can be re-run.
+    let rerun = h.ok(
+        CI,
+        json!({"op":"repo_check_request","commit":id,"name":"unit"}),
+    )["runs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_ne!(rerun, run);
+    let epoch = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":rerun}))["epoch"]
+        .as_u64()
+        .unwrap();
+    h.ok(SYSTEM, json!({"op":"repo_check_complete","run_id":rerun,"epoch":epoch,"outcome":"error","evidence":{"error":"container"}}));
+    let again = h.ok(
+        CI,
+        json!({"op":"repo_check_request","commit":id,"name":"unit"}),
+    )["runs"][0]
+        .clone();
+    assert_eq!(again["status"], "queued");
+    assert_ne!(again["id"], json!(rerun));
+    assert_eq!(
+        code(h.run(
+            CI,
+            json!({"op":"repo_check_request","commit":id,"name":"lint"})
+        )),
+        "NOT_FOUND"
+    );
+}
+
+#[test]
+fn policy_rejects_unsafe_runners() {
+    let (h, _) = seeded();
+    for runner in [
+        json!({"command": []}),
+        json!({"command": ["x"], "timeout_seconds": 0}),
+        json!({"command": ["x"], "shell": true}),
+    ] {
+        let result = h.run(OWNER, json!({"op":"repo_set_policy","policy":{"required_checks":[],"approvals":0,"runners":{"unit":runner}}}));
+        assert_eq!(code(result), "INVALID_INPUT");
+    }
+}
+
+#[test]
+fn upgrades_from_the_preceding_schema_keeping_data() {
+    use crate::storage::SqlStore;
+    let db = NativeStore::memory().unwrap();
+    let v1 = include_str!("../migrations/repo_store/0001_source.sql");
+    db.query(
+        "CREATE TABLE repo_schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
+        &[],
+    )
+    .unwrap();
+    for statement in v1.split(';').filter(|s| !s.trim().is_empty()) {
+        db.query(statement, &[]).unwrap();
+    }
+    db.query(
+        "INSERT INTO repo_schema_migrations(version,digest) VALUES(1,?)",
+        &[json!(yoneda_core::digest(v1.as_bytes()))],
+    )
+    .unwrap();
+    db.query(
+        "INSERT INTO refs(name,commit_id,version) VALUES('refs/heads/main','abc',1)",
+        &[],
+    )
+    .unwrap();
+    super::migrate_repo_store(&db).unwrap();
+    assert_eq!(
+        db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
+            .unwrap()[0]["v"],
+        2
+    );
+    assert_eq!(
+        db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
+        "abc"
+    );
+    assert!(
+        db.query("SELECT id FROM check_runs", &[])
+            .unwrap()
+            .is_empty()
     );
 }

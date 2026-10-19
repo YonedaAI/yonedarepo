@@ -9,6 +9,10 @@ export interface Env {
   SOURCES?: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
   SOURCE_REPOS: DurableObjectNamespace;
+  /** Platform check executors (one fresh container per run attempt). */
+  CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
+  /** Platform jobs (check runs); independent of agent queues. */
+  PLATFORM_QUEUE: Queue<Envelope>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   SELF: Service<YonedaEntrypoint>;

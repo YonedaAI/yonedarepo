@@ -1,5 +1,6 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { brokerHandler } from './broker';
+import { CheckContainer } from './check-container';
 import { ExecutionContainer } from './container';
 import { dependencyHandler, registries } from './dependencies';
 import { gitHandler } from './git';
@@ -15,7 +16,7 @@ export {
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 export { YonedaEntrypoint as default } from './entrypoint';
-export { ExecutionContainer };
+export { CheckContainer, ExecutionContainer };
 
 ExecutionContainer.outboundByHost = {
   ...Object.fromEntries(registries.map((host) => [host, dependencyHandler as OutboundHandler])),

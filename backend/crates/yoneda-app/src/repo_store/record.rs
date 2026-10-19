@@ -11,7 +11,12 @@ use yoneda_core::{
 
 /// Moves a prepared commit into history once the adapter has read it back from the
 /// object store; the readback must match exactly what this store built.
-pub fn record<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn record<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    principal: &str,
+    settings: &Settings,
+) -> Result<Value> {
     let id = object_id(c, "commit")?;
     if rows::commit_row(db, &id)?.is_some() {
         return Ok(json!({ "commit": id, "recorded": true, "already": true }));
@@ -71,7 +76,9 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         "DELETE FROM prepared_commits WHERE commit_id=?",
         &[json!(id.hex())],
     )?;
-    Ok(json!({ "commit": id, "recorded": true, "paths": touches.len() }))
+    // Platform checks start on every recorded commit (Scion: CI per changeset).
+    let runs = super::checks::request(db, &id, None, principal, settings, number(c, "now")?)?;
+    Ok(json!({ "commit": id, "recorded": true, "paths": touches.len(), "check_runs": runs }))
 }
 
 /// Records a check result for the exact commit under the repository's current policy.
@@ -89,7 +96,14 @@ pub fn check<S: SqlStore>(
     if !matches!(status.as_str(), "pass" | "fail") {
         return Err(bad("Check status must be pass or fail"));
     }
-    let evidence = c["evidence"].as_str().filter(|e| e.len() <= 4096);
+    let evidence = match &c["evidence"] {
+        Value::Null => None,
+        Value::String(text) => Some(text.clone()),
+        other => Some(other.to_string()),
+    };
+    if evidence.as_ref().is_some_and(|e| e.len() > 16 * 1024) {
+        return Err(bad("Check evidence exceeds 16 KiB; store logs as objects"));
+    }
     db.query(
         "INSERT INTO checks(commit_id,name,policy_digest,status,evidence,principal,recorded_at) VALUES(?,?,?,?,?,?,?) \
          ON CONFLICT(commit_id,name,policy_digest) DO UPDATE SET status=excluded.status,evidence=excluded.evidence,principal=excluded.principal,recorded_at=excluded.recorded_at",

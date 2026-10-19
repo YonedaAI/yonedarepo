@@ -2,8 +2,13 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-const MIGRATIONS: [(i64, &str); 1] =
-    [(1, include_str!("../migrations/repo_store/0001_source.sql"))];
+const MIGRATIONS: [(i64, &str); 2] = [
+    (1, include_str!("../migrations/repo_store/0001_source.sql")),
+    (
+        2,
+        include_str!("../migrations/repo_store/0002_check_runs.sql"),
+    ),
+];
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.
 pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {

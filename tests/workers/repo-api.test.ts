@@ -38,10 +38,29 @@ const fakeArtifacts = {
     },
   }),
 };
-const scoped = { ...bindings, ARTIFACTS: fakeArtifacts } as unknown as Env;
+// Platform jobs and check containers: the queue records messages; the executor stands in
+// for the Container by evaluating the shipped files (the real one is tested in Rust).
+const queued: any[] = [];
+const executed: any[] = [];
+const fakeQueue = { sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)) };
+const fakeRunners = {
+  idFromName: (name: string) => name,
+  get: (name: string) => ({
+    run: async (job: any) => {
+      executed.push({ name, job });
+      const file = job.files.find((f: any) => f.path === 'a.txt');
+      const ok = file && atob(file.data_b64).startsWith('good');
+      return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 5,
+        output_bytes: 4, output_sha256: 'f'.repeat(64), output_tail: ok ? 'ok\n' : 'bad\n' };
+    },
+  }),
+};
+const scoped = { ...bindings, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners } as unknown as Env;
 
 beforeEach(() => {
   misses.length = 0;
+  queued.length = 0;
+  executed.length = 0;
   const original = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -216,4 +235,43 @@ it('serves the same operations over MCP with Git-verb tools', async () => {
   const unknown = await mcp(id, agent, 'tools/call', { name: 'constructor', arguments: {} });
   expect(unknown.body.result.isError).toBe(true);
   expect((await mcp(id, {}, 'tools/list')).status).toBe(401);
+});
+
+it('runs policy checks on the exact commit and gates landing on them', async () => {
+  const { executeCheckRun } = await import('../../cloudflare/worker/repo-checks');
+  const owner = { cookie: await signup('erin') };
+  const created = await api('/repos', owner, {
+    body: { policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'good\n')], author },
+  });
+  const repo = `/repos/${created.body.id}`;
+  const policy = { required_checks: ['unit'], approvals: 0, runners: { unit: { command: ['sh', '-c', 'test'], timeout_seconds: 30 } } };
+  const minted = await api(`${repo}/tokens`, owner, { body: { name: 'bot', scopes: ['read', 'write', 'land'] } });
+  const bot = { token: minted.body.token as string };
+  expect((await api(`${repo}/policy`, bot, { method: 'PUT', body: { policy } })).status).toBe(403);
+  expect((await api(`${repo}/policy`, owner, { method: 'PUT', body: { policy } })).status).toBe(200);
+
+  const bad = await api(`${repo}/commits`, bot, { body: { ref: 'main', changes: [file('a.txt', 'bad\n')], message: 'bad', author } });
+  const good = await api(`${repo}/commits`, bot, { body: { ref: 'main', changes: [file('a.txt', 'good v2\n')], message: 'good', author } });
+  expect(queued.map((m) => m.kind)).toEqual(['platform_check', 'platform_check']);
+  expect(good.body.check_runs[0]).toMatchObject({ name: 'unit', status: 'queued' });
+  for (const envelope of [...queued]) expect(await executeCheckRun(scoped, envelope)).toEqual({});
+  // Each run shipped its own commit's bytes to a container instance named per attempt.
+  expect(executed.map((e) => e.name)).toEqual([`${queued[0].job_id}:1`, `${queued[1].job_id}:1`]);
+  expect(executed[1].job.command).toEqual(['sh', '-c', 'test']);
+
+  const failed = await api(`${repo}/commits/${bad.body.commit}`, bot);
+  expect(failed.body.gates.failing_checks).toEqual(['unit']);
+  expect(failed.body.checks[0]).toMatchObject({ status: 'fail', principal: 'platform:checks' });
+  expect((await api(`${repo}/land`, bot, { body: { ref: 'main', commit: bad.body.commit } })).body.error.code).toBe('NOT_READY');
+  const log = await api(`/repos/${created.body.id}/check-runs/${queued[0].job_id}/log`, bot);
+  expect(log.body.log).toBe('bad\n');
+  expect((await api(`${repo}/land`, bot, { body: { ref: 'main', commit: good.body.commit } })).body.landed).toBe(true);
+
+  // A redelivered message for a finished run is a no-op.
+  expect(await executeCheckRun(scoped, queued[1])).toEqual({});
+  expect(executed).toHaveLength(2);
+  // Re-requesting a finished check returns the existing run instead of queueing another.
+  const again = await api(`${repo}/commits/${good.body.commit}/check-runs`, bot, { body: {} });
+  expect(again.body.runs[0].existing).toBe(true);
+  expect(queued).toHaveLength(2);
 });
