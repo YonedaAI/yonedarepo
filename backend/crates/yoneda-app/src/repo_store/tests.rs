@@ -655,7 +655,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        3
+        4
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -665,5 +665,67 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
         db.query("SELECT id FROM check_runs", &[])
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn revert_references_known_blobs_and_rejects_moved_paths() {
+    let (h, root) = seeded();
+    let original = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn a() {}\n");
+    let edited = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn a() { 2 }\n");
+    let edit = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn a() { 2 }\n")]),
+            json!([]),
+        )
+        .unwrap();
+    // Revert: put the old blob back, expecting the edited one. No bytes are re-sent.
+    let revert =
+        json!([{"path": "src/lib.rs", "blob": original, "type": "blob", "expect": edited}]);
+    let before: Vec<String> = h.cached.borrow().keys().cloned().collect();
+    let reverted = h
+        .commit(AGENT, Some(&edit), 1, revert.clone(), json!([]))
+        .unwrap();
+    let paths = h.ok(OWNER, json!({"op":"repo_commit","commit":reverted}))["paths"].clone();
+    assert_eq!(paths[0]["new_blob"], json!(original));
+    let pushed: Vec<Value> = h
+        .cached
+        .borrow()
+        .iter()
+        .filter(|(id, _)| !before.contains(id))
+        .map(|(_, o)| o["kind"].clone())
+        .collect();
+    assert!(
+        !pushed.contains(&json!("blob")),
+        "a referenced blob is not pushed again"
+    );
+    // The same revert on a parent where the path moved on is a conflict, not an overwrite.
+    let moved = h
+        .commit(
+            AGENT,
+            Some(&edit),
+            1,
+            json!([file("src/lib.rs", "pub fn a() { 3 }\n")]),
+            json!([]),
+        )
+        .unwrap();
+    assert_eq!(
+        code(
+            h.commit(AGENT, Some(&moved), 1, revert, json!([]))
+                .map(|_| json!(null))
+        ),
+        "CONFLICT"
+    );
+    // Unknown blobs cannot be referenced into existence.
+    let forged = json!([{"path": "x", "blob": "1".repeat(40), "expect": null}]);
+    assert_eq!(
+        code(
+            h.commit(AGENT, Some(&edit), 1, forged, json!([]))
+                .map(|_| json!(null))
+        ),
+        "NOT_FOUND"
     );
 }

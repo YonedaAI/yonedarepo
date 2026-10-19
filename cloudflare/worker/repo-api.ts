@@ -117,6 +117,10 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
+  if (resource === 'commits' && sha && sub === 'revert' && post)
+    return run('git_revert', { ...(await bodyOf(req).catch(() => ({}))), commit: sha });
+  if (resource === 'commits' && sha && sub === 'cherry-pick' && post)
+    return run('git_cherry_pick', { ...(await bodyOf(req).catch(() => ({}))), commit: sha });
   if (resource === 'commits' && sha && sub === 'check-runs' && post)
     return run('git_check_run', { ...(await bodyOf(req).catch(() => ({}))), commit: sha });
   if (resource === 'check-runs' && sha && get) {

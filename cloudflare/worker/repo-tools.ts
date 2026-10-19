@@ -1,7 +1,7 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 import { dispatchRuns } from './repo-checks';
-import { commit, diff, type Json, listTree, type RepoContext, readFile } from './repo-ops';
+import { commit, diff, type Json, listTree, type RepoContext, readFile, replay } from './repo-ops';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
 const version = (args: Json) =>
@@ -35,5 +35,7 @@ export const operations: Record<string, Operation> = {
   },
   git_review: (ctx, a) =>
     ctx.call({ op: 'repo_review', commit: a.commit, decision: a.decision, reason: a.reason }),
+  git_revert: (ctx, a) => replay(ctx, a, 'revert'),
+  git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
   git_land: (ctx, a) => ctx.call({ op: 'repo_land', ref: a.ref, commit: a.commit }),
 };
