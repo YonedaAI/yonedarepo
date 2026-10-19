@@ -46,11 +46,19 @@ async function createRepository(env: Env, auth: Credentials, body: Json) {
   const store = `yr-${id}`;
   await env.ARTIFACTS.create(store, { setDefaultBranch: 'main' });
   const ctx = new RepoContext(env, id, caller(env, id, auth));
+  const name = typeof body.name === 'string' && body.name ? body.name : id;
   await ctx.call({
     op: 'repo_init',
+    name,
     object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/${store}`,
     policy: body.policy ?? { required_checks: [], approvals: 1 },
   });
+  // Listing projection, written after the authority accepted the repository.
+  await env.INDEX.prepare(
+    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
+  )
+    .bind(id, auth._session.workspace, name, Date.now())
+    .run();
   if (!Array.isArray(body.files) || body.files.length === 0) return { id };
   const seeded = await commit(ctx, new RepoObjects(env, id, store), {
     changes: body.files,
@@ -71,6 +79,16 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
+  if (parts.length === 1 && req.method === 'GET') {
+    if (!('_session' in auth))
+      throw new ApiError('FORBIDDEN', 'Repository tokens are scoped to one repository');
+    const listed = await env.INDEX.prepare(
+      'SELECT id,name,created_at FROM platform_repos WHERE workspace=? ORDER BY created_at DESC LIMIT 200',
+    )
+      .bind(auth._session.workspace)
+      .all();
+    return { repos: listed.results };
+  }
   const repo = parts[1];
   if (!/^r[0-9a-f]{20}$/.test(repo ?? '')) throw new ApiError('NOT_FOUND', 'Unknown repository');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));

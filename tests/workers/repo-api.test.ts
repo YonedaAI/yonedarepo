@@ -4,6 +4,7 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import type { Env } from '../../cloudflare/worker/types';
 
@@ -57,7 +58,8 @@ const fakeRunners = {
 };
 const scoped = { ...bindings, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners } as unknown as Env;
 
-beforeEach(() => {
+beforeEach(async () => {
+  for (const statement of listing.split(';').filter((s) => s.trim())) await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
   misses.length = 0;
   queued.length = 0;
   executed.length = 0;
@@ -107,6 +109,7 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   const owner = { cookie: await signup('alice') };
   const created = await api('/repos', owner, {
     body: {
+      name: 'demo-app',
       policy: { required_checks: ['unit'], approvals: 1 },
       files: [file('README.md', '# demo\n'), file('src/lib.rs', 'pub fn a() {}\n')],
       author,
@@ -168,8 +171,14 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   // Every object read was served by the R2 tier written through at commit time.
   expect(misses).toEqual([]);
 
+  const listed = await api('/repos', owner);
+  expect(listed.body.repos.map((r: any) => [r.id, r.name])).toEqual([[created.body.id, 'demo-app']]);
+  expect((await api(repo, owner)).body.name).toBe('demo-app');
+  expect((await api('/repos', agent)).status).toBe(403);
+
   const stranger = { cookie: await signup('bob') };
   expect((await api(repo, stranger)).status).toBe(403);
+  expect((await api('/repos', stranger)).body.repos).toEqual([]);
   expect((await api(repo, {})).status).toBe(401);
   expect((await api(repo, { token: 'yrp_guessed-token-value-0123456789' })).status).toBe(401);
 });
