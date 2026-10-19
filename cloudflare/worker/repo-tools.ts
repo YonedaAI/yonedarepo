@@ -1,7 +1,16 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 import { dispatchRuns } from './repo-checks';
-import { commit, diff, type Json, listTree, type RepoContext, readFile, replay } from './repo-ops';
+import {
+  commit,
+  diff,
+  getObjects,
+  type Json,
+  listTree,
+  type RepoContext,
+  readFile,
+  replay,
+} from './repo-ops';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
 const version = (args: Json) =>
@@ -18,6 +27,7 @@ export const operations: Record<string, Operation> = {
   git_merge_base: (ctx, a) => ctx.call({ op: 'repo_merge_base', left: a.left, right: a.right }),
   git_ls_tree: listTree,
   git_cat_file: readFile,
+  git_get_objects: getObjects,
   git_diff: diff,
   git_commit: async (ctx, a) => commit(ctx, await ctx.objects(), a),
   git_check: (ctx, a) =>

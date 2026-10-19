@@ -135,7 +135,11 @@ fn receive_pack(c: &Value) -> Result<Value> {
         PackLimits, parse_receive_pack_request, read_pack, receive_pack_report,
     };
     let body = STANDARD
-        .decode(string(c, "body_b64")?)
+        .decode(
+            c["body_b64"]
+                .as_str()
+                .ok_or_else(|| bad("Missing body_b64"))?,
+        )
         .map_err(|_| bad("body_b64 is not base64"))?;
     let push = parse_receive_pack_request(&body)?;
     let objects = read_pack(push.pack, PackLimits::default())?

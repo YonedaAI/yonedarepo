@@ -165,6 +165,50 @@
     }
   },
   {
+    "name": "git_get_objects",
+    "description": "Fetch immutable Git objects by id and kind (tree entries, commit headers, blob bytes as base64), in order, up to a response budget. Resume with after=next. Start from a commit's tree and request only the subtrees and blobs you need (sparse by construction).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "objects": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10000,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "tree",
+                  "blob",
+                  "commit"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "kind"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "after": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "objects"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_diff",
     "description": "Files changed from base (default: head's first parent) to head, optionally with unified patches. merge_base compares against the common ancestor, like base...head.",
     "inputSchema": {

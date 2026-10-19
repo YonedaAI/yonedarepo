@@ -136,6 +136,8 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   }
   if (resource === 'policy' && req.method === 'PUT')
     return ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy });
+  if (resource === 'objects' && post)
+    return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {

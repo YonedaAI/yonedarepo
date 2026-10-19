@@ -90,13 +90,19 @@ fn changes(c: &Value) -> Result<Vec<Change>> {
                     expect,
                 });
             }
+            // File content is bounded by the size limits below, not the short-field cap of
+            // `string` (which also rejects the empty base64 of an empty file).
+            let encoded = change["content_b64"]
+                .as_str()
+                .ok_or_else(|| bad("Missing content_b64"))?;
+            if encoded.len() > MAX_FILE_BYTES / 3 * 4 + 4 {
+                return Err(Error::new(
+                    "TOO_LARGE",
+                    "Change exceeds file or total size limit",
+                ));
+            }
             let content = STANDARD
-                .decode(string(change, "content_b64").or_else(|_| {
-                    // An empty file has empty base64, which `string` rejects as blank.
-                    (change["content_b64"] == "")
-                        .then(String::new)
-                        .ok_or_else(|| bad("Missing content_b64"))
-                })?)
+                .decode(encoded)
                 .map_err(|_| bad("content_b64 is not base64"))?;
             total += content.len();
             if content.len() > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES {
