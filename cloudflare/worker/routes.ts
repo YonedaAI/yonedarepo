@@ -20,6 +20,7 @@ import { approveOwnerRun } from './owner-run-approval';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
+import { repoApi } from './repo-api';
 import { ownerCommandInput, repositoryOperationAllowed } from './repository-command';
 import { deleteRepository } from './repository-deletion';
 import { recoverPublication, resynchronize } from './repository-recovery';
@@ -53,6 +54,7 @@ export async function fetchRequest(
   if (url.pathname.startsWith('/git/'))
     return externalGit(req, env, url.pathname.split('/').filter(Boolean));
   if (!url.pathname.startsWith('/api/')) return websiteAssets(req, env);
+  if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;
