@@ -9,6 +9,7 @@ mod auth;
 mod bisect;
 mod checks;
 mod classes;
+pub(crate) mod grants;
 mod history;
 mod history_import;
 mod land;
@@ -71,8 +72,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_set_policy" => actor.require_owner(),
         _ => actor.require("read"),
     }?;
+    grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
-    match op.as_str() {
+    let result = match op.as_str() {
         "repo_status" => reads::status(db, &settings),
         "repo_refs" => reads::refs(db, c),
         "repo_snapshot" => reads::snapshot(db, c),
@@ -120,7 +122,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "UNKNOWN_OP",
             format!("Unknown platform op {op}"),
         )),
-    }
+    }?;
+    Ok(grants::redact(&op, &actor.grant, result))
 }
 
 #[cfg(test)]

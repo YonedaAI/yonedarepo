@@ -9,7 +9,7 @@ mod platform_derived;
 mod platform_objects;
 mod platform_review;
 mod platform_symbols;
-mod repo_store;
+pub(crate) mod repo_store;
 mod source_binding;
 mod source_workspace;
 mod storage;

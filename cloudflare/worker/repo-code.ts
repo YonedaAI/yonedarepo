@@ -5,6 +5,7 @@
 
 import { compute } from './repo-compute';
 import { searchSegments, withObjects } from './repo-derived';
+import { keepAllowed, requirePath } from './repo-grants';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, commit, type Json, RepoContext, target, walk } from './repo-ops';
 
@@ -40,6 +41,7 @@ export async function classifyCommit(ctx: RepoContext, sha: string, touches: Jso
 }
 
 async function fileAt(ctx: RepoContext, args: Json) {
+  await requirePath(ctx, String(args.path ?? ''));
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
   const path = String(args.path ?? '');
@@ -142,7 +144,7 @@ export async function codemod(ctx: RepoContext, args: Json) {
         return { partition: entry.partition.prefix, skipped: true, changes: [] as Json[] };
       const { candidates } = compute({ op: 'search_segment', segment: entry.segment, query: find });
       const changes: Json[] = [];
-      for (const file of candidates as Json[]) {
+      for (const file of await keepAllowed(ctx, candidates as Json[])) {
         if (!file.indexed || (prefix && !String(file.path).startsWith(prefix))) continue;
         const result = compute({
           op: 'replace_literal',

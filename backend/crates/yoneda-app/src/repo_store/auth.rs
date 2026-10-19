@@ -12,6 +12,8 @@ pub struct Actor {
     pub principal: String,
     pub owner: bool,
     scopes: Vec<String>,
+    /// Directory grant (`None`: whole repository).
+    pub grant: super::grants::Grant,
 }
 
 impl Actor {
@@ -72,6 +74,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
         return Ok(Actor {
             principal: format!("platform:{system}"),
             owner: false,
+            grant: None,
             scopes: std::iter::once("read")
                 .chain(roles.iter().copied())
                 .map(str::to_owned)
@@ -89,13 +92,14 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
             principal: string(session, "principal")?,
             owner: true,
             scopes: Vec::new(),
+            grant: None,
         });
     }
     let secret =
         string(c, "_token").map_err(|_| Error::new("UNAUTHORIZED", "Missing credentials"))?;
     let row = db
         .query(
-            "SELECT name,scopes FROM tokens WHERE digest=? AND revoked_at IS NULL",
+            "SELECT name,scopes,paths FROM tokens WHERE digest=? AND revoked_at IS NULL",
             &[json!(token_digest(&secret))],
         )?
         .into_iter()
@@ -106,6 +110,10 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
         owner: false,
         scopes: serde_json::from_str(row["scopes"].as_str().unwrap_or("[]"))
             .map_err(|_| bad("Corrupt scopes"))?,
+        grant: match row["paths"].as_str() {
+            Some(paths) => Some(serde_json::from_str(paths).map_err(|_| bad("Corrupt grant"))?),
+            None => None,
+        },
     })
 }
 
@@ -119,6 +127,7 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     }
     let scopes: Vec<String> =
         serde_json::from_value(c["scopes"].clone()).map_err(|_| bad("scopes must be a list"))?;
+    let grant = super::grants::parse(&c["paths"])?;
     if scopes.is_empty() || scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
         return Err(bad(
             "Scopes must be some of read, write, check, review, land",
@@ -134,16 +143,19 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
         ));
     }
     db.query(
-        "INSERT INTO tokens(name,digest,scopes,created_by,created_at) VALUES(?,?,?,?,?)",
+        "INSERT INTO tokens(name,digest,scopes,created_by,created_at,paths) VALUES(?,?,?,?,?,?)",
         &[
             json!(name),
             json!(token_digest(&secret)),
             json!(json!(scopes).to_string()),
             json!(actor.principal),
             json!(number(c, "now")?),
+            json!(grant.as_ref().map(|g| json!(g).to_string())),
         ],
     )?;
-    Ok(json!({ "name": name, "principal": format!("token:{name}"), "scopes": scopes }))
+    Ok(
+        json!({ "name": name, "principal": format!("token:{name}"), "scopes": scopes, "paths": grant }),
+    )
 }
 
 pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
@@ -159,6 +171,6 @@ pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
 pub fn list_tokens<S: SqlStore>(db: &S, actor: &Actor) -> Result<Value> {
     actor.require_owner()?;
     Ok(
-        json!({ "tokens": db.query("SELECT name,scopes,created_by,created_at,revoked_at FROM tokens ORDER BY name", &[])? }),
+        json!({ "tokens": db.query("SELECT name,scopes,paths,created_by,created_at,revoked_at FROM tokens ORDER BY name", &[])? }),
     )
 }

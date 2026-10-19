@@ -169,7 +169,7 @@
   },
   {
     "name": "git_get_objects",
-    "description": "Fetch immutable Git objects by id and kind (tree entries, commit headers, blob bytes as base64), in order, up to a response budget. Resume with after=next. Start from a commit's tree and request only the subtrees and blobs you need (sparse by construction).",
+    "description": "Fetch immutable Git objects by id and kind (tree entries, commit headers, blob bytes as base64), in order, up to a response budget. Resume with after=next. Start from a commit's tree and request only the subtrees and blobs you need (sparse by construction). Path-restricted tokens must pass commit and each object's path inside their grant.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -191,6 +191,9 @@
                   "blob",
                   "commit"
                 ]
+              },
+              "path": {
+                "type": "string"
               }
             },
             "required": [
@@ -203,6 +206,10 @@
         "after": {
           "type": "integer",
           "minimum": 0
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
         }
       },
       "required": [
