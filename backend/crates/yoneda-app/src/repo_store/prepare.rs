@@ -69,7 +69,11 @@ fn changes(c: &Value) -> Result<Vec<Change>> {
     let list = c["changes"]
         .as_array()
         .filter(|l| l.len() <= MAX_CHANGES)
-        .filter(|l| !l.is_empty() || c.get("merge_parent").is_some_and(|p| !p.is_null()));
+        .filter(|l| {
+            !l.is_empty()
+                || c.get("merge_parent").is_some_and(|p| !p.is_null())
+                || c["merge_parents"].as_array().is_some_and(|p| !p.is_empty())
+        });
     let mut total = 0usize;
     list.ok_or_else(|| bad("Provide 1 to 10000 changes"))?
         .iter()
@@ -282,7 +286,8 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             ),
         ));
     }
-    let merging = c.get("merge_parent").is_some_and(|p| !p.is_null());
+    let merging = c.get("merge_parent").is_some_and(|p| !p.is_null())
+        || c["merge_parents"].as_array().is_some_and(|p| !p.is_empty());
     if touches.is_empty() && !merging {
         return Err(Error::new(
             "NO_CHANGES",
@@ -292,11 +297,24 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     let rewrite = rewrite_tree(root, &path_changes, &trees)?;
     // A merge commit's second parent is the merged work; its tree is `changes` applied to
     // the first parent, so the commit's changeset stays relative to the first parent.
-    let merge_parent = match c.get("merge_parent").filter(|p| !p.is_null()) {
-        Some(_) if parent.is_none() => return Err(bad("A merge needs a first parent")),
-        Some(_) => Some(rows::recorded(db, &object_id(c, "merge_parent")?)?),
-        None => None,
-    };
+    // `merge_parents` (octopus, used for group landings) or a single `merge_parent`.
+    let mut merge_parent = Vec::new();
+    if let Some(one) = c.get("merge_parent").filter(|p| !p.is_null()) {
+        merge_parent.push(ObjectId::parse(one.as_str().unwrap_or_default())?);
+    }
+    for extra in c["merge_parents"].as_array().into_iter().flatten() {
+        merge_parent.push(ObjectId::parse(extra.as_str().unwrap_or_default())?);
+    }
+    if !merge_parent.is_empty() && parent.is_none() {
+        return Err(bad("A merge needs a first parent"));
+    }
+    if merge_parent.len() > 64 {
+        return Err(bad("A merge has at most 64 merged parents"));
+    }
+    let merge_parent = merge_parent
+        .iter()
+        .map(|id| rows::recorded(db, id))
+        .collect::<Result<Vec<_>>>()?;
     let parents: Vec<ObjectId> = parent.iter().chain(&merge_parent).map(|p| p.id).collect();
     let commit = Commit::new(rewrite.root, &parents, &author, &committer, &message)?;
     let commit_bytes = commit.encode();

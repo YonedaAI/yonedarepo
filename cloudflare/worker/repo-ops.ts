@@ -96,6 +96,7 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
       author: body.author,
       read_set: body.read_set ?? [],
       ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
+      ...(body.merge_parents ? { merge_parents: body.merge_parents } : {}),
       trees,
     });
     if (prepared.need_trees) {

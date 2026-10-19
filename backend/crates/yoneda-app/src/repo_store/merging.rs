@@ -91,7 +91,11 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 }
 
 /// Paths written by commits reachable from `tip` but not from `head` (bounded walk).
-fn branch_paths<S: SqlStore>(db: &S, tip: &ObjectId, head: &ObjectId) -> Result<BTreeSet<String>> {
+pub fn branch_paths<S: SqlStore>(
+    db: &S,
+    tip: &ObjectId,
+    head: &ObjectId,
+) -> Result<BTreeSet<String>> {
     let graph = RecordedGraph(db);
     let mut paths = BTreeSet::new();
     let mut stack = vec![*tip];

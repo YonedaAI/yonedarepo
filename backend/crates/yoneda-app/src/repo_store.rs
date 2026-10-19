@@ -9,6 +9,7 @@ mod auth;
 mod checks;
 mod history_import;
 mod land;
+mod land_queue;
 mod merging;
 mod migration;
 mod prepare;
@@ -47,7 +48,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "Only the platform importer records imported history",
         )),
         "repo_review" => actor.require("review"),
-        "repo_land" => actor.require("land"),
+        "repo_land" | "repo_land_enqueue" => actor.require("land"),
+        // Only the platform merger builds and lands batches.
+        "repo_land_claim" | "repo_land_batch" | "repo_land_release" if !actor.can("lander") => Err(
+            Error::new("FORBIDDEN", "Only the platform merger lands queued work"),
+        ),
         "repo_set_policy" => actor.require_owner(),
         _ => actor.require("read"),
     }?;
@@ -74,6 +79,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_projection_result" => projection::result(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
+        "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
+        "repo_land_status" => land_queue::status(db, c),
+        "repo_land_claim" => land_queue::claim(db, c),
+        "repo_land_batch" => land_queue::land_batch(db, c, principal),
+        "repo_land_release" => land_queue::release(db, c),
         "repo_record_imported" => history_import::record(db, c),
         "repo_import" => {
             if !actor.can("import") {
