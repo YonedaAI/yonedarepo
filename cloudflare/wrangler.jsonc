@@ -252,5 +252,12 @@
         "period": 60
       }
     }
+  ],
+  "workflows": [
+    {
+      "name": "yonedarepo-dev-platform-import",
+      "binding": "PLATFORM_IMPORT",
+      "class_name": "PlatformImportWorkflow"
+    }
   ]
 }

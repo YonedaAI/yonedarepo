@@ -7,6 +7,7 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod auth;
 mod checks;
+mod history_import;
 mod land;
 mod migration;
 mod prepare;
@@ -37,6 +38,12 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         | "repo_check_complete"
         | "repo_projection_pending"
         | "repo_projection_result" => actor.require("system"),
+        // Imported history is only recorded by the platform importer, which read it from
+        // the object store; nobody else can declare commits into existence.
+        "repo_record_imported" if !actor.can("import") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform importer records imported history",
+        )),
         "repo_review" => actor.require("review"),
         "repo_land" => actor.require("land"),
         "repo_set_policy" => actor.require_owner(),
@@ -63,8 +70,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_projection_result" => projection::result(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
+        "repo_record_imported" => history_import::record(db, c),
         "repo_import" => {
-            actor.require_owner()?;
+            if !actor.can("import") {
+                actor.require_owner()?;
+            }
             land::import(db, c, principal)
         }
         "repo_token_create" => auth::create_token(db, c, &actor),

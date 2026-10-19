@@ -156,6 +156,27 @@ export function CommitView({
           >
             Run checks
           </button>
+          <button
+            type="button"
+            className="quiet"
+            disabled={!!busy}
+            onClick={async () => {
+              setBusy('revert');
+              setError('');
+              try {
+                const made = await sourceApi(`/repos/${repo}/commits/${commit}/revert`, {
+                  body: { ref: target },
+                });
+                onNavigate({ view: 'commit', repo, commit: made.commit });
+              } catch (e) {
+                setError((e as Error).message);
+              } finally {
+                setBusy('');
+              }
+            }}
+          >
+            Revert
+          </button>
           <input
             aria-label="Branch to land on"
             value={target}

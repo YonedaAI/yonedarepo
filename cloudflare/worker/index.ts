@@ -16,6 +16,7 @@ export {
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 export { YonedaEntrypoint as default } from './entrypoint';
+export { PlatformImportWorkflow } from './repo-import-workflow';
 export { CheckContainer, ExecutionContainer };
 
 ExecutionContainer.outboundByHost = {

@@ -47,6 +47,7 @@ impl Harness {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
             None if principal == SYSTEM => c["_system"] = json!("checks"),
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
+            None if principal == "platform:import" => c["_system"] = json!("import"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -790,4 +791,63 @@ fn ref_projection_tracks_targets_leases_and_drift() {
     let status = h.ok(OWNER, json!({"op":"repo_status"}));
     assert_eq!(status["projections"][0]["status"], "drift");
     assert_eq!(status["projections"][0]["detail"], "stale info");
+}
+
+#[test]
+fn imported_history_lands_with_a_truncated_boundary() {
+    let h = Harness::new();
+    const IMPORTER: &str = "platform:import";
+    let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
+    let (boundary, first, second) = ("a".repeat(40), "b".repeat(40), "c".repeat(40));
+    let record = |id: &str, parents: Value, touches: Value| {
+        h.run(
+            IMPORTER,
+            json!({"op":"repo_record_imported","commit":id,"tree":"d".repeat(40),
+            "parents":parents,"message":"imported","touches":touches}),
+        )
+    };
+    // Owners and tokens cannot declare imported commits.
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_record_imported","commit":first,"tree":"d".repeat(40),"parents":[],"touches":[]}))), "FORBIDDEN");
+    record(
+        &first,
+        json!([boundary]),
+        json!([{"path":"a.txt","op":"add","old_blob":null,"new_blob":blob("a")}]),
+    )
+    .unwrap();
+    let second_row = record(
+        &second,
+        json!([first]),
+        json!([{"path":"a.txt","op":"modify","old_blob":blob("a"),"new_blob":blob("b")}]),
+    )
+    .unwrap();
+    assert_eq!(second_row["generation"], 2);
+    assert_eq!(
+        record(&second, json!([first]), json!([])).unwrap()["already"],
+        true
+    );
+    assert_eq!(
+        h.run(
+            IMPORTER,
+            json!({"op":"repo_import","ref":"main","commit":second})
+        )
+        .unwrap()["version"],
+        1
+    );
+    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
+    assert_eq!(
+        log["commits"].as_array().unwrap().len(),
+        2,
+        "the walk stops at the import boundary"
+    );
+    assert_eq!(
+        h.ok(
+            OWNER,
+            json!({"op":"repo_merge_base","left":second,"right":first})
+        )["merge_bases"][0]["commit"],
+        first
+    );
+    assert_eq!(
+        code(record(&"e".repeat(40), json!([]), json!([]))),
+        "ALREADY_EXISTS"
+    );
 }

@@ -22,6 +22,7 @@ const STATUS: Record<string, number> = {
   NOT_READY: 409,
   ALREADY_EXISTS: 409,
   PUSH_FAILED: 502,
+  NOT_SUPPORTED: 400,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -71,6 +72,40 @@ async function createRepository(env: Env, auth: Credentials, body: Json) {
   return { id, commit: seeded.commit, version: landed.version };
 }
 
+/** Starts a durable import of an external Git repository (Artifacts-backed only). */
+async function importRepository(env: Env, auth: Credentials, body: Json) {
+  if (!('_session' in auth))
+    throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
+  if (env.PLATFORM_OBJECT_STORE === 'r2')
+    throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
+  const url = String(body.url ?? '');
+  if (!/^https:\/\/[^\s]+$/.test(url))
+    throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
+  const branch = typeof body.branch === 'string' && body.branch ? body.branch : 'main';
+  const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
+  const random = crypto.getRandomValues(new Uint8Array(10));
+  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const name = typeof body.name === 'string' && body.name ? body.name : id;
+  const ctx = new RepoContext(env, id, caller(env, id, auth));
+  await ctx.call({
+    op: 'repo_init',
+    name,
+    // Artifacts creates the store itself during import.
+    object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
+    policy: body.policy ?? { required_checks: [], approvals: 1 },
+  });
+  await env.INDEX.prepare(
+    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
+  )
+    .bind(id, auth._session.workspace, name, Date.now())
+    .run();
+  const instance = await env.PLATFORM_IMPORT.create({
+    id: `import-${id}`,
+    params: { repo: id, url, branch, max },
+  });
+  return { id, import: instance.id, branch, max_commits: max };
+}
+
 function tokenSecret() {
   const raw = toBase64(crypto.getRandomValues(new Uint8Array(32)));
   return `yrp_${raw.replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' })[c] ?? '')}`;
@@ -81,6 +116,8 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
+  if (parts.length === 2 && parts[1] === 'import' && req.method === 'POST')
+    return importRepository(env, auth, await bodyOf(req));
   if (parts.length === 1 && req.method === 'GET') {
     if (!('_session' in auth))
       throw new ApiError('FORBIDDEN', 'Repository tokens are scoped to one repository');
@@ -135,6 +172,11 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     const log = await env.OBJECTS.get(key);
     if (!log) throw new ApiError('NOT_FOUND', 'This run has no log');
     return { run_id: sha, log: await log.text() };
+  }
+  if (resource === 'import' && get) {
+    await ctx.call({ op: 'repo_status' }); // read access first
+    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`).then((i) => i.status());
+    return { import: `import-${repo}`, ...status };
   }
   if (resource === 'policy' && req.method === 'PUT')
     return ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy });
