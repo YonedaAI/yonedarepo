@@ -100,6 +100,8 @@ mod git_native_tests;
 mod tests;
 
 #[cfg(test)]
+mod git_object_interop_tests;
+#[cfg(test)]
 mod source_capture_diff_tests;
 #[cfg(test)]
 mod source_capture_manifest_tests;

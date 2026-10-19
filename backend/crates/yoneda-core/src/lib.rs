@@ -15,11 +15,13 @@ pub mod conflict_capture;
 pub mod context;
 pub mod context_study;
 pub mod context_usage;
+pub mod git_object;
 pub mod guided;
 pub mod model_budget;
 pub mod provider_routing;
 pub mod providers;
 pub mod resolver_scope;
+pub mod txlog;
 /// Remote MCP tool contracts shared with the Worker transport.
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub mod retry;
