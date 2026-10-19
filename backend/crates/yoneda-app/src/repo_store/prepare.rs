@@ -2,6 +2,7 @@
 //! asks for exactly the directories on changed paths (one round per depth), verifies every
 //! supplied tree against its id, and returns the pack to push before the commit is recorded.
 use super::rows::{self, current_version, object_id};
+use crate::platform_objects;
 use crate::storage::{SqlStore, bad, number, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -33,43 +34,9 @@ impl TreeSource for Trees {
     }
 }
 
-fn mode(kind: &str) -> Result<FileMode> {
-    Ok(match kind {
-        "tree" => FileMode::Tree,
-        "blob" => FileMode::Blob,
-        "exec" => FileMode::Executable,
-        "symlink" => FileMode::Symlink,
-        "gitlink" => FileMode::Gitlink,
-        _ => return Err(bad("Unknown tree entry type")),
-    })
-}
-
 /// Supplied trees are untrusted: each must hash to the id it is filed under.
 fn supplied_trees(c: &Value) -> Result<Trees> {
-    let mut trees = HashMap::new();
-    for (id, entries) in c["trees"].as_object().into_iter().flatten() {
-        let id = ObjectId::parse(id)?;
-        let entries = entries
-            .as_array()
-            .ok_or_else(|| bad("Tree entries must be an array"))?
-            .iter()
-            .map(|e| {
-                Ok(TreeEntry {
-                    name: string(e, "name")?,
-                    mode: mode(&string(e, "type")?)?,
-                    id: object_id(e, "id")?,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        if hash_object(ObjectKind::Tree, &encode_tree(&entries)?) != id {
-            return Err(Error::new(
-                "TREE_INVALID",
-                format!("Supplied tree does not match {id}"),
-            ));
-        }
-        trees.insert(id, entries);
-    }
-    Ok(Trees(trees))
+    platform_objects::supplied_trees(c).map(Trees)
 }
 
 fn changes(c: &Value) -> Result<Vec<Change>> {
@@ -147,31 +114,6 @@ fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEnt
         dir = entry.id;
     }
     None
-}
-
-fn entry_type(mode: FileMode) -> &'static str {
-    match mode {
-        FileMode::Tree => "tree",
-        FileMode::Blob => "blob",
-        FileMode::Executable => "exec",
-        FileMode::Symlink => "symlink",
-        FileMode::Gitlink => "gitlink",
-    }
-}
-
-fn cache_entry(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
-    Ok(match kind {
-        ObjectKind::Tree => {
-            json!({"id": id, "kind": "tree", "entries": decode_tree(data)?.iter().map(|e| json!({
-            "name": e.name, "type": entry_type(e.mode), "id": e.id,
-        })).collect::<Vec<_>>()})
-        }
-        ObjectKind::Commit => {
-            let commit = Commit::decode(data)?;
-            json!({"id": id, "kind": "commit", "tree": commit.tree()?, "parents": commit.parents()?})
-        }
-        _ => json!({"id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data)}),
-    })
 }
 
 pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
@@ -305,6 +247,6 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         "push_b64": STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?),
         // Structured copies for the adapter's write-through object cache (tier 2), so it
         // never parses Git formats itself.
-        "objects": objects.iter().map(|(oid, kind, data)| cache_entry(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
+        "objects": objects.iter().map(|(oid, kind, data)| platform_objects::object_json(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
     }))
 }

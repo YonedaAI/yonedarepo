@@ -24,11 +24,14 @@ pub mod resolver_scope;
 pub mod txlog;
 /// Remote MCP tool contracts shared with the Worker transport.
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
+/// MCP tools of the source platform (`/api/v1/repos/:id/mcp`), named after Git verbs.
+pub const PLATFORM_MCP_TOOLS: &str = include_str!("platform_tools.json");
 pub mod retry;
 mod source;
 pub mod source_changeset;
 pub mod source_workspace;
 pub mod team;
+pub mod textdiff;
 pub use source::{FileEntry, Workspace};
 pub const MAX_WORKSPACE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_FILES: usize = 500;
@@ -273,6 +276,17 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn platform_tools_are_git_verbs_with_closed_object_schemas() {
+        let tools: Vec<serde_json::Value> = serde_json::from_str(PLATFORM_MCP_TOOLS).unwrap();
+        assert!(tools.len() >= 10);
+        for tool in tools {
+            assert!(tool["name"].as_str().unwrap().starts_with("git_"));
+            assert!(!tool["description"].as_str().unwrap().is_empty());
+            assert_eq!(tool["inputSchema"]["type"], "object");
+            assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        }
+    }
     #[test]
     fn safe_paths_are_allowed_and_archive_escapes_are_rejected() {
         assert!(validate_path("src/retry.rs").is_ok());

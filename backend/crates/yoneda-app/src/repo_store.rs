@@ -6,6 +6,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod auth;
+mod checks;
 mod land;
 mod migration;
 mod prepare;
@@ -27,14 +28,16 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let settings = rows::settings(db)?;
     let actor = auth::actor(db, c, &settings)?;
-    let scope = match op.as_str() {
-        "repo_prepare_commit" | "repo_record_commit" => "write",
-        "repo_check" => "check",
-        "repo_review" => "review",
-        "repo_land" => "land",
-        _ => "read",
-    };
-    actor.require(scope)?;
+    match op.as_str() {
+        "repo_prepare_commit" | "repo_record_commit" => actor.require("write"),
+        "repo_check" => actor.require("check"),
+        "repo_check_request" => actor.require_any(&["write", "check"]),
+        "repo_check_claim" | "repo_check_complete" => actor.require("system"),
+        "repo_review" => actor.require("review"),
+        "repo_land" => actor.require("land"),
+        "repo_set_policy" => actor.require_owner(),
+        _ => actor.require("read"),
+    }?;
     let principal = actor.principal.as_str();
     match op.as_str() {
         "repo_status" => reads::status(db, &settings),
@@ -43,9 +46,15 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_log" => reads::log(db, c),
         "repo_txlog" => reads::txlog(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
+        "repo_merge_base" => reads::merge_base(db, c),
         "repo_prepare_commit" => prepare::prepare(db, c, principal),
-        "repo_record_commit" => record::record(db, c, principal),
+        "repo_record_commit" => record::record(db, c, principal, &settings),
         "repo_check" => record::check(db, c, principal, &settings),
+        "repo_check_request" => checks::request_op(db, c, principal, &settings),
+        "repo_check_claim" => checks::claim(db, c),
+        "repo_check_run" => checks::run_op(db, c),
+        "repo_check_complete" => checks::complete(db, c, principal),
+        "repo_set_policy" => checks::set_policy(db, c, principal),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_import" => {
