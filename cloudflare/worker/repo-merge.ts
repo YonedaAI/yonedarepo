@@ -44,47 +44,132 @@ function conflictError(conflicts: Json[]) {
   );
 }
 
-/** Lands `sha` on `ref`, creating and landing a platform merge commit if the ref moved. */
-export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) {
-  for (let attempt = 0; attempt < 4; attempt++) {
-    try {
-      return await ctx.call({ op: 'repo_land', ref, commit: sha });
-    } catch (e: any) {
-      if (e?.code !== 'MERGE_REQUIRED') throw e;
-    }
-    const plan = await ctx.call({ op: 'repo_merge_plan', ref, commit: sha });
-    if (!['rebase', 'merge'].includes(plan.outcome)) continue;
-    const objects = await ctx.objects();
+const LAND_DEADLINE_MS = 60_000;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const pathsOf = (changes: Json[]) => changes.map((c) => String(c.path));
+
+/**
+ * Builds and lands one claimed batch: every pending landing is merged against the head;
+ * clean ones whose merged paths do not overlap an earlier item join one octopus merge
+ * commit, overlapping ones wait for the next batch, conflicts fail with details.
+ */
+async function landBatch(merger: RepoContext, claim: Json) {
+  const objects = await merger.objects();
+  const accepted: Json[] = [];
+  const failed: Json[] = [];
+  const changes: Json[] = [];
+  const touched = new Set<string>();
+  const fastForward = claim.items.find((item: Json) => item.fast_forward);
+  if (fastForward)
+    return merger.call({
+      op: 'repo_land_batch',
+      ref: claim.ref,
+      epoch: claim.epoch,
+      landed: [fastForward.ticket],
+    });
+  for (const item of claim.items as Json[]) {
     const merged = await mergeTrees(objects, {
-      base: plan.base_tree,
-      ours: plan.head_tree,
-      theirs: plan.commit_tree,
+      base: item.base_tree,
+      ours: claim.head_tree,
+      theirs: item.commit_tree,
     });
-    if (merged.conflicts.length > 0) throw conflictError(merged.conflicts);
-    const merger = new RepoContext(
-      ctx.env,
-      ctx.repo,
-      caller(ctx.env, ctx.repo, { _system: 'merge' }),
-    );
-    const made = await commit(merger, objects, {
-      parent: plan.head,
-      merge_parent: sha,
-      base_version: plan.version,
-      changes: merged.changes,
-      message: `Merge ${sha.slice(0, 10)} into ${String(plan.ref).replace(/^refs\/heads\//, '')}`,
-      author: PLATFORM_AUTHOR,
-    });
-    try {
-      return {
-        ...(await ctx.call({ op: 'repo_land', ref, commit: sha, merge: made.commit })),
-        merge: made.commit,
-      };
-    } catch (e: any) {
-      // The head moved again while merging: plan afresh.
-      if (e?.code !== 'STALE_PARENT') throw e;
+    if (merged.conflicts.length > 0) {
+      const error = conflictError(merged.conflicts);
+      failed.push({
+        ticket: item.ticket,
+        error: { code: error.code, message: error.message, details: error.details },
+      });
+    } else if (pathsOf(merged.changes).some((p) => touched.has(p)))
+      continue; // next batch
+    else {
+      for (const p of pathsOf(merged.changes)) touched.add(p);
+      changes.push(...merged.changes);
+      accepted.push(item);
     }
   }
-  throw new ApiError('CONFLICT', `${ref} kept moving; retry the landing`);
+  if (accepted.length === 0)
+    return merger.call({
+      op: 'repo_land_batch',
+      ref: claim.ref,
+      epoch: claim.epoch,
+      landed: [],
+      failed,
+    });
+  const branch = String(claim.ref).replace(/^refs\/heads\//, '');
+  const made = await commit(merger, objects, {
+    parent: claim.head,
+    merge_parents: accepted.map((item) => item.commit),
+    base_version: claim.version,
+    changes,
+    message:
+      accepted.length === 1
+        ? `Merge ${String(accepted[0].commit).slice(0, 10)} into ${branch}`
+        : `Merge ${accepted.length} landings into ${branch}\n\n${accepted.map((i) => i.commit).join('\n')}`,
+    author: PLATFORM_AUTHOR,
+  });
+  return merger.call({
+    op: 'repo_land_batch',
+    ref: claim.ref,
+    epoch: claim.epoch,
+    merge: made.commit,
+    landed: accepted.map((item) => item.ticket),
+    failed,
+  });
+}
+
+/**
+ * Lands `sha` on `ref`. A fast-forward lands directly; otherwise the landing joins the
+ * branch's queue and this caller either claims the queue (and lands a whole batch) or
+ * waits for whoever holds it. No caller ever rebuilds a merge against a moving head.
+ */
+export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) {
+  try {
+    return await ctx.call({ op: 'repo_land', ref, commit: sha });
+  } catch (e: any) {
+    if (e?.code !== 'MERGE_REQUIRED') throw e;
+  }
+  const { ticket } = await ctx.call({ op: 'repo_land_enqueue', ref, commit: sha });
+  const merger = new RepoContext(
+    ctx.env,
+    ctx.repo,
+    caller(ctx.env, ctx.repo, { _system: 'merge' }),
+  );
+  const deadline = Date.now() + LAND_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    const status = await ctx.call({ op: 'repo_land_status', ticket });
+    if (status.status === 'landed') {
+      const via = status.result?.commit;
+      return {
+        landed: true,
+        ref: status.ref,
+        commit: sha,
+        version: status.result?.version,
+        ...(via && via !== sha ? { merge: via, merged: sha } : {}),
+      };
+    }
+    if (status.status === 'failed') {
+      const { code, message, details } = status.result ?? {};
+      throw new ApiError(code ?? 'CONFLICT', message ?? 'Landing failed', details);
+    }
+    const claim = await merger.call({ op: 'repo_land_claim', ref });
+    if (claim.wait) {
+      await sleep(5 + Math.random() * 20);
+      continue;
+    }
+    if (claim.empty || !claim.items?.length) {
+      if (!claim.empty) await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch });
+      continue;
+    }
+    try {
+      await landBatch(merger, claim);
+    } catch (e) {
+      await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch }).catch(() => {});
+      throw e;
+    }
+  }
+  throw new ApiError('TIMEOUT', `Landing on ${ref} is still queued; check ticket ${ticket}`, {
+    ticket,
+  });
 }
 
 /** `git merge <source>` into branch `into`: creates (does not land) a merge commit. */

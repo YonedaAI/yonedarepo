@@ -62,15 +62,19 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
     if let Some(system @ ("checks" | "projection" | "import" | "merge" | "repair")) =
         c.get("_system").and_then(Value::as_str)
     {
-        let role = match system {
-            "import" => "import",
-            "merge" | "repair" => "write",
-            _ => "system",
+        let roles: &[&str] = match system {
+            "import" => &["import"],
+            "merge" => &["write", "lander"],
+            "repair" => &["write"],
+            _ => &["system"],
         };
         return Ok(Actor {
             principal: format!("platform:{system}"),
             owner: false,
-            scopes: vec!["read".into(), role.into()],
+            scopes: std::iter::once("read")
+                .chain(roles.iter().copied())
+                .map(str::to_owned)
+                .collect(),
         });
     }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {

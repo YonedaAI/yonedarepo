@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, merge_bases},
-    txlog::{Checkpoint, replay},
+    txlog::replay,
 };
 
 fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
@@ -26,12 +26,25 @@ fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
     }
 }
 
-fn refs_at<S: SqlStore>(db: &S, version: u64) -> Result<BTreeMap<String, ObjectId>> {
-    Ok(replay(
-        &Checkpoint::default(),
-        &rows::entries(db, 0, version, None)?,
-    )?
-    .refs)
+/// Refs as of `version`. Current reads use the refs table (O(refs)); time travel replays the hash-chained log from the nearest checkpoint, so time travel also
+/// verifies the history it crosses without re-reading the whole log.
+fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<String, ObjectId>> {
+    // Reads without `at` take the fast path; an explicit `at` always verifies.
+    if c.get("at").is_none_or(Value::is_null) {
+        return db
+            .query("SELECT name,commit_id FROM refs", &[])?
+            .into_iter()
+            .map(|r| {
+                Ok((
+                    r["name"].as_str().unwrap_or_default().to_owned(),
+                    ObjectId::parse(r["commit_id"].as_str().unwrap_or_default())?,
+                ))
+            })
+            .collect();
+    }
+    let from = rows::checkpoint_at_or_before(db, version)?;
+    let tail = rows::entries(db, from.version, version, None)?;
+    Ok(replay(&from, &tail)?.refs)
 }
 
 pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
@@ -53,13 +66,13 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
 
 pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
-    Ok(json!({ "version": version, "refs": refs_at(db, version)? }))
+    Ok(json!({ "version": version, "refs": refs_at(db, c, version)? }))
 }
 
 pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
     let refname = branch_ref(c)?;
-    let commit = refs_at(db, version)?.remove(&refname).ok_or_else(|| {
+    let commit = refs_at(db, c, version)?.remove(&refname).ok_or_else(|| {
         Error::new(
             "NOT_FOUND",
             format!("{refname} does not exist at version {version}"),
@@ -74,7 +87,7 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
     let refname = branch_ref(c)?;
     let limit = c["limit"].as_u64().unwrap_or(50).clamp(1, 200);
-    let mut next = refs_at(db, version)?.remove(&refname);
+    let mut next = refs_at(db, c, version)?.remove(&refname);
     let mut commits = Vec::new();
     while let Some(id) = next {
         if commits.len() as u64 >= limit {

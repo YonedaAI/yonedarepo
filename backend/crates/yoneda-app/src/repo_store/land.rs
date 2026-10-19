@@ -54,7 +54,7 @@ pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<
     }))
 }
 
-fn append<S: SqlStore>(
+pub(super) fn append<S: SqlStore>(
     db: &S,
     c: &Value,
     kind: TxKind,
@@ -104,6 +104,7 @@ fn append<S: SqlStore>(
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
     super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
+    rows::maybe_checkpoint(db, version, &entry.chain)?;
     db.query(
         "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
         &[
@@ -135,6 +136,13 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
         return Err(Error::new(
             "NOT_READY",
             format!("Commit cannot land yet: {gate}"),
+        ));
+    }
+    // While a group landing owns this branch, direct landings queue behind it.
+    if super::land_queue::busy(db, &refname, number(c, "now")?)? {
+        return Err(Error::new(
+            "MERGE_REQUIRED",
+            format!("{refname} has queued landings; this commit joins the queue"),
         ));
     }
     let Some(head) = current else {

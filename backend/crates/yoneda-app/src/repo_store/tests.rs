@@ -678,7 +678,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        5
+        7
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -970,5 +970,133 @@ fn verified_platform_merges_land_under_the_merged_commits_gates() {
             json!({"op":"repo_land","ref":"main","commit":src,"merge":merged})
         )),
         "OK"
+    );
+}
+
+#[test]
+fn time_travel_replays_from_verified_checkpoints() {
+    use crate::storage::SqlStore;
+    let (h, root) = seeded();
+    let mut head = root.clone();
+    for i in 0..70 {
+        let next = h
+            .commit(
+                AGENT,
+                Some(&head),
+                i + 1,
+                json!([file("n.txt", &format!("{i}\n"))]),
+                json!([]),
+            )
+            .unwrap();
+        h.approve_and_check(&next);
+        h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":next}));
+        head = next;
+    }
+    let checkpoints =
+        h.db.query("SELECT version FROM txlog_checkpoints", &[])
+            .unwrap();
+    assert_eq!(checkpoints, vec![json!({"version": 64})]);
+    let at = |v: u64| h.run(OWNER, json!({"op":"repo_snapshot","ref":"main","at":v}));
+    let at66 = at(66).unwrap()["commit"].clone();
+    let at3 = at(3).unwrap()["commit"].clone();
+    assert_ne!(at66, at3);
+    // A checkpoint that disagrees with the log is refused, not trusted.
+    h.db.query("UPDATE txlog_checkpoints SET checkpoint=replace(checkpoint,'\"chain\":\"','\"chain\":\"x')", &[]).unwrap();
+    assert_eq!(code(at(66)), "TXLOG_INVALID");
+    assert_eq!(
+        code(at(71)),
+        "TXLOG_INVALID",
+        "explicit time travel always verifies"
+    );
+    let current = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}));
+    assert_eq!(
+        current["commit"],
+        json!(head),
+        "current reads use the refs table"
+    );
+}
+
+#[test]
+fn queued_landings_batch_under_a_fenced_lease() {
+    let (h, root) = seeded();
+    const MERGER: &str = "platform:merge";
+    let make = |path: &str, read: Value| {
+        let id = h
+            .commit(AGENT, Some(&root), 1, json!([file(path, "x\n")]), read)
+            .unwrap();
+        h.approve_and_check(&id);
+        id
+    };
+    let (first, a, b, stale) = (
+        make("f.txt", json!([])),
+        make("a.txt", json!([])),
+        make("b.txt", json!([])),
+        make("s.txt", json!(["f.txt"])),
+    );
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":first}));
+    let tickets: Vec<Value> = [&a, &b, &stale]
+        .iter()
+        .map(|c| {
+            h.ok(
+                OWNER,
+                json!({"op":"repo_land_enqueue","ref":"main","commit":c}),
+            )["ticket"]
+                .clone()
+        })
+        .collect();
+    // While work is queued, a direct landing joins the queue instead of jumping it.
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_land","ref":"main","commit":a}))),
+        "MERGE_REQUIRED"
+    );
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_land_claim","ref":"main"}))),
+        "FORBIDDEN"
+    );
+    let claim = h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}));
+    assert_eq!(
+        claim["items"].as_array().unwrap().len(),
+        2,
+        "the stale read failed at claim time"
+    );
+    let failed = h.ok(OWNER, json!({"op":"repo_land_status","ticket":tickets[2]}));
+    assert_eq!(
+        (failed["status"].as_str(), failed["result"]["code"].as_str()),
+        (Some("failed"), Some("CONFLICT"))
+    );
+    assert!(
+        h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}))["wait"] == true,
+        "the lease is held"
+    );
+    let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
+    let merge = h
+        .commit_with(MERGER, Some(&first), 2,
+            json!([{"path":"a.txt","blob":blob("x\n"),"type":"blob"},{"path":"b.txt","blob":blob("x\n"),"type":"blob"}]),
+            json!([]), json!({"merge_parents": [a, b]}))
+        .unwrap();
+    let batch = |epoch: &Value| {
+        h.run(MERGER, json!({"op":"repo_land_batch","ref":"main","epoch":epoch,"merge":merge,"landed":[tickets[0], tickets[1]]}))
+    };
+    assert_eq!(code(batch(&json!(99))), "STALE_EPOCH");
+    let landed = batch(&claim["epoch"]).unwrap();
+    assert_eq!(landed["version"], 3);
+    for (ticket, commit) in [(&tickets[0], &a), (&tickets[1], &b)] {
+        assert_eq!(
+            h.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}))["status"],
+            "landed"
+        );
+        assert_eq!(
+            h.ok(OWNER, json!({"op":"repo_commit","commit":commit}))["landings"][0]["version"],
+            3
+        );
+    }
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":merge}))["parents"],
+        json!([first, a, b])
+    );
+    assert_eq!(
+        h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}))["empty"],
+        true,
+        "lease released"
     );
 }
