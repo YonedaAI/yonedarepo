@@ -23,6 +23,7 @@ const STATUS: Record<string, number> = {
   ALREADY_EXISTS: 409,
   PUSH_FAILED: 502,
   NOT_SUPPORTED: 400,
+  TIMEOUT: 503,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
