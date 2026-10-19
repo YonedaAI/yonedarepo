@@ -3,7 +3,7 @@
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
 import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
-import { caller, type Json } from './repo-ops';
+import { caller, type Json, RepoContext, replay } from './repo-ops';
 import type { Env, Envelope } from './types';
 
 const MAX_FILES = 100_000;
@@ -42,6 +42,32 @@ async function files(objects: RepoObjects, tree: string) {
   return out;
 }
 
+/**
+ * A check failed on work that already landed: propose a revert of it on each branch as a
+ * repair commit (recorded, not landed; it goes through its own checks and review).
+ */
+async function proposeRepairs(env: Env, repo: string, run: Json, refs: string[]) {
+  const call = caller(env, repo, { _system: 'checks' });
+  const repairer = new RepoContext(env, repo, caller(env, repo, { _system: 'repair' }));
+  for (const refname of refs) {
+    const link = { op: 'repo_record_repair', commit: run.commit, refname, check: run.name };
+    try {
+      const made = await replay(
+        repairer,
+        {
+          commit: run.commit,
+          ref: refname,
+          message: `Revert ${String(run.commit).slice(0, 10)}: post-land check ${run.name} failed\n\nRepair proposed by YonedaRepo for commit ${run.commit}.`,
+        },
+        'revert',
+      );
+      await call({ ...link, repair_commit: made.commit });
+    } catch (e: any) {
+      await call({ ...link, error: `${e?.code ?? 'ERROR'}: ${e?.message ?? e}` });
+    }
+  }
+}
+
 /** Returns `retry` with a delay when another executor still holds the run's lease. */
 export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ retry?: number }> {
   const repo = envelope.repo_id;
@@ -67,7 +93,7 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
     await env.OBJECTS.put(log, String(result.output_tail ?? ''), {
       customMetadata: { sha256: String(result.output_sha256 ?? ''), commit: run.commit },
     });
-    await complete(result.outcome === 'pass' ? 'pass' : 'fail', {
+    const completed = await complete(result.outcome === 'pass' ? 'pass' : 'fail', {
       exit_code: result.exit_code ?? null,
       timed_out: result.timed_out === true,
       duration_ms: result.duration_ms,
@@ -75,6 +101,7 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       output_sha256: result.output_sha256,
       log,
     });
+    await proposeRepairs(env, repo, run, completed.repair ?? []);
   } catch (e: any) {
     await complete('error', {
       error: String(e?.message ?? e).slice(0, 500),

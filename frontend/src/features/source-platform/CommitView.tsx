@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { CommitDiff } from './CommitDiff';
 import { Failure, Loading } from './SourceStatus';
-import { shortSha, sourceApi, when } from './sourceApi';
+import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
@@ -15,6 +15,12 @@ type Detail = {
   check_runs: { id: string; name: string; status: string; epoch: number }[];
   reviews: { principal: string; decision: string; reason?: string; recorded_at: number }[];
   landings: { refname: string; version: number; landed_at: number }[];
+  repairs: {
+    refname: string;
+    check_name: string;
+    repair_commit: string | null;
+    error: string | null;
+  }[];
   gates: {
     ready: boolean;
     approvals: number;
@@ -39,6 +45,7 @@ export function CommitView({
   const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [conflicts, setConflicts] = useState<{ path: string; kind: string; marked?: string }[]>([]);
   const [notice, setNotice] = useState('');
   const [reason, setReason] = useState('');
   const [target, setTarget] = useState('main');
@@ -51,6 +58,7 @@ export function CommitView({
     setBusy(label);
     setError('');
     setNotice('');
+    setConflicts([]);
     try {
       const result = await sourceApi(`/repos/${repo}${path}`, { body });
       setNotice(typeof done === 'string' ? done : done(result));
@@ -58,6 +66,7 @@ export function CommitView({
       onChanged();
     } catch (e) {
       setError((e as Error).message);
+      setConflicts((e as SourceApiError).details?.conflicts ?? []);
     } finally {
       setBusy('');
     }
@@ -192,6 +201,15 @@ export function CommitView({
         </div>
         {notice && <p role="status">{notice}</p>}
         {error && <Failure error={error} />}
+        {conflicts.map((c) => (
+          <section key={c.path} className="source-file" aria-label={`Conflict in ${c.path}`}>
+            <header>
+              <code>{c.path}</code>
+              <span>{c.kind.replace('_', '/')} conflict: resolve in a new commit</span>
+            </header>
+            {c.marked && <pre>{c.marked}</pre>}
+          </section>
+        ))}
       </section>
       <section aria-label="Checks">
         <h3>Checks</h3>
@@ -216,6 +234,31 @@ export function CommitView({
             ))}
         </ul>
       </section>
+      {d.repairs.length > 0 && (
+        <section aria-label="Repairs">
+          <h3>Post-land repairs</h3>
+          <ul>
+            {d.repairs.map((r) => (
+              <li key={`${r.refname}:${r.check_name}`}>
+                {r.check_name} failed after landing on {r.refname.replace(/^refs\/heads\//, '')}:{' '}
+                {r.repair_commit ? (
+                  <a
+                    href={`/source/${repo}/commit/${r.repair_commit}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onNavigate({ view: 'commit', repo, commit: r.repair_commit as string });
+                    }}
+                  >
+                    revert proposed <code>{shortSha(r.repair_commit)}</code>
+                  </a>
+                ) : (
+                  `no automatic repair (${r.error})`
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section aria-label="Reviews">
         <h3>Reviews</h3>
         {d.reviews.length === 0 && <p className="source-empty">No reviews yet.</p>}
