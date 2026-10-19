@@ -13,11 +13,18 @@ use yoneda_core::{
     txlog::{Checkpoint, replay},
 };
 
-/// The recorded commit graph (parents and generations stored at record time).
+/// The recorded commit graph (parents and generations stored at record time). Parents
+/// beyond a truncated import are not recorded and end the walk there.
 struct Graph<'a, S>(&'a S);
 impl<S: SqlStore> CommitGraph for Graph<'_, S> {
     fn parents(&self, id: &ObjectId) -> Result<Vec<ObjectId>> {
-        Ok(rows::recorded(self.0, id)?.parents)
+        let mut parents = Vec::new();
+        for parent in rows::recorded(self.0, id)?.parents {
+            if rows::commit_row(self.0, &parent)?.is_some() {
+                parents.push(parent);
+            }
+        }
+        Ok(parents)
     }
     fn generation(&self, id: &ObjectId) -> Result<u64> {
         Ok(rows::recorded(self.0, id)?.generation)
@@ -100,7 +107,10 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "commit": id, "tree": row.tree, "parents": row.parents, "message": row.message,
             "principal": row.principal, "landed": landed.first(),
         }));
-        next = row.parents.first().copied();
+        next = match row.parents.first() {
+            Some(parent) if rows::commit_row(db, parent)?.is_some() => Some(*parent),
+            _ => None,
+        };
     }
     Ok(json!({ "version": version, "ref": refname, "commits": commits }))
 }

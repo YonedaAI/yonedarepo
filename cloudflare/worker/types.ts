@@ -13,6 +13,8 @@ export interface Env {
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   /** Platform jobs (check runs); independent of agent queues. */
   PLATFORM_QUEUE: Queue<Envelope>;
+  /** Durable imports of external Git repositories into the source platform. */
+  PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   SELF: Service<YonedaEntrypoint>;

@@ -28,7 +28,9 @@ export function SourceApp() {
     name: string;
     version: number;
     policy: { required_checks: string[]; approvals: number };
+    projections?: { refname: string; status: string; detail?: string }[];
   }>(repo ? `/repos/${repo}` : null);
+  const drift = status.data?.projections?.filter((p) => p.status === 'drift') ?? [];
   const tab = (view: 'files' | 'history' | 'transactions', label: string) =>
     repo && (
       <a
@@ -94,6 +96,12 @@ export function SourceApp() {
                   </span>
                 )}
               </div>
+              {drift.map((p) => (
+                <p key={p.refname} role="alert" className="source-error">
+                  {p.refname.replace(/^refs\/heads\//, '')} in the Git object store has drifted from
+                  the landed branch and is no longer updated: {p.detail}
+                </p>
+              ))}
               {status.error && (
                 <Failure
                   error={unauthorized ? 'Sign in from the workspace first.' : status.error}

@@ -192,8 +192,11 @@ pub fn import<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         ));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
-    if !commit.parents.is_empty() {
-        return Err(Error::new("INVALID_INPUT", "Import needs a root commit"));
+    if !commit.parents.is_empty() && !super::history_import::imported(db, &commit.id)? {
+        return Err(Error::new(
+            "INVALID_INPUT",
+            "Import needs a root commit or imported history",
+        ));
     }
     append(
         db,

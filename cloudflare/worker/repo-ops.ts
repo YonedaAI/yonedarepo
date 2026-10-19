@@ -17,7 +17,7 @@ export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string } }
   | { _token: string }
-  | { _system: 'checks' | 'projection' };
+  | { _system: 'checks' | 'projection' | 'import' };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
