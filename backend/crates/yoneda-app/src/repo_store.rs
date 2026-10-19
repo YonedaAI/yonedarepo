@@ -43,6 +43,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_log" => reads::log(db, c),
         "repo_txlog" => reads::txlog(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
+        "repo_merge_base" => reads::merge_base(db, c),
         "repo_prepare_commit" => prepare::prepare(db, c, principal),
         "repo_record_commit" => record::record(db, c, principal),
         "repo_check" => record::check(db, c, principal, &settings),

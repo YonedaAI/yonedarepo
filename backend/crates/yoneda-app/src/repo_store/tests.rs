@@ -478,3 +478,39 @@ fn migrations_are_repeatable_and_pinned() {
         "MIGRATION_DRIFT"
     );
 }
+
+#[test]
+fn merge_base_of_diverged_commits_is_their_fork_point() {
+    let (h, root) = seeded();
+    let left = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("a.txt", "l\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let right = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("b.txt", "r\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let bases = h.ok(
+        CI,
+        json!({"op":"repo_merge_base","left":left,"right":right}),
+    );
+    assert_eq!(bases["merge_bases"][0]["commit"], root);
+    let unknown = "0".repeat(40);
+    assert_eq!(
+        code(h.run(
+            CI,
+            json!({"op":"repo_merge_base","left":left,"right":unknown})
+        )),
+        "NOT_FOUND"
+    );
+}

@@ -137,6 +137,15 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   expect(log.body.commits.map((c: any) => c.commit)[0]).toBe(sha);
   const txlog = await api(`${repo}/txlog`, ci);
   expect(txlog.body.entries.map((e: any) => e.kind)).toEqual(['import', 'commit']);
+  const changed = await api(`${repo}/diff?head=${sha}&patch=1`, agent);
+  expect(changed.body.changes.map((c: any) => `${c.op}:${c.path}`)).toEqual(['add:docs/a.md', 'modify:src/lib.rs']);
+  expect(changed.body.changes[1]).toMatchObject({
+    patch: '@@ -1 +1 @@\n-pub fn a() {}\n+pub fn a() { 1 }\n',
+    additions: 1,
+    deletions: 1,
+  });
+  const scoped = await api(`${repo}/diff?base=main&head=${sha}&path=docs`, agent);
+  expect(scoped.body.changes).toEqual([]);
   // Every object read was served by the R2 tier written through at commit time.
   expect(misses).toEqual([]);
 
@@ -158,4 +167,53 @@ it('rejects a commit whose base moved underneath it on the same paths', async ()
   const conflict = await api(`${repo}/land`, owner, { body: { ref: 'main', commit: second.body.commit } });
   expect(conflict.status).toBe(409);
   expect(conflict.body.error.code).toBe('CONFLICT');
+});
+
+async function mcp(repo: string, auth: { token?: string }, method: string, params?: unknown, id: number | null = 1) {
+  const headers: Record<string, string> = { 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' };
+  if (auth.token) headers.authorization = `Bearer ${auth.token}`;
+  const response = await fetchRequest(
+    new Request(`https://yoneda/api/v1/repos/${repo}/mcp`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ jsonrpc: '2.0', ...(id === null ? {} : { id }), method, params }),
+    }),
+    scoped,
+  );
+  return { status: response.status, body: response.status === 202 ? null : await response.json<any>() };
+}
+
+it('serves the same operations over MCP with Git-verb tools', async () => {
+  const owner = { cookie: await signup('dana') };
+  const created = await api('/repos', owner, {
+    body: { policy: { required_checks: [], approvals: 1 }, files: [file('a.txt', 'a\n')], author },
+  });
+  const id = created.body.id as string;
+  const minted = await api(`/repos/${id}/tokens`, owner, { body: { name: 'mcp', scopes: ['read', 'write'] } });
+  const agent = { token: minted.body.token as string };
+
+  const init = await mcp(id, agent, 'initialize', { protocolVersion: '2025-06-18' });
+  expect(init.body.result.serverInfo.name).toBe('yonedarepo-source');
+  expect((await mcp(id, agent, 'notifications/initialized', undefined, null)).status).toBe(202);
+  const { operations } = await import('../../cloudflare/worker/repo-tools');
+  const listed = await mcp(id, agent, 'tools/list');
+  expect(listed.body.result.tools.map((t: any) => t.name).sort()).toEqual(Object.keys(operations).sort());
+
+  const made = await mcp(id, agent, 'tools/call', {
+    name: 'git_commit',
+    arguments: { ref: 'main', changes: [file('a.txt', 'b\n')], message: 'edit a', author },
+  });
+  const sha = made.body.result.structuredContent.commit;
+  expect(sha).toMatch(/^[0-9a-f]{40}$/);
+  const diffed = await mcp(id, agent, 'tools/call', { name: 'git_diff', arguments: { head: sha, patch: true } });
+  expect(diffed.body.result.structuredContent.changes[0].patch).toBe('@@ -1 +1 @@\n-a\n+b\n');
+  const read = await mcp(id, agent, 'tools/call', { name: 'git_cat_file', arguments: { path: 'a.txt', commit: sha } });
+  expect(read.body.result.structuredContent.content).toBe('b\n');
+
+  const landing = await mcp(id, agent, 'tools/call', { name: 'git_land', arguments: { ref: 'main', commit: sha } });
+  expect(landing.body.result.isError).toBe(true);
+  expect(landing.body.result.content[0].text).toMatch(/^FORBIDDEN/);
+  const unknown = await mcp(id, agent, 'tools/call', { name: 'constructor', arguments: {} });
+  expect(unknown.body.result.isError).toBe(true);
+  expect((await mcp(id, {}, 'tools/list')).status).toBe(401);
 });
