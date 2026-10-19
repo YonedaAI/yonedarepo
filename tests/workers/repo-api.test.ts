@@ -1,6 +1,6 @@
 // Source platform end to end in workerd through the public API (see repo-fixture.ts).
 import { expect, it } from 'vitest';
-import { fetchRequest } from '../../cloudflare/worker/routes';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, executed, file, misses, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -101,7 +101,7 @@ it('rejects a commit whose base moved underneath it on the same paths', async ()
 async function mcp(repo: string, auth: { token?: string }, method: string, params?: unknown, id: number | null = 1) {
   const headers: Record<string, string> = { 'content-type': 'application/json', 'MCP-Protocol-Version': '2025-06-18' };
   if (auth.token) headers.authorization = `Bearer ${auth.token}`;
-  const response = await fetchRequest(
+  const response = await platformFetch(
     new Request(`https://yoneda/api/v1/repos/${repo}/mcp`, {
       method: 'POST',
       headers,
@@ -191,7 +191,7 @@ it('runs the whole platform on the R2 object store with Rust-verified pushes', a
   const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
   const call = async (path: string, auth: { cookie?: string }, body?: unknown) => {
     const headers: Record<string, string> = { 'content-type': 'application/json', cookie: auth.cookie ?? '' };
-    const response = await fetchRequest(
+    const response = await platformFetch(
       new Request(`https://yoneda/api/v1${path}`, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined }),
       local,
     );

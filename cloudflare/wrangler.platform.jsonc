@@ -1,0 +1,123 @@
+// Platform-only Worker: the source platform with the agent layer switched off. Not yet
+// deployed; deploying it is part of N8 and needs the owner's go-ahead.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-platform-dev",
+  "main": "worker/platform-index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ARTIFACTS_NAMESPACE": "yoneda-dev"
+  },
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "yoneda-dev",
+      "remote": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACES",
+        "class_name": "WorkspaceAuthority"
+      },
+      {
+        "name": "SOURCE_REPOS",
+        "class_name": "SourceRepository"
+      },
+      {
+        "name": "CHECK_RUNNERS",
+        "class_name": "CheckContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SourceRepository",
+        "WorkspaceAuthority",
+        "CheckContainer"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "CheckContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 8,
+      "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-dev-objects"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "INDEX",
+      "database_name": "yonedarepo-dev-index",
+      "database_id": "182c0b3e-8f82-4038-9b3e-630b0b5275c5",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yonedarepo-platform-dev-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "yonedarepo-platform-dev-jobs",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-platform-dev-dead-letter"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "yonedarepo-platform-dev-import",
+      "binding": "PLATFORM_IMPORT",
+      "class_name": "PlatformImportWorkflow"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-platform-dev"
+    }
+  ]
+}

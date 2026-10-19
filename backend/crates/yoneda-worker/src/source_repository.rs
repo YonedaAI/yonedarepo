@@ -24,7 +24,7 @@ impl DurableObject for SourceRepository {
         }
         // `_principal` and `_workspace` come from the authenticating adapter; time is ours.
         command["now"] = json!(Date::now().as_millis() as i64);
-        match yoneda_app::execute_repo_store(&CloudStore::new(self.state.storage()), command) {
+        match yoneda_platform::execute_repo_store(&CloudStore::new(self.state.storage()), command) {
             Ok(value) => Response::from_json(&value),
             Err(e) => Response::from_json(&json!({"error":{"code":e.code,"message":e.message}}))
                 .map(|r| r.with_status(409)),
