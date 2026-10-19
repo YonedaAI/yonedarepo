@@ -8,6 +8,7 @@ import { error, readJson, response } from './http';
 import { repoMcp } from './repo-mcp';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
+import { dispatchProjection } from './repo-projection';
 import { operations } from './repo-tools';
 import type { Env } from './types';
 
@@ -66,6 +67,7 @@ async function createRepository(env: Env, auth: Credentials, body: Json) {
     author: body.author,
   });
   const landed = await ctx.call({ op: 'repo_import', ref: 'main', commit: seeded.commit });
+  await dispatchProjection(env, id);
   return { id, commit: seeded.commit, version: landed.version };
 }
 

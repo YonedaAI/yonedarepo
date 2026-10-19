@@ -102,6 +102,7 @@ fn append<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
+    super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
     db.query(
         "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
         &[

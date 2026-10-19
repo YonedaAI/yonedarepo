@@ -39,7 +39,13 @@ export const fakeArtifacts = {
 // for the Container by evaluating the shipped files (the real one is tested in Rust).
 export const queued: any[] = [];
 export const executed: any[] = [];
-export const fakeQueue = { sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)) };
+export const fakeQueue = {
+  send: async (body: any) => void queued.push(body),
+  sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)),
+};
+/** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
+export const pushes: string[] = [];
+export const refusals = new Set<string>();
 export const fakeRunners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
@@ -63,6 +69,8 @@ afterEach(() => {
 beforeEach(async () => {
   for (const statement of listing.split(';').filter((s) => s.trim())) await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
   misses.length = 0;
+  pushes.length = 0;
+  refusals.clear();
   queued.length = 0;
   executed.length = 0;
   const original = globalThis.fetch;
@@ -73,7 +81,8 @@ beforeEach(async () => {
     const body = new Uint8Array(init?.body as ArrayBuffer);
     const command = new TextDecoder().decode(body.subarray(4, body.indexOf(0)));
     const ref = command.split(' ')[2];
-    const ok = `ok ${ref}\n`;
+    pushes.push(command);
+    const ok = refusals.has(ref) ? `ng ${ref} stale info\n` : `ok ${ref}\n`;
     const report = `000eunpack ok\n${(ok.length + 4).toString(16).padStart(4, '0')}${ok}0000`;
     return new Response(report, { headers: { 'content-type': 'application/x-git-receive-pack-result' } });
   });

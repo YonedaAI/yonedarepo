@@ -54,9 +54,9 @@ fn token_digest(secret: &str) -> String {
 /// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
 /// callers. `_system` is the platform's own check executor (queue consumer).
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
-    if c.get("_system").and_then(Value::as_str) == Some("checks") {
+    if let Some(system @ ("checks" | "projection")) = c.get("_system").and_then(Value::as_str) {
         return Ok(Actor {
-            principal: "platform:checks".into(),
+            principal: format!("platform:{system}"),
             owner: false,
             scopes: vec!["read".into(), "system".into()],
         });

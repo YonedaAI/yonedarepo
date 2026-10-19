@@ -46,6 +46,7 @@ impl Harness {
         match principal.strip_prefix("token:") {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
             None if principal == SYSTEM => c["_system"] = json!("checks"),
+            None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -745,4 +746,48 @@ fn commits_files_larger_than_short_field_limits() {
         .unwrap();
     let paths = h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["paths"].clone();
     assert_eq!(paths.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn ref_projection_tracks_targets_leases_and_drift() {
+    let (h, root) = seeded();
+    const PROJECTOR: &str = "platform:projection";
+    let pending = |h: &Harness| {
+        h.run(PROJECTOR, json!({"op":"repo_projection_pending"}))
+            .unwrap()["pending"]
+            .clone()
+    };
+    assert_eq!(pending(&h)[0]["target_commit"], root);
+    assert_eq!(pending(&h)[0]["projected_commit"], Value::Null);
+    assert_eq!(
+        code(h.run(AGENT, json!({"op":"repo_projection_pending"}))),
+        "FORBIDDEN"
+    );
+    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":1,"outcome":"ok","commit":root})).unwrap();
+    assert_eq!(pending(&h), json!([]));
+
+    let child = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("x.txt", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.approve_and_check(&child);
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":child}));
+    assert_eq!(
+        pending(&h)[0]["projected_commit"],
+        root,
+        "the last projected value is the lease"
+    );
+    // A late result for an older version never regresses the projection.
+    let late = h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":0,"outcome":"ok","commit":root})).unwrap();
+    assert_eq!(late["ignored"], true);
+    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":2,"outcome":"drift","detail":"stale info"})).unwrap();
+    assert_eq!(pending(&h), json!([]), "drift waits for an owner");
+    let status = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(status["projections"][0]["status"], "drift");
+    assert_eq!(status["projections"][0]["detail"], "stale info");
 }
