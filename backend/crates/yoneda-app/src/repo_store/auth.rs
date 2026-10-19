@@ -59,13 +59,14 @@ fn token_digest(secret: &str) -> String {
 /// callers. `_system` names a platform role (check executor, ref projector, importer,
 /// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
-    if let Some(system @ ("checks" | "projection" | "import" | "merge" | "repair")) =
+    if let Some(system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive")) =
         c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
             "import" => &["import"],
             "merge" => &["write", "lander"],
             "repair" => &["write"],
+            "derive" => &[],
             _ => &["system"],
         };
         return Ok(Actor {

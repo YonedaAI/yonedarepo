@@ -15,6 +15,7 @@ describe('source routes', () => {
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
+      { view: 'search', repo, query: 'retry with' },
     ];
     for (const route of routes) {
       const url = new URL(formatSourceRoute(route), 'https://x');

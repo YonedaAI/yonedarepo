@@ -678,7 +678,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        7
+        8
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1099,4 +1099,102 @@ fn queued_landings_batch_under_a_fenced_lease() {
         true,
         "lease released"
     );
+}
+
+#[test]
+fn path_history_bisect_and_vacuum_follow_the_log() {
+    use crate::storage::SqlStore;
+    let (h, root) = seeded();
+    let mut set = runner_policy(60);
+    set["policy"]["required_checks"] = json!([]);
+    set["policy"]["approvals"] = json!(0);
+    set["op"] = json!("repo_set_policy");
+    h.ok(OWNER, set);
+    // Eight commits on main; the fifth breaks the "unit" check.
+    let mut chain = vec![root.clone()];
+    for i in 1..=8 {
+        let id = h
+            .commit(
+                AGENT,
+                chain.last().map(String::as_str),
+                i,
+                json!([file("n.txt", &format!("{i}\n"))]),
+                json!([]),
+            )
+            .unwrap();
+        h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":id}));
+        chain.push(id);
+    }
+    let history = h.ok(
+        CI,
+        json!({"op":"repo_path_history","ref":"main","path":"n.txt"}),
+    );
+    assert_eq!(history["commits"].as_array().unwrap().len(), 8);
+    assert_eq!(history["commits"][0]["commit"], json!(chain[8]));
+
+    let mut step = h.ok(CI, json!({"op":"repo_bisect_start","ref":"main","check":"unit","good":chain[0],"bad":chain[8]}));
+    let id = step["id"].as_str().unwrap().to_owned();
+    let mut tested = 0;
+    while step["status"] == "running" {
+        let commit = step["testing"].as_str().unwrap().to_owned();
+        let index = chain.iter().position(|c| *c == commit).unwrap();
+        let run = step["runs"][0]["id"].as_str().unwrap().to_owned();
+        let epoch = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["epoch"].clone();
+        let outcome = if index >= 5 { "fail" } else { "pass" };
+        let done = h.ok(SYSTEM, json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,"outcome":outcome,"evidence":{}}));
+        assert_eq!(done["bisects"], json!([id]));
+        step = h.ok(SYSTEM, json!({"op":"repo_bisect_step","id":id}));
+        tested += 1;
+    }
+    assert_eq!(step["result"]["first_bad"], json!(chain[5]));
+    assert!(
+        tested <= 4,
+        "bisect halves the range ({tested} checks for 8 commits)"
+    );
+
+    // Vacuum: landed work is covered only once its branch projection caught up; old
+    // unlanded work expires unless pinned or still in flight.
+    let orphan = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("o.txt", "o\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let pinned = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("p.txt", "p\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_pin","commit":pinned,"reason":"long job"}),
+    );
+    *h.now.borrow_mut() += 8 * 24 * 60 * 60 * 1000;
+    let plan = h.ok(OWNER, json!({"op":"repo_vacuum_plan"}));
+    assert_eq!(plan["covered"], json!([]), "nothing is projected yet");
+    let expired: Vec<String> = serde_json::from_value(plan["expired"].clone()).unwrap();
+    assert!(
+        expired.contains(&orphan) && !expired.contains(&pinned) && !expired.contains(&chain[8])
+    );
+    h.db.query("UPDATE ref_projections SET status='ok',projected_version=target_version,projected_commit=target_commit", &[]).unwrap();
+    let covered: Vec<String> =
+        serde_json::from_value(h.ok(OWNER, json!({"op":"repo_vacuum_plan"}))["covered"].clone())
+            .unwrap();
+    assert!(covered.contains(&chain[8]) && !covered.contains(&pinned));
+    assert_eq!(
+        code(h.run(AGENT, json!({"op":"repo_vacuum_plan"}))),
+        "FORBIDDEN"
+    );
+    h.ok(OWNER, json!({"op":"repo_vacuum_done","commits":[orphan]}));
+    let again: Vec<String> =
+        serde_json::from_value(h.ok(OWNER, json!({"op":"repo_vacuum_plan"}))["expired"].clone())
+            .unwrap();
+    assert!(!again.contains(&orphan));
 }

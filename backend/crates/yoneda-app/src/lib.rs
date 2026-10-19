@@ -4,6 +4,7 @@ use yoneda_core::Result;
 mod commands;
 mod path_lists;
 mod platform_compute;
+mod platform_derived;
 mod platform_objects;
 mod repo_store;
 mod source_binding;

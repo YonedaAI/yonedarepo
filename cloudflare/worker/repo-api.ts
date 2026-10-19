@@ -10,6 +10,7 @@ import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 import { operations } from './repo-tools';
+import { vacuum } from './repo-vacuum';
 import type { Env } from './types';
 
 const STATUS: Record<string, number> = {
@@ -144,6 +145,14 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
   if (get && resource === 'blob') return run('git_cat_file', query);
+  if (get && resource === 'search')
+    return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
+  if (get && resource === 'blame') return run('git_blame', query);
+  if (resource === 'bisect' && post) return run('git_bisect', await bodyOf(req));
+  if (resource === 'bisect' && sha && get) return run('git_bisect', { id: sha });
+  if (resource === 'commits' && sha && sub === 'pin' && post)
+    return run('git_pin', { ...(await bodyOf(req)), commit: sha });
+  if (resource === 'vacuum' && post) return vacuum(ctx, await bodyOf(req).catch(() => ({})));
   if (get && resource === 'diff')
     return run('git_diff', {
       ...query,

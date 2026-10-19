@@ -22,7 +22,13 @@ pub fn compute(c: Value) -> Result<Value> {
         "receive_pack" => receive_pack(&c),
         "replay_changes" => replay_changes(&c),
         "merge_trees" => merge(&c),
+        "search_plan" => crate::platform_derived::plan(&c),
+        "index_partition" => crate::platform_derived::index_partition(&c),
+        "search_segment" => crate::platform_derived::search_segment(&c),
+        "grep" => crate::platform_derived::grep_blob(&c),
+        "blame" => crate::platform_derived::blame_versions(&c),
         "ref_update" => ref_update(&c),
+        "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
         "push_outcome" => push_outcome(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
@@ -46,7 +52,7 @@ fn tree_diff(c: &Value) -> Result<Value> {
     )?;
     Ok(match walk {
         Walk::Need(ids) => json!({ "need_trees": ids }),
-        Walk::Done(changes) => json!({ "changes": changes.iter().map(|ch| {
+        Walk::Done(changes) => json!({ "changes": with_renames(changes.iter().map(|ch| {
             let side = |s: Option<(yoneda_core::git_object::FileMode, ObjectId)>| {
                 s.map(|(m, id)| json!({"type": entry_type(m), "id": id}))
             };
@@ -56,8 +62,37 @@ fn tree_diff(c: &Value) -> Result<Value> {
                 _ => "modify",
             };
             json!({"path": ch.path, "op": op, "old": side(ch.old), "new": side(ch.new)})
-        }).collect::<Vec<_>>() }),
+        }).collect::<Vec<_>>()) }),
     })
+}
+
+/// Pairs a deleted and an added file with the same blob and mode into one exact rename
+/// (`op: rename`, `old_path`), like `git diff -M100%`.
+fn with_renames(changes: Vec<Value>) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::with_capacity(changes.len());
+    let mut deleted: Vec<Value> = changes
+        .iter()
+        .filter(|c| c["op"] == "delete")
+        .cloned()
+        .collect();
+    for change in changes.into_iter().filter(|c| c["op"] != "delete") {
+        let twin = (change["op"] == "add")
+            .then(|| deleted.iter().position(|d| d["old"] == change["new"]))
+            .flatten();
+        match twin {
+            Some(index) => {
+                let gone = deleted.remove(index);
+                out.push(
+                    json!({ "path": change["path"], "op": "rename", "old_path": gone["path"],
+                    "old": gone["old"], "new": change["new"] }),
+                );
+            }
+            None => out.push(change),
+        }
+    }
+    out.extend(deleted);
+    out.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+    out
 }
 
 /// One side of a patch: base64 content that must hash to the given blob id.
@@ -235,6 +270,14 @@ fn ref_update(c: &Value) -> Result<Value> {
     Ok(json!({ "push_b64": STANDARD.encode(body) }))
 }
 
+/// Releases a commit's hidden ref (vacuum) so the object store may collect it.
+fn ref_delete(c: &Value) -> Result<Value> {
+    let commit = ObjectId::parse(&string(c, "commit")?)?;
+    let refname = yoneda_core::git_object::hidden_ref(&commit);
+    let body = yoneda_core::git_object::receive_pack_delete(&refname, commit)?;
+    Ok(json!({ "push_b64": STANDARD.encode(body), "refname": refname }))
+}
+
 /// The report-status an object store answers with (R2 store).
 fn push_report(c: &Value) -> Result<Value> {
     let refname = string(c, "refname")?;
@@ -262,6 +305,12 @@ fn receive_pack(c: &Value) -> Result<Value> {
         )
         .map_err(|_| bad("body_b64 is not base64"))?;
     let push = parse_receive_pack_request(&body)?;
+    if push.new == ObjectId::from_bytes([0; 20]) {
+        // A delete carries no pack.
+        return Ok(
+            json!({ "ref": push.refname, "old": push.old, "new": null, "delete": true, "objects": [] }),
+        );
+    }
     let objects = read_pack(push.pack, PackLimits::default())?
         .into_iter()
         .map(|(kind, data)| {
