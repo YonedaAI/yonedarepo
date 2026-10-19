@@ -3,6 +3,7 @@
 // reused by every commit and branch containing that subtree; only changed partitions
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
 import { compute } from './repo-compute';
+import { keepAllowed, requirePath } from './repo-grants';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import type { Env, Envelope } from './types';
@@ -74,7 +75,8 @@ export async function search(ctx: RepoContext, args: Json) {
       continue;
     }
     const { candidates } = compute({ op: 'search_segment', segment: entry.segment, query });
-    for (const file of candidates as Json[]) {
+    // Grants filter candidates before any content is read or counted.
+    for (const file of await keepAllowed(ctx, candidates as Json[])) {
       if (prefix && !String(file.path).startsWith(prefix)) continue;
       if (results.length >= limit) break;
       const lines = file.indexed
@@ -101,6 +103,7 @@ export async function search(ctx: RepoContext, args: Json) {
 
 export async function blame(ctx: RepoContext, args: Json) {
   const path = String(args.path ?? '');
+  await requirePath(ctx, path);
   const ref = args.ref ?? 'main';
   const history = await ctx.call({
     op: 'repo_path_history',

@@ -208,6 +208,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
       op: 'repo_token_create',
       name: body.name,
       scopes: body.scopes,
+      paths: body.paths ?? null,
       _secret: secret,
     });
     return { ...created, token: secret };
