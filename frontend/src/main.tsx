@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AppErrorBoundary, reloadAfterStaleChunk } from './components/AppErrorBoundary';
@@ -14,12 +14,25 @@ window.addEventListener('vite:preloadError', (event) => {
   }
 });
 
+// The source platform is its own feature area; the workspace (agent layer) stays at `/`.
+const SourceApp = lazy(() =>
+  import('./features/source-platform/SourceApp').then((m) => ({ default: m.SourceApp })),
+);
+const source =
+  window.location.pathname === '/source' || window.location.pathname.startsWith('/source/');
+
 const root = document.getElementById('root');
 if (!root) throw new Error('Application root is missing');
 createRoot(root).render(
   <StrictMode>
     <AppErrorBoundary>
-      <App />
+      {source ? (
+        <Suspense fallback={null}>
+          <SourceApp />
+        </Suspense>
+      ) : (
+        <App />
+      )}
     </AppErrorBoundary>
   </StrictMode>,
 );
