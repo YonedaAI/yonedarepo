@@ -2,8 +2,12 @@
 //! no ref points at yet. Checks and reviews attach to the exact commit id.
 use super::rows::{self, Settings, check_name, object_id};
 use crate::storage::{SqlStore, bad, number, string};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, git_object::ObjectId};
+use yoneda_core::{
+    Error, Result,
+    git_object::{ObjectId, hidden_ref, verify_receive_pack_report},
+};
 
 /// Moves a prepared commit into history once the adapter has read it back from the
 /// object store; the readback must match exactly what this store built.
@@ -22,6 +26,11 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         .ok_or_else(|| Error::new("NOT_FOUND", "No prepared commit for this principal"))?;
     let prepared: Value = serde_json::from_str(row["payload"].as_str().unwrap_or_default())
         .map_err(|_| rows::corrupt("prepared commit"))?;
+    // The adapter relays the object store's own receive-pack report and readback.
+    let report = STANDARD
+        .decode(string(c, "push_report_b64")?)
+        .map_err(|_| bad("push_report_b64 is not base64"))?;
+    verify_receive_pack_report(&report, &hidden_ref(&id))?;
     let readback = &c["readback"];
     if readback["tree"] != prepared["tree"] || readback["parents"] != prepared["parents"] {
         return Err(Error::new(

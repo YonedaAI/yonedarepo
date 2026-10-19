@@ -35,6 +35,10 @@
       {
         "name": "SOURCES",
         "class_name": "SourceWorkspaceAuthority"
+      },
+      {
+        "name": "SOURCE_REPOS",
+        "class_name": "SourceRepository"
       }
     ]
   },
@@ -56,6 +60,12 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "SourceWorkspaceAuthority"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "SourceRepository"
       ]
     }
   ],

@@ -5,7 +5,9 @@ use crate::native::NativeStore;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::{cell::RefCell, collections::HashMap};
-use yoneda_core::git_object::{Commit, FileMode, decode_tree};
+use yoneda_core::git_object::{
+    Commit, FileMode, ObjectKind, PackLimits, decode_tree, hash_object, read_pack,
+};
 
 const OWNER: &str = "user:owner";
 const AGENT: &str = "token:agent";
@@ -13,7 +15,10 @@ const CI: &str = "token:ci";
 
 struct Harness {
     db: NativeStore,
-    objects: RefCell<HashMap<String, (String, Vec<u8>)>>,
+    /// Plays the object store: raw objects unpacked from real pushed packs.
+    objects: RefCell<HashMap<String, (ObjectKind, Vec<u8>)>>,
+    /// The adapter's write-through cache copies returned by prepare.
+    cached: RefCell<HashMap<String, Value>>,
     now: RefCell<i64>,
 }
 
@@ -22,6 +27,7 @@ impl Harness {
         let h = Self {
             db: NativeStore::memory().unwrap(),
             objects: RefCell::default(),
+            cached: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
         };
         h.run(OWNER, json!({"op":"repo_init","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1}})).unwrap();
@@ -49,11 +55,24 @@ impl Harness {
     fn tree_json(&self, id: &str) -> Value {
         let (_, bytes) = &self.objects.borrow()[id];
         let entries = decode_tree(bytes).unwrap();
-        json!(entries.iter().map(|e| json!({"name": e.name, "id": e.id, "type": match e.mode {
+        let listed = json!(entries.iter().map(|e| json!({"name": e.name, "id": e.id, "type": match e.mode {
             FileMode::Tree => "tree", FileMode::Executable => "exec", FileMode::Symlink => "symlink",
-            FileMode::Gitlink => "gitlink", FileMode::Blob => "blob" }})).collect::<Vec<_>>())
+            FileMode::Gitlink => "gitlink", FileMode::Blob => "blob" }})).collect::<Vec<_>>());
+        // The cache copy prepare returned must agree with the raw tree that was pushed.
+        assert_eq!(self.cached.borrow()[id]["entries"], listed);
+        listed
     }
-    /// Plays the adapter: answer tree requests, "push" objects, read back, record.
+    /// Receives a push like a Git server: unpack the pack, store objects, report status.
+    fn receive(&self, push: &[u8], hidden_ref: &str) -> String {
+        let pack_at = push.windows(4).position(|w| w == b"PACK").unwrap();
+        for (kind, data) in read_pack(&push[pack_at..], PackLimits::default()).unwrap() {
+            let id = hash_object(kind, &data).hex();
+            self.objects.borrow_mut().insert(id, (kind, data));
+        }
+        let ok = format!("ok {hidden_ref}\n");
+        STANDARD.encode(format!("000eunpack ok\n{:04x}{ok}0000", ok.len() + 4))
+    }
+    /// Plays the adapter: answer tree requests, push, read back, record.
     fn commit(
         &self,
         principal: &str,
@@ -80,25 +99,18 @@ impl Harness {
                 }
                 continue;
             }
-            assert!(
-                STANDARD
-                    .decode(prepared["push_b64"].as_str().unwrap())
-                    .unwrap()
-                    .windows(4)
-                    .any(|w| w == b"PACK")
-            );
             for object in prepared["objects"].as_array().unwrap() {
-                let data = STANDARD
-                    .decode(object["data_b64"].as_str().unwrap())
-                    .unwrap();
-                self.objects.borrow_mut().insert(
-                    object["id"].as_str().unwrap().into(),
-                    (object["kind"].as_str().unwrap().into(), data),
-                );
+                self.cached
+                    .borrow_mut()
+                    .insert(object["id"].as_str().unwrap().into(), object.clone());
             }
+            let push = STANDARD
+                .decode(prepared["push_b64"].as_str().unwrap())
+                .unwrap();
+            let report = self.receive(&push, prepared["hidden_ref"].as_str().unwrap());
             let id = prepared["commit"].as_str().unwrap().to_owned();
             let commit = Commit::decode(&self.objects.borrow()[&id].1).unwrap();
-            self.run(principal, json!({"op": "repo_record_commit", "commit": id,
+            self.run(principal, json!({"op": "repo_record_commit", "commit": id, "push_report_b64": report,
                 "readback": {"tree": commit.tree().unwrap(), "parents": commit.parents().unwrap()}}))?;
             return Ok(id);
         }
@@ -318,25 +330,29 @@ fn untrusted_adapter_inputs_are_verified() {
     );
     let id = prepared["commit"].clone();
     let readback = json!({"tree": prepared["tree"], "parents": prepared["parents"]});
-    assert_eq!(code(h.run(AGENT, json!({"op":"repo_record_commit","commit":id,"readback":{"tree":root_tree,"parents":[root]}}))), "READBACK_MISMATCH");
+    let push = STANDARD
+        .decode(prepared["push_b64"].as_str().unwrap())
+        .unwrap();
+    let report = h.receive(&push, prepared["hidden_ref"].as_str().unwrap());
+    let record = |principal: &str, report: &str, readback: &Value| {
+        h.run(principal, json!({"op":"repo_record_commit","commit":id,"push_report_b64":report,"readback":readback}))
+    };
+    let rejected = STANDARD.encode("000eunpack ok\n0018ng refs/x denied\n0000");
     assert_eq!(
-        code(h.run(
-            OWNER,
-            json!({"op":"repo_record_commit","commit":id,"readback":readback})
-        )),
-        "NOT_FOUND"
-    );
-    h.ok(
-        AGENT,
-        json!({"op":"repo_record_commit","commit":id,"readback":readback}),
+        code(record(AGENT, &rejected, &readback)),
+        "GIT_OBJECT_INVALID"
     );
     assert_eq!(
-        h.ok(
+        code(record(
             AGENT,
-            json!({"op":"repo_record_commit","commit":id,"readback":readback})
-        )["already"],
-        true
+            &report,
+            &json!({"tree": root_tree, "parents": [root]})
+        )),
+        "READBACK_MISMATCH"
     );
+    assert_eq!(code(record(OWNER, &report, &readback)), "NOT_FOUND");
+    record(AGENT, &report, &readback).unwrap();
+    assert_eq!(record(AGENT, &report, &readback).unwrap()["already"], true);
     // No-op and missing-path changes are rejected.
     assert_eq!(
         code(
