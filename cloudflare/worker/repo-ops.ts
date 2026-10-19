@@ -2,6 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { dispatchRuns } from './repo-checks';
+import { classifyCommit } from './repo-code';
 import { compute } from './repo-compute';
 import {
   type CachedObject,
@@ -113,6 +114,9 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
       readback,
     });
     await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
+    // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
+    // (a human must approve), never classified as safe.
+    await classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {});
     return {
       commit: prepared.commit,
       tree: prepared.tree,
@@ -125,7 +129,7 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
 }
 
-async function walk(objects: RepoObjects, tree: string, path: string) {
+export async function walk(objects: RepoObjects, tree: string, path: string) {
   let entry: TreeEntry = { name: '', type: 'tree', id: tree };
   for (const part of path.split('/').filter(Boolean)) {
     if (entry.type !== 'tree') throw new ApiError('NOT_FOUND', `${path} is not a directory`);

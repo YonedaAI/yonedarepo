@@ -25,6 +25,7 @@ const STATUS: Record<string, number> = {
   PUSH_FAILED: 502,
   NOT_SUPPORTED: 400,
   TIMEOUT: 503,
+  STALE_HANDLE: 409,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -148,6 +149,11 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'search')
     return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
   if (get && resource === 'blame') return run('git_blame', query);
+  if (get && resource === 'symbols') return run('symbol_list', query);
+  if (get && resource === 'symbol') return run('symbol_get', query);
+  if (resource === 'symbol-edits' && post)
+    return run('symbol_edit', await bodyOf(req, COMMIT_BODY_LIMIT));
+  if (resource === 'codemods' && post) return run('git_codemod', await bodyOf(req));
   if (resource === 'bisect' && post) return run('git_bisect', await bodyOf(req));
   if (resource === 'bisect' && sha && get) return run('git_bisect', { id: sha });
   if (resource === 'commits' && sha && sub === 'pin' && post)
