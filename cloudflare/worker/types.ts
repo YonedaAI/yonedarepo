@@ -7,6 +7,8 @@ export interface Env {
   WORKSPACES: DurableObjectNamespace;
   /** Source staging is separate from workspace accounts and spending authority. */
   SOURCES?: DurableObjectNamespace;
+  /** Source platform authority: one SourceRepository per repository. */
+  SOURCE_REPOS: DurableObjectNamespace;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   SELF: Service<YonedaEntrypoint>;

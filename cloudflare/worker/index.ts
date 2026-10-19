@@ -10,6 +10,7 @@ export { ContainerProxy } from '@cloudflare/containers';
 export {
   LiveRoom,
   RepositoryAuthority,
+  SourceRepository,
   SourceWorkspaceAuthority,
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';

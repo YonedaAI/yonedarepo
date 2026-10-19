@@ -149,6 +149,31 @@ fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEnt
     None
 }
 
+fn entry_type(mode: FileMode) -> &'static str {
+    match mode {
+        FileMode::Tree => "tree",
+        FileMode::Blob => "blob",
+        FileMode::Executable => "exec",
+        FileMode::Symlink => "symlink",
+        FileMode::Gitlink => "gitlink",
+    }
+}
+
+fn cache_entry(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
+    Ok(match kind {
+        ObjectKind::Tree => {
+            json!({"id": id, "kind": "tree", "entries": decode_tree(data)?.iter().map(|e| json!({
+            "name": e.name, "type": entry_type(e.mode), "id": e.id,
+        })).collect::<Vec<_>>()})
+        }
+        ObjectKind::Commit => {
+            let commit = Commit::decode(data)?;
+            json!({"id": id, "kind": "commit", "tree": commit.tree()?, "parents": commit.parents()?})
+        }
+        _ => json!({"id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data)}),
+    })
+}
+
 pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let now = number(c, "now")?;
     let base_version = c["base_version"]
@@ -278,8 +303,8 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         "commit": id, "tree": rewrite.root, "parents": parents, "touches": touches,
         "hidden_ref": hidden,
         "push_b64": STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?),
-        "objects": objects.iter().map(|(oid, kind, data)| json!({
-            "id": oid, "kind": kind.name(), "data_b64": STANDARD.encode(data)
-        })).collect::<Vec<_>>(),
+        // Structured copies for the adapter's write-through object cache (tier 2), so it
+        // never parses Git formats itself.
+        "objects": objects.iter().map(|(oid, kind, data)| cache_entry(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
     }))
 }
