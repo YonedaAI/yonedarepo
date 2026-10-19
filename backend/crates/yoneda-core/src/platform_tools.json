@@ -27,7 +27,7 @@
   },
   {
     "name": "git_log",
-    "description": "First-parent history of a branch, newest first, with landing versions.",
+    "description": "First-parent history of a branch, newest first, with landing versions. With path, only commits that changed that path (or anything under a dir/ prefix).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -43,6 +43,9 @@
           "type": "integer",
           "minimum": 0,
           "description": "Read as of this transaction-log version (time travel)"
+        },
+        "path": {
+          "type": "string"
         }
       },
       "required": [],
@@ -209,6 +212,71 @@
     }
   },
   {
+    "name": "git_grep",
+    "description": "Search file contents and paths at a commit, branch or past version (case-insensitive with ignore_case). Uses a trigram index partitioned by top-level directory and reused across commits; results list matching lines per file.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 200
+        },
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "path": {
+          "type": "string",
+          "description": "Only paths starting with this prefix"
+        },
+        "ignore_case": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_blame",
+    "description": "Line-by-line attribution of a file on a branch: the commit that last changed each line, from the file's first-parent history.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_diff",
     "description": "Files changed from base (default: head's first parent) to head, optionally with unified patches. merge_base compares against the common ancestor, like base...head.",
     "inputSchema": {
@@ -365,6 +433,56 @@
         },
         "name": {
           "type": "string"
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_bisect",
+    "description": "Find the first commit on a branch that breaks a policy check: start with good, bad and check (a policy runner name); the platform runs the check on midpoints and narrows the range as results arrive. Pass id to read progress.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "good": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "bad": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "check": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_pin",
+    "description": "Pin (or unpin) a commit so vacuum never releases its objects, for example while a long job reads it.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "unpin": {
+          "type": "boolean"
         }
       },
       "required": [

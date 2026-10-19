@@ -4,7 +4,8 @@ export type SourceRoute =
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
-  | { view: 'transactions'; repo: string };
+  | { view: 'transactions'; repo: string }
+  | { view: 'search'; repo: string; query: string };
 
 const REPO = /^r[0-9a-f]{20}$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -17,6 +18,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
+  if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
@@ -38,6 +40,8 @@ export function formatSourceRoute(route: SourceRoute): string {
       ? `${base}/history`
       : `${base}/history?ref=${encodeURIComponent(route.ref)}`;
   if (route.view === 'transactions') return `${base}/transactions`;
+  if (route.view === 'search')
+    return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   const query = new URLSearchParams();
   if (route.ref !== 'main') query.set('ref', route.ref);

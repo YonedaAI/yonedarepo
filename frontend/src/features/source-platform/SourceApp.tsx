@@ -3,6 +3,7 @@ import { CommitView } from './CommitView';
 import { RepoFiles } from './RepoFiles';
 import { RepoHistory } from './RepoHistory';
 import { RepoList } from './RepoList';
+import { RepoSearch } from './RepoSearch';
 import { RepoTransactions } from './RepoTransactions';
 import { Failure } from './SourceStatus';
 import { formatSourceRoute, parseSourceRoute, type SourceRoute } from './sourceRoute';
@@ -31,7 +32,7 @@ export function SourceApp() {
     projections?: { refname: string; status: string; detail?: string }[];
   }>(repo ? `/repos/${repo}` : null);
   const drift = status.data?.projections?.filter((p) => p.status === 'drift') ?? [];
-  const tab = (view: 'files' | 'history' | 'transactions', label: string) =>
+  const tab = (view: 'files' | 'history' | 'transactions' | 'search', label: string) =>
     repo && (
       <a
         href={formatSourceRoute(
@@ -39,7 +40,9 @@ export function SourceApp() {
             ? { view, repo, path: '', ref: 'main' }
             : view === 'history'
               ? { view, repo, ref: 'main' }
-              : { view, repo },
+              : view === 'search'
+                ? { view, repo, query: '' }
+                : { view, repo },
         )}
         aria-current={route.view === view ? 'page' : undefined}
         onClick={(e) => {
@@ -49,7 +52,9 @@ export function SourceApp() {
               ? { view, repo, path: '', ref: 'main' }
               : view === 'history'
                 ? { view, repo, ref: 'main' }
-                : { view, repo },
+                : view === 'search'
+                  ? { view, repo, query: '' }
+                  : { view, repo },
           );
         }}
       >
@@ -112,12 +117,21 @@ export function SourceApp() {
                 {tab('files', 'Files')}
                 {tab('history', 'History')}
                 {tab('transactions', 'Transactions')}
+                {tab('search', 'Search')}
               </nav>
             </>
           )}
           {route.view === 'files' && <RepoFiles route={route} onNavigate={navigate} />}
           {route.view === 'history' && (
             <RepoHistory repo={route.repo} refName={route.ref} onNavigate={navigate} />
+          )}
+          {route.view === 'search' && (
+            <RepoSearch
+              key={route.query}
+              repo={route.repo}
+              query={route.query}
+              onNavigate={navigate}
+            />
           )}
           {route.view === 'transactions' && (
             <RepoTransactions repo={route.repo} onNavigate={navigate} />

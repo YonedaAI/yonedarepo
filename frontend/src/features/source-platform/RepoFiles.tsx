@@ -1,5 +1,6 @@
 import { File, Folder } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { FileBlame } from './FileBlame';
 import { Failure, Loading } from './SourceStatus';
 import { SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
@@ -56,6 +57,7 @@ export function RepoFiles({
   onNavigate: (r: SourceRoute) => void;
 }) {
   const listing = useListing(route);
+  const [blaming, setBlaming] = useState(false);
   const txlog = useSource<{
     entries: { version: number; kind: string; committed_at_ms: number }[];
     version: number;
@@ -168,8 +170,25 @@ export function RepoFiles({
             <span>
               {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
             </span>
+            {route.at === undefined && listing.value.encoding === 'utf-8' && (
+              <button
+                type="button"
+                className="quiet"
+                aria-pressed={blaming}
+                onClick={() => setBlaming((b) => !b)}
+              >
+                {blaming ? 'Hide blame' : 'Blame'}
+              </button>
+            )}
           </header>
-          {listing.value.encoding === 'utf-8' ? (
+          {blaming && route.at === undefined ? (
+            <FileBlame
+              repo={route.repo}
+              path={route.path}
+              refName={route.ref}
+              onNavigate={onNavigate}
+            />
+          ) : listing.value.encoding === 'utf-8' ? (
             <pre>{listing.value.content}</pre>
           ) : (
             <p className="source-empty">Binary file not shown.</p>
