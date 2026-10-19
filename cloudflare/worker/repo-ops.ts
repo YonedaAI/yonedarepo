@@ -171,6 +171,51 @@ export async function readFile(ctx: RepoContext, args: Json) {
   };
 }
 
+/** Runs a Rust compute op that walks trees, supplying the trees it asks for. */
+export async function withTrees(objects: RepoObjects, input: Json) {
+  const trees: Record<string, TreeEntry[]> = {};
+  for (let round = 0; round <= 64; round++) {
+    const result = compute({ ...input, trees });
+    if (!result.need_trees) return result;
+    await Promise.all(
+      (result.need_trees as string[]).map(async (id) => {
+        trees[id] = await objects.tree(id);
+      }),
+    );
+  }
+  throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
+}
+
+const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
+
+/** Server-side revert or cherry-pick of `args.commit` onto branch `args.ref` (default main). */
+export async function replay(ctx: RepoContext, args: Json, direction: 'revert' | 'pick') {
+  const source = await ctx.call({ op: 'repo_commit', commit: args.commit });
+  const parent = source.parents[0]
+    ? await ctx.call({ op: 'repo_commit', commit: source.parents[0] })
+    : null;
+  const objects = await ctx.objects();
+  const { changes } = await withTrees(objects, {
+    op: 'replay_changes',
+    direction,
+    old: parent?.tree ?? null,
+    new: source.tree,
+  });
+  const subject = String(source.message).split('\n')[0];
+  const message =
+    args.message ??
+    (direction === 'revert'
+      ? `Revert "${subject}"\n\nThis reverts commit ${source.commit}.`
+      : `${source.message}\n\n(cherry picked from commit ${source.commit})`);
+  return commit(ctx, objects, {
+    ref: args.ref ?? 'main',
+    changes,
+    message,
+    author: args.author ?? PLATFORM_AUTHOR,
+    read_set: args.read_set,
+  });
+}
+
 const PATCH_FILES = 200;
 const PATCH_BYTES = 16 * 1024 * 1024;
 
@@ -190,21 +235,9 @@ export async function diff(ctx: RepoContext, args: Json) {
     }
   } else if (head.parents[0]) base = await ctx.call({ op: 'repo_commit', commit: head.parents[0] });
   const objects = await ctx.objects();
-  const trees: Record<string, TreeEntry[]> = {};
-  let changes: Json[] = [];
-  for (let round = 0; ; round++) {
-    if (round > 64) throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
-    const result = compute({ op: 'tree_diff', old: base?.tree ?? null, new: head.tree, trees });
-    if (!result.need_trees) {
-      changes = result.changes;
-      break;
-    }
-    await Promise.all(
-      (result.need_trees as string[]).map(async (id) => {
-        trees[id] = await objects.tree(id);
-      }),
-    );
-  }
+  let changes: Json[] = (
+    await withTrees(objects, { op: 'tree_diff', old: base?.tree ?? null, new: head.tree })
+  ).changes;
   const prefix = String(args.path ?? '');
   if (prefix)
     changes = changes.filter(

@@ -358,6 +358,98 @@
     }
   },
   {
+    "name": "git_revert",
+    "description": "Create (not land) a commit on the server that undoes a commit's changes relative to its first parent, on top of a branch head. Fails with CONFLICT when the branch changed those paths since; reconcile with a three-way merge instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch whose head becomes the parent (default main)"
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        },
+        "read_set": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_cherry_pick",
+    "description": "Create (not land) a commit on the server that re-applies a commit's changes on top of a branch head. Fails with CONFLICT when the branch's versions of those paths differ from the commit's parent.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Branch whose head becomes the parent (default main)"
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        },
+        "read_set": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_land",
     "description": "Move a branch to a commit that passed its required checks and approvals, with optimistic concurrency (requires the land scope).",
     "inputSchema": {

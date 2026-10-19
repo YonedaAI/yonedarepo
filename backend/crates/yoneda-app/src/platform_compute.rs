@@ -20,6 +20,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "tree_diff" => tree_diff(&c),
         "file_patch" => file_patch(&c),
         "receive_pack" => receive_pack(&c),
+        "replay_changes" => replay_changes(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }
@@ -83,6 +84,48 @@ fn file_patch(c: &Value) -> Result<Value> {
     let context = c["context"].as_u64().unwrap_or(3).min(100) as u32;
     let (patch, stats) = textdiff::unified(&old, &new, context);
     Ok(json!({ "patch": patch, "additions": stats.additions, "deletions": stats.deletions }))
+}
+
+/// Changes that re-apply (`pick`) or undo (`revert`) the diff from `old` to `new` on
+/// another parent. Each change carries the blob it expects there, so the authority
+/// rejects the result with CONFLICT instead of silently overwriting later edits.
+fn replay_changes(c: &Value) -> Result<Value> {
+    let revert = match string(c, "direction")?.as_str() {
+        "revert" => true,
+        "pick" => false,
+        _ => return Err(bad("direction must be revert or pick")),
+    };
+    let trees = supplied_trees(c)?;
+    let walk = diff_trees(
+        optional_id(c, "old")?,
+        optional_id(c, "new")?,
+        &trees,
+        MAX_DIFF_FILES,
+    )?;
+    let changes = match walk {
+        Walk::Need(ids) => return Ok(json!({ "need_trees": ids })),
+        Walk::Done(changes) => changes,
+    };
+    let listed = changes
+        .iter()
+        .map(|ch| {
+            let (from, to) = if revert {
+                (ch.new, ch.old)
+            } else {
+                (ch.old, ch.new)
+            };
+            let mut change = json!({ "path": ch.path, "expect": from.map(|(_, id)| id) });
+            match to {
+                Some((mode, id)) => {
+                    change["blob"] = json!(id);
+                    change["type"] = json!(entry_type(mode));
+                }
+                None => change["delete"] = json!(true),
+            }
+            change
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "changes": listed }))
 }
 
 /// Server side of a push for the R2 object store (local development and fallback):
