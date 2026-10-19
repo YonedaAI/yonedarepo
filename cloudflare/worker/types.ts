@@ -35,6 +35,8 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
+  /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
+  PLATFORM_OBJECT_STORE?: string;
   CODEX_MODEL: string;
   CLAUDE_MODEL: string;
   MIMO_MODEL?: string;

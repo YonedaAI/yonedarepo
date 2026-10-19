@@ -284,3 +284,28 @@ it('runs policy checks on the exact commit and gates landing on them', async () 
   expect(again.body.runs[0].existing).toBe(true);
   expect(queued).toHaveLength(2);
 });
+
+it('runs the whole platform on the R2 object store with Rust-verified pushes', async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  const call = async (path: string, auth: { cookie?: string }, body?: unknown) => {
+    const headers: Record<string, string> = { 'content-type': 'application/json', cookie: auth.cookie ?? '' };
+    const response = await fetchRequest(
+      new Request(`https://yoneda/api/v1${path}`, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined }),
+      local,
+    );
+    return { status: response.status, body: await response.json<any>() };
+  };
+  const owner = { cookie: await signup('frank') };
+  const created = await call('/repos', owner, { name: 'local', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'one\n')], author });
+  expect(created.status).toBe(200);
+  const repo = `/repos/${created.body.id}`;
+  expect((await call(repo, owner)).body.object_store).toBe(`r2:yr-${created.body.id}`);
+  const next = await call(`${repo}/commits`, owner, { ref: 'main', changes: [file('b/c.txt', 'two\n')], message: 'two', author });
+  expect(next.status).toBe(200);
+  expect((await call(`${repo}/land`, owner, { ref: 'main', commit: next.body.commit })).body.landed).toBe(true);
+  // Cold reads bypass the cache tier and come from the R2 store's own objects.
+  for (const key of (await bindings.OBJECTS.list({ prefix: `platform/v1/${created.body.id}/` })).objects)
+    await bindings.OBJECTS.delete(key.key);
+  expect((await call(`${repo}/blob?path=b/c.txt`, owner)).body.content).toBe('two\n');
+  expect((await call(`${repo}/diff?patch=1`, owner)).body.changes[0].patch).toBe('@@ -0,0 +1 @@\n+two\n');
+});

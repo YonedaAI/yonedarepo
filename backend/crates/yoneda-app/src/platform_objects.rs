@@ -1,6 +1,7 @@
 //! JSON forms of Git trees shared by the platform authority and stateless compute.
 //! Trees arriving from adapters are untrusted: each must hash to the id it is filed under.
 use crate::storage::{bad, string};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use yoneda_core::{Error, Result, git_object::*};
@@ -61,4 +62,19 @@ pub fn supplied_trees(c: &Value) -> Result<HashMap<ObjectId, Vec<TreeEntry>>> {
         trees.insert(id, entries);
     }
     Ok(trees)
+}
+
+/// Structured object form shared by the R2 cache tier and the R2 object store, so
+/// adapters never parse Git formats themselves.
+pub fn object_json(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
+    Ok(match kind {
+        ObjectKind::Tree => {
+            json!({"id": id, "kind": "tree", "entries": entries_json(&decode_tree(data)?)})
+        }
+        ObjectKind::Commit => {
+            let commit = Commit::decode(data)?;
+            json!({"id": id, "kind": "commit", "tree": commit.tree()?, "parents": commit.parents()?})
+        }
+        _ => json!({"id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data)}),
+    })
 }

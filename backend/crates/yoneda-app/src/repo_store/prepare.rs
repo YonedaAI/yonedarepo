@@ -116,19 +116,6 @@ fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEnt
     None
 }
 
-fn cache_entry(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
-    Ok(match kind {
-        ObjectKind::Tree => {
-            json!({"id": id, "kind": "tree", "entries": platform_objects::entries_json(&decode_tree(data)?)})
-        }
-        ObjectKind::Commit => {
-            let commit = Commit::decode(data)?;
-            json!({"id": id, "kind": "commit", "tree": commit.tree()?, "parents": commit.parents()?})
-        }
-        _ => json!({"id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data)}),
-    })
-}
-
 pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let now = number(c, "now")?;
     let base_version = c["base_version"]
@@ -260,6 +247,6 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         "push_b64": STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?),
         // Structured copies for the adapter's write-through object cache (tier 2), so it
         // never parses Git formats itself.
-        "objects": objects.iter().map(|(oid, kind, data)| cache_entry(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
+        "objects": objects.iter().map(|(oid, kind, data)| platform_objects::object_json(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
     }))
 }
