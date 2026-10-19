@@ -17,13 +17,14 @@ export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string } }
   | { _token: string }
-  | { _system: 'checks' | 'projection' | 'import' };
+  | { _system: 'checks' | 'projection' | 'import' | 'merge' };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly details?: Json,
   ) {
     super(message);
   }
@@ -94,6 +95,7 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
       message: body.message,
       author: body.author,
       read_set: body.read_set ?? [],
+      ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
       trees,
     });
     if (prepared.need_trees) {

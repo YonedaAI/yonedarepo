@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::ObjectId,
+    git_object::{CommitGraph, ObjectId},
     txlog::{PathTouch, TxEntry},
 };
 
@@ -264,4 +264,22 @@ pub fn branch_ref(c: &Value) -> Result<String> {
         return Err(bad("Invalid branch name"));
     }
     Ok(full)
+}
+
+/// The recorded commit graph (parents and generations stored at record time). Parents
+/// beyond a truncated import are not recorded and end the walk there.
+pub struct RecordedGraph<'a, S>(pub &'a S);
+impl<S: SqlStore> CommitGraph for RecordedGraph<'_, S> {
+    fn parents(&self, id: &ObjectId) -> Result<Vec<ObjectId>> {
+        let mut parents = Vec::new();
+        for parent in recorded(self.0, id)?.parents {
+            if commit_row(self.0, &parent)?.is_some() {
+                parents.push(parent);
+            }
+        }
+        Ok(parents)
+    }
+    fn generation(&self, id: &ObjectId) -> Result<u64> {
+        Ok(recorded(self.0, id)?.generation)
+    }
 }

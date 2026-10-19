@@ -23,6 +23,8 @@ mod git_revision;
 mod harness_error;
 mod jobs;
 mod mcp;
+#[cfg(all(test, unix))]
+mod merge_interop_tests;
 mod process;
 mod process_guard;
 mod process_privileges;

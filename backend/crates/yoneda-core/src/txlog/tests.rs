@@ -101,16 +101,21 @@ fn independent_writes_rebase_and_overlaps_conflict() {
             concurrent: vec![2, 3]
         }
     );
-    // Write/write on the same file.
-    assert!(matches!(
+    // Write/write on the same file: a three-way merge decides.
+    assert_eq!(
         proposal(&["web/app.tsx"], &[]).check(later),
-        OccOutcome::Conflict { version: 3, .. }
-    ));
-    // My write lands inside a directory they declared as read.
-    assert!(matches!(
+        OccOutcome::Merge {
+            concurrent: vec![2, 3],
+            paths: vec!["web/app.tsx".into()]
+        }
+    );
+    // They read a directory I write: they serialize before me, so this is independent.
+    assert_eq!(
         proposal(&["src/auth/session.rs"], &[]).check(later),
-        OccOutcome::Conflict { version: 2, .. }
-    ));
+        OccOutcome::Rebase {
+            concurrent: vec![2, 3]
+        }
+    );
     // They wrote something I declared as read.
     match proposal(&["docs/a.md"], &["src/"]).check(later) {
         OccOutcome::Conflict { version, paths } => {

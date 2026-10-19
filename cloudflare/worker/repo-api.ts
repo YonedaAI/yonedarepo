@@ -182,6 +182,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy });
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
+  if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {
@@ -211,6 +212,9 @@ export async function repoApi(req: Request, env: Env): Promise<Response> {
   } catch (e: any) {
     const code = e instanceof ApiError ? e.code : (e?.code ?? 'INVALID_INPUT');
     const message = String(e?.message ?? e).slice(0, 500);
-    return error(code, message, statusOf(code, e instanceof ApiError || !!e?.code));
+    const status = statusOf(code, e instanceof ApiError || !!e?.code);
+    if (e instanceof ApiError && e.details)
+      return response({ error: { code, message, details: e.details } }, status);
+    return error(code, message, status);
   }
 }
