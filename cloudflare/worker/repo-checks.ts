@@ -2,7 +2,7 @@
 // run from the SourceRepository authority with a fenced epoch, ships the exact commit's
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
-import { RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
 import type { Env, Envelope } from './types';
 
@@ -53,7 +53,7 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
     call({ op: 'repo_check_complete', run_id: run.run_id, epoch: run.epoch, outcome, evidence });
   try {
     const status = await call({ op: 'repo_status' });
-    const objects = new RepoObjects(env, repo, RepoObjects.parseStore(env, status.object_store));
+    const objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
     const job: CheckJob = {
       command: run.command,
       timeout_seconds: run.timeout_seconds,

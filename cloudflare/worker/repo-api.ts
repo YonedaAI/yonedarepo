@@ -6,7 +6,7 @@
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { repoMcp } from './repo-mcp';
-import { RepoObjects, toBase64 } from './repo-objects';
+import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
 import { operations } from './repo-tools';
 import type { Env } from './types';
@@ -43,14 +43,14 @@ async function createRepository(env: Env, auth: Credentials, body: Json) {
     throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
   const random = crypto.getRandomValues(new Uint8Array(10));
   const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-  const store = `yr-${id}`;
-  await env.ARTIFACTS.create(store, { setDefaultBranch: 'main' });
+  const store = newStore(env, `yr-${id}`);
+  await store.create();
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   await ctx.call({
     op: 'repo_init',
     name,
-    object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/${store}`,
+    object_store: store.spec,
     policy: body.policy ?? { required_checks: [], approvals: 1 },
   });
   // Listing projection, written after the authority accepted the repository.

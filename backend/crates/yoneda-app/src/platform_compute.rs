@@ -19,6 +19,7 @@ pub fn compute(c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "tree_diff" => tree_diff(&c),
         "file_patch" => file_patch(&c),
+        "receive_pack" => receive_pack(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }
@@ -82,6 +83,38 @@ fn file_patch(c: &Value) -> Result<Value> {
     let context = c["context"].as_u64().unwrap_or(3).min(100) as u32;
     let (patch, stats) = textdiff::unified(&old, &new, context);
     Ok(json!({ "patch": patch, "additions": stats.additions, "deletions": stats.deletions }))
+}
+
+/// Server side of a push for the R2 object store (local development and fallback):
+/// unpacks and verifies the objects and answers with Git's report-status.
+fn receive_pack(c: &Value) -> Result<Value> {
+    use yoneda_core::git_object::{
+        PackLimits, parse_receive_pack_request, read_pack, receive_pack_report,
+    };
+    let body = STANDARD
+        .decode(string(c, "body_b64")?)
+        .map_err(|_| bad("body_b64 is not base64"))?;
+    let push = parse_receive_pack_request(&body)?;
+    let objects = read_pack(push.pack, PackLimits::default())?
+        .into_iter()
+        .map(|(kind, data)| {
+            let id = hash_object(kind, &data);
+            crate::platform_objects::object_json(id, kind, &data)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    if !objects
+        .iter()
+        .any(|o| o["id"] == json!(push.new) && o["kind"] == "commit")
+    {
+        return Err(Error::new(
+            "PUSH_INVALID",
+            "The pushed commit is not in the pack",
+        ));
+    }
+    Ok(json!({
+        "ref": push.refname, "old": push.old, "new": push.new, "objects": objects,
+        "report_b64": STANDARD.encode(receive_pack_report(&push.refname)),
+    }))
 }
 
 #[cfg(test)]

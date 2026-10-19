@@ -6,6 +6,7 @@ import { compute } from './repo-compute';
 import {
   type CachedObject,
   fromBase64,
+  parseStore,
   RepoObjects,
   type TreeEntry,
   toBase64,
@@ -58,11 +59,7 @@ export class RepoContext {
   async objects() {
     if (!this.cached) {
       const status = await this.call({ op: 'repo_status' });
-      this.cached = new RepoObjects(
-        this.env,
-        this.repo,
-        RepoObjects.parseStore(this.env, status.object_store),
-      );
+      this.cached = new RepoObjects(this.env, this.repo, parseStore(this.env, status.object_store));
     }
     return this.cached;
   }
