@@ -678,7 +678,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        5
+        7
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -970,5 +970,48 @@ fn verified_platform_merges_land_under_the_merged_commits_gates() {
             json!({"op":"repo_land","ref":"main","commit":src,"merge":merged})
         )),
         "OK"
+    );
+}
+
+#[test]
+fn time_travel_replays_from_verified_checkpoints() {
+    use crate::storage::SqlStore;
+    let (h, root) = seeded();
+    let mut head = root.clone();
+    for i in 0..70 {
+        let next = h
+            .commit(
+                AGENT,
+                Some(&head),
+                i + 1,
+                json!([file("n.txt", &format!("{i}\n"))]),
+                json!([]),
+            )
+            .unwrap();
+        h.approve_and_check(&next);
+        h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":next}));
+        head = next;
+    }
+    let checkpoints =
+        h.db.query("SELECT version FROM txlog_checkpoints", &[])
+            .unwrap();
+    assert_eq!(checkpoints, vec![json!({"version": 64})]);
+    let at = |v: u64| h.run(OWNER, json!({"op":"repo_snapshot","ref":"main","at":v}));
+    let at66 = at(66).unwrap()["commit"].clone();
+    let at3 = at(3).unwrap()["commit"].clone();
+    assert_ne!(at66, at3);
+    // A checkpoint that disagrees with the log is refused, not trusted.
+    h.db.query("UPDATE txlog_checkpoints SET checkpoint=replace(checkpoint,'\"chain\":\"','\"chain\":\"x')", &[]).unwrap();
+    assert_eq!(code(at(66)), "TXLOG_INVALID");
+    assert_eq!(
+        code(at(71)),
+        "TXLOG_INVALID",
+        "explicit time travel always verifies"
+    );
+    let current = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}));
+    assert_eq!(
+        current["commit"],
+        json!(head),
+        "current reads use the refs table"
     );
 }
