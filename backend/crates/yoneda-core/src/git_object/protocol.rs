@@ -34,6 +34,21 @@ pub fn receive_pack_request(
     Ok(body)
 }
 
+/// Body deleting `refname` (expected at `old`): a delete command and no pack, as Git
+/// clients send for `git push --delete`.
+pub fn receive_pack_delete(refname: &str, old: ObjectId) -> Result<Vec<u8>> {
+    if !refname.starts_with("refs/") || refname.contains(['\0', '\n', ' ']) {
+        return Err(invalid("Invalid ref name for delete"));
+    }
+    let zero = "0".repeat(40);
+    let mut body = pkt(&format!(
+        "{old} {zero} {refname}\0report-status delete-refs\n"
+    ))
+    .into_bytes();
+    body.extend_from_slice(b"0000");
+    Ok(body)
+}
+
 /// Accepts only `unpack ok` plus `ok <refname>`, so a partial or rejected push never counts.
 pub fn verify_receive_pack_report(mut bytes: &[u8], refname: &str) -> Result<()> {
     let mut lines = Vec::new();

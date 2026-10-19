@@ -33,6 +33,7 @@ test('platform Rust modules use only platform and storage code', async () => {
     `${roots[1]}/repo_store.rs`,
     `${roots[1]}/platform_compute.rs`,
     `${roots[1]}/platform_objects.rs`,
+    `${roots[1]}/platform_derived.rs`,
   ].filter((f) => f.endsWith('.rs'));
   for (const file of files) {
     const source = await readFile(file, 'utf8');
@@ -40,7 +41,7 @@ test('platform Rust modules use only platform and storage code', async () => {
       assert.ok(['storage', 'platform_objects', 'native'].includes(path), `${file} uses crate::${path}`);
     for (const [, module] of source.matchAll(/yoneda_core::([a-z_]+)/g))
       assert.ok(
-        ['git_object', 'txlog', 'textdiff', 'merge', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),
+        ['git_object', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),
         `${file} uses yoneda_core::${module}`,
       );
   }

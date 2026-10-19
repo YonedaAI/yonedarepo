@@ -10,7 +10,8 @@ const MAX_FILES = 100_000;
 const MAX_BYTES = 192 * 1024 * 1024;
 
 export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefined) {
-  const queued = (runs ?? []).filter((r) => r.status === 'queued' && !r.existing);
+  // Re-sending a still-queued run is safe (claims are fenced) and recovers a lost message.
+  const queued = (runs ?? []).filter((r) => r.status === 'queued');
   if (queued.length === 0) return;
   await env.PLATFORM_QUEUE.sendBatch(
     queued.map((run) => ({
@@ -102,6 +103,11 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       log,
     });
     await proposeRepairs(env, repo, run, completed.repair ?? []);
+    // Advance bisects that were waiting on this result (and queue their next run).
+    for (const id of (completed.bisects ?? []) as string[]) {
+      const step = await call({ op: 'repo_bisect_step', id });
+      await dispatchRuns(env, repo, step.runs);
+    }
   } catch (e: any) {
     await complete('error', {
       error: String(e?.message ?? e).slice(0, 500),

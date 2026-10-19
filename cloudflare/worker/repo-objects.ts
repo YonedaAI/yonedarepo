@@ -108,6 +108,9 @@ class R2Store implements ObjectStore {
     const received = compute({ op: 'receive_pack', body_b64: toBase64(body) });
     const refuse = (refused: string) =>
       fromBase64(compute({ op: 'push_report', refname: received.ref, refused }).report_b64);
+    // Hidden refs are not stored in R2 (objects never expire here): a delete is a no-op.
+    if (received.delete)
+      return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
     await putObjects(this.env, (id) => this.key(id), received.objects);
     if (!received.contains_new && !(await this.readCommit(received.new)))
       return refuse('missing necessary objects');

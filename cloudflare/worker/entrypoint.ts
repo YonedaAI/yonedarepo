@@ -6,6 +6,7 @@ import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
 import { executeCheckRun } from './repo-checks';
+import { deriveAfterLanding } from './repo-derived';
 import { projectRefs } from './repo-projection';
 import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
@@ -63,6 +64,11 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
         let launchRequested = false;
         try {
           if (envelope.v !== 1) {
+            message.ack();
+            return;
+          }
+          if (envelope.kind === 'platform_derive') {
+            await deriveAfterLanding(this.env, envelope);
             message.ack();
             return;
           }
