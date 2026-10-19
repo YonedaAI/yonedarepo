@@ -118,6 +118,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,
         "landings": db.query("SELECT refname,version,landed_at FROM landings WHERE commit_id=? ORDER BY version", &key)?,
         "check_runs": super::checks::runs_for(db, &id)?,
+        "repairs": super::checks::repairs_for(db, &id)?,
         "gates": gates(db, &id, settings)?,
     }))
 }

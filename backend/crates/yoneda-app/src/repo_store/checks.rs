@@ -181,7 +181,52 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
               json!(outcome), json!(evidence), json!(principal), json!(now)],
         )?;
     }
-    Ok(json!({ "run_id": id, "status": status }))
+    // A failing check on work that already landed is a post-land failure: the adapter
+    // proposes a repair (revert) commit on each branch it landed on. Never a ref rewrite.
+    let repair: Vec<Value> = if outcome == "fail" {
+        db.query(
+            "SELECT refname FROM landings WHERE commit_id=? AND refname NOT IN \
+             (SELECT refname FROM repairs WHERE commit_id=? AND check_name=?)",
+            &[
+                row["commit_id"].clone(),
+                row["commit_id"].clone(),
+                row["name"].clone(),
+            ],
+        )?
+        .into_iter()
+        .map(|r| r["refname"].clone())
+        .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(
+        json!({ "run_id": id, "status": status, "commit": row["commit_id"], "name": row["name"], "repair": repair }),
+    )
+}
+
+/// Links a post-land failure to the repair commit proposed for it (or why none could be).
+pub fn record_repair<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let commit = rows::object_id(c, "commit")?;
+    let refname = string(c, "refname")?;
+    let check = string(c, "check")?;
+    let repair = match c.get("repair_commit").filter(|v| !v.is_null()) {
+        Some(_) => Some(rows::recorded(db, &rows::object_id(c, "repair_commit")?)?.id),
+        None => None,
+    };
+    db.query(
+        "INSERT INTO repairs(commit_id,refname,check_name,repair_commit,error,created_at) VALUES(?,?,?,?,?,?) \
+         ON CONFLICT(commit_id,refname,check_name) DO NOTHING",
+        &[json!(commit.hex()), json!(refname), json!(check), json!(repair.map(|r| r.hex())),
+          json!(c["error"].as_str().map(|e| e.chars().take(500).collect::<String>())), c["now"].clone()],
+    )?;
+    Ok(json!({ "commit": commit, "refname": refname, "repair_commit": repair }))
+}
+
+pub fn repairs_for<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<Value>> {
+    db.query(
+        "SELECT refname,check_name,repair_commit,error,created_at FROM repairs WHERE commit_id=? ORDER BY created_at",
+        &[json!(commit.hex())],
+    )
 }
 
 pub fn run_op<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {

@@ -65,3 +65,29 @@ it('creates explicit merge commits of branches', async () => {
   expect((await api(`${repo}/blob?path=b.txt`, owner)).body.content).toBe('feature b\n');
   expect((await api(`${repo}/merges`, owner, { body: { source: 'feature', into: 'main' } })).body.up_to_date).toBe(true);
 });
+
+it('turns a post-land check failure into a proposed repair commit', async () => {
+  const { executeCheckRun } = await import('../../cloudflare/worker/repo-checks');
+  const { scoped } = await import('./repo-fixture');
+  const owner = { cookie: await signup('repairer') };
+  // The fake executor passes when a.txt starts with "good"; checks are not required to land.
+  const policy = { required_checks: [], approvals: 0, runners: { unit: { command: ['true'] } } };
+  const created = await api('/repos', owner, { body: { name: 'r', policy, files: [file('a.txt', 'good\n')], author } });
+  const repo = `/repos/${created.body.id}`;
+  const broken = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('a.txt', 'bad\n')], message: 'break it', author } });
+  expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: broken.body.commit } })).body.landed).toBe(true);
+  const run = queued.find((m) => m.kind === 'platform_check' && broken.body.check_runs.some((r: any) => r.id === m.job_id));
+  await executeCheckRun(scoped, run);
+
+  const detail = await api(`${repo}/commits/${broken.body.commit}`, owner);
+  expect(detail.body.checks[0].status).toBe('fail');
+  const [repair] = detail.body.repairs;
+  expect(repair).toMatchObject({ refname: 'refs/heads/main', check_name: 'unit', error: null });
+  const proposed = await api(`${repo}/commits/${repair.repair_commit}`, owner);
+  expect(proposed.body).toMatchObject({ parents: [broken.body.commit], principal: 'platform:repair' });
+  expect(proposed.body.message).toContain('post-land check unit failed');
+  expect((await api(`${repo}/blob?path=a.txt&commit=${repair.repair_commit}`, owner)).body.content).toBe('good\n');
+  // The branch itself is never rewritten; the repair awaits its own checks and landing.
+  expect((await api(`${repo}/blob?path=a.txt`, owner)).body.content).toBe('bad\n');
+  expect(proposed.body.check_runs.map((r: any) => r.status)).toEqual(['queued']);
+});
