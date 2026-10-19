@@ -31,7 +31,7 @@ impl Harness {
             cached: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
         };
-        h.run(OWNER, json!({"op":"repo_init","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1}})).unwrap();
+        h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1}})).unwrap();
         for (name, scopes) in [
             ("agent", json!(["read", "write"])),
             ("ci", json!(["read", "check"])),
@@ -655,7 +655,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        2
+        3
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],

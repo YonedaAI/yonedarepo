@@ -52,6 +52,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
     )?;
     Ok(json!({
         "version": current_version(db)?,
+        "name": settings.name,
         "owner": settings.owner,
         "object_store": settings.object_store,
         "policy": settings.policy,

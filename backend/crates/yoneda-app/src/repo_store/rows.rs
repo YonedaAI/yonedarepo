@@ -61,6 +61,7 @@ impl Policy {
 }
 
 pub struct Settings {
+    pub name: String,
     pub workspace: String,
     pub owner: String,
     pub object_store: String,
@@ -113,9 +114,19 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let object_store = string(c, "object_store")?;
     let (_, policy_json, digest) = Policy::parse(&c["policy"])?;
+    let name = string(c, "name")?;
+    let valid = name.len() <= 100
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    if !valid || name.starts_with('.') {
+        return Err(bad(
+            "Repository names are 1-100 characters of [A-Za-z0-9._-]",
+        ));
+    }
     db.query(
-        "INSERT INTO repo_settings(id,workspace,owner,object_store,policy,policy_digest,created_at) VALUES('repository',?,?,?,?,?,?)",
-        &[json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone()],
+        "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at) VALUES('repository',?,?,?,?,?,?,?)",
+        &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone()],
     )?;
     Ok(json!({ "initialized": true, "policy_digest": digest }))
 }
@@ -133,6 +144,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
             .ok_or_else(|| corrupt(key))
     };
     Ok(Settings {
+        name: text("name")?,
         workspace: text("workspace")?,
         owner: text("owner")?,
         object_store: text("object_store")?,
