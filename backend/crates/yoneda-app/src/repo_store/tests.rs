@@ -50,6 +50,9 @@ impl Harness {
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
+            None if principal == "token:public" => {
+                c["_token"] = json!("public-secret-0123456789abcdef0123456789")
+            }
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -679,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        9
+        10
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1262,4 +1265,100 @@ fn auto_approval_follows_recorded_review_classes() {
     )
     .unwrap();
     assert_eq!(gates(&comment)["review_class"], "comment_only");
+}
+
+#[test]
+fn directory_grants_bound_writes_reviews_landings_and_reads() {
+    let (h, root) = seeded();
+    const PUBLIC: &str = "token:public";
+    h.ok(OWNER, json!({"op":"repo_token_create","name":"public","scopes":["read","write","review","land","check"],
+        "paths":["docs/"],"_secret":"public-secret-0123456789abcdef0123456789"}));
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_token_create","name":"bad","scopes":["read"],"paths":["../x"],"_secret":"bad-secret-0123456789abcdef0123456789xx"}))), "UNSAFE_PATH");
+    assert_eq!(
+        h.ok(PUBLIC, json!({"op":"repo_status"}))["grant"],
+        json!(["docs/"])
+    );
+    assert_eq!(
+        code(
+            h.commit(
+                PUBLIC,
+                Some(&root),
+                1,
+                json!([file("src/lib.rs", "x\n")]),
+                json!([])
+            )
+            .map(|_| json!(null))
+        ),
+        "FORBIDDEN"
+    );
+    let docs = h
+        .commit(
+            PUBLIC,
+            Some(&root),
+            1,
+            json!([file("docs/a.md", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    // A commit touching hidden paths cannot be reviewed, checked or landed by this token.
+    let mixed = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("docs/b.md", "b\n"), file("src/lib.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    for op in ["repo_review", "repo_land", "repo_check"] {
+        let mut command = json!({"op": op, "commit": mixed, "ref": "main", "decision": "approve", "name": "unit", "status": "pass"});
+        command["op"] = json!(op);
+        assert_eq!(code(h.run(PUBLIC, command)), "FORBIDDEN", "{op}");
+    }
+    // Reads list only granted paths.
+    let detail = h.ok(PUBLIC, json!({"op":"repo_commit","commit":mixed}));
+    assert_eq!(
+        detail["paths"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["path"].clone())
+            .collect::<Vec<_>>(),
+        vec![json!("docs/b.md")]
+    );
+    h.approve_and_check(&mixed);
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":mixed}));
+    let txlog = h.ok(PUBLIC, json!({"op":"repo_txlog"}));
+    assert!(
+        txlog["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|e| e["paths"].as_array().unwrap().clone())
+            .all(|p| p["path"].as_str().unwrap().starts_with("docs/"))
+    );
+    assert_eq!(
+        code(h.run(
+            PUBLIC,
+            json!({"op":"repo_path_history","ref":"main","path":"src/lib.rs"})
+        )),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(h.run(PUBLIC, json!({"op":"repo_check_run","run_id":"cr_x"}))),
+        "FORBIDDEN"
+    );
+    // Within the grant, the token works normally.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_check","commit":docs,"name":"unit","status":"pass"}),
+    );
+    h.ok(
+        OWNER,
+        json!({"op":"repo_review","commit":docs,"decision":"approve"}),
+    );
+    assert_eq!(
+        code(h.run(PUBLIC, json!({"op":"repo_land","ref":"main","commit":docs}))),
+        "MERGE_REQUIRED"
+    );
 }

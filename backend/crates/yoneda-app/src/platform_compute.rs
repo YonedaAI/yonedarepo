@@ -22,6 +22,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "receive_pack" => receive_pack(&c),
         "replay_changes" => replay_changes(&c),
         "merge_trees" => merge(&c),
+        "grant_check" => grant_check(&c),
         "search_plan" => crate::platform_derived::plan(&c),
         "index_partition" => crate::platform_derived::index_partition(&c),
         "search_segment" => crate::platform_derived::search_segment(&c),
@@ -127,6 +128,22 @@ fn file_patch(c: &Value) -> Result<Value> {
     let context = c["context"].as_u64().unwrap_or(3).min(100) as u32;
     let (patch, stats) = textdiff::unified(&old, &new, context);
     Ok(json!({ "patch": patch, "additions": stats.additions, "deletions": stats.deletions }))
+}
+
+/// Grant decisions for the adapter, so grant semantics live in one place: `allows` for
+/// files and `sees` for directories on the way to granted paths.
+fn grant_check(c: &Value) -> Result<Value> {
+    use crate::repo_store::grants;
+    let grant = grants::parse(&c["grant"])?;
+    let decide = |key: &str, f: fn(&grants::Grant, &str) -> bool| -> Vec<bool> {
+        c[key]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|p| f(&grant, p.as_str().unwrap_or_default()))
+            .collect()
+    };
+    Ok(json!({ "paths": decide("paths", grants::allows), "dirs": decide("dirs", grants::sees) }))
 }
 
 /// Largest file merged textually; bigger files that both sides changed conflict.

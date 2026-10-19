@@ -3,6 +3,7 @@
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
 import { compute } from './repo-compute';
+import { keepAllowed, outside } from './repo-grants';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, commit, type Json, RepoContext } from './repo-ops';
 
@@ -117,6 +118,12 @@ async function landBatch(merger: RepoContext, claim: Json) {
   });
 }
 
+/** Conflict details, refused outright if any conflict lies outside the caller's grant. */
+async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
+  const visible = await keepAllowed(ctx, conflicts);
+  return visible.length === conflicts.length ? conflictError(conflicts) : outside();
+}
+
 /**
  * Lands `sha` on `ref`. A fast-forward lands directly; otherwise the landing joins the
  * branch's queue and this caller either claims the queue (and lands a whole batch) or
@@ -195,7 +202,7 @@ export async function explicitMerge(ctx: RepoContext, args: Json) {
     ours: head.tree,
     theirs: source.tree,
   });
-  if (merged.conflicts.length > 0) throw conflictError(merged.conflicts);
+  if (merged.conflicts.length > 0) throw await scopedConflict(ctx, merged.conflicts);
   return commit(ctx, objects, {
     parent: head.commit,
     merge_parent: source.commit,
