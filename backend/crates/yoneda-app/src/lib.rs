@@ -3,19 +3,10 @@ use serde_json::Value;
 use yoneda_core::Result;
 mod commands;
 mod path_lists;
-mod platform_code;
-mod platform_compute;
-mod platform_derived;
-mod platform_objects;
-mod platform_review;
-mod platform_symbols;
-pub(crate) mod repo_store;
 mod source_binding;
 mod source_workspace;
 mod storage;
 mod workspace;
-pub use platform_compute::compute as platform_compute;
-pub use repo_store::{execute_repo_store, migrate_repo_store};
 pub use source_workspace::{execute_source_workspace, migrate_source_workspace};
 pub use storage::{SqlStore, migrate};
 pub use workspace::execute_workspace;
@@ -28,7 +19,9 @@ pub fn execute<S: SqlStore>(store: &S, command: Value) -> Result<Value> {
 }
 
 #[cfg(any(test, feature = "native"))]
-pub mod native;
+pub mod native {
+    pub use yoneda_store::native::NativeStore;
+}
 
 #[cfg(test)]
 mod tests;

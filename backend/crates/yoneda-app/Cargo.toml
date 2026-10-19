@@ -5,10 +5,11 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-native = ["dep:rusqlite"]
+native = ["dep:rusqlite", "yoneda-store/native"]
 
 [dependencies]
 yoneda-core.workspace = true
+yoneda-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
@@ -17,12 +18,6 @@ hmac = "0.12.1"
 sha2.workspace = true
 base64 = "0.22.1"
 rusqlite = { version = "0.38", features = ["bundled"], optional = true }
-syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "visit"] }
-proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-oxc_parser = "0.139.0"
-oxc_ast = "0.139.0"
-oxc_allocator = "0.139.0"
-oxc_span = "0.139.0"
 
 [dev-dependencies]
 rusqlite = { version = "0.38", features = ["bundled"] }

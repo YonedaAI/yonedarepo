@@ -1,0 +1,23 @@
+[package]
+name = "yoneda-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The source platform's authority and stateless compute. It depends on core contracts and
+# the store contract only: never on the agent layer (yoneda-app, yoneda-runtime).
+[dependencies]
+yoneda-core.workspace = true
+yoneda-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22.1"
+syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "visit"] }
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+oxc_parser = "0.139.0"
+oxc_ast = "0.139.0"
+oxc_allocator = "0.139.0"
+oxc_span = "0.139.0"
+
+[dev-dependencies]
+yoneda-store = { workspace = true, features = ["native"] }

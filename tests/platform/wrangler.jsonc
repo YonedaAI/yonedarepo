@@ -1,0 +1,17 @@
+{
+  "name": "yoneda-platform-test",
+  "main": "entrypoint.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": { "ARTIFACTS_NAMESPACE": "yoneda-test", "VAULT_KEY": "1111111111111111111111111111111111111111111111111111111111111111" },
+  "services": [{ "binding": "SELF", "service": "yoneda-platform-test" }],
+  "durable_objects": {
+    "bindings": [
+      { "name": "SOURCE_REPOS", "class_name": "SourceRepository" },
+      { "name": "WORKSPACES", "class_name": "WorkspaceAuthority" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority"] }],
+  "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yoneda-platform-test" }],
+  "d1_databases": [{ "binding": "INDEX", "database_name": "yoneda-platform-index", "database_id": "00000000-0000-0000-0000-000000000001" }]
+}
