@@ -103,10 +103,35 @@ class R2Store implements ObjectStore {
     return `store/v1/${this.name}/objects/${id}`;
   }
   async create() {}
+  /** Like a Git server: store the pack, then update the ref only if `old` still holds. */
   async push(body: Uint8Array) {
     const received = compute({ op: 'receive_pack', body_b64: toBase64(body) });
+    const refuse = (refused: string) =>
+      fromBase64(compute({ op: 'push_report', refname: received.ref, refused }).report_b64);
     await putObjects(this.env, (id) => this.key(id), received.objects);
-    return fromBase64(received.report_b64);
+    if (!received.contains_new && !(await this.readCommit(received.new)))
+      return refuse('missing necessary objects');
+    // Hidden per-commit refs only keep objects reachable; R2 objects never expire.
+    if (!received.ref.startsWith('refs/yoneda/')) {
+      const key = `store/v1/${this.name}/${received.ref}`;
+      const current = await this.env.OBJECTS.get(key);
+      const value = current ? await current.text() : null;
+      if (value !== (received.old ?? null)) return refuse('stale info');
+      // Updates are conditional on the etag read above; creation is unconditional (R2 has
+      // no create-only precondition), which only matters for two first projections racing.
+      const written = await this.env.OBJECTS.put(
+        key,
+        received.new,
+        current ? { onlyIf: { etagMatches: current.etag } } : {},
+      );
+      if (!written) return refuse('stale info');
+    }
+    return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
+  }
+  /** A projected branch value (tests and drift investigation). */
+  async readRef(refname: string) {
+    const value = await this.env.OBJECTS.get(`store/v1/${this.name}/${refname}`);
+    return value ? value.text() : null;
   }
   async readCommit(id: string) {
     const object = await this.env.OBJECTS.get(this.key(id));

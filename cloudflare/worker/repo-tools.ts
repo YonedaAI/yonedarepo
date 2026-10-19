@@ -11,6 +11,7 @@ import {
   readFile,
   replay,
 } from './repo-ops';
+import { dispatchProjection } from './repo-projection';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
 const version = (args: Json) =>
@@ -47,5 +48,9 @@ export const operations: Record<string, Operation> = {
     ctx.call({ op: 'repo_review', commit: a.commit, decision: a.decision, reason: a.reason }),
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
-  git_land: (ctx, a) => ctx.call({ op: 'repo_land', ref: a.ref, commit: a.commit }),
+  git_land: async (ctx, a) => {
+    const landed = await ctx.call({ op: 'repo_land', ref: a.ref, commit: a.commit });
+    if (!landed.already) await dispatchProjection(ctx.env, ctx.repo);
+    return landed;
+  },
 };

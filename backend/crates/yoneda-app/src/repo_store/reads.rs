@@ -58,6 +58,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
         "policy": settings.policy,
         "policy_digest": settings.policy_digest,
         "refs": refs,
+        "projections": super::projection::list(db)?,
     }))
 }
 

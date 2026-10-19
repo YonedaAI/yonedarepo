@@ -21,6 +21,9 @@ pub fn compute(c: Value) -> Result<Value> {
         "file_patch" => file_patch(&c),
         "receive_pack" => receive_pack(&c),
         "replay_changes" => replay_changes(&c),
+        "ref_update" => ref_update(&c),
+        "push_report" => push_report(&c),
+        "push_outcome" => push_outcome(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }
@@ -128,12 +131,38 @@ fn replay_changes(c: &Value) -> Result<Value> {
     Ok(json!({ "changes": listed }))
 }
 
+/// A ref-only receive-pack request (empty pack) moving a branch from `old` (expected-old
+/// lease; null to create) to `new`, which the object store already holds.
+fn ref_update(c: &Value) -> Result<Value> {
+    use yoneda_core::git_object::{receive_pack_request, write_pack};
+    let refname = string(c, "refname")?;
+    if !refname.starts_with("refs/heads/") {
+        return Err(bad("Only branch refs are projected"));
+    }
+    let new = ObjectId::parse(&string(c, "new")?)?;
+    let body = receive_pack_request(&refname, optional_id(c, "old")?, new, &write_pack(&[])?)?;
+    Ok(json!({ "push_b64": STANDARD.encode(body) }))
+}
+
+/// The report-status an object store answers with (R2 store).
+fn push_report(c: &Value) -> Result<Value> {
+    let refname = string(c, "refname")?;
+    let report = yoneda_core::git_object::receive_pack_report(&refname, c["refused"].as_str());
+    Ok(json!({ "report_b64": STANDARD.encode(report) }))
+}
+
+fn push_outcome(c: &Value) -> Result<Value> {
+    let report = STANDARD
+        .decode(string(c, "report_b64")?)
+        .map_err(|_| bad("report_b64 is not base64"))?;
+    let refused = yoneda_core::git_object::receive_pack_outcome(&report, &string(c, "refname")?)?;
+    Ok(json!({ "accepted": refused.is_none(), "refused": refused }))
+}
+
 /// Server side of a push for the R2 object store (local development and fallback):
 /// unpacks and verifies the objects and answers with Git's report-status.
 fn receive_pack(c: &Value) -> Result<Value> {
-    use yoneda_core::git_object::{
-        PackLimits, parse_receive_pack_request, read_pack, receive_pack_report,
-    };
+    use yoneda_core::git_object::{PackLimits, parse_receive_pack_request, read_pack};
     let body = STANDARD
         .decode(
             c["body_b64"]
@@ -149,18 +178,14 @@ fn receive_pack(c: &Value) -> Result<Value> {
             crate::platform_objects::object_json(id, kind, &data)
         })
         .collect::<Result<Vec<_>>>()?;
-    if !objects
+    // Ref-only updates (projections) carry an empty pack: the store must already hold
+    // `new`, which the adapter checks before accepting.
+    let contains_new = objects
         .iter()
-        .any(|o| o["id"] == json!(push.new) && o["kind"] == "commit")
-    {
-        return Err(Error::new(
-            "PUSH_INVALID",
-            "The pushed commit is not in the pack",
-        ));
-    }
+        .any(|o| o["id"] == json!(push.new) && o["kind"] == "commit");
     Ok(json!({
         "ref": push.refname, "old": push.old, "new": push.new, "objects": objects,
-        "report_b64": STANDARD.encode(receive_pack_report(&push.refname)),
+        "contains_new": contains_new,
     }))
 }
 
@@ -228,6 +253,29 @@ mod tests {
         assert_eq!(ops, ["add:README", "modify:src/lib.rs"]);
         c["trees"][new.hex()] = json!([]);
         assert_eq!(compute(c).unwrap_err().code, "TREE_INVALID");
+    }
+
+    #[test]
+    fn ref_updates_carry_an_empty_pack_and_reports_classify() {
+        let new = blob("commit stand-in");
+        let update = compute(
+            json!({"op": "ref_update", "refname": "refs/heads/main", "old": null, "new": new}),
+        )
+        .unwrap();
+        let received =
+            compute(json!({"op": "receive_pack", "body_b64": update["push_b64"]})).unwrap();
+        assert_eq!(received["objects"], json!([]));
+        assert_eq!(received["contains_new"], false);
+        assert_eq!(received["ref"], "refs/heads/main");
+        let refused = compute(
+            json!({"op": "push_report", "refname": "refs/heads/main", "refused": "stale info"}),
+        )
+        .unwrap();
+        let outcome = compute(json!({"op": "push_outcome", "refname": "refs/heads/main", "report_b64": refused["report_b64"]})).unwrap();
+        assert_eq!(outcome, json!({"accepted": false, "refused": "stale info"}));
+        assert!(
+            compute(json!({"op": "ref_update", "refname": "refs/yoneda/c/x", "new": new})).is_err()
+        );
     }
 
     #[test]

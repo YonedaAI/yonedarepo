@@ -10,6 +10,7 @@ mod checks;
 mod land;
 mod migration;
 mod prepare;
+mod projection;
 mod reads;
 mod record;
 mod rows;
@@ -32,7 +33,10 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_prepare_commit" | "repo_record_commit" => actor.require("write"),
         "repo_check" => actor.require("check"),
         "repo_check_request" => actor.require_any(&["write", "check"]),
-        "repo_check_claim" | "repo_check_complete" => actor.require("system"),
+        "repo_check_claim"
+        | "repo_check_complete"
+        | "repo_projection_pending"
+        | "repo_projection_result" => actor.require("system"),
         "repo_review" => actor.require("review"),
         "repo_land" => actor.require("land"),
         "repo_set_policy" => actor.require_owner(),
@@ -55,6 +59,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_run" => checks::run_op(db, c),
         "repo_check_complete" => checks::complete(db, c, principal),
         "repo_set_policy" => checks::set_policy(db, c, principal),
+        "repo_projection_pending" => projection::pending(db),
+        "repo_projection_result" => projection::result(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_import" => {
