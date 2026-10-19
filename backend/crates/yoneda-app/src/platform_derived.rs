@@ -14,7 +14,7 @@ use yoneda_core::{
 
 const MAX_PARTITION_FILES: usize = 20_000;
 
-fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
+pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
     let Some(encoded) = c["blobs"].get(id.hex()).and_then(Value::as_str) else {
         return Ok(None);
     };

@@ -10,7 +10,7 @@ import type { Env, Envelope } from './types';
 const MAX_RESULTS = 200;
 
 /** Runs a Rust compute op that walks trees and reads blobs, supplying both on request. */
-async function withObjects(ctx: RepoContext, input: Json) {
+export async function withObjects(ctx: RepoContext, input: Json) {
   const objects = await ctx.objects();
   const trees: Json = {};
   const blobs: Json = {};

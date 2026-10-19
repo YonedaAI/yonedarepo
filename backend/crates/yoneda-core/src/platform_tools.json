@@ -277,6 +277,64 @@
     }
   },
   {
+    "name": "symbol_list",
+    "description": "Symbols (functions, types, methods, modules) in a Rust, TypeScript or JavaScript file at a commit, branch or past version, each with a handle for symbol_edit. A parse failure is reported, never hidden.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "symbol_get",
+    "description": "The source text of one symbol (by qualified path like Type::method, or name) with its handle. Read only what you need instead of whole files.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "symbol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "symbol"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_diff",
     "description": "Files changed from base (default: head's first parent) to head, optionally with unified patches. merge_base compares against the common ancestor, like base...head.",
     "inputSchema": {
@@ -385,6 +443,121 @@
         "changes",
         "message",
         "author"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "symbol_edit",
+    "description": "Replace one symbol's source on the head of a branch, creating (not landing) a commit. The handle must still match the symbol in the current file; a stale handle (the symbol changed or vanished) is rejected. The edited file must still parse.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "object",
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "path": {
+              "type": "string"
+            },
+            "symbol_path": {
+              "type": "string"
+            },
+            "start": {
+              "type": "integer"
+            },
+            "end": {
+              "type": "integer"
+            },
+            "digest": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "symbol_path",
+            "digest"
+          ],
+          "additionalProperties": false
+        },
+        "replacement": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "handle",
+        "replacement"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_codemod",
+    "description": "Literal find/replace across a branch (optionally under a path prefix), computed partition by partition and reduced into one commit (not landed).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "find": {
+          "type": "string",
+          "minLength": 2
+        },
+        "replace": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "find",
+        "replace"
       ],
       "additionalProperties": false
     }

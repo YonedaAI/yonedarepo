@@ -34,11 +34,14 @@ test('platform Rust modules use only platform and storage code', async () => {
     `${roots[1]}/platform_compute.rs`,
     `${roots[1]}/platform_objects.rs`,
     `${roots[1]}/platform_derived.rs`,
+    `${roots[1]}/platform_code.rs`,
+    `${roots[1]}/platform_review.rs`,
+    `${roots[1]}/platform_symbols.rs`,
   ].filter((f) => f.endsWith('.rs'));
   for (const file of files) {
     const source = await readFile(file, 'utf8');
     for (const [, path] of source.matchAll(/use crate::([a-z_]+)/g))
-      assert.ok(['storage', 'platform_objects', 'native'].includes(path), `${file} uses crate::${path}`);
+      assert.ok(['storage', 'platform_objects', 'platform_derived', 'platform_review', 'platform_symbols', 'native'].includes(path), `${file} uses crate::${path}`);
     for (const [, module] of source.matchAll(/yoneda_core::([a-z_]+)/g))
       assert.ok(
         ['git_object', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),

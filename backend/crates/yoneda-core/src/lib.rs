@@ -286,7 +286,11 @@ mod tests {
         let tools: Vec<serde_json::Value> = serde_json::from_str(PLATFORM_MCP_TOOLS).unwrap();
         assert!(tools.len() >= 10);
         for tool in tools {
-            assert!(tool["name"].as_str().unwrap().starts_with("git_"));
+            let name = tool["name"].as_str().unwrap();
+            assert!(
+                name.starts_with("git_") || name.starts_with("symbol_"),
+                "{name}"
+            );
             assert!(!tool["description"].as_str().unwrap().is_empty());
             assert_eq!(tool["inputSchema"]["type"], "object");
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);
