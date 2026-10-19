@@ -25,6 +25,16 @@ impl Actor {
             ))
         }
     }
+    pub fn require_any(&self, scopes: &[&str]) -> Result<()> {
+        if scopes.iter().any(|s| self.require(s).is_ok()) {
+            Ok(())
+        } else {
+            Err(Error::new(
+                "FORBIDDEN",
+                format!("Token needs one of the {} scopes", scopes.join("/")),
+            ))
+        }
+    }
     pub fn require_owner(&self) -> Result<()> {
         if self.owner {
             Ok(())
@@ -41,8 +51,16 @@ fn token_digest(secret: &str) -> String {
     yoneda_core::digest(format!("yonedarepo:repo-token:v1:{secret}").as_bytes())
 }
 
-/// `_session` and `_token` are set by the authenticating adapter, never by callers.
+/// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
+/// callers. `_system` is the platform's own check executor (queue consumer).
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
+    if c.get("_system").and_then(Value::as_str) == Some("checks") {
+        return Ok(Actor {
+            principal: "platform:checks".into(),
+            owner: false,
+            scopes: vec!["read".into(), "system".into()],
+        });
+    }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {
         if string(session, "workspace")? != settings.workspace {
             return Err(Error::new(

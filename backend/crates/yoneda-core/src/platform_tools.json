@@ -310,6 +310,26 @@
     }
   },
   {
+    "name": "git_check_run",
+    "description": "Ask the platform to execute the policy's check runners on an exact commit (all runners, or one by name). Runs also start automatically when a commit is recorded; results appear in git_show.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_review",
     "description": "Approve or reject a commit (requires the review scope; authors cannot review their own commits; rejection needs a reason).",
     "inputSchema": {

@@ -55,7 +55,14 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
         "One-time resources (skip resources that already exist):\npnpm exec wrangler r2 bucket create {name}-objects --config {0}/platform.json\npnpm exec wrangler d1 create {name}-index --config {0}/platform.json",
         dir.display()
     );
-    for suffix in ["agent", "capture", "evaluate", "publish", "dead-letter"] {
+    for suffix in [
+        "agent",
+        "capture",
+        "evaluate",
+        "publish",
+        "platform",
+        "dead-letter",
+    ] {
         println!(
             "pnpm exec wrangler queues create {name}-{suffix} --config {}/platform.json",
             dir.display()
@@ -168,11 +175,14 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
         .as_object_mut()
         .map(|p| p.remove("secrets_store_secrets"));
     platform["artifacts"][0]["namespace"] = m["namespace"].clone();
-    platform["containers"][0]["image"] = json!("../../../cloudflare/containers/Dockerfile");
-    platform["containers"][0]["image_build_context"] = json!("../../..");
+    // Agent executions and platform checks share the pinned runtime image.
+    for index in 0..2 {
+        platform["containers"][index]["image"] = json!("../../../cloudflare/containers/Dockerfile");
+        platform["containers"][index]["image_build_context"] = json!("../../..");
+    }
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
     platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
-    for (index, suffix) in ["agent", "capture", "evaluate", "publish"]
+    for (index, suffix) in ["agent", "capture", "evaluate", "publish", "platform"]
         .iter()
         .enumerate()
     {

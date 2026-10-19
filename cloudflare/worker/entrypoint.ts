@@ -5,6 +5,7 @@ import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
+import { executeCheckRun } from './repo-checks';
 import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
@@ -62,6 +63,12 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
         try {
           if (envelope.v !== 1) {
             message.ack();
+            return;
+          }
+          if (envelope.kind === 'platform_check') {
+            const outcome = await executeCheckRun(this.env, envelope);
+            if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+            else message.ack();
             return;
           }
           if (envelope.kind === 'provision') {

@@ -99,6 +99,21 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
+  if (resource === 'commits' && sha && sub === 'check-runs' && post)
+    return run('git_check_run', { ...(await bodyOf(req).catch(() => ({}))), commit: sha });
+  if (resource === 'check-runs' && sha && get) {
+    const detail = await ctx.call({ op: 'repo_check_run', run_id: sha });
+    if (sub !== 'log') return detail;
+    const key = detail.result?.log;
+    // The key is ours (built per repository by the executor), but never trust stored state.
+    if (typeof key !== 'string' || !key.startsWith(`platform/v1/${repo}/checks/${sha}/`))
+      throw new ApiError('NOT_FOUND', 'This run has no log');
+    const log = await env.OBJECTS.get(key);
+    if (!log) throw new ApiError('NOT_FOUND', 'This run has no log');
+    return { run_id: sha, log: await log.text() };
+  }
+  if (resource === 'policy' && req.method === 'PUT')
+    return ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy });
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {

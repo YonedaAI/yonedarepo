@@ -7,6 +7,10 @@ mod agent_transcript;
 pub mod app_bundle;
 mod attempt_failure;
 mod broker;
+pub mod check_runner;
+#[cfg(all(test, unix))]
+mod check_runner_tests;
+mod check_server;
 mod child_privileges;
 mod comparison_checkout;
 mod comparison_review;
@@ -82,6 +86,7 @@ mod telemetry;
 mod test_bundle;
 mod transport;
 mod workspace;
+pub use check_server::serve_checks;
 pub use git::{capture, git};
 pub use mcp::mcp;
 pub use supervisor::serve;

@@ -7,7 +7,9 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "limits": { "subrequests": 50000 },
+  "limits": {
+    "subrequests": 50000
+  },
   "workers_dev": true,
   "routes": [
     {
@@ -108,6 +110,10 @@
       {
         "name": "SOURCE_REPOS",
         "class_name": "SourceRepository"
+      },
+      {
+        "name": "CHECK_RUNNERS",
+        "class_name": "CheckContainer"
       }
     ]
   },
@@ -137,6 +143,12 @@
       "new_sqlite_classes": [
         "SourceRepository"
       ]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": [
+        "CheckContainer"
+      ]
     }
   ],
   "containers": [
@@ -145,6 +157,16 @@
       "image": "./containers/Dockerfile",
       "image_build_context": "..",
       "max_instances": 16,
+      "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "CheckContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 8,
       "instance_type": "standard-1",
       "rollout_step_percentage": [
         100
@@ -182,6 +204,10 @@
       {
         "binding": "PUBLISH_QUEUE",
         "queue": "yoneda-dev-publish"
+      },
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yoneda-dev-platform"
       }
     ],
     "consumers": [
@@ -205,6 +231,12 @@
       },
       {
         "queue": "yoneda-dev-publish",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yoneda-dev-dead-letter"
+      },
+      {
+        "queue": "yoneda-dev-platform",
         "max_batch_size": 1,
         "max_retries": 3,
         "dead_letter_queue": "yoneda-dev-dead-letter"
