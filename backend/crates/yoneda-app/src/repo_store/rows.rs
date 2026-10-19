@@ -314,7 +314,7 @@ pub fn checkpoint_at_or_before<S: SqlStore>(db: &S, version: u64) -> Result<Chec
 
 /// Records the refs after `version` when it is a checkpoint version.
 pub fn maybe_checkpoint<S: SqlStore>(db: &S, version: u64, chain: &str) -> Result<()> {
-    if version % CHECKPOINT_EVERY != 0 {
+    if !version.is_multiple_of(CHECKPOINT_EVERY) {
         return Ok(());
     }
     let refs = db
