@@ -1,0 +1,1 @@
+ALTER TABLE repo_settings ADD COLUMN name TEXT NOT NULL DEFAULT ''

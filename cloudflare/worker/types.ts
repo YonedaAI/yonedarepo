@@ -9,6 +9,10 @@ export interface Env {
   SOURCES?: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
   SOURCE_REPOS: DurableObjectNamespace;
+  /** Platform check executors (one fresh container per run attempt). */
+  CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
+  /** Platform jobs (check runs); independent of agent queues. */
+  PLATFORM_QUEUE: Queue<Envelope>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   SELF: Service<YonedaEntrypoint>;
@@ -31,6 +35,8 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
+  /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
+  PLATFORM_OBJECT_STORE?: string;
   CODEX_MODEL: string;
   CLAUDE_MODEL: string;
   MIMO_MODEL?: string;

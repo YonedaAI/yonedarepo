@@ -84,6 +84,24 @@ proptest! {
         let empty = hash_object(ObjectKind::Tree, b"");
         let expected_root = if expected.is_empty() { empty } else { scratch(&expected) };
         prop_assert_eq!(incremental.root, expected_root);
+
+        // The tree diff recovers exactly the effective file changes, and asks for trees
+        // (rather than failing) while they are missing.
+        store.keep(&incremental);
+        let wanted: Vec<(String, Option<u8>, Option<u8>)> = base.keys().chain(expected.keys())
+            .collect::<std::collections::BTreeSet<_>>().into_iter()
+            .map(|p| (p.clone(), base.get(p).copied(), expected.get(p).copied()))
+            .filter(|(_, a, b)| a != b)
+            .collect();
+        let Walk::Done(found) = diff_trees(Some(first.root), Some(incremental.root), &store.0, 10_000).unwrap() else {
+            panic!("all trees were supplied");
+        };
+        let side = |v: Option<u8>| v.map(|v| (FileMode::Blob, blob(v)));
+        prop_assert_eq!(found, wanted.into_iter().map(|(path, a, b)| TreeChange { path, old: side(a), new: side(b) }).collect::<Vec<_>>());
+        if first.root != incremental.root {
+            let need = diff_trees(Some(first.root), Some(incremental.root), &HashMap::new(), 10_000).unwrap();
+            prop_assert_eq!(need, Walk::Need([first.root, incremental.root].into_iter().collect()));
+        }
     }
 
     #[test]

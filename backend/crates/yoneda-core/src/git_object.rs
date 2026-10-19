@@ -4,6 +4,7 @@
 //! object ids must match what `git` computes. Decoding is lossless: re-encoding a
 //! decoded object reproduces its original bytes and id.
 mod commit;
+mod diff;
 mod graph;
 mod id;
 mod pack;
@@ -12,11 +13,13 @@ mod rewrite;
 mod tree;
 
 pub use commit::{Commit, Signature};
+pub use diff::{TreeChange, Walk, diff_trees};
 pub use graph::{CommitGraph, is_ancestor, merge_bases, next_generation};
 pub use id::{ObjectId, ObjectKind, hash_object};
 pub use pack::{PackLimits, read_pack, write_pack};
 pub use protocol::{
-    HIDDEN_REF_PREFIX, hidden_ref, receive_pack_request, verify_receive_pack_report,
+    HIDDEN_REF_PREFIX, ReceivedPush, hidden_ref, parse_receive_pack_request, receive_pack_report,
+    receive_pack_request, verify_receive_pack_report,
 };
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};
 pub use tree::{FileMode, MAX_TREE_ENTRIES, TreeEntry, decode_tree, encode_tree};

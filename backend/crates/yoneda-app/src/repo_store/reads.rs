@@ -9,9 +9,20 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::ObjectId,
+    git_object::{CommitGraph, ObjectId, merge_bases},
     txlog::{Checkpoint, replay},
 };
+
+/// The recorded commit graph (parents and generations stored at record time).
+struct Graph<'a, S>(&'a S);
+impl<S: SqlStore> CommitGraph for Graph<'_, S> {
+    fn parents(&self, id: &ObjectId) -> Result<Vec<ObjectId>> {
+        Ok(rows::recorded(self.0, id)?.parents)
+    }
+    fn generation(&self, id: &ObjectId) -> Result<u64> {
+        Ok(rows::recorded(self.0, id)?.generation)
+    }
+}
 
 fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
     let current = current_version(db)?;
@@ -41,6 +52,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
     )?;
     Ok(json!({
         "version": current_version(db)?,
+        "name": settings.name,
         "owner": settings.owner,
         "object_store": settings.object_store,
         "policy": settings.policy,
@@ -112,6 +124,17 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "checks": db.query("SELECT name,status,evidence,principal,recorded_at FROM checks WHERE commit_id=? ORDER BY name", &key)?,
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,
         "landings": db.query("SELECT refname,version,landed_at FROM landings WHERE commit_id=? ORDER BY version", &key)?,
+        "check_runs": super::checks::runs_for(db, &id)?,
         "gates": gates(db, &id, settings)?,
     }))
+}
+
+/// Best common ancestors of two recorded commits, with their trees.
+pub fn merge_base<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let bases = merge_bases(&Graph(db), &object_id(c, "left")?, &object_id(c, "right")?)?;
+    let listed = bases
+        .iter()
+        .map(|id| Ok(json!({ "commit": id, "tree": rows::recorded(db, id)?.tree })))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(json!({ "merge_bases": listed }))
 }
