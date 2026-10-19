@@ -14,7 +14,7 @@ export default defineConfig({
     }),
   ],
   test: {
-    include: ['tests/workers/repo-*.test.ts', 'tests/workers/load-platform.test.ts'],
+    include: ['tests/workers/repo-*.test.ts', 'tests/workers/load-platform.test.ts', 'tests/workers/eval-*.test.ts'],
     testTimeout: 60_000,
   },
 });
