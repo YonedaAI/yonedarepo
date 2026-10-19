@@ -2956,18 +2956,13 @@ dependencies = [
  "argon2",
  "base64 0.22.1",
  "hmac",
- "oxc_allocator",
- "oxc_ast",
- "oxc_parser",
- "oxc_span",
- "proc-macro2",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2",
  "subtle",
- "syn 3.0.9",
  "yoneda-core",
+ "yoneda-store",
 ]
 
 [[package]]
@@ -3001,6 +2996,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoneda-platform"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_parser",
+ "oxc_span",
+ "proc-macro2",
+ "serde",
+ "serde_json",
+ "syn 3.0.9",
+ "yoneda-core",
+ "yoneda-store",
+]
+
+[[package]]
 name = "yoneda-runtime"
 version = "0.1.0"
 dependencies = [
@@ -3023,6 +3035,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoneda-store"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde_json",
+ "yoneda-core",
+]
+
+[[package]]
 name = "yoneda-worker"
 version = "0.1.0"
 dependencies = [
@@ -3031,6 +3052,7 @@ dependencies = [
  "yoneda-app",
  "yoneda-cloudflare",
  "yoneda-core",
+ "yoneda-platform",
 ]
 
 [[package]]

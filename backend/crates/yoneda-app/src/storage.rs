@@ -16,26 +16,9 @@ pub(crate) use lineage::{
 };
 pub use migrations::migrate;
 
-pub trait SqlStore: Clone + 'static {
-    fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>>;
-    fn transaction(&self, action: Box<dyn FnOnce() -> Result<Value>>) -> Result<Value>;
-}
+pub use yoneda_store::SqlStore;
+pub(crate) use yoneda_store::{bad, number, string};
 
-pub(crate) fn bad(message: &str) -> Error {
-    Error::new("INVALID_INPUT", message)
-}
-pub(crate) fn string(v: &Value, key: &str) -> Result<String> {
-    v.get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.trim().is_empty() && s.len() <= 16384)
-        .map(str::to_owned)
-        .ok_or_else(|| bad(&format!("Missing or invalid {key}")))
-}
-pub(crate) fn number(v: &Value, key: &str) -> Result<i64> {
-    v.get(key)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| bad(&format!("Missing or invalid {key}")))
-}
 pub(crate) fn hash(v: &Value, key: &str, lengths: &[usize]) -> Result<String> {
     let s = string(v, key)?;
     if !lengths.contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
