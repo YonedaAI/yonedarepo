@@ -7,6 +7,7 @@ mod commit;
 mod graph;
 mod id;
 mod pack;
+mod protocol;
 mod rewrite;
 mod tree;
 
@@ -14,6 +15,9 @@ pub use commit::{Commit, Signature};
 pub use graph::{CommitGraph, is_ancestor, merge_bases, next_generation};
 pub use id::{ObjectId, ObjectKind, hash_object};
 pub use pack::{PackLimits, read_pack, write_pack};
+pub use protocol::{
+    HIDDEN_REF_PREFIX, hidden_ref, receive_pack_request, verify_receive_pack_report,
+};
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};
 pub use tree::{FileMode, MAX_TREE_ENTRIES, TreeEntry, decode_tree, encode_tree};
 
@@ -21,5 +25,7 @@ pub(crate) fn invalid(message: impl Into<String>) -> crate::Error {
     crate::Error::new("GIT_OBJECT_INVALID", message)
 }
 
+#[cfg(test)]
+mod proptests;
 #[cfg(test)]
 mod tests;

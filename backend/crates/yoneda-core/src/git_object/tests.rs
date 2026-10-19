@@ -326,3 +326,24 @@ fn criss_cross_merges_report_every_best_base() {
     bases.sort();
     assert_eq!(bases, vec![n(2), n(3)]);
 }
+
+#[test]
+fn receive_pack_framing_matches_git_and_rejects_partial_reports() {
+    let commit = id(FIRST);
+    let refname = hidden_ref(&commit);
+    let body = receive_pack_request(&refname, None, commit, b"PACK").unwrap();
+    let line = format!("{} {FIRST} {refname}\0report-status\n", "0".repeat(40));
+    assert_eq!(
+        body,
+        format!("{:04x}{line}0000PACK", line.len() + 4).into_bytes()
+    );
+    assert!(receive_pack_request("main", None, commit, b"").is_err());
+    let ok = format!("000eunpack ok\n{:04x}ok {refname}\n0000", refname.len() + 8);
+    verify_receive_pack_report(ok.as_bytes(), &refname).unwrap();
+    let rejected = format!(
+        "000eunpack ok\n{:04x}ng {refname} denied\n0000",
+        refname.len() + 15
+    );
+    assert!(verify_receive_pack_report(rejected.as_bytes(), &refname).is_err());
+    assert!(verify_receive_pack_report(b"0000", &refname).is_err());
+}
