@@ -17,7 +17,7 @@ export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string } }
   | { _token: string }
-  | { _system: 'checks' };
+  | { _system: 'checks' | 'projection' | 'import' };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
@@ -171,6 +171,110 @@ export async function readFile(ctx: RepoContext, args: Json) {
   };
 }
 
+/** Runs a Rust compute op that walks trees, supplying the trees it asks for. */
+export async function withTrees(objects: RepoObjects, input: Json) {
+  const trees: Record<string, TreeEntry[]> = {};
+  for (let round = 0; round <= 64; round++) {
+    const result = compute({ ...input, trees });
+    if (!result.need_trees) return result;
+    await Promise.all(
+      (result.need_trees as string[]).map(async (id) => {
+        trees[id] = await objects.tree(id);
+      }),
+    );
+  }
+  throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
+}
+
+const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
+
+/** Server-side revert or cherry-pick of `args.commit` onto branch `args.ref` (default main). */
+export async function replay(ctx: RepoContext, args: Json, direction: 'revert' | 'pick') {
+  const source = await ctx.call({ op: 'repo_commit', commit: args.commit });
+  const parent = source.parents[0]
+    ? await ctx.call({ op: 'repo_commit', commit: source.parents[0] })
+    : null;
+  const objects = await ctx.objects();
+  const { changes } = await withTrees(objects, {
+    op: 'replay_changes',
+    direction,
+    old: parent?.tree ?? null,
+    new: source.tree,
+  });
+  const subject = String(source.message).split('\n')[0];
+  const message =
+    args.message ??
+    (direction === 'revert'
+      ? `Revert "${subject}"\n\nThis reverts commit ${source.commit}.`
+      : `${source.message}\n\n(cherry picked from commit ${source.commit})`);
+  return commit(ctx, objects, {
+    ref: args.ref ?? 'main',
+    changes,
+    message,
+    author: args.author ?? PLATFORM_AUTHOR,
+    read_set: args.read_set,
+  });
+}
+
+const OBJECT_BUDGET = 8 * 1024 * 1024;
+const OBJECT_KINDS = ['tree', 'blob', 'commit'];
+
+/**
+ * Batch, resumable object fetch (Scion GetObjects): immutable objects by id and kind, in
+ * request order, up to a response budget. `next` resumes after the last object served,
+ * so an interrupted client never refetches what it already has.
+ */
+export async function getObjects(ctx: RepoContext, args: Json) {
+  const wanted = args.objects;
+  if (
+    !Array.isArray(wanted) ||
+    wanted.length === 0 ||
+    wanted.length > 10_000 ||
+    !wanted.every((o) => SHA.test(o?.id) && OBJECT_KINDS.includes(o?.kind))
+  )
+    throw new ApiError('INVALID_INPUT', 'objects must be 1-10000 {id, kind} entries');
+  const start = Number(args.after ?? 0);
+  if (!Number.isSafeInteger(start) || start < 0 || start > wanted.length)
+    throw new ApiError('INVALID_INPUT', 'after is outside the request');
+  const objects = await ctx.objects();
+  const served: Json[] = [];
+  const missing: string[] = [];
+  let bytes = 0;
+  let index = start;
+  while (index < wanted.length) {
+    const batch = wanted.slice(index, index + 16);
+    const read = await Promise.all(
+      batch.map((o: Json) =>
+        objects.object(o.id, o.kind).catch((e) => {
+          if (e?.code === 'NOT_FOUND') return null;
+          throw e;
+        }),
+      ),
+    );
+    let stop = false;
+    for (const [offset, object] of read.entries()) {
+      if (!object) missing.push(batch[offset].id);
+      else {
+        const size = JSON.stringify(object).length;
+        if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
+          stop = true;
+          break;
+        }
+        bytes += size;
+        served.push(object);
+      }
+      index++;
+    }
+    if (stop) break;
+  }
+  return {
+    objects: served,
+    missing,
+    next: index < wanted.length ? index : null,
+    tiers: objects.hits,
+  };
+}
+
 const PATCH_FILES = 200;
 const PATCH_BYTES = 16 * 1024 * 1024;
 
@@ -190,21 +294,9 @@ export async function diff(ctx: RepoContext, args: Json) {
     }
   } else if (head.parents[0]) base = await ctx.call({ op: 'repo_commit', commit: head.parents[0] });
   const objects = await ctx.objects();
-  const trees: Record<string, TreeEntry[]> = {};
-  let changes: Json[] = [];
-  for (let round = 0; ; round++) {
-    if (round > 64) throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
-    const result = compute({ op: 'tree_diff', old: base?.tree ?? null, new: head.tree, trees });
-    if (!result.need_trees) {
-      changes = result.changes;
-      break;
-    }
-    await Promise.all(
-      (result.need_trees as string[]).map(async (id) => {
-        trees[id] = await objects.tree(id);
-      }),
-    );
-  }
+  let changes: Json[] = (
+    await withTrees(objects, { op: 'tree_diff', old: base?.tree ?? null, new: head.tree })
+  ).changes;
   const prefix = String(args.path ?? '');
   if (prefix)
     changes = changes.filter(

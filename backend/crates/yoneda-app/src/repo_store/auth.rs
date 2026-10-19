@@ -25,6 +25,10 @@ impl Actor {
             ))
         }
     }
+    /// Whether this actor holds `scope` itself (owners hold every token scope, not roles).
+    pub fn can(&self, scope: &str) -> bool {
+        self.scopes.iter().any(|s| s == scope)
+    }
     pub fn require_any(&self, scopes: &[&str]) -> Result<()> {
         if scopes.iter().any(|s| self.require(s).is_ok()) {
             Ok(())
@@ -54,11 +58,19 @@ fn token_digest(secret: &str) -> String {
 /// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
 /// callers. `_system` is the platform's own check executor (queue consumer).
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
-    if c.get("_system").and_then(Value::as_str) == Some("checks") {
+    if let Some(system @ ("checks" | "projection" | "import")) =
+        c.get("_system").and_then(Value::as_str)
+    {
+        // The importer may record history and land it; it cannot run checks or project.
+        let role = if system == "import" {
+            "import"
+        } else {
+            "system"
+        };
         return Ok(Actor {
-            principal: "platform:checks".into(),
+            principal: format!("platform:{system}"),
             owner: false,
-            scopes: vec!["read".into(), "system".into()],
+            scopes: vec!["read".into(), role.into()],
         });
     }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {

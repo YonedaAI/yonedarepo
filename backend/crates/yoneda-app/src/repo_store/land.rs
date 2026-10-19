@@ -102,6 +102,7 @@ fn append<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
+    super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
     db.query(
         "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
         &[
@@ -191,8 +192,11 @@ pub fn import<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         ));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
-    if !commit.parents.is_empty() {
-        return Err(Error::new("INVALID_INPUT", "Import needs a root commit"));
+    if !commit.parents.is_empty() && !super::history_import::imported(db, &commit.id)? {
+        return Err(Error::new(
+            "INVALID_INPUT",
+            "Import needs a root commit or imported history",
+        ));
     }
     append(
         db,

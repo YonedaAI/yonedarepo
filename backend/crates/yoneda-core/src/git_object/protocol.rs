@@ -109,12 +109,30 @@ pub fn parse_receive_pack_request(bytes: &[u8]) -> Result<ReceivedPush<'_>> {
     })
 }
 
-/// The report-status a Git server sends after accepting `refname`.
-pub fn receive_pack_report(refname: &str) -> Vec<u8> {
+/// The report-status a Git server sends: `ok <ref>`, or `ng <ref> <reason>` on refusal.
+pub fn receive_pack_report(refname: &str, refused: Option<&str>) -> Vec<u8> {
     let mut out = pkt("unpack ok\n").into_bytes();
-    out.extend_from_slice(pkt(&format!("ok {refname}\n")).as_bytes());
+    let line = match refused {
+        None => format!("ok {refname}\n"),
+        Some(reason) => format!("ng {refname} {reason}\n"),
+    };
+    out.extend_from_slice(pkt(&line).as_bytes());
     out.extend_from_slice(b"0000");
     out
+}
+
+/// Classifies a report: `Ok(None)` accepted, `Ok(Some(reason))` the server refused the
+/// ref update (for example a stale expected-old value), `Err` anything malformed.
+pub fn receive_pack_outcome(bytes: &[u8], refname: &str) -> Result<Option<String>> {
+    if verify_receive_pack_report(bytes, refname).is_ok() {
+        return Ok(None);
+    }
+    let text = String::from_utf8_lossy(bytes);
+    let prefix = format!("ng {refname} ");
+    text.split('\n')
+        .find_map(|line| line.get(4..).and_then(|l| l.strip_prefix(&prefix)))
+        .map(|reason| Some(reason.trim().to_owned()))
+        .ok_or_else(|| invalid(format!("Unrecognized push report for {refname}")))
 }
 
 #[cfg(test)]
@@ -135,8 +153,23 @@ mod tests {
                 pack: b"PACKDATA"
             }
         );
-        verify_receive_pack_report(&receive_pack_report("refs/yoneda/c/x"), "refs/yoneda/c/x")
-            .unwrap();
+        verify_receive_pack_report(
+            &receive_pack_report("refs/yoneda/c/x", None),
+            "refs/yoneda/c/x",
+        )
+        .unwrap();
+        let refused = receive_pack_report("refs/heads/main", Some("stale info"));
+        assert!(verify_receive_pack_report(&refused, "refs/heads/main").is_err());
+        assert_eq!(
+            receive_pack_outcome(&refused, "refs/heads/main").unwrap(),
+            Some("stale info".into())
+        );
+        let accepted = receive_pack_report("refs/heads/main", None);
+        assert_eq!(
+            receive_pack_outcome(&accepted, "refs/heads/main").unwrap(),
+            None
+        );
+        assert!(receive_pack_outcome(b"0000", "refs/heads/main").is_err());
         assert!(parse_receive_pack_request(b"0000").is_err());
     }
 }
