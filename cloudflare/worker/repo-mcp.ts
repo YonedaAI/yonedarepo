@@ -62,9 +62,10 @@ export async function repoMcp(req: Request, ctx: RepoContext): Promise<Response>
       });
     } catch (e: any) {
       const code = e?.code ? `${e.code}: ` : '';
+      const details = e?.details ? `\n${JSON.stringify(e.details)}` : '';
       return reply({
         isError: true,
-        content: [{ type: 'text', text: `${code}${e?.message ?? e}` }],
+        content: [{ type: 'text', text: `${code}${e?.message ?? e}${details}` }],
       });
     }
   }

@@ -48,6 +48,7 @@ impl Harness {
             None if principal == SYSTEM => c["_system"] = json!("checks"),
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None if principal == "platform:import" => c["_system"] = json!("import"),
+            None if principal == "platform:merge" => c["_system"] = json!("merge"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -85,16 +86,35 @@ impl Harness {
         changes: Value,
         read_set: Value,
     ) -> yoneda_core::Result<String> {
+        self.commit_with(
+            principal,
+            parent,
+            base_version,
+            changes,
+            read_set,
+            json!({}),
+        )
+    }
+    fn commit_with(
+        &self,
+        principal: &str,
+        parent: Option<&str>,
+        base_version: u64,
+        changes: Value,
+        read_set: Value,
+        extra: Value,
+    ) -> yoneda_core::Result<String> {
         let mut trees = serde_json::Map::new();
         loop {
-            let prepared = self.run(
-                principal,
-                json!({
-                    "op": "repo_prepare_commit", "parent": parent, "base_version": base_version,
-                    "changes": changes, "read_set": read_set, "trees": trees,
-                    "message": "change", "author": {"name": "Agent", "email": "agent@example.com"},
-                }),
-            )?;
+            let mut command = json!({
+                "op": "repo_prepare_commit", "parent": parent, "base_version": base_version,
+                "changes": changes, "read_set": read_set, "trees": trees,
+                "message": "change", "author": {"name": "Agent", "email": "agent@example.com"},
+            });
+            for (key, value) in extra.as_object().into_iter().flatten() {
+                command[key] = value.clone();
+            }
+            let prepared = self.run(principal, command)?;
             if let Some(need) = prepared["need_trees"].as_array() {
                 assert!(!need.is_empty());
                 for id in need {
@@ -288,9 +308,10 @@ fn concurrent_landing_follows_read_write_set_independence() {
         code(h.run(OWNER, json!({"op":"repo_land","ref":"main","commit":src}))),
         "MERGE_REQUIRED"
     );
+    // Same file written on both sides: a three-way merge decides (here add/add).
     assert_eq!(
         code(h.run(OWNER, json!({"op":"repo_land","ref":"main","commit":same}))),
-        "CONFLICT"
+        "MERGE_REQUIRED"
     );
     assert_eq!(
         code(h.run(
@@ -849,5 +870,105 @@ fn imported_history_lands_with_a_truncated_boundary() {
     assert_eq!(
         code(record(&"e".repeat(40), json!([]), json!([]))),
         "ALREADY_EXISTS"
+    );
+}
+
+#[test]
+fn verified_platform_merges_land_under_the_merged_commits_gates() {
+    let (h, root) = seeded();
+    const MERGER: &str = "platform:merge";
+    let docs = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("docs/a.md", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let src = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn b() {}\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.approve_and_check(&docs);
+    h.approve_and_check(&src);
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":docs}));
+    let plan = h.ok(
+        CI,
+        json!({"op":"repo_merge_plan","ref":"main","commit":src}),
+    );
+    assert_eq!(
+        (
+            plan["outcome"].as_str(),
+            plan["head"].as_str(),
+            plan["base"].as_str()
+        ),
+        (Some("rebase"), Some(docs.as_str()), Some(root.as_str()))
+    );
+    let lib = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn b() {}\n");
+    let take = json!([{"path": "src/lib.rs", "blob": lib, "type": "blob"}]);
+    let merge = |principal: &str, changes: Value| {
+        h.commit_with(
+            principal,
+            Some(&docs),
+            2,
+            changes,
+            json!([]),
+            json!({"merge_parent": src}),
+        )
+    };
+    // Only platform merges land under the merged commit's gates, and only with its paths.
+    let rogue = merge(AGENT, take.clone()).unwrap();
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_land","ref":"main","commit":src,"merge":rogue})
+        )),
+        "FORBIDDEN"
+    );
+    let mut extra = take.as_array().unwrap().clone();
+    extra.push(file("smuggled.txt", "x\n"));
+    let sneaky = merge(MERGER, json!(extra)).unwrap();
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_land","ref":"main","commit":src,"merge":sneaky})
+        )),
+        "FORBIDDEN"
+    );
+    let merged = merge(MERGER, take).unwrap();
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":merged}))["parents"],
+        json!([docs, src])
+    );
+    let landed = h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":src,"merge":merged}),
+    );
+    assert_eq!(
+        (landed["version"].as_u64(), landed["merged"].as_str()),
+        (Some(3), Some(src.as_str()))
+    );
+    let entry = &h.ok(OWNER, json!({"op":"repo_txlog"}))["entries"][2];
+    assert_eq!(
+        (entry["kind"].as_str(), entry["new"].as_str()),
+        (Some("merge"), Some(merged.as_str()))
+    );
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":src}))["landings"][0]["version"],
+        3
+    );
+    // The same merge cannot land again on a moved head.
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_land","ref":"main","commit":src,"merge":merged})
+        )),
+        "OK"
     );
 }

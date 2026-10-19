@@ -1,6 +1,7 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 import { dispatchRuns } from './repo-checks';
+import { explicitMerge, landWithMerge } from './repo-merge';
 import {
   commit,
   diff,
@@ -46,10 +47,11 @@ export const operations: Record<string, Operation> = {
   },
   git_review: (ctx, a) =>
     ctx.call({ op: 'repo_review', commit: a.commit, decision: a.decision, reason: a.reason }),
+  git_merge: explicitMerge,
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
   git_land: async (ctx, a) => {
-    const landed = await ctx.call({ op: 'repo_land', ref: a.ref, commit: a.commit });
+    const landed = await landWithMerge(ctx, a.ref, a.commit);
     if (!landed.already) await dispatchProjection(ctx.env, ctx.repo);
     return landed;
   },
