@@ -199,8 +199,18 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
     } else {
         Vec::new()
     };
+    let bisects = if outcome == "error" {
+        Vec::new()
+    } else {
+        super::bisect::waiting_on(
+            db,
+            row["commit_id"].as_str().unwrap_or_default(),
+            row["name"].as_str().unwrap_or_default(),
+        )?
+    };
     Ok(
-        json!({ "run_id": id, "status": status, "commit": row["commit_id"], "name": row["name"], "repair": repair }),
+        json!({ "run_id": id, "status": status, "commit": row["commit_id"], "name": row["name"],
+        "repair": repair, "bisects": bisects }),
     )
 }
 
