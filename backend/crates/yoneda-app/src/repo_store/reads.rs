@@ -9,27 +9,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::{CommitGraph, ObjectId, merge_bases},
+    git_object::{ObjectId, merge_bases},
     txlog::{Checkpoint, replay},
 };
-
-/// The recorded commit graph (parents and generations stored at record time). Parents
-/// beyond a truncated import are not recorded and end the walk there.
-struct Graph<'a, S>(&'a S);
-impl<S: SqlStore> CommitGraph for Graph<'_, S> {
-    fn parents(&self, id: &ObjectId) -> Result<Vec<ObjectId>> {
-        let mut parents = Vec::new();
-        for parent in rows::recorded(self.0, id)?.parents {
-            if rows::commit_row(self.0, &parent)?.is_some() {
-                parents.push(parent);
-            }
-        }
-        Ok(parents)
-    }
-    fn generation(&self, id: &ObjectId) -> Result<u64> {
-        Ok(rows::recorded(self.0, id)?.generation)
-    }
-}
 
 fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
     let current = current_version(db)?;
@@ -136,13 +118,18 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,
         "landings": db.query("SELECT refname,version,landed_at FROM landings WHERE commit_id=? ORDER BY version", &key)?,
         "check_runs": super::checks::runs_for(db, &id)?,
+        "repairs": super::checks::repairs_for(db, &id)?,
         "gates": gates(db, &id, settings)?,
     }))
 }
 
 /// Best common ancestors of two recorded commits, with their trees.
 pub fn merge_base<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
-    let bases = merge_bases(&Graph(db), &object_id(c, "left")?, &object_id(c, "right")?)?;
+    let bases = merge_bases(
+        &rows::RecordedGraph(db),
+        &object_id(c, "left")?,
+        &object_id(c, "right")?,
+    )?;
     let listed = bases
         .iter()
         .map(|id| Ok(json!({ "commit": id, "tree": rows::recorded(db, id)?.tree })))

@@ -26,6 +26,9 @@ pub mod txlog;
 pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 /// MCP tools of the source platform (`/api/v1/repos/:id/mcp`), named after Git verbs.
 pub const PLATFORM_MCP_TOOLS: &str = include_str!("platform_tools.json");
+pub mod merge;
+#[cfg(test)]
+mod merge_tree_tests;
 pub mod retry;
 mod source;
 pub mod source_changeset;

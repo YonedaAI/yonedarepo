@@ -5,6 +5,7 @@ export class SourceApiError extends Error {
     readonly code: string,
     message: string,
     readonly status: number,
+    readonly details?: { conflicts?: { path: string; kind: string; marked?: string }[] },
   ) {
     super(message);
   }
@@ -27,6 +28,7 @@ export async function sourceApi<T = any>(
       value.error?.code ?? 'REQUEST_FAILED',
       value.error?.message ?? `Request failed (${response.status})`,
       response.status,
+      value.error?.details,
     );
   return value as T;
 }

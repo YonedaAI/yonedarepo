@@ -9,6 +9,7 @@ mod auth;
 mod checks;
 mod history_import;
 mod land;
+mod merging;
 mod migration;
 mod prepare;
 mod projection;
@@ -37,7 +38,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_claim"
         | "repo_check_complete"
         | "repo_projection_pending"
-        | "repo_projection_result" => actor.require("system"),
+        | "repo_projection_result"
+        | "repo_record_repair" => actor.require("system"),
         // Imported history is only recorded by the platform importer, which read it from
         // the object store; nobody else can declare commits into existence.
         "repo_record_imported" if !actor.can("import") => Err(Error::new(
@@ -58,12 +60,14 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_txlog" => reads::txlog(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
         "repo_merge_base" => reads::merge_base(db, c),
+        "repo_merge_plan" => merging::plan(db, c),
         "repo_prepare_commit" => prepare::prepare(db, c, principal),
         "repo_record_commit" => record::record(db, c, principal, &settings),
         "repo_check" => record::check(db, c, principal, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_check_claim" => checks::claim(db, c),
         "repo_check_run" => checks::run_op(db, c),
+        "repo_record_repair" => checks::record_repair(db, c),
         "repo_check_complete" => checks::complete(db, c, principal),
         "repo_set_policy" => checks::set_policy(db, c, principal),
         "repo_projection_pending" => projection::pending(db),
