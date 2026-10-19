@@ -19,9 +19,35 @@ const MAX_TOTAL_BYTES: usize = 100 * 1024 * 1024;
 const PREPARED_TTL_MS: i64 = 60 * 60 * 1000;
 const COMMITTER: (&str, &str) = ("YonedaRepo", "commits@yonedarepo.invalid");
 
+enum Content {
+    Bytes(Vec<u8>),
+    /// A blob already in the object store (revert, cherry-pick): referenced, not re-sent.
+    Known(ObjectId),
+}
+
 struct Change {
     path: String,
-    target: Option<(FileMode, Vec<u8>)>,
+    target: Option<(FileMode, Content)>,
+    /// Precondition on the parent: the path's current blob (`None`: absent).
+    expect: Option<Option<ObjectId>>,
+}
+
+fn expectation(change: &Value) -> Result<Option<Option<ObjectId>>> {
+    match change.get("expect") {
+        None => Ok(None),
+        Some(Value::Null) => Ok(Some(None)),
+        Some(_) => Ok(Some(Some(object_id(change, "expect")?))),
+    }
+}
+
+fn file_mode(change: &Value) -> Result<FileMode> {
+    Ok(match change["type"].as_str() {
+        Some("symlink") => FileMode::Symlink,
+        Some("exec") => FileMode::Executable,
+        Some("blob") | None if change["executable"] == true => FileMode::Executable,
+        Some("blob") | None => FileMode::Blob,
+        Some(_) => return Err(bad("Change type must be blob, exec or symlink")),
+    })
 }
 
 struct Trees(HashMap<ObjectId, Vec<TreeEntry>>);
@@ -48,16 +74,35 @@ fn changes(c: &Value) -> Result<Vec<Change>> {
         .iter()
         .map(|change| {
             let path = string(change, "path")?;
+            let expect = expectation(change)?;
             if change["delete"] == true {
-                return Ok(Change { path, target: None });
+                return Ok(Change {
+                    path,
+                    target: None,
+                    expect,
+                });
+            }
+            if change.get("blob").is_some() {
+                let blob = Content::Known(object_id(change, "blob")?);
+                return Ok(Change {
+                    path,
+                    target: Some((file_mode(change)?, blob)),
+                    expect,
+                });
+            }
+            // File content is bounded by the size limits below, not the short-field cap of
+            // `string` (which also rejects the empty base64 of an empty file).
+            let encoded = change["content_b64"]
+                .as_str()
+                .ok_or_else(|| bad("Missing content_b64"))?;
+            if encoded.len() > MAX_FILE_BYTES / 3 * 4 + 4 {
+                return Err(Error::new(
+                    "TOO_LARGE",
+                    "Change exceeds file or total size limit",
+                ));
             }
             let content = STANDARD
-                .decode(string(change, "content_b64").or_else(|_| {
-                    // An empty file has empty base64, which `string` rejects as blank.
-                    (change["content_b64"] == "")
-                        .then(String::new)
-                        .ok_or_else(|| bad("Missing content_b64"))
-                })?)
+                .decode(encoded)
                 .map_err(|_| bad("content_b64 is not base64"))?;
             total += content.len();
             if content.len() > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES {
@@ -66,17 +111,29 @@ fn changes(c: &Value) -> Result<Vec<Change>> {
                     "Change exceeds file or total size limit",
                 ));
             }
-            let file_mode = if change["executable"] == true {
-                FileMode::Executable
-            } else {
-                FileMode::Blob
-            };
             Ok(Change {
                 path,
-                target: Some((file_mode, content)),
+                target: Some((file_mode(change)?, Content::Bytes(content))),
+                expect,
             })
         })
         .collect()
+}
+
+/// A referenced blob must already be in this repository's object store: it was written
+/// by a recorded commit (or removed by one, so it existed in that commit's parent).
+fn known_blob<S: SqlStore>(db: &S, id: &ObjectId) -> Result<()> {
+    let found = db.query(
+        "SELECT 1 AS found FROM commit_paths WHERE new_blob=? OR old_blob=? LIMIT 1",
+        &[json!(id.hex()), json!(id.hex())],
+    )?;
+    if found.is_empty() {
+        return Err(Error::new(
+            "NOT_FOUND",
+            format!("Blob {id} is not in this repository"),
+        ));
+    }
+    Ok(())
 }
 
 /// Directories on changed paths that are not yet supplied (the next walk frontier).
@@ -167,16 +224,27 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     let mut blobs: Vec<(ObjectId, &[u8])> = Vec::new();
     let mut path_changes = Vec::new();
     let mut touches = Vec::new();
+    let mut conflicts = Vec::new();
     for change in &changes {
         let old = existing(root, &change.path, &trees).filter(|e| !e.mode.is_tree());
-        let new = change
-            .target
-            .as_ref()
-            .map(|(m, data)| (*m, hash_object(ObjectKind::Blob, data)));
+        if let Some(expected) = change.expect
+            && old.as_ref().map(|o| o.id) != expected
+        {
+            conflicts.push(change.path.clone());
+            continue;
+        }
+        let new = match &change.target {
+            None => None,
+            Some((m, Content::Bytes(data))) => Some((*m, hash_object(ObjectKind::Blob, data))),
+            Some((m, Content::Known(id))) => {
+                known_blob(db, id)?;
+                Some((*m, *id))
+            }
+        };
         if matches!((&old, new), (Some(o), Some((m, id))) if o.mode == m && o.id == id) {
             continue;
         }
-        if let Some((_, data)) = &change.target
+        if let Some((_, Content::Bytes(data))) = &change.target
             && let Some((_, id)) = new
             && !blobs.iter().any(|(b, _)| *b == id)
         {
@@ -203,6 +271,15 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             path: change.path.clone(),
             target: new,
         });
+    }
+    if !conflicts.is_empty() {
+        return Err(Error::new(
+            "CONFLICT",
+            format!(
+                "The parent changed on {}; these paths need a three-way merge",
+                conflicts.join(", ")
+            ),
+        ));
     }
     if touches.is_empty() {
         return Err(Error::new(

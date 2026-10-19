@@ -103,10 +103,35 @@ class R2Store implements ObjectStore {
     return `store/v1/${this.name}/objects/${id}`;
   }
   async create() {}
+  /** Like a Git server: store the pack, then update the ref only if `old` still holds. */
   async push(body: Uint8Array) {
     const received = compute({ op: 'receive_pack', body_b64: toBase64(body) });
+    const refuse = (refused: string) =>
+      fromBase64(compute({ op: 'push_report', refname: received.ref, refused }).report_b64);
     await putObjects(this.env, (id) => this.key(id), received.objects);
-    return fromBase64(received.report_b64);
+    if (!received.contains_new && !(await this.readCommit(received.new)))
+      return refuse('missing necessary objects');
+    // Hidden per-commit refs only keep objects reachable; R2 objects never expire.
+    if (!received.ref.startsWith('refs/yoneda/')) {
+      const key = `store/v1/${this.name}/${received.ref}`;
+      const current = await this.env.OBJECTS.get(key);
+      const value = current ? await current.text() : null;
+      if (value !== (received.old ?? null)) return refuse('stale info');
+      // Updates are conditional on the etag read above; creation is unconditional (R2 has
+      // no create-only precondition), which only matters for two first projections racing.
+      const written = await this.env.OBJECTS.put(
+        key,
+        received.new,
+        current ? { onlyIf: { etagMatches: current.etag } } : {},
+      );
+      if (!written) return refuse('stale info');
+    }
+    return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
+  }
+  /** A projected branch value (tests and drift investigation). */
+  async readRef(refname: string) {
+    const value = await this.env.OBJECTS.get(`store/v1/${this.name}/${refname}`);
+    return value ? value.text() : null;
   }
   async readCommit(id: string) {
     const object = await this.env.OBJECTS.get(this.key(id));
@@ -149,7 +174,18 @@ export function parseStore(env: Env, spec: string): ObjectStore {
   throw new Error('Repository object store is outside this deployment');
 }
 
+export type ObjectKind = 'tree' | 'blob' | 'commit';
+/** Reads served per tier, for the S12 hit-rate gate: edge (Cache API), R2, object store. */
+export type TierHits = { edge: number; r2: number; store: number };
+const EDGE_ORIGIN = 'https://objects.yoneda.internal';
+
+/**
+ * Tiered, content-addressed reads: Cache API (per colo) -> R2 (shared) -> object store.
+ * Each tier only asks the next one, and a miss fills the tiers above it. Keys carry the
+ * repository so cached bytes are only reachable through that repository's auth.
+ */
 export class RepoObjects {
+  readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
   constructor(
     private readonly env: Env,
     private readonly repo: string,
@@ -159,27 +195,81 @@ export class RepoObjects {
   private key(id: string) {
     return `platform/v1/${this.repo}/objects/${id}`;
   }
+  private edgeKey(id: string) {
+    return new Request(`${EDGE_ORIGIN}/${this.repo}/${id}`);
+  }
+  private async edgePut(id: string, kind: ObjectKind, body: Uint8Array | string) {
+    try {
+      await caches.default.put(
+        this.edgeKey(id),
+        new Response(body, {
+          headers: { 'cache-control': 'public, max-age=31536000, immutable', 'x-kind': kind },
+        }),
+      );
+    } catch {
+      // The edge tier is an optimization; R2 remains authoritative for cached objects.
+    }
+  }
 
-  cache(objects: CachedObject[]) {
-    return putObjects(this.env, (id) => this.key(id), objects);
+  async cache(objects: CachedObject[]) {
+    await putObjects(this.env, (id) => this.key(id), objects);
+    await Promise.all(
+      objects.map((o) =>
+        this.edgePut(o.id, o.kind, o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o)),
+      ),
+    );
+  }
+
+  /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). */
+  private async read(id: string, kind: ObjectKind): Promise<Uint8Array> {
+    const edge = await caches.default.match(this.edgeKey(id)).catch(() => undefined);
+    if (edge && edge.headers.get('x-kind') === kind) {
+      this.hits.edge++;
+      return new Uint8Array(await edge.arrayBuffer());
+    }
+    const cached = await this.env.OBJECTS.get(this.key(id));
+    if (cached && (cached.customMetadata?.kind ?? kind) === kind) {
+      this.hits.r2++;
+      const bytes = new Uint8Array(await cached.arrayBuffer());
+      await this.edgePut(id, kind, bytes);
+      return bytes;
+    }
+    this.hits.store++;
+    let object: CachedObject | null = null;
+    if (kind === 'tree') {
+      const entries = await this.store.readTree(id);
+      object = entries && { id, kind, entries };
+    } else if (kind === 'blob') {
+      const bytes = await this.store.readBlob(id);
+      object = bytes && { id, kind, data_b64: toBase64(bytes) };
+    } else {
+      const commit = await this.store.readCommit(id);
+      object = commit && { id, kind, ...commit };
+    }
+    if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
+    await this.cache([object]);
+    return object.kind === 'blob'
+      ? fromBase64(object.data_b64)
+      : new TextEncoder().encode(JSON.stringify(object));
   }
 
   async tree(id: string): Promise<TreeEntry[]> {
-    const cached = await this.env.OBJECTS.get(this.key(id));
-    if (cached) return (await cached.json<{ entries: TreeEntry[] }>()).entries;
-    const entries = await this.store.readTree(id);
-    if (!entries) throw missing(`Tree ${id}`);
-    await this.cache([{ id, kind: 'tree', entries }]);
-    return entries;
+    const bytes = await this.read(id, 'tree');
+    return (JSON.parse(new TextDecoder().decode(bytes)) as { entries: TreeEntry[] }).entries;
   }
 
-  async blob(id: string): Promise<Uint8Array> {
-    const cached = await this.env.OBJECTS.get(this.key(id));
-    if (cached) return new Uint8Array(await cached.arrayBuffer());
-    const bytes = await this.store.readBlob(id);
-    if (!bytes) throw missing(`Blob ${id}`);
-    await this.cache([{ id, kind: 'blob', data_b64: toBase64(bytes) }]);
-    return bytes;
+  blob(id: string): Promise<Uint8Array> {
+    return this.read(id, 'blob');
+  }
+
+  /** One object in the structured form clients receive from `objects`. */
+  async object(id: string, kind: ObjectKind): Promise<CachedObject> {
+    const bytes = await this.read(id, kind);
+    if (kind === 'blob') return { id, kind, data_b64: toBase64(bytes) };
+    const parsed = JSON.parse(new TextDecoder().decode(bytes));
+    return kind === 'tree'
+      ? { id, kind, entries: parsed.entries }
+      : { id, kind, tree: parsed.tree, parents: parsed.parents };
   }
 
   /** Readback always asks the object store itself, never the cache. */

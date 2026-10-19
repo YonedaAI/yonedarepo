@@ -182,6 +182,7 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
     }
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
     platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
+    platform["workflows"][0]["name"] = json!(format!("{name}-platform-import"));
     for (index, suffix) in ["agent", "capture", "evaluate", "publish", "platform"]
         .iter()
         .enumerate()

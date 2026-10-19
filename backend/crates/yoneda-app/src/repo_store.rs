@@ -7,9 +7,11 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod auth;
 mod checks;
+mod history_import;
 mod land;
 mod migration;
 mod prepare;
+mod projection;
 mod reads;
 mod record;
 mod rows;
@@ -32,7 +34,16 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_prepare_commit" | "repo_record_commit" => actor.require("write"),
         "repo_check" => actor.require("check"),
         "repo_check_request" => actor.require_any(&["write", "check"]),
-        "repo_check_claim" | "repo_check_complete" => actor.require("system"),
+        "repo_check_claim"
+        | "repo_check_complete"
+        | "repo_projection_pending"
+        | "repo_projection_result" => actor.require("system"),
+        // Imported history is only recorded by the platform importer, which read it from
+        // the object store; nobody else can declare commits into existence.
+        "repo_record_imported" if !actor.can("import") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform importer records imported history",
+        )),
         "repo_review" => actor.require("review"),
         "repo_land" => actor.require("land"),
         "repo_set_policy" => actor.require_owner(),
@@ -55,10 +66,15 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_run" => checks::run_op(db, c),
         "repo_check_complete" => checks::complete(db, c, principal),
         "repo_set_policy" => checks::set_policy(db, c, principal),
+        "repo_projection_pending" => projection::pending(db),
+        "repo_projection_result" => projection::result(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
+        "repo_record_imported" => history_import::record(db, c),
         "repo_import" => {
-            actor.require_owner()?;
+            if !actor.can("import") {
+                actor.require_owner()?;
+            }
             land::import(db, c, principal)
         }
         "repo_token_create" => auth::create_token(db, c, &actor),

@@ -46,6 +46,8 @@ impl Harness {
         match principal.strip_prefix("token:") {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
             None if principal == SYSTEM => c["_system"] = json!("checks"),
+            None if principal == "platform:projection" => c["_system"] = json!("projection"),
+            None if principal == "platform:import" => c["_system"] = json!("import"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -655,7 +657,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        3
+        4
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -665,5 +667,187 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
         db.query("SELECT id FROM check_runs", &[])
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn revert_references_known_blobs_and_rejects_moved_paths() {
+    let (h, root) = seeded();
+    let original = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn a() {}\n");
+    let edited = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn a() { 2 }\n");
+    let edit = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn a() { 2 }\n")]),
+            json!([]),
+        )
+        .unwrap();
+    // Revert: put the old blob back, expecting the edited one. No bytes are re-sent.
+    let revert =
+        json!([{"path": "src/lib.rs", "blob": original, "type": "blob", "expect": edited}]);
+    let before: Vec<String> = h.cached.borrow().keys().cloned().collect();
+    let reverted = h
+        .commit(AGENT, Some(&edit), 1, revert.clone(), json!([]))
+        .unwrap();
+    let paths = h.ok(OWNER, json!({"op":"repo_commit","commit":reverted}))["paths"].clone();
+    assert_eq!(paths[0]["new_blob"], json!(original));
+    let pushed: Vec<Value> = h
+        .cached
+        .borrow()
+        .iter()
+        .filter(|(id, _)| !before.contains(id))
+        .map(|(_, o)| o["kind"].clone())
+        .collect();
+    assert!(
+        !pushed.contains(&json!("blob")),
+        "a referenced blob is not pushed again"
+    );
+    // The same revert on a parent where the path moved on is a conflict, not an overwrite.
+    let moved = h
+        .commit(
+            AGENT,
+            Some(&edit),
+            1,
+            json!([file("src/lib.rs", "pub fn a() { 3 }\n")]),
+            json!([]),
+        )
+        .unwrap();
+    assert_eq!(
+        code(
+            h.commit(AGENT, Some(&moved), 1, revert, json!([]))
+                .map(|_| json!(null))
+        ),
+        "CONFLICT"
+    );
+    // Unknown blobs cannot be referenced into existence.
+    let forged = json!([{"path": "x", "blob": "1".repeat(40), "expect": null}]);
+    assert_eq!(
+        code(
+            h.commit(AGENT, Some(&edit), 1, forged, json!([]))
+                .map(|_| json!(null))
+        ),
+        "NOT_FOUND"
+    );
+}
+
+#[test]
+fn commits_files_larger_than_short_field_limits() {
+    let (h, root) = seeded();
+    let large = "x".repeat(200_000);
+    let id = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("big.txt", &large), file("empty.txt", "")]),
+            json!([]),
+        )
+        .unwrap();
+    let paths = h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["paths"].clone();
+    assert_eq!(paths.as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn ref_projection_tracks_targets_leases_and_drift() {
+    let (h, root) = seeded();
+    const PROJECTOR: &str = "platform:projection";
+    let pending = |h: &Harness| {
+        h.run(PROJECTOR, json!({"op":"repo_projection_pending"}))
+            .unwrap()["pending"]
+            .clone()
+    };
+    assert_eq!(pending(&h)[0]["target_commit"], root);
+    assert_eq!(pending(&h)[0]["projected_commit"], Value::Null);
+    assert_eq!(
+        code(h.run(AGENT, json!({"op":"repo_projection_pending"}))),
+        "FORBIDDEN"
+    );
+    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":1,"outcome":"ok","commit":root})).unwrap();
+    assert_eq!(pending(&h), json!([]));
+
+    let child = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("x.txt", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.approve_and_check(&child);
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":child}));
+    assert_eq!(
+        pending(&h)[0]["projected_commit"],
+        root,
+        "the last projected value is the lease"
+    );
+    // A late result for an older version never regresses the projection.
+    let late = h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":0,"outcome":"ok","commit":root})).unwrap();
+    assert_eq!(late["ignored"], true);
+    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":2,"outcome":"drift","detail":"stale info"})).unwrap();
+    assert_eq!(pending(&h), json!([]), "drift waits for an owner");
+    let status = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(status["projections"][0]["status"], "drift");
+    assert_eq!(status["projections"][0]["detail"], "stale info");
+}
+
+#[test]
+fn imported_history_lands_with_a_truncated_boundary() {
+    let h = Harness::new();
+    const IMPORTER: &str = "platform:import";
+    let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
+    let (boundary, first, second) = ("a".repeat(40), "b".repeat(40), "c".repeat(40));
+    let record = |id: &str, parents: Value, touches: Value| {
+        h.run(
+            IMPORTER,
+            json!({"op":"repo_record_imported","commit":id,"tree":"d".repeat(40),
+            "parents":parents,"message":"imported","touches":touches}),
+        )
+    };
+    // Owners and tokens cannot declare imported commits.
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_record_imported","commit":first,"tree":"d".repeat(40),"parents":[],"touches":[]}))), "FORBIDDEN");
+    record(
+        &first,
+        json!([boundary]),
+        json!([{"path":"a.txt","op":"add","old_blob":null,"new_blob":blob("a")}]),
+    )
+    .unwrap();
+    let second_row = record(
+        &second,
+        json!([first]),
+        json!([{"path":"a.txt","op":"modify","old_blob":blob("a"),"new_blob":blob("b")}]),
+    )
+    .unwrap();
+    assert_eq!(second_row["generation"], 2);
+    assert_eq!(
+        record(&second, json!([first]), json!([])).unwrap()["already"],
+        true
+    );
+    assert_eq!(
+        h.run(
+            IMPORTER,
+            json!({"op":"repo_import","ref":"main","commit":second})
+        )
+        .unwrap()["version"],
+        1
+    );
+    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
+    assert_eq!(
+        log["commits"].as_array().unwrap().len(),
+        2,
+        "the walk stops at the import boundary"
+    );
+    assert_eq!(
+        h.ok(
+            OWNER,
+            json!({"op":"repo_merge_base","left":second,"right":first})
+        )["merge_bases"][0]["commit"],
+        first
+    );
+    assert_eq!(
+        code(record(&"e".repeat(40), json!([]), json!([]))),
+        "ALREADY_EXISTS"
     );
 }
