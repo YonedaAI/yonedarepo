@@ -7,6 +7,7 @@ import test from 'node:test';
 const worker = 'cloudflare/worker';
 const neutral = new Set([
   './auth',
+  './accounts',
   './http',
   './types',
   './check-container',
@@ -15,33 +16,33 @@ const neutral = new Set([
 ]);
 
 test('platform adapter modules import only platform and neutral modules', async () => {
-  const files = (await readdir(worker)).filter((f) => /^(repo-.*|check-container)\.ts$/.test(f));
-  assert.ok(files.length >= 7, files.join());
+  const files = (await readdir(worker)).filter((f) => /^(repo-.*|check-container|platform-.*)\.ts$/.test(f));
+  assert.ok(files.length >= 10, files.join());
   for (const file of files) {
     const source = await readFile(`${worker}/${file}`, 'utf8');
     for (const [, target] of source.matchAll(/from '(\.[^']+)'/g)) {
-      const allowed = neutral.has(target) || /^\.\/repo-[a-z-]+$/.test(target);
+      const allowed = neutral.has(target) || /^\.\/(repo|platform)-[a-z-]+$/.test(target);
       assert.ok(allowed, `${file} imports ${target}`);
     }
   }
 });
 
-test('platform Rust modules use only platform and storage code', async () => {
-  const roots = ['backend/crates/yoneda-app/src/repo_store', 'backend/crates/yoneda-app/src'];
+test('the platform crate depends on core contracts and the store only', async () => {
+  const manifest = await readFile('backend/crates/yoneda-platform/Cargo.toml', 'utf8');
+  for (const agent of ['yoneda-app', 'yoneda-runtime', 'yoneda-cloudflare', 'yoneda-worker'])
+    assert.ok(!new RegExp(`^${agent}\\b`, 'm').test(manifest), `yoneda-platform depends on ${agent}`);
+  const store = await readFile('backend/crates/yoneda-store/Cargo.toml', 'utf8');
+  assert.ok(!/^yoneda-(app|runtime|platform)\b/m.test(store), 'yoneda-store stays a leaf');
+});
+
+test('platform Rust modules use only platform code and core contracts', async () => {
+  const root = 'backend/crates/yoneda-platform/src';
   const files = [
-    ...(await readdir(roots[0])).map((f) => `${roots[0]}/${f}`),
-    `${roots[1]}/repo_store.rs`,
-    `${roots[1]}/platform_compute.rs`,
-    `${roots[1]}/platform_objects.rs`,
-    `${roots[1]}/platform_derived.rs`,
-    `${roots[1]}/platform_code.rs`,
-    `${roots[1]}/platform_review.rs`,
-    `${roots[1]}/platform_symbols.rs`,
+    ...(await readdir(`${root}/repo_store`)).map((f) => `${root}/repo_store/${f}`),
+    ...(await readdir(root)).filter((f) => f.endsWith('.rs')).map((f) => `${root}/${f}`),
   ].filter((f) => f.endsWith('.rs'));
   for (const file of files) {
     const source = await readFile(file, 'utf8');
-    for (const [, path] of source.matchAll(/use crate::([a-z_]+)/g))
-      assert.ok(['storage', 'repo_store', 'platform_objects', 'platform_derived', 'platform_review', 'platform_symbols', 'native'].includes(path), `${file} uses crate::${path}`);
     for (const [, module] of source.matchAll(/yoneda_core::([a-z_]+)/g))
       assert.ok(
         ['git_object', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),

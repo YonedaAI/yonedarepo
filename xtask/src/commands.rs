@@ -51,6 +51,8 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             run("pnpm", &["check"])?;
             run("pnpm", &["test"])?;
             run("pnpm", &["test:apps"])?;
+            // The source platform must pass on its own, with the agent layer switched off.
+            run("pnpm", &["test:platform"])?;
             run("pnpm", &["test:runtime"])?;
             run("pnpm", &["test:frontend"])?;
             run("pnpm", &["--dir", FRONTEND, "build"])?;

@@ -4,10 +4,8 @@ import { comparisonReviewAttempt } from './comparison-scope';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
+import { platformJob } from './platform-entrypoint';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
-import { executeCheckRun } from './repo-checks';
-import { deriveAfterLanding } from './repo-derived';
-import { projectRefs } from './repo-projection';
 import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
@@ -67,20 +65,8 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
             message.ack();
             return;
           }
-          if (envelope.kind === 'platform_derive') {
-            await deriveAfterLanding(this.env, envelope);
-            message.ack();
-            return;
-          }
-          if (envelope.kind === 'platform_project') {
-            await projectRefs(this.env, envelope);
-            message.ack();
-            return;
-          }
-          if (envelope.kind === 'platform_check') {
-            const outcome = await executeCheckRun(this.env, envelope);
-            if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-            else message.ack();
+          if (envelope.kind.startsWith('platform_')) {
+            await platformJob(this.env, message);
             return;
           }
           if (envelope.kind === 'provision') {

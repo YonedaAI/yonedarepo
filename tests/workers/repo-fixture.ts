@@ -5,7 +5,7 @@ import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
-import { fetchRequest } from '../../cloudflare/worker/routes';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
 
 export const bindings = env as unknown as Env;
@@ -108,7 +108,7 @@ export async function api(
   const headers: Record<string, string> = { 'content-type': 'application/json' };
   if (auth.cookie) headers.cookie = auth.cookie;
   if (auth.token) headers.authorization = `Bearer ${auth.token}`;
-  const response = await fetchRequest(
+  const response = await platformFetch(
     new Request(`https://yoneda/api/v1${path}`, {
       method: init.method ?? (init.body ? 'POST' : 'GET'),
       headers,
