@@ -1,6 +1,7 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 import { dispatchRuns } from './repo-checks';
+import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { blame, dispatchDerive, pathHistory, search } from './repo-derived';
 import { explicitMerge, landWithMerge } from './repo-merge';
 import {
@@ -38,6 +39,10 @@ export const operations: Record<string, Operation> = {
   git_ls_tree: listTree,
   git_cat_file: readFile,
   git_grep: search,
+  symbol_list: listSymbols,
+  symbol_get: getSymbol,
+  symbol_edit: editSymbol,
+  git_codemod: codemod,
   git_blame: blame,
   git_get_objects: getObjects,
   git_diff: diff,

@@ -66,7 +66,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
             "import" => &["import"],
             "merge" => &["write", "lander"],
             "repair" => &["write"],
-            "derive" => &[],
+            "derive" => &["classify"],
             _ => &["system"],
         };
         return Ok(Actor {

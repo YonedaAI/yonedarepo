@@ -287,3 +287,19 @@ button.danger {
     padding: 16px;
   }
 }
+.source-class {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #eef2fb;
+  color: var(--muted);
+}
+.source-class-logic,
+.source-class-unknown {
+  background: #fff3e0;
+  color: #8a4b00;
+}
+.source-diff .source-empty {
+  margin: 0;
+  padding: 8px 12px;
+}

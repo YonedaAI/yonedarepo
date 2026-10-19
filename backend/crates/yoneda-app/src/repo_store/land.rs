@@ -44,12 +44,30 @@ pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<
         .iter()
         .filter(|n| status(n).is_some_and(|s| s == "fail"))
         .collect();
+    // Semantic approval: a classified change whose every file is in an auto-approvable
+    // class satisfies the approval count. Unclassified or unknown changes never do.
+    let classes = db.query(
+        "SELECT overall,files FROM commit_classes WHERE commit_id=?",
+        &[json!(id.hex())],
+    )?;
+    let class = classes.first().map(|r| r["overall"].clone());
+    let auto_approved = classes.first().is_some_and(|r| {
+        serde_json::from_str::<Vec<Value>>(r["files"].as_str().unwrap_or("[]")).is_ok_and(|files| {
+            !files.is_empty()
+                && files.iter().all(|f| {
+                    f["class"]
+                        .as_str()
+                        .is_some_and(|c| settings.policy.auto_approve.iter().any(|a| a == c))
+                })
+        })
+    });
     let ready = !rejected
-        && approvals >= settings.policy.approvals as usize
+        && (auto_approved || approvals >= settings.policy.approvals as usize)
         && missing.is_empty()
         && failing.is_empty();
     Ok(json!({
         "ready": ready, "approvals": approvals, "approvals_required": settings.policy.approvals,
+        "review_class": class, "auto_approved": auto_approved,
         "rejected": rejected, "missing_checks": missing, "failing_checks": failing,
     }))
 }
