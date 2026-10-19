@@ -21,8 +21,10 @@ type Detail = {
     repair_commit: string | null;
     error: string | null;
   }[];
+  review_classes: { overall: string; files: { path: string; class: string }[] } | null;
   gates: {
     ready: boolean;
+    auto_approved?: boolean;
     approvals: number;
     approvals_required: number;
     rejected: boolean;
@@ -103,6 +105,11 @@ export function CommitView({
       <section className="source-gates" aria-label="Landing gates">
         <h3>{gates.ready ? 'Ready to land' : 'Not ready to land'}</h3>
         <ul>
+          <li>
+            Review class:{' '}
+            {d.review_classes?.overall.replace('_', ' ') ?? 'not classified (needs a human)'}
+            {gates.auto_approved && ' · auto-approved by policy'}
+          </li>
           <li>
             Approvals {gates.approvals}/{gates.approvals_required}
             {gates.rejected && ' · rejected'}
@@ -273,7 +280,13 @@ export function CommitView({
       </section>
       <section aria-label="Changes">
         <h3>Changes</h3>
-        <CommitDiff repo={repo} commit={commit} />
+        <CommitDiff
+          repo={repo}
+          commit={commit}
+          classes={Object.fromEntries(
+            (d.review_classes?.files ?? []).map((f) => [f.path, f.class]),
+          )}
+        />
       </section>
     </article>
   );

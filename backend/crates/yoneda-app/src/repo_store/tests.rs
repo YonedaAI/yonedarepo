@@ -49,6 +49,7 @@ impl Harness {
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
+            None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
         }
         execute_repo_store(&self.db, c)
@@ -678,7 +679,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        8
+        9
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1197,4 +1198,68 @@ fn path_history_bisect_and_vacuum_follow_the_log() {
         serde_json::from_value(h.ok(OWNER, json!({"op":"repo_vacuum_plan"}))["expired"].clone())
             .unwrap();
     assert!(!again.contains(&orphan));
+}
+
+#[test]
+fn auto_approval_follows_recorded_review_classes() {
+    let (h, root) = seeded();
+    const CLASSIFIER: &str = "platform:derive";
+    h.ok(OWNER, json!({"op":"repo_set_policy","policy":{"required_checks":[],"approvals":1,"auto_approve":["comment_only","docs"]}}));
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_set_policy","policy":{"required_checks":[],"approvals":1,"auto_approve":["logic"]}}))),
+        "INVALID_INPUT"
+    );
+    let commit = |path: &str| {
+        h.commit(AGENT, Some(&root), 1, json!([file(path, "x\n")]), json!([]))
+            .unwrap()
+    };
+    let (comment, unknown, unclassified) =
+        (commit("src/a.rs"), commit("data.bin"), commit("src/b.rs"));
+    let record = |id: &str, overall: &str, files: Value| {
+        h.run(
+            CLASSIFIER,
+            json!({"op":"repo_record_classes","commit":id,"overall":overall,"files":files}),
+        )
+    };
+    assert_eq!(
+        code(h.run(
+            AGENT,
+            json!({"op":"repo_record_classes","commit":comment,"overall":"docs","files":[]})
+        )),
+        "FORBIDDEN"
+    );
+    record(
+        &comment,
+        "comment_only",
+        json!([{"path":"src/a.rs","class":"comment_only"}]),
+    )
+    .unwrap();
+    record(
+        &unknown,
+        "unknown",
+        json!([{"path":"data.bin","class":"unknown"}]),
+    )
+    .unwrap();
+    let gates = |id: &str| h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["gates"].clone();
+    assert_eq!(
+        (
+            gates(&comment)["ready"].as_bool(),
+            gates(&comment)["auto_approved"].as_bool()
+        ),
+        (Some(true), Some(true))
+    );
+    assert_eq!(gates(&unknown)["ready"], false, "unknown is never safe");
+    assert_eq!(
+        gates(&unclassified)["ready"],
+        false,
+        "unclassified needs a human"
+    );
+    // A recorded class is immutable.
+    record(
+        &comment,
+        "logic",
+        json!([{"path":"src/a.rs","class":"logic"}]),
+    )
+    .unwrap();
+    assert_eq!(gates(&comment)["review_class"], "comment_only");
 }

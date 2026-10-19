@@ -19,6 +19,10 @@ pub struct Policy {
     pub approvals: u32,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub runners: BTreeMap<String, Runner>,
+    /// Review classes that satisfy the approval requirement without a human (semantic
+    /// approval). Only `docs`, `formatting` and `comment_only` may be listed.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_approve: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -53,6 +57,15 @@ impl Policy {
             return Err(bad(
                 "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
             ));
+        }
+        if let Some(class) = policy
+            .auto_approve
+            .iter()
+            .find(|c| !crate::platform_review::ReviewClass::AUTO_APPROVABLE.contains(&c.as_str()))
+        {
+            return Err(bad(&format!(
+                "Review class {class} cannot be auto-approved (only docs, formatting, comment_only)"
+            )));
         }
         let json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
         let digest = yoneda_core::fingerprint(&json)?;

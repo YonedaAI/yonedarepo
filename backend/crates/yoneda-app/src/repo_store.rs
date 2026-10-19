@@ -8,6 +8,7 @@ use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
 mod checks;
+mod classes;
 mod history;
 mod history_import;
 mod land;
@@ -42,6 +43,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         // The check executor advances bisects as results arrive.
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
         "repo_pin" => actor.require("write"),
+        // Only the platform classifier records review classes.
+        "repo_record_classes" if !actor.can("classify") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform classifier records review classes",
+        )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
         ),
@@ -76,6 +82,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_merge_base" => reads::merge_base(db, c),
         "repo_merge_plan" => merging::plan(db, c),
         "repo_path_history" => history::path_history(db, c),
+        "repo_record_classes" => classes::record(db, c),
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         "repo_pin" => vacuum::pin(db, c, principal),
