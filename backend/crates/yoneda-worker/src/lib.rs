@@ -4,6 +4,7 @@ use yoneda_app::{SqlStore, execute};
 use yoneda_cloudflare::CloudStore;
 mod workspace;
 pub use workspace::WorkspaceAuthority;
+mod compute;
 mod source_repository;
 mod source_workspace;
 pub use source_repository::SourceRepository;

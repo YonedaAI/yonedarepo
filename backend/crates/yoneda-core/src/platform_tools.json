@@ -1,0 +1,361 @@
+[
+  {
+    "name": "git_status",
+    "description": "Repository head refs, current log version and landing policy.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_refs",
+    "description": "Branch refs, optionally as of a past log version.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_log",
+    "description": "First-parent history of a branch, newest first, with landing versions.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_txlog",
+    "description": "The hash-chained transaction log: every ref move with paths, read set and actor.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "after": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_show",
+    "description": "One commit: message, parents, changed paths, checks, reviews, landings and landing gates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_merge_base",
+    "description": "Best common ancestors of two commits.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "left": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "right": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_ls_tree",
+    "description": "List a directory at a commit, branch or past version.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_cat_file",
+    "description": "Read one file at a commit, branch or past version. UTF-8 text is returned as text, other bytes as base64.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_diff",
+    "description": "Files changed from base (default: head's first parent) to head, optionally with unified patches. merge_base compares against the common ancestor, like base...head.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "head": {
+          "type": "string",
+          "description": "A 40-hex commit id or a branch name (default main)"
+        },
+        "base": {
+          "type": "string",
+          "description": "A 40-hex commit id or a branch name (default main)"
+        },
+        "merge_base": {
+          "type": "boolean"
+        },
+        "patch": {
+          "type": "boolean"
+        },
+        "path": {
+          "type": "string",
+          "description": "Only paths under this prefix"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_commit",
+    "description": "Create a commit on the server from file changes against a branch head (or an explicit parent). Nothing is landed: the commit is recorded and must pass checks and review before git_land moves a branch. Declare read_set (paths or dir/ prefixes you relied on) so concurrent work is checked for independence.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "base_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Repository-relative path"
+              },
+              "content_b64": {
+                "type": "string",
+                "description": "New file content, base64"
+              },
+              "executable": {
+                "type": "boolean"
+              },
+              "delete": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 10000
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        },
+        "read_set": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "changes",
+        "message",
+        "author"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_check",
+    "description": "Record a check result for an exact commit (requires the check scope).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail"
+          ]
+        },
+        "evidence": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "commit",
+        "name",
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_review",
+    "description": "Approve or reject a commit (requires the review scope; authors cannot review their own commits; rejection needs a reason).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "approve",
+            "reject"
+          ]
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "commit",
+        "decision"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_land",
+    "description": "Move a branch to a commit that passed its required checks and approvals, with optimistic concurrency (requires the land scope).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "ref",
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  }
+]
