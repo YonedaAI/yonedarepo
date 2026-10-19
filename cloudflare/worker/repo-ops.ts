@@ -216,6 +216,65 @@ export async function replay(ctx: RepoContext, args: Json, direction: 'revert' |
   });
 }
 
+const OBJECT_BUDGET = 8 * 1024 * 1024;
+const OBJECT_KINDS = ['tree', 'blob', 'commit'];
+
+/**
+ * Batch, resumable object fetch (Scion GetObjects): immutable objects by id and kind, in
+ * request order, up to a response budget. `next` resumes after the last object served,
+ * so an interrupted client never refetches what it already has.
+ */
+export async function getObjects(ctx: RepoContext, args: Json) {
+  const wanted = args.objects;
+  if (
+    !Array.isArray(wanted) ||
+    wanted.length === 0 ||
+    wanted.length > 10_000 ||
+    !wanted.every((o) => SHA.test(o?.id) && OBJECT_KINDS.includes(o?.kind))
+  )
+    throw new ApiError('INVALID_INPUT', 'objects must be 1-10000 {id, kind} entries');
+  const start = Number(args.after ?? 0);
+  if (!Number.isSafeInteger(start) || start < 0 || start > wanted.length)
+    throw new ApiError('INVALID_INPUT', 'after is outside the request');
+  const objects = await ctx.objects();
+  const served: Json[] = [];
+  const missing: string[] = [];
+  let bytes = 0;
+  let index = start;
+  while (index < wanted.length) {
+    const batch = wanted.slice(index, index + 16);
+    const read = await Promise.all(
+      batch.map((o: Json) =>
+        objects.object(o.id, o.kind).catch((e) => {
+          if (e?.code === 'NOT_FOUND') return null;
+          throw e;
+        }),
+      ),
+    );
+    let stop = false;
+    for (const [offset, object] of read.entries()) {
+      if (!object) missing.push(batch[offset].id);
+      else {
+        const size = JSON.stringify(object).length;
+        if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
+          stop = true;
+          break;
+        }
+        bytes += size;
+        served.push(object);
+      }
+      index++;
+    }
+    if (stop) break;
+  }
+  return {
+    objects: served,
+    missing,
+    next: index < wanted.length ? index : null,
+    tiers: objects.hits,
+  };
+}
+
 const PATCH_FILES = 200;
 const PATCH_BYTES = 16 * 1024 * 1024;
 

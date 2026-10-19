@@ -729,3 +729,20 @@ fn revert_references_known_blobs_and_rejects_moved_paths() {
         "NOT_FOUND"
     );
 }
+
+#[test]
+fn commits_files_larger_than_short_field_limits() {
+    let (h, root) = seeded();
+    let large = "x".repeat(200_000);
+    let id = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("big.txt", &large), file("empty.txt", "")]),
+            json!([]),
+        )
+        .unwrap();
+    let paths = h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["paths"].clone();
+    assert_eq!(paths.as_array().unwrap().len(), 2);
+}
