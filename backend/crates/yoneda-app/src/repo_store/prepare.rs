@@ -68,7 +68,8 @@ fn supplied_trees(c: &Value) -> Result<Trees> {
 fn changes(c: &Value) -> Result<Vec<Change>> {
     let list = c["changes"]
         .as_array()
-        .filter(|l| !l.is_empty() && l.len() <= MAX_CHANGES);
+        .filter(|l| l.len() <= MAX_CHANGES)
+        .filter(|l| !l.is_empty() || c.get("merge_parent").is_some_and(|p| !p.is_null()));
     let mut total = 0usize;
     list.ok_or_else(|| bad("Provide 1 to 10000 changes"))?
         .iter()
@@ -281,14 +282,22 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             ),
         ));
     }
-    if touches.is_empty() {
+    let merging = c.get("merge_parent").is_some_and(|p| !p.is_null());
+    if touches.is_empty() && !merging {
         return Err(Error::new(
             "NO_CHANGES",
             "Every change matches the parent commit",
         ));
     }
     let rewrite = rewrite_tree(root, &path_changes, &trees)?;
-    let parents: Vec<ObjectId> = parent.iter().map(|p| p.id).collect();
+    // A merge commit's second parent is the merged work; its tree is `changes` applied to
+    // the first parent, so the commit's changeset stays relative to the first parent.
+    let merge_parent = match c.get("merge_parent").filter(|p| !p.is_null()) {
+        Some(_) if parent.is_none() => return Err(bad("A merge needs a first parent")),
+        Some(_) => Some(rows::recorded(db, &object_id(c, "merge_parent")?)?),
+        None => None,
+    };
+    let parents: Vec<ObjectId> = parent.iter().chain(&merge_parent).map(|p| p.id).collect();
     let commit = Commit::new(rewrite.root, &parents, &author, &committer, &message)?;
     let commit_bytes = commit.encode();
     let id = commit.id();
@@ -304,7 +313,12 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     objects.extend(blobs.iter().map(|(b, data)| (*b, ObjectKind::Blob, *data)));
     let pack = write_pack(&objects.iter().map(|(_, k, d)| (*k, *d)).collect::<Vec<_>>())?;
     let hidden = hidden_ref(&id);
-    let generation = parent.as_ref().map_or(1, |p| p.generation + 1);
+    let generation = parent
+        .iter()
+        .chain(&merge_parent)
+        .map(|p| p.generation + 1)
+        .max()
+        .unwrap_or(1);
     let prepared = json!({
         "tree": rewrite.root, "parents": parents, "generation": generation,
         "base_version": base_version, "touches": touches, "read_set": read_set, "message": message,

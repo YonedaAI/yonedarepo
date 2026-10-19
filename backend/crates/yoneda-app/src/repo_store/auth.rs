@@ -56,16 +56,16 @@ fn token_digest(secret: &str) -> String {
 }
 
 /// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
-/// callers. `_system` is the platform's own check executor (queue consumer).
+/// callers. `_system` names a platform role (check executor, ref projector, importer,
+/// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
-    if let Some(system @ ("checks" | "projection" | "import")) =
+    if let Some(system @ ("checks" | "projection" | "import" | "merge" | "repair")) =
         c.get("_system").and_then(Value::as_str)
     {
-        // The importer may record history and land it; it cannot run checks or project.
-        let role = if system == "import" {
-            "import"
-        } else {
-            "system"
+        let role = match system {
+            "import" => "import",
+            "merge" | "repair" => "write",
+            _ => "system",
         };
         return Ok(Actor {
             principal: format!("platform:{system}"),

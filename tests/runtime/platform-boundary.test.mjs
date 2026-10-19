@@ -40,7 +40,7 @@ test('platform Rust modules use only platform and storage code', async () => {
       assert.ok(['storage', 'platform_objects', 'native'].includes(path), `${file} uses crate::${path}`);
     for (const [, module] of source.matchAll(/yoneda_core::([a-z_]+)/g))
       assert.ok(
-        ['git_object', 'txlog', 'textdiff', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),
+        ['git_object', 'txlog', 'textdiff', 'merge', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path'].includes(module),
         `${file} uses yoneda_core::${module}`,
       );
   }

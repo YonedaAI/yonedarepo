@@ -1,13 +1,14 @@
 //! Landing moves a branch with a compare-and-swap and appends one hash-chained log entry.
-//! There is no merge lock: a moved branch is checked for independence (Eq. 1 read/write
-//! sets); independent work needs a server merge (N3), overlapping work a reconcile.
+//! There is no merge lock: if the branch moved, `merging` decides between a conflict
+//! (stale read), a platform merge commit, or a stale parent.
+use super::merging;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use crate::storage::{SqlStore, number};
 use serde_json::{Value, json};
 use yoneda_core::{
     Error, Result,
     git_object::ObjectId,
-    txlog::{OccOutcome, Proposal, TxEntry, TxKind, chain_digest},
+    txlog::{TxEntry, TxKind, chain_digest},
 };
 
 /// Why a commit can or cannot land under the current policy.
@@ -121,7 +122,12 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     let refname = branch_ref(c)?;
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
     let current = rows::ref_value(db, &refname)?;
-    if current == Some(commit.id) {
+    // Already landed (directly, or through a platform merge): a retried land is a no-op.
+    let landed = db.query(
+        "SELECT version FROM landings WHERE commit_id=? AND refname=?",
+        &[json!(commit.id.hex()), json!(refname)],
+    )?;
+    if current == Some(commit.id) || !landed.is_empty() {
         return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
     }
     let gate = gates(db, &commit.id, settings)?;
@@ -145,41 +151,41 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
             principal,
         );
     }
-    let proposal = Proposal {
-        refname: refname.clone(),
-        base_version: commit.base_version,
-        expected_old: commit.parents.first().copied(),
-        write_set: rows::touches(db, &commit.id)?
-            .into_iter()
-            .map(|t| t.path)
-            .collect(),
-        read_set: commit.read_set.iter().cloned().collect(),
-    };
-    let later = rows::entries(
-        db,
-        commit.base_version,
-        current_version(db)?,
-        Some(&refname),
-    )?;
-    Err(match proposal.check(&later) {
-        OccOutcome::Conflict { version, paths } => Error::new(
-            "CONFLICT",
-            format!(
-                "{refname} changed at version {version} on {}; reconcile and re-check",
-                paths.join(", ")
-            ),
-        ),
-        OccOutcome::Rebase { concurrent } => Error::new(
-            "MERGE_REQUIRED",
-            format!(
-                "{refname} moved independently at versions {concurrent:?}; a server merge commit is required"
-            ),
-        ),
-        OccOutcome::FastForward => Error::new(
-            "STALE_PARENT",
-            format!("{refname} is at {head}, which is not this commit's parent"),
-        ),
-    })
+    if let Some(merge) = c.get("merge").filter(|m| !m.is_null()) {
+        let merge = rows::recorded(db, &ObjectId::parse(merge.as_str().unwrap_or_default())?)?;
+        merging::verify(db, &refname, &head, &commit, &merge)?;
+        // The merge lands under the merged commit's read set and base; both are landed.
+        let landed_as = CommitRow {
+            read_set: commit.read_set.clone(),
+            base_version: commit.base_version,
+            ..merge
+        };
+        let mut result = append(
+            db,
+            c,
+            TxKind::Merge,
+            &refname,
+            Some(head),
+            &landed_as,
+            principal,
+        )?;
+        db.query(
+            "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
+            &[
+                json!(commit.id.hex()),
+                json!(refname),
+                result["version"].clone(),
+                c["now"].clone(),
+            ],
+        )?;
+        result["merged"] = json!(commit.id);
+        return Ok(result);
+    }
+    Err(merging::outcome_error(
+        &refname,
+        &head,
+        merging::occ(db, &commit, &refname)?,
+    ))
 }
 
 /// Seeds an empty repository with a root commit. Owner-only (checked by the dispatcher)

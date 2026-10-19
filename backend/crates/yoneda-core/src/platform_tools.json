@@ -402,6 +402,44 @@
     }
   },
   {
+    "name": "git_merge",
+    "description": "Create (not land) a merge commit of source (a branch or commit id) into branch `into` (default main), using a three-way merge on the server. Returns up_to_date or fast_forward when no merge commit is needed. Conflicts return CONFLICT with diff3-marked text per path to resolve in a follow-up commit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "into": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_revert",
     "description": "Create (not land) a commit on the server that undoes a commit's changes relative to its first parent, on top of a branch head. Fails with CONFLICT when the branch changed those paths since; reconcile with a three-way merge instead.",
     "inputSchema": {
@@ -495,7 +533,7 @@
   },
   {
     "name": "git_land",
-    "description": "Move a branch to a commit that passed its required checks and approvals, with optimistic concurrency (requires the land scope).",
+    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details.",
     "inputSchema": {
       "type": "object",
       "properties": {
