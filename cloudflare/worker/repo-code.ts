@@ -3,11 +3,12 @@
 // partitioned codemods that reduce to one commit. Parsing and classification run in Rust
 // compute; results that depend only on content are cached by blob id.
 
+import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { searchSegments, withObjects } from './repo-derived';
 import { keepAllowed, requirePath } from './repo-grants';
 import { type CachedObject, toBase64 } from './repo-objects';
-import { ApiError, commit, type Json, type RepoContext, target, walk } from './repo-ops';
+import { ApiError, type Json, type RepoContext, target, walk } from './repo-ops';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const MAX_CLASSIFIED_FILES = 200;

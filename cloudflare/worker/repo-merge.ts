@@ -2,11 +2,12 @@
 // plan, has Rust compute merge trees and blobs, records a platform merge commit and lands
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
+import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, caller, commit, type Json, RepoContext } from './repo-ops';
+import { ApiError, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
