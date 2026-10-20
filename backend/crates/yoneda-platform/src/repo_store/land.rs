@@ -72,7 +72,9 @@ pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<
     }))
 }
 
-pub(super) fn append<S: SqlStore>(
+/// Writes the log entry for `commit` landing on `refname` (hash-chained, path-indexed)
+/// and its landing record; the caller moves the ref, or leaves it to the projector.
+pub(super) fn write_entry<S: SqlStore>(
     db: &S,
     c: &Value,
     kind: TxKind,
@@ -80,7 +82,23 @@ pub(super) fn append<S: SqlStore>(
     old: Option<ObjectId>,
     commit: &CommitRow,
     principal: &str,
-) -> Result<Value> {
+) -> Result<TxEntry> {
+    let paths = rows::touches(db, &commit.id)?;
+    write_entry_with(db, c, kind, refname, old, commit, paths, principal)
+}
+
+/// `write_entry` with the commit's path touches given (a commit not adopted here).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn write_entry_with<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    kind: TxKind,
+    refname: &str,
+    old: Option<ObjectId>,
+    commit: &CommitRow,
+    paths: Vec<yoneda_core::txlog::PathTouch>,
+    principal: &str,
+) -> Result<TxEntry> {
     let version = current_version(db)? + 1;
     let previous = db
         .query(
@@ -97,7 +115,7 @@ pub(super) fn append<S: SqlStore>(
         refname: refname.into(),
         old,
         new: Some(commit.id),
-        paths: rows::touches(db, &commit.id)?,
+        paths,
         read_set: commit.read_set.clone(),
         actor: principal.into(),
         intent_digest: yoneda_core::digest(commit.message.as_bytes()),
@@ -117,12 +135,7 @@ pub(super) fn append<S: SqlStore>(
             json!(entry.chain),
         ],
     )?;
-    db.query(
-        "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
-        &[json!(refname), json!(commit.id.hex()), json!(version)],
-    )?;
-    super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
-    rows::maybe_checkpoint(db, version, &entry.chain)?;
+    super::changesets::index_paths(db, &entry)?;
     db.query(
         "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
         &[
@@ -132,6 +145,26 @@ pub(super) fn append<S: SqlStore>(
             json!(entry.committed_at_ms),
         ],
     )?;
+    Ok(entry)
+}
+
+pub(super) fn append<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    kind: TxKind,
+    refname: &str,
+    old: Option<ObjectId>,
+    commit: &CommitRow,
+    principal: &str,
+) -> Result<Value> {
+    let entry = write_entry(db, c, kind, refname, old, commit, principal)?;
+    let version = entry.version;
+    db.query(
+        "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
+        &[json!(refname), json!(commit.id.hex()), json!(version)],
+    )?;
+    super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
+    rows::maybe_checkpoint(db, version, &entry.chain)?;
     Ok(
         json!({ "landed": true, "ref": refname, "commit": commit.id, "version": version, "chain": entry.chain }),
     )
@@ -140,7 +173,8 @@ pub(super) fn append<S: SqlStore>(
 pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings) -> Result<Value> {
     let refname = branch_ref(c)?;
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
-    let current = rows::ref_value(db, &refname)?;
+    // Read past unprojected changesets: they only route this landing (below).
+    let current = rows::projected_ref(db, &refname)?;
     // Already landed (directly, or through a platform merge): a retried land is a no-op.
     let landed = db.query(
         "SELECT version FROM landings WHERE commit_id=? AND refname=?",
@@ -156,8 +190,14 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
             format!("Commit cannot land yet: {gate}"),
         ));
     }
+    // A fast-forward-only landing compares against the latest version: the adapter projects
+    // the pending changesets and retries. Any other landing queues behind them.
+    let unprojected = super::changesets::unprojected(db, &refname)?;
+    if unprojected && c["fast_forward_only"] == true {
+        return Err(rows::projection_pending(&refname));
+    }
     // While a group landing owns this branch, direct landings queue behind it.
-    if super::land_queue::busy(db, &refname, number(c, "now")?)? {
+    if unprojected || super::land_queue::busy(db, &refname, number(c, "now")?)? {
         return Err(Error::new(
             "MERGE_REQUIRED",
             format!("{refname} has queued landings; this commit joins the queue"),

@@ -83,6 +83,24 @@ fn token_digest(secret: &str) -> String {
 /// callers. `_session.human` marks a personal account session (not an admin bearer). `_system` names a platform role (check executor, ref projector, importer,
 /// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
+    actor_with(c, &settings.workspace, |digest| {
+        Ok(db
+            .query(
+                "SELECT name,scopes,paths FROM tokens WHERE digest=? AND revoked_at IS NULL",
+                &[json!(digest)],
+            )?
+            .into_iter()
+            .next())
+    })
+}
+
+/// The actor for credentials `c`, with live tokens looked up by digest through `token`
+/// (the authority's table, or a published snapshot of it).
+pub fn actor_with(
+    c: &Value,
+    workspace: &str,
+    token: impl Fn(&str) -> Result<Option<Value>>,
+) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"),
     ) = c.get("_system").and_then(Value::as_str)
@@ -106,7 +124,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
         });
     }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {
-        if string(session, "workspace")? != settings.workspace {
+        if string(session, "workspace")? != workspace {
             return Err(Error::new(
                 "FORBIDDEN",
                 "Repository belongs to another workspace",
@@ -122,13 +140,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
     }
     let secret =
         string(c, "_token").map_err(|_| Error::new("UNAUTHORIZED", "Missing credentials"))?;
-    let row = db
-        .query(
-            "SELECT name,scopes,paths FROM tokens WHERE digest=? AND revoked_at IS NULL",
-            &[json!(token_digest(&secret))],
-        )?
-        .into_iter()
-        .next()
+    let row = token(&token_digest(&secret))?
         .ok_or_else(|| Error::new("UNAUTHORIZED", "Unknown or revoked token"))?;
     Ok(Actor {
         principal: format!("token:{}", row["name"].as_str().unwrap_or_default()),
@@ -141,6 +153,14 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
             None => None,
         },
     })
+}
+
+/// Live tokens as a published snapshot holds them (digests only, never secrets).
+pub fn live_tokens<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+    db.query(
+        "SELECT digest,name,scopes,paths FROM tokens WHERE revoked_at IS NULL ORDER BY name",
+        &[],
+    )
 }
 
 pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {

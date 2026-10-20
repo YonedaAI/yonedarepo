@@ -7,6 +7,7 @@ import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
+import { beginFromHead } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
@@ -31,15 +32,22 @@ export async function commitInShard(
   body: Json,
   dispatch: 'required' | 'best_effort',
 ) {
-  const begun = await ctx.call({
-    op: 'repo_begin_commit',
-    ...(body.parent
-      ? { parent: body.parent, base_version: body.base_version ?? 0 }
-      : body.ref
-        ? { ref: body.ref }
-        : { parent: null, base_version: body.base_version ?? 0 }),
-    paths: body.changes.map((c: Json) => c?.path),
-  });
+  // On main, a commit may begin from the published head: no authority call (landing
+  // re-checks access and validates the base against the log).
+  const onMain = !body.parent && ['main', 'refs/heads/main'].includes(body.ref);
+  const paths = body.changes.map((c: Json) => c?.path);
+  const begun =
+    body.begin_mode === 'head' && onMain
+      ? await timed('begin.head', () => beginFromHead(ctx, paths))
+      : await ctx.call({
+          op: 'repo_begin_commit',
+          ...(body.parent
+            ? { parent: body.parent, base_version: body.base_version ?? 0 }
+            : body.ref
+              ? { ref: body.ref }
+              : { parent: null, base_version: body.base_version ?? 0 }),
+          paths: body.changes.map((c: Json) => c?.path),
+        });
   const store = given ?? ctx.adopt(begun.object_store);
   let parent = begun.parent;
   if (begun.parent_elsewhere) {
@@ -83,7 +91,10 @@ export async function commitInShard(
   const bytes = raw.reduce((n, o) => n + (o.data_b64.length * 3) / 4, 0);
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
   const all = built.objects as CachedObject[];
-  const edge = timed('cache', () => store.cache(all, 'edge'));
+  // Edge copies spare this colo's first reads a trip down the tiers; they are written after
+  // the answer when the request allows it (they share its six connection slots).
+  const cacheEdge = () => timed('cache', () => store.cache(all, 'edge'));
+  const edge = deferred(cacheEdge) ? Promise.resolve() : cacheEdge();
   const [classes, symbols] = await timed('derive', () =>
     Promise.all([
       // Review classes gate semantic auto-approval; a failure leaves the commit

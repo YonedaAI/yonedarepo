@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, is_ancestor, merge_bases},
-    txlog::{OccOutcome, Proposal},
+    txlog::{OccOutcome, Proposal, overlaps},
 };
 
 /// Principal of merge commits the platform computes; only these land under another
@@ -17,14 +17,25 @@ use yoneda_core::{
 pub const MERGE_PRINCIPAL: &str = "platform:merge";
 
 pub fn occ<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<OccOutcome> {
+    let writes = rows::touches(db, &commit.id)?
+        .into_iter()
+        .map(|t| t.path)
+        .collect();
+    occ_writing(db, commit, refname, writes)
+}
+
+/// `occ` for a commit whose written paths are given (one not adopted here).
+pub fn occ_writing<S: SqlStore>(
+    db: &S,
+    commit: &CommitRow,
+    refname: &str,
+    write_set: BTreeSet<String>,
+) -> Result<OccOutcome> {
     let proposal = Proposal {
         refname: refname.into(),
         base_version: commit.base_version,
         expected_old: commit.parents.first().copied(),
-        write_set: rows::touches(db, &commit.id)?
-            .into_iter()
-            .map(|t| t.path)
-            .collect(),
+        write_set,
         read_set: commit.read_set.iter().cloned().collect(),
     };
     let later = rows::entries(db, commit.base_version, current_version(db)?, Some(refname))?;
@@ -154,4 +165,29 @@ pub fn verify<S: SqlStore>(
         ));
     }
     Ok(())
+}
+
+/// Write skew inside one batch (Adya G2-item): members land in ticket order, so a member
+/// may neither read nor write a path an earlier accepted member of the same batch wrote
+/// (paths overlap as in log validation: a directory meets the paths under it). A member
+/// with no declared reads counts its writes as reads. Log validation alone misses this:
+/// each member is checked against the log since its own base, not against its batch.
+#[derive(Default)]
+pub struct BatchWrites(Vec<String>);
+
+impl BatchWrites {
+    /// Whether a member reading `reads` and writing `writes` may join after the members
+    /// accepted so far.
+    pub fn admits(&self, reads: &[String], writes: &BTreeSet<String>) -> bool {
+        let file = |p: &String| p.split('#').next().unwrap_or_default().to_owned();
+        !reads
+            .iter()
+            .map(file)
+            .chain(writes.iter().cloned())
+            .any(|key| self.0.iter().any(|w| overlaps(&key, w)))
+    }
+    /// Records an accepted (landed) member's writes.
+    pub fn accept(&mut self, writes: BTreeSet<String>) {
+        self.0.extend(writes);
+    }
 }
