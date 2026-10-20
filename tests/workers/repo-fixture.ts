@@ -113,34 +113,38 @@ export const fakePushQueues = {
 // Each keeps its due timers and its running step, so a test's teardown can stop them.
 type InProcess = { batcher: LandBatcher; timers: Set<ReturnType<typeof setTimeout>>; running: Promise<void> | null };
 const combiners = new Map<string, InProcess>();
+function inProcess(name: string): InProcess {
+  let combiner = combiners.get(name);
+  if (!combiner) {
+    const self: InProcess = { batcher: undefined as unknown as LandBatcher, timers: new Set(), running: null };
+    let again = false;
+    const run = async () => {
+      do {
+        again = false;
+        await self.batcher.step();
+      } while (again);
+    };
+    self.batcher = new LandBatcher(scoped, async (ms) => {
+      const timer = setTimeout(() => {
+        self.timers.delete(timer);
+        if (self.running) return void (again = true);
+        self.running = run().finally(() => {
+          self.running = null;
+        });
+      }, ms);
+      self.timers.add(timer);
+    });
+    combiners.set(name, (combiner = self));
+  }
+  return combiner;
+}
 export const fakeCombiners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
-    wait: (repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) => {
-      let combiner = combiners.get(name);
-      if (!combiner) {
-        const self: InProcess = { batcher: undefined as unknown as LandBatcher, timers: new Set(), running: null };
-        let again = false;
-        const run = async () => {
-          do {
-            again = false;
-            await self.batcher.step();
-          } while (again);
-        };
-        self.batcher = new LandBatcher(scoped, async (ms) => {
-          const timer = setTimeout(() => {
-            self.timers.delete(timer);
-            if (self.running) return void (again = true);
-            self.running = run().finally(() => {
-              self.running = null;
-            });
-          }, ms);
-          self.timers.add(timer);
-        });
-        combiners.set(name, (combiner = self));
-      }
-      return combiner.batcher.wait({ repo, ref }, ticket, timeoutMs, mode);
-    },
+    wait: (repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) =>
+      inProcess(name).batcher.wait({ repo, ref }, ticket, timeoutMs, mode),
+    submit: (repo: string, ref: string, item: Record<string, unknown>, timeoutMs: number) =>
+      inProcess(name).batcher.submit({ repo, ref }, item, timeoutMs),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */

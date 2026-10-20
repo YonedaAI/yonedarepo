@@ -7,6 +7,7 @@ import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
+import { beginFromHead } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
@@ -31,15 +32,22 @@ export async function commitInShard(
   body: Json,
   dispatch: 'required' | 'best_effort',
 ) {
-  const begun = await ctx.call({
-    op: 'repo_begin_commit',
-    ...(body.parent
-      ? { parent: body.parent, base_version: body.base_version ?? 0 }
-      : body.ref
-        ? { ref: body.ref }
-        : { parent: null, base_version: body.base_version ?? 0 }),
-    paths: body.changes.map((c: Json) => c?.path),
-  });
+  // On main, a commit may begin from the published head: no authority call (landing
+  // re-checks access and validates the base against the log).
+  const onMain = !body.parent && ['main', 'refs/heads/main'].includes(body.ref);
+  const paths = body.changes.map((c: Json) => c?.path);
+  const begun =
+    body.begin_mode === 'head' && onMain
+      ? await timed('begin.head', () => beginFromHead(ctx, paths))
+      : await ctx.call({
+          op: 'repo_begin_commit',
+          ...(body.parent
+            ? { parent: body.parent, base_version: body.base_version ?? 0 }
+            : body.ref
+              ? { ref: body.ref }
+              : { parent: null, base_version: body.base_version ?? 0 }),
+          paths: body.changes.map((c: Json) => c?.path),
+        });
   const store = given ?? ctx.adopt(begun.object_store);
   let parent = begun.parent;
   if (begun.parent_elsewhere) {

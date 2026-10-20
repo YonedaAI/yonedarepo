@@ -4,6 +4,7 @@
 // changeset version afterwards, deterministically (same versions, same ids), so it can
 // run in the background, on demand for a read, or twice at once without harm.
 import { deferred } from './background';
+import { refreshHead } from './repo-head';
 import { stagedOf } from './repo-merge';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
@@ -11,17 +12,29 @@ import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
-export type LandMode = 'poll' | 'combiner' | 'changeset';
-const MODES: LandMode[] = ['poll', 'combiner', 'changeset'];
+export type LandMode = 'poll' | 'combiner' | 'changeset' | 'batch';
 
-/** The deployment's landing mode; a request may pick another only where the deployment
- * allows it (for benchmarks on one deploy). */
-export function landMode(env: Env, requested?: string | null): LandMode {
-  const pick = (m?: string | null) => MODES.find((mode) => mode === m);
-  return (
-    (env.LAND_MODE_OVERRIDE === 'true' && pick(requested)) || pick(env.LAND_MODE) || 'combiner'
-  );
+/** A write-path switch: the deployment's default, or what a request picked where the
+ * deployment allows a per-request choice (benchmarks compare modes on one deploy). */
+export function writeSwitch<T extends string>(
+  env: Env,
+  values: readonly T[],
+  fallback: T,
+  configured: string | undefined,
+  requested?: string | null,
+): T {
+  const pick = (m?: string | null) => values.find((value) => value === m);
+  return (env.LAND_MODE_OVERRIDE === 'true' && pick(requested)) || pick(configured) || fallback;
 }
+
+export const landMode = (env: Env, requested?: string | null): LandMode =>
+  writeSwitch(
+    env,
+    ['poll', 'combiner', 'changeset', 'batch'] as const,
+    'combiner',
+    env.LAND_MODE,
+    requested,
+  );
 
 const PROJECTION_ROUNDS = 64;
 
@@ -43,7 +56,13 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     // Landed commits' objects are usually still staged (in their commit shard): fetch each
     // commit's in one call rather than walking the tiers object by object.
     const staged = await timed('project.staged', () =>
-      Promise.all((plan.items as Json[]).map((item) => stagedOf(projector, item.commit.id))),
+      Promise.all(
+        [
+          ...new Set(
+            (plan.items as Json[]).flatMap((step) => step.changes.map((c: Json) => c.source.id)),
+          ),
+        ].map((commit) => stagedOf(projector, commit)),
+      ),
     );
     const known = new Map([...previous, ...staged.flat()].map((o) => [o.id, o]));
     const built = await timed('project.compute', () =>
@@ -76,11 +95,15 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree');
   }
   await Promise.all(caching);
-  // The branch moved in Git: project it to Artifacts. A lost message only delays that.
+  // The branch moved in Git: project it to Artifacts (a lost message only delays that),
+  // and republish its head.
   if (projected)
-    await dispatchProjection(env, repo).catch((e) =>
-      console.warn(`dispatch after projection failed: ${e?.message ?? e}`),
-    );
+    await Promise.all([
+      dispatchProjection(env, repo).catch((e) =>
+        console.warn(`dispatch after projection failed: ${e?.message ?? e}`),
+      ),
+      refreshHead(env, repo),
+    ]);
   return projected;
 }
 
