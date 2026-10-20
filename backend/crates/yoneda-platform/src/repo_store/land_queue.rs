@@ -22,7 +22,7 @@ use yoneda_core::{
 /// stampede of identical merges; a batch lands only if the head it was built on is still
 /// the head (compare-and-swap), so a slow or vanished builder never blocks or corrupts.
 const LEASE_MS: i64 = 10_000;
-const BATCH: u64 = 64;
+const BATCH: u64 = 128;
 
 pub fn enqueue<S: SqlStore>(
     db: &S,
@@ -151,6 +151,8 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         &[json!(refname), json!(epoch), json!(now + LEASE_MS)],
     )?;
     let mut items = Vec::new();
+    // Tickets settled here (stale reads) are reported, so their waiters hear at once.
+    let mut failed = Vec::new();
     for row in pending {
         let commit = rows::recorded(
             db,
@@ -165,13 +167,10 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         match merging::occ(db, &commit, &refname)? {
             outcome @ (OccOutcome::Conflict { .. } | OccOutcome::FastForward) => {
                 let error = merging::outcome_error(&refname, &head, outcome);
-                finish(
-                    db,
-                    &row["ticket"],
-                    "failed",
-                    json!({ "code": error.code, "message": error.message }),
-                    now,
-                )?;
+                let result = json!({ "code": error.code, "message": error.message });
+                finish(db, &row["ticket"], "failed", result.clone(), now)?;
+                failed
+                    .push(json!({ "ticket": row["ticket"], "status": "failed", "result": result }));
             }
             OccOutcome::Rebase { .. } | OccOutcome::Merge { .. } => {
                 let base = merge_bases(&RecordedGraph(db), &head, &commit.id)?
@@ -188,7 +187,7 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     Ok(json!({
         "epoch": epoch, "ref": refname, "head": head, "head_tree": head_row.tree,
-        "version": current_version(db)?, "items": items,
+        "version": current_version(db)?, "items": items, "failed": failed,
     }))
 }
 

@@ -37,11 +37,13 @@ export async function runCheckOnce(
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });
+    // The check server enforces the job's timeout; a stalled connection must not outlive it.
     const result = await instance.containerFetch(
       new Request('http://check/check', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
         body: JSON.stringify(job),
+        signal: AbortSignal.timeout((job.timeout_seconds + 30) * 1000),
       }),
     );
     const body = await result.json<Record<string, any>>();

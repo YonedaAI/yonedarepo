@@ -52,7 +52,8 @@ function conflictError(conflicts: Json[]) {
   );
 }
 
-const LAND_DEADLINE_MS = 60_000;
+const LAND_DEADLINE_MS = 120_000;
+const WAIT_ROUND_MS = 20_000;
 const WAIT_FIRST_MS = 20;
 const WAIT_MAX_MS = 320;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -63,7 +64,24 @@ const pathsOf = (changes: Json[]) => changes.map((c) => String(c.path));
  * clean ones whose merged paths do not overlap an earlier item join one octopus merge
  * commit, overlapping ones wait for the next batch, conflicts fail with details.
  */
-async function landBatch(merger: RepoContext, claim: Json) {
+/** A ticket's outcome, as the authority's land status reports it. */
+export type Settled = { ticket: number; status: 'landed' | 'failed'; ref?: string; result: Json };
+
+/**
+ * Builds and lands one claimed batch and returns every ticket it settled (landed, failed
+ * here or failed by the claim's stale-read check); deferred tickets stay queued.
+ */
+export async function landBatch(merger: RepoContext, claim: Json): Promise<Settled[]> {
+  const early: Settled[] = claim.failed ?? [];
+  const landedAs = (tickets: number[], out: Json): Settled[] =>
+    tickets.map((ticket) => ({
+      ticket,
+      status: 'landed',
+      ref: claim.ref,
+      result: { version: out.version, commit: out.commit },
+    }));
+  const failedAs = (list: Json[]): Settled[] =>
+    list.map((f) => ({ ticket: f.ticket, status: 'failed', result: f.error }));
   const objects = await merger.objects();
   const accepted: Json[] = [];
   const failed: Json[] = [];
@@ -79,7 +97,7 @@ async function landBatch(merger: RepoContext, claim: Json) {
       landed: [fastForward.ticket],
     });
     await moved(merger, claim.ref);
-    return landed;
+    return [...early, ...landedAs([fastForward.ticket], landed)];
   }
   // Every item merges against the head on its own (stateless compute, side by side); the
   // batch then takes them in queue order while their merged paths stay disjoint.
@@ -110,8 +128,8 @@ async function landBatch(merger: RepoContext, claim: Json) {
       accepted.push(item);
     }
   }
-  if (accepted.length === 0)
-    return merger.call({
+  if (accepted.length === 0) {
+    await merger.call({
       op: 'repo_land_batch',
       ref: claim.ref,
       epoch: claim.epoch,
@@ -119,6 +137,8 @@ async function landBatch(merger: RepoContext, claim: Json) {
       landed: [],
       failed,
     });
+    return [...early, ...failedAs(failed)];
+  }
   const branch = String(claim.ref).replace(/^refs\/heads\//, '');
   const made = await commit(merger, objects, {
     parent: claim.head,
@@ -141,14 +161,25 @@ async function landBatch(merger: RepoContext, claim: Json) {
     failed,
   });
   await moved(merger, claim.ref);
-  return landed;
+  return [
+    ...early,
+    ...failedAs(failed),
+    ...landedAs(
+      accepted.map((i) => i.ticket),
+      landed,
+    ),
+  ];
 }
 
 /** After the branch moved: one projection and one derive job per move, sent by whoever
  * moved it (waiters whose work rode along send none). */
 async function moved(ctx: RepoContext, ref: string) {
-  await dispatchProjection(ctx.env, ctx.repo);
-  await dispatchDerive(ctx.env, ctx.repo, ref);
+  // The landing already happened: a lost message delays projection and derived data (the
+  // next move or a projector retry catches up), it does not undo or fail the landing.
+  await Promise.all([
+    dispatchProjection(ctx.env, ctx.repo),
+    dispatchDerive(ctx.env, ctx.repo, ref),
+  ]).catch((e) => console.warn(`dispatch after landing failed: ${e?.message ?? e}`));
 }
 
 /** Conflict details, refused outright if any conflict lies outside the caller's grant. */
@@ -189,17 +220,7 @@ export async function landWithMerge(
     caller(ctx.env, ctx.repo, { _system: 'merge' }),
   );
   const deadline = Date.now() + LAND_DEADLINE_MS;
-  // Waiters back off: a hundred waiters polling every few milliseconds would starve the
-  // commits and the merger they wait for.
-  let pause = WAIT_FIRST_MS;
-  const wait = async () => {
-    await sleep(pause / 2 + Math.random() * pause);
-    pause = Math.min(pause * 2, WAIT_MAX_MS);
-  };
-  while (Date.now() < deadline) {
-    // The claim answers for this ticket once it is settled: one authority call per poll.
-    const claim = await merger.call({ op: 'repo_land_claim', ref, ticket });
-    const status = claim.settled ?? { status: 'pending' };
+  const outcome = (status: Json) => {
     if (status.status === 'landed') {
       const via = status.result?.commit;
       return {
@@ -214,7 +235,48 @@ export async function landWithMerge(
       const { code, message, details } = status.result ?? {};
       throw new ApiError(code ?? 'CONFLICT', message ?? 'Landing failed', details);
     }
-    if (status.status !== 'pending') throw new ApiError('INVALID_INPUT', 'Unknown landing state');
+    throw new ApiError('INVALID_INPUT', 'Unknown landing state');
+  };
+  // The branch's combiner builds the batches and answers when this ticket settles; waiting
+  // there costs the authority nothing. Without one (or if it is evicted), poll.
+  const combiners = ctx.env.LAND_COMBINERS;
+  if (combiners) {
+    const combiner = combiners.get(combiners.idFromName(`${ctx.repo}:${ref}`)) as unknown as {
+      wait(repo: string, ref: string, ticket: number, timeoutMs: number): Promise<Json | null>;
+    };
+    try {
+      while (Date.now() < deadline) {
+        const settled = await timed('land.wait', () =>
+          combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+        );
+        if (settled) return outcome(settled);
+      }
+    } catch (e) {
+      if (e instanceof ApiError) throw e;
+    }
+  }
+  return pollLanding(merger, ref, ticket, deadline, outcome);
+}
+
+/** The fallback: poll the queue with back-off, building a batch when the lease is free. */
+async function pollLanding(
+  merger: RepoContext,
+  ref: string,
+  ticket: number,
+  deadline: number,
+  outcome: (status: Json) => Json,
+) {
+  // Waiters back off: a hundred waiters polling every few milliseconds would starve the
+  // commits and the merger they wait for.
+  let pause = WAIT_FIRST_MS;
+  const wait = async () => {
+    await sleep(pause / 2 + Math.random() * pause);
+    pause = Math.min(pause * 2, WAIT_MAX_MS);
+  };
+  while (Date.now() < deadline) {
+    // The claim answers for this ticket once it is settled: one authority call per poll.
+    const claim = await merger.call({ op: 'repo_land_claim', ref, ticket });
+    if (claim.settled) return outcome(claim.settled);
     if (claim.wait) {
       await wait();
       continue;

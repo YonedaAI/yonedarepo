@@ -75,19 +75,26 @@ export async function projectObjects(env: Env, repo: string, job = 'objects') {
 // Objects per receive-pack: reading each from R2 is a subrequest.
 const PACK_OBJECTS = 400;
 
-/** Pushes `commits` (oldest first) each under its own hidden ref, for a projection too
- * large for one pack, and records them as held by Artifacts once read back. */
+/**
+ * Pushes `commits` (oldest first), each under its own hidden ref, in ONE receive-pack, for
+ * a projection too large for one pack, and records them as held by Artifacts once each is
+ * read back. (Separate pushes could land a child before its parent and be refused.)
+ */
 async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects, commits: Json[]) {
   const raw = await objects.raw(commits.flatMap((c) => c.objects));
   const byId = new Map(raw.map((o) => [o.id, o]));
-  await Promise.all(
-    commits.map(async (c) => {
-      const own = (c.objects as Json[]).map((o) => byId.get(o.id));
-      if (own.some((o) => !o)) throw new Error(`Objects of ${c.commit} are not readable`);
-      const built = compute({ op: 'staged_push', commit: c.commit, objects: own });
-      await objects.pushCommit(fromBase64(built.push_b64), c.commit);
-    }),
-  );
+  const bodies = commits.map((c) => {
+    const own = (c.objects as Json[]).map((o) => byId.get(o.id));
+    if (own.some((o) => !o)) throw new Error(`Objects of ${c.commit} are not readable`);
+    return compute({ op: 'staged_push', commit: c.commit, objects: own }).push_b64;
+  });
+  const combined =
+    bodies.length === 1 ? bodies[0] : compute({ op: 'push_combine', bodies_b64: bodies }).push_b64;
+  await objects.push(fromBase64(combined));
+  const readback = await Promise.all(commits.map((c) => objects.store.readCommit(c.commit)));
+  const missing = commits.filter((_, i) => !readback[i]);
+  if (missing.length > 0)
+    throw new Error(`${missing.length} commits are not readable from the object store`);
   await call({ op: 'repo_objects_stored', commits: commits.map((c) => c.commit) });
 }
 
