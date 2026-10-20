@@ -7,6 +7,7 @@
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 const ISOLATE_MS = 1000;
@@ -121,15 +122,16 @@ export async function refreshHead(env: Env, repo: string) {
 const meets = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
 /**
- * Authorizes a commit on the published head (stateless compute, the authority's rules).
+ * Authorizes a commit on the published head (stateless compute, the authority's rules), or
+ * returns null when the authority must decide (see `decide`).
  * A commit writing a path that a landed but unprojected changeset wrote would build on
  * that path's old content (a conflict at landing for a writer who just landed it), so it
  * waits for the projection first; work on other paths begins at once on the projected
  * head and is validated at landing like any concurrent work.
  */
-export async function beginFromHead(ctx: RepoContext, paths: string[]) {
+export async function beginFromHead(ctx: RepoContext, paths: string[]): Promise<Json | null> {
   const credentials = ctx.call.sign({});
-  let head = await publishedHead(ctx.env, ctx.repo, credentials);
+  let head = await timed('head.fetch', () => publishedHead(ctx.env, ctx.repo, credentials));
   for (let round = 0; round < 3; round++) {
     const pending = (head.overlay as Json[]).some((c) =>
       c.paths.some((p: Json) => paths.some((path) => meets(path, p.path))),
@@ -139,22 +141,32 @@ export async function beginFromHead(ctx: RepoContext, paths: string[]) {
     forgetHead(ctx.repo);
     head = await publishedHead(ctx.env, ctx.repo, credentials, head.version);
   }
-  try {
-    return compute({ op: 'head_begin', head, credentials, paths });
-  } catch (e: any) {
-    throw new ApiError(e.code ?? 'FORBIDDEN', e.message);
-  }
+  return decide(head, { op: 'head_begin', credentials, paths });
 }
 
-/** The caller's read access and main's head for a read served from the published head. */
+/** The caller's read access and main's head for a read served from the published head,
+ * or null when the authority must decide (see `decide`). */
 export async function readFromHead(ctx: RepoContext, minVersion = 0) {
   const credentials = ctx.call.sign({});
-  const head = await publishedHead(ctx.env, ctx.repo, credentials, minVersion);
+  const head = await timed('head.fetch', () =>
+    publishedHead(ctx.env, ctx.repo, credentials, minVersion),
+  );
+  const access = decide(head, { op: 'head_access', credentials });
+  return access && { head, access };
+}
+
+/**
+ * Runs an access decision on the head's snapshot (without its overlay, which access never
+ * reads). A refusal may come from a snapshot older than the caller's token, so it returns
+ * null and the caller asks the authority, which refuses for real if it must.
+ */
+function decide(head: Json, command: Json): Json | null {
+  const { overlay: _, ...access } = head;
   try {
-    const access = compute({ op: 'head_access', head, credentials });
-    return { head, access };
+    return compute({ ...command, head: access });
   } catch (e: any) {
-    throw new ApiError(e.code ?? 'FORBIDDEN', e.message);
+    if (['UNAUTHORIZED', 'FORBIDDEN'].includes(e.code)) return null;
+    throw new ApiError(e.code ?? 'INVALID_INPUT', e.message);
   }
 }
 

@@ -59,12 +59,12 @@ export async function readFile(ctx: RepoContext, args: Json) {
     !args.commit &&
     (args.at === undefined || args.at === null || args.at === '') &&
     [undefined, null, '', 'main', 'refs/heads/main'].includes(args.ref);
-  if (main) {
-    const { head, access } = await readFromHead(ctx, Number(args.min_version ?? 0));
-    ctx.publish(head, access);
-  }
+  // Main's published head, unless its access snapshot refused the caller (the authority
+  // then decides, on the read below).
+  const fromHead = main ? await readFromHead(ctx, Number(args.min_version ?? 0)) : null;
+  if (fromHead) ctx.publish(fromHead.head, fromHead.access);
   await requirePath(ctx, path);
-  if (main) {
+  if (fromHead) {
     const objects = await ctx.objects();
     const entry = await publishedEntry(objects, ctx.published as Json, path);
     if (!['blob', 'exec'].includes(entry.type))
