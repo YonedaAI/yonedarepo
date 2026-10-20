@@ -11,11 +11,9 @@ use yoneda_core::{
     txlog::{TxEntry, TxKind, chain_digest},
 };
 
-pub const PROTECTED: &str = "refs/heads/main";
-
 pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let refname = branch_ref(c)?;
-    if refname == PROTECTED {
+    if rows::protected(&refname) {
         return Err(Error::new(
             "FORBIDDEN",
             "main moves only by landing an approved, checked commit",
