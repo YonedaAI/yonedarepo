@@ -4,11 +4,15 @@
 // explicit, separate command: it creates two repositories and many commits on the target.
 // Credentials come from YONEDA_USERNAME / YONEDA_PASSWORD. Evidence goes to
 // .local/platform-live/bench.json.
+// S19 baseline: time to first edit and bytes moved, `git clone` (the old agent flow) versus
+// one API read (the platform flow), on the large repository.
 // Usage: node tools/platform-live-bench.mjs --url https://<deployment> [--writers 100] [--large 10000]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { latency } from './load-metrics.mjs';
@@ -106,6 +110,41 @@ for (let k = 3; k < 23; k++) {
   }
 }
 
+// S19: the old flow cloned the repository before the first edit; the platform reads one file.
+async function cloneBaseline(id) {
+  const access = must(await call(`/repos/${id}/clone`, {}), 'clone access');
+  const head = must(await call(`/repos/${id}/refs`), 'refs').refs['refs/heads/main'];
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}` };
+  const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
+  for (let waited = 0; git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] !== head; waited += 2000) {
+    assert.ok(waited < 180_000, 'large repository main was not projected');
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  const runs = {};
+  for (const [name, extra] of [['full', []], ['depth1', ['--depth=1']]]) {
+    const dir = mkdtempSync(join(tmpdir(), 'yoneda-bench-'));
+    try {
+      const started = performance.now();
+      git(['clone', '--quiet', ...extra, access.remote, dir]);
+      const ms = performance.now() - started;
+      const pack = Number(git(['count-objects', '-v'], dir).match(/size-pack: (\d+)/)?.[1] ?? 0) * 1024;
+      runs[name] = { ms: Math.round(ms), pack_bytes: pack };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  const reads = [];
+  let bytes = 0;
+  for (let k = 0; k < 10; k++) {
+    const read = await call(`/repos/${id}/blob?path=seed/7/${700 + k}.txt`);
+    must(read, 'api read');
+    reads.push(read.ms);
+    bytes = JSON.stringify(read.body).length;
+  }
+  return { git_clone: runs, api_first_read: { ...latency(reads), response_bytes: bytes } };
+}
+const baseline = await cloneBaseline(large.id);
+
 const result = {
   writers: WRITERS,
   elapsed_ms: Math.round(elapsed),
@@ -120,6 +159,7 @@ const result = {
   hit_rates: hitRates,
   s3_commit_small: latency(smallSamples),
   s3_commit_large: latency(largeSamples),
+  s19_time_to_first_edit: baseline,
 };
 const s3 = result.s3_commit_large.p50_ms <= result.s3_commit_small.p50_ms * 1.2 + 3;
 const evidence = {

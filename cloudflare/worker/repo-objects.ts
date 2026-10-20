@@ -54,6 +54,8 @@ export interface ObjectStore {
   readCommit(id: string): Promise<CommitHeader | null>;
   readTree(id: string): Promise<TreeEntry[] | null>;
   readBlob(id: string): Promise<Uint8Array | null>;
+  /** A read-only `git clone` remote and short-lived token, where the store supports it. */
+  cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
 }
 
 /** Per-isolate: a repository's remote never changes. */
@@ -62,6 +64,7 @@ const remotes = new Map<string, string>();
 const tokens = new Map<string, { plaintext: string; expires: number }>();
 const TOKEN_SECONDS = 60;
 const TOKEN_REUSE_MS = 40_000;
+const CLONE_TOKEN_SECONDS = 600;
 
 class ArtifactsStore implements ObjectStore {
   constructor(
@@ -103,6 +106,12 @@ class ArtifactsStore implements ObjectStore {
     const token = await repo.createToken('write', TOKEN_SECONDS);
     tokens.set(this.spec, { plaintext: token.plaintext, expires: Date.now() + TOKEN_REUSE_MS });
     return { remote: url, token: token.plaintext };
+  }
+  async cloneAccess() {
+    using repo = await this.env.ARTIFACTS.get(this.name);
+    const info = await repo.info();
+    const token = await repo.createToken('read', CLONE_TOKEN_SECONDS);
+    return { remote: info.remote, token: token.plaintext, expires_in_seconds: CLONE_TOKEN_SECONDS };
   }
   async readCommit(id: string) {
     using repo = await this.env.ARTIFACTS.get(this.name);
