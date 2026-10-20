@@ -9,27 +9,18 @@ import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 const ISOLATE_MS = 1000;
-/** Per repository: the whole head (one holder call per isolate, not per caller). */
-const isolate = new Map<string, { head: Json; at: number }>();
+/** Per repository: main's head (small, changes per landing) and the access snapshot
+ * (live token digests; changes only with access, versioned), each fetched once per
+ * isolate at a time. */
+const heads = new Map<string, { head: Json; at: number }>();
+const accesses = new Map<string, Json>();
+const loading = new Map<string, Promise<Json>>();
 
 type Holder = {
   head(repo: string, minVersion: number): Promise<Json>;
+  access(repo: string): Promise<Json>;
   refresh(repo: string): Promise<void>;
 };
-
-/** The digest the authority files a repository token under (as `auth.rs` computes it). */
-async function tokenDigest(credentials: Json): Promise<string | null> {
-  if (typeof credentials._token !== 'string') return null;
-  const bytes = new TextEncoder().encode(`yonedarepo:repo-token:v1:${credentials._token}`);
-  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-  return [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/** The head with only `digest`'s live token, as access compute needs it. */
-function forCaller(head: Json, digest: string | null): Json {
-  const token = digest && (head.tokens as Json[]).find((t) => t.digest === digest);
-  return { ...head, tokens: token ? [token] : [] };
-}
 
 function holder(env: Env, repo: string): Holder | null {
   const namespace = env.LAND_COMBINERS;
@@ -42,29 +33,79 @@ function holder(env: Env, repo: string): Holder | null {
 export const fetchHead = (env: Env, repo: string) =>
   caller(env, repo, { _system: 'projection' })({ op: 'repo_head', ref: 'main' });
 
-/** Main's published head for `credentials`, at least at `minVersion` (a reader's own
- * landing). */
+/** `head` without its token snapshot, and the snapshot alone. */
+const withoutTokens = ({ tokens: _, ...head }: Json) => head;
+const accessOf = (head: Json) => ({ version: head.access_version, tokens: head.tokens });
+
+/** The digest the authority files a repository token under (as `auth.rs` computes it). */
+async function tokenDigest(credentials: Json): Promise<string | null> {
+  if (typeof credentials._token !== 'string') return null;
+  const bytes = new TextEncoder().encode(`yonedarepo:repo-token:v1:${credentials._token}`);
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** One fetch per key at a time in this isolate; concurrent callers share it. */
+function once(key: string, load: () => Promise<Json>) {
+  let pending = loading.get(key);
+  if (!pending) {
+    pending = load().finally(() => loading.delete(key));
+    loading.set(key, pending);
+  }
+  return pending;
+}
+
+async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
+  const cached = heads.get(repo);
+  if (cached && Date.now() - cached.at < ISOLATE_MS && cached.head.version >= minVersion)
+    return cached.head;
+  const shared = holder(env, repo);
+  let head = await once(`head:${repo}`, async () => {
+    if (shared) return shared.head(repo, minVersion);
+    const full = await fetchHead(env, repo);
+    accesses.set(repo, accessOf(full));
+    return withoutTokens(full);
+  });
+  // A shared fetch may have started before this caller's landing: fetch again once.
+  if (head.version < minVersion)
+    head = shared ? await shared.head(repo, minVersion) : withoutTokens(await fetchHead(env, repo));
+  if (head.version < minVersion)
+    throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
+  heads.set(repo, { head, at: Date.now() });
+  return head;
+}
+
+async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
+  const cached = accesses.get(repo);
+  if (cached && cached.version === head.access_version) return cached;
+  const shared = holder(env, repo);
+  const access = await once(`access:${repo}`, async () =>
+    shared ? shared.access(repo) : accessOf(await fetchHead(env, repo)),
+  );
+  accesses.set(repo, access);
+  return access;
+}
+
+/** Main's published head for `credentials` (carrying only their token row), at least at
+ * `minVersion` (a reader's own landing). */
 export async function publishedHead(
   env: Env,
   repo: string,
   credentials: Json,
   minVersion = 0,
 ): Promise<Json> {
-  const digest = await tokenDigest(credentials);
-  const cached = isolate.get(repo);
-  if (cached && Date.now() - cached.at < ISOLATE_MS && cached.head.version >= minVersion)
-    return forCaller(cached.head, digest);
-  const shared = holder(env, repo);
-  const head = shared ? await shared.head(repo, minVersion) : await fetchHead(env, repo);
-  if (head.version < minVersion)
-    throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
-  isolate.set(repo, { head, at: Date.now() });
-  return forCaller(head, digest);
+  const [digest, head] = await Promise.all([
+    tokenDigest(credentials),
+    headOf(env, repo, minVersion),
+  ]);
+  const access = await accessFor(env, repo, head);
+  const token = digest && (access.tokens as Json[]).find((t) => t.digest === digest);
+  return { ...head, tokens: token ? [token] : [] };
 }
 
 /** Marks the published head stale after a landing, projection or access change. */
 export async function refreshHead(env: Env, repo: string) {
-  isolate.delete(repo);
+  heads.delete(repo);
   await holder(env, repo)
     ?.refresh(repo)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
@@ -102,8 +143,15 @@ export class HeadHolder {
   constructor(private readonly env: Env) {}
 
   async head(repo: string, minVersion: number): Promise<Json> {
-    if (this.#head && !this.#stale && this.#head.version >= minVersion) return this.#head;
-    return this.#load(repo, minVersion);
+    const head =
+      this.#head && !this.#stale && this.#head.version >= minVersion
+        ? this.#head
+        : await this.#load(repo, minVersion);
+    return withoutTokens(head);
+  }
+
+  async access(repo: string): Promise<Json> {
+    return accessOf(this.#head ?? (await this.#load(repo, 0)));
   }
 
   refresh(repo: string) {

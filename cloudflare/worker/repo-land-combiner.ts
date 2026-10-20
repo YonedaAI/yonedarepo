@@ -246,6 +246,11 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#head.head(repo, minVersion);
   }
 
+  /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
+  access(repo: string) {
+    return this.#head.access(repo);
+  }
+
   /** Head role: the head is stale (a landing, projection or access change). */
   refresh(repo: string) {
     this.#head.refresh(repo);
