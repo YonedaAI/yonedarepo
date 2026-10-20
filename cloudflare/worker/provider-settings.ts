@@ -1,6 +1,6 @@
 import { providers } from '../../shared/providers';
 import { error, readJson, response } from './http';
-import { resolveProviderKey } from './managed-provider';
+import { isManagedReference, resolveProviderKey } from './managed-provider';
 import { type MiMoRouting, mimoRouting, validateMiMoKey } from './mimo-routing';
 import { providerModelAlias } from './provider-model-alias';
 import type { Env, Principal } from './types';
@@ -40,6 +40,8 @@ export async function settingsRoute(
     );
   if (req.method !== 'POST') return error('NOT_FOUND', 'Unknown provider setting', 404);
   const body = await readJson(req);
+  // Managed references are minted only by the owner route; a planted one is never stored.
+  if (isManagedReference(body.key)) return error('INVALID_INPUT', 'Enter a provider API key');
   if (named && connection) {
     const old = await workspace(env, principal.workspace, { op: 'provider_secret', connection });
     if (old.alias_source)

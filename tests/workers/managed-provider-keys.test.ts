@@ -93,3 +93,24 @@ it('fails closed when the flag is off at call time or the reference is forged', 
   });
   await expect(providerCredentials(scoped(true).env, 'managed_thief', 'zai', 'zai')).rejects.toMatchObject({ code: 'PROVIDER_MISSING' });
 });
+
+it('refuses a reference-shaped key on the ordinary settings save paths', async () => {
+  const cookie = await signup('managed_planter');
+  const { env } = scoped(true);
+  const planted = 'yoneda-managed:v1:zai:abc';
+  const saved = await api(env, '/api/settings/providers/zai', cookie, { key: planted, model: 'glm-5.3-flash' });
+  expect(saved.status).toBe(400);
+  expect((await saved.json<Json>()).error.code).toBe('INVALID_INPUT');
+  const named = await api(env, '/api/settings/connections', cookie, { provider: 'zai', key: planted, model: 'glm-5.3-flash', label: 'x' });
+  expect(named.status).toBe(400);
+  expect(await providers('managed_planter')).toEqual([]);
+  // Replacing an existing connection's key with a reference is refused as well.
+  expect((await api(env, '/api/settings/providers/zai', cookie, { key: 'genuine-user-zai-key', model: 'glm-5.3-flash' })).status).toBe(200);
+  const [existing] = await providers('managed_planter');
+  const update = await api(env, '/api/settings/connections/zai', cookie, {
+    key: planted,
+    expected_version: existing.version,
+  });
+  expect(update.status).toBe(400);
+  expect(await providers('managed_planter')).toEqual([existing]);
+});
