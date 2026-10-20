@@ -137,9 +137,11 @@ async fn unrecorded(
     Ok(found)
 }
 
-/// Lands the pushed series on the base branch, one platform commit at a time and oldest
-/// first (the platform lands a commit whose parent is the branch head, or merges one
-/// onto a moved head; a retried landing is a no-op), then re-pins the checkout.
+/// Lands the pushed series on the base branch by landing its tip once: the platform
+/// fast-forwards a chain built on the branch head (one log version for the whole series)
+/// or merges it onto a moved head, and a retried landing is a no-op. A server that only
+/// fast-forwards a commit whose parent is the head refuses the tip with STALE_PARENT;
+/// then the series lands one commit at a time, oldest first. Re-pins the checkout after.
 pub async fn land(co: &mut Checkout) -> Result<()> {
     let commits = co.git.first_parent_since(&co.state.local_base)?;
     let Some(tip_local) = commits.last().cloned() else {
@@ -149,26 +151,27 @@ pub async fn land(co: &mut Checkout) -> Result<()> {
         );
         return Ok(());
     };
-    if co.state.series.is_empty() {
+    let Some(tip) = co.state.series.last().cloned() else {
         println!("Nothing to land: the pending commits change nothing");
         return Ok(());
-    }
+    };
     let branch = co.state.branch.clone();
-    let mut landed = Value::Null;
-    for pushed in co.state.series.clone() {
-        landed = match co.api.land(&branch, &pushed.commit).await {
-            Ok(landed) => landed,
-            Err(failure) if failure.code == "CONFLICT" => {
-                return Err(conflict::report(co, &failure).await?);
+    let landed = match co.api.land(&branch, &tip.commit).await {
+        Err(failure) if failure.code == "STALE_PARENT" && co.state.series.len() > 1 => {
+            let mut landed = Value::Null;
+            for pushed in co.state.series.clone() {
+                landed = landing(
+                    co,
+                    &branch,
+                    &pushed.commit,
+                    co.api.land(&branch, &pushed.commit).await,
+                )
+                .await?;
             }
-            Err(failure) => {
-                return Err(Error::new(format!(
-                    "landing {} on {branch}: {failure}",
-                    pushed.commit
-                )));
-            }
-        };
-    }
+            landed
+        }
+        result => landing(co, &branch, &tip.commit, result).await?,
+    };
     let version = landed["version"].as_u64();
     let (latest, head) = co
         .api
@@ -197,6 +200,22 @@ pub async fn land(co: &mut Checkout) -> Result<()> {
         println!("Could not fast-forward to {local} ({e}); run `git merge --ff-only {local}`");
     }
     Ok(())
+}
+
+/// A landing's answer, or the error to stop with (a conflict is reported with its sides).
+async fn landing(
+    co: &Checkout,
+    branch: &str,
+    commit: &str,
+    result: std::result::Result<Value, Failure>,
+) -> Result<Value> {
+    match result {
+        Ok(landed) => Ok(landed),
+        Err(failure) if failure.code == "CONFLICT" => Err(conflict::report(co, &failure).await?),
+        Err(failure) => Err(Error::new(format!(
+            "landing {commit} on {branch}: {failure}"
+        ))),
+    }
 }
 
 fn at_readback(failure: Failure) -> Error {
