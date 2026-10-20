@@ -38,6 +38,8 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_objects_projected" => staging::projected(&owned, c),
             "store_staged_objects" => staging::read(&owned, c),
             "store_status" => staging::status(&owned),
+            "store_vacuum_scan" => vacuum_scan(&owned, c),
+            "store_vacuum_delete" => vacuum_delete(&owned, c),
             op => Err(Error::new("UNKNOWN_OP", format!("Unknown shard op {op}"))),
         }
     }))
@@ -150,6 +152,64 @@ fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "symbols": db.query("SELECT path,symbols FROM commit_symbols WHERE commit_id=? ORDER BY path", &key)?,
         "objects": db.query("SELECT id,kind FROM commit_objects WHERE commit_id=? ORDER BY id", &key)?,
     }))
+}
+
+const VACUUM_ROWS: i64 = 5000;
+
+/// Vacuum input: commits recorded before `before` (with their parents), and the parents of
+/// every newer commit. The adapter keeps every ancestor of a newer commit, across shards.
+/// Commits whose objects are still on their way to R2 are never offered.
+fn vacuum_scan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let before = number(c, "before")?;
+    let old = db.query(
+        "SELECT id,parents FROM commits WHERE recorded_at<? AND id NOT IN (SELECT commit_id FROM object_projections) ORDER BY recorded_at LIMIT ?",
+        &[json!(before), json!(VACUUM_ROWS)],
+    )?;
+    let young = db.query(
+        "SELECT parents FROM commits WHERE recorded_at>=? LIMIT ?",
+        &[json!(before), json!(VACUUM_ROWS)],
+    )?;
+    let parents = |row: &Value| -> Vec<Value> {
+        serde_json::from_str(row["parents"].as_str().unwrap_or("[]")).unwrap_or_default()
+    };
+    Ok(json!({
+        "old": old.iter().map(|r| json!({ "id": r["id"], "parents": parents(r) })).collect::<Vec<_>>(),
+        "young_parents": young.iter().flat_map(parents).collect::<Vec<_>>(),
+    }))
+}
+
+/// Forgets expired commits (records, changesets, derived rows, object lists). Objects in R2
+/// stay: they are content-addressed and may be shared with commits that live on.
+fn vacuum_delete<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let mut deleted = 0;
+    for id in c["ids"]
+        .as_array()
+        .ok_or_else(|| bad("ids must be a list"))?
+    {
+        let id = ObjectId::parse(id.as_str().unwrap_or_default())?;
+        let pending = db.query(
+            "SELECT 1 FROM object_projections WHERE commit_id=?",
+            &[json!(id.hex())],
+        )?;
+        if !pending.is_empty() {
+            continue;
+        }
+        for table in [
+            "commit_paths",
+            "commit_classes",
+            "commit_symbols",
+            "commit_objects",
+            "staged_objects",
+        ] {
+            db.query(
+                &format!("DELETE FROM {table} WHERE commit_id=?"),
+                &[json!(id.hex())],
+            )?;
+        }
+        db.query("DELETE FROM commits WHERE id=?", &[json!(id.hex())])?;
+        deleted += 1;
+    }
+    Ok(json!({ "deleted": deleted }))
 }
 
 #[cfg(test)]
