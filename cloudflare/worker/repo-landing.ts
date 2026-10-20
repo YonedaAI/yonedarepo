@@ -85,6 +85,11 @@ export async function landWithMerge(
   fastForwardOnly = false,
   mode: LandMode = landMode(ctx.env),
 ) {
+  if (mode === 'batch' && !fastForwardOnly && ctx.env.LAND_COMBINERS) {
+    const records = await shardChain(ctx.env, ctx.repo, sha);
+    // Batched landing takes the commit's shard records; an adopted commit lands as before.
+    if (records.length) return landSubmitted(ctx, ref, sha, records);
+  }
   // Lands directly, or joins the branch's queue in the same call (never fast-forward-only).
   const land = {
     op: 'repo_land',
@@ -98,26 +103,72 @@ export async function landWithMerge(
     if (!landed.already) await moved(ctx, ref);
     return landed;
   }
-  const { ticket } = landed;
+  return awaitTicket(ctx, ref, sha, landed.ticket, mode, Date.now() + LAND_DEADLINE_MS);
+}
+
+type Combiner = {
+  wait(
+    repo: string,
+    ref: string,
+    ticket: number,
+    timeoutMs: number,
+    mode: LandMode,
+  ): Promise<Json | null>;
+  submit(repo: string, ref: string, item: Json, timeoutMs: number): Promise<Json | null>;
+};
+
+/**
+ * Batch mode: submits the commit's shard records with this caller's credentials to the
+ * branch's combiner, which lands every waiting submission in one authority call. Nothing
+ * waits in the authority, so a lost combiner only means submitting again (a landed commit
+ * answers with its version).
+ */
+async function landSubmitted(ctx: RepoContext, ref: string, sha: string, records: Json[]) {
+  const combiners = ctx.env.LAND_COMBINERS as DurableObjectNamespace;
+  const combiner = combiners.get(combiners.idFromName(`${ctx.repo}:${ref}`)) as unknown as Combiner;
+  const item = { credentials: ctx.call.sign({}), records };
+  const deadline = Date.now() + LAND_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    const out = await timed('land.submit', () =>
+      combiner.submit(ctx.repo, ref, item, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+    ).catch((e) => {
+      if (e instanceof ApiError) throw e;
+      return null; // the combiner was reset: submit again
+    });
+    if (!out) continue;
+    if (out.status === 'landed')
+      return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
+    if (out.status === 'queued')
+      return awaitTicket(ctx, ref, sha, out.ticket, 'changeset', deadline);
+    throw new ApiError(out.code ?? 'CONFLICT', out.message ?? 'Landing failed');
+  }
+  throw new ApiError(
+    'TIMEOUT',
+    `Landing ${sha} on ${ref} was not settled in time; submit it again`,
+  );
+}
+
+/** Waits for a queued ticket on the branch's combiner, or polls without one. */
+async function awaitTicket(
+  ctx: RepoContext,
+  ref: string,
+  sha: string,
+  ticket: number,
+  mode: LandMode,
+  deadline: number,
+) {
   const merger = new RepoContext(
     ctx.env,
     ctx.repo,
     caller(ctx.env, ctx.repo, { _system: 'merge' }),
   );
-  const deadline = Date.now() + LAND_DEADLINE_MS;
   // The branch's combiner lands the batches and answers when this ticket settles; waiting
   // there costs the authority nothing. Without one (or if it is evicted), poll.
   const combiners = ctx.env.LAND_COMBINERS;
   if (combiners && mode !== 'poll') {
-    const combiner = combiners.get(combiners.idFromName(`${ctx.repo}:${ref}`)) as unknown as {
-      wait(
-        repo: string,
-        ref: string,
-        ticket: number,
-        timeoutMs: number,
-        mode: LandMode,
-      ): Promise<Json | null>;
-    };
+    const combiner = combiners.get(
+      combiners.idFromName(`${ctx.repo}:${ref}`),
+    ) as unknown as Combiner;
     try {
       while (Date.now() < deadline) {
         const settled = await timed('land.wait', () =>

@@ -4,10 +4,19 @@
 // this Worker, each landed with one compare-and-swap and one log entry) and answers every
 // waiter whose ticket it settled. Waiting is held in memory: if the combiner is evicted
 // its waiters fall back to polling, and the queue and every landing stay in the
-// authority, so nothing is lost. The same class, named `<repo>#projector`, is the
-// repository's changeset projector.
+// authority, so nothing is lost. In batch mode landers submit their commit's shard
+// records here instead, and each step lands every waiting submission in one authority
+// call (nothing is queued in the authority: an evicted combiner's landers resubmit, and
+// a resubmitted landing answers with its version). The same class, named `<repo>#projector`
+// and `<repo>#head`, is the repository's changeset projector and published-head holder.
 import { DurableObject } from 'cloudflare:workers';
-import { type LandMode, landChangesets, projectChangesets } from './repo-changesets';
+import {
+  kickProjection,
+  type LandMode,
+  landChangesets,
+  projectChangesets,
+} from './repo-changesets';
+import { HeadHolder, refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
@@ -15,7 +24,9 @@ import type { Env } from './types';
 
 const SETTLED_KEPT = 10_000;
 const RETRY_MS = 250;
+const SUBMIT_BATCH = 256;
 type Target = { repo: string; ref: string };
+type Submission = { item: Json; resolve: (outcome: Json | null) => void };
 
 /**
  * The combiner's logic, apart from the Durable Object so tests can run it in-process with
@@ -24,6 +35,7 @@ type Target = { repo: string; ref: string };
 export class LandBatcher {
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
+  #submissions: Submission[] = [];
   target?: Target;
   mode: LandMode = 'combiner';
 
@@ -56,6 +68,49 @@ export class LandBatcher {
     return settled;
   }
 
+  /**
+   * Batch mode: lands `item` (a lander's credentials and its commit's shard records) in
+   * the next batch; resolves with its outcome, or null after `timeoutMs` (resubmit).
+   */
+  async submit(target: Target, item: Json, timeoutMs: number) {
+    this.target = target;
+    const outcome = new Promise<Json | null>((resolve) => {
+      const submission = { item, resolve };
+      this.#submissions.push(submission);
+      setTimeout(() => {
+        this.#submissions = this.#submissions.filter((s) => s !== submission);
+        resolve(null);
+      }, timeoutMs);
+    });
+    await this.schedule(0);
+    return outcome;
+  }
+
+  /** One authority call for every waiting submission; deferred ones ride the next. */
+  async #landSubmitted(merger: RepoContext, ref: string) {
+    const batch = this.#submissions.splice(0, SUBMIT_BATCH);
+    let out: Json;
+    try {
+      out = await merger.call({ op: 'repo_land_submitted', ref, items: batch.map((s) => s.item) });
+    } catch (e) {
+      this.#submissions.unshift(...batch);
+      throw e;
+    }
+    const again: Submission[] = [];
+    for (const [i, submission] of batch.entries()) {
+      if (out.items[i].status === 'deferred') again.push(submission);
+      else submission.resolve(out.items[i]);
+    }
+    this.#submissions.unshift(...again);
+    if (out.items.some((r: Json) => r.status === 'landed'))
+      await Promise.all([
+        kickProjection(merger.env, merger.repo).catch((e) =>
+          console.warn(`projection kick failed: ${e?.message ?? e}`),
+        ),
+        refreshHead(merger.env, merger.repo),
+      ]);
+  }
+
   /** Builds one batch (each step has its own subrequest budget), then asks for the next. */
   async step() {
     const target = this.target;
@@ -65,6 +120,20 @@ export class LandBatcher {
       target.repo,
       caller(this.env, target.repo, { _system: 'merge' }),
     );
+    if (this.#submissions.length) {
+      try {
+        await this.#landSubmitted(merger, target.ref);
+      } catch (e: any) {
+        console.warn(`submitted batch failed: ${e?.code ?? ''} ${e?.message ?? e}`);
+        await this.schedule(1000);
+        return;
+      }
+      // Queued merge-path tickets still get their turn between submitted batches.
+      if (this.#waiters.size === 0) {
+        await this.schedule(0);
+        return;
+      }
+    }
     if (this.mode === 'changeset') {
       // Path-disjoint work lands as changesets, a batch per step, before any merge.
       const step = await landChangesets(merger, target.ref);
@@ -160,10 +229,26 @@ export class LandCombiner extends DurableObject<Env> {
     if (current === null || current > at) await this.ctx.storage.setAlarm(at);
   });
   #projection = new ProjectionRunner(this.env);
+  #head = new HeadHolder(this.env);
 
   async wait(repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) {
     await this.ctx.storage.put('target', { repo, ref });
     return this.#batcher.wait({ repo, ref }, ticket, timeoutMs, mode);
+  }
+
+  async submit(repo: string, ref: string, item: Json, timeoutMs: number) {
+    await this.ctx.storage.put('target', { repo, ref });
+    return this.#batcher.submit({ repo, ref }, item, timeoutMs);
+  }
+
+  /** Head role: main's published head, at least at `minVersion`. */
+  head(repo: string, minVersion: number) {
+    return this.#head.head(repo, minVersion);
+  }
+
+  /** Head role: the head is stale (a landing, projection or access change). */
+  refresh(repo: string) {
+    this.#head.refresh(repo);
   }
 
   /** Projector role: waits until this repository's changesets are projected. */

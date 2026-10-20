@@ -6,8 +6,10 @@
 // platform's Server-Timing totals, with correctness counts. An explicit, separate command:
 // it creates a repository (and, with --principals tokens, one token per writer).
 // Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the bench client.
-// --mode picks the landing mode per request (poll|combiner|changeset) where the target
-// allows it; changeset runs also report how long main's Git projection lagged each landing.
+// --mode picks the landing mode per request (poll|combiner|changeset|batch), --begin where
+// commits begin (authority|head) and --read where main reads are served (authority|head),
+// where the target allows a per-request choice; changeset and batch runs also report how
+// long main's Git projection lagged each landing.
 // Usage: node tools/platform-fanout-bench.mjs --url https://<platform> --client https://<bench-client> [--writers 1000] [--principals tokens|session] [--mode changeset]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -24,11 +26,13 @@ const { values } = parseArgs({
     writers: { type: 'string', default: '1000' },
     principals: { type: 'string', default: 'tokens' },
     mode: { type: 'string' },
+    begin: { type: 'string' },
+    read: { type: 'string' },
   },
 });
 assert.ok(values.url && values.client, 'Pass --url (platform) and --client (bench client)');
 assert.ok(['session', 'tokens'].includes(values.principals), '--principals is session or tokens');
-assert.ok(!values.mode || ['poll', 'combiner', 'changeset'].includes(values.mode), '--mode is poll, combiner or changeset');
+assert.ok(!values.mode || ['poll', 'combiner', 'changeset', 'batch'].includes(values.mode), '--mode is poll, combiner, changeset or batch');
 const url = values.url.replace(/\/$/, '');
 const WRITERS = Number(values.writers);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -78,10 +82,10 @@ async function fanout(writers) {
 }
 
 const began = performance.now();
-const writes = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), mode: values.mode, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
+const writes = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), mode: values.mode, begin: values.begin, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
 const elapsed = performance.now() - began;
 const projection = await projectionLag();
-const reads = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), read: true, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
+const reads = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), read: true, read_mode: values.read, version: writes[i]?.land?.version, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
 
 /** Waits (up to 5 min) until every changeset is projected; lag = projected - landed. */
 async function projectionLag() {
@@ -144,6 +148,8 @@ const result = {
   writers: WRITERS,
   principals: values.principals,
   mode: values.mode ?? 'default',
+  begin: values.begin ?? 'default',
+  read: values.read ?? 'default',
   elapsed_ms: Math.round(elapsed),
   commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits) },
   land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },

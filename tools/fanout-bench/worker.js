@@ -36,13 +36,17 @@ export default {
     const results = await Promise.all(
       writers.map(async (w) => {
         if (w.read) {
-          const read = await timed(`${target}/api/v1/repos/${repo}/blob?path=${encodeURIComponent(w.path)}`, { headers: headers(w) });
+          // Read-your-writes: a reader passes the version its landing reported.
+          const since = w.version ? `&min_version=${w.version}` : '';
+          const read = await timed(`${target}/api/v1/repos/${repo}/blob?path=${encodeURIComponent(w.path)}${since}`, {
+            headers: { ...headers(w), ...(w.read_mode ? { 'x-yoneda-read': w.read_mode } : {}) },
+          });
           const ok = read.status === 200 && read.body.content === w.content;
           return { read: { ...read, ok, error: read.body?.error?.code, message: read.body?.error?.message?.slice(0, 120), body: undefined } };
         }
         const made = await timed(`${target}/api/v1/repos/${repo}/commits`, {
           method: 'POST',
-          headers: headers(w),
+          headers: { ...headers(w), ...(w.begin ? { 'x-yoneda-begin': w.begin } : {}) },
           body: JSON.stringify({ ref: 'main', changes: [{ path: w.path, content_b64: btoa(w.content) }], message: w.path, author: { name: 'Fanout bench', email: 'bench@yonedarepo.invalid' } }),
         });
         const land =
@@ -61,6 +65,7 @@ export default {
             ms: r.ms,
             server: r.server,
             timing: r.timing,
+            version: r.body?.version,
             error: r.body?.error?.code,
             message: r.body?.error?.message?.slice(0, 120),
           };

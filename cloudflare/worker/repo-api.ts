@@ -7,7 +7,9 @@ import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
+import { writeSwitch } from './repo-changesets';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
+import { readFromHead, refreshHead } from './repo-head';
 import { repoMcp } from './repo-mcp';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -101,7 +103,22 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'changelog') return changeLogStatus(ctx);
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
-  if (get && resource === 'blob') return run('git_cat_file', query);
+  if (get && resource === 'blob') {
+    // Main reads may be served from the published head (read-your-writes: min_version).
+    if (
+      writeSwitch(
+        env,
+        ['authority', 'head'] as const,
+        'authority',
+        env.READ_MODE,
+        req.headers.get('x-yoneda-read'),
+      ) === 'head'
+    ) {
+      const { head, access } = await readFromHead(ctx, Number(query.min_version ?? 0));
+      ctx.publish(head, access);
+    }
+    return run('git_cat_file', query);
+  }
   if (get && resource === 'search')
     return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
   if (get && resource === 'blame') return run('git_blame', query);
@@ -128,7 +145,16 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     });
   if (resource === 'commits' && sha && !sub && get) return run('git_show', { commit: sha });
   if (resource === 'commits' && !sha && post)
-    return run('git_commit', await bodyOf(req, COMMIT_BODY_LIMIT));
+    return run('git_commit', {
+      ...(await bodyOf(req, COMMIT_BODY_LIMIT)),
+      begin_mode: writeSwitch(
+        env,
+        ['authority', 'head'] as const,
+        'authority',
+        env.BEGIN_MODE,
+        req.headers.get('x-yoneda-begin'),
+      ),
+    });
   if (resource === 'commits' && sha && sub === 'checks' && post)
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'reviews' && post)
@@ -155,8 +181,13 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     const status = await env.PLATFORM_IMPORT.get(`import-${repo}`).then((i) => i.status());
     return { import: `import-${repo}`, ...status };
   }
+  // Access changes republish main's head (begins and reads decide access from it).
   if (resource === 'policy' && req.method === 'PUT')
-    return ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy });
+    return withHeadRefresh(
+      env,
+      repo,
+      ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy }),
+    );
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
@@ -180,18 +211,28 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (resource === 'tokens' && !sha && post) {
     const body = await bodyOf(req);
     const secret = tokenSecret();
-    const created = await ctx.call({
-      op: 'repo_token_create',
-      name: body.name,
-      scopes: body.scopes,
-      paths: body.paths ?? null,
-      _secret: secret,
-    });
+    const created = await withHeadRefresh(
+      env,
+      repo,
+      ctx.call({
+        op: 'repo_token_create',
+        name: body.name,
+        scopes: body.scopes,
+        paths: body.paths ?? null,
+        _secret: secret,
+      }),
+    );
     return { ...created, token: secret };
   }
   if (resource === 'tokens' && sha && req.method === 'DELETE')
-    return ctx.call({ op: 'repo_token_revoke', name: sha });
+    return withHeadRefresh(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha }));
   throw new ApiError('NOT_FOUND', 'Unknown API path');
+}
+
+async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
+  const done = await change;
+  await refreshHead(env, repo);
+  return done;
 }
 
 export async function repoApi(req: Request, env: Env): Promise<Response> {

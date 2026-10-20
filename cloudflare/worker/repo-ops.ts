@@ -83,6 +83,8 @@ export async function batch(env: Env, repo: string, commands: Json[]): Promise<J
 /** One repository, as seen by one authenticated caller. */
 export class RepoContext {
   private statusOnce?: Promise<Json>;
+  /** Main's published head, when this request reads from it instead of the authority. */
+  published?: Json;
   constructor(
     readonly env: Env,
     readonly repo: string,
@@ -93,6 +95,11 @@ export class RepoContext {
   status() {
     this.statusOnce ??= this.call({ op: 'repo_status' });
     return this.statusOnce;
+  }
+  /** Serves this request's access and main's head from the published head. */
+  publish(head: Json, access: Json) {
+    this.published = head;
+    this.statusOnce = Promise.resolve({ object_store: head.object_store, ...access });
   }
   async objects() {
     if (!this.cached) {
@@ -159,11 +166,43 @@ export async function listTree(ctx: RepoContext, args: Json) {
   return { commit: where.commit, path, entries };
 }
 
+/** A path's entry at main's published head: from the latest changeset that wrote it
+ * (walked in its landed commit's tree), else from the projected head. */
+async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
+  const changed = [...(head.overlay as Json[])]
+    .reverse()
+    .find((c) => c.paths.some((p: Json) => p.path === path));
+  if (!changed) return walk(objects, head.head.tree, path);
+  if (!changed.paths.find((p: Json) => p.path === path).blob)
+    throw new ApiError('NOT_FOUND', `${path} does not exist`);
+  return walk(objects, changed.tree, path);
+}
+
 export async function readFile(ctx: RepoContext, args: Json) {
   await requirePath(ctx, String(args.path ?? ''));
+  const path = String(args.path ?? '');
+  const published =
+    ctx.published &&
+    !args.commit &&
+    !args.at &&
+    [undefined, 'main', 'refs/heads/main'].includes(args.ref);
+  if (published) {
+    const objects = await ctx.objects();
+    const entry = await publishedEntry(objects, ctx.published as Json, path);
+    if (!['blob', 'exec'].includes(entry.type))
+      throw new ApiError('NOT_FOUND', `${path} is not a file`);
+    const bytes = await objects.blob(entry.id);
+    return {
+      version: ctx.published?.version,
+      path,
+      id: entry.id,
+      executable: entry.type === 'exec',
+      size: bytes.length,
+      ...text(bytes),
+    };
+  }
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
-  const path = String(args.path ?? '');
   const entry = await walk(objects, where.tree, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw new ApiError('NOT_FOUND', `${path} is not a file`);

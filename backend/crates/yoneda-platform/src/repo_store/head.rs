@@ -1,7 +1,7 @@
 //! The published head of a branch: everything a commit needs to begin and a read needs to
 //! serve the latest version, so neither asks the authority. The last projected Git head
 //! and the version it reflects (the base new work builds on), the changesets landed since
-//! (the overlay: path → blob), and the access snapshot (workspace, live token digests and
+//! (the overlay: path → blob, with the landed commit's tree), and the access snapshot (workspace, live token digests and
 //! grants, automation pause). Caches may serve it stale: landing re-checks access and
 //! validates the base against the log.
 use super::changesets::settled_head;
@@ -19,7 +19,7 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
         db.query("SELECT version FROM refs WHERE name=?", &[json!(refname)])?[0]["version"].clone();
     let mut overlay = Vec::new();
     for pending in db.query(
-        "SELECT t.entry FROM changesets c JOIN txlog t ON t.version=c.version \
+        "SELECT t.entry,c.commit_id,c.tree FROM changesets c JOIN txlog t ON t.version=c.version \
          WHERE c.refname=? AND c.projected IS NULL ORDER BY c.version",
         &[json!(refname)],
     )? {
@@ -30,7 +30,14 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
             .iter()
             .map(|t| json!({ "path": t.path, "blob": t.new_blob }))
             .collect();
-        overlay.push(json!({ "version": entry.version, "paths": paths }));
+        // The landed commit's tree gives a read the file's mode as well as its blob.
+        let tree = match pending["tree"].as_str() {
+            Some(tree) => json!(tree),
+            None => json!(rows::recorded(db, &rows::object_id(&pending, "commit_id")?)?.tree),
+        };
+        overlay.push(json!({
+            "version": entry.version, "commit": pending["commit_id"], "tree": tree, "paths": paths,
+        }));
     }
     Ok(json!({
         "ref": refname, "version": current_version(db)?, "base_version": base_version,
