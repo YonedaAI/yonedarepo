@@ -1,29 +1,30 @@
-// Object access for the source platform. Each repository records which object store
-// holds its Git objects: Artifacts (production) or R2 (local development and the
-// fallback the plan keeps open). In front of either, R2 is the shared cache tier.
-// Objects are immutable, so a cache entry keyed by id never needs invalidation; keys are
-// per repository so access follows repository auth.
+// Object access for the source platform: tiered reads (edge, R2) in front of each
+// repository's object store (repo-stores), and verified pushes to it. Objects are
+// immutable, so a cache entry keyed by id never needs invalidation; keys are per
+// repository so access follows repository auth.
 import { compute } from './repo-compute';
+import {
+  type CachedObject,
+  fromBase64,
+  type ObjectStore,
+  putObjects,
+  type TreeEntry,
+  toBase64,
+} from './repo-stores';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
-export type TreeEntry = {
-  name: string;
-  type: 'tree' | 'blob' | 'exec' | 'symlink' | 'gitlink';
-  id: string;
-};
-export type CachedObject =
-  | { id: string; kind: 'tree'; entries: TreeEntry[] }
-  | { id: string; kind: 'commit'; tree: string; parents: string[] }
-  | { id: string; kind: 'blob'; data_b64: string };
-type CommitHeader = { tree: string; parents: string[] };
+// Stores and object forms, for callers that know this module as the object layer.
+export {
+  type CachedObject,
+  fromBase64,
+  newStore,
+  type ObjectStore,
+  parseStore,
+  type TreeEntry,
+  toBase64,
+} from './repo-stores';
 
-export const fromBase64 = (value: string) => Uint8Array.from(atob(value), (c) => c.charCodeAt(0));
-export function toBase64(bytes: Uint8Array) {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 8192)
-    binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  return btoa(binary);
-}
 const PUSH_ATTEMPTS = 5;
 const CACHE_CHUNK = 256;
 /** Commits up to this many objects write the cache alongside their push. */
@@ -44,178 +45,6 @@ function pushOutcome(report: Uint8Array, refname: string): { accepted: boolean; 
 }
 const missing = (what: string) =>
   Object.assign(new Error(`${what} is missing`), { code: 'NOT_FOUND' });
-
-/** The Git object store behind one repository. */
-export interface ObjectStore {
-  readonly spec: string;
-  create(): Promise<void>;
-  /** Accepts a receive-pack request body and returns Git's report-status. */
-  push(body: Uint8Array): Promise<Uint8Array>;
-  readCommit(id: string): Promise<CommitHeader | null>;
-  readTree(id: string): Promise<TreeEntry[] | null>;
-  readBlob(id: string): Promise<Uint8Array | null>;
-  /** A read-only `git clone` remote and short-lived token, where the store supports it. */
-  cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
-}
-
-/** Per-isolate: a repository's remote never changes. */
-const remotes = new Map<string, string>();
-/** Per-isolate write tokens, reused until shortly before they expire (never logged). */
-const tokens = new Map<string, { plaintext: string; expires: number }>();
-const TOKEN_SECONDS = 60;
-const TOKEN_REUSE_MS = 40_000;
-const CLONE_TOKEN_SECONDS = 600;
-
-class ArtifactsStore implements ObjectStore {
-  constructor(
-    private readonly env: Env,
-    private readonly name: string,
-  ) {}
-  get spec() {
-    return `artifacts:${this.env.ARTIFACTS_NAMESPACE}/${this.name}`;
-  }
-  async create() {
-    await this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' });
-  }
-  /**
-   * Pushes through the repository's queue: Artifacts takes one receive-pack at a time. The
-   * remote and a short-lived write token are reused within this isolate; minting and
-   * revoking a token per push cost more than the push itself. A rejected token is replaced.
-   */
-  async push(body: Uint8Array) {
-    const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
-    for (let attempt = 0; ; attempt++) {
-      const { remote, token } = await this.credentials(attempt > 0);
-      try {
-        return await queue.push(remote, token, body);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (attempt === 0 && /returned 40[13]/.test(message)) continue;
-        throw Object.assign(new Error(message), { code: 'PUSH_FAILED' });
-      }
-    }
-  }
-  private async credentials(fresh: boolean) {
-    const cached = tokens.get(this.spec);
-    const remote = remotes.get(this.spec);
-    if (!fresh && remote && cached && cached.expires > Date.now())
-      return { remote, token: cached.plaintext };
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const url = remote ?? (await repo.info()).remote;
-    remotes.set(this.spec, url);
-    const token = await repo.createToken('write', TOKEN_SECONDS);
-    tokens.set(this.spec, { plaintext: token.plaintext, expires: Date.now() + TOKEN_REUSE_MS });
-    return { remote: url, token: token.plaintext };
-  }
-  async cloneAccess() {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const info = await repo.info();
-    const token = await repo.createToken('read', CLONE_TOKEN_SECONDS);
-    return { remote: info.remote, token: token.plaintext, expires_in_seconds: CLONE_TOKEN_SECONDS };
-  }
-  async readCommit(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const commit = await repo.readCommit(id);
-    return commit ? { tree: commit.treeHash, parents: commit.parents } : null;
-  }
-  async readTree(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const entries = await repo.readTree(id);
-    return entries ? entries.map((e) => ({ name: e.name, type: e.type, id: e.hash })) : null;
-  }
-  async readBlob(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const blob = await repo.readBlob(id);
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
-  }
-}
-
-/** Objects as R2 entries; pushes are unpacked and verified by Rust compute. */
-class R2Store implements ObjectStore {
-  constructor(
-    private readonly env: Env,
-    private readonly name: string,
-  ) {}
-  get spec() {
-    return `r2:${this.name}`;
-  }
-  private key(id: string) {
-    return `store/v1/${this.name}/objects/${id}`;
-  }
-  async create() {}
-  /** Like a Git server: store the pack, then update the ref only if `old` still holds. */
-  async push(body: Uint8Array) {
-    const received = compute({ op: 'receive_pack', body_b64: toBase64(body) });
-    const refuse = (refused: string) =>
-      fromBase64(compute({ op: 'push_report', refname: received.ref, refused }).report_b64);
-    // Hidden refs are not stored in R2 (objects never expire here): a delete is a no-op.
-    if (received.delete)
-      return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
-    await putObjects(this.env, (id) => this.key(id), received.objects);
-    if (!received.contains_new && !(await this.readCommit(received.new)))
-      return refuse('missing necessary objects');
-    // Hidden per-commit refs only keep objects reachable; R2 objects never expire.
-    if (!received.ref.startsWith('refs/yoneda/')) {
-      const key = `store/v1/${this.name}/${received.ref}`;
-      const current = await this.env.OBJECTS.get(key);
-      const value = current ? await current.text() : null;
-      if (value !== (received.old ?? null)) return refuse('stale info');
-      // Updates are conditional on the etag read above; creation is unconditional (R2 has
-      // no create-only precondition), which only matters for two first projections racing.
-      const written = await this.env.OBJECTS.put(
-        key,
-        received.new,
-        current ? { onlyIf: { etagMatches: current.etag } } : {},
-      );
-      if (!written) return refuse('stale info');
-    }
-    return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
-  }
-  /** A projected branch value (tests and drift investigation). */
-  async readRef(refname: string) {
-    const value = await this.env.OBJECTS.get(`store/v1/${this.name}/${refname}`);
-    return value ? value.text() : null;
-  }
-  async readCommit(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? object.json<CommitHeader>() : null;
-  }
-  async readTree(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? (await object.json<{ entries: TreeEntry[] }>()).entries : null;
-  }
-  async readBlob(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? new Uint8Array(await object.arrayBuffer()) : null;
-  }
-}
-
-function putObjects(env: Env, key: (id: string) => string, objects: CachedObject[]) {
-  return Promise.all(
-    objects.map((o) =>
-      env.OBJECTS.put(key(o.id), o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o), {
-        customMetadata: { kind: o.kind },
-      }),
-    ),
-  );
-}
-
-/** A new repository's store, chosen by deployment (`PLATFORM_OBJECT_STORE=r2` locally). */
-export function newStore(env: Env, name: string): ObjectStore {
-  return env.PLATFORM_OBJECT_STORE === 'r2'
-    ? new R2Store(env, name)
-    : new ArtifactsStore(env, name);
-}
-
-/** Parses a recorded store: `artifacts:<namespace>/<name>` or `r2:<name>`. */
-export function parseStore(env: Env, spec: string): ObjectStore {
-  const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(spec);
-  if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
-    return new ArtifactsStore(env, artifacts[2]);
-  const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(spec);
-  if (r2) return new R2Store(env, r2[1]);
-  throw new Error('Repository object store is outside this deployment');
-}
 
 export type ObjectKind = 'tree' | 'blob' | 'commit';
 /** Reads served per tier, for the S12 hit-rate gate: edge (Cache API), R2, object store. */
@@ -254,19 +83,26 @@ export class RepoObjects {
     }
   }
 
-  /** Writes both tiers in bounded chunks: unbounded fan-out stalls on large imports. */
-  async cache(objects: CachedObject[]) {
+  /** Writes both tiers (or one) in bounded chunks: unbounded fan-out stalls on large
+   * imports. */
+  async cache(objects: CachedObject[], tiers: 'all' | 'edge' | 'r2' = 'all') {
     for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
       const chunk = objects.slice(i, i + CACHE_CHUNK);
       await Promise.all([
-        putObjects(this.env, (id) => this.key(id), chunk),
-        ...chunk.map((o) =>
-          this.edgePut(
-            o.id,
-            o.kind,
-            o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+        tiers !== 'edge' &&
+          timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), chunk)),
+        tiers !== 'r2' &&
+          timed('cache.edge', () =>
+            Promise.all(
+              chunk.map((o) =>
+                this.edgePut(
+                  o.id,
+                  o.kind,
+                  o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+                ),
+              ),
+            ),
           ),
-        ),
       ]);
     }
   }
@@ -297,11 +133,30 @@ export class RepoObjects {
       const commit = await this.store.readCommit(id);
       object = commit && { id, kind, ...commit };
     }
+    // Accepted but not yet projected: the authority still holds the staged copy.
+    object ??= await this.staged(id).then((o) => (o?.kind === kind ? o : null));
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
     return object.kind === 'blob'
       ? fromBase64(object.data_b64)
       : new TextEncoder().encode(JSON.stringify(object));
+  }
+
+  /** The authority's staged copy of an accepted object (read as the platform: callers
+   * reach this tier only through the same authorization as the object store). */
+  private async staged(id: string): Promise<CachedObject | null> {
+    const stub = this.env.SOURCE_REPOS.get(this.env.SOURCE_REPOS.idFromName(this.repo));
+    const response = await stub.fetch('https://source-repository/', {
+      method: 'POST',
+      body: JSON.stringify({ op: 'repo_staged_objects', ids: [id], _system: 'projection' }),
+    });
+    const value = await response.json<{
+      objects?: CachedObject[];
+      error?: { code: string; message: string };
+    }>();
+    if (value.error)
+      throw Object.assign(new Error(value.error.message), { code: value.error.code });
+    return value.objects?.[0] ?? null;
   }
 
   async tree(id: string): Promise<TreeEntry[]> {
@@ -336,7 +191,7 @@ export class RepoObjects {
     let reason = 'not readable';
     for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
       if (attempt) await sleep(100 * 2 ** attempt + Math.random() * 100 * 2 ** attempt);
-      const report = await this.store.push(body);
+      const report = await timed('push.store', () => this.store.push(body));
       const outcome = pushOutcome(report, refname);
       if (!outcome.accepted) {
         reason = `refused: ${outcome.refused}`;
@@ -344,7 +199,7 @@ export class RepoObjects {
       }
       await ready;
       for (let read = 0; read < 3; read++) {
-        const readback = await this.store.readCommit(commit);
+        const readback = await timed('push.readback', () => this.store.readCommit(commit));
         // A retried push may be refused because an earlier attempt already created the ref.
         if (readback) return { report: outcome.accepted ? report : accepted(refname), readback };
         if (!outcome.accepted) break;

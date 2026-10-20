@@ -1,7 +1,7 @@
 // Branch refs are projected into the object store with expected-old leases; refusals
 // become visible drift instead of forced updates.
 import { expect, it } from 'vitest';
-import { projectRefs } from '../../cloudflare/worker/repo-projection';
+import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
 import { parseStore } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, pushes, queued, refusals, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -15,7 +15,10 @@ async function landNext(repo: string, owner: { cookie: string }, text: string, t
   return made.body.commit as string;
 }
 const drain = async (target: Env) => {
-  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(target, message);
+  for (const message of queued.splice(0)) {
+    if (message.kind === 'platform_objects') await projectObjects(target, message.repo_id);
+    if (message.kind === 'platform_project') await projectRefs(target, message);
+  }
 };
 
 it('projects landed branches to Artifacts with leases and records drift', async () => {
