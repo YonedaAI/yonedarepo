@@ -57,8 +57,25 @@ assert.equal(landed.version, 2);
 // Read-your-writes: a reader passes the version its landing reported.
 assert.equal((await call(`/repos/${repo.id}/blob?path=src/a.txt&min_version=${landed.version}`)).content, 'a\n');
 
+// A second commit, landed without being read first: a batched landing, whose Git commit
+// the platform builds (an executable file and a nested path exercise modes and trees).
+const second = await call(`/repos/${repo.id}/commits`, {
+  ref: 'main',
+  changes: [
+    { path: 'bin/run.sh', content_b64: b64('#!/bin/sh\necho ok\n'), type: 'exec' },
+    { path: 'docs/ünïcode.md', content_b64: b64('u\n') },
+  ],
+  message: 'Live batched commit',
+  author,
+});
+const landedSecond = await call(`/repos/${repo.id}/land`, { ref: 'main', commit: second.commit });
+assert.equal(
+  (await call(`/repos/${repo.id}/blob?path=bin/run.sh&min_version=${landedSecond.version}`)).executable,
+  true,
+);
+
 // Any Git client sees the platform's ids: main is projected to the head the API reports
-// (the landed commit itself, or the Git commit built for its changeset).
+// (the landed commit itself, or the Git commit built for a changeset).
 const head = (await call(`/repos/${repo.id}/refs`)).refs['refs/heads/main'];
 const access = await call(`/repos/${repo.id}/clone`, {});
 const gitEnv = {
@@ -84,6 +101,8 @@ try {
   console.log(`git clone ${Date.now() - started}ms; projection visible after ${started - projectedAt}ms`);
   assert.equal(git(['rev-parse', 'HEAD'], dir), head);
   assert.equal(readFileSync(join(dir, 'src/a.txt'), 'utf8'), 'a\n');
+  assert.equal(readFileSync(join(dir, 'docs/ünïcode.md'), 'utf8'), 'u\n');
+  assert.equal(git(['ls-files', '-s', 'bin/run.sh'], dir).split(' ')[0], '100755');
   git(['fsck', '--strict'], dir);
 } finally {
   rmSync(dir, { recursive: true, force: true });
