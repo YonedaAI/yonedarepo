@@ -2,8 +2,9 @@
 // run from the SourceRepository authority with a fenced epoch, ships the exact commit's
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
+import { replay } from './repo-commit';
 import { parseStore, RepoObjects } from './repo-objects';
-import { caller, type Json, RepoContext, replay } from './repo-ops';
+import { caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
 import type { Env, Envelope } from './types';
 

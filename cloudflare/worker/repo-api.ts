@@ -6,9 +6,10 @@
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
+import { commit } from './repo-commit';
 import { repoMcp } from './repo-mcp';
 import { newStore, parseStore, RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
+import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 import { timed, withTimings } from './repo-timing';
 import { operations } from './repo-tools';
