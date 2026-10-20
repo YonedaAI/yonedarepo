@@ -1,5 +1,5 @@
 [workspace]
-members = ["backend/crates/yoneda-core", "backend/crates/yoneda-agents-core", "backend/crates/yoneda-app", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "xtask"]
+members = ["backend/crates/yoneda-core", "backend/crates/yoneda-agents-core", "backend/crates/yoneda-app", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "backend/crates/yoneda-cli", "xtask"]
 exclude = ["fixtures/retry-client"]
 resolver = "2"
 
