@@ -23,9 +23,10 @@ const PREPARED_TTL_MS: i64 = 60 * 60 * 1000;
 fn base<S: SqlStore>(db: &S, c: &Value) -> Result<(Option<ObjectId>, u64)> {
     if c.get("parent").is_none_or(Value::is_null) && c["ref"].is_string() {
         let refname = branch_ref(c)?;
-        let head = rows::ref_value(db, &refname)?
-            .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
-        return Ok((Some(head), current_version(db)?));
+        let (head, version) = super::changesets::settled_head(db, &refname)?;
+        let head =
+            head.ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
+        return Ok((Some(head), version));
     }
     let base_version = c["base_version"]
         .as_u64()

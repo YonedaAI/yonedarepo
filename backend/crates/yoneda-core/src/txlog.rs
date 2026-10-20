@@ -9,7 +9,7 @@ mod plan;
 mod scc;
 
 pub use access::{Access, AccessSet, SymbolTouch, independent, symbols_overlap};
-pub use checkpoint::{Checkpoint, replay};
+pub use checkpoint::{Checkpoint, replay, replay_projected};
 pub use entry::{PathOp, PathTouch, TxEntry, TxKind, chain_digest};
 pub use occ::{OccOutcome, Proposal, Refinements, overlaps, stale_read};
 pub use plan::{Plan, PlannedItem, SymbolGraph, SymbolNode, WorkItem, plan};

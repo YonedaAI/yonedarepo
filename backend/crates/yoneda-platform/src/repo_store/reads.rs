@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, merge_bases},
-    txlog::replay,
+    txlog::replay_projected,
 };
 
 fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
@@ -31,6 +31,12 @@ fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
 fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<String, ObjectId>> {
     // Reads without `at` take the fast path; an explicit `at` always verifies.
     if c.get("at").is_none_or(Value::is_null) {
+        if super::changesets::any_unprojected(db)? {
+            return Err(Error::new(
+                "PROJECTION_PENDING",
+                "Landed changesets are not projected to Git yet",
+            ));
+        }
         return db
             .query("SELECT name,commit_id FROM refs", &[])?
             .into_iter()
@@ -44,7 +50,8 @@ fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<Stri
     }
     let from = rows::checkpoint_at_or_before(db, version)?;
     let tail = rows::entries(db, from.version, version, None)?;
-    Ok(replay(&from, &tail)?.refs)
+    let projected = super::version_projection::projected_between(db, from.version, version)?;
+    Ok(replay_projected(&from, &tail, &projected)?.refs)
 }
 
 pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {

@@ -4,11 +4,10 @@
 //! commit, which lands as one log entry, so 100 concurrent landings cost a few round
 //! trips instead of 100 racing merges. The lease orders merge construction; it never
 //! blocks commits, reads or other branches.
-use super::land::{append, gates};
+use super::land::append;
+use super::land_tickets::{finish, status};
 use super::merging::{self, MERGE_PRINCIPAL};
-use super::rows::{
-    self, CommitRow, RecordedGraph, Settings, branch_ref, current_version, object_id,
-};
+use super::rows::{self, CommitRow, RecordedGraph, branch_ref, current_version, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -24,54 +23,8 @@ use yoneda_core::{
 const LEASE_MS: i64 = 10_000;
 const BATCH: u64 = 128;
 
-pub fn enqueue<S: SqlStore>(
-    db: &S,
-    c: &Value,
-    principal: &str,
-    settings: &Settings,
-) -> Result<Value> {
-    let refname = branch_ref(c)?;
-    let commit = rows::recorded(db, &rows::object_id(c, "commit")?)?;
-    let gate = gates(db, &commit.id, settings)?;
-    if gate["ready"] != true {
-        return Err(Error::new(
-            "NOT_READY",
-            format!("Commit cannot land yet: {gate}"),
-        ));
-    }
-    let existing = db.query(
-        "SELECT ticket FROM land_queue WHERE refname=? AND commit_id=? AND status='pending'",
-        &[json!(refname), json!(commit.id.hex())],
-    )?;
-    if let Some(row) = existing.first() {
-        return Ok(json!({ "ticket": row["ticket"], "queued": true }));
-    }
-    db.query(
-        "INSERT INTO land_queue(refname,commit_id,principal,status,requested_at) VALUES(?,?,?,'pending',?)",
-        &[json!(refname), json!(commit.id.hex()), json!(principal), json!(number(c, "now")?)],
-    )?;
-    let ticket = db.query("SELECT last_insert_rowid() AS t", &[])?[0]["t"].clone();
-    Ok(json!({ "ticket": ticket, "queued": true }))
-}
-
-pub fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
-    let ticket = c["ticket"].as_i64().ok_or_else(|| bad("Missing ticket"))?;
-    let row = db
-        .query(
-            "SELECT ticket,refname,commit_id,status,result FROM land_queue WHERE ticket=?",
-            &[json!(ticket)],
-        )?
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::new("NOT_FOUND", "Unknown landing ticket"))?;
-    Ok(json!({
-        "ticket": row["ticket"], "ref": row["refname"], "commit": row["commit_id"], "status": row["status"],
-        "result": row["result"].as_str().and_then(|r| serde_json::from_str::<Value>(r).ok()),
-    }))
-}
-
 /// Active lease, if any: (epoch, expires_at).
-fn lease<S: SqlStore>(db: &S, refname: &str) -> Result<Option<(i64, i64)>> {
+pub(super) fn lease<S: SqlStore>(db: &S, refname: &str) -> Result<Option<(i64, i64)>> {
     Ok(db
         .query(
             "SELECT epoch,expires_at FROM land_leases WHERE refname=?",
@@ -97,25 +50,6 @@ pub fn busy<S: SqlStore>(db: &S, refname: &str, now: i64) -> Result<bool> {
                 )?
                 .is_empty(),
     )
-}
-
-fn finish<S: SqlStore>(
-    db: &S,
-    ticket: &Value,
-    status: &str,
-    result: Value,
-    now: i64,
-) -> Result<()> {
-    db.query(
-        "UPDATE land_queue SET status=?,result=?,finished_at=? WHERE ticket=? AND status='pending'",
-        &[
-            json!(status),
-            json!(result.to_string()),
-            json!(now),
-            ticket.clone(),
-        ],
-    )?;
-    Ok(())
 }
 
 /// Takes the branch's lease (if free) and returns the pending batch to merge. Stale reads

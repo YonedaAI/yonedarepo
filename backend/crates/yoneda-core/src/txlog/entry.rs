@@ -13,6 +13,10 @@ pub enum TxKind {
     /// A ref moved to an existing commit (branch create, reset by owner) without new content.
     RefMove,
     RefDelete,
+    /// A path-disjoint landing appended as its changeset (Scion): `new` is the landed
+    /// commit whose changes it carries, `old` is unset, and the branch's Git commit at this
+    /// version is built later by the deterministic projector.
+    Changeset,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -85,6 +89,9 @@ impl TxEntry {
         }
         if (self.kind == TxKind::RefDelete) != self.new.is_none() {
             return Err(invalid("Only ref deletion has no new commit"));
+        }
+        if self.kind == TxKind::Changeset && self.old.is_some() {
+            return Err(invalid("A changeset names no old commit"));
         }
         let mut seen = std::collections::BTreeSet::new();
         for touch in &self.paths {
