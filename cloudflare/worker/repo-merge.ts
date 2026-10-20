@@ -200,7 +200,7 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
 }
 
 /** A commit's staged objects (its shard's copy, else the authority's), or none. */
-export async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
+async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
   const fromShard = await shardStagedOf(merger.env, merger.repo, commit);
   if (fromShard.length) return fromShard;
   const here = await caller(merger.env, merger.repo, { _system: 'projection' })({
