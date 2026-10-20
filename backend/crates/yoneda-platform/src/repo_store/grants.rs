@@ -1,6 +1,7 @@
 //! Directory grants (Scion S16): a repository token may be limited to path prefixes.
-//! Every read, search, write, review and land checks them; anything outside the grant is
-//! refused with one uniform error, so refusals reveal nothing about what exists there.
+//! Every read, search, write, review, land and contract record checks them; anything
+//! outside the grant is refused with one uniform error, so refusals reveal nothing about
+//! what exists there.
 use crate::storage::bad;
 use serde_json::Value;
 use yoneda_core::{Error, Result, txlog::Access};
@@ -97,7 +98,14 @@ pub fn precheck<S: crate::storage::SqlStore>(
                 require(grant, &touch.path)?;
             }
         }
-        "repo_path_history" => require(grant, c["path"].as_str().unwrap_or_default())?,
+        "repo_path_history" | "repo_record_contract" => {
+            require(grant, c["path"].as_str().unwrap_or_default())?
+        }
+        "repo_contracts" => {
+            for path in super::contracts::paths(c)? {
+                require(grant, &path)?;
+            }
+        }
         // Whether a hidden path was written since is itself hidden.
         "repo_stale_reads" => {
             for item in c["items"].as_array().into_iter().flatten() {
@@ -134,6 +142,10 @@ pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
                 .cloned()
                 .unwrap_or_default();
             result["symbol_touches"] = Value::Array(filter(grant, touches, "path"));
+        }
+        "repo_contracts" => {
+            let records = result["records"].as_array().cloned().unwrap_or_default();
+            result["records"] = Value::Array(filter(grant, records, "path"));
         }
         "repo_txlog" => {
             for entry in result["entries"].as_array_mut().into_iter().flatten() {

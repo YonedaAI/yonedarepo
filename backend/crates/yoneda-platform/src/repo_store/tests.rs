@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        12
+        13
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1417,4 +1417,113 @@ fn symbol_reads_conflict_only_with_derived_writes_to_those_symbols() {
         json!([{"id":"y","version":2,"entries":["src/lib.rs#a"]}])
     );
 }
+
+#[test]
+fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
+    let (h, root) = seeded();
+    let digest = "a".repeat(64);
+    let record = |principal: &str, path: &str, contract: Value| {
+        h.run(
+            principal,
+            json!({"op":"repo_record_contract","commit":root,"path":path,
+            "symbol_path":"a","node_digest":digest,"contract":contract}),
+        )
+    };
+    let first = record(AGENT, "src/lib.rs", json!({"summary":"Does a."})).unwrap();
+    assert_eq!(
+        (first["seq"].as_i64(), first["already"].as_bool()),
+        (Some(1), Some(false))
+    );
+    // A retried write is the same record; a changed contract is a new one.
+    assert_eq!(
+        record(AGENT, "src/lib.rs", json!({"summary":"Does a."})).unwrap()["already"],
+        true
+    );
+    record(
+        AGENT,
+        "src/lib.rs",
+        json!({"summary":"Does a, carefully.","effects":["writes logs"]}),
+    )
+    .unwrap();
+    for (bad, expected) in [
+        (json!({"summary":"x","extra":1}), "INVALID_INPUT"),
+        (json!({}), "INVALID_INPUT"),
+    ] {
+        assert_eq!(code(record(AGENT, "src/lib.rs", bad)), expected);
+    }
+    assert_eq!(
+        code(record(CI, "src/lib.rs", json!({"summary":"x"}))),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(record(AGENT, "../etc", json!({"summary":"x"}))),
+        "UNSAFE_PATH"
+    );
+    assert_eq!(
+        code(h.run(
+            AGENT,
+            json!({"op":"repo_record_contract","commit":"b".repeat(40),"path":"src/lib.rs",
+        "symbol_path":"a","node_digest":digest,"contract":{"summary":"x"}})
+        )),
+        "NOT_FOUND"
+    );
+    assert_eq!(
+        code(h.run(
+            AGENT,
+            json!({"op":"repo_record_contract","commit":root,"path":"src/lib.rs",
+        "symbol_path":"a","node_digest":"short","contract":{"summary":"x"}})
+        )),
+        "INVALID_INPUT"
+    );
+    let listed = h.ok(
+        CI,
+        json!({"op":"repo_contracts","paths":["src/lib.rs","README.md"]}),
+    );
+    let summaries: Vec<&str> = listed["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["contract"]["summary"].as_str().unwrap())
+        .collect();
+    assert_eq!(summaries, ["Does a.", "Does a, carefully."]);
+    assert_eq!(listed["records"][0]["commit"], json!(root));
+    assert_eq!(listed["records"][0]["node_digest"], json!(digest));
+    // Time travel: before the records' log version they did not exist yet.
+    assert!(
+        h.ok(
+            CI,
+            json!({"op":"repo_contracts","paths":["src/lib.rs"],"at":0})
+        )["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    // Directory grants: no writes and no reads outside the grant, not even by listing.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_token_create","name":"public","scopes":["read","write"],
+        "paths":["docs/"],"_secret":"public-secret-0123456789abcdef0123456789"}),
+    );
+    assert_eq!(
+        code(record("token:public", "src/lib.rs", json!({"summary":"x"}))),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(h.run(
+            "token:public",
+            json!({"op":"repo_contracts","paths":["src/lib.rs"]})
+        )),
+        "FORBIDDEN"
+    );
+    assert!(
+        h.ok(
+            "token:public",
+            json!({"op":"repo_contracts","paths":["docs/a.md"]})
+        )["records"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
 mod break_glass;

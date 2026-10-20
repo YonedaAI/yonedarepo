@@ -524,6 +524,201 @@
     }
   },
   {
+    "name": "symbol_contract",
+    "description": "The contract governing one symbol at a commit, branch or past version: inputs, outputs, effects, errors and invariants. status is authored (a recorded contract matching the symbol's current node digest), derived (from the signature and doc comments) or stale (a recorded contract exists but the symbol changed since; it is reported, never served as the contract).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Qualified symbol path like Type::method, or a name"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [
+        "path",
+        "symbol"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "symbol_contract_record",
+    "description": "Record an authored contract for the symbol a handle names (from symbol_get, symbol_list, symbol_contract or symbol_view). The handle must match the symbol at its commit; the record binds to that commit and the symbol's node digest, so it turns stale when the symbol changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "object",
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "path": {
+              "type": "string"
+            },
+            "symbol_path": {
+              "type": "string"
+            },
+            "start": {
+              "type": "integer"
+            },
+            "end": {
+              "type": "integer"
+            },
+            "digest": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "commit",
+            "path",
+            "symbol_path",
+            "digest"
+          ],
+          "additionalProperties": false
+        },
+        "contract": {
+          "type": "object",
+          "description": "Typed contract; every field optional, at least one stated",
+          "properties": {
+            "summary": {
+              "type": "string"
+            },
+            "inputs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "outputs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "effects": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "errors": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "error",
+                      "panic",
+                      "throw"
+                    ]
+                  },
+                  "type": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "invariants": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "handle",
+        "contract"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "symbol_view",
+    "description": "Agent view of one symbol at a revision: its source and handle, its governing contract, and its graph neighbors (callers, callees, members) with handles. Neighbors are resolved lexically by name within the files you can read, so treat them as candidates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "Qualified symbol path like Type::method, or a name"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read as of this transaction-log version (time travel)"
+        }
+      },
+      "required": [
+        "path",
+        "symbol"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_codemod",
     "description": "Literal find/replace across a branch (optionally under a path prefix), computed partition by partition and reduced into one commit (not landed).",
     "inputSchema": {
