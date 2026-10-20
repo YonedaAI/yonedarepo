@@ -1,5 +1,5 @@
+import type { AgentsEntrypoint } from './agents-entrypoint';
 import type { ExecutionContainer } from './container';
-import type { YonedaEntrypoint } from './entrypoint';
 export type Json = Record<string, any>;
 export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
 export interface Env {
@@ -18,7 +18,7 @@ export interface Env {
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
-  SELF: Service<YonedaEntrypoint>;
+  SELF: Service<AgentsEntrypoint>;
   OBJECTS: R2Bucket;
   INDEX: D1Database;
   ARTIFACTS: Artifacts;
@@ -48,6 +48,8 @@ export interface Env {
   SITE_ORIGIN?: string;
   APP_ORIGIN?: string;
   APPS?: Fetcher;
+  /** The source platform Worker (agents-only deployment); its public API is all we call. */
+  PLATFORM?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */

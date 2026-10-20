@@ -74,3 +74,22 @@ test('platform Rust modules use only platform code and core contracts', async ()
     for (const item of used) assert.ok(allowed.includes(item), `${file} uses yoneda_core::${item}`);
   }
 });
+
+test('the agent-layer Worker reaches the platform only through its public API', async () => {
+  const seen = new Set();
+  const pending = ['agents-index'];
+  while (pending.length) {
+    const module = pending.pop();
+    if (seen.has(module)) continue;
+    seen.add(module);
+    const source = await readFile(`${worker}/${module}.ts`, 'utf8');
+    for (const [, target] of source.matchAll(/from '\.\/([^']+)'/g)) pending.push(target);
+  }
+  assert.ok(seen.has('routes') && seen.has('agents-entrypoint'), [...seen].join());
+  for (const module of seen)
+    assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `agent Worker imports ${module}`);
+  const config = await readFile('cloudflare/wrangler.agents.jsonc', 'utf8');
+  for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'OBJECT_PUSHES', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
+    assert.ok(!config.includes(`"${binding}"`), `agent Worker binds ${binding}`);
+  assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-platform-dev"/);
+});

@@ -20,7 +20,6 @@ import { approveOwnerRun } from './owner-run-approval';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
-import { repoApi } from './repo-api';
 import { ownerCommandInput, repositoryOperationAllowed } from './repository-command';
 import { deleteRepository } from './repository-deletion';
 import { recoverPublication, resynchronize } from './repository-recovery';
@@ -54,7 +53,11 @@ export async function fetchRequest(
   if (url.pathname.startsWith('/git/'))
     return externalGit(req, env, url.pathname.split('/').filter(Boolean));
   if (!url.pathname.startsWith('/api/')) return websiteAssets(req, env);
-  if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
+  // The platform's public API is another Worker's surface; the agent layer only proxies it.
+  if (url.pathname.startsWith('/api/v1/'))
+    return env.PLATFORM
+      ? env.PLATFORM.fetch(req)
+      : error('NOT_FOUND', 'The source platform is not bound', 404);
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;
