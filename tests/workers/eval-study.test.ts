@@ -2,7 +2,7 @@
 // plus a retrieval-fault arm. Measures closure recall, exposure precision and cost per
 // accepted change at the API boundary; an independent oracle decides acceptance.
 import { expect, it } from 'vitest';
-import { AGENTS, type Api, type ArmResult, codebase, LAYOUTS, type Receipt, Rng, render, score, tasks } from '../eval/study';
+import { AGENTS, type Api, type ArmResult, codebase, judge, LAYOUTS, newReceipt, render, type Run, score, searchFaults, tasks } from '../eval/study';
 import { api as call, author, file, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -16,20 +16,15 @@ async function arm(owner: { cookie: string }, layout: (typeof LAYOUTS)[number], 
   const repo = `/repos/${created.body.id}`;
   const token = (await call(`${repo}/tokens`, owner, { body: { name: 'agent', scopes: ['read', 'write', 'land'] } })).body.token;
   const api: Api = (path, init) => call(`${repo}${path}`, { token }, init);
-  const runs = [];
-  const faults = { rng: new Rng(SEED + 1), dropSearchHit: (rng: Rng) => dropRate > 0 && rng.next(100) < dropRate * 100 };
+  const runs: Run[] = [];
+  const faults = searchFaults(SEED, dropRate);
   for (const task of tasks(symbols, 6, SEED)) {
-    const receipt: Receipt = { bytesRead: 0, bytesWritten: 0, symbolsSeen: new Set(), faults: 0 };
+    const receipt = newReceipt();
     const commit = await AGENTS[iface](api, task, symbols, receipt, faults);
     const landed = commit ? (await api('/land', { body: { ref: 'main', commit } })).body.landed === true : false;
     // Independent oracle: the target now adds one, and nothing else changed.
-    let accepted = false;
-    if (landed) {
-      const diff = await call(`${repo}/diff?head=${commit}&patch=1`, owner);
-      const added = diff.body.changes.flatMap((c: any) => String(c.patch ?? '').split('\n').filter((l: string) => l.startsWith('+')));
-      accepted = added.length === 1 && added[0].includes('+ 1;');
-    }
-    runs.push({ task, receipt, accepted });
+    const verdict = landed ? judge((await call(`${repo}/diff?head=${commit}&patch=1`, owner)).body, task, symbols) : { accepted: false };
+    runs.push({ task, receipt, ...verdict });
   }
   return score(layout, iface, runs, symbols);
 }
@@ -45,6 +40,7 @@ it('measures what file and symbol interfaces expose across layouts', async () =>
 
   for (const result of arms) expect(result.closure_recall, `${result.layout}/${result.interface}`).toBe(1);
   for (const result of arms) expect(result.accepted, `${result.layout}/${result.interface}`).toBe(result.tasks);
+  for (const result of arms) expect(result.edit_expansion, `${result.layout}/${result.interface}`).toBe(1);
   const of = (layout: string, iface: string) => arms.find((a) => a.layout === layout && a.interface === iface)!;
   for (const layout of LAYOUTS) expect(of(layout, 'symbol').exposure_precision).toBeGreaterThan(of(layout, 'file').exposure_precision);
   // P2: symbol-aware access decouples exposure from layout; whole-file reads do not.
