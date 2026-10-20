@@ -2,6 +2,7 @@
 //! checks, reviews, landing, grants) and the stateless Rust compute the Worker runs next
 //! to the object cache (diffs, merges, search, blame, symbols, review classes, contracts
 //! and the agent and human views).
+mod commit_store;
 mod platform_access;
 mod platform_build;
 mod platform_code;
@@ -21,6 +22,7 @@ mod platform_symbols;
 mod platform_views;
 pub(crate) mod repo_store;
 
+pub use commit_store::{execute_commit_store, migrate_commit_store};
 pub use platform_compute::compute as platform_compute;
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 
