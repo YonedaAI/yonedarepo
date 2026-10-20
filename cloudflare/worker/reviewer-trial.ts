@@ -1,3 +1,4 @@
+import { freezeSourceApproval } from './api-source-approval';
 import { checkLedger } from './runtime';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
@@ -7,7 +8,6 @@ import { workspace } from './workspace';
 export function trialRequest(id: string) {
   return {
     id,
-    workspace_transport: 'git-native-v1',
     mode: 'collaborate',
     intent:
       'Build an accessible San Jose cycling trail guide together, with trail data and a bilingual English/Spanish interface.',
@@ -218,7 +218,8 @@ async function ensureTrialStarted(env: Env, owner: string, repo: string, id: str
   const repository = await ledger(env, repo, { op: 'repository_status', _workspace: owner });
   const existing = await runDetailIfPresent(env, repo, owner, id);
   if (!existing) {
-    const approval = trialRequest(id);
+    const approval: Json = trialRequest(id);
+    await freezeSourceApproval(env, owner, repo, approval, repository);
     checkLedger({ capabilities: repository.capabilities }, approval);
     try {
       await ledger(env, repo, { ...approval, op: 'start_run', _workspace: owner });

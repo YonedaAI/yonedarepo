@@ -2,7 +2,7 @@
 use super::*;
 pub(crate) fn membership<S: SqlStore>(db: &S, c: &Value, record: &Value) -> Result<Value> {
     let path = string(c, "path")?;
-    yoneda_core::validate_path(&path)?;
+    yoneda_agents_core::validate_path(&path)?;
     let r = &record["paths_ref"];
     let id = string(r, "id")?;
     let digest = hash(r, "digest", &[64])?;

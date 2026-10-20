@@ -7,7 +7,9 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
+mod branches;
 mod break_glass;
+mod change_records;
 mod checks;
 mod classes;
 mod contracts;
@@ -49,7 +51,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let settings = rows::settings(db)?;
     let actor = auth::actor(db, c, &settings)?;
     match op.as_str() {
-        "repo_prepare_commit" | "repo_record_commit" => actor.require("write"),
+        "repo_prepare_commit" | "repo_record_commit" | "repo_branch_set" => actor.require("write"),
         "repo_check" => actor.require("check"),
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
@@ -59,6 +61,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_record_classes" | "repo_record_symbols" if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
             "Only the platform classifier records derived classes",
+        )),
+        // Change records feed analytics; only the platform's derive job streams them.
+        "repo_change_records" if !actor.can("classify") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reads change records",
         )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
@@ -111,6 +118,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_snapshot" => reads::snapshot(db, c),
         "repo_log" => reads::log(db, c),
         "repo_txlog" => reads::txlog(db, c),
+        "repo_change_records" => change_records::records(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
         "repo_merge_base" => reads::merge_base(db, c),
         "repo_merge_plan" => merging::plan(db, c),
@@ -146,6 +154,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_projection_objects" => store_lineage::unprojected(db, c),
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
+        "repo_branch_set" => branches::set(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
         "repo_land_status" => land_queue::status(db, c),

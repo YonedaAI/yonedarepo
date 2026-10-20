@@ -12,5 +12,10 @@ export default defineConfig({
       },
     }),
   ],
-  test: { include: ['tests/workers/apps-canary.test.ts'], testTimeout: 20000 },
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
+  test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
+    include: ['tests/workers/apps-canary.test.ts'],
+    testTimeout: 20000,
+  },
 });

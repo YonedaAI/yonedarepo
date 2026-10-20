@@ -1,3 +1,4 @@
+import { platformRevision, repositoryPlatform } from './agents-platform';
 import { response } from './http';
 import { cacheSourceBlob } from './source-cache';
 import {
@@ -14,13 +15,14 @@ import {
   sourceError,
 } from './source-contract';
 import { sourceFingerprint } from './source-crypto';
+import { platformSource } from './source-objects';
 import {
   compareSourcePaths,
   sourceEntry,
   sourceLink,
   sourceOid,
   sourcePath,
-  sourceRepository,
+  sourceRepo,
 } from './source-path';
 import { sourceReadResponse } from './source-storage';
 import type { Env, Json, Scope } from './types';
@@ -30,11 +32,11 @@ const fields: Record<string, string[]> = {
   manifest: ['kind', 'cursor', 'limit'],
   tree: ['path', 'cursor', 'limit', 'input'],
   blob: ['path', 'offset', 'limit', 'kind'],
-  verify: ['commit', 'tree', 'parents'],
+  commit: ['parents', 'tree', 'message', 'changes'],
 };
 
 async function baseFile(env: Env, revision: SourceRevision, path: string): Promise<SourceFile> {
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, revision));
+  const repo = await sourceRepo(env, revision);
   const entry = await sourceLink(repo, revision, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw sourceError('SOURCE_PATH', 'Capture blob requires a regular file');
@@ -62,7 +64,7 @@ async function treePage(env: Env, context: CaptureContext, body: Json) {
         : undefined;
   if (!selected) throw sourceError('SOURCE_SCOPE', 'Capture tree input is not approved');
   const path = sourcePath(body.path ?? '', true);
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, selected));
+  const repo = await sourceRepo(env, selected);
   const commit = await repo.readCommit(selected.commit);
   if (!commit || commit.hash !== selected.commit || commit.treeHash !== selected.tree)
     throw sourceError('SOURCE_CHANGED', 'Capture base root differs');
@@ -163,34 +165,49 @@ export async function sourceCapture(env: Env, scope: Scope, op: string, body: Js
       length: Math.min(body.limit ?? 65536, file.size - offset),
     });
   }
-  const fork = scope.fork ?? scope.job.payload?.fork;
-  if (typeof fork !== 'string' || !Array.isArray(body.parents))
-    throw sourceError('SOURCE_SCOPE', 'Capture fork is not server assigned');
-  sourceOid(body.commit);
+  return commitCapture(env, scope, context, body);
+}
+
+/**
+ * Commit the runtime's changes on the platform and set the attempt's assigned candidate
+ * branch. A retried attempt finds its branch already set to the same tree and parents.
+ */
+async function commitCapture(env: Env, scope: Scope, context: CaptureContext, body: Json) {
+  const branch = scope.job.source_capture_ref?.branch;
+  if (typeof branch !== 'string' || !Array.isArray(body.parents) || !Array.isArray(body.changes))
+    throw sourceError('SOURCE_SCOPE', 'Capture branch is not server assigned');
   sourceOid(body.tree);
   if ((await sourceFingerprint(body.parents)) !== (await sourceFingerprint(context.parents)))
     throw sourceError('SOURCE_SCOPE', 'Capture ordered parents differ');
-  const ref = { repository: fork, commit: body.commit, tree: body.tree };
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, ref));
-  const actual = await repo.readCommit(body.commit);
-  const assigned = scope.job.source_capture_ref;
-  const tip = assigned?.branch ? (await repo.log({ ref: assigned.branch, limit: 1 }))[0] : null;
-  if (
-    !actual ||
-    actual.hash !== body.commit ||
-    actual.treeHash !== body.tree ||
-    !tip ||
-    tip.hash !== body.commit ||
-    (await sourceFingerprint(actual.parents)) !== (await sourceFingerprint(context.parents)) ||
-    !(await repo.readTree(body.tree))
-  )
-    throw sourceError(
-      'SOURCE_CHANGED',
-      'Captured fork commit, tree, or parents differ from readback',
-    );
+  if (body.parents.length < 1 || body.parents.length > 2)
+    throw sourceError('SOURCE_SCOPE', 'Capture needs its base and at most one merged parent');
+  const platform = await repositoryPlatform(env, scope.repo_id);
+  const source = platformSource(platform);
+  const matches = async (commit: string | null) => {
+    const actual = commit ? await source.readCommit(commit) : null;
+    return actual &&
+      actual.treeHash === body.tree &&
+      (await sourceFingerprint(actual.parents)) === (await sourceFingerprint(context.parents))
+      ? actual
+      : null;
+  };
+  let actual = await matches(await source.head(branch));
+  if (!actual) {
+    const made = await platform.call('POST', '/commits', {
+      parent: body.parents[0],
+      ...(body.parents[1] ? { merge_parent: body.parents[1] } : {}),
+      changes: body.changes,
+      message: String(body.message ?? 'YonedaRepo sealed source').slice(0, 2000),
+      author: { name: 'YonedaRepo capture', email: 'capture@yonedarepo.invalid' },
+    });
+    actual = await matches(made.commit);
+    if (!actual)
+      throw sourceError('SOURCE_CHANGED', 'Platform commit tree or parents differ from capture');
+    await platform.call('POST', '/branches', { ref: branch, commit: actual.hash, expected: null });
+  }
   return response({
     verified: true,
-    revision: { repository: fork, commit: actual.hash },
+    revision: { repository: platformRevision(scope.repo_id), commit: actual.hash },
     tree: actual.treeHash,
     parents: actual.parents,
   });

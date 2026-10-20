@@ -13,7 +13,7 @@ use std::{
     },
     time::{Duration, UNIX_EPOCH},
 };
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 #[derive(Clone)]
 pub(super) struct Handle {

@@ -2,13 +2,13 @@
 use crate::err;
 use serde_json::Value;
 use std::path::Path;
-use yoneda_core::{Policy, Result};
+use yoneda_agents_core::{Policy, Result};
 /// Matches the trusted app-bundle broker upload ceiling.
 const MAX_BUNDLE_BYTES: usize = 2 * 1024 * 1024;
 /// Capture after all candidate processes stop; `revision` is the evaluator's captured Git commit.
 /// The caller stores `encode` bytes using create-only `sha256/<digest>` R2 semantics.
 pub fn capture(root: &Path, revision: &str, policy: &Policy) -> Result<Value> {
-    yoneda_core::build::validate_policy(policy)?;
+    yoneda_agents_core::build::validate_policy(policy)?;
     if ![40, 64].contains(&revision.len())
         || !revision
             .bytes()
@@ -48,7 +48,7 @@ pub fn capture(root: &Path, revision: &str, policy: &Policy) -> Result<Value> {
             .map_err(err)?
             .to_str()
             .ok_or_else(|| err("Non-UTF8 app module path"))?;
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         if path
             .split('/')
             .any(|part| part == "node_modules" || part.starts_with("_yoneda_"))
@@ -65,7 +65,7 @@ pub fn capture(root: &Path, revision: &str, policy: &Policy) -> Result<Value> {
         )?;
         let bytes = source.bytes()?;
         total = total.saturating_add(bytes.len());
-        if total > MAX_BUNDLE_BYTES || modules.len() >= yoneda_core::MAX_FILES {
+        if total > MAX_BUNDLE_BYTES || modules.len() >= yoneda_agents_core::MAX_FILES {
             return Err(err("Application bundle exceeds resource limits"));
         }
         modules.insert(path.to_owned(), String::from_utf8(bytes).map_err(err)?);
@@ -77,7 +77,7 @@ pub fn capture(root: &Path, revision: &str, policy: &Policy) -> Result<Value> {
     if !modules.contains_key(main) {
         return Err(err("Missing compiled app entrypoint"));
     }
-    let policy_digest = yoneda_core::build::policy_digest(policy)?;
+    let policy_digest = yoneda_agents_core::build::policy_digest(policy)?;
     Ok(
         serde_json::json!({"version":1,"revision":revision,"policy_digest":policy_digest,
         "manifest":manifest,"modules":modules}),
@@ -89,7 +89,7 @@ pub fn encode(root: &Path, revision: &str, policy: &Policy) -> Result<(String, S
     if text.len() > MAX_BUNDLE_BYTES {
         return Err(err("Encoded application bundle exceeds 2 MiB"));
     }
-    let digest = yoneda_core::digest(text.as_bytes());
+    let digest = yoneda_agents_core::digest(text.as_bytes());
     Ok((text, digest))
 }
 #[cfg(test)]
@@ -98,7 +98,7 @@ mod tests {
     use serde_json::json;
     fn policy() -> Policy {
         serde_json::from_value(json!({"version":"v1","suite":"commands-v1",
-            "environment":yoneda_core::build::ENVIRONMENT,"required_checks":["app"],
+            "environment":yoneda_agents_core::build::ENVIRONMENT,"required_checks":["app"],
             "build":{"checks":[{"name":"app","argv":["true"],"timeout_seconds":1}],
             "app":{"version":1,"entrypoint":"dist/worker.js","export_name":"App",
             "migrations":[{"version":1,"sql":["CREATE TABLE notes (id TEXT)"]}],"seed":[]}}}))
@@ -115,10 +115,10 @@ mod tests {
         assert_eq!(value["revision"], "a".repeat(40));
         assert_eq!(
             value["policy_digest"],
-            yoneda_core::build::policy_digest(&policy).unwrap()
+            yoneda_agents_core::build::policy_digest(&policy).unwrap()
         );
         assert_eq!(value["modules"]["worker.js"], "export class App {}");
-        assert_eq!(digest, yoneda_core::digest(text.as_bytes()));
+        assert_eq!(digest, yoneda_agents_core::digest(text.as_bytes()));
         std::fs::write(root.path().join("dist/worker.js"), "changed").unwrap();
         assert_ne!(
             encode(root.path(), &"a".repeat(40), &policy).unwrap().1,

@@ -43,7 +43,7 @@ async function fixture(guidedProject = true, reviewer = true) {
   const cookie = reviewer ? await reviewerSignup(owner) : await signup(owner);
   const policy = guidedPolicy(bundle);
   await call({ op: 'init', id: repo, name: 'Offline guided authority fixture', workspace: owner,
-    remote: { namespace: 'yoneda-test', name: repo, branch: 'main' }, commit: base, policy,
+    remote: { namespace: 'yoneda-test', name: repo, branch: 'main' }, commit: base, tree: 'b'.repeat(40), policy,
     ...(guidedProject ? { _guided_project: { profile_id: 'task-board-v1', version: 1,
       policy_digest: await sourceFingerprint(policy), test_bundle_digest: bundle,
       starter: { repository: 'yoneda-test/starter', branch: 'main', commit: base, tree: 'b'.repeat(40) } } } : {}),

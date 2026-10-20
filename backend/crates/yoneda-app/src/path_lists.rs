@@ -1,12 +1,12 @@
 //! Immutable path manifests keep API metadata below SQLite and supervisor limits.
 use crate::storage::{SqlStore, bad, create, get, hash, string};
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(crate) mod access;
 pub(crate) mod integrity;
 #[cfg(test)]
 mod tests;
-pub(crate) const MAX_PATHS: usize = 2 * yoneda_core::source_workspace::MAX_FILES;
+pub(crate) const MAX_PATHS: usize = 2 * yoneda_agents_core::source_workspace::MAX_FILES;
 fn paths(value: &Value) -> Result<Vec<String>> {
     let values = value.as_array().ok_or_else(|| bad("Missing path array"))?;
     if values.len() > MAX_PATHS {
@@ -18,7 +18,7 @@ fn paths(value: &Value) -> Result<Vec<String>> {
     let mut result = Vec::with_capacity(values.len());
     for v in values {
         let path = v.as_str().ok_or_else(|| bad("Invalid path entry"))?;
-        yoneda_core::validate_path(path.trim_end_matches('/'))?;
+        yoneda_agents_core::validate_path(path.trim_end_matches('/'))?;
         result.push(path.to_owned());
     }
     Ok(result)
@@ -27,7 +27,7 @@ pub(crate) fn persist<S: SqlStore>(db: &S, value: &Value) -> Result<Value> {
     let mut items = paths(value)?;
     items.sort();
     items.dedup();
-    let digest = yoneda_core::fingerprint(&json!(items))?;
+    let digest = yoneda_agents_core::fingerprint(&json!(items))?;
     let id = format!("paths:{digest}");
     let reference = json!({"version":1,"id":id,"digest":digest,"count":items.len()});
     match get(db, "source_path_lists", &id) {
@@ -73,7 +73,7 @@ fn load_ref<S: SqlStore>(db: &S, reference: &Value) -> Result<Vec<String>> {
         }
         for row in rows {
             let path = string(&row, "path")?;
-            yoneda_core::validate_path(path.trim_end_matches('/'))?;
+            yoneda_agents_core::validate_path(path.trim_end_matches('/'))?;
             after = path.clone();
             result.push(path);
         }
@@ -81,7 +81,7 @@ fn load_ref<S: SqlStore>(db: &S, reference: &Value) -> Result<Vec<String>> {
             return Err(Error::new("DATABASE", "Path manifest overflow"));
         }
     }
-    if result.len() as u64 != count || yoneda_core::fingerprint(&json!(result))? != digest {
+    if result.len() as u64 != count || yoneda_agents_core::fingerprint(&json!(result))? != digest {
         return Err(Error::new(
             "DATABASE",
             "Path manifest rows differ from frozen digest",
@@ -128,7 +128,7 @@ pub(crate) fn page_record<S: SqlStore>(db: &S, c: &Value, record: &Value) -> Res
         .transpose()?
         .unwrap_or("");
     if !after.is_empty() {
-        yoneda_core::validate_path(after.trim_end_matches('/'))?;
+        yoneda_agents_core::validate_path(after.trim_end_matches('/'))?;
     }
     let (digest, total, selected) = if !record["paths_ref"].is_null() {
         let reference = &record["paths_ref"];
@@ -161,7 +161,7 @@ pub(crate) fn page_record<S: SqlStore>(db: &S, c: &Value, record: &Value) -> Res
         items.sort();
         items.dedup();
         (
-            yoneda_core::fingerprint(&json!(items))?,
+            yoneda_agents_core::fingerprint(&json!(items))?,
             items.len() as u64,
             items
                 .into_iter()

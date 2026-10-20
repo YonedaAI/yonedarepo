@@ -1,7 +1,7 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut c: Value) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
     c["now"] = json!(1000);
     execute_workspace(db, c)
 }
@@ -143,7 +143,7 @@ fn aliases_reject_stale_source_models_unpriced_targets_and_existing_connection_r
     // This supported historical model has no current conservative catalog price.
     // MiMo 2.6 is now priced and is no longer a valid denial fixture.
     unpriced["model"] = json!("claude-sonnet-4-6");
-    yoneda_core::providers::validate_model("claude", "claude-sonnet-4-6").unwrap();
+    yoneda_agents_core::providers::validate_model("claude", "claude-sonnet-4-6").unwrap();
     assert_eq!(call(&db, unpriced).unwrap_err().code, "INVALID_INPUT");
 }
 
@@ -187,11 +187,11 @@ struct AliasReadFailure {
     db: NativeStore,
 }
 impl SqlStore for AliasReadFailure {
-    fn query(&self, sql: &str, params: &[Value]) -> yoneda_core::Result<Vec<Value>> {
+    fn query(&self, sql: &str, params: &[Value]) -> yoneda_agents_core::Result<Vec<Value>> {
         if sql == "SELECT payload FROM workspace_records WHERE id=?"
             && params.first() == Some(&json!("provider:alias-opus"))
         {
-            return Err(yoneda_core::Error::new(
+            return Err(yoneda_agents_core::Error::new(
                 "DATABASE",
                 "Injected target alias read failure",
             ));
@@ -200,8 +200,8 @@ impl SqlStore for AliasReadFailure {
     }
     fn transaction(
         &self,
-        action: Box<dyn FnOnce() -> yoneda_core::Result<Value>>,
-    ) -> yoneda_core::Result<Value> {
+        action: Box<dyn FnOnce() -> yoneda_agents_core::Result<Value>>,
+    ) -> yoneda_agents_core::Result<Value> {
         self.db.transaction(action)
     }
 }

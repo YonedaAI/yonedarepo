@@ -22,7 +22,7 @@ pub(super) fn attempt(saved: &Value) -> u64 {
 /// Deterministic run identity. The first attempt keeps the original unsuffixed form so
 /// existing sessions and approvals remain valid; the Worker preparation mirrors this.
 pub(super) fn run_id(session_id: &str, step: &str, ordinal: usize, attempt: u64) -> String {
-    let prefix = &yoneda_core::digest(session_id.as_bytes())[..24];
+    let prefix = &yoneda_agents_core::digest(session_id.as_bytes())[..24];
     if attempt <= 1 {
         format!("guide-{prefix}-{step}-{ordinal}")
     } else {

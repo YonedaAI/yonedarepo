@@ -1,7 +1,7 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut command: Value) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut command: Value) -> yoneda_agents_core::Result<Value> {
     command["now"] = json!(1000);
     execute_workspace(db, command)
 }
@@ -10,7 +10,7 @@ fn fixture() -> (NativeStore, Value) {
     let db = NativeStore::memory().unwrap();
     call(&db, json!({"op":"signup","username":"guide_owner","password":"offline guide fixture password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)})).unwrap();
     let policy = json!({"version":"task-board-v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1","required_checks":["guided-task-board"],"build":{"setup":[],"checks":[{"name":"guided-task-board","argv":["node","/opt/yoneda/test-bundle/fixtures/guided-task-board/oracle/run.mjs"],"timeout_seconds":30}],"static_dir":"public","test_bundle":{"digest":"d".repeat(64),"protected_paths":["README.md",".yoneda-guided","fixtures/guided-task-board/oracle"]}}});
-    let marker = json!({"profile_id":"task-board-v1","version":1,"starter":{"repository":"local/starter","branch":"main","commit":"a".repeat(40),"tree":"b".repeat(40)},"policy_digest":yoneda_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64)});
+    let marker = json!({"profile_id":"task-board-v1","version":1,"starter":{"repository":"local/starter","branch":"main","commit":"a".repeat(40),"tree":"b".repeat(40)},"policy_digest":yoneda_agents_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64)});
     (
         db,
         json!({"op":"project_reserve","id":"fresh-guide","name":"Fresh guide","source":null,"policy":policy,"_guided_project":marker}),

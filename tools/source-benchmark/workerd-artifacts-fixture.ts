@@ -6,12 +6,12 @@ const bytesPerFile = 4096;
 const oid = (kind: string, bytes: Uint8Array) =>
   createHash('sha1').update(`${kind} ${bytes.length}\0`).update(bytes).digest('hex');
 
-/** External Artifacts fixture only: native staging and R2 remain actual Workerd bindings. */
+/** Synthetic platform objects only: native staging and R2 remain actual Workerd bindings. */
 export function artifactsBenchmarkFixture() {
   const paths: string[] = fixturePaths(10000);
   const requested: string[] = requestedPaths(paths);
   const byBlob = new Map<string, string>();
-  const trees = new Map<string, ArtifactsTreeEntry[]>();
+  const trees = new Map<string, { name: string; mode: string; hash: string; type: string }[]>();
   function tree(entries: { name: string; mode: string; hash: string; type: string }[]) {
     entries.sort((a, b) => a.name.localeCompare(b.name));
     const content = Buffer.concat(
@@ -23,7 +23,7 @@ export function artifactsBenchmarkFixture() {
       ),
     );
     const hash = oid('tree', content);
-    trees.set(hash, entries as ArtifactsTreeEntry[]);
+    trees.set(hash, entries);
     return hash;
   }
   const folders = new Map<string, { name: string; mode: string; hash: string; type: string }[]>();
@@ -45,7 +45,7 @@ export function artifactsBenchmarkFixture() {
   );
   const root = tree([{ name: 'data', mode: '040000', type: 'tree', hash: data }]);
   const base = {
-    repository: 'yoneda-test/source-base',
+    repository: 'platform/source-base',
     commit: '07eddbc5fac77839cf101342767a2f825d19c53b',
     tree: root,
   };
@@ -71,20 +71,13 @@ export function artifactsBenchmarkFixture() {
       reads.push(path);
       return new Blob([fixtureBytes(seed, path, bytesPerFile)]);
     },
-  } as unknown as ArtifactsRepo;
-  const artifacts = {
-    async get(name: string) {
-      if (name !== 'source-base') throw new Error('Foreign source repository');
-      return repo;
-    },
-  } as unknown as Artifacts;
+  };
   return {
     base,
     paths,
     requested,
     reads,
     repo,
-    artifacts,
     counts: () => ({
       tree_reads: treeReads,
       commit_reads: commitReads,

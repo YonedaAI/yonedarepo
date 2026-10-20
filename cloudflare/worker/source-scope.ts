@@ -9,7 +9,7 @@ import {
 } from './source-contract';
 import { sourceFingerprint } from './source-crypto';
 import { preparedSourceView } from './source-index';
-import { compareSourcePaths, sourceRepository } from './source-path';
+import { compareSourcePaths, sourceRepo } from './source-path';
 import { ledger } from './storage';
 import type { Env, Scope } from './types';
 
@@ -88,7 +88,7 @@ export async function sourceScope(
   const view = await preparedSourceView(env, selected, guard);
   const verifyRoot = async (revision: SourceRevision) => {
     await guard();
-    using repo = await env.ARTIFACTS.get(sourceRepository(env, revision));
+    const repo = await sourceRepo(env, revision);
     const actual = await repo.readCommit(revision.commit);
     if (!actual || actual.hash !== revision.commit || actual.treeHash !== revision.tree)
       throw sourceError('SOURCE_CHANGED', 'Certified source root differs from the frozen input');

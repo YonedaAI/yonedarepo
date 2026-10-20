@@ -1,7 +1,7 @@
 //! Shared owner allowance. Historical authorities are observed, never debited again or rewritten.
 use super::*;
 use crate::storage::{create, number};
-use yoneda_core::model_budget::MAX_SAFE_BUDGET_INTEGER;
+use yoneda_agents_core::model_budget::MAX_SAFE_BUDGET_INTEGER;
 mod history;
 mod reservations;
 mod transition;

@@ -30,7 +30,7 @@ pub(super) fn candidate<S: SqlStore>(
         {
             continue;
         }
-        let policy: yoneda_core::Policy =
+        let policy: yoneda_agents_core::Policy =
             serde_json::from_value(repo(db)?["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
         let passed = evaluation["checks"].as_array().is_some_and(|checks| {
             policy.required_checks.iter().all(|name| {

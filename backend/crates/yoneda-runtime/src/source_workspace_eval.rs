@@ -10,7 +10,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     sync::{Arc, Mutex},
 };
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 #[derive(Clone)]
 struct Entry {
     node: SourceNode,

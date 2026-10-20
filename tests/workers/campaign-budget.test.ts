@@ -116,7 +116,7 @@ async function finishedCoordinator(sharedPreferredExhausted = false) {
   }
   const command = { username: f.owner, repo_id: f.repo, run_id: id, request_id: 'after-runtime-fix',
     expected_coordinator_job: coordinator.id, expected_epoch: coordinator.epoch,
-    expected_commit: 'a'.repeat(40), expected_version: 0, expected_plan_revision: 1 };
+    expected_commit: f.head, expected_version: 0, expected_plan_revision: 1 };
   return { ...f, command, id };
 }
 it('retries a completed inactive coordinator once across eviction without renewing campaign authority', async () => {

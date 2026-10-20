@@ -1,3 +1,4 @@
+import { freezeSourceApproval } from './api-source-approval';
 import { campaignGrant } from './campaign-grant';
 import { latestChecked } from './reviewer-campaign-evidence';
 import { campaignTrialRequest, reviewerCampaignId } from './reviewer-campaign-policy';
@@ -48,6 +49,7 @@ export async function startCampaignTrial(env: Env, owner: string, requestId: str
   }
   if (!existing) {
     try {
+      await freezeSourceApproval(env, owner, repo, approval, repository);
       const grant = await campaignGrant(env, owner, repo, approval, binding);
       await ledger(env, repo, {
         ...approval,

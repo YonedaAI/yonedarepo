@@ -1,5 +1,5 @@
 use super::SqlStore;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(crate) fn active_run_count<S: SqlStore>(db: &S) -> Result<i64> {
     active_run_count_where(db, false)

@@ -3,8 +3,8 @@ use super::http::{Response, Server};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use yoneda_agents_core::source_workspace::*;
 use yoneda_app::{SqlStore, execute_source_workspace, native::NativeStore};
-use yoneda_core::source_workspace::*;
 
 pub struct NativeSourceServer {
     pub server: Server,
@@ -54,7 +54,7 @@ impl NativeSourceServer {
             role: SourceRole::Builder,
             access: SourceAccess::ReadWrite,
             view_digest: digest.clone(),
-            baseline_overrides_digest: yoneda_core::fingerprint(&json!([])).unwrap(),
+            baseline_overrides_digest: yoneda_agents_core::fingerprint(&json!([])).unwrap(),
             base: base.clone(),
             parents: vec![base.commit.clone()],
             policy_digest: "d".repeat(64),
@@ -166,7 +166,11 @@ fn sign(claims: &ActorClaims) -> String {
     key[..32].fill(0xaa);
     inner.update(key.map(|b| b ^ 0x36));
     inner.update(b"yoneda:source-grant:v1\0");
-    inner.update(yoneda_core::fingerprint(&json!(claims)).unwrap().as_bytes());
+    inner.update(
+        yoneda_agents_core::fingerprint(&json!(claims))
+            .unwrap()
+            .as_bytes(),
+    );
     outer.update(key.map(|b| b ^ 0x5c));
     outer.update(inner.finalize());
     outer

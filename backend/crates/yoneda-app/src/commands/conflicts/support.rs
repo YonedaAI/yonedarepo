@@ -1,7 +1,7 @@
 use super::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::conflict::{ConflictRecord, ConflictStatus};
+use yoneda_agents_core::conflict::{ConflictRecord, ConflictStatus};
 pub(super) fn owner(c: &Value) -> Result<()> {
     if c.get("_grant").is_some() || c.get("_reviewer").is_some() || c.get("job_id").is_some() {
         return Err(Error::new(
@@ -88,7 +88,7 @@ pub(super) fn declared_scopes<S: SqlStore>(
     }
     let run = get(db, "runs", &string(candidate, "run_id")?)?;
     if run["mode"] == "collaborate" {
-        let plan: yoneda_core::team::TeamPlan =
+        let plan: yoneda_agents_core::team::TeamPlan =
             serde_json::from_value(run["team_plan"].clone()).map_err(|e| bad(&e.to_string()))?;
         let declared: BTreeSet<String> = plan
             .integration_paths
@@ -99,7 +99,7 @@ pub(super) fn declared_scopes<S: SqlStore>(
         if paths.iter().any(|path| {
             !declared
                 .iter()
-                .any(|scope| yoneda_core::team::owns_path(scope, path))
+                .any(|scope| yoneda_agents_core::team::owns_path(scope, path))
         }) {
             return Err(Error::new(
                 "WRITE_SCOPE",
@@ -123,7 +123,7 @@ pub(super) fn validate_path_list(paths: &[String]) -> Result<()> {
         return Err(bad("Candidate path manifest contains duplicates"));
     }
     for path in paths {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
     }
     Ok(())
 }

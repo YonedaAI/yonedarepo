@@ -1,6 +1,6 @@
 //! Validate the complete amended DAG before fencing or modifying any task.
 use super::*;
-use yoneda_core::team::TeamTask;
+use yoneda_agents_core::team::TeamTask;
 
 pub(super) fn apply<S: SqlStore>(
     db: &S,
@@ -45,7 +45,7 @@ pub(super) fn apply<S: SqlStore>(
     if let Some(definitions) = c.get("task_definitions") {
         let definitions: Vec<TeamTask> =
             serde_json::from_value(definitions.clone()).map_err(|e| bad(&e.to_string()))?;
-        if definitions.is_empty() || definitions.len() > yoneda_core::team::MAX_TEAM_TASKS {
+        if definitions.is_empty() || definitions.len() > yoneda_agents_core::team::MAX_TEAM_TASKS {
             return Err(bad("Choose 1–16 task definitions"));
         }
         let mut ids = BTreeSet::new();

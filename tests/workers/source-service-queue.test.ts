@@ -8,13 +8,13 @@ import { sourceIndexEnvelope } from '../../cloudflare/worker/source-index-queue'
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
-import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 
 it('continues legitimate cold preparation beyond four queue batches without burning transport retries or claiming a model job', async () => {
   const repo = 'source-queue-many-files';
-  const revision = { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const revision = { repository: `platform/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
   const bytes = new Uint8Array([0, 255]);
   const prefix = new TextEncoder().encode(`blob ${bytes.length}\0`);
   const input = new Uint8Array(prefix.length + bytes.length); input.set(prefix); input.set(bytes, prefix.length);
@@ -22,9 +22,8 @@ it('continues legitimate cold preparation beyond four queue batches without burn
   const readBlob = vi.fn(async () => new Blob([bytes]));
   const artifact = { readCommit: async () => ({ hash: revision.commit, treeHash: revision.tree }),
     readTree: async () => Array.from({ length: 100 }, (_, index) => ({ name: `f-${String(index).padStart(3, '0')}.bin`,
-      hash: blob, mode: '100644', type: 'blob' })), readBlob, [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Bounded queue index', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: revision.commit, policy: reviewerPolicy });
+      hash: blob, mode: '100644', type: 'blob' })), readBlob };
+  const platform = await syntheticPlatform(bindings, { [repo]: artifact }, 'source_owner');
   await ledger(bindings, repo, { op: 'start_run', id: 'index-run', intent: 'Prepare immutable source before models',
     workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: revision,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic source index' }] });
@@ -37,7 +36,7 @@ it('continues legitimate cold preparation beyond four queue batches without burn
     expect(options).toEqual({ delaySeconds: 1 });
     messages.push(envelope);
   });
-  const local = { ...bindings, AGENT_QUEUE: { send }, ARTIFACTS: { get: async () => artifact } } as unknown as Env;
+  const local = { ...platform, AGENT_QUEUE: { send } } as unknown as Env;
   while (messages.length && batches < 12) {
     const body = messages.shift();
     batches++;

@@ -1,7 +1,7 @@
 //! Delegation creates isolated alternatives, never a shared checkout or automatic merge.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     agents::{DelegationPolicy, DelegationRequest},
 };
@@ -52,10 +52,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     }))
     .map_err(|e| bad(&e.to_string()))?;
     request.validate()?;
-    let key =
-        yoneda_core::fingerprint(&json!({"parent":parent_id,"request_id":request.request_id}))?;
+    let key = yoneda_agents_core::fingerprint(
+        &json!({"parent":parent_id,"request_id":request.request_id}),
+    )?;
     let id = format!("{run_id}:child:{key}");
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &serde_json::to_value(&request).map_err(|e| bad(&e.to_string()))?,
     )?;
     if let Ok(existing) = get(db, "executions", &id) {
@@ -104,7 +105,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             child[field] = value.clone();
         }
     }
-    yoneda_core::adaptive_team::execution_effort(&run, &child)?;
+    yoneda_agents_core::adaptive_team::execution_effort(&run, &child)?;
     create(db, "executions", &id, &child)?;
     node(
         db,
@@ -197,7 +198,7 @@ fn status<S: SqlStore>(db: &S, parent: &Value, run: &Value) -> Result<Value> {
         json!({"execution":parent,"children":children,"candidates":candidates,"context":context,
         "context_truncated":context_truncated,"delegation":run["delegation"],
         "model_requests":run["model_requests"].as_i64().unwrap_or_default(),
-        "run_model_request_limit":if run["request_limits"] == "optional-v1" {Value::Null} else {json!(yoneda_core::agents::MAX_RUN_MODEL_REQUESTS)},
+        "run_model_request_limit":if run["request_limits"] == "optional-v1" {Value::Null} else {json!(yoneda_agents_core::agents::MAX_RUN_MODEL_REQUESTS)},
         "model_budgets":run.get("model_budgets").cloned().unwrap_or_else(||json!([]))}),
     )
 }

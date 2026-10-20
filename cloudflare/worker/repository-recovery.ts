@@ -1,4 +1,6 @@
+import { repositoryPlatform } from './agents-platform';
 import { error, readJson, response } from './http';
+import { platformSource } from './source-objects';
 import { ledger } from './storage';
 import type { Env, Json, Principal } from './types';
 
@@ -7,17 +9,13 @@ async function observeCanonical(env: Env, principal: Principal, repo: string) {
     op: 'repository_status',
     _workspace: principal.workspace,
   });
-  using remote = await env.ARTIFACTS.get(status.remote.name);
-  const info = await remote.info();
-  const observed = (
-    await remote.log({ ref: status.remote.branch ?? info.defaultBranch, limit: 1 })
-  )[0]?.hash;
+  const observed = await platformSource(await repositoryPlatform(env, status.id)).head('main');
   if (!observed)
     throw new Error('Canonical remote has no readable HEAD; recovery did not change the ledger');
   return observed;
 }
 
-/** The owner supplies CAS expectations; only Artifacts supplies the observed commit. */
+/** The owner supplies CAS expectations; only the platform supplies the observed commit. */
 export async function resynchronize(req: Request, env: Env, principal: Principal, repo: string) {
   const input = await readJson(req);
   const observed = await observeCanonical(env, principal, repo);
@@ -35,45 +33,46 @@ export async function resynchronize(req: Request, env: Env, principal: Principal
 const boundedId = (value: unknown, limit: number) =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
 
-/** Validated owner input for retrying a falsely conflicted publication; extra fields are dropped. */
-export function publicationRecoveryInput(input: Json) {
-  if (
-    !boundedId(input?.request_id, 128) ||
-    !boundedId(input?.decision_id, 256) ||
-    !Number.isSafeInteger(input?.expected_version) ||
-    input.expected_version < 0
-  )
-    return null;
-  return {
-    request_id: input.request_id as string,
-    decision_id: input.decision_id as string,
-    expected_version: input.expected_version as number,
-  };
+/**
+ * After the owner selects a checked candidate, the agent layer records its independent
+ * checks on the exact platform commit (its token has the check scope; it can never land).
+ * Overridden checks are recorded as failing, so only the owner's break-glass lands them.
+ */
+export async function recordPublicationChecks(env: Env, repo: string, receipt: Json) {
+  const landing = receipt?.publication;
+  if (!landing?.commit) return;
+  const platform = await repositoryPlatform(env, repo);
+  await platform.call('POST', `/commits/${landing.commit}/checks`, {
+    name: 'yoneda-checks',
+    status: landing.break_glass ? 'fail' : 'pass',
+    evidence: `YonedaRepo decision ${receipt.id}`,
+  });
 }
 
-/**
- * Retry a publication whose publisher reported a conflict. The ledger refuses unless the
- * freshly observed canonical HEAD still equals the head recorded when the decision was made.
- */
-export async function recoverPublication(
+/** The owner landed (or tried to) on the platform; only the platform's `main` completes it. */
+export async function publicationReadback(
   req: Request,
   env: Env,
   principal: Principal,
   repo: string,
 ) {
-  const input = publicationRecoveryInput(await readJson(req));
-  if (!input)
-    return error(
-      'INVALID_INPUT',
-      'request_id, decision_id and a non-negative expected_version are required',
-    );
-  const observed = await observeCanonical(env, principal, repo);
+  const input = await readJson(req);
+  if (!boundedId(input?.decision_id, 256)) return error('INVALID_INPUT', 'decision_id is required');
+  const status = await ledger(env, repo, {
+    op: 'repository_status',
+    _workspace: principal.workspace,
+  });
+  const platform = await repositoryPlatform(env, status.id);
+  const observed = await platformSource(platform).head('main');
+  if (!observed) throw new Error('The platform repository has no main branch');
+  const landed = await platform.call('GET', `/commits/${observed}`);
+  const version = landed.landings?.find((l: Json) => l.refname === 'refs/heads/main')?.version;
   return response(
     await ledger(env, repo, {
-      ...input,
-      op: 'recover_publication',
-      _workspace: principal.workspace,
+      op: 'publication_readback',
+      decision_id: input.decision_id,
       observed_commit: observed,
+      land_version: version ?? null,
     }),
   );
 }

@@ -14,7 +14,7 @@ The apps Worker needs `APP_DOMAIN`, `APP_ORIGIN`, `PLATFORM_ORIGIN`, `PLATFORM`,
 
 ## Capture and execution
 
-`yoneda_core::build::AppManifest` is an optional version-1 `BuildProfile.app`, with `entrypoint`, `export_name`, ordered `migrations: [{version, sql}]` and initial `seed`. Core and host validation allow only bounded, single-statement additive migrations (`CREATE TABLE`, `CREATE [UNIQUE] INDEX`, `ALTER TABLE ... ADD COLUMN`) and initial `INSERT INTO` seed statements. Old build profiles remain valid.
+`yoneda_agents_core::build::AppManifest` is an optional version-1 `BuildProfile.app`, with `entrypoint`, `export_name`, ordered `migrations: [{version, sql}]` and initial `seed`. Core and host validation allow only bounded, single-statement additive migrations (`CREATE TABLE`, `CREATE [UNIQUE] INDEX`, `ALTER TABLE ... ADD COLUMN`) and initial `INSERT INTO` seed statements. Old build profiles remain valid.
 
 `yoneda_runtime::app_bundle::capture(root, revision, policy) -> Result<Value>` captures compiled `.js`/`.mjs` files beneath the entrypoint's parent, rejects symlinks/nonregular files/reserved module paths, and binds the exact evaluator revision and normalized policy digest. `encode(...) -> Result<(String, String)>` returns the canonical bundle JSON bytes as a string and their SHA256 digest. JSON fields are `version`, `revision`, `policy_digest`, `manifest`, `modules`; module paths are relative to the captured directory, while the manifest retains its repository-relative entrypoint. Store the exact returned bytes at private R2 `sha256/<digest>` using create-only writes. `build::policy_digest(&Policy)` supplies the normalized, sorted-key fingerprint used by capture and evaluation.
 

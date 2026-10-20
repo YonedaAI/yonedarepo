@@ -30,7 +30,7 @@ pub(in crate::commands) fn context<S: SqlStore>(db: &S, c: &Value, now: i64) -> 
         ));
     }
     if let Some(path) = c["path"].as_str() {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         if c["candidate_id"].is_null() {
             return Err(bad("Source paths require an exact manifest candidate"));
         }
@@ -102,7 +102,7 @@ pub(in crate::commands) fn submit<S: SqlStore>(db: &S, c: &Value, now: i64) -> R
         ));
     }
     let manifest = &j["payload"]["comparison_manifest"]["manifest"];
-    let digest = yoneda_core::fingerprint(manifest)?;
+    let digest = yoneda_agents_core::fingerprint(manifest)?;
     if c["manifest_digest"] != digest
         || run["comparison"]["manifest_digest"] != digest
         || manifest::current(db, &run)? != *manifest
@@ -191,7 +191,7 @@ pub(in crate::commands) fn submit<S: SqlStore>(db: &S, c: &Value, now: i64) -> R
     }
     let id = format!(
         "proposed-decision:{}",
-        yoneda_core::fingerprint(
+        yoneda_agents_core::fingerprint(
             &json!({"execution":e["id"],"epoch":j["epoch"],"request":request})
         )?
     );

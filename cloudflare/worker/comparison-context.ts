@@ -1,7 +1,7 @@
-import { source } from './artifacts';
 import { canonicalJson } from './canonical-json';
 import { assertComparisonReview } from './comparison-scope';
 import { CANDIDATE_DIFF_LIMIT, readBoundedEvidence } from './evidence';
+import { openSource, type SourceRepo } from './source-objects';
 import { ledger, sha } from './storage';
 import type { Env, Json, Scope } from './types';
 
@@ -124,10 +124,12 @@ async function sourceFile(
     path.split('/').some((part) => !part || ['.', '..', '.git'].includes(part.toLowerCase()))
   )
     throw fail('Invalid captured source path');
-  const [namespace, name, extra] = String(candidate.revision?.repository).split('/');
-  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !/^[A-Za-z0-9_.-]{1,100}$/.test(name))
+  let repo: SourceRepo;
+  try {
+    repo = await openSource(env, String(candidate.revision?.repository));
+  } catch {
     throw fail('Captured source is outside this namespace');
-  using repo = await env.ARTIFACTS.get(name);
+  }
   const commit = await repo.readCommit(candidate.revision.commit);
   if (!commit || typeof candidate.tree !== 'string' || commit.treeHash !== candidate.tree)
     throw fail('Captured source tree differs from the comparison manifest');
@@ -156,28 +158,6 @@ async function sourceFile(
 }
 
 /** Supervisor-only materialization is separate from bounded model tool responses. */
-export async function comparisonSources(env: Env, scope: Scope) {
-  const context = await comparisonContext(env, scope);
-  const candidates = [];
-  for (const alternative of context.manifest.alternatives) {
-    if (alternative.candidate_id == null) continue;
-    const metadata = context.manifest.candidates.find(
-      (candidate: Json) => candidate.candidate_id === alternative.candidate_id,
-    );
-    if (!metadata || canonicalJson(metadata.revision) !== canonicalJson(alternative.revision))
-      throw fail('Comparison source identity differs from its frozen alternative');
-    const candidate = await capturedCandidate(env, scope, metadata);
-    candidates.push({
-      candidate_id: candidate.id,
-      revision: candidate.revision,
-      ...(await source(env, candidate.revision, candidate.tree, {
-        bytes: 100 * 1024 * 1024,
-        files: 10000,
-      })),
-    });
-  }
-  return { manifest_digest: context.manifest_digest, candidates };
-}
 
 async function capturedCandidate(env: Env, scope: Scope, metadata: Json): Promise<Json> {
   const candidate = await ledger(env, scope.repo_id, {

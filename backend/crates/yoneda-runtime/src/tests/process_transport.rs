@@ -85,7 +85,7 @@ async fn rejected_completion_reports_failure_with_original_retry_policy() {
             observed.lock().unwrap().push((path, body, trusted));
             async move {
                 if path == "/complete" {
-                    Err(yoneda_core::Error::new(
+                    Err(yoneda_agents_core::Error::new(
                         "INVALID_CAPTURE",
                         "Synthetic rejection",
                     ))
@@ -152,7 +152,7 @@ async fn successful_completion_and_failure_callback_errors_are_not_hidden() {
     assert_eq!(calls, 1);
     let error =
         crate::supervisor_task::report_completion(json!({}), false, false, |_, _, _| async {
-            Err(yoneda_core::Error::new(
+            Err(yoneda_agents_core::Error::new(
                 "FENCED",
                 "Synthetic terminal attempt",
             ))

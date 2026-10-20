@@ -86,6 +86,8 @@ function compatibleRuntime(health: Json, job: Json) {
     )
   )
     throw new Error('Container image lacks lazy source isolation; wait for rollout completion');
+  if (job.kind === 'capture' && health?.capabilities?.platform_capture !== 1)
+    throw new Error('Container image still pushes captures to Git; wait for rollout completion');
   if (
     (comparisonReviewAttempt(job) || job.payload?.execution?.comparison_approval_id != null) &&
     health?.capabilities?.comparison_review !== 1
@@ -117,13 +119,6 @@ function compatibleRuntime(health: Json, job: Json) {
   if (job.payload?.run?.autonomy_policy != null && health.capabilities?.agent_coordination !== 1)
     throw new Error(
       'Container image cannot coordinate autonomous repairs; wait for rollout completion',
-    );
-  if (
-    job.payload?.workspace_transport === 'git-native-v1' &&
-    health.capabilities?.git_native_transport !== 1
-  )
-    throw new Error(
-      'Container image does not support Git-native workspaces; wait for rollout completion',
     );
   if (job.payload?.policy?.build?.test_bundle != null && health.capabilities?.test_bundle !== 1)
     throw new Error(

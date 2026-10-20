@@ -1,6 +1,6 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
-use yoneda_core::model_budget::ModelBudget;
+use yoneda_agents_core::model_budget::ModelBudget;
 
 pub(in crate::commands) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
     if c.get("comparison").is_none() {
@@ -28,7 +28,7 @@ fn reviewer(c: &Value) -> Result<Value> {
     let mut r = c["_comparison_reviewer"].clone();
     let p = string(&r, "provider")?;
     let model = string(&r, "model")?;
-    let catalog = yoneda_core::providers::provider(&p)?;
+    let catalog = yoneda_agents_core::providers::provider(&p)?;
     if !catalog
         .models
         .iter()
@@ -79,7 +79,7 @@ fn install(c: &Value, run: &mut Value, request: &str, legacy: bool, policy: &Val
             b.requests = 0;
             b.charged_microusd = 0;
             b.max_requests = Some(144);
-            if let Some(current) = yoneda_core::providers::provider(&b.provider)?
+            if let Some(current) = yoneda_agents_core::providers::provider(&b.provider)?
                 .models
                 .iter()
                 .find(|m| m.id == b.model)
@@ -134,8 +134,8 @@ fn install(c: &Value, run: &mut Value, request: &str, legacy: bool, policy: &Val
         ));
     }
     let id = format!("comparison-approval:{}:{request}", string(run, "id")?);
-    let mut approval = json!({"id":id,"request_id":request,"version":1,"builders":run["agents"],"reviewer":reviewer,"intent":run["intent"],"criteria":run["criteria"],"policy":policy,"original_policy":run["policy"],"policy_digest":yoneda_core::fingerprint(policy)? ,"context":run["context"],"context_records":run["context_records"],"base":run["base"],"branch_id":run["working_branch_id"],"original_branch_version":run["working_branch_version"],"branch_version":if legacy {&c["expected_working_version"]}else{&run["working_branch_version"]},"working_commit":if legacy {&c["expected_working_commit"]}else{&run["base"]["commit"]},"source_scope":"project","max_repair_rounds":2,"max_logical_executions":7,"max_review_requests":12,"budget_scope":if legacy {"comparison_approval"} else {"run"},"model_budget_configs":yoneda_core::comparison::configurations(&budgets)?});
-    approval["digest"] = json!(yoneda_core::fingerprint(&approval)?);
+    let mut approval = json!({"id":id,"request_id":request,"version":1,"builders":run["agents"],"reviewer":reviewer,"intent":run["intent"],"criteria":run["criteria"],"policy":policy,"original_policy":run["policy"],"policy_digest":yoneda_agents_core::fingerprint(policy)? ,"context":run["context"],"context_records":run["context_records"],"base":run["base"],"branch_id":run["working_branch_id"],"original_branch_version":run["working_branch_version"],"branch_version":if legacy {&c["expected_working_version"]}else{&run["working_branch_version"]},"working_commit":if legacy {&c["expected_working_commit"]}else{&run["base"]["commit"]},"source_scope":"project","max_repair_rounds":2,"max_logical_executions":7,"max_review_requests":12,"budget_scope":if legacy {"comparison_approval"} else {"run"},"model_budget_configs":yoneda_agents_core::comparison::configurations(&budgets)?});
+    approval["digest"] = json!(yoneda_agents_core::fingerprint(&approval)?);
     run["comparison"] = json!({"version":1,"status":"building","round":0,"approval":approval,"review_requests_by_round":[0,0,0],"model_requests":0,"selected_candidate_id":null,"latest_review_id":null,"latest_review":null,"selection_version":0,"review_execution_id":null});
     run["comparison"]["approved_policy"] = policy.clone();
     if legacy {
@@ -145,11 +145,11 @@ fn install(c: &Value, run: &mut Value, request: &str, legacy: bool, policy: &Val
     Ok(())
 }
 pub(in crate::commands) fn validate(run: &Value) -> Result<()> {
-    yoneda_core::comparison::validate_approval(run)
+    yoneda_agents_core::comparison::validate_approval(run)
 }
 fn legacy_roots_only<S: SqlStore>(db: &S, run: &Value) -> Result<bool> {
     if run["delegation"]["enabled"] == true {
-        let policy: yoneda_core::agents::DelegationPolicy =
+        let policy: yoneda_agents_core::agents::DelegationPolicy =
             serde_json::from_value(run["delegation"].clone()).map_err(|e| bad(&e.to_string()))?;
         policy.validate(2)?;
         if policy.max_executions > 2 {

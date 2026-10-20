@@ -1,6 +1,6 @@
 //! Brief-driven planning uses the frozen roster and proposes policy-validated source ownership.
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
     let agents = payload["run"]["agents"]

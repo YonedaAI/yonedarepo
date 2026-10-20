@@ -1,5 +1,5 @@
 use super::*;
-use yoneda_core::FileEntry;
+use yoneda_agents_core::FileEntry;
 
 fn setup() -> (tempfile::TempDir, String) {
     let root = tempfile::tempdir().unwrap();

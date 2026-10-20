@@ -78,5 +78,7 @@ export const operations: Record<string, Operation> = {
   git_merge: explicitMerge,
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
-  git_land: (ctx, a) => landWithMerge(ctx, a.ref, a.commit),
+  git_branch: (ctx, a) =>
+    ctx.call({ op: 'repo_branch_set', ref: a.ref, commit: a.commit, expected: a.expected ?? null }),
+  git_land: (ctx, a) => landWithMerge(ctx, a.ref, a.commit, a.fast_forward_only === true),
 };

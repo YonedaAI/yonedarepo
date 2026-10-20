@@ -2,7 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) fn target<S: SqlStore>(db: &S, id: &str, digest: Option<&str>) -> Result<Value> {
     let record = get(db, "nodes", id)?;

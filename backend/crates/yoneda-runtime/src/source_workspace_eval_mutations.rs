@@ -1,5 +1,5 @@
 use super::{EvaluationSource, SOURCE_FILE_MAX, SourceChange, SourceNode, failure};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(super) fn apply(
     cow: &EvaluationSource,
     _id: &str,

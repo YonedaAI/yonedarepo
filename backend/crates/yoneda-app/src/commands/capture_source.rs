@@ -1,7 +1,7 @@
 //! Trusted capture must match current registered source lineage, never model claims.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn validate<S: SqlStore>(
     db: &S,
     j: &Value,

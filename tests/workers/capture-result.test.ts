@@ -1,87 +1,69 @@
+// Capture readback against the real platform repository: every path, blob and parent comes
+// from the platform's own objects and the attempt's assigned candidate branch.
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { captureResult } from '../../cloudflare/worker/capture-result';
-import { ledger } from '../../cloudflare/worker/storage';
-import type { Env, Scope } from '../../cloudflare/worker/types';
+import type { Env, Json, Scope } from '../../cloudflare/worker/types';
+import { gitSnapshot, platformCommit, platformProject } from './platform-fixture';
 
 afterEach(reset);
-const base = 'a'.repeat(40), target = 'b'.repeat(40), head = 'c'.repeat(40);
-const tree = (revision: string) => revision[0].repeat(40);
-function fixture(parents: string[]) {
-  const repository = {
-    [Symbol.dispose]() {},
-    async readCommit(commit: string) { return { hash: commit, treeHash: tree(commit), parents: commit === target ? parents : [] }; },
-    async readTree(hash: string) { return [{ name: 'file.txt', type: 'blob', hash: (hash === tree(base) ? 'd' : 'e').repeat(40) }]; },
-    async info() { return { defaultBranch: 'main' }; },
-    async log() { return [{ hash: head }]; },
-  };
-  const bindings = { ...env, ARTIFACTS_NAMESPACE: 'yoneda-test', ARTIFACTS: { get: async () => repository } } as unknown as Env;
-  const scope = { repo_id: 'capture-readback', fork: 'yoneda-test/fork', job: { id: 'capture-job', epoch: 3, kind: 'capture',
-    payload: { base: { repository: 'yoneda-test/canonical', commit: base } } } } as unknown as Scope;
-  const result = { id: 'candidate', tree: tree(target), revision: { repository: scope.fork, commit: target }, diff: 'recorded diff',
-    paths: ['forged.txt'], file_provenance: [{ path: 'forged.txt', authority: 'agent' }], diff_digest: 'f'.repeat(64) };
-  return { bindings, scope, result };
+const bindings = env as unknown as Env;
+const project = 'capture-readback';
+const repository = `platform/${project}`;
+const branch = 'agents/capture-0123456789abcdef0123456789abcdef';
+const blob = async (text: string) => [...(await gitSnapshot({ f: text })).blobs.keys()][0];
+
+async function fixture(files: Record<string, string> = { 'file.txt': 'target\n' }, onto?: string) {
+  const { base, platform } = await platformProject(bindings, 'capture_owner', project, { 'file.txt': 'base\n' });
+  const target = await platformCommit(platform, onto ?? base.commit, files);
+  await platform.call('POST', '/branches', { ref: branch, commit: target.commit, expected: null });
+  const scope = { repo_id: project, job: { id: 'capture-job', epoch: 3, kind: 'capture',
+    source_capture_ref: { branch }, payload: { base: { repository, commit: base.commit } } } } as unknown as Scope;
+  const result: Json = { id: 'candidate', tree: target.tree, revision: { repository, commit: target.commit },
+    diff: 'recorded diff', paths: ['forged.txt'], file_provenance: [{ path: 'forged.txt', authority: 'agent' }],
+    diff_digest: 'f'.repeat(64) };
+  return { base, platform, target, scope, result };
 }
 
-it('replaces every path, blob and diff pointer claim using independent tree/R2 readback', async () => {
-  const { bindings, scope, result } = fixture([base]);
+it('replaces every path, blob and diff pointer claim using independent platform/R2 readback', async () => {
+  const { scope, result } = await fixture();
   const command = await captureResult(bindings, scope, result);
   expect(command).toMatchObject({ op: 'finish', job_id: 'capture-job', epoch: 3,
-    result: { paths: ['file.txt'], file_provenance: [{ path: 'file.txt', change: 'modify', old_blob: 'd'.repeat(40), new_blob: 'e'.repeat(40) }] } });
+    result: { paths: ['file.txt'], file_provenance: [{ path: 'file.txt', change: 'modify',
+      old_blob: await blob('base\n'), new_blob: await blob('target\n') }] } });
   expect(command.result.diff_digest).not.toBe(result.diff_digest);
   expect(command.result.diff).toBeUndefined();
   expect(await bindings.OBJECTS.get(`sha256/${command.result.diff_digest}`)).not.toBeNull();
 });
 
-it('rejects an unapproved parent before binding capture evidence', async () => {
-  const { bindings, scope, result } = fixture([head]);
-  await expect(captureResult(bindings, scope, result)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
-  expect((await bindings.OBJECTS.list()).objects).toHaveLength(0);
+it('rejects an unapproved parent, a foreign repository and a commit off its assigned branch', async () => {
+  const seeded = await fixture();
+  const other = await platformCommit(seeded.platform, seeded.base.commit, { 'other.txt': 'x\n' });
+  // A capture whose parent is not the frozen base, even on the assigned branch.
+  const stray = await platformCommit(seeded.platform, other.commit, { 'file.txt': 'stray\n' });
+  await seeded.platform.call('POST', '/branches', { ref: branch, commit: stray.commit, expected: seeded.target.commit });
+  const strayResult = { ...seeded.result, tree: stray.tree, revision: { repository, commit: stray.commit } };
+  await expect(captureResult(bindings, seeded.scope, strayResult)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
+  // The base-parented commit is valid, but no longer the head of the assigned branch.
+  await expect(captureResult(bindings, seeded.scope, seeded.result)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
+  const foreign = { ...seeded.result, revision: { repository: 'platform/other-project', commit: seeded.target.commit } };
+  await expect(captureResult(bindings, seeded.scope, foreign)).rejects.toMatchObject({ code: 'FORBIDDEN' });
+  expect((await bindings.OBJECTS.list({ prefix: 'sha256/' })).objects).toHaveLength(0);
 });
 
 it('resolver readback separates approved conflict edits from already merged clean changes', async () => {
-  const { bindings, scope, result } = fixture([base]);
-  await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Resolver readback', commit: base,
-    remote: { namespace: 'yoneda-test', name: 'canonical' },
-    policy: { version: 'v1', required_checks: ['retry'], suite: 'retry-contract-v1', environment: 'linux-rust-1.94-v1' } });
-  scope.job.payload.capture_subtype = 'resolve_conflict';
-  scope.job.payload.expected_head = base;
-  scope.job.payload.expected_version = 0;
-  scope.job.payload.merge_workspace_revision = { repository: scope.fork, commit: head };
-  const command = await captureResult(bindings, scope, { ...result, resolver_delta_paths: ['forged.txt'] });
-  expect(command.result.resolver_delta_paths).toEqual([]);
-  expect(command.result.paths).toEqual(['file.txt']);
-  expect(command.result.readback).toMatchObject({ candidate_commit: target, captured_paths: ['file.txt'], resolver_delta_paths: [], parents: [base] });
-});
-
-it('refresh readback binds both parents and independently observes canonical head/version', async () => {
-  const { bindings, scope, result } = fixture([head, base]);
-  await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Refresh readback', commit: head,
-    remote: { namespace: 'yoneda-test', name: 'canonical' },
-    policy: { version: 'v1', required_checks: ['retry'], suite: 'retry-contract-v1', environment: 'linux-rust-1.94-v1' } });
-  scope.job.payload = { capture_subtype: 'refresh_candidate', expected_base: base, expected_head: head,
-    expected_version: 0, candidate: { revision: { repository: 'yoneda-test/original', commit: base } } };
-  const command = await captureResult(bindings, scope, { ...result, status: 'clean', merge_commit: target,
-    readback: { observed_head: 'forged', version: 99 }, merge_tree: tree(target) });
-  expect(command.op).toBe('conflict_refresh_complete');
-  expect(command.result.readback).toMatchObject({ observed_head: head, version: 0, parents: [head, base] });
-});
-
-it('unresolved sparse refresh preserves independently verified head and merged paths for the resolver', async () => {
-  const { bindings, scope, result } = fixture([head, base]);
-  await ledger(bindings, scope.repo_id, { op: 'init', id: scope.repo_id, name: 'Sparse resolver baseline', commit: head,
-    remote: { namespace: 'yoneda-test', name: 'canonical' },
-    policy: { version: 'v1', required_checks: ['retry'], suite: 'retry-contract-v1', environment: 'linux-rust-1.94-v1' } });
-  scope.job.payload = { workspace_transport: 'api-source-v1', capture_subtype: 'refresh_candidate',
-    expected_base: base, expected_head: head, expected_version: 0,
-    candidate: { revision: { repository: 'yoneda-test/original', commit: base } } };
-  const command = await captureResult(bindings, scope, { ...result, status: 'unresolved',
-    merge_workspace_commit: target, merge_tree: tree(target), conflict_paths: ['file.txt'],
-    readback: { expected_head_tree: 'forged', merged_paths: ['forged.txt'] } });
-  expect(command.op).toBe('conflict_refresh_complete');
-  expect(command.result.readback).toMatchObject({ observed_head: head, version: 0, expected_head_tree: tree(head),
-    parents: [head, base], merged_paths: [], workspace_commit: target });
-  expect(command.result.workspace_revision).toEqual({ repository: scope.fork, commit: target });
-  expect(command.result.diff_digest).toBeUndefined();
+  const f = await fixture({ 'file.txt': 'target\n', 'resolved.txt': 'resolved\n' });
+  // The merge workspace already carries the clean change to file.txt.
+  const workspace = await platformCommit(f.platform, f.base.commit, { 'file.txt': 'target\n' });
+  Object.assign(f.scope.job.payload, { source_resolution: true, expected_head: f.base.commit, expected_version: 0,
+    merge_workspace_revision: { repository, commit: workspace.commit } });
+  const command = await captureResult(bindings, f.scope, { ...f.result, resolver_delta_paths: ['forged.txt'] });
+  expect(command.result.resolver_delta_paths).toEqual(['resolved.txt']);
+  expect(command.result.paths).toEqual(['file.txt', 'resolved.txt']);
+  expect(command.result.readback).toMatchObject({ observed_head: f.base.commit, version: 0,
+    candidate_commit: f.target.commit, captured_paths: ['file.txt', 'resolved.txt'],
+    resolver_delta_paths: ['resolved.txt'], parents: [f.base.commit] });
+  Object.assign(f.scope.job.payload, { merge_workspace_revision: { repository: 'platform/foreign', commit: workspace.commit } });
+  await expect(captureResult(bindings, f.scope, f.result)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
 });

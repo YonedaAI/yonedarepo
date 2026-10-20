@@ -1,7 +1,7 @@
 //! Preserve only the adapter-verified fresh guided starter and immutable oracle identity.
 use crate::storage::*;
 use serde_json::Value;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> {
     let Some(marker) = command.get("_guided_project") else {
@@ -19,13 +19,14 @@ pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> 
             "test_bundle_digest",
         ]
         .contains(&key.as_str())
-    }) || marker["profile_id"] != yoneda_core::guided::PROFILE_ID
-        || !yoneda_core::guided::supported_version(&marker["version"])
-        || repository["policy"]["version"] != yoneda_core::guided::PROFILE_ID
-        || marker["policy_digest"] != yoneda_core::fingerprint(&repository["policy"])?
+    }) || marker["profile_id"] != yoneda_agents_core::guided::PROFILE_ID
+        || !yoneda_agents_core::guided::supported_version(&marker["version"])
+        || repository["policy"]["version"] != yoneda_agents_core::guided::PROFILE_ID
+        || marker["policy_digest"] != yoneda_agents_core::fingerprint(&repository["policy"])?
         || marker["test_bundle_digest"] != repository["policy"]["build"]["test_bundle"]["digest"]
-        || marker["starter"]["commit"] != repository["published_commit"]
-        || marker["starter"]["branch"] != repository["remote"]["branch"]
+        // The adapter seeded the platform repository from the starter and read back its
+        // root tree; the commit differs (a new platform commit), the tree must not.
+        || marker["starter"]["tree"] != command["tree"]
     {
         return Err(bad(
             "Guided source or checks differ from the verified starter",
@@ -36,9 +37,8 @@ pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> 
     hash(&marker["starter"], "commit", &[40])?;
     hash(&marker["starter"], "tree", &[40])?;
     let source = string(&marker["starter"], "repository")?;
-    let namespace = string(&repository["remote"], "namespace")?;
-    let Some(name) = source.strip_prefix(&format!("{namespace}/")) else {
-        return Err(bad("Guided starter namespace changed"));
+    let Some((_, name)) = source.split_once('/') else {
+        return Err(bad("Invalid guided starter repository"));
     };
     if name.is_empty()
         || name.len() > 100
@@ -64,9 +64,9 @@ mod tests {
                 "argv":["node","/opt/yoneda/test-bundle/fixtures/guided-task-board/oracle/run.mjs"],
                 "timeout_seconds":30}],"test_bundle":{"digest":"d".repeat(64),"protected_paths":["README.md"]}}});
         json!({"op":"init","id":"fresh-guide","name":"Fresh guide","workspace":"owner",
-            "commit":"a".repeat(40),"remote":{"namespace":"test","name":"fresh-guide","branch":"main"},
+            "commit":"c".repeat(40),"tree":"b".repeat(40),"remote":{"namespace":"platform","name":"fresh-guide","branch":"main"},
             "policy":policy,"_guided_project":{"profile_id":"task-board-v1","version":1,
-                "policy_digest":yoneda_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64),
+                "policy_digest":yoneda_agents_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64),
                 "starter":{"repository":"test/guided-starter","branch":"main","commit":"a".repeat(40),"tree":"b".repeat(40)}}})
     }
 
@@ -96,9 +96,8 @@ mod tests {
         for (path, value) in [
             ("/policy_digest", json!("e".repeat(64))),
             ("/test_bundle_digest", json!("e".repeat(64))),
-            ("/starter/commit", json!("c".repeat(40))),
-            ("/starter/repository", json!("other/starter")),
-            ("/starter/branch", json!("changed")),
+            ("/starter/tree", json!("c".repeat(40))),
+            ("/starter/repository", json!("no-namespace")),
             ("/version", json!(3)),
             ("/version", json!("2")),
         ] {

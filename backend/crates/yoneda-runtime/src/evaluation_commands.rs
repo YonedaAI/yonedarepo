@@ -6,16 +6,16 @@ use crate::{
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) async fn run_profile(
     root: &Path,
-    profile: &yoneda_core::build::BuildProfile,
+    profile: &yoneda_agents_core::build::BuildProfile,
 ) -> Result<Value> {
     run_profile_with_guide(root, profile, None).await
 }
 pub(super) async fn run_profile_with_guide(
     root: &Path,
-    profile: &yoneda_core::build::BuildProfile,
+    profile: &yoneda_agents_core::build::BuildProfile,
     guide: Option<&Value>,
 ) -> Result<Value> {
     let mut setup = Vec::new();
@@ -41,7 +41,7 @@ pub(super) async fn run_profile_with_guide(
 }
 async fn run_command(
     root: &Path,
-    spec: &yoneda_core::build::CommandSpec,
+    spec: &yoneda_agents_core::build::CommandSpec,
     guide: Option<&Value>,
 ) -> Result<Value> {
     let program = spec.argv.first().ok_or_else(|| err("Empty command"))?;
@@ -76,7 +76,7 @@ async fn run_command(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yoneda_core::build::{BuildProfile, CommandSpec};
+    use yoneda_agents_core::build::{BuildProfile, CommandSpec};
     #[tokio::test]
     async fn real_oracle_child_receives_each_server_phase_and_variant_after_env_clear() {
         use std::os::unix::fs::PermissionsExt;

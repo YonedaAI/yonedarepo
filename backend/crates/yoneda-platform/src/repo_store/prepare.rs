@@ -38,6 +38,13 @@ fn supplied_trees(c: &Value) -> Result<Trees> {
 /// Directories on changed paths that are not yet supplied (the next walk frontier).
 fn frontier(root: Option<ObjectId>, paths: &[&str], trees: &Trees) -> BTreeSet<ObjectId> {
     let mut missing = BTreeSet::new();
+    // A merge commit may change nothing (every path conflicted); it still rewrites the root.
+    if paths.is_empty()
+        && let Some(id) = root
+        && !trees.0.contains_key(&id)
+    {
+        missing.insert(id);
+    }
     for path in paths {
         let parts: Vec<&str> = path.split('/').collect();
         let mut dir = root;

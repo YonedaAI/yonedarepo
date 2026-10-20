@@ -45,7 +45,7 @@ fn actual_linux_runtime_health_proof_and_missing_source_index_guard_before_infer
         "execution":{"comparison_role":"reviewer","comparison_approval_id":"approval"},
         "run":{"comparison":{"approval":{"id":"approval"}}},
         "comparison_manifest":{"version":1,"approval_id":"approval","manifest":manifest,
-        "manifest_digest":yoneda_core::fingerprint(&manifest).unwrap()}}});
+        "manifest_digest":yoneda_agents_core::fingerprint(&manifest).unwrap()}}});
     let attempt =
         crate::source_workspace_run::SourceRun::prepare(&review, root.path(), false).unwrap();
     assert_eq!(attempt.root(), root.path());

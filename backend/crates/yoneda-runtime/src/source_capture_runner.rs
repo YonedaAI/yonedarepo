@@ -1,16 +1,17 @@
-//! Complete incremental trusted capture; Git/Artifacts readback remains the result authority.
+//! Complete incremental trusted capture. The tree is built here from the sealed delta; the
+//! platform commits the same changes and its readback is the result authority.
 use crate::{
     source_capture_api::{CaptureApi, failure},
     source_capture_diff::touched_diff,
-    source_capture_files::prepare,
+    source_capture_files::{CaptureFiles, prepare},
     source_capture_manifest::assemble_manifest,
     source_capture_trees::TreeCache,
     source_git::SourceGitObjects,
-    source_git_http::SourceGitHttp,
-    source_git_rewrite::rewrite_tree,
+    source_git_rewrite::{TreeEdit, rewrite_tree},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use yoneda_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
+use yoneda_agents_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
 
 pub(crate) async fn execute(job: &Value) -> Result<Value> {
     if job["kind"] != "capture" || job["payload"]["capture_subtype"] != "source_changeset" {
@@ -18,19 +19,36 @@ pub(crate) async fn execute(job: &Value) -> Result<Value> {
             "Capture job is not approved for API-source transport",
         ));
     }
-    let api = CaptureApi::from_root()?;
-    let authorization = std::env::var("SUPERVISOR_TOKEN")
-        .map(|token| format!("Bearer {token}"))
-        .map_err(|_| failure("Root Git authorization missing"))?;
-    let git = SourceGitHttp::new("http://git.yoneda.internal/candidate", Some(&authorization))
-        .map_err(|_| failure("Scoped candidate Git proxy unavailable"))?;
-    execute_with(job, &api, &git).await
+    execute_with(job, &CaptureApi::from_root()?).await
 }
-pub(crate) async fn execute_with(
-    job: &Value,
-    api: &CaptureApi,
-    git: &SourceGitHttp,
-) -> Result<Value> {
+
+/// The platform commit request: every touched path with its final bytes, or a deletion.
+fn platform_changes(files: &CaptureFiles) -> Result<Vec<Value>> {
+    let mut total = 0usize;
+    files
+        .edits
+        .iter()
+        .map(|(path, edit)| match edit {
+            TreeEdit::Delete => Ok(json!({"path":path,"delete":true})),
+            TreeEdit::Set { mode, .. } => {
+                let file = files
+                    .after
+                    .get(path)
+                    .ok_or_else(|| failure("Captured file bytes are unavailable"))?;
+                let bytes = std::fs::read(&file.file)
+                    .map_err(|_| failure("Captured file bytes are unavailable"))?;
+                total = total.saturating_add(bytes.len());
+                if total > MAX_UPLOAD_BYTES as usize {
+                    return Err(failure("Captured changes exceed the commit capability"));
+                }
+                let kind = if *mode == 0o100755 { "exec" } else { "blob" };
+                Ok(json!({"path":path,"type":kind,"content_b64":STANDARD.encode(bytes)}))
+            }
+        })
+        .collect()
+}
+
+pub(crate) async fn execute_with(job: &Value, api: &CaptureApi) -> Result<Value> {
     let id = job["id"]
         .as_str()
         .ok_or_else(|| failure("Trusted capture job identity missing"))?;
@@ -38,23 +56,9 @@ pub(crate) async fn execute_with(
         .as_i64()
         .filter(|v| *v >= 1)
         .ok_or_else(|| failure("Trusted capture epoch missing"))?;
-    if job["kind"] != "capture"
-        || job["payload"]["capture_subtype"] != "source_changeset"
-        || job["fork"].as_str().is_none_or(str::is_empty)
-    {
+    if job["kind"] != "capture" || job["payload"]["capture_subtype"] != "source_changeset" {
         return Err(failure("Invalid trusted source capture job"));
     }
-    let branch = job["source_capture_ref"]["branch"]
-        .as_str()
-        .ok_or_else(|| failure("Frozen capture fork branch missing"))?;
-    let reference = format!("refs/heads/{branch}");
-    crate::source_git_protocol::validate_ref(&reference)
-        .map_err(|_| failure("Invalid frozen capture fork branch"))?;
-    let expected_head = job["source_capture_ref"]["expected_head"]
-        .as_str()
-        .ok_or_else(|| failure("Frozen capture fork expected head missing"))?;
-    crate::source_git_tree::validate_oid(expected_head)
-        .map_err(|_| failure("Frozen capture fork head requires Git SHA-1"))?;
     let context = api.context().await?;
     let changes = api.manifest(&context, "changes").await?;
     let overrides = api.manifest(&context, "overrides").await?;
@@ -88,39 +92,30 @@ pub(crate) async fn execute_with(
     )
     .map_err(|_| failure("Incremental tree construction failed"))?;
     let message = format!("YonedaRepo sealed source {}", context.digest);
-    let commit = objects
-        .commit(&tree, &context.binding.parents, &message)
-        .map_err(|_| failure("Trusted deterministic commit construction failed"))?;
     let diff = touched_diff(&files.before, &files.after)
         .map_err(|_| failure("Real touched-path Git diff generation failed or exceeded 24 MiB"))?;
-    let pack = objects
-        .pack(MAX_UPLOAD_BYTES)
-        .map_err(|_| failure("Explicit incremental pack exceeds its capability"))?;
-    let push = git
-        .push_ref(&reference, expected_head, &commit, &pack, MAX_UPLOAD_BYTES)
-        .await
-        .map_err(|_| failure("Incremental Git push or ref readback failed"))?;
-    let verified = api
+    let committed = api
         .json(
-            "verify",
-            json!({"commit":commit,"tree":tree,"parents":context.binding.parents}),
+            "commit",
+            json!({"parents":context.binding.parents,"tree":tree,"message":message,"changes":platform_changes(&files)?}),
         )
         .await?;
-    if verified["verified"] != true
-        || verified["revision"]["commit"] != commit
-        || verified["tree"] != tree
-        || verified["parents"] != json!(context.binding.parents)
-        || verified["revision"]["repository"] != job["fork"]
+    if committed["verified"] != true
+        || committed["tree"] != tree
+        || committed["parents"] != json!(context.binding.parents)
+        || committed["revision"]["repository"] != context.binding.base.repository
+        || committed["revision"]["commit"].as_str().is_none()
     {
         return Err(failure(
-            "Independent Worker commit/tree/parent readback differs",
+            "Independent platform commit/tree/parent readback differs",
         ));
     }
+    let commit = committed["revision"]["commit"].clone();
     let strategy = job["payload"]["execution"]["strategy"]
         .as_str()
         .unwrap_or("Candidate");
-    let mut result = json!({"id":format!("candidate:{id}:{epoch}"),"revision":verified["revision"],"commit":commit,"tree":tree,"paths":files.edits.keys().collect::<Vec<_>>(),"summary":format!("{strategy} approach"),"parents":context.binding.parents,"diff":diff,"source_changeset_digest":context.digest,"source_manifest_digest":context.digest,"incremental_capture":{"version":1,"recovered_ack":push.recovered_ack,"pack_uploaded":push.uploaded}});
-    // Integrator captures attest the frozen integration manifest, as the Git-native path does.
+    let mut result = json!({"id":format!("candidate:{id}:{epoch}"),"revision":committed["revision"],"commit":commit,"tree":tree,"paths":files.edits.keys().collect::<Vec<_>>(),"summary":format!("{strategy} approach"),"parents":context.binding.parents,"diff":diff,"source_changeset_digest":context.digest,"source_manifest_digest":context.digest});
+    // Integrator captures attest the frozen integration manifest.
     if let Some(digest) = job["payload"].get("integration_digest") {
         result["integration_digest"] = digest.clone();
     }

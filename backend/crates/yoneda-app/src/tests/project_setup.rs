@@ -1,14 +1,14 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut command: Value, now: i64) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut command: Value, now: i64) -> yoneda_agents_core::Result<Value> {
     command["now"] = json!(now);
     execute_workspace(db, command)
 }
 fn project() -> NativeStore {
     let db = NativeStore::memory().unwrap();
     call(&db, json!({"op":"signup","username":"alice","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)}), 1000).unwrap();
-    call(&db, json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_core::Policy::default()}), 1000).unwrap();
+    call(&db, json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_agents_core::Policy::default()}), 1000).unwrap();
     db
 }
 #[test]
@@ -208,6 +208,51 @@ fn short_pending_retry_cannot_bypass_active_lease_failure_or_deletion() {
         call(&db, json!({"op":"project_claim","id":"repo-one"}), 6500)
             .unwrap_err()
             .code,
+        "REPOSITORY_DELETED"
+    );
+}
+#[test]
+fn first_platform_binding_wins_and_project_reads_never_carry_the_token() {
+    let db = project();
+    let sealed = json!({"v":2,"iv":"aXY=","ciphertext":"c2VjcmV0"});
+    let bind = |repo: &str| json!({"op":"project_platform_bind","id":"repo-one","platform_repo":repo,"sealed":sealed});
+    assert_eq!(
+        call(&db, bind("not-a-repo"), 1100).unwrap_err().code,
+        "INVALID_INPUT"
+    );
+    let first = format!("r{}", "a".repeat(20));
+    assert_eq!(
+        call(&db, bind(&first), 1100).unwrap()["platform"]["repo"],
+        first
+    );
+    // A concurrent setup's second repository never replaces the first binding.
+    let second = format!("r{}", "b".repeat(20));
+    assert_eq!(
+        call(&db, bind(&second), 1200).unwrap()["platform"]["repo"],
+        first
+    );
+    let credential = call(
+        &db,
+        json!({"op":"project_platform_credential","id":"repo-one"}),
+        1300,
+    )
+    .unwrap();
+    assert_eq!(credential["repo"], first);
+    assert_eq!(credential["sealed"], sealed);
+    let project = call(&db, json!({"op":"project_get","id":"repo-one"}), 1300).unwrap();
+    assert_eq!(project["platform"], json!({"repo":first}));
+    assert!(!project.to_string().contains("c2VjcmV0"));
+    let listed = call(&db, json!({"op":"projects"}), 1300).unwrap();
+    assert_eq!(listed["projects"].as_array().unwrap().len(), 1);
+    call(&db, json!({"op":"project_delete","id":"repo-one"}), 1400).unwrap();
+    assert_eq!(
+        call(
+            &db,
+            json!({"op":"project_platform_credential","id":"repo-one"}),
+            1500
+        )
+        .unwrap_err()
+        .code,
         "REPOSITORY_DELETED"
     );
 }

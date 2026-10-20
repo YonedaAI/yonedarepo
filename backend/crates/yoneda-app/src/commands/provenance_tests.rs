@@ -4,7 +4,7 @@ use crate::native::NativeStore;
 #[test]
 fn captured_receipts_are_execution_epoch_bound() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     create(
         &db,
         "executions",
@@ -31,7 +31,7 @@ fn captured_receipts_are_execution_epoch_bound() {
 #[test]
 fn provenance_rejects_receipts_for_unlisted_paths_and_invalid_blob_ids() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     create(
         &db,
         "executions",
@@ -59,7 +59,7 @@ fn provenance_rejects_receipts_for_unlisted_paths_and_invalid_blob_ids() {
 #[test]
 fn task_receipts_are_scoped_to_the_handoff_identity() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     create(
         &db,
         "executions",
@@ -78,7 +78,7 @@ fn task_receipts_are_scoped_to_the_handoff_identity() {
 #[test]
 fn capture_receipt_limit_allows_more_than_git_diff_legacy_limit() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     create(
         &db,
         "executions",
@@ -115,7 +115,7 @@ fn capture_receipt_limit_allows_more_than_git_diff_legacy_limit() {
 #[test]
 fn merge_refresh_is_platform_authored_and_inherits_execution_only_for_exact_blobs() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     let original = json!({"id":"candidate-old","execution":"original-exec","run_id":"run","revision":{"commit":"b".repeat(40)}});
     create(&db, "candidates", "candidate-old", &original).unwrap();
     create(
@@ -179,7 +179,7 @@ fn merge_refresh_is_platform_authored_and_inherits_execution_only_for_exact_blob
 #[test]
 fn merge_refresh_rejects_frozen_candidate_run_mismatch() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     let candidate = json!({"id":"candidate-old","execution":"original-exec","run_id":"actual-run"});
     create(&db, "candidates", "candidate-old", &candidate).unwrap();
     create(
@@ -196,7 +196,7 @@ fn merge_refresh_rejects_frozen_candidate_run_mismatch() {
 #[test]
 fn lineage_inherits_unchanged_paths_and_keeps_file_histories_isolated() {
     let db = NativeStore::memory().unwrap();
-    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    crate::execute(&db, json!({"op":"init","id":"prov","name":"Prov","remote":{"namespace":"test","name":"prov"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     for (id, base, revision, path, change, execution) in [
         ("c1", "a", "b", "src/one.rs", "add", "agent-one"),
         ("c2", "b", "c", "src/two.rs", "add", "agent-two"),

@@ -1,6 +1,6 @@
 use crate::storage::{SqlStore, bad, get, string};
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn validate<S: SqlStore>(
     db: &S,

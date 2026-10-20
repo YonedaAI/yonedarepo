@@ -6,7 +6,7 @@ use super::{
 use crate::source_client::{SOURCE_READ_MAX, failure};
 use base64::Engine;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 const PUBLIC: &[&str] = &[
     "source_upload",
     "source_status",
@@ -147,11 +147,11 @@ fn upload_request(args: Value) -> Result<WireRequest> {
         return Err(failure("INVALID_SOURCE", "Invalid source mode"));
     }
     let id = text("request_id")?.to_string();
-    yoneda_core::source_workspace::validate_id(&id)?;
+    yoneda_agents_core::source_workspace::validate_id(&id)?;
     let mut query = vec![
         ("path".into(), path.into()),
         ("mode".into(), mode.into()),
-        ("sha256".into(), yoneda_core::digest(&bytes)),
+        ("sha256".into(), yoneda_agents_core::digest(&bytes)),
         ("size".into(), bytes.len().to_string()),
     ];
     for key in ["expected_workspace_version", "expected_file_version"] {

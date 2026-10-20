@@ -1,7 +1,7 @@
 use crate::storage::*;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use yoneda_core::{Error, Result, model_budget::ModelBudget};
+use yoneda_agents_core::{Error, Result, model_budget::ModelBudget};
 
 pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>>> {
     if !general {

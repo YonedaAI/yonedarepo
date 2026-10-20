@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, mpsc},
     time::Duration,
 };
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) const JSON_LIMIT: usize = 1024 * 1024;
 pub(super) struct HttpReply {

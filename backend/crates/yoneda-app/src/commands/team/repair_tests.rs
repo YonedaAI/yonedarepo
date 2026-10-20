@@ -109,11 +109,11 @@ fn repair_budget_is_two_rounds_and_does_not_revise_run_model_budgets() {
 }
 
 #[test]
-fn retry_restores_frozen_git_transport_on_an_older_repaired_job() {
+fn retry_restores_frozen_source_transport_on_an_older_repaired_job() {
     let db = NativeStore::memory().unwrap();
     start(&db);
     let mut run = get(&db, "runs", "repair-run").unwrap();
-    run["workspace_transport"] = json!("git-native-v1");
+    run["workspace_transport"] = json!("api-source-v1");
     run["status"] = json!("exploring");
     save(&db, "runs", "repair-run", &run).unwrap();
 
@@ -158,6 +158,6 @@ fn retry_restores_frozen_git_transport_on_an_older_repaired_job() {
     .unwrap();
 
     let retried = get(&db, "jobs", &format!("job:{execution_id}")).unwrap();
-    assert_eq!(retried["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(retried["payload"]["workspace_transport"], "api-source-v1");
     assert_eq!(retried["payload"]["execution"]["team_task_revision"], 2);
 }

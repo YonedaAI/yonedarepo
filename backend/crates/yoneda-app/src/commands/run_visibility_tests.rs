@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 fn fixture() -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    execute(&db, json!({"op":"init","id":"repo-test","name":"Owner project","workspace":"alice","remote":{"namespace":"test","name":"private"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    execute(&db, json!({"op":"init","id":"repo-test","name":"Owner project","workspace":"alice","remote":{"namespace":"test","name":"private"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     for (id, at) in [("old", 1), ("current", 2), ("older", 0)] {
         execute(
             &db,

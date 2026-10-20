@@ -1,6 +1,6 @@
 //! Freeze API source identity only after the authenticated Worker reads Artifacts.
 use serde_json::Value;
-use yoneda_core::{Error, Result, source_workspace::SourceRevision};
+use yoneda_agents_core::{Error, Result, source_workspace::SourceRevision};
 
 pub(super) fn freeze(command: &Value, run: &mut Value) -> Result<()> {
     if run["workspace_transport"] != "api-source-v1" {
@@ -52,7 +52,7 @@ mod tests {
     }
     #[test]
     fn legacy_run_transport_and_approval_remain_unchanged() {
-        let mut legacy = json!({"workspace_transport":"git-native-v1","base":{"commit":"old"}});
+        let mut legacy = json!({"base":{"commit":"old"}});
         let before = legacy.clone();
         freeze(&approved(), &mut legacy).unwrap();
         assert_eq!(legacy, before);

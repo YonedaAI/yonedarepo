@@ -2,7 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::{Error, Result, context_study::ContextStudy};
+use yoneda_agents_core::{Error, Result, context_study::ContextStudy};
 
 fn parse(value: &Value) -> Result<ContextStudy> {
     let study: ContextStudy =

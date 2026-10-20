@@ -3,7 +3,7 @@
 mod client;
 use crate::{
     source_capture_fixture::{Fixture, TOKEN},
-    source_git_http_tests::{git, oid},
+    source_git_fixture::{git, oid},
 };
 use axum::{
     Json, Router,
@@ -115,25 +115,90 @@ async fn handle(
             json_response(json!({"tree_oid":tree,"items":rows,"next_cursor":next}))
         }
         "blob" => blob(f, &args, state.fault.load(Ordering::SeqCst)),
-        "verify" => {
-            let commit = args["commit"].as_str().unwrap();
-            let raw = git(&f.destination, &["cat-file", "commit", commit], b"");
-            let text = String::from_utf8(raw).unwrap();
-            let tree = text.lines().find_map(|l| l.strip_prefix("tree ")).unwrap();
-            let parents = text
-                .lines()
-                .filter_map(|l| l.strip_prefix("parent "))
-                .collect::<Vec<_>>();
-            assert_eq!(json!(parents), json!(f.binding.parents));
-            assert_eq!(tree, args["tree"].as_str().unwrap());
-            let mut value = json!({"verified":true,"revision":{"repository":"candidate-fork","commit":commit},"tree":tree,"parents":parents});
-            if state.fault.load(Ordering::SeqCst) == 3 {
-                value["parents"] = json!(["f".repeat(40)]);
-            }
-            json_response(value)
-        }
+        "commit" => json_response(commit(f, &args, state.fault.load(Ordering::SeqCst))),
         _ => Response::builder().status(404).body(Body::empty()).unwrap(),
     }
+}
+/// Plays the platform commit: apply the changes to the base tree, record a two-parent-aware
+/// commit and move the assigned branch, reusing it when the same capture is retried.
+fn commit(f: &Fixture, args: &Value, fault: u8) -> Value {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    let index = f.destination.join("capture.index");
+    let work = f.destination.with_extension("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let indexed = |args: &[&str], bytes: &[u8]| {
+        let mut child = std::process::Command::new("/usr/bin/git")
+            .current_dir(&f.destination)
+            .env("GIT_INDEX_FILE", &index)
+            .env("GIT_WORK_TREE", &work)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        std::io::Write::write_all(&mut child.stdin.take().unwrap(), bytes).unwrap();
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        oid(output.stdout)
+    };
+    let _ = std::fs::remove_file(&index);
+    indexed(&["read-tree", &f.binding.base.tree], b"");
+    for change in args["changes"].as_array().unwrap() {
+        let path = change["path"].as_str().unwrap();
+        if change["delete"] == true {
+            indexed(&["update-index", "--force-remove", "--", path], b"");
+            continue;
+        }
+        let bytes = STANDARD
+            .decode(change["content_b64"].as_str().unwrap())
+            .unwrap();
+        let blob = oid(git(
+            &f.destination,
+            &["hash-object", "-w", "--stdin"],
+            &bytes,
+        ));
+        let mode = if change["type"] == "exec" {
+            "100755"
+        } else {
+            "100644"
+        };
+        indexed(
+            &[
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                &format!("{mode},{blob},{path}"),
+            ],
+            b"",
+        );
+    }
+    let tree = indexed(&["write-tree"], b"");
+    let mut command = vec!["commit-tree", tree.as_str(), "-m", "capture"];
+    let parents: Vec<String> = args["parents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p.as_str().unwrap().to_owned())
+        .collect();
+    for parent in &parents {
+        command.extend(["-p", parent.as_str()]);
+    }
+    let made = oid(git(&f.destination, &command, b""));
+    git(
+        &f.destination,
+        &["update-ref", "refs/heads/main", &made],
+        b"",
+    );
+    let mut value = json!({"verified":true,"revision":{"repository":f.binding.base.repository,"commit":made},"tree":tree,"parents":parents});
+    if fault == 3 {
+        value["parents"] = json!(["f".repeat(40)]);
+    }
+    value
 }
 fn blob(f: &Fixture, args: &Value, fault: u8) -> Response<Body> {
     let path = args["path"].as_str().unwrap();
@@ -160,7 +225,7 @@ fn blob(f: &Fixture, args: &Value, fault: u8) -> Response<Body> {
             },
         )
     };
-    let sha = yoneda_core::digest(&bytes);
+    let sha = yoneda_agents_core::digest(&bytes);
     let size = bytes.len();
     let offset = args["offset"].as_u64().unwrap() as usize;
     let length = (args["limit"].as_u64().unwrap() as usize).min(size - offset);

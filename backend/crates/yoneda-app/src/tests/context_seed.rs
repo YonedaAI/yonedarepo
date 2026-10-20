@@ -2,7 +2,7 @@ use super::*;
 use crate::storage::get;
 
 fn request() -> Value {
-    json!({"op":"init","id":"study","name":"Study","remote":{"namespace":"yoneda-dev","name":"study"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default(),
+    json!({"op":"init","id":"study","name":"Study","remote":{"namespace":"yoneda-dev","name":"study"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default(),
         "context_seed":{"intent_id":"intent:study","statement":"Preserve booking behavior","records":[{"id":"context:booking:capacity","kind":"constraint","statement":"Capacity must remain positive","purpose":"Avoid overselling","verified":true}]}})
 }
 

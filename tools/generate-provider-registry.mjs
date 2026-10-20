@@ -2,7 +2,7 @@
 // Deterministic public catalog export. No credentials or provider I/O.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-const source = new URL('../backend/crates/yoneda-core/src/providers.json', import.meta.url);
+const source = new URL('../backend/crates/yoneda-agents-core/src/providers.json', import.meta.url);
 const target = new URL('../shared/provider-registry.ts', import.meta.url);
 const registry = JSON.parse(readFileSync(source, 'utf8'));
 const ids = new Set();
