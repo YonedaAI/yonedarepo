@@ -19,6 +19,7 @@ export async function approveOwnerRun(
   principal: Principal,
   repo: string,
   input: Json,
+  checkpoint?: { repository: string; commit: string },
 ): Promise<Json> {
   const repository = await ledger(env, repo, {
     op: 'repository_status',
@@ -26,7 +27,7 @@ export async function approveOwnerRun(
   });
   checkLedger(repository, input);
   if (principal.role !== 'user') {
-    await freezeSourceApproval(env, principal.workspace, repo, input, repository);
+    await freezeSourceApproval(env, principal.workspace, repo, input, repository, checkpoint);
     return input;
   }
   if (
@@ -101,7 +102,7 @@ export async function approveOwnerRun(
     checked.add(id);
   }
   // Source is read back only for a credentialed start, before funding activation.
-  await freezeSourceApproval(env, principal.workspace, repo, input, repository);
+  await freezeSourceApproval(env, principal.workspace, repo, input, repository, checkpoint);
   approved = resolve(allowance.limit_microusd);
   validateWorkspaceSpendRun(approved);
   // Recheck after saved routing and every generated marker/budget have been normalized.
