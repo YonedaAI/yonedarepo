@@ -62,6 +62,20 @@ function conflictError(conflicts: Json[]) {
 
 const pathsOf = (changes: Json[]) => changes.map((c) => String(c.path));
 
+/** Paths meet when equal or when one is a directory of the other (as in log validation). */
+function overlaps(a: string, b: string) {
+  const within = (inner: string, outer: string) =>
+    (outer.endsWith('/') && inner.startsWith(outer)) || inner.startsWith(`${outer}/`);
+  return a === b || within(a, b) || within(b, a);
+}
+
+/** Write skew within a batch (Adya G2-item): a member may neither read nor write what an
+ * earlier accepted member writes; with no declared reads its writes count as reads. */
+function skews(item: Json, written: string[]) {
+  const keys = [...(item.reads ?? []), ...(item.writes ?? [])].map((k) => String(k).split('#')[0]);
+  return keys.some((key) => written.some((w) => overlaps(key, w)));
+}
+
 /**
  * Builds and lands one claimed batch: every pending landing is merged against the head;
  * clean ones whose merged paths do not overlap an earlier item join one octopus merge
@@ -90,6 +104,7 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
   const failed: Json[] = [];
   const changes: Json[] = [];
   const touched = new Set<string>();
+  const written: string[] = [];
   const fastForward = claim.items.find((item: Json) => item.fast_forward);
   if (fastForward) {
     const landed = await merger.call({
@@ -132,9 +147,10 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
         ticket: item.ticket,
         error: { code: error.code, message: error.message, details: error.details },
       });
-    } else if (pathsOf(merged.changes).some((p) => touched.has(p)))
-      continue; // next batch
+    } else if (skews(item, written) || pathsOf(merged.changes).some((p) => touched.has(p)))
+      continue; // next batch, validated against a log that holds the earlier members
     else {
+      written.push(...(item.writes ?? []));
       for (const p of pathsOf(merged.changes)) touched.add(p);
       changes.push(...merged.changes);
       accepted.push(item);

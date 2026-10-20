@@ -230,7 +230,9 @@ pub fn land<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "SELECT ticket,commit_id,principal FROM land_queue WHERE refname=? AND status='pending' AND slow=0 ORDER BY ticket LIMIT ?",
         &[json!(refname), json!(BATCH)],
     )?;
-    let (mut landed, mut failed, mut slow) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut landed, mut failed, mut slow, mut deferred) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut batch = merging::BatchWrites::default();
     for row in &pending {
         let ticket = &row["ticket"];
         // The log records who asked to land (authorized when the landing was queued).
@@ -239,6 +241,16 @@ pub fn land<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             db,
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
         )?;
+        // Write skew within the batch: a member meeting an earlier member's writes waits for
+        // the next batch, where log validation (now holding that member) decides it.
+        let writes: BTreeSet<String> = rows::touches(db, &commit.id)?
+            .into_iter()
+            .map(|t| t.path)
+            .collect();
+        if !batch.admits(&commit.read_set, &writes) {
+            deferred.push(ticket.clone());
+            continue;
+        }
         let result = match route(db, &refname, &commit)? {
             Route::FastForward(head) => {
                 let out = append(db, c, TxKind::Commit, &refname, head, &commit, principal)?;
@@ -263,13 +275,14 @@ pub fn land<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 continue;
             }
         };
+        batch.accept(writes);
         finish(db, ticket, "landed", result.clone(), now)?;
         landed.push(
             json!({ "ticket": ticket, "status": "landed", "ref": refname, "result": result }),
         );
     }
     Ok(json!({
-        "landed": landed, "failed": failed, "slow": slow,
-        "more": pending.len() as u64 == BATCH,
+        "landed": landed, "failed": failed, "slow": slow, "deferred": deferred,
+        "more": pending.len() as u64 == BATCH || !deferred.is_empty(),
     }))
 }

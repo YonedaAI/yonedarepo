@@ -2,6 +2,8 @@
 // polling the authority; it builds the batches and answers each settled ticket. If the
 // combiner is unreachable, landers fall back to polling and still land.
 import { expect, it } from 'vitest';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { caller } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -42,4 +44,30 @@ it('runs the same way inside the LandCombiner Durable Object', async () => {
   const { owner, repo, commits } = await repoWithWork('durable', 6, target);
   const landed = await Promise.all(commits.map((commit) => api(`${repo}/land`, owner, { body: { ref: 'main', commit } }, target)));
   expect(landed.map((l) => l.status)).toEqual(Array(6).fill(200));
+});
+
+it('never lands write skew in one batch: of a (reads x, writes y) and b (reads y, writes x), one lands', async () => {
+  const owner = { cookie: await signup('skewed') };
+  const created = await api('/repos', owner, { body: { name: 'skewed', policy: { required_checks: [], approvals: 0 }, files: [file('x.txt', '0\n'), file('y.txt', '0\n')], author } });
+  const id = created.body.id as string;
+  const repo = `/repos/${id}`;
+  const commit = (path: string, read: string) =>
+    api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file(path, `${path}\n`)], read_set: [read], message: path, author } });
+  const [a, b] = await Promise.all([commit('y.txt', 'x.txt'), commit('x.txt', 'y.txt')]);
+  // Move main, then queue both, so one combiner step meets them in one batch.
+  const first = await commit('first.txt', 'first.txt');
+  expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: first.body.commit } })).status).toBe(200);
+  const token = (await api(`${repo}/tokens`, owner, { body: { name: 'lander', scopes: ['read', 'land'] } })).body.token;
+  const lander = caller(scoped, id, { _token: token });
+  const tickets = [];
+  for (const m of [a, b]) tickets.push((await lander({ op: 'repo_land_enqueue', ref: 'main', commit: m.body.commit })).ticket);
+  const batcher = new LandBatcher(scoped, async () => {});
+  batcher.target = { repo: id, ref: 'main' };
+  const status = async (ticket: number) => (await lander({ op: 'repo_land_status', ticket })).status;
+  await batcher.step();
+  expect([await status(tickets[0]), await status(tickets[1])]).toEqual(['landed', 'pending']);
+  // The next batch validates b against a log that holds a: its read of y is stale.
+  await batcher.step();
+  const later = await lander({ op: 'repo_land_status', ticket: tickets[1] });
+  expect([later.status, later.result.code]).toEqual(['failed', 'CONFLICT']);
 });

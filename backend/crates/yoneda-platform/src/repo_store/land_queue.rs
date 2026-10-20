@@ -115,8 +115,11 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 let base_tree = base
                     .map(|b| rows::recorded(db, &b).map(|r| r.tree))
                     .transpose()?;
+                // The builder applies the batch write-skew rule with these (as land_batch does).
+                let writes = merging::branch_paths(db, &commit.id, &head)?;
                 items.push(json!({
                     "ticket": row["ticket"], "commit": commit.id, "commit_tree": commit.tree, "base_tree": base_tree,
+                    "reads": commit.read_set, "writes": writes,
                 }));
             }
         }
@@ -259,13 +262,25 @@ fn verify_octopus<S: SqlStore>(
         ));
     }
     let mut allowed = BTreeSet::new();
+    let mut batch = merging::BatchWrites::default();
     for commit in landed {
         match merging::occ(db, commit, refname)? {
             OccOutcome::Rebase { .. } | OccOutcome::Merge { .. } => {}
             OccOutcome::FastForward if commit.parents.first() == Some(head) => {}
             other => return Err(merging::outcome_error(refname, head, other)),
         }
-        allowed.extend(merging::branch_paths(db, &commit.id, head)?);
+        let writes = merging::branch_paths(db, &commit.id, head)?;
+        if !batch.admits(&commit.read_set, &writes) {
+            return Err(Error::new(
+                "WRITE_SKEW",
+                format!(
+                    "{} reads or writes what an earlier commit of the batch writes; it lands in a later batch",
+                    commit.id
+                ),
+            ));
+        }
+        allowed.extend(writes.iter().cloned());
+        batch.accept(writes);
     }
     if let Some(extra) = rows::touches(db, &merge.id)?
         .into_iter()
