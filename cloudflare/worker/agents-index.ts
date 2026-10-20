@@ -1,0 +1,13 @@
+// Module root of the agent-layer Worker (cloudflare/wrangler.agents.jsonc). It owns runs,
+// attempt source workspaces and harness containers; accounts and repositories belong to the
+// platform Worker, reached through the WORKSPACES script binding and its public API.
+import { ExecutionContainer } from './execution-outbound';
+
+export { ContainerProxy } from '@cloudflare/containers';
+export {
+  LiveRoom,
+  RepositoryAuthority,
+  SourceWorkspaceAuthority,
+} from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
+export { AgentsEntrypoint as default } from './agents-entrypoint';
+export { ExecutionContainer };

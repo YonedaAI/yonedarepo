@@ -1,0 +1,201 @@
+// Agent-layer Worker (not deployed): runs, attempt source workspaces and harness containers,
+// switched off independently of the platform. It calls the platform Worker only through its
+// public API (PLATFORM service binding, `/api/v1`) and shares the platform's accounts through
+// the WORKSPACES script binding. Its D1 index and R2 bucket are created at cutover; the
+// all-zero database_id is never deployable.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-agents-dev",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "main": "worker/agents-index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "limits": {
+    "subrequests": 50000
+  },
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+    "APP_ORIGIN": "https://apps.yonedarepo.com",
+    "ARTIFACTS_NAMESPACE": "yoneda-platform-dev",
+    "CODEX_MODEL": "gpt-5.6-luna",
+    "CLAUDE_MODEL": "claude-sonnet-5-5",
+    "MIMO_MODEL": "mimo-v2.6-flash",
+    "ZAI_MODEL": "glm-5.3-flash",
+    "STARTER_REPO": "yoneda-website-starter",
+    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev"
+  },
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-agents-dev"
+    },
+    {
+      "binding": "APPS",
+      "service": "yonedarepo-apps-dev"
+    },
+    {
+      "binding": "PLATFORM",
+      "service": "yonedarepo-platform-dev"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "OPENAI_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "Codex"
+    },
+    {
+      "binding": "ANTHROPIC_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "Claude"
+    },
+    {
+      "binding": "MIMO_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "MiMo"
+    },
+    {
+      "binding": "ZAI_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "ZAI"
+    }
+  ],
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "yoneda-platform-dev",
+      "remote": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "REPOSITORIES",
+        "class_name": "RepositoryAuthority"
+      },
+      {
+        "name": "LIVE",
+        "class_name": "LiveRoom"
+      },
+      {
+        "name": "EXECUTIONS",
+        "class_name": "ExecutionContainer"
+      },
+      {
+        "name": "SOURCES",
+        "class_name": "SourceWorkspaceAuthority"
+      },
+      {
+        "name": "WORKSPACES",
+        "class_name": "WorkspaceAuthority",
+        "script_name": "yonedarepo-platform-dev"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "RepositoryAuthority",
+        "LiveRoom",
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "ExecutionContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 16,
+      "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-agents-dev-objects"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "INDEX",
+      "database_name": "yonedarepo-agents-dev-index",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "AGENT_QUEUE",
+        "queue": "yonedarepo-agents-dev-agent"
+      },
+      {
+        "binding": "CAPTURE_QUEUE",
+        "queue": "yonedarepo-agents-dev-capture"
+      },
+      {
+        "binding": "EVALUATE_QUEUE",
+        "queue": "yonedarepo-agents-dev-evaluate"
+      },
+      {
+        "binding": "PUBLISH_QUEUE",
+        "queue": "yonedarepo-agents-dev-publish"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "yonedarepo-agents-dev-agent",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
+      },
+      {
+        "queue": "yonedarepo-agents-dev-capture",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
+      },
+      {
+        "queue": "yonedarepo-agents-dev-evaluate",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
+      },
+      {
+        "queue": "yonedarepo-agents-dev-publish",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
+      }
+    ]
+  },
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ]
+}

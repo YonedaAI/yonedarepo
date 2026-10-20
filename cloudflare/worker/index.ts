@@ -1,11 +1,6 @@
-import type { OutboundHandler } from '@cloudflare/containers';
-import { brokerHandler } from './broker';
+// Module root of the combined Worker (cloudflare/wrangler.jsonc): agent layer and platform.
 import { CheckContainer } from './check-container';
-import { ExecutionContainer } from './container';
-import { dependencyHandler, registries } from './dependencies';
-import { gitHandler } from './git';
-import { modelHandler } from './models';
-import { sourceBroker } from './source-broker';
+import { ExecutionContainer } from './execution-outbound';
 
 export { ContainerProxy } from '@cloudflare/containers';
 export {
@@ -19,13 +14,3 @@ export { YonedaEntrypoint as default } from './entrypoint';
 export { PlatformImportWorkflow } from './repo-import-workflow';
 export { ObjectPushQueue } from './repo-push-queue';
 export { CheckContainer, ExecutionContainer };
-
-ExecutionContainer.outboundByHost = {
-  ...Object.fromEntries(registries.map((host) => [host, dependencyHandler as OutboundHandler])),
-  'yoneda.internal': brokerHandler as OutboundHandler,
-  'source.yoneda.internal': sourceBroker as OutboundHandler,
-  'codex.yoneda.internal': modelHandler('codex') as OutboundHandler,
-  'gemini.yoneda.internal': modelHandler('gemini') as OutboundHandler,
-  'claude.yoneda.internal': modelHandler('claude') as OutboundHandler,
-  'git.yoneda.internal': gitHandler as OutboundHandler,
-};
