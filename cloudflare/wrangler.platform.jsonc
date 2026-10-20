@@ -43,6 +43,10 @@
       {
         "name": "CHECK_RUNNERS",
         "class_name": "CheckContainer"
+      },
+      {
+        "name": "OBJECT_PUSHES",
+        "class_name": "ObjectPushQueue"
       }
     ]
   },
@@ -53,6 +57,12 @@
         "SourceRepository",
         "WorkspaceAuthority",
         "CheckContainer"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "ObjectPushQueue"
       ]
     }
   ],

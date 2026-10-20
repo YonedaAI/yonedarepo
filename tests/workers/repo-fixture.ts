@@ -6,6 +6,7 @@ import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
 
 export const bindings = env as unknown as Env;
@@ -46,6 +47,19 @@ export const fakeQueue = {
 /** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
 export const pushes: string[] = [];
 export const refusals = new Set<string>();
+/** Receive-pack requests the fake saw, and how many more it answers "busy" like Artifacts. */
+export const receivePacks = { requests: 0, busy: 0 };
+const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
+/** The ref-update commands of a receive-pack body, up to its flush packet. */
+function commands(body: Uint8Array) {
+  const out: string[] = [];
+  for (let at = 0; ; ) {
+    const length = Number.parseInt(new TextDecoder().decode(body.subarray(at, at + 4)), 16);
+    if (!length) return out;
+    out.push(new TextDecoder().decode(body.subarray(at + 4, at + length)).split('\0')[0].trim());
+    at += length;
+  }
+}
 export const fakeRunners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
@@ -58,7 +72,16 @@ export const fakeRunners = {
     },
   }),
 };
-export const scoped = { ...bindings, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners } as unknown as Env;
+// The push queue's batching runs in-process, so its receive-packs reach the fake endpoint.
+const batchers = new Map<string, PushBatcher>();
+export const fakePushQueues = {
+  idFromName: (name: string) => name,
+  get: (name: string) => {
+    if (!batchers.has(name)) batchers.set(name, new PushBatcher());
+    return batchers.get(name);
+  },
+};
+export const scoped = { ...bindings, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues } as unknown as Env;
 
 /** Registers per-test reset, the D1 listing schema and the Artifacts push endpoint. */
 export function usePlatformFixture() {
@@ -71,6 +94,8 @@ beforeEach(async () => {
   misses.length = 0;
   pushes.length = 0;
   refusals.clear();
+  receivePacks.requests = 0;
+  receivePacks.busy = 0;
   queued.length = 0;
   executed.length = 0;
   const original = globalThis.fetch;
@@ -79,12 +104,19 @@ beforeEach(async () => {
     if (!url.startsWith('https://artifacts.test/')) return original(input, init);
     expect(url).toMatch(/\/git-receive-pack$/);
     const body = new Uint8Array(init?.body as ArrayBuffer);
-    const command = new TextDecoder().decode(body.subarray(4, body.indexOf(0)));
-    const ref = command.split(' ')[2];
-    pushes.push(command);
-    const ok = refusals.has(ref) ? `ng ${ref} stale info\n` : `ok ${ref}\n`;
-    const report = `000eunpack ok\n${(ok.length + 4).toString(16).padStart(4, '0')}${ok}0000`;
-    return new Response(report, { headers: { 'content-type': 'application/x-git-receive-pack-result' } });
+    receivePacks.requests++;
+    const headers = { 'content-type': 'application/x-git-receive-pack-result' };
+    if (receivePacks.busy > 0) {
+      receivePacks.busy--;
+      return new Response(pkt('ERR artifacts_git_receive_pack_busy'), { headers });
+    }
+    let report = pkt('unpack ok\n');
+    for (const command of commands(body)) {
+      const ref = command.split(' ')[2];
+      pushes.push(command);
+      report += pkt(refusals.has(ref) ? `ng ${ref} stale info\n` : `ok ${ref}\n`);
+    }
+    return new Response(`${report}0000`, { headers });
   });
 });
 }

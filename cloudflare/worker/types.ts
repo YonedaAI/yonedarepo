@@ -11,6 +11,7 @@ export interface Env {
   SOURCE_REPOS: DurableObjectNamespace;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
+  OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
   /** Platform jobs (check runs); independent of agent queues. */
   PLATFORM_QUEUE: Queue<Envelope>;
   /** Durable imports of external Git repositories into the source platform. */

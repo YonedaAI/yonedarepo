@@ -50,7 +50,26 @@ pub fn receive_pack_delete(refname: &str, old: ObjectId) -> Result<Vec<u8>> {
 }
 
 /// Accepts only `unpack ok` plus `ok <refname>`, so a partial or rejected push never counts.
-pub fn verify_receive_pack_report(mut bytes: &[u8], refname: &str) -> Result<()> {
+pub fn verify_receive_pack_report(bytes: &[u8], refname: &str) -> Result<()> {
+    let lines = report_lines(bytes)?;
+    let expected = format!("ok {refname}\n");
+    if lines != [Some(&b"unpack ok\n"[..]), Some(expected.as_bytes()), None] {
+        return Err(invalid(format!(
+            "Object store did not acknowledge {refname}: {}",
+            String::from_utf8_lossy(
+                &lines
+                    .iter()
+                    .flatten()
+                    .flat_map(|l| l.iter().copied())
+                    .collect::<Vec<_>>()
+            )
+        )));
+    }
+    Ok(())
+}
+
+/// A report's pkt-lines, with `None` for each flush packet.
+pub(super) fn report_lines(mut bytes: &[u8]) -> Result<Vec<Option<&[u8]>>> {
     let mut lines = Vec::new();
     while !bytes.is_empty() {
         let len = std::str::from_utf8(bytes.get(..4).ok_or_else(|| invalid("Truncated report"))?)
@@ -68,20 +87,7 @@ pub fn verify_receive_pack_report(mut bytes: &[u8], refname: &str) -> Result<()>
         lines.push(Some(line));
         bytes = &bytes[len..];
     }
-    let expected = format!("ok {refname}\n");
-    if lines != [Some(&b"unpack ok\n"[..]), Some(expected.as_bytes()), None] {
-        return Err(invalid(format!(
-            "Object store did not acknowledge {refname}: {}",
-            String::from_utf8_lossy(
-                &lines
-                    .iter()
-                    .flatten()
-                    .flat_map(|l| l.iter().copied())
-                    .collect::<Vec<_>>()
-            )
-        )));
-    }
-    Ok(())
+    Ok(lines)
 }
 
 /// One ref update parsed from a receive-pack request (server side of `receive_pack_request`).

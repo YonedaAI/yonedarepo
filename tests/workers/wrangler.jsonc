@@ -39,6 +39,10 @@
       {
         "name": "SOURCE_REPOS",
         "class_name": "SourceRepository"
+      },
+      {
+        "name": "OBJECT_PUSHES",
+        "class_name": "ObjectPushQueue"
       }
     ]
   },
@@ -66,6 +70,12 @@
       "tag": "v4",
       "new_sqlite_classes": [
         "SourceRepository"
+      ]
+    },
+    {
+      "tag": "v5",
+      "new_sqlite_classes": [
+        "ObjectPushQueue"
       ]
     }
   ],
