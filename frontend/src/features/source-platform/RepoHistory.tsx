@@ -8,6 +8,7 @@ type LogCommit = {
   message: string;
   principal: string;
   landed?: { version: number; landed_at: number };
+  break_glass?: string | null;
 };
 
 export function RepoHistory({
@@ -42,6 +43,12 @@ export function RepoHistory({
           <span>
             <code>{shortSha(c.commit)}</code> · {c.principal}
             {c.landed && ` · landed v${c.landed.version} · ${when(c.landed.landed_at)}`}
+            {c.break_glass && (
+              <>
+                {' · '}
+                <span className="source-badge-danger">Break-glass {c.break_glass}</span>
+              </>
+            )}
           </span>
         </li>
       ))}

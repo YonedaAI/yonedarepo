@@ -5,6 +5,7 @@
 // same to us.
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
+import { breakGlass } from './repo-break-glass';
 import { repoMcp } from './repo-mcp';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
@@ -21,6 +22,10 @@ const STATUS: Record<string, number> = {
   MERGE_REQUIRED: 409,
   STALE_PARENT: 409,
   NOT_READY: 409,
+  STALE_HEAD: 409,
+  STALE_EPOCH: 409,
+  NOT_LANDED: 409,
+  AUTOMATION_PAUSED: 423,
   ALREADY_EXISTS: 409,
   PUSH_FAILED: 502,
   NOT_SUPPORTED: 400,
@@ -40,7 +45,9 @@ async function credentials(req: Request, env: Env): Promise<Credentials | null> 
   const principal = await authenticate(req, env);
   if (!principal || principal.role === 'agent') return null;
   const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
-  return { _session: { workspace: principal.workspace, principal: name } };
+  // Only a personal account session is a person; admin bearers may be held by scripts.
+  const human = principal.role === 'user' ? { human: true as const } : {};
+  return { _session: { workspace: principal.workspace, principal: name, ...human } };
 }
 
 async function createRepository(env: Env, auth: Credentials, body: Json) {
@@ -200,6 +207,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
+  if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {
     const body = await bodyOf(req);
@@ -223,7 +231,13 @@ export async function repoApi(req: Request, env: Env): Promise<Response> {
   if (!auth) return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
   const url = new URL(req.url);
   const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);
-  if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], auth)));
+  // MCP is the agent surface: it never carries a human marker, so break-glass (which is not
+  // an MCP tool either) stays unreachable through it.
+  const machine: Credentials =
+    '_session' in auth
+      ? { _session: { workspace: auth._session.workspace, principal: auth._session.principal } }
+      : auth;
+  if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   try {
     return response(await route(req, env, url, auth));
   } catch (e: any) {

@@ -303,3 +303,28 @@ button.danger {
   margin: 0;
   padding: 8px 12px;
 }
+.source-badge-danger {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #b4232c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+.source-break-glass {
+  margin-top: 10px;
+}
+.source-break-glass-record {
+  margin: 4px 0;
+}
+.source-break-glass-confirm {
+  border: 1px solid #b4232c;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+.source-break-glass-confirm textarea {
+  width: 100%;
+  min-height: 56px;
+  margin-bottom: 8px;
+}
