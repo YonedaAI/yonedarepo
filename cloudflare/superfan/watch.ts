@@ -60,7 +60,7 @@ export function productionDeps(env: SuperfanEnv): WatchDeps {
         ? failing('disabled', 'Analytics source is disabled')
         : !env.CF_ANALYTICS_TOKEN
           ? failing('token_missing', 'Waiting on the CF_ANALYTICS_TOKEN secret')
-          : new CloudflareAnalytics(target, env.CF_ANALYTICS_TOKEN);
+          : new CloudflareAnalytics(target, env.CF_ANALYTICS_TOKEN.trim());
   let model: ModelClient | null = null;
   try {
     model = new FlashModel(env, env.SUPERFAN_MODEL);

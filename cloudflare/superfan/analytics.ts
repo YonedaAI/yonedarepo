@@ -124,15 +124,16 @@ export class CloudflareAnalytics implements AnalyticsSource {
       signal: AbortSignal.timeout(20_000),
     }).catch(() => null);
     if (!res) throw new TelemetryError('fetch_failed', 'GraphQL request did not complete');
-    if (!res.ok) throw new TelemetryError('fetch_failed', `GraphQL HTTP ${res.status}`);
     const body = (await res.json().catch(() => null)) as Row | null;
     const errors = Array.isArray(body?.errors) ? body.errors : [];
     const account = body?.data?.viewer?.accounts?.[0];
-    if (errors.length || !account) {
+    if (!res.ok || errors.length || !account) {
+      // Cloudflare's error messages name the problem (auth, budget, schema), never the token.
       const message = errors.map((e: Row) => String(e?.message ?? '')).join('; ');
+      const status = res.ok ? 'GraphQL error' : `GraphQL HTTP ${res.status}`;
       throw new TelemetryError(
         'fetch_failed',
-        `GraphQL error: ${message || 'no account data'}`.slice(0, 300),
+        `${status}${message ? `: ${message}` : ''}`.slice(0, 300),
       );
     }
     return parseAccount(account, t, window);
