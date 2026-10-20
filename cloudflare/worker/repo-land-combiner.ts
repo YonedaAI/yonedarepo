@@ -223,11 +223,33 @@ export class ProjectionRunner {
 }
 
 export class LandCombiner extends DurableObject<Env> {
+  // Steps due now run here at once (one at a time); later ones wait for an alarm, which
+  // also restarts the combiner after an eviction.
   #batcher = new LandBatcher(this.env, async (ms) => {
+    if (ms === 0) return this.#run();
     const at = Date.now() + ms;
     const current = await this.ctx.storage.getAlarm();
     if (current === null || current > at) await this.ctx.storage.setAlarm(at);
   });
+  #running: Promise<void> | null = null;
+  #again = false;
+
+  #run() {
+    if (this.#running) {
+      this.#again = true;
+      return;
+    }
+    this.#running = (async () => {
+      do {
+        this.#again = false;
+        await this.#batcher.step();
+      } while (this.#again);
+    })()
+      .catch((e) => console.warn(`land step failed: ${e?.message ?? e}`))
+      .finally(() => {
+        this.#running = null;
+      });
+  }
   #projection = new ProjectionRunner(this.env);
   #head = new HeadHolder(this.env);
 
@@ -275,6 +297,7 @@ export class LandCombiner extends DurableObject<Env> {
       return;
     }
     this.#batcher.target ??= await this.ctx.storage.get<Target>('target');
-    await this.#batcher.step();
+    this.#run();
+    await this.#running;
   }
 }
