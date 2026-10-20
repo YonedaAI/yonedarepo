@@ -54,7 +54,8 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       } catch (e) {
         const missing = unrecorded(e);
         if (!missing || attempt >= 4) throw e;
-        if (!(await timed('adopt', () => adoptCommit(env, repo, missing)))) throw e;
+        // False also when a racing adoption took it first: retry once in case.
+        if (!(await timed('adopt', () => adoptCommit(env, repo, missing))) && attempt > 0) throw e;
       }
     }
   };

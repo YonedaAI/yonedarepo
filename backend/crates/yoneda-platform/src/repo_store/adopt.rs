@@ -57,7 +57,26 @@ pub fn begin<S: SqlStore>(
 /// Copies a shard record into this store (its parents must already be here) and starts
 /// its platform checks, as recording does.
 pub fn adopt<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
-    let record = &c["record"];
+    // A chain arrives parents first in one call (`records`), or one commit (`record`).
+    if let Some(records) = c["records"].as_array() {
+        let mut adopted = Vec::new();
+        for record in records {
+            adopted.push(adopt_one(db, record, settings, number(c, "now")?)?);
+        }
+        let last = adopted
+            .last()
+            .cloned()
+            .ok_or_else(|| bad("records is empty"))?;
+        let runs: Vec<Value> = adopted
+            .iter()
+            .flat_map(|a| a["check_runs"].as_array().cloned().unwrap_or_default())
+            .collect();
+        return Ok(json!({ "commit": last["commit"], "adopted": true, "check_runs": runs }));
+    }
+    adopt_one(db, &c["record"], settings, number(c, "now")?)
+}
+
+fn adopt_one<S: SqlStore>(db: &S, record: &Value, settings: &Settings, now: i64) -> Result<Value> {
     let row = &record["commit"];
     let id = ObjectId::parse(&string(row, "id")?)?;
     if rows::commit_row(db, &id)?.is_some() {
@@ -69,7 +88,6 @@ pub fn adopt<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Valu
         rows::recorded(db, parent)?;
     }
     let principal = string(row, "principal")?;
-    let now = number(c, "now")?;
     db.query(
         "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,0,NULL)",
         &[json!(id.hex()), row["tree"].clone(), json!(json!(parents).to_string()), row["generation"].clone(),

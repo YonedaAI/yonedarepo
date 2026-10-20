@@ -40,6 +40,7 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_status" => staging::status(&owned),
             "store_vacuum_scan" => vacuum_scan(&owned, c),
             "store_vacuum_delete" => vacuum_delete(&owned, c),
+            "store_forget" => forget(&owned, c),
             op => Err(Error::new("UNKNOWN_OP", format!("Unknown shard op {op}"))),
         }
     }))
@@ -210,6 +211,30 @@ fn vacuum_delete<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         deleted += 1;
     }
     Ok(json!({ "deleted": deleted }))
+}
+
+/// Drops the records of commits the authority adopted (it serves them now), so the next
+/// adoption walk stops at them. Staged objects stay until their R2 write.
+fn forget<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    for id in c["ids"]
+        .as_array()
+        .ok_or_else(|| bad("ids must be a list"))?
+    {
+        let id = ObjectId::parse(id.as_str().unwrap_or_default())?;
+        for table in [
+            "commit_paths",
+            "commit_classes",
+            "commit_symbols",
+            "commit_objects",
+        ] {
+            db.query(
+                &format!("DELETE FROM {table} WHERE commit_id=?"),
+                &[json!(id.hex())],
+            )?;
+        }
+        db.query("DELETE FROM commits WHERE id=?", &[json!(id.hex())])?;
+    }
+    Ok(json!({ "forgotten": true }))
 }
 
 #[cfg(test)]
