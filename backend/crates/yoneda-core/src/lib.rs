@@ -196,9 +196,13 @@ pub fn validate_workspace(files: &Workspace) -> Result<()> {
     }
     Ok(())
 }
+/// Lowercase hex of raw bytes (digest outputs no longer implement `LowerHex` in sha2 0.11).
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
 pub fn digest(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
-    format!("{:x}", Sha256::digest(bytes))
+    hex(&Sha256::digest(bytes))
 }
 pub fn fingerprint(value: &Value) -> Result<String> {
     fn canonical(v: &Value) -> Result<Value> {

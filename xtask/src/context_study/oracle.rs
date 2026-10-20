@@ -2,7 +2,7 @@ use crate::process::Result;
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
-const IMAGE: &str = "node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d";
+const IMAGE: &str = "node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315";
 pub(super) async fn check(root: &Path, feature: &str) -> Result<Value> {
     #[cfg(unix)]
     {

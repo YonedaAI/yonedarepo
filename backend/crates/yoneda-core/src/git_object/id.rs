@@ -22,8 +22,8 @@ impl ObjectId {
             return Err(invalid("Object id must be 40 lowercase hex digits"));
         }
         let mut out = [0u8; 20];
-        for (i, pair) in bytes.chunks_exact(2).enumerate() {
-            out[i] = (nibble(pair[0]) << 4) | nibble(pair[1]);
+        for (byte, [high, low]) in out.iter_mut().zip(bytes.as_chunks::<2>().0) {
+            *byte = (nibble(*high) << 4) | nibble(*low);
         }
         Ok(Self(out))
     }

@@ -30,7 +30,7 @@ fn sign(claims: Value, domain: &str) -> Value {
     inner.update(yoneda_core::fingerprint(&claims).unwrap().as_bytes());
     outer.update(opad);
     outer.update(inner.finalize());
-    json!({"claims":claims,"signature":format!("{:x}",outer.finalize())})
+    json!({"claims":claims,"signature":yoneda_core::hex(&outer.finalize())})
 }
 impl Fixture {
     pub fn call(&self, command: Value) -> yoneda_core::Result<Value> {

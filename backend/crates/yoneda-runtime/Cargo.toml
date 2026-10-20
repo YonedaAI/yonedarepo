@@ -8,9 +8,9 @@ yoneda-core.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 sha2.workspace = true
-base64 = "0.22.1"
+base64 = "0.23.1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "stream"] }
 axum = "0.8"
 walkdir = "2"
 tempfile = "3"

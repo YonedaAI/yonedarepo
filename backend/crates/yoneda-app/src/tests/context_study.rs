@@ -171,7 +171,7 @@ fn stage_request(id: &str, ids: Value) -> Value {
 }
 
 fn sign_stage(mut command: Value) -> Value {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
     let mut public = command.clone();
     for field in [

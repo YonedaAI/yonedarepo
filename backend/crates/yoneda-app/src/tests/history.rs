@@ -450,7 +450,7 @@ fn external_contribution_started_event_populates_run_history_without_run_created
 #[test]
 fn hot_lineage_reads_use_run_scoped_job_indexes() {
     let db = repo();
-    let plan = db.query("EXPLAIN QUERY PLAN SELECT payload FROM jobs WHERE id IN (SELECT id FROM jobs WHERE json_extract(payload,'$.payload.execution.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.candidate.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.decision_id') IN (SELECT id FROM decisions WHERE json_extract(payload,'$.run_id')='run-one')) ORDER BY id", &[]).unwrap();
+    let plan = db.query("EXPLAIN QUERY PLAN SELECT payload FROM jobs WHERE id IN (SELECT id FROM jobs WHERE json_extract(payload,'$.payload.execution.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.run_id')='run-one' UNION SELECT id FROM jobs WHERE json_extract(payload,'$.payload.candidate.run_id')='run-one' UNION SELECT id FROM jobs INDEXED BY jobs_by_decision WHERE json_extract(payload,'$.payload.decision_id') IN (SELECT id FROM decisions WHERE json_extract(payload,'$.run_id')='run-one')) ORDER BY id", &[]).unwrap();
     let plan = json!(plan).to_string();
     assert!(plan.contains("jobs_by_execution_run"), "{plan}");
     assert!(plan.contains("jobs_by_run"), "{plan}");

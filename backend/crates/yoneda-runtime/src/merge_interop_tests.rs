@@ -57,33 +57,9 @@ fn git_merge(dir: &Path, base: &str, ours: &str, theirs: &str) -> (bool, String)
     (code == 0, String::from_utf8(output.stdout).unwrap())
 }
 
-/// `merge-file --diff-algorithm` needs Git 2.44+; the container image ships Debian's older Git,
-/// so the differential check runs where a recent Git exists (developer machines and CI).
-fn git_supports_diff_algorithm(dir: &Path) -> bool {
-    for name in ["base", "ours", "theirs"] {
-        std::fs::write(dir.join(name), "x\n").unwrap();
-    }
-    Command::new("/usr/bin/git")
-        .args([
-            "merge-file",
-            "-p",
-            "--diff-algorithm=histogram",
-            "ours",
-            "base",
-            "theirs",
-        ])
-        .current_dir(dir)
-        .output()
-        .is_ok_and(|output| output.status.success())
-}
-
 #[test]
 fn three_way_merge_matches_git_merge_file() {
     let dir = tempfile::tempdir().unwrap();
-    if !git_supports_diff_algorithm(dir.path()) {
-        eprintln!("skipped: /usr/bin/git lacks merge-file --diff-algorithm (needs Git 2.44+)");
-        return;
-    }
     let mut rng = Lcg(7);
     let (mut agree, mut clean) = (0, 0);
     for case in 0..300 {
