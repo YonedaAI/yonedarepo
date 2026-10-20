@@ -129,11 +129,22 @@ async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
  * branch's queue and this caller either claims the queue (and lands a whole batch) or
  * waits for whoever holds it. No caller ever rebuilds a merge against a moving head.
  */
-export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) {
+export async function landWithMerge(
+  ctx: RepoContext,
+  ref: string,
+  sha: string,
+  fastForwardOnly = false,
+) {
   try {
-    return await ctx.call({ op: 'repo_land', ref, commit: sha });
+    return await ctx.call({
+      op: 'repo_land',
+      ref,
+      commit: sha,
+      fast_forward_only: fastForwardOnly,
+    });
   } catch (e: any) {
-    if (e?.code !== 'MERGE_REQUIRED') throw e;
+    // A fast-forward-only landing never joins the merge queue.
+    if (e?.code !== 'MERGE_REQUIRED' || fastForwardOnly) throw e;
   }
   const { ticket } = await ctx.call({ op: 'repo_land_enqueue', ref, commit: sha });
   const merger = new RepoContext(

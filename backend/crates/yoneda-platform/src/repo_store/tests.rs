@@ -1526,4 +1526,5 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
     );
 }
 
+mod branches;
 mod break_glass;

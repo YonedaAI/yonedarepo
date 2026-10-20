@@ -214,6 +214,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
+  if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
