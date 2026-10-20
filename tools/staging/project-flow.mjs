@@ -139,7 +139,8 @@ export async function refreshOther(account, repo, run, published, metrics) {
   );
   metrics.refresh = settled.status;
   metrics.refresh_s = ((performance.now() - started) / 1000).toFixed(1);
-  assert.ok(['clean', 'done'].includes(settled.status), `Refresh ended ${settled.status}`);
+  const why = settled.error ?? settled.detail ?? settled.reason ?? settled.evaluation_status ?? '';
+  assert.ok(['clean', 'done'].includes(settled.status), `Refresh ended ${settled.status} ${JSON.stringify(why).slice(0, 300)}`);
 }
 
 /** Deletes a project and checks its platform agent token is revoked. */
