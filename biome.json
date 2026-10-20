@@ -4,6 +4,7 @@
     "includes": [
       "cloudflare/worker/**",
       "cloudflare/sites/**",
+      "cloudflare/superfan/**",
       "frontend/src/**",
       "shared/**",
       "!**/wasm.d.ts"
