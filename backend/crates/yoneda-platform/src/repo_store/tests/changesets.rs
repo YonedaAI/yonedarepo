@@ -22,12 +22,7 @@ impl Harness {
             return None;
         }
         let built = self.project_compute(&plan);
-        for object in built["projected"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .flat_map(|p| p["raw"].as_array().unwrap())
-        {
+        for object in built["raw"].as_array().unwrap() {
             let data = STANDARD
                 .decode(object["data_b64"].as_str().unwrap())
                 .unwrap();
