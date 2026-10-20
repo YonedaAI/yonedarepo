@@ -105,6 +105,38 @@ async function agent(model: ModelClient, api: Api, task: string, base: Base, spe
 }
 
 const CAP_STOPS = new Set(['spend_cap', 'request_cap', 'wall_clock']);
+const EXECUTOR_RETRIES = 3;
+
+/**
+ * Waits for the post-land combined check on `head`. A run that errored in the executor
+ * (e.g. no container capacity) is infrastructure, not a verdict: it is re-requested a few
+ * times and counted; only pass/fail (or a persistent error) is reported.
+ */
+export async function combinedCheck(api: Api, head: string, timeoutMs: number, pollMs: number) {
+  let executorErrors = 0;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const detail = (await api(`/commits/${head}`)).body;
+    const verdict = detail.checks?.find((c: Json) => c.name === 'combined')?.status;
+    if (verdict === 'pass' || verdict === 'fail' || verdict === 'error')
+      return { status: verdict as string, executor_errors: executorErrors };
+    const runs = ((detail.check_runs ?? []) as Json[]).filter((r) => r.name === 'combined');
+    const lastError = Math.max(0, ...runs.map((r) => Number(r.finished_at ?? 0)));
+    // Spaced re-requests: capacity errors need a moment to clear (6 polls, 30 s hosted).
+    if (
+      runs.length > 0 &&
+      runs.every((r) => r.status === 'errored') &&
+      Date.now() - lastError >= 6 * pollMs
+    ) {
+      if (runs.length > executorErrors) executorErrors = runs.length;
+      if (executorErrors > EXECUTOR_RETRIES)
+        return { status: 'error', executor_errors: executorErrors };
+      await api(`/commits/${head}/check-runs`, { body: { name: 'combined' } });
+    }
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return { status: 'timeout', executor_errors: executorErrors };
+}
 
 export async function runP9(
   route: Route,
@@ -162,18 +194,12 @@ export async function runP9(
     }
   }
   const head = (await a('/log?ref=main&limit=1')).body.commits?.[0]?.commit as string;
-  let check = 'timeout';
-  const deadline = Date.now() + spec.check_timeout_ms;
-  while (Date.now() < deadline) {
-    const status = (await a(`/commits/${head}`)).body.checks?.find(
-      (c: Json) => c.name === 'combined',
-    )?.status;
-    if (status === 'pass' || status === 'fail' || status === 'error') {
-      check = status;
-      break;
-    }
-    await new Promise((r) => setTimeout(r, pollMs));
-  }
+  const { status: check, executor_errors } = await combinedCheck(
+    a,
+    head,
+    spec.check_timeout_ms,
+    pollMs,
+  );
   const commits = [...new Set([...landings.map((l) => l.commit).filter(Boolean), head])];
   const repairs = (await Promise.all(commits.map((c) => a(`/commits/${c}`)))).flatMap(
     (r) => r.body.repairs ?? [],
@@ -191,6 +217,7 @@ export async function runP9(
     plan,
     landed,
     head_check: check,
+    check_executor_errors: executor_errors,
     accepted,
     stale_read_conflicts: conflicts,
     agent_attempts: attempts.length,

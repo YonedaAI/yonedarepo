@@ -7,13 +7,14 @@
 // Phases: smoke (one tiny request per provider), small (one 2-task arm per working
 // provider), full (Study A grid + faulted arm + P9, only when projected spend fits), p9
 // (the hosted check preflight and P9 alone, e.g. after a preflight timeout).
-// Writes .local/platform-eval/model-arms-<phase>-<providers>.json. Credentials: YONEDA_USERNAME /
+// Writes .local/platform-eval/model-arms-<phase>-<providers>-<run>.json; a full run resumes
+// from earlier saved runs, skipping finished grid arms. Credentials: YONEDA_USERNAME /
 // YONEDA_PASSWORD; the eval bearer secret is read from a 0600 file, never printed.
 // Usage: node tools/platform-eval-models.mjs --eval-url URL --platform-url URL
 //          --token-file FILE --phase smoke|small|full|p9 [--providers zai,mimo]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,20 +61,28 @@ async function evalCall(path, body) {
   return value;
 }
 
-const login = await fetch(`${platformUrl}/api/auth/login`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json' },
-  body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
-});
-assert.equal(login.status, 200, 'Platform login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
-const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
-async function platform(path, body) {
+async function signIn() {
+  const login = await fetch(`${platformUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
+  });
+  assert.equal(login.status, 200, 'Platform login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
+  return (login.headers.get('set-cookie') ?? '').split(';')[0];
+}
+let cookie = await signIn();
+async function platform(path, body, retried = false) {
   const response = await fetch(`${platformUrl}/api/v1${path}`, {
     method: body ? 'POST' : 'GET',
     headers: { 'content-type': 'application/json', cookie },
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json();
+  // The shared test account's sessions can be evicted by other sign-ins: sign in again once.
+  if (response.status === 401 && !retried) {
+    cookie = await signIn();
+    return platform(path, body, true);
+  }
   if (!response.ok) throw new Error(`${path}: ${value.error?.code} ${value.error?.message}`);
   return value;
 }
@@ -96,6 +105,20 @@ for (const provider of providers) {
   report.smoke.push(result);
 }
 const working = report.smoke.filter((s) => s.ok).map((s) => s.provider);
+// Earlier runs' saved arms: a full run resumes, skipping grid arms that already finished.
+const output = resolve(root, '.local/platform-eval');
+await mkdir(output, { recursive: true, mode: 0o700 });
+const armKey = (provider, layout, iface, dropRate) => `${provider}/${layout}/${iface}/${dropRate}`;
+const earlierRuns = readdirSync(output)
+  .filter((name) => /^model-arms-(full|p9)-.+\.json$/.test(name))
+  .map((name) => JSON.parse(readFileSync(resolve(output, name), 'utf8')));
+const saved = earlierRuns.flatMap((r) => r.arms);
+const p9Done = new Set(
+  earlierRuns.flatMap((r) => r.p9).filter((r) => ['pass', 'fail'].includes(r.head_check)).map((r) => `${r.provider}/${r.scheduler_id}`),
+);
+const done = new Set(
+  saved.filter((a) => a.tasks_planned === 6 && !a.stopped).map((a) => armKey(a.provider, a.layout, a.interface, a.drop_rate)),
+);
 
 report.failed = [];
 /** A failed arm is recorded (its spend is in the ledger) and the run continues. */
@@ -110,6 +133,7 @@ async function attempt(label, work) {
 }
 
 async function arm(provider, layout, iface, tasks, dropRate = 0) {
+  if (tasks === 6 && done.has(armKey(provider, layout, iface, dropRate))) return log(`${provider} ${layout}/${iface} ${dropRate}: done in an earlier run`);
   return attempt(`${provider} ${layout}/${iface}${dropRate ? ` faults ${dropRate}` : ''}`, () => runArm(provider, layout, iface, tasks, dropRate));
 }
 async function runArm(provider, layout, iface, tasks, dropRate) {
@@ -127,11 +151,19 @@ const TSCONFIG = '{\n  "compilerOptions": { "strict": true, "noEmit": true, "tar
 const P9_POLICY = { required_checks: [], approvals: 0, runners: { combined: { command: ['node', '/opt/yoneda/node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'], timeout_seconds: 180 } } };
 const P9_FILES = [['src/pricing.ts', PRICING], ['src/cart.ts', CART], ['tsconfig.json', TSCONFIG]];
 
+/** Same rule as the eval Worker: executor errors (no container capacity) are re-requested. */
 async function headCheck(repo, commit) {
-  const deadline = Date.now() + 6 * 60_000;
+  const deadline = Date.now() + 8 * 60_000;
   while (Date.now() < deadline) {
-    const status = (await platform(`/repos/${repo}/commits/${commit}`)).checks?.find((c) => c.name === 'combined')?.status;
+    const detail = await platform(`/repos/${repo}/commits/${commit}`);
+    const status = detail.checks?.find((c) => c.name === 'combined')?.status;
     if (['pass', 'fail', 'error'].includes(status)) return status;
+    const runs = (detail.check_runs ?? []).filter((r) => r.name === 'combined');
+    const lastError = Math.max(0, ...runs.map((r) => Number(r.finished_at ?? 0)));
+    if (runs.length > 0 && runs.every((r) => r.status === 'errored') && Date.now() - lastError >= 30_000) {
+      if (runs.length > 3) return `error (executor: ${JSON.parse(runs.at(-1).result ?? '{}').error ?? 'unknown'})`.slice(0, 160);
+      await platform(`/repos/${repo}/commits/${commit}/check-runs`, { name: 'combined' });
+    }
     await new Promise((r) => setTimeout(r, 5000));
   }
   return 'timeout';
@@ -150,6 +182,7 @@ async function p9Preflight() {
 }
 
 async function p9(provider, scheduler) {
+  if (p9Done.has(`${provider}/${scheduler}`)) return log(`${provider} P9 ${scheduler}: done in an earlier run`);
   return attempt(`${provider} P9 ${scheduler}`, () => runP9(provider, scheduler));
 }
 async function runP9(provider, scheduler) {
@@ -157,7 +190,7 @@ async function runP9(provider, scheduler) {
   const tokens = { a: await token(repo.id, 'agent-a'), b: await token(repo.id, 'agent-b') };
   const result = await evalCall('/v1/p9', { run, provider, scheduler, repo: repo.id, tokens, base: { commit: repo.commit, version: repo.version } });
   log(`${provider} P9 ${scheduler}: check ${result.head_check}, accepted ${result.accepted}/2, conflicts ${result.stale_read_conflicts}, attempts ${result.agent_attempts}, $${result.usage.usd}${result.stopped ? `, STOPPED ${result.stopped}` : ''}`);
-  report.p9.push({ repo: repo.id, ...result });
+  report.p9.push({ repo: repo.id, scheduler_id: scheduler, ...result });
 }
 
 if (values.phase === 'p9') {
@@ -169,7 +202,8 @@ if (values.phase === 'p9') {
 } else if (values.phase !== 'smoke') {
   const perTask = {};
   for (const provider of working) {
-    const small = await arm(provider, 'modules', 'symbol', 2);
+    const earlier = saved.find((a) => a.provider === provider && a.tasks > 0);
+    const small = earlier ?? (await arm(provider, 'modules', 'symbol', 2));
     if (small) perTask[provider] = small.usage.usd / Math.max(1, small.tasks);
   }
   if (values.phase === 'full') {
@@ -212,6 +246,4 @@ const spent =
   [...report.arms, ...report.p9].reduce((sum, a) => sum + a.usage.usd, 0);
 report.total_usd = Number(spent.toFixed(6));
 log(`spent $${report.total_usd} this run; ledger total $${report.spend_after.settled_microusd / 1e6} of $${report.spend_after.cap_microusd / 1e6}`);
-const output = resolve(root, '.local/platform-eval');
-await mkdir(output, { recursive: true, mode: 0o700 });
-await writeFile(resolve(output, `model-arms-${values.phase}-${providers.join('+')}.json`), `${JSON.stringify(report, null, 2)}\n`);
+await writeFile(resolve(output, `model-arms-${values.phase}-${providers.join('+')}-${run}.json`), `${JSON.stringify(report, null, 2)}\n`);
