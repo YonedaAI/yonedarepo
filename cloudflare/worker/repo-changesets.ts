@@ -7,8 +7,7 @@ import { deferred } from './background';
 import { stagedOf } from './repo-merge';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
-import { putRaw } from './repo-stores';
+import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -28,8 +27,8 @@ const PROJECTION_ROUNDS = 64;
 
 /**
  * Builds and records the Git commits of every unprojected changeset (oldest first, up to
- * 64 versions per round). New objects reach R2, the store of record, before the authority
- * names them. Returns how many versions this call projected.
+ * 64 versions per round). The authority stages their new objects as it records them, and
+ * the object projector writes them to R2. Returns how many versions this call projected.
  */
 export async function projectChangesets(env: Env, repo: string): Promise<number> {
   const projector = new RepoContext(env, repo, caller(env, repo, { _system: 'projection' }));
@@ -49,14 +48,11 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     const built = await timed('project.compute', () =>
       withTrees(objects, { op: 'project_changesets', head: plan.head, items: plan.items }, known),
     );
-    await timed('project.store', () =>
-      Promise.all([
-        putRaw(env, (id) => objects.rawKey(id), built.raw),
-        objects.cache(built.objects, 'edge'),
-      ]),
-    );
+    // The authority stages the new objects with the record (R2 follows, off this path).
+    await timed('project.cache', () => objects.cache(built.objects, 'edge'));
+    let recorded: Json;
     try {
-      await projector.call({
+      recorded = await projector.call({
         op: 'repo_changeset_record',
         ref: plan.ref,
         from: plan.head.id,
@@ -68,6 +64,10 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       continue;
     }
     projected += built.projected.length;
+    if (recorded.dispatch_objects)
+      await dispatchObjects(env, repo).catch((e) =>
+        console.warn(`object drain request failed: ${e?.message ?? e}`),
+      );
     const head = built.projected.at(-1);
     const tip = new Set([head.commit, head.tree]);
     previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree' || tip.has(o.id));
