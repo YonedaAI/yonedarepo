@@ -5,11 +5,12 @@
 // repositories and per-repo tokens as the platform test account, then asks the eval
 // Worker to run each arm; the Worker enforces the total spend cap before every request.
 // Phases: smoke (one tiny request per provider), small (one 2-task arm per working
-// provider), full (Study A grid + faulted arm + P9, only when projected spend fits).
+// provider), full (Study A grid + faulted arm + P9, only when projected spend fits), p9
+// (the hosted check preflight and P9 alone, e.g. after a preflight timeout).
 // Writes .local/platform-eval/model-arms-<phase>-<providers>.json. Credentials: YONEDA_USERNAME /
 // YONEDA_PASSWORD; the eval bearer secret is read from a 0600 file, never printed.
 // Usage: node tools/platform-eval-models.mjs --eval-url URL --platform-url URL
-//          --token-file FILE --phase smoke|small|full [--providers zai,mimo]
+//          --token-file FILE --phase smoke|small|full|p9 [--providers zai,mimo]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
@@ -32,7 +33,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const evalUrl = values['eval-url']?.replace(/\/$/, '');
 const platformUrl = values['platform-url']?.replace(/\/$/, '');
 assert.ok(evalUrl && platformUrl && values['token-file'], 'Pass --eval-url, --platform-url and --token-file');
-assert.ok(['smoke', 'small', 'full'].includes(values.phase), 'phase is smoke, small or full');
+assert.ok(['smoke', 'small', 'full', 'p9'].includes(values.phase), 'phase is smoke, small, full or p9');
 assert.equal(statSync(values['token-file']).mode & 0o077, 0, 'The token file must be private (0600)');
 const secret = readFileSync(values['token-file'], 'utf8').trim();
 const SEED = 20261019;
@@ -53,8 +54,9 @@ async function evalCall(path, body) {
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(25 * 60_000),
   });
-  const value = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`${path}: ${response.status} ${value.error?.code} ${value.error?.message}`);
+  // Arm responses stream: headers at once, keepalive spaces, then the JSON result.
+  const value = await response.json().catch(() => ({ error: { code: 'BAD_RESPONSE' } }));
+  if (!response.ok || value.error) throw new Error(`${path}: ${response.status} ${value.error?.code} ${value.error?.message}`);
   return value;
 }
 
@@ -95,7 +97,22 @@ for (const provider of providers) {
 }
 const working = report.smoke.filter((s) => s.ok).map((s) => s.provider);
 
+report.failed = [];
+/** A failed arm is recorded (its spend is in the ledger) and the run continues. */
+async function attempt(label, work) {
+  try {
+    return await work();
+  } catch (e) {
+    log(`FAILED ${label}: ${e.message}`);
+    report.failed.push({ arm: label, error: String(e.message).slice(0, 300) });
+    return null;
+  }
+}
+
 async function arm(provider, layout, iface, tasks, dropRate = 0) {
+  return attempt(`${provider} ${layout}/${iface}${dropRate ? ` faults ${dropRate}` : ''}`, () => runArm(provider, layout, iface, tasks, dropRate));
+}
+async function runArm(provider, layout, iface, tasks, dropRate) {
   const repo = await repoWith(`n9-${provider}-${layout}-${iface}-${Date.now()}`, render(layout, codebase(SEED)));
   const result = await evalCall('/v1/arms', { run, provider, layout, interface: iface, seed: SEED, tasks, drop_rate: dropRate, repo: repo.id, token: await token(repo.id, 'model-agent') });
   log(`${provider} ${layout}/${iface}${dropRate ? ` faults ${dropRate}` : ''}: accepted ${result.accepted}/${result.tasks}, recall ${result.closure_recall.toFixed(2)}, precision ${result.exposure_precision.toFixed(2)}, $${result.usage.usd}, failures ${JSON.stringify(result.usage.failures)}${result.stopped ? `, STOPPED ${result.stopped}` : ''}`);
@@ -133,6 +150,9 @@ async function p9Preflight() {
 }
 
 async function p9(provider, scheduler) {
+  return attempt(`${provider} P9 ${scheduler}`, () => runP9(provider, scheduler));
+}
+async function runP9(provider, scheduler) {
   const repo = await repoWith(`n9-p9-${provider}-${scheduler}-${Date.now()}`, P9_FILES, P9_POLICY);
   const tokens = { a: await token(repo.id, 'agent-a'), b: await token(repo.id, 'agent-b') };
   const result = await evalCall('/v1/p9', { run, provider, scheduler, repo: repo.id, tokens, base: { commit: repo.commit, version: repo.version } });
@@ -140,17 +160,23 @@ async function p9(provider, scheduler) {
   report.p9.push({ repo: repo.id, ...result });
 }
 
-if (values.phase !== 'smoke') {
+if (values.phase === 'p9') {
+  const preflight = await p9Preflight();
+  log(`P9 hosted check preflight: ${JSON.stringify(preflight.verdicts)}`);
+  report.p9_preflight = preflight;
+  if (preflight.ok) for (const provider of working) for (const scheduler of ['disjoint', 'aware', 'planned']) await p9(provider, scheduler);
+  else report.skipped.push({ reason: 'P9 skipped: the hosted combined check preflight did not pass/fail as expected' });
+} else if (values.phase !== 'smoke') {
   const perTask = {};
   for (const provider of working) {
     const small = await arm(provider, 'modules', 'symbol', 2);
-    perTask[provider] = small.usage.usd / Math.max(1, small.tasks);
+    if (small) perTask[provider] = small.usage.usd / Math.max(1, small.tasks);
   }
   if (values.phase === 'full') {
     const preflight = await p9Preflight();
     log(`P9 hosted check preflight: ${JSON.stringify(preflight.verdicts)}`);
     report.p9_preflight = preflight;
-    for (const provider of working) {
+    for (const provider of working.filter((p) => p in perTask)) {
       const spend = await evalCall('/v1/spend');
       const committed = (spend.settled_microusd + spend.open_reservations_microusd) / 1e6;
       // 36 grid tasks + 6 faulted + ~7 P9 agent runs, with a 2x margin for longer contexts.
@@ -180,7 +206,10 @@ report.manifest = {
   seeds: { study_a: SEED, search_faults: SEED + 1, tasks_per_arm: 6 },
   prompts_sha256: report.arms[0]?.prompts_sha256 ?? report.p9[0]?.prompts_sha256 ?? null,
 };
-const spent = (report.spend_after.settled_microusd - report.spend_before.settled_microusd) / 1e6;
+// This run's own requests (parallel runs share the ledger, so its delta is not ours alone).
+const spent =
+  report.smoke.reduce((sum, s) => sum + s.usage.microusd / 1e6, 0) +
+  [...report.arms, ...report.p9].reduce((sum, a) => sum + a.usage.usd, 0);
 report.total_usd = Number(spent.toFixed(6));
 log(`spent $${report.total_usd} this run; ledger total $${report.spend_after.settled_microusd / 1e6} of $${report.spend_after.cap_microusd / 1e6}`);
 const output = resolve(root, '.local/platform-eval');
