@@ -14,6 +14,13 @@
   "observability": {
     "enabled": true
   },
+  // Run next to the data: a commit makes about ten round trips to its repository's
+  // Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo
+  // otherwise. New repository objects are created near the placed Worker.
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
   "assets": {
     "directory": "../frontend/dist",
     "binding": "ASSETS",
