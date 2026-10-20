@@ -1,6 +1,6 @@
 // Branch refs are projected into the object store with expected-old leases; refusals
 // become visible drift instead of forced updates.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
 import { parseStore } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
@@ -89,4 +89,25 @@ it('keeps R2-store refs in step and detects tampering', async () => {
   await drain(local);
   expect((await api(repo, owner, {}, local)).body.projections[0].status).toBe('drift');
   expect(await store.readRef('refs/heads/main')).toBe(created.body.commit);
+});
+
+it('projects a long backlog in one receive-pack per chunk, never a refused push', async () => {
+  const owner = { cookie: await signup('backlog') };
+  const created = await api('/repos', owner, { body: { name: 'k', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
+  const repo = `/repos/${created.body.id}`;
+  await drain(scoped);
+  const landedCommits: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const files = Array.from({ length: 40 }, (_, k) => file(`b${i}/${k}.txt`, `${i}.${k}\n`));
+    const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: files, message: `b${i}`, author } });
+    expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: made.body.commit } })).body.landed).toBe(true);
+    landedCommits.push(made.body.commit);
+  }
+  const warn = vi.spyOn(console, 'warn');
+  const packs = receivePacks.requests;
+  await drain(scoped);
+  expect(receivePacks.requests - packs).toBe(2); // the older chunk under hidden refs, then main
+  expect(warn.mock.calls.filter((c) => String(c[0]).startsWith('object store push attempt'))).toEqual([]);
+  for (const commit of landedCommits) expect(artifacts.get(`yr-${created.body.id}`)?.get(commit)?.kind).toBe('commit');
+  expect((await api(repo, owner)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: landedCommits.at(-1) });
 });
