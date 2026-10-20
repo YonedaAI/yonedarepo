@@ -65,7 +65,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   expect(status.objects.oldest).toMatchObject({ commit_id: made.body.commit, attempts: 1 });
   expect(status.objects.oldest.detail).toContain('R2 unavailable');
 
-  // Without cached copies, reads fall through R2 to the staged copy (before Artifacts).
+  // Without cached copies, reads fall through R2 and Artifacts to the shard's staged copy.
   const tree = (await api(`${path}/commits/${made.body.commit}`, owner)).body.tree;
   const listed = (await api(`${path}/tree?commit=${made.body.commit}&path=dir`, owner)).body;
   for (const object of [tree, ...listed.entries.map((e: any) => e.id)]) {
@@ -75,7 +75,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   misses.length = 0;
   const read = await api(`${path}/blob?commit=${made.body.commit}&path=dir/b.txt`, owner);
   expect(read.body.content).toBe('b\n');
-  expect(misses).toEqual([]); // never asked Artifacts
+  expect(misses.length).toBeGreaterThan(0); // Artifacts did not have them
 
   // Artifacts is down too: main lands, its projection fails and retries; never drift.
   receivePacks.down = true;
