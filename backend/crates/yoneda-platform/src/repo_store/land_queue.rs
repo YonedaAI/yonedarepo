@@ -6,7 +6,9 @@
 //! blocks commits, reads or other branches.
 use super::land::{append, gates};
 use super::merging::{self, MERGE_PRINCIPAL};
-use super::rows::{self, CommitRow, RecordedGraph, Settings, branch_ref, current_version};
+use super::rows::{
+    self, CommitRow, RecordedGraph, Settings, branch_ref, current_version, object_id,
+};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -16,7 +18,10 @@ use yoneda_core::{
     txlog::{OccOutcome, TxKind},
 };
 
-const LEASE_MS: i64 = 30_000;
+/// How long one builder is left alone with a batch. Advisory: it only spares the branch a
+/// stampede of identical merges; a batch lands only if the head it was built on is still
+/// the head (compare-and-swap), so a slow or vanished builder never blocks or corrupts.
+const LEASE_MS: i64 = 10_000;
 const BATCH: u64 = 64;
 
 pub fn enqueue<S: SqlStore>(
@@ -187,17 +192,22 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }))
 }
 
-/// Lands a claimed batch: either one fast-forward commit, or one platform merge commit
-/// whose parents are the head followed by every landed commit. Failed tickets record
-/// why; deferred tickets stay queued for the next batch. Releases the lease.
+/// Lands a claimed batch with one compare-and-swap of the head it was built on and one log
+/// entry: either one fast-forward commit, or one platform merge commit whose parents are
+/// the head followed by every landed commit. Failed tickets record why; deferred tickets
+/// stay queued for the next batch. Releases the builder's lease.
 pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
     let epoch = c["epoch"].as_i64().ok_or_else(|| bad("Missing epoch"))?;
-    if lease(db, &refname)?.map(|(e, _)| e) != Some(epoch) {
+    let built_on = object_id(c, "head")?;
+    let head =
+        rows::ref_value(db, &refname)?.ok_or_else(|| Error::new("NOT_FOUND", "Branch vanished"))?;
+    if head != built_on {
+        // Compare-and-swap lost: the builder rebuilds against the new head.
         return Err(Error::new(
-            "STALE_EPOCH",
-            "Another lander owns this branch now",
+            "STALE_HEAD",
+            format!("{refname} moved to {head} while the batch was built"),
         ));
     }
     for failure in c["failed"].as_array().into_iter().flatten() {
@@ -222,8 +232,6 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
         )?);
     }
-    let head =
-        rows::ref_value(db, &refname)?.ok_or_else(|| Error::new("NOT_FOUND", "Branch vanished"))?;
     let mut result = json!({ "landed": [] });
     if !landed_commits.is_empty() {
         result = match c.get("merge").filter(|m| !m.is_null()) {
