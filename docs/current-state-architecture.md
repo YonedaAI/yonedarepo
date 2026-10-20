@@ -1,7 +1,8 @@
 # YonedaRepo current-state architecture
 
-Source snapshot: October 14, 2026 (implementation `fa07681`). This document describes the current code and Cloudflare
-configuration. Deployment and live acceptance evidence are recorded separately in
+Source snapshot: October 14, 2026 (implementation `fa07681`), with the agent layer re-hosted on the
+source platform's public API (N8, October 20, 2026). This document describes the current code and
+Cloudflare configuration. Deployment and live acceptance evidence are recorded separately in
 [UI workflow evidence](ui-workflow-evidence.md).
 
 YonedaRepo has four main parts: a React frontend, a Rust application core, Cloudflare services
@@ -16,9 +17,9 @@ backend/crates/
   yoneda-app/              Transactional state, graph, scheduling and migrations
   yoneda-cloudflare/       Rust-to-Cloudflare binding adapters
   yoneda-worker/           Rust Durable Objects compiled to Wasm
-  yoneda-runtime/          Native supervisor, MCP, capture, evaluation and publication
+  yoneda-runtime/          Native supervisor, MCP, capture and evaluation
 cloudflare/
-  worker/                 Authentication, HTTP/MCP/Git and SDK adapters
+  worker/                 Authentication, HTTP/MCP and SDK adapters
   sites/                  Separate Worker serving published static websites
   containers/             Pinned native runtime Docker image
   migrations/             Forward-only D1 discovery migrations
@@ -44,8 +45,8 @@ credentials, local state and diagnostic exports are ignored by Git.
 | Rust application | Run creation, scheduling, leases, context, capture results, verification, decisions and publication state | [yoneda-app](../backend/crates/yoneda-app/src/lib.rs), [command dispatch](../backend/crates/yoneda-app/src/commands/mod.rs) |
 | Cloudflare binding adapter | Implements the storage interface and bridges SDK operations | [yoneda-cloudflare](../backend/crates/yoneda-cloudflare/src/lib.rs) |
 | Rust Durable Objects | Repository authority, workspace authority, recovery alarms and live notifications | [yoneda-worker](../backend/crates/yoneda-worker/src/lib.rs) |
-| Worker transport | Authentication, HTTP routes, remote MCP/Git, container lifecycle and credential injection | [Worker entrypoint](../cloudflare/worker/index.ts), [routes](../cloudflare/worker/routes.ts) |
-| Native execution | Tokio/Axum supervisor, agent CLI harnesses, stdio MCP, source capture, clean evaluation and Git publication | [yoneda-runtime](../backend/crates/yoneda-runtime/src/lib.rs) |
+| Worker transport | Authentication, HTTP routes, remote MCP, platform API calls, container lifecycle and credential injection | [Worker entrypoint](../cloudflare/worker/index.ts), [routes](../cloudflare/worker/routes.ts) |
+| Native execution | Tokio/Axum supervisor, agent CLI harnesses, stdio MCP, source capture and clean evaluation | [yoneda-runtime](../backend/crates/yoneda-runtime/src/lib.rs) |
 
 The browser submits commands and displays recorded state. Rust owns authoritative repository
 transitions. The application uses the same commands with native SQLite in local tests and
@@ -61,7 +62,7 @@ can open username/password sign-in directly; administrator token access remains 
 ```mermaid
 flowchart TD
     Browser["Browser"] --> Worker["Platform Worker"]
-    LocalAgent["Local agents: scoped MCP and Git"] --> Worker
+    LocalAgent["Local agents: scoped MCP"] --> Worker
 
     Worker --> Workspace["Workspace DO: accounts, connections, access"]
     Worker --> Repo["Repository DO: authoritative state and graph"]
@@ -69,12 +70,12 @@ flowchart TD
     Worker --> Source["Source DO: per-attempt lazy source views"]
     Source --> R2
     Workspace --> Setup["Background project setup via agent queue"]
-    Setup --> Artifacts
+    Setup --> Platform
     Setup --> Repo
     Setup --> Workspace
 
     Repo --> Outbox["Transactional outbox and recovery alarms"]
-    Outbox --> Queues["Agent, capture, evaluate and publish queues; DLQ"]
+    Outbox --> Queues["Agent, capture and evaluate queues; DLQ"]
     Outbox --> D1["D1: repository discovery index"]
     Outbox --> Live
 
@@ -82,7 +83,8 @@ flowchart TD
     Execution --> Containers["Containers: native Rust runtime"]
     Containers --> Broker["Worker capability brokers"]
     Broker --> Providers["External model APIs"]
-    Broker --> Artifacts["Cloudflare Artifacts: canonical Git and candidate forks"]
+    Broker --> Platform["Source platform public API: one repository per project"]
+    Worker --> Platform
     Broker --> R2["R2: content-addressed objects and static assets"]
     Broker --> Repo
     Broker --> Workspace
@@ -99,7 +101,7 @@ flowchart TD
 ```
 
 The platform Worker (`yonedarepo-dev`, served at `yonedarepo.com` and `www.yonedarepo.com`)
-serves the browser assets and handles `/api`, `/mcp`, `/git` and the scoped source APIs. Its
+serves the browser assets and handles `/api`, `/mcp` and the scoped source APIs. Its
 `SELF` service binding calls back into the same Worker and its `APPS` binding reaches the Apps
 Worker. The Sites Worker (`yonedarepo-sites-dev`) serves published static output on its own
 `workers.dev` origin and reads the verified site pointer through a `PLATFORM` service binding.
@@ -113,12 +115,12 @@ The Apps Worker (`yonedarepo-apps-dev`) serves checked apps on `apps.yonedarepo.
 | Source DO (`SourceWorkspaceAuthority`) | One Rust SQLite authority per approved lazy-source attempt and immutable view: metadata, uploads, compare-and-swap file mutations with per-file receipts, checkpoints and seals. |
 | Live DO (`LiveRoom`) | Hibernating WebSocket connections and payload-free refresh signals. Clients reauthenticate when fetching data. |
 | Execution DO (`ExecutionContainer`) | Stores one attempt's scope and manages its container, watchdog, startup and cancellation. This adapter uses the TypeScript Container SDK. |
-| Queues | Separate dispatch queues for agent, capture, evaluate and publish work. The agent queue also carries `provision` (project setup) and `source_index` (lazy-source indexing) jobs; neither starts a model or container. All four consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
-| Containers | Run the native Rust supervisor and agent CLIs. Coding, capture, evaluation and publication run with separate capabilities. The current configuration allows 16 instances. |
-| Artifacts | Canonical Git repositories and isolated candidate forks. |
+| Queues | Separate dispatch queues for agent, capture and evaluate work. The agent queue also carries `provision` (project setup) and `source_index` (lazy-source indexing) jobs; neither starts a model or container. All three consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
+| Containers | Run the native Rust supervisor and agent CLIs. Coding, capture and evaluation run with separate capabilities; containers never publish. The current configuration allows 16 instances. |
+| Source platform | Each project's source is one platform repository reached only through its public `/api/v1`: the agent layer commits candidates onto its own branches with a read/write/check token sealed in the workspace, and only the owner's own session reviews and lands. Artifacts holds only the operator-published starter templates. |
 | R2 | Immutable context objects, workspace snapshots, transcripts, verification evidence and static asset manifests. |
 | D1 | Rebuildable repository discovery projection. It does not authorize selection or publication. |
-| Sites Worker | `yonedarepo-sites-dev` on `workers.dev`. Serves checked static assets after verified canonical publication. |
+| Sites Worker | `yonedarepo-sites-dev` on `workers.dev`. Serves checked static assets after the owner's landing is read back. |
 | Apps Worker | `yonedarepo-apps-dev` on `apps.yonedarepo.com` and `*.yonedarepo.com`. Authorizes exact checked previews or the canonical published app through a platform service binding. Each app gets a distinct host; platform cookies are stripped. |
 | Worker Loader and AppRunner | Load the checked JS/TS application bundle with outbound network disabled and a managed SQLite capability. Preview and published data are separate. Additive schema migration preserves application data across revisions. |
 | Observability | Structured operational Worker/container logs. Safe owner-visible execution timelines also persist in Repository DO SQLite. |
@@ -150,12 +152,13 @@ FUSE working tree. Builders receive no Git clone or Git credential. Metadata, up
 file mutations, checkpoints and seals use server-authorized identities and version checks;
 staged changesets do not confer checked or published authority.
 
-Trusted capture reads the sealed delta and constructs Git objects for Artifacts, retaining
-unread base files and approved dependency overlays. A fresh evaluator reads the exact
-captured revision with local disposable build scratch. Sparse refresh retains both Git
-parents; a resolver receives a writable conflict scope plus read-only views of both inputs.
-Human selection and publication remain separate. Existing Git-native approvals continue
-using their original transport.
+Trusted capture reads the sealed delta and commits it through the platform API onto the
+attempt's own candidate branch (`agents/capture-*`), retaining unread base files and approved
+dependency overlays. A fresh evaluator reads the exact captured revision with local disposable
+build scratch. Refresh is a server-side platform merge that retains both parents; a conflicting
+merge yields a workspace commit, and a resolver receives a writable conflict scope plus read-only
+views of both inputs. Human selection and publication remain separate. Every run uses this
+transport; the earlier Git-native transport and its evidence files were removed.
 
 Capture handoffs retain the trusted producer epoch separately from the capture job epoch;
 file provenance verifies both identities. The owner can request one same-seal capture/check
@@ -164,17 +167,20 @@ Recovery retains spending and the original agent assertions, creates no new buil
 automatic-review inference, and leaves checked results for human choice. Ordinary comparison
 review also requires at least one independently eligible checked result.
 
-This is an incremental source transport alongside Git, not a distributed replacement for
-Git history. Source views are bounded to 10,000 regular files, 100 MiB total and 32 MiB per
-file. Links and submodules are unsupported. Local filesystem, ledger and Git tests are
+Source history lives in the platform repository; this transport is not a distributed
+replacement for it. Source views are bounded to 10,000 regular files, 100 MiB total and 32 MiB per
+file. Links and submodules are unsupported. Local filesystem, ledger and platform tests are
 separate from hosted acceptance; consult release evidence before treating this new transport
 as deployed or validated at scale.
 
 Signup and login create an opaque session backed by Workspace DO SQLite. Project creation
-reserves a stable ID there, schedules background setup and returns promptly. A Workspace DO
+reserves a stable ID there and, in the owner's own request, creates the project's platform
+repository from a starter template (or a public Git import) and binds its agent token; the
+reviewer and campaign operator flows create it for the named workspace. Background setup then
+initializes the ledger from the platform's `main` and the request returns promptly. A Workspace DO
 alarm retains dispatch intent and retries queue sends, pending imports and expired claims,
 even when the browser is closed or a queue acknowledgment is lost. Idle workspaces stop their
-alarm. Browser polling reads recorded stages without starting parallel Artifacts imports.
+alarm. Browser polling reads recorded stages without starting parallel imports.
 Setup claims have a
 two-minute lease and epoch; an attempt has a 90-second watchdog, and repeated pending work
 stops after ten minutes. Failed setup can retry with the same repository identity.
@@ -187,15 +193,13 @@ and Worker parity. Existing usernames do not acquire an email alias automaticall
 ownership verification and email-based password reset are not implemented; recovery uses the
 one-time saved code.
 
-Imports resolve the public Git remote's advertised HEAD and explicitly supply its branch to
-Artifacts. Existing imports with incorrect default-branch metadata recover the actual source
-branch before initialization. Empty or unsupported source produces an actionable error.
-Artifacts operations remain asynchronous; see the
-[Cloudflare import guide](https://developers.cloudflare.com/artifacts/guides/import-repositories/).
+Imports resolve the public Git remote's advertised HEAD and pass its branch to the platform's
+durable import. Setup waits for the platform's `main`; empty or unsupported source produces an
+actionable error.
 The UI displays elapsed time, stage, errors and retry controls. Browser API requests have a
 20-second timeout; mutations are not automatically repeated after an uncertain response.
 Initial setup events go to
-Cloudflare Workers Logs without passwords, Git capabilities or source contents.
+Cloudflare Workers Logs without passwords, credentials or source contents.
 
 The comparison flow is below. [Build together](build-together.md) starts with brief-driven
 read-only planning on the first selected connection, or an optional manual plan. Its scoped
@@ -212,7 +216,7 @@ branches, peer messages, delivery receipts and intent questions; migrations rema
 
 1. The owner approves a brief, source base, context, agent roster and model limits.
 2. In comparison mode, agents work independently from the same frozen base and publish typed context through MCP.
-3. A separate capture job validates regular files and constructs fresh candidate Git objects.
+3. A separate capture job validates regular files and commits them through the platform API onto the attempt's own branch.
 4. A clean evaluator checks the exact captured revision against the approved policy.
 5. New two-builder comparisons wait for both terminal results, then schedule a separate read-only
    reviewer. Its immutable manifest binds intent, prior context, both exact revisions, diffs and
@@ -225,8 +229,10 @@ branches, peer messages, delivery receipts and intent questions; migrations rema
 6. The owner can override the checked selection with a reason and separately approve publication.
    The human decision stores the exact selection and a graph link to the immutable agent review,
    keeping reviewer rationale, override reason and publication rationale distinct.
-7. Publication verifies ancestry, updates canonical Git with an expected-old-ref lease and
-   reads it back. Verified publication advances the static site or checked app pointer.
+7. The ledger reserves the publication and records the `yoneda-checks` platform check; the
+   owner's own session approves and lands the exact commit (`fast_forward_only`, so a moved
+   `main` is refused, never merged; break-glass when checks were overridden). The ledger then
+   reads the platform back, and only that readback advances the static site or checked app pointer.
 8. Later updates carry forward the published approach, decision and selected context for review.
 
 Runs accept one to six initial agents. Optional delegation allows up to 12 total agents through
@@ -236,7 +242,7 @@ before run approval and frozen afterward.
 
 `continuation_of` connects a new update to the decision at the current published commit.
 Restarting a run creates a new approved attempt while retaining the earlier evidence.
-Selection, canonical Git publication and hosted site state remain separately recorded.
+Selection, the owner's platform landing and hosted site state remain separately recorded.
 Checked team working branches advance automatically under a compare-and-swap guard. Compare
 checks alone never promote a candidate: selection requires the completed read-only review or a
 guarded owner choice. Older one-to-six-builder runs retain manual selection; existing two-builder
@@ -260,9 +266,10 @@ understanding. Historical reads and context retrieval use bounded, stable-waterm
 Historical queries are anchored to a specific source revision and path; graph traversal is bounded.
 
 Hosted agents use the native stdio MCP server. External agents use Streamable HTTP MCP and
-revocable repository-scoped grants. Scoped Git reads and contribution writes go through the
-Worker without exposing Artifacts credentials. External contributions enter the same capture
-and evaluation pipeline, with owner selection required for publication.
+revocable repository-scoped grants: `attempt_read` and `attempt_commit` read and commit files on
+the attempt's own platform branch through the Worker, which never returns a platform credential.
+On submission a trusted Worker capture rebuilds the bound tree as one fresh commit on the frozen
+base, which then enters the same evaluation pipeline, with owner selection required for publication.
 
 ## Providers and credentials
 
@@ -292,7 +299,7 @@ See [README setup and deployment](../README.md), [runbook](runbook.md),
 ## What differentiates the platform
 
 Parallel isolated branches are an expected agent-tool capability. YonedaRepo's distinguishing
-design is a durable evidence chain: intent and agent assertions, trusted Git capture,
+design is a durable evidence chain: intent and agent assertions, trusted source capture,
 independent exact-revision checks, explicit human decisions and file-level provenance. Later
 agents receive a frozen record of why the current checked code exists, rather than only source
 or a chat transcript. Coordination and bounded repair use the same ledger and approval.
