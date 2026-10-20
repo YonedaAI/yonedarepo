@@ -166,12 +166,15 @@ export class HeadHolder {
 
   constructor(private readonly env: Env) {}
 
+  /** The head it holds when that is recent enough for the caller (a stale one is
+   * refreshed in the background: begins validate their base when they land); otherwise
+   * waits for a load that reaches `minVersion`. */
   async head(repo: string, minVersion: number): Promise<Json> {
-    const head =
-      this.#head && !this.#stale && this.#head.version >= minVersion
-        ? this.#head
-        : await this.#load(repo, minVersion);
-    return withoutTokens(head);
+    if (this.#head && this.#head.version >= minVersion) {
+      if (this.#stale) void this.#load(repo, 0).catch(() => {});
+      return withoutTokens(this.#head);
+    }
+    return withoutTokens(await this.#load(repo, minVersion));
   }
 
   async access(repo: string): Promise<Json> {
