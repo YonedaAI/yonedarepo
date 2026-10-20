@@ -62,7 +62,11 @@ async function fanout(writers) {
         headers: { 'content-type': 'application/json', 'x-bench-key': process.env.BENCH_KEY ?? '' },
         body: JSON.stringify({ target: url, repo, writers: batch }),
       });
-      assert.equal(response.status, 200, `bench client answered ${response.status}`);
+      // A bench client invocation that failed outright counts its writers as failed.
+      if (response.status !== 200) {
+        const failed = { status: 0, error: 'BENCH_CLIENT', message: `bench client answered ${response.status}` };
+        return batch.map((w) => (w.read ? { read: { ...failed, ok: false } } : { commit: failed, land: null }));
+      }
       return (await response.json()).results;
     }),
   );
