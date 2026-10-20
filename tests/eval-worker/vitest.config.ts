@@ -12,5 +12,11 @@ export default defineConfig({
       miniflare: { name: 'yoneda-eval-test', compatibilityDate: '2026-10-07', compatibilityFlags: ['nodejs_compat'] },
     }),
   ],
-  test: { include: ['tests/eval-worker/**/*.test.ts'], testTimeout: 60_000 },
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
+  test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
+    include: ['tests/eval-worker/**/*.test.ts'],
+    testTimeout: 60_000,
+    maxWorkers: 2,
+  },
 });

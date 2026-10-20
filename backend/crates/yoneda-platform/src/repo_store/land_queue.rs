@@ -114,10 +114,17 @@ fn finish<S: SqlStore>(
 }
 
 /// Takes the branch's lease (if free) and returns the pending batch to merge. Stale reads
-/// fail immediately; the rest come with the trees needed for a three-way merge.
+/// fail immediately; the rest come with the trees needed for a three-way merge. A waiter
+/// passes its `ticket`: once settled, that answers instead (one call per poll, not two).
 pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
+    if c.get("ticket").is_some_and(|t| !t.is_null()) {
+        let mine = status(db, c)?;
+        if mine["status"] != "pending" {
+            return Ok(json!({ "settled": mine }));
+        }
+    }
     if let Some((_, expires)) = lease(db, &refname)?
         && expires > now
     {

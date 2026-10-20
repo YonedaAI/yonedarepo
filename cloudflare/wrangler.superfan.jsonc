@@ -1,0 +1,64 @@
+// Superfan: one cheap-model watcher per platform component. It reads Cloudflare's telemetry
+// for the isolated platform-only Worker (never production yonedarepo-dev) once an hour and
+// keeps deduplicated findings in its own SQLite Durable Object. Secrets, set from stdin:
+//   CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only
+//   SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-superfan-dev",
+  "main": "superfan/index.ts",
+  "compatibility_date": "2026-10-07",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "triggers": {
+    "crons": [
+      "7 * * * *"
+    ]
+  },
+  "vars": {
+    "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "WATCH_SCRIPT": "yonedarepo-platform-dev",
+    "WATCH_URL": "https://yonedarepo-platform-dev.mlong-f01.workers.dev",
+    "NS_SOURCE_REPOSITORY": "5f63d62b5c4e46f096335ab63f5d3c1a",
+    "NS_OBJECT_PUSH_QUEUE": "1951acf9e2de40b8b5bdf190b6e9c94b",
+    "NS_CHECK_CONTAINER": "b07666bc5d864b50a1f38c8f649f88ec",
+    "QUEUE_JOBS_ID": "e624a6b79361418bb1dd7f99c5c11c2b",
+    "QUEUE_DEAD_LETTER_ID": "5c1ec8623df54e238cc9259cdcf4ba84",
+    "CHECK_CONTAINER_APP_ID": "a03f94b3-b71c-45eb-bfad-d0dc3fd84666",
+    "TELEMETRY_SOURCE": "cloudflare",
+    "SUPERFAN_MODEL": "mimo-v2.6-flash",
+    "MIMO_TOKEN_PLAN_REGION": "sgp",
+    "DAILY_CAP_MICROUSD": "1000000"
+  },
+  "secrets_store_secrets": [
+    {
+      "binding": "MIMO_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "MiMo"
+    },
+    {
+      "binding": "ZAI_KEY",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+      "secret_name": "ZAI"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "LEDGER",
+        "class_name": "SuperfanLedger"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SuperfanLedger"
+      ]
+    }
+  ]
+}

@@ -13,8 +13,12 @@ export default defineConfig({
       miniflare: { name: 'yoneda-platform-test', compatibilityDate: '2026-10-07', compatibilityFlags: ['nodejs_compat'] },
     }),
   ],
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
   test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
     include: ['tests/workers/repo-*.test.ts', 'tests/workers/load-platform.test.ts', 'tests/workers/eval-*.test.ts'],
     testTimeout: 60_000,
+    // One workerd per worker: cap it so parallel builders don't saturate the machine.
+    maxWorkers: 4,
   },
 });

@@ -8,6 +8,7 @@ use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
 mod break_glass;
+mod change_records;
 mod checks;
 mod classes;
 mod contracts;
@@ -23,12 +24,19 @@ mod projection;
 mod reads;
 mod record;
 mod rows;
+mod staging;
 mod symbols;
+mod tree_cache;
 mod vacuum;
 pub use migration::migrate_repo_store;
 
 pub fn execute_repo_store<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
     migrate_repo_store(db)?;
+    execute_migrated(db, command)
+}
+
+/// One command against a store this process already migrated.
+pub fn execute_migrated<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
     let owned = db.clone();
     db.transaction(Box::new(move || dispatch(&owned, &command)))
 }
@@ -52,6 +60,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "FORBIDDEN",
             "Only the platform classifier records derived classes",
         )),
+        // Change records feed analytics; only the platform's derive job streams them.
+        "repo_change_records" if !actor.can("classify") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reads change records",
+        )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
         ),
@@ -60,6 +73,16 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         | "repo_projection_pending"
         | "repo_projection_result"
         | "repo_record_repair" => actor.require("system"),
+        // Only the platform's object projector reads or settles the object outbox: a false
+        // "projected" would drop the only copy of accepted objects.
+        "repo_objects_pending" | "repo_objects_projected" | "repo_staged_objects"
+            if !actor.can("system") =>
+        {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform projects staged objects",
+            ))
+        }
         // Imported history is only recorded by the platform importer, which read it from
         // the object store; nobody else can declare commits into existence.
         "repo_record_imported" if !actor.can("import") => Err(Error::new(
@@ -89,6 +112,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_snapshot" => reads::snapshot(db, c),
         "repo_log" => reads::log(db, c),
         "repo_txlog" => reads::txlog(db, c),
+        "repo_change_records" => change_records::records(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
         "repo_merge_base" => reads::merge_base(db, c),
         "repo_merge_plan" => merging::plan(db, c),
@@ -103,7 +127,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_pin" => vacuum::pin(db, c, principal),
         "repo_vacuum_plan" => vacuum::plan(db, c),
         "repo_vacuum_done" => vacuum::done(db, c),
-        "repo_prepare_commit" => prepare::prepare(db, c, principal),
+        // The store travels with the answer, so the adapter needs no status read first.
+        "repo_prepare_commit" => prepare::prepare(db, c, principal).map(|mut prepared| {
+            prepared["object_store"] = json!(settings.object_store);
+            prepared
+        }),
         "repo_record_commit" => record::record(db, c, principal, &settings),
         "repo_check" => record::check(db, c, principal, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
@@ -114,6 +142,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_set_policy" => checks::set_policy(db, c, principal),
         "repo_projection_pending" => projection::pending(db),
         "repo_projection_result" => projection::result(db, c),
+        "repo_objects_pending" => staging::pending(db),
+        "repo_objects_projected" => staging::projected(db, c),
+        "repo_staged_objects" => staging::read(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),

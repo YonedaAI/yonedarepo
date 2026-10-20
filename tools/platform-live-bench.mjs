@@ -42,7 +42,28 @@ async function call(path, body) {
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json().catch(() => ({}));
-  return { status: response.status, body: value, ms: performance.now() - started };
+  return { status: response.status, body: value, ms: performance.now() - started, phases: phasesOf(response) };
+}
+/** The Worker's `Server-Timing` phases: {name: {ms, n}}. */
+function phasesOf(response) {
+  const phases = {};
+  for (const part of (response.headers.get('server-timing') ?? '').split(',').filter(Boolean)) {
+    const [name, ...fields] = part.trim().split(';');
+    const field = (key) => fields.find((f) => f.startsWith(`${key}=`))?.slice(key.length + 1).replace(/"/g, '');
+    phases[name] = { ms: Number(field('dur')), n: Number(field('desc')) };
+  }
+  return phases;
+}
+/** Per phase across requests: latency of its total time and mean calls per request. */
+function breakdown(results) {
+  const names = [...new Set(results.flatMap((r) => Object.keys(r.phases)))].sort();
+  return Object.fromEntries(
+    names.map((name) => {
+      const seen = results.map((r) => r.phases[name]).filter(Boolean);
+      const { p50_ms, p95_ms, max_ms } = latency(seen.map((p) => Math.round(p.ms)));
+      return [name, { p50_ms, p95_ms, max_ms, calls_per_request: +(seen.reduce((n, p) => n + p.n, 0) / results.length).toFixed(2) }];
+    }),
+  );
 }
 const must = (result, what) => {
   assert.equal(result.status, 200, `${what}: ${result.body.error?.code} ${result.body.error?.message}`);
@@ -102,11 +123,13 @@ const edit = (id, k) => call(`/repos/${id}/commits`, { ref: 'main', changes: [fi
 for (let k = 0; k < 3; k++) await Promise.all([edit(small.id, k), edit(large.id, k)]);
 const smallSamples = [];
 const largeSamples = [];
+const singles = [];
 for (let k = 3; k < 23; k++) {
   for (const [id, samples] of [[small.id, smallSamples], [large.id, largeSamples]]) {
     const made = await edit(id, k);
     must(made, 'edit');
     samples.push(made.ms);
+    if (samples === smallSamples) singles.push(made);
   }
 }
 
@@ -150,6 +173,8 @@ const result = {
   elapsed_ms: Math.round(elapsed),
   repo_create_ms: { small: Math.round(small.ms), large: Math.round(large.ms), large_files: LARGE },
   commits: latency(writes.filter((w) => w.commit.status === 200).map((w) => w.commit.ms)),
+  commit_phases: breakdown(writes.filter((w) => w.commit.status === 200).map((w) => w.commit)),
+  land_phases: breakdown(writes.filter((w) => w.land.status === 200).map((w) => w.land)),
   commit_failures: writes.filter((w) => w.commit.status !== 200).map((w) => w.commit.body.error?.code),
   landings: latency(writes.filter((w) => w.land.status === 200).map((w) => w.land.ms)),
   land_failures: writes.filter((w) => w.land.status !== 200).map((w) => w.land.body.error?.code),
@@ -158,6 +183,7 @@ const result = {
   tiers,
   hit_rates: hitRates,
   s3_commit_small: latency(smallSamples),
+  single_commit_phases: breakdown(singles),
   s3_commit_large: latency(largeSamples),
   s19_time_to_first_edit: baseline,
 };
