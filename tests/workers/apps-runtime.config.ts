@@ -15,7 +15,9 @@ export default defineConfig({
       },
     }),
   ],
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
   test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
     include: [
       'tests/workers/apps-runtime.test.ts',
       'tests/workers/apps-host.test.ts',
