@@ -7,17 +7,10 @@ import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
+import { listTree, readFile } from './repo-files';
 import { landWithMerge } from './repo-landing';
 import { explicitMerge } from './repo-merge';
-import {
-  ApiError,
-  diff,
-  getObjects,
-  type Json,
-  listTree,
-  type RepoContext,
-  readFile,
-} from './repo-ops';
+import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { agentView } from './repo-views';
