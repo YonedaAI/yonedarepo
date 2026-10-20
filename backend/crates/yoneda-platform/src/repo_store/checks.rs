@@ -182,16 +182,14 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
         )?;
     }
     // A failing check on work that already landed is a post-land failure: the adapter
-    // proposes a repair (revert) commit on each branch it landed on. Never a ref rewrite.
+    // proposes a repair (revert) commit on each branch it landed on, or whose projected Git
+    // head it is (landed changesets). Never a ref rewrite.
     let repair: Vec<Value> = if outcome == "fail" {
         db.query(
-            "SELECT refname FROM landings WHERE commit_id=? AND refname NOT IN \
-             (SELECT refname FROM repairs WHERE commit_id=? AND check_name=?)",
-            &[
-                row["commit_id"].clone(),
-                row["commit_id"].clone(),
-                row["name"].clone(),
-            ],
+            "SELECT refname FROM (SELECT refname FROM landings WHERE commit_id=?1 \
+             UNION SELECT refname FROM changesets WHERE projected=?1) WHERE refname NOT IN \
+             (SELECT refname FROM repairs WHERE commit_id=?1 AND check_name=?2)",
+            &[row["commit_id"].clone(), row["name"].clone()],
         )?
         .into_iter()
         .map(|r| r["refname"].clone())

@@ -7,12 +7,19 @@ import type { CachedObject, RawObject } from './repo-stores';
 import type { Env } from './types';
 
 type Json = Record<string, any>;
-export const SHARDS = 16;
+/** 64 shards: a 1000-writer burst puts ~16 commits on each. */
+export const SHARDS = 64;
+/** Commits recorded before 64 shards sit in the shard of their first hex digit. */
+const LEGACY_SHARDS = 16;
 const SYSTEM = { _system: 'commits' };
 const NOT_RECORDED = /Commit ([0-9a-f]{40}) is not recorded/;
 const ADOPT_DEPTH = 256;
 
-export const shardOf = (commit: string) => Number.parseInt(commit[0], 16) % SHARDS;
+export const shardOf = (commit: string) => Number.parseInt(commit.slice(0, 2), 16) % SHARDS;
+/** The shards that may hold `commit`: where it is written now, then where it was. */
+const shardsOf = (commit: string) => [
+  ...new Set([shardOf(commit), Number.parseInt(commit[0], 16) % LEGACY_SHARDS]),
+];
 
 function fail(error: { code: string; message: string }) {
   return Object.assign(new Error(error.message), { code: error.code });
@@ -39,10 +46,14 @@ async function authority(env: Env, repo: string, command: Json) {
 /** A shard's record of `commit`, or null if no shard holds it. */
 export async function shardRecord(env: Env, repo: string, commit: string) {
   if (!env.COMMIT_SHARDS) return null;
-  return shardCall(env, repo, shardOf(commit), { op: 'store_commit', commit }).catch((e) => {
-    if (e?.code === 'NOT_FOUND') return null;
-    throw e;
-  });
+  for (const shard of shardsOf(commit)) {
+    const record = await shardCall(env, repo, shard, { op: 'store_commit', commit }).catch((e) => {
+      if (e?.code === 'NOT_FOUND') return null;
+      throw e;
+    });
+    if (record) return record;
+  }
+  return null;
 }
 
 /**
@@ -80,7 +91,8 @@ export async function shardChain(env: Env, repo: string, commit: string) {
 export async function forgetChain(env: Env, repo: string, chain: Json[]) {
   const byShard = new Map<number, string[]>();
   for (const r of chain)
-    byShard.set(shardOf(r.commit.id), [...(byShard.get(shardOf(r.commit.id)) ?? []), r.commit.id]);
+    for (const shard of shardsOf(r.commit.id))
+      byShard.set(shard, [...(byShard.get(shard) ?? []), r.commit.id]);
   await Promise.all(
     [...byShard].map(([shard, ids]) => shardCall(env, repo, shard, { op: 'store_forget', ids })),
   );
@@ -111,7 +123,8 @@ export const unrecorded = (e: unknown) =>
     ? (NOT_RECORDED.exec(String((e as Error).message))?.[1] ?? null)
     : null;
 
-/** Staged objects of shard commits not yet in R2, from every shard (a rare read path). */
+/** Staged objects of shard commits not yet in R2, from every shard (a rare read path:
+ * an object is staged with its commit, whose id the reader does not know). */
 export async function stagedInShards(env: Env, repo: string, ids: string[], raw = false) {
   if (!env.COMMIT_SHARDS || ids.length === 0) return [];
   const found = await Promise.all(
@@ -156,9 +169,11 @@ export async function shardStagedOf(
   commit: string,
 ): Promise<CachedObject[]> {
   if (!env.COMMIT_SHARDS) return [];
-  const found = await shardCall(env, repo, shardOf(commit), {
-    op: 'store_staged_objects',
-    commit,
-  }).catch(() => ({ objects: [] }));
-  return found.objects as CachedObject[];
+  for (const shard of shardsOf(commit)) {
+    const found = await shardCall(env, repo, shard, { op: 'store_staged_objects', commit }).catch(
+      () => ({ objects: [] }),
+    );
+    if (found.objects.length) return found.objects as CachedObject[];
+  }
+  return [];
 }

@@ -3,7 +3,7 @@
 // merge commit on the landing path. A projector builds main's Git commit for each
 // changeset version afterwards, deterministically (same versions, same ids), so it can
 // run in the background, on demand for a read, or twice at once without harm.
-import { deferred } from './background';
+import { dispatchRuns } from './repo-checks';
 import { refreshHead } from './repo-head';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
@@ -12,7 +12,11 @@ import { shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
-export type LandMode = 'poll' | 'combiner' | 'changeset' | 'batch';
+/** `changeset` (the default): landings queue in the authority and the combiner lands them
+ * a batch at a time. `batch`: landers submit their commit's shard record to the branch's
+ * combiner, which lands every waiting submission in one authority call (an adopted commit,
+ * which has no shard record, or an unreachable combiner, falls back to `changeset`). */
+export type LandMode = 'changeset' | 'batch';
 
 /** A write-path switch: the deployment's default, or what a request picked where the
  * deployment allows a per-request choice (benchmarks compare modes on one deploy). */
@@ -28,13 +32,7 @@ export function writeSwitch<T extends string>(
 }
 
 export const landMode = (env: Env, requested?: string | null): LandMode =>
-  writeSwitch(
-    env,
-    ['poll', 'combiner', 'changeset', 'batch'] as const,
-    'combiner',
-    env.LAND_MODE,
-    requested,
-  );
+  writeSwitch(env, ['changeset', 'batch'] as const, 'changeset', env.LAND_MODE, requested);
 
 const PROJECTION_ROUNDS = 64;
 
@@ -88,6 +86,10 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       await dispatchObjects(env, repo).catch((e) =>
         console.warn(`object drain request failed: ${e?.message ?? e}`),
       );
+    // Post-land checks on main's new head (the combined result of the landed work).
+    await dispatchRuns(env, repo, recorded.check_runs).catch((e) =>
+      console.warn(`check dispatch failed: ${e?.message ?? e}`),
+    );
     // Reads at the latest version walk the head's new trees: cache them in R2 now (beside
     // the next round) rather than have every reader ask the authority's staged copies.
     const head = new Set((built.projected.at(-1).raw as Json[]).map((o) => o.id));
@@ -158,11 +160,12 @@ export async function awaitProjection(env: Env, repo: string) {
   await timed('project.wait', () => (shared ? shared.catchUp(repo) : projectChangesets(env, repo)));
 }
 
-/** Starts projecting in the background after changesets landed. */
+/** Starts projecting in the background after changesets landed (without a projector,
+ * as locally, the lander projects before it answers). */
 export async function kickProjection(env: Env, repo: string) {
   const shared = projector(env, repo);
   if (shared) return shared.kick(repo);
-  if (!deferred(() => projectChangesets(env, repo))) await projectChangesets(env, repo);
+  await projectChangesets(env, repo);
 }
 
 export type ChangesetStep = { settled: Json[]; wait?: number; more: boolean; slow: boolean };

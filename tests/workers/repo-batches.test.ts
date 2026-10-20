@@ -75,3 +75,18 @@ it('runs inside the LandCombiner Durable Object, with its head holder and projec
   for (const [i, l] of landed.entries())
     expect((await api(`${repo}/blob?path=d/${i}.txt&min_version=${l.body.version}`, owner, {}, target)).body.content).toBe(`${i}\n`);
 });
+
+it('falls back to the queued path when the combiner cannot be reached', async () => {
+  const broken = {
+    idFromName: (n: string) => n,
+    get: () => ({
+      wait: async () => { throw new Error('combiner evicted'); },
+      submit: async () => { throw new Error('combiner evicted'); },
+    }),
+  };
+  const target = { ...batched, LAND_COMBINERS: broken } as unknown as Env;
+  const { owner, repo } = await repoWith('nocombiner', [file('a.txt', '0\n')], target);
+  const made = await Promise.all(Array.from({ length: 4 }, (_, i) => commitOn(repo, owner, [file(`n/${i}.txt`, `${i}\n`)], target)));
+  const landed = await Promise.all(made.map((m) => landOn(repo, owner, m.body.commit, target)));
+  expect(landed.map((l) => l.status)).toEqual(Array(4).fill(200));
+});

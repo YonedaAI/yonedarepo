@@ -11,6 +11,7 @@ fn touch(path: &str) -> PathTouch {
         op: PathOp::Modify,
         old_blob: Some(oid(1)),
         new_blob: Some(oid(2)),
+        mode: None,
     }
 }
 fn entry(

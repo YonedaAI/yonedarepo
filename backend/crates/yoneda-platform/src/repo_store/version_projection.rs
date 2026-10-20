@@ -7,7 +7,7 @@
 //! retry.
 use super::merging::MERGE_PRINCIPAL;
 use super::projection_plan::written;
-use super::rows::{self, branch_ref, object_id};
+use super::rows::{self, Settings, branch_ref, object_id};
 use crate::storage::{SqlStore, bad, number};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -16,8 +16,6 @@ use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, ObjectKind, hash_object},
 };
-
-const RECORD_STEPS: usize = 64;
 
 fn ids(value: &Value) -> Result<Vec<ObjectId>> {
     value
@@ -40,13 +38,13 @@ fn versions(step: &Value) -> Result<Vec<u64>> {
 
 /// `repo_changeset_record`: records projected steps for the oldest unprojected versions of
 /// `ref`, built on `from` (its projected head), and moves the Git ref to the last one.
-pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+pub fn record<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
     let from = object_id(c, "from")?;
     let steps = c["items"]
         .as_array()
-        .filter(|i| !i.is_empty() && i.len() <= RECORD_STEPS)
+        .filter(|i| !i.is_empty() && i.len() <= super::projection_plan::PLAN_STEPS)
         .ok_or_else(|| bad("Record 1 to 64 projected steps"))?;
     let mut prior = Vec::new();
     for step in steps {
@@ -84,6 +82,7 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )?;
     let mut rows_left = expected.iter();
     let (mut head, mut version, mut dispatch) = (from, 0, false);
+    let mut check_runs = Vec::new();
     for step in steps {
         let group: Vec<&Value> = versions(step)?
             .iter()
@@ -97,6 +96,15 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             })
             .collect::<Result<_>>()?;
         let (id, asked) = record_step(db, &refname, step, &group, head, now)?;
+        // Main's new head gets the platform checks (post-land, on the combined result).
+        check_runs.extend(super::checks::request(
+            db,
+            &id,
+            None,
+            MERGE_PRINCIPAL,
+            settings,
+            now,
+        )?);
         version = group[group.len() - 1]["version"]
             .as_u64()
             .unwrap_or_default();
@@ -110,7 +118,7 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     super::projection::target(db, &refname, &head, version, now)?;
     Ok(json!({
         "ref": refname, "projected": steps.len(), "head": head, "version": version,
-        "dispatch_objects": dispatch,
+        "dispatch_objects": dispatch, "check_runs": check_runs,
     }))
 }
 
@@ -176,8 +184,8 @@ fn record_step<S: SqlStore>(
     )?;
     for touch in touches {
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?) ON CONFLICT DO NOTHING",
-            &[json!(id.hex()), touch["path"].clone(), touch["op"].clone(), touch["old_blob"].clone(), touch["new_blob"].clone()],
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+            &[json!(id.hex()), touch["path"].clone(), touch["op"].clone(), touch["old_blob"].clone(), touch["new_blob"].clone(), touch["mode"].clone()],
         )?;
     }
     let dispatch = stage(db, &id, &step["raw"], now)?;

@@ -1,16 +1,15 @@
-// The land combiner: one per protected branch. Landers that need a merge enqueue with the
-// authority, then wait here instead of polling it; the combiner alone drains the queue
-// (changesets first in changeset mode, then batch merges built by stateless compute in
-// this Worker, each landed with one compare-and-swap and one log entry) and answers every
-// waiter whose ticket it settled. Waiting is held in memory: if the combiner is evicted
-// its waiters fall back to polling, and the queue and every landing stay in the
-// authority, so nothing is lost. In batch mode landers submit their commit's shard
-// records here instead, and each step lands every waiting submission in one authority
-// call (nothing is queued in the authority: an evicted combiner's landers resubmit, and
-// a resubmitted landing answers with its version). The same class, named `<repo>#projector`
+// The land combiner: one per protected branch. In batch mode landers submit their
+// commit's shard record here, and each step lands every waiting submission in one
+// authority call (nothing is queued in the authority: an evicted combiner's landers
+// resubmit, and a resubmitted landing answers with its version). Landings queued in the
+// authority (changeset mode, and same-file work, which needs a merge) wait here too: the
+// combiner lands path-disjoint ones as changesets and builds batch merges for the rest
+// (stateless compute in this Worker, one compare-and-swap and one log entry each), and
+// answers every waiter whose ticket it settled. Waiting is held in memory: if the combiner
+// is evicted its ticket waiters fall back to polling, so nothing is lost. The same class, named `<repo>#projector`
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
 import { DurableObject } from 'cloudflare:workers';
-import { kickProjection, type LandMode, landChangesets, ProjectionRunner } from './repo-changesets';
+import { kickProjection, landChangesets, ProjectionRunner } from './repo-changesets';
 import { HeadHolder, refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
@@ -34,7 +33,6 @@ export class LandBatcher {
   /** Notifications sent without holding up landing, until they finish. */
   #background = new Set<Promise<unknown>>();
   target?: Target;
-  mode: LandMode = 'combiner';
 
   constructor(
     private readonly env: Env,
@@ -45,11 +43,10 @@ export class LandBatcher {
    * Resolves with `ticket`'s outcome once a batch settles it, or null after `timeoutMs`
    * (the caller checks the authority and waits again).
    */
-  async wait(target: Target, ticket: number, timeoutMs: number, mode: LandMode = 'combiner') {
+  async wait(target: Target, ticket: number, timeoutMs: number) {
     const done = this.#settled.get(ticket);
     if (done) return done;
     this.target = target;
-    this.mode = mode;
     const settled = new Promise<Settled | null>((resolve) => {
       const list = this.#waiters.get(ticket) ?? [];
       list.push(resolve);
@@ -143,16 +140,14 @@ export class LandBatcher {
         return;
       }
     }
-    if (this.mode === 'changeset') {
-      // Path-disjoint work lands as changesets, a batch per step, before any merge.
-      const step = await landChangesets(merger, target.ref);
-      this.#settle(step.settled as Settled[]);
-      if (step.wait !== undefined || step.more) {
-        await this.schedule(Math.min(step.wait ?? 0, RETRY_MS));
-        return;
-      }
+    // Path-disjoint queued work lands as changesets, a batch per step, before any merge.
+    const step = await landChangesets(merger, target.ref);
+    this.#settle(step.settled as Settled[]);
+    if (step.wait !== undefined || step.more) {
+      await this.schedule(Math.min(step.wait ?? 0, RETRY_MS));
+      return;
     }
-    const claim = await merger.call(claimCommand(target.ref, this.mode));
+    const claim = await merger.call(claimCommand(target.ref));
     if (claim.wait) {
       // A polling lander (a fallback) holds the lease; look again shortly.
       await this.schedule(Math.min(claim.retry_after_ms ?? RETRY_MS, RETRY_MS));
@@ -234,9 +229,9 @@ export class LandCombiner extends DurableObject<Env> {
   #projection = new ProjectionRunner(this.env);
   #head = new HeadHolder(this.env);
 
-  async wait(repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) {
+  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
     await this.ctx.storage.put('target', { repo, ref });
-    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs, mode);
+    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs);
   }
 
   async submit(repo: string, ref: string, item: Json, timeoutMs: number) {
