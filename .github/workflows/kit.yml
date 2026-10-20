@@ -1,0 +1,56 @@
+name: Kit
+# The real-world kit against dev.yonedarepo.com (cheap real models, so manual only). Its
+# evidence, named after the dev commit, is what `deploy --env prod` requires.
+on:
+  workflow_dispatch:
+    inputs:
+      skip_bursts:
+        description: Skip the 100/1000-writer and many-repo bursts
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: kit
+  cancel-in-progress: false
+jobs:
+  kit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.0'
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+        with:
+          version: '12.14.0'
+      - run: pnpm install --frozen-lockfile
+      - name: Write the kit credential files (0600, outside the tree)
+        env:
+          OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
+          KIT_USERNAME: ${{ secrets.KIT_USERNAME }}
+          KIT_PASSWORD: ${{ secrets.KIT_PASSWORD }}
+          BENCH_KEY: ${{ secrets.BENCH_KEY }}
+        run: |
+          install -d -m 700 ~/.config/yonedarepo
+          umask 077
+          printf 'OWNER_TOKEN=%s\n' "$OWNER_TOKEN" > ~/.config/yonedarepo/staging.env
+          printf 'KIT_USERNAME=%s\nKIT_PASSWORD=%s\n' "$KIT_USERNAME" "$KIT_PASSWORD" > ~/.config/yonedarepo/staging-kit.env
+          if [ -n "$BENCH_KEY" ]; then printf 'BENCH_KEY=%s\n' "$BENCH_KEY" > ~/.config/yonedarepo/staging-bench.env; fi
+      - name: Real-world kit
+        run: node tools/staging-realworld.mjs ${{ inputs.skip_bursts && '--skip-bursts' || '' }}
+      - name: Name the evidence after the dev commit
+        if: always()
+        run: echo "SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: realworld-${{ env.SHA }}
+          path: .local/staging/realworld-*.json
+          if-no-files-found: error
+      - if: always()
+        run: rm -rf ~/.config/yonedarepo
