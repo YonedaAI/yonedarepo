@@ -133,6 +133,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "check_runs": super::checks::runs_for(db, &id)?,
         "repairs": super::checks::repairs_for(db, &id)?,
         "review_classes": super::classes::for_commit(db, &id)?,
+        "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),
         "gates": gates(db, &id, settings)?,
     }))
 }
