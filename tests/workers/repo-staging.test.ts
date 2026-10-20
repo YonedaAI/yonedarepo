@@ -35,7 +35,8 @@ it('keeps an accepted commit readable and pending through an object store outage
   // Without cached copies, reads fall through the store to the authority's staged copy.
   const tree = (await api(`${path}/commits/${made.body.commit}`, owner)).body.tree;
   const listed = (await api(`${path}/tree?commit=${made.body.commit}&path=dir`, owner)).body;
-  for (const object of [made.body.commit, tree, ...listed.entries.map((e: any) => e.id)]) {
+  // (The commit object's copy stays: the fake store reads it back from R2.)
+  for (const object of [tree, ...listed.entries.map((e: any) => e.id)]) {
     await caches.default.delete(new Request(`${EDGE}/${id}/${object}`));
     await bindings.OBJECTS.delete(`platform/v1/${id}/objects/${object}`);
   }
