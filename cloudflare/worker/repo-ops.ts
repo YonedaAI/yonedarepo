@@ -173,10 +173,12 @@ export async function commit(
       ]),
     );
     let record: Json;
+    let edge: Promise<unknown> = Promise.resolve();
     if (prepared.staged) {
       record = { op: 'repo_record_commit', commit: prepared.commit, staged: true };
-      // The edge copy spares the first reads a trip to the authority's staged copy.
-      await timed('cache', () => store.cache(all, 'edge'));
+      // The edge copy spares the first reads a trip to the authority's staged copy; it is
+      // written while the commit is recorded and settles before the answer.
+      edge = timed('cache', () => store.cache(all, 'edge'));
     } else {
       // Immutable and keyed by id, so the cache write runs alongside the push. A large
       // import writes through only its commit: thousands of tier writes cost minutes
@@ -196,7 +198,10 @@ export async function commit(
     }
     const deriver = caller(ctx.env, ctx.repo, { _system: 'derive' });
     const extra = (await derived).filter((c): c is Json => c !== null).map(deriver.sign);
-    const [recorded] = await batch(ctx.env, ctx.repo, [ctx.call.sign(record), ...extra]);
+    const [[recorded]] = await Promise.all([
+      batch(ctx.env, ctx.repo, [ctx.call.sign(record), ...extra]),
+      edge,
+    ]);
     if (recorded.error) throw new ApiError(recorded.error.code, recorded.error.message);
     let undispatched = false;
     try {
