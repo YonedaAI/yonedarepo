@@ -43,6 +43,18 @@ impl Actor {
             ))
         }
     }
+    /// Git clone access: a person signed in to their own account who may read the whole
+    /// repository. Agents and scripts use the API; a directory grant cannot clone it all.
+    pub fn require_human_reader(&self) -> Result<()> {
+        if self.human && self.grant.is_none() && (self.owner || self.can("read")) {
+            Ok(())
+        } else {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Git clone access is for a signed-in person who can read the whole repository",
+            ))
+        }
+    }
     /// Break-glass gate: every other caller gets the same refusal, whatever it holds.
     pub fn require_human_owner(&self) -> Result<()> {
         if self.owner && self.human {

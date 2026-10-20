@@ -7,7 +7,7 @@ import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
 import { repoMcp } from './repo-mcp';
-import { newStore, RepoObjects, toBase64 } from './repo-objects';
+import { newStore, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 import { operations } from './repo-tools';
@@ -215,6 +215,14 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
+  if (resource === 'clone' && post) {
+    // The authority admits only a person who can read the whole repository.
+    const access = await ctx.call({ op: 'repo_clone_access' });
+    const store = parseStore(env, access.object_store);
+    if (!store.cloneAccess)
+      throw new ApiError('NOT_SUPPORTED', "This repository's object store cannot be cloned");
+    return store.cloneAccess();
+  }
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {
     const body = await bodyOf(req);

@@ -342,3 +342,15 @@ fn stuck_lease_release_and_automation_pause_are_owner_recoveries() {
     h.ok(CI, check);
     assert_eq!(audit_rows(&h), 3);
 }
+
+#[test]
+fn clone_access_is_only_for_a_person_reading_the_whole_repository() {
+    let (h, _root) = seeded();
+    let access = json!({"op": "repo_clone_access"});
+    let granted = as_caller(&h, person(), access.clone()).unwrap();
+    assert!(granted["object_store"].is_string());
+    // The same owner without the human marker (an admin script) and every token are refused.
+    let script = json!({"_session": {"workspace": "ws-1", "principal": OWNER}});
+    assert_eq!(code(as_caller(&h, script, access.clone())), "FORBIDDEN");
+    assert_eq!(code(h.run(AGENT, access)), "FORBIDDEN");
+}
