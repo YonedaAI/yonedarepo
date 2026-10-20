@@ -14,14 +14,35 @@ use yoneda_core::{
 
 const MAX_TREES: i64 = 4096;
 const MAX_TREE_BYTES: usize = 64 * 1024;
+const PRUNE_EVERY: i64 = 64;
 
-/// Remembers a tree by its encoded bytes (which hash to `id`).
-pub fn keep<S: SqlStore>(db: &S, id: &ObjectId, encoded: &[u8]) -> Result<()> {
-    if encoded.len() <= MAX_TREE_BYTES {
-        db.query(
-            "INSERT INTO tree_cache(id,data_b64) VALUES(?,?) ON CONFLICT(id) DO NOTHING",
-            &[json!(id.hex()), json!(STANDARD.encode(encoded))],
+/// Remembers trees by their encoded bytes (each hashes to its id), keeping the newest.
+pub fn keep<S: SqlStore>(db: &S, trees: &[(ObjectId, Vec<u8>)]) -> Result<()> {
+    let small: Vec<_> = trees
+        .iter()
+        .filter(|(_, encoded)| encoded.len() <= MAX_TREE_BYTES)
+        .collect();
+    // Durable Object SQL binds at most 100 parameters per statement.
+    for chunk in small.chunks(50) {
+        let rows = vec!["(?,?)"; chunk.len()].join(",");
+        let params: Vec<_> = chunk
+            .iter()
+            .flat_map(|(id, encoded)| [json!(id.hex()), json!(STANDARD.encode(encoded))])
+            .collect();
+        let inserted = db.query(
+            &format!("INSERT INTO tree_cache(id,data_b64) VALUES{rows} ON CONFLICT(id) DO NOTHING RETURNING seq"),
+            &params,
         )?;
+        // Prune when the sequence crosses a multiple of the prune step, not on every write.
+        if inserted
+            .iter()
+            .any(|r| r["seq"].as_i64().is_some_and(|seq| seq % PRUNE_EVERY == 0))
+        {
+            db.query(
+                "DELETE FROM tree_cache WHERE seq<=(SELECT MAX(seq) FROM tree_cache)-?",
+                &[json!(MAX_TREES)],
+            )?;
+        }
     }
     Ok(())
 }
@@ -51,13 +72,4 @@ pub fn fill<S: SqlStore>(
         found = true;
     }
     Ok(found)
-}
-
-/// Keeps the newest entries only.
-pub fn prune<S: SqlStore>(db: &S) -> Result<()> {
-    db.query(
-        "DELETE FROM tree_cache WHERE seq<=(SELECT MAX(seq) FROM tree_cache)-?",
-        &[json!(MAX_TREES)],
-    )?;
-    Ok(())
 }

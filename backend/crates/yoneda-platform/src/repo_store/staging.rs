@@ -38,20 +38,43 @@ pub fn stage<S: SqlStore>(
     {
         return Ok(false);
     }
-    for (id, kind, data) in objects {
+    // Multi-row inserts: each statement is a host call, and Durable Object SQL binds at
+    // most 100 parameters per statement.
+    for chunk in objects.chunks(25) {
+        let mut params = Vec::with_capacity(chunk.len() * 4);
+        for (id, kind, data) in chunk {
+            params.extend([
+                json!(commit.hex()),
+                json!(id.hex()),
+                json!(kind.name()),
+                json!(STANDARD.encode(data)),
+            ]);
+        }
+        let rows = vec!["(?,?,?,?)"; chunk.len()].join(",");
         db.query(
-            "INSERT INTO staged_objects(commit_id,id,kind,data_b64) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
-            &[json!(commit.hex()), json!(id.hex()), json!(kind.name()), json!(STANDARD.encode(data))],
+            &format!("INSERT INTO staged_objects(commit_id,id,kind,data_b64) VALUES{rows} ON CONFLICT DO NOTHING"),
+            &params,
         )?;
     }
     Ok(true)
 }
 
-/// Drops staged copies of prepared commits that expired without being accepted.
+/// Drops prepared commits that expired without being accepted, with their staged copies.
 pub fn expire<S: SqlStore>(db: &S, now: i64) -> Result<()> {
+    let expired = db.query(
+        "SELECT 1 FROM prepared_commits WHERE expires_at<? LIMIT 1",
+        &[json!(now)],
+    )?;
+    if expired.is_empty() {
+        return Ok(());
+    }
     db.query(
         "DELETE FROM staged_objects WHERE commit_id IN (SELECT commit_id FROM prepared_commits WHERE expires_at<?) \
          AND commit_id NOT IN (SELECT commit_id FROM object_projections)",
+        &[json!(now)],
+    )?;
+    db.query(
+        "DELETE FROM prepared_commits WHERE expires_at<?",
         &[json!(now)],
     )?;
     Ok(())
@@ -61,39 +84,31 @@ pub fn expire<S: SqlStore>(db: &S, now: i64) -> Result<()> {
 /// they need no readback), and its outbox row commits with the commit row. Returns whether
 /// the adapter must ask for a projector job.
 pub fn accept<S: SqlStore>(db: &S, commit: &ObjectId, now: i64) -> Result<bool> {
-    let staged = db.query(
-        "SELECT 1 FROM staged_objects WHERE commit_id=? AND id=? AND kind='commit'",
-        &[json!(commit.hex()), json!(commit.hex())],
+    let accepted = db.query(
+        "INSERT INTO object_projections(commit_id,recorded_at,updated_at) SELECT ?1,?2,?2 \
+         WHERE EXISTS (SELECT 1 FROM staged_objects WHERE commit_id=?1 AND id=?1 AND kind='commit') \
+         RETURNING commit_id",
+        &[json!(commit.hex()), json!(now)],
     )?;
-    if staged.is_empty() {
+    if accepted.is_empty() {
         return Err(Error::new(
             "NOT_FOUND",
             "This commit's objects were not staged; push them instead",
         ));
     }
-    db.query(
-        "INSERT INTO object_projections(commit_id,recorded_at,updated_at) VALUES(?,?,?)",
-        &[json!(commit.hex()), json!(now), json!(now)],
-    )?;
     should_dispatch(db, now)
 }
 
 /// Whether the caller must ask for a drain: none is outstanding (or the last looks lost).
 /// One request covers every commit accepted before the job next finds the outbox empty.
 fn should_dispatch<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
-    let fresh = db.query(
-        "SELECT 1 FROM object_outbox_dispatch WHERE dispatched_at>?",
-        &[json!(now - DISPATCH_STALE_MS)],
-    )?;
-    if !fresh.is_empty() {
-        return Ok(false);
-    }
-    db.query(
+    let claimed = db.query(
         "INSERT INTO object_outbox_dispatch(id,dispatched_at) VALUES(1,?) \
-         ON CONFLICT(id) DO UPDATE SET dispatched_at=excluded.dispatched_at",
-        &[json!(now)],
+         ON CONFLICT(id) DO UPDATE SET dispatched_at=excluded.dispatched_at WHERE dispatched_at<=? \
+         RETURNING dispatched_at",
+        &[json!(now), json!(now - DISPATCH_STALE_MS)],
     )?;
-    Ok(true)
+    Ok(!claimed.is_empty())
 }
 
 /// A commit accepted through the object store needs no staged copies.
