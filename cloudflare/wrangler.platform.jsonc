@@ -157,7 +157,7 @@
       {
         "queue": "yonedarepo-platform-dev-checks",
         "max_batch_size": 1,
-        "max_concurrency": 8,
+        "max_concurrency": 100,
         "max_retries": 3,
         "dead_letter_queue": "yonedarepo-platform-dev-dead-letter"
       }
