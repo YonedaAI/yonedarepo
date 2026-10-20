@@ -16,10 +16,12 @@ use yoneda_core::{
     git_object::{ObjectId, ObjectKind, hash_object},
 };
 
-/// Commits whose objects total at most this many bytes are staged (SQLite rows in a
-/// Durable Object hold at most 2 MB; base64 adds a third). Larger commits are pushed and
-/// read back before they are accepted.
+/// Commits of at most this many objects totalling at most this many bytes are staged
+/// (SQLite rows in a Durable Object hold at most 2 MB; base64 adds a third). Larger ones,
+/// such as imports, are pushed and read back before they are accepted, so one projector
+/// job stays within a Worker invocation's limits.
 pub const STAGE_LIMIT: usize = 1024 * 1024;
+pub const STAGE_OBJECTS: usize = 256;
 const PENDING_BYTES: usize = 8 * 1024 * 1024;
 const READ_IDS: usize = 64;
 /// A drain request older than this is presumed lost (a dropped queue message) and resent.
@@ -31,7 +33,9 @@ pub fn stage<S: SqlStore>(
     commit: &ObjectId,
     objects: &[(ObjectId, ObjectKind, &[u8])],
 ) -> Result<bool> {
-    if objects.iter().map(|(_, _, d)| d.len()).sum::<usize>() > STAGE_LIMIT {
+    if objects.len() > STAGE_OBJECTS
+        || objects.iter().map(|(_, _, d)| d.len()).sum::<usize>() > STAGE_LIMIT
+    {
         return Ok(false);
     }
     for (id, kind, data) in objects {
@@ -121,6 +125,11 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
         if !commits.is_empty() && bytes > PENDING_BYTES {
             break;
         }
+        // Counted when handed out, so a projector that dies before reporting still shows.
+        db.query(
+            "UPDATE object_projections SET attempts=attempts+1,detail=COALESCE(detail,'No outcome reported yet') WHERE commit_id=?",
+            &[row["commit_id"].clone()],
+        )?;
         commits.push(
             json!({ "commit": row["commit_id"], "attempts": row["attempts"], "objects": objects }),
         );
@@ -133,7 +142,7 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
 }
 
 /// The projector's outcome per commit: `ok` (pushed and read back) drops the staged
-/// copies; `failed` keeps them pending with the reason.
+/// copies; `failed` keeps them pending with the reason (attempts count hand-outs).
 pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let now = number(c, "now")?;
     let mut done = 0;
@@ -159,7 +168,7 @@ pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                     .take(500)
                     .collect();
                 db.query(
-                    "UPDATE object_projections SET attempts=attempts+1,detail=?,updated_at=? WHERE commit_id=?",
+                    "UPDATE object_projections SET detail=?,updated_at=? WHERE commit_id=?",
                     &[json!(detail), json!(now), json!(id.hex())],
                 )?;
             }

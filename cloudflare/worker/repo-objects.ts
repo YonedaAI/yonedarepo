@@ -259,25 +259,26 @@ export class RepoObjects {
     }
   }
 
-  /** Writes both tiers (or the edge alone) in bounded chunks: unbounded fan-out stalls on
-   * large imports. */
-  async cache(objects: CachedObject[], tiers: 'all' | 'edge' = 'all') {
+  /** Writes both tiers (or one) in bounded chunks: unbounded fan-out stalls on large
+   * imports. */
+  async cache(objects: CachedObject[], tiers: 'all' | 'edge' | 'r2' = 'all') {
     for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
       const chunk = objects.slice(i, i + CACHE_CHUNK);
       await Promise.all([
-        tiers === 'all' &&
+        tiers !== 'edge' &&
           timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), chunk)),
-        timed('cache.edge', () =>
-          Promise.all(
-            chunk.map((o) =>
-              this.edgePut(
-                o.id,
-                o.kind,
-                o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+        tiers !== 'r2' &&
+          timed('cache.edge', () =>
+            Promise.all(
+              chunk.map((o) =>
+                this.edgePut(
+                  o.id,
+                  o.kind,
+                  o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+                ),
               ),
             ),
           ),
-        ),
       ]);
     }
   }
