@@ -46,6 +46,8 @@ const modelArms = saved.length
   ? {
       runs: saved.map((r) => ({ run: r.run, started_at: r.started_at, total_usd: Number(spentBy(r).toFixed(6)), smoke: r.smoke.map(({ provider, model, route, ok, error }) => ({ provider, model, route, ok, error })), skipped: r.skipped, p9_preflight: r.p9_preflight?.verdicts, manifest: r.manifest })),
       total_usd: Number(saved.reduce((sum, r) => sum + spentBy(r), 0).toFixed(6)),
+      // Runs replaced after a harness fix (files renamed superseded-*), kept for audit.
+      superseded: readdirSync(output).filter((name) => name.startsWith('superseded-')),
       ledger_settled_usd: Math.max(...saved.map((r) => r.spend_after.settled_microusd)) / 1e6,
       arms: saved.flatMap((r) =>
         r.arms.map(({ attempts, limits, ...arm }) => ({
@@ -107,6 +109,7 @@ const markdown = [
   ...(models && models.p9.length === 0
     ? [`Real-model P9: not run. The hosted combined-check preflight (no model calls) must pass a correct change and fail a wrong one first; latest verdicts: ${JSON.stringify(models.runs.at(-1)?.p9_preflight)}.`, '']
     : []),
+  ...(models?.superseded.length ? [`Superseded runs kept for audit (not in the tables): ${models.superseded.join(', ')}.`, ''] : []),
 ].join('\n');
 await writeFile(resolve(output, 'report.json'), `${JSON.stringify(report, null, 2)}\n`);
 await writeFile(resolve(output, 'report.md'), markdown);
