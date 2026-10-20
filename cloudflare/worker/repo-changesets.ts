@@ -4,6 +4,8 @@
 // changeset version afterwards, deterministically (same versions, same ids), so it can
 // run in the background, on demand for a read, or twice at once without harm.
 import { deferred } from './background';
+import { stagedOf } from './repo-merge';
+import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 import { putRaw } from './repo-stores';
@@ -32,12 +34,20 @@ const PROJECTION_ROUNDS = 64;
 export async function projectChangesets(env: Env, repo: string): Promise<number> {
   const projector = new RepoContext(env, repo, caller(env, repo, { _system: 'projection' }));
   let projected = 0;
+  // The previous round's head trees, carried into the next round.
+  let previous: CachedObject[] = [];
   for (let round = 0; round < PROJECTION_ROUNDS; round++) {
     const plan = await projector.call({ op: 'repo_changeset_plan' });
     if (!plan.items?.length) break;
     const objects = await projector.objects();
+    // Landed commits' objects are usually still staged (in their commit shard): fetch each
+    // commit's in one call rather than walking the tiers object by object.
+    const staged = await timed('project.staged', () =>
+      Promise.all((plan.items as Json[]).map((item) => stagedOf(projector, item.commit.id))),
+    );
+    const known = new Map([...previous, ...staged.flat()].map((o) => [o.id, o]));
     const built = await timed('project.compute', () =>
-      withTrees(objects, { op: 'project_changesets', head: plan.head, items: plan.items }),
+      withTrees(objects, { op: 'project_changesets', head: plan.head, items: plan.items }, known),
     );
     await timed('project.store', () =>
       Promise.all([
@@ -58,6 +68,9 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       continue;
     }
     projected += built.projected.length;
+    const head = built.projected.at(-1);
+    const tip = new Set([head.commit, head.tree]);
+    previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree' || tip.has(o.id));
   }
   // The branch moved in Git: project it to Artifacts. A lost message only delays that.
   if (projected)
