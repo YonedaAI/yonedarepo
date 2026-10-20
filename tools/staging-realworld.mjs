@@ -97,10 +97,12 @@ await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
 );
 await step('11', 'Delete test project, token revoked', async (m) => {
   if (!state.project) return { skip: 'No project (item 1)' };
+  // Read the run's settled spend first: a deleted project's history is gone (410).
+  if (state.run) state.spend = spend((await account.get(`/api/repos/${state.project.id}/runs/${state.run.id}`)).run);
   await deleteProject(account, state.project, m);
 });
 
-const modelSpend = state.run ? spend((await account.get(`/api/repos/${state.project.id}/runs/${state.run.id}`)).run) : 0;
+const modelSpend = state.spend ?? (state.run ? spend(state.run) : 0);
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 const file = resolve(root, `.local/staging/realworld-${Date.now()}.json`);
