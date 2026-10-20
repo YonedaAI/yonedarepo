@@ -257,6 +257,12 @@ pub fn entries<S: SqlStore>(
 }
 
 /// Accepts `main` or `refs/heads/main`; only branch refs are writable through the API.
+/// Protected refs move only by landing an approved, checked commit (or the human break-glass
+/// path), never by a working-branch compare-and-swap.
+pub fn protected(refname: &str) -> bool {
+    refname == "refs/heads/main"
+}
+
 pub fn branch_ref(c: &Value) -> Result<String> {
     let name = string(c, "ref")?;
     let full = if name.starts_with("refs/") {
