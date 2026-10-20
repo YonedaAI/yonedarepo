@@ -39,10 +39,14 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         run["status"] = json!("exploring");
     } else {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
-        if j["payload"]["workspace_transport"] == "api-source-v1" {
-            payload = super::source::payload(db, j, result, now)?;
-        } else {
-            payload["workspace"] = json!(hash(result, "workspace", &[64])?);
+        match j["payload"]["workspace_transport"].as_str() {
+            Some("api-source-v1") => payload = super::source::payload(db, j, result, now)?,
+            Some("platform-branch-v1") => {
+                // The bound submission, never a commit named by the contributor's finish.
+                payload["capture_subtype"] = json!("platform_commit");
+                payload["contribution"] = j["submitted_revision"].clone();
+            }
+            _ => payload["workspace"] = json!(hash(result, "workspace", &[64])?),
         }
         if let Some(resolver) = j["payload"].get("conflict_resolver") {
             if payload["capture_subtype"] != "source_changeset" {

@@ -431,7 +431,7 @@ fn run_detail_and_graph_scope_actual_evaluation_and_producer_execution_artifact_
 #[test]
 fn external_contribution_started_event_populates_run_history_without_run_created() {
     let db = repo();
-    let contribution = call(&db, json!({"op":"external_begin","id":"external-history","_grant":"history-grant","fork":"test/history","intent":"Check external history","criteria":[]})).unwrap();
+    let contribution = call(&db, json!({"op":"external_begin","id":"external-history","_grant":"history-grant","branch":"contributions/external-history","intent":"Check external history","criteria":[]})).unwrap();
     let run_id = contribution["payload"]["execution"]["run_id"]
         .as_str()
         .unwrap();

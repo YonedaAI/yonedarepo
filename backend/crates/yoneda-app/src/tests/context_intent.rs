@@ -113,7 +113,7 @@ fn owner_and_external_context_keep_their_explicit_intent_contract() {
     call(
         &db,
         json!({"op":"external_begin","id":"external-one","_grant":"grant-one",
-        "fork":"test/external-fork","intent":"Contribute locally"}),
+        "branch":"contributions/external-one","intent":"Contribute locally"}),
     )
     .unwrap();
     let mut command = publish("context:external");

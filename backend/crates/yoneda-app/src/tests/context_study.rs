@@ -83,7 +83,7 @@ fn local_contributions_get_the_same_frozen_study_without_inline_history() {
     let job = call(
         &db,
         json!({"op":"external_begin","id":"local-trial","_grant":"grant-one",
-        "fork":"test/local-trial","intent":"Local trial","context":["context:colors"]}),
+        "branch":"contributions/local-trial","intent":"Local trial","context":["context:colors"]}),
     )
     .unwrap();
     assert_eq!(job["payload"]["run"]["context_study"], study);

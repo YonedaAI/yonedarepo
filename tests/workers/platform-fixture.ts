@@ -3,6 +3,7 @@
 // and only the operator-published template store (Artifacts) is synthetic.
 import {
   AGENT_SCOPES,
+  AGENT_TOKEN,
   bindPlatform,
   PLATFORM_POLICY,
   platformRequest,
@@ -126,16 +127,7 @@ export async function platformProject(
   files: FixtureFiles = websiteStarter,
   policy: Json = reviewerPolicy,
 ) {
-  const created = await platformRequest(env, { forward: operator() }, 'POST', '/repos', {
-    name: project,
-    workspace: owner,
-    policy: PLATFORM_POLICY,
-    tokens: [{ name: 'yoneda-agents', scopes: AGENT_SCOPES }],
-    files: Object.entries(files).map(([path, content]) => ({ path, content_b64: base64(bytesOf(content)) })),
-    message: 'Fixture seed',
-    author,
-  });
-  await bindProject(env, owner, project, created.id, created.tokens[0].token);
+  const created = await bindNewPlatformRepo(env, owner, project, files);
   await ledger(env, project, {
     op: 'init',
     id: project,
@@ -144,11 +136,11 @@ export async function platformProject(
     remote: { namespace: 'platform', name: project, branch: 'main' },
     commit: created.commit,
     tree: created.tree,
-    platform_repo: created.id,
+    platform_repo: created.repo,
     policy,
   });
   const base = { repository: platformRevision(project), commit: created.commit as string, tree: created.tree as string };
-  return { repo: created.id as string, base, platform: await projectPlatform(env, owner, project) };
+  return { repo: created.repo, base, platform: await projectPlatform(env, owner, project) };
 }
 
 /** Commit `files` (path → content, null deletes) onto `parent` with the agent token. */
@@ -244,7 +236,7 @@ export async function bindNewPlatformRepo(env: Env, owner: string, project: stri
     name: project,
     workspace: owner,
     policy: PLATFORM_POLICY,
-    tokens: [{ name: 'yoneda-agents', scopes: AGENT_SCOPES }],
+    tokens: [{ name: AGENT_TOKEN, scopes: AGENT_SCOPES }],
     ...(files
       ? { files: Object.entries(files).map(([path, content]) => ({ path, content_b64: base64(bytesOf(content)) })), message: 'Fixture seed', author }
       : {}),

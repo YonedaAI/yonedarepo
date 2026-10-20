@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// Real isolated Containers/Artifacts exercise; no inference and no production mutations.
+// Real isolated Containers/platform exercise; no inference and no production mutations.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { client, git, load, savePrivate, until } from './acceptance/client.mjs';
+import { client, load, savePrivate, until } from './acceptance/client.mjs';
 import { readRun } from './reviewer-client.mjs';
 
 const directory = resolve('.local/platform-acceptance');
@@ -18,8 +17,6 @@ async function main() {
   assert.equal(configuration.name, 'yonedarepo-acceptance');
   assert.equal(configuration.containers[0].max_instances, 2);
   assert.ok(configuration.vars.ARTIFACTS_NAMESPACE.endsWith('-acceptance'));
-  assert.equal(configuration.vars.ACCEPTANCE_FAULTS, 'publish-ack-once');
-  assert.equal(configuration.vars.ACCEPTANCE_REPOSITORY, access.repo_id);
   assert.equal(access.origin, 'https://yonedarepo-acceptance.mlong-f01.workers.dev');
   assert.ok(!configuration.routes?.length, 'Acceptance must never claim production domains.');
   const deadline = Date.now() + 15 * 60 * 1000;
@@ -58,23 +55,19 @@ async function main() {
   }
   for (let index = 0; index < 3; index++) {
     const receipt = access.contributions[index];
-    if (receipt.pushed) continue;
+    if (receipt.committed) continue;
     const attempt = await mcp(access.repo_id, access.grant.token, 'attempt_begin', {
       request_id: receipt.request_id, intent: `Controlled capacity fixture ${index + 1}; no model inference`, criteria: ['A real clean evaluator must finish'],
     });
     receipt.attempt = attempt;
     await savePrivate(credentialsPath, access);
-    const worktree = `${directory}/contribution-${index}`;
-    await mkdir(directory, { recursive: true, mode: 0o700 });
-    // A persisted Git checkout is reused after interruption; never delete unfamiliar files.
-    try { await git(worktree, ['rev-parse', '--git-dir']); }
-    catch { await git(directory, ['clone', attempt.git_url, worktree], access.grant.token); }
-    await writeFile(`${worktree}/acceptance-${index}.txt`, 'Controlled deployed fixture; not a product acceptance claim.\n');
-    await git(worktree, ['add', `acceptance-${index}.txt`]);
-    const staged = await git(worktree, ['diff', '--cached', '--name-only']);
-    if (staged) await git(worktree, ['-c', 'user.name=YonedaRepo acceptance fixture', '-c', 'user.email=acceptance@invalid.example', 'commit', '-m', 'Controlled deployed fixture']);
-    await git(worktree, ['push', 'origin', 'HEAD:main'], access.grant.token);
-    receipt.pushed = true;
+    // Files go onto the attempt's own platform branch; the platform builds the commit.
+    const content = Buffer.from('Controlled deployed fixture; not a product acceptance claim.\n').toString('base64');
+    await mcp(access.repo_id, access.grant.token, 'attempt_commit', {
+      attempt_id: attempt.attempt_id, message: 'Controlled deployed fixture',
+      changes: [{ path: `acceptance-${index}.txt`, content_b64: content }],
+    });
+    receipt.committed = true;
     await savePrivate(credentialsPath, access);
   }
   // Submit three real capture/evaluation pipelines together to contend for two slots.
@@ -129,17 +122,27 @@ async function main() {
     assert.equal(access.selection_input.candidate, selected.id, 'Persisted approval must still refer to the same fixture candidate.');
     decision = await api(`repos/${access.repo_id}/accept`, access.selection_input);
   }
-  const published = await until(async () => {
-    const detail = await api(`repos/${access.repo_id}/decision?id=${encodeURIComponent(decision.id ?? decisionId)}`);
-    return detail.status === 'published' ? detail : false;
-  }, 'publication readback recovery', deadline);
+  // The owner lands the selection on the project's platform repository with this session;
+  // the agent layer only reads the platform back. A repeated readback is idempotent.
+  const landing = decision.publication ?? (decision.status === 'publication_pending'
+    ? { platform_repo: (await api(`repos/${access.repo_id}/repository_overview`)).repository.platform_repo, commit: decision.target.commit }
+    : null);
+  if (landing) {
+    try { await api(`v1/repos/${landing.platform_repo}/commits/${landing.commit}/reviews`, { decision: 'approve' }); }
+    catch (error) { if (error.code !== 'ALREADY_EXISTS') throw error; }
+    try { await api(`v1/repos/${landing.platform_repo}/land`, { ref: 'main', commit: landing.commit, fast_forward_only: true }); }
+    catch (error) { if (error.code !== 'STALE_HEAD') throw error; }
+  }
+  for (let attempt = 0; attempt < 2; attempt++)
+    await api(`repos/${access.repo_id}/publication_readback`, { decision_id: decision.id ?? decisionId });
+  const published = await api(`repos/${access.repo_id}/decision?id=${encodeURIComponent(decision.id ?? decisionId)}`);
+  assert.equal(published.status, 'published', 'The platform landing must read back as published.');
   await collectEvents();
-  assert.ok(events.some(event => event.kind === 'job.progress' && event.data?.progress?.stage === 'controlled_publish_ack_loss'), 'The deployed acknowledgement loss must actually be injected.');
-  const remote = await git(directory, ['ls-remote', `${access.origin}/git/${access.repo_id}/source`, 'refs/heads/main'], access.grant.token);
-  assert.equal(remote.split(/\s+/)[0], selected.revision.commit);
-
+  const overview = await api(`repos/${access.repo_id}/repository_overview`);
+  const refs = await api(`v1/repos/${overview.repository.platform_repo}/refs`);
+  assert.equal(refs.refs['refs/heads/main'], selected.revision.commit);
   // Refresh a second, disjoint candidate that was captured on the old base. The owner route
-  // performs trusted Git merge/capture and schedules a fresh independent evaluation.
+  // runs a platform merge and schedules a fresh independent evaluation.
   const stale = candidates.find(candidate => candidate.id !== selected.id
     && candidate.base.commit === selected.base.commit
     && candidate.paths?.every(path => !selected.paths?.includes(path)));
@@ -202,6 +205,6 @@ async function main() {
       evaluation: refreshed.evaluation, evaluation_status: refreshed.status,
       evidence: conflict.evidence, files_preserved: [access.refresh_request.published_path, access.refresh_request.candidate_path] }, events };
   await savePrivate(`${directory}/evidence.json`, evidence);
-  console.log(`Verified deployed capacity deferral and publication recovery. Evidence: ${directory}/evidence.json`);
+  console.log(`Verified deployed capacity deferral, owner landing readback and refresh. Evidence: ${directory}/evidence.json`);
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

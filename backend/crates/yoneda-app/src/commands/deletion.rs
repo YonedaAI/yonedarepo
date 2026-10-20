@@ -17,7 +17,7 @@ pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 return Err(Error::new("NOT_FOUND", "Unknown repository"));
             }
             json!({"id":id,"name":string(project,"name")?,"workspace":workspace,
-                "remote":{"namespace":string(c,"namespace")?,"name":id},"version":0})
+                "remote":{"namespace":"platform","name":id},"version":0})
         }
         Err(error) => return Err(error),
     };

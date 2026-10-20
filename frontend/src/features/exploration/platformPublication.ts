@@ -28,6 +28,23 @@ export function pendingLanding(
   };
 }
 
+/** The owner's selection, reserved against the repository head they reviewed. */
+export function acceptRequest(
+  repository: Repository,
+  candidate: string,
+  rationale: string,
+  alternatives: unknown,
+) {
+  return {
+    request_id: crypto.randomUUID(),
+    candidate,
+    expected_commit: repository.head_commit,
+    expected_version: repository.version,
+    rationale,
+    alternatives,
+  };
+}
+
 const tolerated = (error: unknown, code: string) =>
   error instanceof SourceApiError && error.code === code;
 
