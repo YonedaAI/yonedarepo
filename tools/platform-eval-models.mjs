@@ -28,6 +28,8 @@ const { values } = parseArgs({
     'token-file': { type: 'string' },
     phase: { type: 'string', default: 'smoke' },
     providers: { type: 'string', default: 'zai,mimo' },
+    // Re-run P9 schedulers even if an earlier saved run judged them.
+    fresh: { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -182,7 +184,7 @@ async function p9Preflight() {
 }
 
 async function p9(provider, scheduler) {
-  if (p9Done.has(`${provider}/${scheduler}`)) return log(`${provider} P9 ${scheduler}: done in an earlier run`);
+  if (!values.fresh && p9Done.has(`${provider}/${scheduler}`)) return log(`${provider} P9 ${scheduler}: done in an earlier run`);
   return attempt(`${provider} P9 ${scheduler}`, () => runP9(provider, scheduler));
 }
 async function runP9(provider, scheduler) {

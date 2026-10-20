@@ -201,9 +201,16 @@ export async function runP9(
     pollMs,
   );
   const commits = [...new Set([...landings.map((l) => l.commit).filter(Boolean), head])];
-  const repairs = (await Promise.all(commits.map((c) => a(`/commits/${c}`)))).flatMap(
-    (r) => r.body.repairs ?? [],
-  );
+  const readRepairs = async () =>
+    (await Promise.all(commits.map((c) => a(`/commits/${c}`)))).flatMap(
+      (r) => r.body.repairs ?? [],
+    );
+  // The platform records a failed check's repair proposal just after the verdict.
+  let repairs = await readRepairs();
+  for (let wait = 0; check === 'fail' && repairs.length === 0 && wait < 6; wait++) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    repairs = await readRepairs();
+  }
   const landed = landings.filter((l) => l.landed).length;
   const usd = model.usage.microusd / 1_000_000;
   const accepted = check === 'pass' && landed === 2 ? 2 : 0;
