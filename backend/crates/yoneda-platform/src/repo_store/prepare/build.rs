@@ -216,8 +216,8 @@ pub(crate) fn build(
     if !merges.is_empty() && parent.is_none() {
         return Err(bad("A merge needs a first parent"));
     }
-    if merges.len() > 64 {
-        return Err(bad("A merge has at most 64 merged parents"));
+    if merges.len() > 128 {
+        return Err(bad("A merge has at most 128 merged parents"));
     }
     let parents: Vec<ObjectId> = parent.into_iter().chain(merges).map(|p| p.id).collect();
     let commit = Commit::new(rewrite.root, &parents, &author, &committer, &message)?;

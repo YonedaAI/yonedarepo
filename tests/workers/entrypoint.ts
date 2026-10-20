@@ -27,3 +27,4 @@ export default class TestEntrypoint extends YonedaEntrypoint {
     return { ...result, launchRequested: this.launchRequestedForTest };
   }
 }
+export { LandCombiner } from '../../cloudflare/worker/repo-land-combiner';
