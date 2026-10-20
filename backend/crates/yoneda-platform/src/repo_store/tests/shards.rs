@@ -162,4 +162,21 @@ fn shards_verify_what_they_record_and_only_the_platform_reaches_them() {
     )
     .unwrap();
     assert_eq!(read["objects"].as_array().unwrap().len(), 1);
+    // A whole commit's staged objects at once (batch merges prefetch their inputs).
+    let all = on(
+        &s,
+        json!({"op": "store_staged_objects", "commit": built["commit"]}),
+    )
+    .unwrap();
+    let ids = |v: &Value| {
+        let mut ids: Vec<String> = v
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["id"].to_string())
+            .collect();
+        ids.sort();
+        ids
+    };
+    assert_eq!(ids(&all["objects"]), ids(&built["objects"]));
 }

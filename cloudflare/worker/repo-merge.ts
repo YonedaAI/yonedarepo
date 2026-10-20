@@ -2,34 +2,43 @@
 // plan, has Rust compute merge trees and blobs, records a platform merge commit and lands
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
+import { deferred } from './background';
 import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
-import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, caller, type Json, RepoContext } from './repo-ops';
+import { type CachedObject, fromBase64, type RepoObjects, toBase64 } from './repo-objects';
+import { ApiError, batch, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
-import { adoptCommit } from './repo-shards';
+import { adoptCommit, forgetChain, shardChain, shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const SHA = /^[0-9a-f]{40}$/;
 
 /** Rust three-way merge of `theirs` into `ours`, supplying trees and blobs on request. */
-export async function mergeTrees(objects: RepoObjects, input: Json) {
+export async function mergeTrees(objects: RepoObjects, input: Json, known: CachedObject[] = []) {
   const trees: Json = {};
   const blobs: Json = {};
+  // Objects already in hand (prefetched from where they are staged) skip the tiers.
+  const held = new Map(known.map((o) => [o.id, o]));
+  const tree = async (id: string) => {
+    const object = held.get(id);
+    return object?.kind === 'tree' ? object.entries : objects.tree(id);
+  };
+  const blob = async (id: string) => {
+    const object = held.get(id);
+    return object?.kind === 'blob' ? object.data_b64 : toBase64(await objects.blob(id));
+  };
   for (let round = 0; round <= 128; round++) {
     const result = compute({ op: 'merge_trees', ...input, trees, blobs });
     if (result.need_trees)
       await Promise.all(
-        (result.need_trees as string[]).map(async (id) => (trees[id] = await objects.tree(id))),
+        (result.need_trees as string[]).map(async (id) => (trees[id] = await tree(id))),
       );
     else if (result.need_blobs)
       await Promise.all(
-        (result.need_blobs as string[]).map(
-          async (id) => (blobs[id] = toBase64(await objects.blob(id))),
-        ),
+        (result.need_blobs as string[]).map(async (id) => (blobs[id] = await blob(id))),
       );
     else return result as { changes: Json[]; conflicts: Json[] };
   }
@@ -99,16 +108,25 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
     await moved(merger, claim.ref);
     return [...early, ...landedAs([fastForward.ticket], landed)];
   }
+  // Fresh objects are still staged (in their commit's shard, or the authority for the
+  // previous batch merge): fetch each commit's in one call rather than walking the tiers
+  // object by object, which from the combiner's colo means a miss at every tier.
+  const known = (
+    await Promise.all([
+      stagedOf(merger, claim.head),
+      ...(claim.items as Json[]).map((item) => stagedOf(merger, item.commit)),
+    ])
+  ).flat();
   // Every item merges against the head on its own (stateless compute, side by side); the
   // batch then takes them in queue order while their merged paths stay disjoint.
   const merges = await timed('merge', () =>
     Promise.all(
       (claim.items as Json[]).map((item) =>
-        mergeTrees(objects, {
-          base: item.base_tree,
-          ours: claim.head_tree,
-          theirs: item.commit_tree,
-        }),
+        mergeTrees(
+          objects,
+          { base: item.base_tree, ours: claim.head_tree, theirs: item.commit_tree },
+          known,
+        ),
       ),
     ),
   );
@@ -171,6 +189,42 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
   ];
 }
 
+/**
+ * Lands `sha`, adopting it first if it is still in its shard: the adoption (as the
+ * platform) and the landing (as the caller) travel in one authority request, each in its
+ * own transaction, so a thousand landers cost the authority a thousand requests, not two.
+ */
+async function adoptAndLand(ctx: RepoContext, sha: string, land: Json) {
+  const chain = await shardChain(ctx.env, ctx.repo, sha);
+  if (chain.length === 0) return ctx.call(land);
+  const adopter = caller(ctx.env, ctx.repo, { _system: 'commits' });
+  const [adopted, landed] = await batch(ctx.env, ctx.repo, [
+    adopter.sign({ op: 'repo_adopt_commit', records: chain }),
+    ctx.call.sign(land),
+  ]);
+  if (adopted.error) {
+    // An ancestor's record moved mid-walk (a racing adoption): adopt stepwise, land again.
+    await adoptCommit(ctx.env, ctx.repo, sha);
+    return ctx.call(land);
+  }
+  // Dropping the shard records can wait for after the answer when the request allows it.
+  const forget = () => forgetChain(ctx.env, ctx.repo, chain);
+  if (!deferred(forget)) await forget();
+  if (landed.error) throw new ApiError(landed.error.code, landed.error.message);
+  return landed;
+}
+
+/** A commit's staged objects (its shard's copy, else the authority's), or none. */
+async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
+  const fromShard = await shardStagedOf(merger.env, merger.repo, commit);
+  if (fromShard.length) return fromShard;
+  const here = await caller(merger.env, merger.repo, { _system: 'projection' })({
+    op: 'repo_staged_objects',
+    commit,
+  }).catch(() => ({ objects: [] }));
+  return here.objects as CachedObject[];
+}
+
 /** After the branch moved: one projection and one derive job per move, sent by whoever
  * moved it (waiters whose work rode along send none). */
 async function moved(ctx: RepoContext, ref: string) {
@@ -199,16 +253,15 @@ export async function landWithMerge(
   sha: string,
   fastForwardOnly = false,
 ) {
-  // A commit still in its shard is adopted first, sparing a refused landing round trip.
-  await timed('adopt', () => adoptCommit(ctx.env, ctx.repo, sha));
   // Lands directly, or joins the branch's queue in the same call (never fast-forward-only).
-  const landed = await ctx.call({
+  const land = {
     op: 'repo_land',
     ref,
     commit: sha,
     fast_forward_only: fastForwardOnly,
     ...(fastForwardOnly ? {} : { enqueue: true }),
-  });
+  };
+  const landed = await timed('land.request', () => adoptAndLand(ctx, sha, land));
   if (!landed.queued) {
     if (!landed.already) await moved(ctx, ref);
     return landed;
