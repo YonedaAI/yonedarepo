@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, is_ancestor, merge_bases},
-    txlog::{OccOutcome, Proposal},
+    txlog::{OccOutcome, Proposal, overlaps},
 };
 
 /// Principal of merge commits the platform computes; only these land under another
@@ -154,4 +154,29 @@ pub fn verify<S: SqlStore>(
         ));
     }
     Ok(())
+}
+
+/// Write skew inside one batch (Adya G2-item): members land in ticket order, so a member
+/// may neither read nor write a path an earlier accepted member of the same batch wrote
+/// (paths overlap as in log validation: a directory meets the paths under it). A member
+/// with no declared reads counts its writes as reads. Log validation alone misses this:
+/// each member is checked against the log since its own base, not against its batch.
+#[derive(Default)]
+pub struct BatchWrites(Vec<String>);
+
+impl BatchWrites {
+    /// Whether a member reading `reads` and writing `writes` may join after the members
+    /// accepted so far.
+    pub fn admits(&self, reads: &[String], writes: &BTreeSet<String>) -> bool {
+        let file = |p: &String| p.split('#').next().unwrap_or_default().to_owned();
+        !reads
+            .iter()
+            .map(file)
+            .chain(writes.iter().cloned())
+            .any(|key| self.0.iter().any(|w| overlaps(&key, w)))
+    }
+    /// Records an accepted (landed) member's writes.
+    pub fn accept(&mut self, writes: BTreeSet<String>) {
+        self.0.extend(writes);
+    }
 }

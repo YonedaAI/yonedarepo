@@ -126,8 +126,11 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
     );
     let landed = land_changesets(&h);
     // The first item sits on the head: an ordinary fast-forward; the second is disjoint
-    // from it: a changeset; the rest wait for the merge path or fail.
+    // from it: a changeset. Items meeting the first's writes wait for the next batch (no
+    // write skew within a batch); the chain waits for the merge path.
     assert_eq!(landed["landed"].as_array().unwrap().len(), 2, "{landed}");
+    assert_eq!(landed["deferred"], json!([tickets[2], tickets[3]]));
+    assert_eq!(landed["slow"], json!([tickets[4]]));
     assert_eq!(h.status_of(&tickets[0])["result"]["version"], 2);
     assert_eq!(h.status_of(&tickets[1])["status"], "landed");
     assert_eq!(h.status_of(&tickets[1])["result"]["version"], 3);
@@ -136,13 +139,13 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
         Value::Null,
         "not projected yet"
     );
+    // Next batch, against a log holding `a`: the same file takes the merge path, the
+    // stale read fails.
+    let next = land_changesets(&h);
+    assert_eq!(next["slow"], json!([tickets[2]]));
     for slow in [&tickets[2], &tickets[4]] {
         assert_eq!(h.status_of(slow)["status"], "pending");
     }
-    assert_eq!(
-        landed["slow"].as_array().unwrap(),
-        &vec![tickets[2].clone(), tickets[4].clone()]
-    );
     let failed = h.status_of(&tickets[3]);
     assert_eq!(
         (failed["status"].as_str(), failed["result"]["code"].as_str()),
@@ -420,4 +423,57 @@ fn the_path_index_migration_backfills_existing_log_entries() {
         h.db.query(statement, &[]).unwrap();
     }
     assert_eq!(index(&h), written);
+}
+
+/// Write skew (Adya G2-item): `a` reads x and writes y, `b` reads y and writes x. Each is
+/// independent of the log since its base, but no serial order explains both landing.
+fn skewed(h: &Harness, root: &str) -> (String, String) {
+    let first = h.landable(root, 1, json!([file("first.txt", "1\n")]), json!([]));
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":first}));
+    (
+        h.landable(root, 1, json!([file("y.txt", "y\n")]), json!(["x.txt"])),
+        h.landable(root, 1, json!([file("x.txt", "x\n")]), json!(["y.txt"])),
+    )
+}
+
+#[test]
+fn a_changeset_batch_never_lands_write_skew() {
+    let (h, root) = seeded();
+    let (a, b) = skewed(&h, &root);
+    let tickets = [h.enqueue(&a), h.enqueue(&b)];
+    let landed = land_changesets(&h);
+    assert_eq!(landed["landed"].as_array().unwrap().len(), 1, "{landed}");
+    assert_eq!(landed["deferred"], json!([tickets[1]]));
+    assert_eq!(landed["more"], true);
+    assert_eq!(h.status_of(&tickets[0])["status"], "landed");
+    assert_eq!(h.status_of(&tickets[1])["status"], "pending");
+    // The next batch validates it against a log that holds `a`: its read of y is stale.
+    land_changesets(&h);
+    let other = h.status_of(&tickets[1]);
+    assert_eq!(
+        (other["status"].as_str(), other["result"]["code"].as_str()),
+        (Some("failed"), Some("CONFLICT"))
+    );
+}
+
+#[test]
+fn a_batch_merge_never_lands_write_skew() {
+    let (h, root) = seeded();
+    let (a, b) = skewed(&h, &root);
+    let tickets = [h.enqueue(&a), h.enqueue(&b)];
+    let claim = h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}));
+    assert_eq!(claim["items"].as_array().unwrap().len(), 2);
+    let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
+    let merge = h
+        .commit_with(MERGER, claim["head"].as_str(), 2,
+            json!([{"path":"x.txt","blob":blob("x\n"),"type":"blob"},{"path":"y.txt","blob":blob("y\n"),"type":"blob"}]),
+            json!([]), json!({"merge_parents": [a, b]}))
+        .unwrap();
+    let batch = h.run(
+        MERGER,
+        json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],
+        "head":claim["head"],"merge":merge,"landed":[tickets[0], tickets[1]]}),
+    );
+    assert_eq!(code(batch), "WRITE_SKEW");
+    assert_eq!(h.status_of(&tickets[0])["status"], "pending");
 }
