@@ -17,6 +17,7 @@
   "include": [
     "worker/**/*.ts",
     "sites/**/*.ts",
-    "apps/**/*.ts"
+    "apps/**/*.ts",
+    "superfan/**/*.ts"
   ]
 }
