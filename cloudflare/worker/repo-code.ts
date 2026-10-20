@@ -6,58 +6,56 @@
 import { compute } from './repo-compute';
 import { searchSegments, withObjects } from './repo-derived';
 import { keepAllowed, requirePath } from './repo-grants';
-import { toBase64 } from './repo-objects';
-import { ApiError, caller, commit, type Json, RepoContext, target, walk } from './repo-ops';
+import { type CachedObject, toBase64 } from './repo-objects';
+import { ApiError, commit, type Json, type RepoContext, target, walk } from './repo-ops';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const MAX_CLASSIFIED_FILES = 200;
 
-/** Classifies a recorded commit's changes and records them as the platform classifier. */
-export async function classifyCommit(ctx: RepoContext, sha: string, touches: Json[]) {
-  const classifier = new RepoContext(
-    ctx.env,
-    ctx.repo,
-    caller(ctx.env, ctx.repo, { _system: 'derive' }),
-  );
+/**
+ * The platform classifier's record of a commit's review classes, computed before the
+ * commit is recorded (from its own new objects plus the tiers) and sent with it.
+ */
+export async function reviewClasses(
+  ctx: RepoContext,
+  sha: string,
+  touches: Json[],
+  built: CachedObject[],
+): Promise<Json> {
   const changes = touches.map((t) => ({
     path: t.path,
     old: t.old_blob ?? null,
     new: t.new_blob ?? null,
   }));
   if (changes.length > MAX_CLASSIFIED_FILES)
-    return classifier.call({
+    return {
       op: 'repo_record_classes',
       commit: sha,
       overall: 'unknown',
       files: changes.map((c) => ({ path: c.path, class: 'unknown' })),
-    });
-  const result = await withObjects(classifier, { op: 'review_classes', changes });
-  return classifier.call({
-    op: 'repo_record_classes',
-    commit: sha,
-    overall: result.overall,
-    files: result.files,
-  });
+    };
+  const result = await withObjects(ctx, { op: 'review_classes', changes }, built);
+  return { op: 'repo_record_classes', commit: sha, overall: result.overall, files: result.files };
 }
 
 /**
- * Derives which symbols a recorded commit's modifications touched (Rust compute over both
- * sides) and records them as the platform. Files it cannot resolve are left out and stay
- * whole-file writes for landing.
+ * Which symbols a commit's modifications touched (Rust compute over both sides), as the
+ * platform's record, or null when there is nothing to record. Files it cannot resolve are
+ * left out and stay whole-file writes for landing.
  */
-export async function deriveSymbols(ctx: RepoContext, sha: string, touches: Json[]) {
+export async function symbolWrites(
+  ctx: RepoContext,
+  sha: string,
+  touches: Json[],
+  built: CachedObject[],
+): Promise<Json | null> {
   const changes = touches
     .filter((t) => t.op === 'modify')
     .map((t) => ({ path: t.path, old: t.old_blob, new: t.new_blob }));
-  if (changes.length === 0 || changes.length > MAX_CLASSIFIED_FILES) return;
-  const deriver = new RepoContext(
-    ctx.env,
-    ctx.repo,
-    caller(ctx.env, ctx.repo, { _system: 'derive' }),
-  );
-  const derived = await withObjects(deriver, { op: 'symbol_touches', changes });
-  if (derived.touches.length === 0) return;
-  await deriver.call({ op: 'repo_record_symbols', commit: sha, touches: derived.touches });
+  if (changes.length === 0 || changes.length > MAX_CLASSIFIED_FILES) return null;
+  const derived = await withObjects(ctx, { op: 'symbol_touches', changes }, built);
+  if (derived.touches.length === 0) return null;
+  return { op: 'repo_record_symbols', commit: sha, touches: derived.touches };
 }
 
 export async function fileAt(ctx: RepoContext, args: Json) {

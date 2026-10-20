@@ -3,7 +3,7 @@
 import { dispatchRuns } from './repo-checks';
 import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { recordContract, symbolContract } from './repo-contracts';
-import { blame, dispatchDerive, pathHistory, search } from './repo-derived';
+import { blame, pathHistory, search } from './repo-derived';
 import { explicitMerge, landWithMerge } from './repo-merge';
 import {
   commit,
@@ -16,7 +16,6 @@ import {
   replay,
 } from './repo-ops';
 import { plan } from './repo-plan';
-import { dispatchProjection } from './repo-projection';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -53,7 +52,7 @@ export const operations: Record<string, Operation> = {
   git_blame: blame,
   git_get_objects: getObjects,
   git_diff: diff,
-  git_commit: async (ctx, a) => commit(ctx, await ctx.objects(), a),
+  git_commit: (ctx, a) => commit(ctx, null, a),
   git_check: (ctx, a) =>
     ctx.call({
       op: 'repo_check',
@@ -87,12 +86,5 @@ export const operations: Record<string, Operation> = {
   git_merge: explicitMerge,
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
-  git_land: async (ctx, a) => {
-    const landed = await landWithMerge(ctx, a.ref, a.commit);
-    if (!landed.already) {
-      await dispatchProjection(ctx.env, ctx.repo);
-      await dispatchDerive(ctx.env, ctx.repo, a.ref);
-    }
-    return landed;
-  },
+  git_land: (ctx, a) => landWithMerge(ctx, a.ref, a.commit),
 };
