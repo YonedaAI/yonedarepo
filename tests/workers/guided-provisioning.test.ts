@@ -104,8 +104,7 @@ it('a fresh guided fork is ready only after Native init retains the exact profil
   expect(read.status).toBe(200);
   const session = await read.json<Json>();
   expect(session.steps[0]).toMatchObject({ id: 'build', status: 'ready', run_ids: [] });
-  expect(session.source_transport).toBe('git-native-v1');
-  expect(session.source_allowlisted).toBe(false);
+  expect(session.source_ready).toBe(true);
 });
 
 it('a non-reviewer cannot create a guided project and nothing is reserved or read', async () => {

@@ -1,41 +1,21 @@
-import type { GuidedEnv } from './guided-profile';
-import { isGuidedProject } from './guided-project';
-import { sourceFingerprint } from './source-crypto';
 import { ledger } from './storage';
-import type { Env, Json, Principal } from './types';
+import type { Env, Json } from './types';
 
 const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
 
-/** New approvals only: operator-selected repos or explicitly activated verified guides. */
-export async function sourceApprovalSelected(
-  env: GuidedEnv,
-  repo: string,
-  repository: Json,
-): Promise<boolean> {
-  if (env.SOURCE_TRANSPORT !== 'api-source-v1') return false;
-  const configured = env.SOURCE_TRANSPORT_REPOS;
-  return (
-    (typeof configured === 'string' && configured.split(',').some((id) => id.trim() === repo)) ||
-    (env.SOURCE_GUIDED_ENABLED === 'true' &&
-      isGuidedProject(repository.guided_project) &&
-      (await sourceFingerprint(repository.policy)) === repository.guided_project.policy_digest)
-  );
-}
-
-/** Only operator configuration activates the transport; source identity is independently read back. */
+/** Every run works in a lazy source workspace; its base is independently read back from Artifacts. */
 export async function freezeSourceApproval(
   env: Env,
-  principal: Principal,
+  owner: string,
   repo: string,
   input: Json,
   repository: Json,
 ): Promise<void> {
   delete input._source_base;
   delete input._source_transport_approved;
-  input.workspace_transport = 'git-native-v1';
-  if (!(await sourceApprovalSelected(env, repo, repository))) return;
+  delete input.workspace_transport;
   if (!env.SOURCES || repository.capabilities?.source_api !== 1)
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
   let revision = {
@@ -46,7 +26,7 @@ export async function freezeSourceApproval(
     const branch = await ledger(env, repo, {
       op: 'working_branch',
       id: input.working_branch_id,
-      _workspace: principal.workspace,
+      _workspace: owner,
     });
     if (
       branch.working_commit !== input.expected_working_commit ||

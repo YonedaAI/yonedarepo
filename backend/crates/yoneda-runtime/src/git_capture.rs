@@ -129,52 +129,6 @@ fn binary_review_attributes(root: &Path, files: &crate::transport::GitWorkspace)
     Ok(true)
 }
 
-pub(crate) async fn seed_workspace(
-    root: &Path,
-    base: &str,
-    files: &crate::transport::GitWorkspace,
-) -> Result<String> {
-    validate_shape(files)?;
-    clear_worktree(root)?;
-    crate::transport::materialize_git(root, files)?;
-    git(root, &["add", "--force", "--all"]).await?;
-    let tree = git(root, &["write-tree"]).await?;
-    let output = Command::new("/usr/bin/git")
-        .current_dir(root)
-        .env_clear()
-        .env("PATH", "/usr/bin:/bin")
-        .env("HOME", "/nonexistent")
-        .env("LANG", "C.UTF-8")
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_AUTHOR_NAME", "YonedaRepo team assembly")
-        .env("GIT_AUTHOR_EMAIL", "capture@yoneda.invalid")
-        .env("GIT_COMMITTER_NAME", "YonedaRepo team assembly")
-        .env("GIT_COMMITTER_EMAIL", "capture@yoneda.invalid")
-        .env("GIT_AUTHOR_DATE", "2026-10-07T00:00:00Z")
-        .env("GIT_COMMITTER_DATE", "2026-10-07T00:00:00Z")
-        .args([
-            "-c",
-            "core.hooksPath=/dev/null",
-            "commit-tree",
-            &tree,
-            "-p",
-            base,
-            "-m",
-            "YonedaRepo exact Team inputs",
-        ])
-        .output()
-        .await
-        .map_err(err)?;
-    if !output.status.success() {
-        return Err(err(String::from_utf8_lossy(&output.stderr)));
-    }
-    let commit = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    git(root, &["update-ref", "refs/heads/main", &commit]).await?;
-    git(root, &["push", "--force", "origin", "HEAD:refs/heads/main"]).await?;
-    Ok(commit)
-}
-
 fn copy_tree(from: &Path, to: &Path) -> Result<()> {
     for entry in std::fs::read_dir(from).map_err(err)? {
         let entry = entry.map_err(err)?;
@@ -190,28 +144,4 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn clear_worktree(root: &Path) -> Result<()> {
-    for entry in std::fs::read_dir(root).map_err(err)? {
-        let entry = entry.map_err(err)?;
-        if entry.file_name() != ".git" {
-            remove_entry(&entry.path())?;
-        }
-    }
-    Ok(())
-}
-
-fn remove_entry(path: &Path) -> Result<()> {
-    let kind = std::fs::symlink_metadata(path).map_err(err)?.file_type();
-    if kind.is_symlink() || kind.is_file() {
-        std::fs::remove_file(path).map_err(err)
-    } else if kind.is_dir() {
-        for child in std::fs::read_dir(path).map_err(err)? {
-            remove_entry(&child.map_err(err)?.path())?;
-        }
-        std::fs::remove_dir(path).map_err(err)
-    } else {
-        Err(err("Workspace contains a nonregular entry"))
-    }
 }

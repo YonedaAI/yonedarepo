@@ -190,32 +190,6 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
           typeof body.transcript !== 'string')
       )
         return error('INVALID_REVIEW', 'Trusted unchanged-source review completion required', 409);
-      if (
-        !reviewOnly &&
-        job.kind === 'agent' &&
-        job.payload.workspace_transport === 'git-native-v1'
-      ) {
-        if (
-          !scope.fork ||
-          body.fork_revision?.repository !== scope.fork ||
-          typeof body.fork_revision?.commit !== 'string' ||
-          !/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(body.fork_revision.commit)
-        )
-          return error(
-            'INVALID_CAPTURE',
-            'Agent must finish with its assigned Git fork revision',
-            409,
-          );
-        using fork = await env.ARTIFACTS.get(scope.fork.split('/')[1]);
-        if (!(await fork.readCommit(body.fork_revision.commit)))
-          return error(
-            'INVALID_CAPTURE',
-            'Agent revision has not been pushed to its assigned fork',
-            409,
-          );
-        const { workspace: _legacyWorkspace, git_verified: _claimedVerified, ...metadata } = body;
-        command = { op: 'finish', ...identity, result: { ...metadata, git_verified: true } };
-      }
       if (job.kind === 'evaluate') {
         const stored = await object(env, JSON.stringify(body));
         command = { op: 'verify_finish', ...identity, report: body, evidence: stored.digest };

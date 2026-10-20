@@ -46,7 +46,7 @@ fn source_preparation_cannot_refund_legacy_capture_or_model_used_attempt() {
         let db = fixture();
         let mut current = get(&db, "jobs", "job:execution").unwrap();
         if mode == "legacy" {
-            current["payload"]["workspace_transport"] = json!("git-native-v1");
+            current["payload"]["workspace_transport"] = json!("json-v1");
         }
         if mode == "capture" {
             current["kind"] = json!("capture");

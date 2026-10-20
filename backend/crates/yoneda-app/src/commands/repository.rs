@@ -25,12 +25,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .and_then(Value::as_str)
                 .unwrap_or("_admin");
             let mut r = json!({"id":id,"name":name,"workspace":workspace,"remote":c["remote"],"head_commit":commit,"published_commit":commit,"version":0,"policy":policy,"pending":null,"status":"ready"});
-            if let Some(transport) = c.get("workspace_transport") {
-                if transport != "git-native-v1" {
-                    return Err(bad("Unsupported workspace transport"));
-                }
-                r["workspace_transport"] = transport.clone();
-            }
             super::study::initialize(&c, &mut r)?;
             guided_init::initialize(&c, &mut r)?;
             create(db, "repository", "repo", &r)?;
@@ -152,7 +146,6 @@ fn job_status<S: SqlStore>(db: &S, command: &Value) -> Result<Value> {
         "progress": job["progress"],
         "error": job["error"],
         "workspace_transport": payload["workspace_transport"],
-        "source_revision": revision(&payload["source_revision"]),
         "source_registration": source_registration,
         "execution": {
             "id": execution["id"],
@@ -203,8 +196,7 @@ mod job_status_tests {
         )
         .unwrap();
         let payload = json!({
-            "workspace_transport":"git-native-v1",
-            "source_revision":{"repository":"artifacts/fork","commit":"b".repeat(40)},
+            "workspace":"b".repeat(64),
             "execution":{
                 "id":"execution-1", "base":{"repository":"artifacts/base","commit":"a".repeat(40)},
                 "team_task":"task-1", "team_task_revision":2
@@ -235,9 +227,8 @@ mod job_status_tests {
         assert_eq!(status["kind"], "capture");
         assert_eq!(status["epoch"], 2);
         assert_eq!(status["attempt"], 2);
-        assert_eq!(status["workspace_transport"], "git-native-v1");
-        assert_eq!(status["source_revision"]["repository"], "artifacts/fork");
-        assert_eq!(status["source_revision"]["commit"], "b".repeat(40));
+        assert!(status["workspace_transport"].is_null());
+        assert!(status.get("source_revision").is_none());
         assert_eq!(status["execution"]["base"]["repository"], "artifacts/base");
         assert_eq!(status["execution"]["team_task_revision"], 2);
         let serialized = status.to_string();

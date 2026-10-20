@@ -42,9 +42,7 @@ async fn dirty_api_protected_oracle_runs_zero_candidate_commands_or_bundle_downl
     let policy_json = serde_json::to_value(&policy).unwrap();
     let revision = json!({"repository":"repo","commit":"1".repeat(40)});
     let job = json!({"payload":{"workspace_transport":"api-source-v1","policy":policy_json,"candidate":{"id":"candidate","revision":revision,"paths_ref":{"version":1,"id":"paths","count":10000,"digest":"d".repeat(64)}},"source_integrity":{"version":1,"candidate_id":"candidate","revision":revision,"paths_digest":"d".repeat(64),"protected_changes":["tests"],"policy_digest":yoneda_core::fingerprint(&policy_json).unwrap()}}});
-    let report = run_evaluation(&job, root.path(), false, None)
-        .await
-        .unwrap();
+    let report = run_evaluation(&job, root.path()).await.unwrap();
     assert_eq!(report["commands"], json!([]));
     assert_eq!(report["protected_changes"], json!(["tests"]));
     assert!(!marker.exists());

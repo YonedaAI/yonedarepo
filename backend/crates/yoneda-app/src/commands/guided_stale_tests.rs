@@ -23,6 +23,13 @@ fn stale_capture() -> (NativeStore, Value, Value) {
     candidate["status"] = json!("eligible");
     (db, run, candidate)
 }
+/// Refresh and resolution need lazy source; the fixture's earlier steps use JSON workspaces.
+fn lazy_source(db: &NativeStore, run: &Value) {
+    let id = run["id"].as_str().unwrap();
+    let mut stored = get(db, "runs", id).unwrap();
+    stored["workspace_transport"] = json!("api-source-v1");
+    save(db, "runs", id, &stored).unwrap();
+}
 #[test]
 fn guided_stale_promote_wakes_one_original_coordinator_and_preserves_frozen_approval() {
     let (db, mut run, mut candidate) = stale_capture();

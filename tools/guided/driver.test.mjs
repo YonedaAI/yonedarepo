@@ -27,8 +27,7 @@ function fixture(overrides = {}) {
     version: 1,
     profile_id: 'task-board-v1',
     session_id: assignedSession,
-    source_transport: 'api-source-v1',
-    source_allowlisted: true,
+    source_ready: true,
     steps: ['build', 'extend', 'concurrent', 'review'].map((id, index) => ({
       id,
       status: index ? 'locked' : 'ready',
@@ -188,7 +187,7 @@ test('platform, allowance, actual source bytes/allowlist and oracle guard before
     const original = f.client.api;
     if (kind === 'platform')
       f.client.health = async () => ({ service: 'yonedarepo', revision: 'f'.repeat(40) });
-    if (kind === 'activation') f.session.source_allowlisted = false;
+    if (kind === 'activation') f.session.source_ready = false;
     if (kind === 'oracle') f.repository.policy.build.test_bundle.digest = '0'.repeat(64);
     f.client.api = async (path, body) => {
       if (kind === 'allowance' && path === 'workspace/allowance')

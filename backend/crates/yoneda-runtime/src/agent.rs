@@ -17,23 +17,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
         )
         .await;
     }
-    let git_native = crate::transport::enabled(job);
-    let baseline = if git_native {
-        crate::transport::prepare_agent_workspace(job, root).await?;
-        yoneda_core::Workspace::new()
-    } else {
-        super::jobs::workspace(job, root).await?
-    };
-    let git_baseline = if git_native && job["payload"]["team_planning"] == true {
-        Some(crate::transport::snapshot_read_only(root).await?)
-    } else {
-        None
-    };
-    let repair_baseline = if git_native && job["payload"]["comparison_repair"].is_object() {
-        Some(crate::team_source::load_git(job).await?)
-    } else {
-        None
-    };
+    let baseline = super::jobs::workspace(job, root).await?;
     #[cfg(target_os = "linux")]
     {
         Command::new("/usr/bin/chown")
@@ -50,35 +34,6 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
         crate::agent_harness::run(job, root, transcript, &prompt, approved_budget.as_ref()).await?;
     if execution["role"] == "research" {
         return Ok(json!({"transcript":evidence["digest"],"model":model}));
-    }
-    if git_native {
-        let commit = crate::git::git(root, &["rev-parse", "HEAD"]).await?;
-        if let Some(before) = &repair_baseline {
-            let after =
-                crate::git::read_git_revision("http://git.yoneda.internal/fork", &commit).await?;
-            crate::team_workspace::validate_changes_git(
-                before,
-                &after,
-                &payload["comparison_repair"]["write_paths"],
-            )?;
-        }
-        if let Some(snapshot) = &git_baseline {
-            crate::transport::verify_read_only(root, snapshot).await?;
-            return Ok(git_agent_result(
-                job,
-                commit,
-                true,
-                &evidence["digest"],
-                model,
-            ));
-        }
-        return Ok(git_agent_result(
-            job,
-            commit,
-            false,
-            &evidence["digest"],
-            model,
-        ));
     }
     let files = export_with_baseline(root, &baseline)?;
     if payload["team_planning"] == true {
@@ -144,29 +99,7 @@ fn agent_prompt(job: &Value) -> Result<String> {
     if crate::source_workspace_job::enabled(job) {
         prompt.push_str("\n\nWorkspace transport: api-source-v1. Normal file operations and scoped source_* MCP tools use one staged SourceWorkspace authority. Inspect files on demand. Do not clone, Git commit, push or publish; the supervisor seals changes and a separate capture/evaluator checks exact Git source. Generated dependencies/build output are local scratch only. Staged writes are not checked or published evidence.\n");
     }
-    if crate::transport::enabled(job) && !read_only {
-        prompt.push_str("\n\nWorkspace transport: git-native-v1. Commit your completed changes on branch main and push them to origin. Preserve the existing history and do not modify remote URLs or credentials.\n");
-    }
     Ok(prompt)
-}
-
-fn git_agent_result(
-    job: &Value,
-    commit: String,
-    planning: bool,
-    transcript: &Value,
-    model: &str,
-) -> Value {
-    let mut result = json!({
-        "fork_revision":crate::transport::candidate_revision(job, commit),
-        "transcript":transcript,
-        "model":model
-    });
-    if planning {
-        result["planning"] = json!(true);
-        result["source_unchanged"] = json!(true);
-    }
-    result
 }
 
 #[cfg(test)]

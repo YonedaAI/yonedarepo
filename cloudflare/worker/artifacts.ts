@@ -98,7 +98,7 @@ export async function validateSourceMetadata(env: Env, revision: Json) {
       count++;
       bytes += blob.size;
       if (blob.size > 32_000_000 || count > 10_000 || bytes > 100 * 1024 * 1024)
-        throw new Error('Source exceeds Git-native limits');
+        throw new Error('Source exceeds workspace limits');
     }
   }
   await walk(commit.treeHash, '', 0);

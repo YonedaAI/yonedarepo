@@ -113,44 +113,6 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
               message.ack();
               return;
             }
-          } else if (job.payload?.workspace_transport === 'git-native-v1') {
-            if (job.kind === 'agent' && !comparisonReviewAttempt(job)) {
-              const base =
-                job.payload.comparison_repair?.source_revision ?? job.payload.execution?.base;
-              const fork = await provisionAttemptFork(
-                this.env,
-                envelope.repo_id,
-                job,
-                base?.repository,
-              );
-              job.fork = fork;
-              scope.fork = fork;
-            } else if (job.kind === 'capture') {
-              if (job.payload.capture_subtype === 'refresh_candidate') {
-                const canonical =
-                  job.payload.target_revision?.repository ??
-                  job.payload.candidate?.base?.repository;
-                const fork = await provisionAttemptFork(
-                  this.env,
-                  envelope.repo_id,
-                  job,
-                  canonical,
-                  'refresh',
-                );
-                job.fork = fork;
-                scope.fork = fork;
-              } else {
-                const fork = job.payload.source_revision?.repository;
-                if (typeof fork !== 'string')
-                  throw Object.assign(new Error('Frozen agent Git revision is missing'), {
-                    code: 'INVALID_CAPTURE',
-                  });
-                job.fork = fork;
-                scope.fork = fork;
-              }
-            } else if (job.kind === 'evaluate') {
-              scope.fork = job.payload.target?.repository;
-            }
           } else if (job.kind === 'capture') {
             const canonical = job.payload.base.repository.split('/')[1];
             const name = `candidate-${(await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
@@ -229,38 +191,4 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
       }),
     );
   }
-}
-
-async function provisionAttemptFork(
-  env: Env,
-  repoId: string,
-  job: Record<string, any>,
-  revision?: string,
-  purpose = 'attempt',
-) {
-  const [namespace, canonical, extra] = String(revision ?? '').split('/');
-  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !canonical)
-    throw new Error('Approved canonical repository is unavailable');
-  const name = `${purpose}-${(await sha(`${repoId}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
-  using source = await env.ARTIFACTS.get(canonical);
-  try {
-    await source.fork(name, { defaultBranchOnly: true });
-  } catch (error) {
-    try {
-      using existing = await env.ARTIFACTS.get(name);
-      await existing.info();
-    } catch {
-      throw error;
-    }
-  }
-  using attempt = await env.ARTIFACTS.get(name);
-  for (const token of (await attempt.listTokens()).tokens)
-    if (token.state === 'active') await attempt.revokeToken(token.id);
-  try {
-    await ledger(env, repoId, { op: 'check_attempt', job_id: job.id, epoch: job.epoch });
-  } catch (error: any) {
-    if (error.code === 'REPOSITORY_DELETED') await cleanupLateRemote(env, repoId, name);
-    throw error;
-  }
-  return `${namespace}/${name}`;
 }

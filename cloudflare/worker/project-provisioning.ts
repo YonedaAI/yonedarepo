@@ -61,7 +61,6 @@ async function initializeProject(
       name: project.name,
       workspace: owner,
       commit: head,
-      workspace_transport: 'git-native-v1',
       remote: { namespace: env.ARTIFACTS_NAMESPACE, name: project.id, branch },
       policy: project.policy,
       ...(project.guided_project ? { _guided_project: project.guided_project } : {}),

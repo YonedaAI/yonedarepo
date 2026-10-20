@@ -73,9 +73,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match j["kind"].as_str().unwrap_or_default() {
         "agent" => agent::complete(db, &j, result, now)?,
         "capture" => {
-            if j["payload"]["capture_subtype"] == "resolve_conflict"
-                || j["payload"]["source_resolution"] == true
-            {
+            if j["payload"]["source_resolution"] == true {
                 super::conflicts::complete_resolver_capture(db, &j, result, now)?;
             } else {
                 super::capture_completion::complete(db, &j, result, now)?;

@@ -50,8 +50,6 @@ export interface Env {
   APPS?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
-  /** Operator activation only; every run freezes its selected transport. */
-  SOURCE_TRANSPORT?: 'api-source-v1';
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
   ACCEPTANCE_FAULTS?: 'publish-ack-once';
   ACCEPTANCE_REPOSITORY?: string;

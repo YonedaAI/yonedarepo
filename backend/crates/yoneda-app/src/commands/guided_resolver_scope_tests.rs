@@ -1,5 +1,6 @@
 //! Resolver write scope: any valid repository path except protected verification paths.
 use super::*;
+use crate::commands::source_kit;
 fn call(db: &NativeStore, input: Value, now: i64) -> Value {
     let mut input = input;
     input["now"] = json!(now);
@@ -16,6 +17,7 @@ fn claimed_capture() -> (NativeStore, Value, Value, Value) {
     let (db, run, candidate) = stale_capture();
     let cid = candidate["id"].as_str().unwrap();
     evidence_fixture::evaluate(&db, cid, "parallel");
+    lazy_source(&db, &run);
     let view = read(&db);
     let head = view["working_revision"]["commit"].clone();
     let version = view["working_version"].clone();
@@ -25,15 +27,16 @@ fn claimed_capture() -> (NativeStore, Value, Value, Value) {
         65,
     );
     let refresh = call(&db, json!({"op":"claim","job_id":receipt["job_id"]}), 66);
+    let declared = crate::path_lists::load(&db, &refresh["payload"], "declared_paths").unwrap();
     let captured = json!(["public/app.mjs", "public/tasks.mjs"]);
     let intervening = json!(["public/style.css", "public/tasks.mjs"]);
     let overlap = json!(["public/tasks.mjs"]);
     call(
         &db,
         json!({"op":"conflict_refresh_complete","job_id":refresh["id"],"epoch":refresh["epoch"],"result":{
-        "status":"unresolved","evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":refresh["payload"]["declared_paths"],"captured_paths":captured,"intervening_paths":intervening,"overlapping_paths":overlap},
-        "merge_workspace_commit":"3".repeat(40),"workspace_revision":{"repository":"owner/merge","commit":"3".repeat(40)},"conflict_paths":overlap,
-        "readback":{"observed_head":head,"version":version,"parents":[head,candidate["revision"]["commit"]],"candidate_paths":captured,"intervening_paths":intervening,"workspace_commit":"3".repeat(40),"conflict_paths":overlap}}}),
+        "status":"unresolved","evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":declared,"captured_paths":captured,"intervening_paths":intervening,"overlapping_paths":overlap},
+        "merge_workspace_commit":"3".repeat(40),"merge_tree":"7".repeat(40),"workspace_revision":{"repository":"owner/merge","commit":"3".repeat(40)},"conflict_paths":overlap,
+        "readback":{"observed_head":head,"version":version,"parents":[head,candidate["revision"]["commit"]],"candidate_paths":captured,"intervening_paths":intervening,"workspace_commit":"3".repeat(40),"conflict_paths":overlap,"expected_head_tree":"8".repeat(40),"merged_paths":captured}}}),
         67,
     );
     let updated = get(&db, "runs", run["id"].as_str().unwrap()).unwrap();
@@ -53,11 +56,7 @@ fn claimed_capture() -> (NativeStore, Value, Value, Value) {
         json!({"op":"record_transcript","job_id":resolver["id"],"epoch":resolver["epoch"],"digest":"a".repeat(64)}),
         71,
     );
-    call(
-        &db,
-        json!({"op":"finish","job_id":resolver["id"],"epoch":resolver["epoch"],"result":{"git_verified":true,"fork_revision":{"repository":"owner/resolver","commit":"5".repeat(40)}}}),
-        72,
-    );
+    let registration = source_kit::finish_agent(&db, &resolver, 72);
     let capture = call(
         &db,
         json!({"op":"claim","job_id":format!("capture:{}",resolved["execution_id"].as_str().unwrap())}),
@@ -67,7 +66,7 @@ fn claimed_capture() -> (NativeStore, Value, Value, Value) {
         db,
         resolver,
         capture,
-        json!({"head":head,"version":version}),
+        json!({"head":head,"version":version,"registration":registration}),
     )
 }
 fn finish(
@@ -82,18 +81,29 @@ fn finish(
         "public/tasks.mjs",
         "src/new.mjs"
     ]);
+    let registration = &at["registration"];
+    let result = source_kit::capture_result(
+        registration,
+        "candidate:scope-final",
+        &"4".repeat(40),
+        paths.clone(),
+        json!({"resolver_delta_paths":delta,"readback":{"observed_head":at["head"],"version":at["version"],
+            "parents":registration["binding"]["parents"],"candidate_commit":"4".repeat(40),
+            "resolver_delta_paths":delta,"captured_paths":paths}}),
+    );
     execute(
         db,
-        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"now":74,"result":{
-        "id":"candidate:scope-final","revision":{"repository":"owner/resolved","commit":"4".repeat(40)},"tree":"f".repeat(40),"paths":paths,"resolver_delta_paths":delta,
-        "readback":{"observed_head":at["head"],"version":at["version"],"parents":[at["head"]],"candidate_commit":"4".repeat(40),"resolver_delta_paths":delta,"captured_paths":paths}}}),
+        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"now":74,"result":result}),
     )
 }
 #[test]
 fn resolver_keeps_actual_conflicts_and_freezes_only_protected_paths() {
     let (db, resolver, capture, _) = claimed_capture();
     let record = get(&db, "conflicts", CONFLICT).unwrap();
-    assert_eq!(record["conflict_paths"], json!(["public/tasks.mjs"]));
+    assert_eq!(
+        crate::path_lists::load(&db, &record, "conflict_paths").unwrap(),
+        ["public/tasks.mjs"]
+    );
     let execution = &resolver["payload"]["execution"];
     assert_eq!(execution["conflict_paths"], json!(["public/tasks.mjs"]));
     let task = execution["task"].as_str().unwrap();
@@ -118,7 +128,10 @@ fn resolver_capture_accepts_edits_outside_the_conflicting_paths_and_records_them
     assert_eq!(record["status"], "evaluating");
     assert_eq!(record["resolver_candidate_id"], "candidate:scope-final");
     assert_eq!(record["resolver_delta_paths"], json!(delta));
-    assert_eq!(record["conflict_paths"], json!(["public/tasks.mjs"]));
+    assert_eq!(
+        crate::path_lists::load(&db, &record, "conflict_paths").unwrap(),
+        ["public/tasks.mjs"]
+    );
 }
 #[test]
 fn resolver_capture_rejects_protected_paths() {

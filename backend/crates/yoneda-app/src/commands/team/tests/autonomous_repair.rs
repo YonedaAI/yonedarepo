@@ -12,6 +12,8 @@ pub(super) fn fixture() -> NativeStore {
         json!(yoneda_core::fingerprint(&run["autonomy_policy"]).unwrap());
     run["approved_policy"] = run["policy"].clone();
     run["status"] = json!("exploring");
+    // Candidate refresh and conflict resolution exist only for lazy-source runs.
+    run["workspace_transport"] = json!("api-source-v1");
     save(&db, "runs", "run", &run).unwrap();
     for mut task in rows(&db, "team_tasks", "run").unwrap() {
         task["status"] = json!("complete");

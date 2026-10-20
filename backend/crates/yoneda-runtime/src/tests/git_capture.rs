@@ -1,6 +1,5 @@
 use crate::{capture, git, git::capture_fresh};
-use serde_json::json;
-use std::{collections::BTreeMap, io::Write};
+use std::collections::BTreeMap;
 use yoneda_core::{FileEntry, Workspace};
 
 #[tokio::test]
@@ -165,71 +164,4 @@ async fn legacy_capture_discards_untrusted_local_filter_configuration() {
         .await
         .unwrap();
     assert!(!marker.exists(), "untrusted Git filters must never execute");
-}
-
-#[test]
-fn transport_discriminator_is_read_only_and_missing_value_keeps_legacy_mode() {
-    assert!(crate::transport::enabled(
-        &json!({"payload":{"workspace_transport":"git-native-v1"}})
-    ));
-    assert!(!crate::transport::enabled(&json!({"payload":{}})));
-    assert!(!crate::transport::enabled(
-        &json!({"payload":{"workspace_transport":"other"}})
-    ));
-}
-
-#[tokio::test]
-async fn planner_snapshot_rejects_dirty_files_and_untrusted_git_config() {
-    let root = tempfile::tempdir().unwrap();
-    let approved = Workspace::from([(
-        "src/main.rs".into(),
-        FileEntry::from_bytes(b"fn main() {}\n".to_vec(), false),
-    )]);
-    crate::git::capture(root.path(), None, &approved, "approved")
-        .await
-        .unwrap();
-    let snapshot = crate::transport::snapshot_read_only(root.path())
-        .await
-        .unwrap();
-    crate::transport::verify_read_only(root.path(), &snapshot)
-        .await
-        .unwrap();
-
-    std::fs::write(root.path().join("src/main.rs"), b"changed\n").unwrap();
-    assert!(
-        crate::transport::verify_read_only(root.path(), &snapshot)
-            .await
-            .is_err()
-    );
-    std::fs::write(root.path().join("src/main.rs"), b"fn main() {}\n").unwrap();
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            root.path().join("src/main.rs"),
-            std::fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
-        std::fs::OpenOptions::new()
-            .append(true)
-            .open(root.path().join(".git/config"))
-            .unwrap()
-            .write_all(b"\n[core]\nfileMode = false\nfsmonitor = !touch /tmp/yoneda-git-planner-config-ran\n")
-            .unwrap();
-        assert!(
-            crate::transport::verify_read_only(root.path(), &snapshot)
-                .await
-                .is_err()
-        );
-        assert!(!std::path::Path::new("/tmp/yoneda-git-planner-config-ran").exists());
-    }
-
-    std::fs::write(root.path().join(".git/info/exclude"), "planner-output\n").unwrap();
-    std::fs::write(root.path().join("planner-output"), "untracked").unwrap();
-    assert!(
-        crate::transport::verify_read_only(root.path(), &snapshot)
-            .await
-            .is_err()
-    );
 }

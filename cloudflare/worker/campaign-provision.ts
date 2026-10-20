@@ -164,7 +164,6 @@ async function provision(env: Env, owner: string, input: Json): Promise<Json> {
         name: request.repo_id,
         workspace: owner,
         commit: source.commit,
-        workspace_transport: 'git-native-v1',
         remote: { namespace: source.namespace, name: request.repo_id, branch: source.branch },
         policy: request.policy,
         ...(request.context_study !== undefined ? { context_study: request.context_study } : {}),

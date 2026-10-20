@@ -118,13 +118,6 @@ function compatibleRuntime(health: Json, job: Json) {
     throw new Error(
       'Container image cannot coordinate autonomous repairs; wait for rollout completion',
     );
-  if (
-    job.payload?.workspace_transport === 'git-native-v1' &&
-    health.capabilities?.git_native_transport !== 1
-  )
-    throw new Error(
-      'Container image does not support Git-native workspaces; wait for rollout completion',
-    );
   if (job.payload?.policy?.build?.test_bundle != null && health.capabilities?.test_bundle !== 1)
     throw new Error(
       'Container image does not support the frozen test bundle; wait for rollout completion',

@@ -8,8 +8,6 @@ export type GuidedEnv = Env & {
   GUIDED_TASK_BOARD_BUNDLE_DIGEST?: string;
   GUIDED_TASK_BOARD_V2_STARTER_REPO?: string;
   GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST?: string;
-  SOURCE_TRANSPORT_REPOS?: string;
-  SOURCE_GUIDED_ENABLED?: string;
 };
 export const guidedFailure = (code: string, message: string) =>
   Object.assign(new Error(message), { code });

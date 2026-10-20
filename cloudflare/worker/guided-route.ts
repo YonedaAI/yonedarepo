@@ -4,7 +4,6 @@ import {
   guidedSteps,
   type StartGuidedStep,
 } from '../../shared/guided-runs';
-import { sourceApprovalSelected } from './api-source-approval';
 import { prepareGuidedRuns } from './guided-preparation';
 import { guidedFailure } from './guided-profile';
 import { isGuidedProject } from './guided-project';
@@ -46,18 +45,13 @@ function startInput(body: Json, sessionId: string): StartGuidedStep {
   return body as StartGuidedStep;
 }
 
-async function reply(env: Env, repo: string, repository: Json, session: Json) {
+async function reply(env: Env, repository: Json, session: Json) {
   const ready =
-    (await sourceApprovalSelected(env, repo, repository)) &&
     repository.capabilities?.source_api === 1 &&
     !!env.SOURCES &&
     isGuidedProject(repository.guided_project) &&
     (await sourceFingerprint(repository.policy)) === repository.guided_project.policy_digest;
-  return response({
-    ...session,
-    source_transport: ready ? 'api-source-v1' : 'git-native-v1',
-    source_allowlisted: ready,
-  });
+  return response({ ...session, source_ready: ready });
 }
 
 /** Rust owns session progress, atomic starts and receipt replay. GET never starts work. */
@@ -90,18 +84,13 @@ export async function guidedRoute(
   const sessionId = await guidedSessionId(repo);
   const read = () =>
     ledger(env, repo, { op: 'guided_session', id: sessionId, _workspace: principal.workspace });
-  if (action === 'guided_session') return reply(env, repo, repository, await read());
+  if (action === 'guided_session') return reply(env, repository, await read());
   const input = startInput(await readJson(req, 16 * 1024), sessionId);
   const command = { ...input, op: 'start_guided_step', _workspace: principal.workspace };
   // Receipt replay must reach Rust before current-head/provider/spend approval.
   // A fresh start's empty approvals fail transactionally; no branch/job survives.
   try {
-    return await reply(
-      env,
-      repo,
-      repository,
-      await ledger(env, repo, { ...command, _guided_runs: [] }),
-    );
+    return await reply(env, repository, await ledger(env, repo, { ...command, _guided_runs: [] }));
   } catch (failure) {
     if (
       (failure as { code?: string }).code !== 'INVALID_INPUT' ||
@@ -130,5 +119,5 @@ export async function guidedRoute(
     input.expected_version,
     input.retry ? current + 1 : 1,
   );
-  return reply(env, repo, repository, await ledger(env, repo, { ...command, _guided_runs: runs }));
+  return reply(env, repository, await ledger(env, repo, { ...command, _guided_runs: runs }));
 }

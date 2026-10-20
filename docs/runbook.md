@@ -18,14 +18,12 @@ Human reviewer rehearsal remains pending after the final handoff; the key sheet 
 
 ## History, archives and Git conflicts
 
-New source-transport deployments require the additive `SOURCES` binding and `v3` SQLite
-class migration, the matching runtime image and all four health markers:
-`source_api`, `lazy_source`, `source_capture` and `child_privilege_drop`. The last marker
-requires an observed UID/GID 1000 process with zero capability masks and `NoNewPrivs=1`.
-Enable `SOURCE_TRANSPORT=api-source-v1` only for new approvals after rollout, then complete
-bounded hosted acceptance before claiming readiness. Never rewrite an existing run's
-transport or funding. Missing capabilities fail before inference. The operator flag is
-not a user-facing run setting.
+Every run works in a lazy source workspace (`api-source-v1`); agents never clone or push.
+Deployments require the `SOURCES` binding and `v3` SQLite class migration, the matching
+runtime image and all four health markers: `source_api`, `lazy_source`, `source_capture`
+and `child_privilege_drop`. The last marker requires an observed UID/GID 1000 process with
+zero capability masks and `NoNewPrivs=1`. Without them, starts fail with `LEDGER_UPDATING`
+or `RUNTIME_UPDATING` before inference. Never rewrite an existing run's transport or funding.
 
 Source indexing progresses through bounded queue messages before launching models. Signed
 metadata journals and completed index manifests bind the verified Git root, immutable
@@ -56,7 +54,7 @@ The repository history interface separates compact metadata from run detail. `ru
 
 Terminal runs older than 30 days are eligible for archive only after the immutable archive object is uploaded and read back with its digest verified. Commit/compaction must follow that acknowledgment; replay after a lost acknowledgment must be idempotent, and a digest mismatch must leave hot records intact. Archived detail is read through the verified bundle and overlaid with current authoritative repository state. The ledger retains summaries, receipts, provenance and the archive index. Outbox payload cleanup applies only after seven days and preserves replay guards. Unknown or globally shared content-addressed objects are retained. Archive behavior is implemented and deployed, but the current isolated acceptance record does not establish a live archive/replay cycle; verify that separately before making operational retention claims.
 
-The active-work limit is six live runs: queued/running jobs and running external executions count even when a run has already reached a review-ready status. A ready run with no live work does not consume a slot. Completed lifetime history does not consume active capacity. Isolated production acceptance exercised real container-capacity deferrals with attempt refunds. Git-native candidate refresh and conflict resolution use frozen manifests and trusted Git readback; preserve both revisions and the decision/history records when a conflict occurs. The accepted fixture produced a clean, freshly checked disjoint two-parent refresh and retained both files; this does not claim semantic conflict resolution quality or broad-scale capacity.
+The active-work limit is six live runs: queued/running jobs and running external executions count even when a run has already reached a review-ready status. A ready run with no live work does not consume a slot. Completed lifetime history does not consume active capacity. Isolated production acceptance exercised real container-capacity deferrals with attempt refunds. Candidate refresh and conflict resolution run only on lazy-source runs and use frozen manifests and trusted Git readback; preserve both revisions and the decision/history records when a conflict occurs. The accepted fixture produced a clean, freshly checked disjoint two-parent refresh and retained both files; this does not claim semantic conflict resolution quality or broad-scale capacity.
 
 ## Team runs and container rollout
 

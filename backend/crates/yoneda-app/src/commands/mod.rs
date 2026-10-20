@@ -46,6 +46,8 @@ mod runs;
 mod scheduling;
 mod sites;
 mod source_capture_retry;
+#[cfg(test)]
+pub(crate) mod source_kit;
 mod source_refresh;
 mod source_transport;
 mod study;

@@ -45,15 +45,10 @@ function sessionGuard(session, state) {
   return session;
 }
 
-/** These are server-read deployment facts, never CLI/model assertions authorizing transport. */
-export function activationGuard(session, transport = 'api-source-v1') {
-  if (transport === 'git-native-v1') {
-    if (session.source_transport !== 'git-native-v1')
-      fail('Server must confirm Git-native transport for this exact project before paid work');
-    return;
-  }
-  if (session.source_transport !== 'api-source-v1' || session.source_allowlisted !== true)
-    fail('Server must confirm this exact project is allowlisted for source API before paid work');
+/** A server-read deployment fact, never a CLI/model assertion authorizing lazy source. */
+export function activationGuard(session) {
+  if (session.source_ready !== true)
+    fail('Server must confirm lazy source is ready for this exact project before paid work');
 }
 
 async function allowanceGuard(api) {
@@ -147,7 +142,6 @@ export async function driveGuided(client, state, options = {}) {
   const {
     run = false,
     expectedRevision,
-    transport = 'api-source-v1',
     save = async () => {},
     sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now = Date.now,
@@ -223,7 +217,7 @@ export async function driveGuided(client, state, options = {}) {
   );
   adoptId(state, session.session_id);
   await save(state);
-  activationGuard(session, transport);
+  activationGuard(session);
   if (!state.initial_commit) {
     sourceGuard(snapshot, await client.api(`repos/${repo}/published_source`), versionOf(state));
     state.initial_commit = snapshot.repository.published_commit;
@@ -234,7 +228,7 @@ export async function driveGuided(client, state, options = {}) {
   const begin = async (id, retry) => {
     await platformGuard(client, expectedRevision);
     await allowanceGuard(client.api);
-    activationGuard(session, transport);
+    activationGuard(session);
     const current = await client.api(`repos/${repo}/repository_overview`);
     if (current.repository?.published_commit !== state.initial_commit)
       fail('Canonical publication changed during this private exercise');

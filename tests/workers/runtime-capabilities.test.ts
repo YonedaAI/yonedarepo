@@ -28,13 +28,6 @@ it('requires lazy source, incremental capture and child privilege isolation befo
   expect(() => checkRuntime({ protocol: 2, capabilities }, job)).not.toThrow();
 });
 
-it('defers frozen Git-native jobs until the runtime image advertises Git transport', () => {
-  const job = { kind: 'agent', payload: { workspace_transport: 'git-native-v1' } };
-  checkFailureCode({ protocol: 2, capabilities: {} }, job);
-  expect(() => checkRuntime({ protocol: 2, capabilities: { git_native_transport: 1 } }, job)).not.toThrow();
-  expect(() => checkRuntime({ protocol: 2, capabilities: {} }, { kind: 'agent', payload: {} })).not.toThrow();
-});
-
 it('defers frozen test-bundle policy until the runtime image advertises bundle evaluation', () => {
   const job = {
     kind: 'evaluate',

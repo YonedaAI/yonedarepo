@@ -85,21 +85,11 @@ export async function contribution(
     const info = await fork.info();
     const commit = (await fork.log({ ref: info.defaultBranch, limit: 1 }))[0]?.hash;
     if (!commit) throw new Error('Push your contribution to its default branch before submitting');
-    if (job.workspace_transport === 'git-native-v1' && !(await fork.readCommit(commit)))
-      throw new Error('Fork HEAD commit is missing from the Git object store');
     job = await command({
       op: 'external_bind',
       attempt_id: args.attempt_id,
       revision: { repository: job.external_fork, commit },
     });
-  }
-  if (job.workspace_transport === 'git-native-v1') {
-    await command({ op: 'external_submit', attempt_id: args.attempt_id });
-    return {
-      status: 'capture_requested',
-      execution: job.payload.execution.id,
-      submitted_revision: job.submitted_revision,
-    };
   }
   const files = await source(env, job.submitted_revision);
   const stored = await object(env, JSON.stringify(files), 12 * 1024 * 1024);

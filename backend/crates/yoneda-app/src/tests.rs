@@ -22,9 +22,9 @@ mod delegation;
 mod deletion;
 #[path = "tests/execution_logs.rs"]
 mod execution_logs;
-mod git_transport;
 #[path = "tests/graph_status.rs"]
 mod graph_status;
+mod legacy_transport;
 #[path = "tests/model_budgets.rs"]
 mod model_budgets;
 #[path = "tests/peer_messages.rs"]

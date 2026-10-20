@@ -230,7 +230,6 @@ export async function fetchRequest(
     }
 
     if (action === 'init') {
-      input.workspace_transport = 'git-native-v1';
       if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
         return error('INVALID_INPUT', 'Repository identity mismatch');
       using remote = await env.ARTIFACTS.get(input.remote.name);
