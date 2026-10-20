@@ -1,4 +1,4 @@
-use super::{Step, steps};
+use super::{Mode, Step, mode, steps};
 use crate::deploy_guard::{self as guard, Facts, Options};
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
@@ -35,7 +35,7 @@ fn good_prod() -> Facts {
     Facts {
         head: HEAD.into(),
         clean: true,
-        ref_tips: vec![],
+        ref_tips: vec![HEAD.into()],
         dev_revisions: vec![("yonedarepo-staging-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
     }
@@ -330,4 +330,38 @@ fn options_come_from_flags() {
         .to_vec();
     let options = Options::from_args(&args);
     assert!(options.dry_run && options.confirm && !options.allow_active);
+}
+
+#[test]
+fn prod_deploys_only_the_tip_of_main() {
+    let prod = prod();
+    assert_eq!(prod.git_ref.as_deref(), Some("main"));
+    assert_eq!(dev().git_ref.as_deref(), Some("dev"));
+    let off_main = Facts {
+        ref_tips: vec![OTHER.into()],
+        ..good_prod()
+    };
+    refused(
+        &Env::Prod,
+        &prod,
+        &off_main,
+        &confirmed(),
+        "is not the tip of main",
+    );
+}
+
+#[test]
+fn deploy_without_an_env_is_refused_and_legacy_is_explicit() {
+    let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let error = mode(&args(&["deploy"])).unwrap_err().to_string();
+    assert!(error.contains("Refusing: name an environment"), "{error}");
+    assert!(mode(&args(&["deploy", "--confirm"])).is_err());
+    assert_eq!(
+        mode(&args(&["deploy", "--env", "prod-legacy", "--confirm"])).unwrap(),
+        Mode::Legacy
+    );
+    assert_eq!(
+        mode(&args(&["deploy", "--env", "dev"])).unwrap(),
+        Mode::Spec
+    );
 }

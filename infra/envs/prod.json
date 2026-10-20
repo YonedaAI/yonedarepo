@@ -4,6 +4,7 @@
   "zone": "yonedarepo.com",
   "workers_subdomain": "mlong-f01",
   "prefix": "yonedarepo-dev",
+  "ref": "main",
   "secrets_file": "~/.config/yonedarepo/prod.env",
   "vars": {},
   "workers": [

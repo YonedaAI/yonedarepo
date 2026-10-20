@@ -67,6 +67,35 @@ pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool) -> Vec<Ste
     steps
 }
 
+/// Which deploy a command line asks for. There is no default: an env is always named.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Mode {
+    Spec,
+    Legacy,
+}
+
+pub(crate) const LEGACY_ENV: &str = "prod-legacy";
+
+pub(crate) fn mode(args: &[String]) -> Result<Mode> {
+    match args.windows(2).find(|v| v[0] == "--env").map(|v| v[1].as_str()) {
+        None => Err("Usage: cargo xtask deploy --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]\n       cargo xtask deploy --env prod-legacy --confirm  (old single-Worker production deploy)\nRefusing: name an environment.".into()),
+        Some(LEGACY_ENV) => Ok(Mode::Legacy),
+        Some(_) => Ok(Mode::Spec),
+    }
+}
+
+/// The legacy production deploy passes the same guards as `--env prod`.
+pub(crate) async fn legacy_preflight(args: &[String]) -> Result<()> {
+    let options = Options::from_args(args);
+    if options.dry_run {
+        return Err("The legacy deploy has no dry run.".into());
+    }
+    let spec = Spec::load(&Env::Prod)?;
+    let mut facts = guard::git_facts(&spec)?;
+    prod_facts(&mut facts).await?;
+    guard::preflight(&Env::Prod, &spec, &facts, &options)
+}
+
 pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;

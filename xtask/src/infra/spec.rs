@@ -106,7 +106,15 @@ pub(crate) struct WorkerSpec {
     /// The `service` its `/health` reports, when it serves one.
     #[serde(default)]
     pub health: Option<String>,
+    /// Whether ephemeral copies of this env include the Worker (operations-only Workers,
+    /// such as a watcher wired to one env's resource ids, opt out).
+    #[serde(default = "yes")]
+    pub ephemeral: bool,
     pub config: Value,
+}
+
+fn yes() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
@@ -173,6 +181,7 @@ impl Spec {
             ),
         );
         self.prefix = prefix;
+        self.workers.retain(|w| w.ephemeral);
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
             worker.notes = vec![format!(
@@ -182,6 +191,7 @@ impl Spec {
             )];
             if let Some(config) = worker.config.as_object_mut() {
                 config.remove("routes");
+                config.remove("tail_consumers");
                 config.insert("workers_dev".into(), json!(true));
                 if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut)
                 {
