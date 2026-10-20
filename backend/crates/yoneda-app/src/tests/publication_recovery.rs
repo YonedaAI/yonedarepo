@@ -49,116 +49,13 @@ fn accept(db: &NativeStore) -> Value {
 fn working_branch_publication_leases_the_canonical_head_not_the_candidate_base() {
     let db = two_step_branch();
     let decision = accept(&db);
-    let id = format!("publish:{}", decision["id"].as_str().unwrap());
-    let job = crate::storage::get(&db, "jobs", &id).unwrap();
-    assert_eq!(job["payload"]["expected"]["commit"], "a".repeat(40));
-    assert_eq!(job["payload"]["target"]["commit"], "f".repeat(40));
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":id,"epoch":1,"result":{"commit":"f".repeat(40)}}),
-    )
-    .unwrap();
+    assert_eq!(decision["publication"]["expected"], "a".repeat(40));
+    assert_eq!(decision["publication"]["commit"], "f".repeat(40));
+    assert_eq!(decision["publication"]["ref"], "main");
+    call(&db,json!({"op":"publication_readback","decision_id":decision["id"],"observed_commit":"f".repeat(40)})).unwrap();
     assert_eq!(
         crate::storage::repo(&db).unwrap()["published_commit"],
         "f".repeat(40)
-    );
-}
-
-/// The pre-fix lease reported a false conflict: the remote still held the decision-time head.
-fn falsely_conflicted() -> (NativeStore, String) {
-    let db = two_step_branch();
-    let decision = accept(&db);
-    let did = decision["id"].as_str().unwrap().to_owned();
-    let id = format!("publish:{did}");
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(&db,json!({"op":"finish","job_id":id,"epoch":1,"result":{"conflict":true,"observed":"a".repeat(40)}})).unwrap();
-    assert_eq!(
-        call(&db, json!({"op":"decision","id":did})).unwrap()["status"],
-        "publication_conflict"
-    );
-    (db, did)
-}
-
-fn recovery(did: &str, observed: &str) -> Value {
-    json!({"op":"recover_publication","_workspace":"_admin","request_id":"recover-1","decision_id":did,"expected_version":1,"observed_commit":observed})
-}
-
-#[test]
-fn owner_recovers_a_false_conflict_with_a_fenced_new_publisher() {
-    let (db, did) = falsely_conflicted();
-    let receipt = call(&db, recovery(&did, &"a".repeat(40))).unwrap();
-    assert_eq!(receipt["status"], "publication_pending");
-    assert_eq!(call(&db, recovery(&did, &"a".repeat(40))).unwrap(), receipt);
-    let mut changed = recovery(&did, &"a".repeat(40));
-    changed["expected_version"] = json!(2);
-    assert_eq!(call(&db, changed).unwrap_err().code, "IDEMPOTENCY_CONFLICT");
-    let old = crate::storage::get(&db, "jobs", &format!("publish:{did}")).unwrap();
-    assert_eq!(
-        old["epoch"], 2,
-        "the conflicted publisher attempt is fenced"
-    );
-    let decision = call(&db, json!({"op":"decision","id":did})).unwrap();
-    assert_eq!(decision["status"], "publication_pending");
-    let history = decision["publication_history"].as_array().unwrap();
-    assert_eq!(history.len(), 1);
-    assert_eq!(history[0]["status"], "publication_conflict");
-    assert_eq!(history[0]["observed"]["observed"], "a".repeat(40));
-    let id = receipt["job_id"].as_str().unwrap();
-    assert_ne!(id, format!("publish:{did}"));
-    let job = crate::storage::get(&db, "jobs", id).unwrap();
-    assert_eq!(job["payload"]["expected"]["commit"], "a".repeat(40));
-    assert_eq!(job["payload"]["target"]["commit"], "f".repeat(40));
-    // The finished conflicted attempt is terminal; a redelivery cannot run it again.
-    assert_eq!(
-        call(&db, json!({"op":"claim","job_id":format!("publish:{did}")})).unwrap()["already_done"],
-        true
-    );
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":id,"epoch":1,"result":{"commit":"f".repeat(40)}}),
-    )
-    .unwrap();
-    let repository = crate::storage::repo(&db).unwrap();
-    assert_eq!(repository["published_commit"], "f".repeat(40));
-    assert_eq!(repository["status"], "ready");
-    let published = call(&db, json!({"op":"decision","id":did})).unwrap();
-    assert_eq!(published["status"], "published");
-    assert_eq!(
-        published["publication_history"].as_array().unwrap().len(),
-        1
-    );
-}
-
-#[test]
-fn recovery_refuses_a_genuinely_changed_remote_and_non_owners() {
-    let (db, did) = falsely_conflicted();
-    let before = call(&db, json!({"op":"snapshot"})).unwrap();
-    assert_eq!(
-        call(&db, recovery(&did, &"9".repeat(40))).unwrap_err().code,
-        "REMOTE_CHANGED"
-    );
-    let mut stale = recovery(&did, &"a".repeat(40));
-    stale["expected_version"] = json!(0);
-    assert_eq!(call(&db, stale).unwrap_err().code, "HEAD_MOVED");
-    let mut agent = recovery(&did, &"a".repeat(40));
-    agent["_grant"] = json!({"scope":"agent"});
-    assert_eq!(call(&db, agent).unwrap_err().code, "FORBIDDEN");
-    let mut missing = recovery(&did, &"a".repeat(40));
-    missing.as_object_mut().unwrap().remove("observed_commit");
-    assert_eq!(call(&db, missing).unwrap_err().code, "INVALID_INPUT");
-    assert_eq!(call(&db, json!({"op":"snapshot"})).unwrap(), before);
-}
-
-#[test]
-fn recovery_requires_a_conflicted_decision() {
-    let db = two_step_branch();
-    let decision = accept(&db);
-    let did = decision["id"].as_str().unwrap();
-    assert_eq!(
-        call(&db, recovery(did, &"a".repeat(40))).unwrap_err().code,
-        "INVALID_STATE"
     );
 }
 
@@ -202,12 +99,6 @@ fn rejection_is_an_immutable_decision_that_leaves_canonical_untouched() {
     ] {
         assert_eq!(repository[key], before[key], "{key} changed");
     }
-    assert!(
-        !crate::storage::all(&db, "jobs")
-            .unwrap()
-            .iter()
-            .any(|j| j["kind"] == "publish")
-    );
     let error = call(&db,json!({"op":"accept","request_id":"stale-tab","candidate":"candidate-b","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Stale tab"})).unwrap_err();
     assert_eq!(error.code, "CANDIDATE_REJECTED");
     let mut again = rejection("Second opinion");

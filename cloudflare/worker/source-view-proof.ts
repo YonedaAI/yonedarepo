@@ -1,6 +1,6 @@
 import { cacheSourceBlob } from './source-cache';
 import { type SourceView, sourceError } from './source-contract';
-import { sourceEntry, sourcePath, sourceRepository } from './source-path';
+import { sourceEntry, sourcePath, sourceRepo } from './source-path';
 import type { Env } from './types';
 
 /** Index metadata is rebuildable. Prove complete Git membership before first native binding/init. */
@@ -16,7 +16,7 @@ export async function verifySourceView(env: Env, view: SourceView, guard?: () =>
   };
   await recheck(true);
   const revision = view.base;
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, revision));
+  const repo = await sourceRepo(env, revision);
   const root = await repo.readCommit(revision.commit);
   if (!root || root.hash !== revision.commit || root.treeHash !== revision.tree)
     throw sourceError('SOURCE_CHANGED', 'Prepared source root differs');

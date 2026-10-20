@@ -8,7 +8,7 @@ import {
   type SourceRevision,
   sourceError,
 } from './source-contract';
-import { sourceLink, sourceRepository } from './source-path';
+import { sourceLink, sourceRepo } from './source-path';
 import type { Env } from './types';
 
 export { sourceCleanup } from './source-cleanup';
@@ -46,7 +46,7 @@ export async function sourceContentKey(
     (input) => input.repository === content.repository && input.commit === content.commit,
   );
   if (!revision) throw sourceError('SOURCE_SCOPE', 'Source pointer is outside the approved inputs');
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, revision));
+  const repo = await sourceRepo(env, revision);
   const entry = await sourceLink(repo, revision, content.path);
   if (!['blob', 'exec'].includes(entry.type) || entry.hash !== content.blob)
     throw sourceError('SOURCE_SCOPE', 'Source object is not linked at its original frozen path');
@@ -116,7 +116,7 @@ export async function immutableSourceFile(
   offset: number,
   limit: number,
 ) {
-  using repo = await env.ARTIFACTS.get(sourceRepository(env, revision));
+  const repo = await sourceRepo(env, revision);
   const entry = await sourceLink(repo, revision, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw sourceError('SOURCE_PATH', 'Only regular source files can be read');

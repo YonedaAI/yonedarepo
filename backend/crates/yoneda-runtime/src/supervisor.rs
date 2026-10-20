@@ -2,7 +2,7 @@ use crate::err;
 use serde_json::{Value, json};
 use yoneda_agents_core::Result;
 pub(crate) fn health() -> Value {
-    let mut health = json!({"protocol":2,"capabilities":{"comparison_review":1,"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1,"adaptive_teams":1,"reasoning_efforts":1,"test_bundle":1,"app_bundle":1,"app_planning":1,"agent_coordination":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_agents_core::Policy::default().environment,"environments":[yoneda_agents_core::Policy::default().environment,yoneda_agents_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]});
+    let mut health = json!({"protocol":2,"capabilities":{"comparison_review":1,"agent_delegation":1,"model_budgets":1,"max_execution_ms":yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"context_usage":1,"context_study":1,"collaborative_runs":1,"team_planning":1,"adaptive_teams":1,"reasoning_efforts":1,"test_bundle":1,"app_bundle":1,"app_planning":1,"agent_coordination":1,"platform_capture":1},"harnesses":["codex","claude","gemini"],"environment":yoneda_agents_core::Policy::default().environment,"environments":[yoneda_agents_core::Policy::default().environment,yoneda_agents_core::build::ENVIRONMENT],"suites":["retry-contract-v1","retry-contract-v2","commands-v1"]});
     let proof = crate::child_privileges::probe();
     health["child_privileges"] = proof.clone();
     #[cfg(target_os = "linux")]

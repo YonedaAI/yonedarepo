@@ -1,3 +1,4 @@
+import { openSource, type SourceCommit } from './source-objects';
 import { ledger } from './storage';
 import type { Env, Json } from './types';
 
@@ -5,7 +6,7 @@ const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
 
-/** Every run works in a lazy source workspace; its base is independently read back from Artifacts. */
+/** Every run works in a lazy source workspace; its base is read back from the platform. */
 export async function freezeSourceApproval(
   env: Env,
   owner: string,
@@ -35,16 +36,14 @@ export async function freezeSourceApproval(
       fail('WORKING_HEAD_MOVED', 'The working source changed; refresh your brief.');
     revision = branch.working_revision;
   }
-  const [namespace, name, extra] = String(revision.repository).split('/');
-  if (
-    namespace !== env.ARTIFACTS_NAMESPACE ||
-    extra ||
-    !/^[A-Za-z0-9_.-]{1,100}$/.test(name ?? '') ||
-    !/^[a-f0-9]{40}$/.test(revision.commit ?? '')
-  )
+  if (!/^[a-f0-9]{40}$/.test(revision.commit ?? ''))
     fail('INVALID_CAPTURE', 'Approved source identity is unavailable.');
-  using source = await env.ARTIFACTS.get(name);
-  const commit = await source.readCommit(revision.commit);
+  let commit: SourceCommit | null = null;
+  try {
+    commit = await (await openSource(env, String(revision.repository))).readCommit(revision.commit);
+  } catch (failure: any) {
+    if (failure.code !== 'SOURCE_SCOPE') throw failure;
+  }
   if (!commit || commit.hash !== revision.commit || !/^[a-f0-9]{40}$/.test(commit.treeHash)) {
     fail('INVALID_CAPTURE', 'Approved source revision is unavailable.');
     return;

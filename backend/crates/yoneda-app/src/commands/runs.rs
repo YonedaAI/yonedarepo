@@ -223,7 +223,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 if j["status"] == "queued" || j["status"] == "running" {
                     let jid = string(&j, "id")?;
                     stops.push(json!({"job_id":jid,"epoch":j["epoch"]}));
-                    cancel_job(db, &mut j, now)?;
+                    cancel_job(db, &mut j)?;
                     if let Some(eid) = j["payload"]["execution"]["id"]
                         .as_str()
                         .or_else(|| j["payload"]["candidate"]["execution"].as_str())

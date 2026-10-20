@@ -25,7 +25,7 @@ export async function campaignRoute(req: Request, env: Env, principal: Principal
     return response(await reconcileCampaignModelLimit(env, owner, input.repo_id, input.job_id));
   if (path.endsWith('/repository')) return campaignRepository(env, owner, input);
   if (path.endsWith('/provision')) {
-    const project = await provisionCampaignProject(env, principal, owner, input);
+    const project = await provisionCampaignProject(env, req, principal, owner, input);
     return response(project, project.status === 'ready' ? 200 : 202);
   }
   if (path.endsWith('/start_run')) {

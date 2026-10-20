@@ -22,7 +22,7 @@ import { settingsRoute } from './provider-settings';
 import { remoteMcp } from './remote-mcp';
 import { ownerCommandInput, repositoryOperationAllowed } from './repository-command';
 import { deleteRepository } from './repository-deletion';
-import { recoverPublication, resynchronize } from './repository-recovery';
+import { publicationReadback, recordPublicationChecks, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
 import { ownerSession } from './session';
@@ -162,18 +162,15 @@ export async function fetchRequest(
     if (parts[1] !== 'repos' || !safeId(repo)) return error('NOT_FOUND', 'Unknown API route', 404);
     if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
       return await deleteRepository(req, env, principal, repo);
-    if (action !== 'init')
-      await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
-    else if (principal.role !== 'admin')
-      return error('FORBIDDEN', 'Use project creation to initialize a repository', 403);
+    await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
     const guided = await guidedRoute(req, env, principal, repo, action);
     if (guided) return guided;
     const sourceResponse = await sourceRoute(req, env, principal, repo);
     if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')
       return await resynchronize(req, env, principal, repo);
-    if (action === 'recover_publication' && req.method === 'POST')
-      return await recoverPublication(req, env, principal, repo);
+    if (action === 'publication_readback' && req.method === 'POST')
+      return await publicationReadback(req, env, principal, repo);
     if (action === 'approve_test_bundle' && req.method === 'POST')
       return await approveTestPolicy(req, env, principal, repo);
     if (action === 'grants') return grantRoute(req, env, principal, repo);
@@ -232,22 +229,14 @@ export async function fetchRequest(
       return response(await historyDetail(env, repo, input.run_id));
     }
 
-    if (action === 'init') {
-      if (input.id !== repo || input.remote?.namespace !== env.ARTIFACTS_NAMESPACE)
-        return error('INVALID_INPUT', 'Repository identity mismatch');
-      using remote = await env.ARTIFACTS.get(input.remote.name);
-      const head = (await remote.log({ ref: 'main', limit: 1 }))[0]?.hash;
-      if (head !== input.commit)
-        return error('HEAD_MOVED', 'Initialization must use the actual canonical HEAD', 409);
-    }
     if (action === 'start_run') input = await approveOwnerRun(env, principal, repo, input);
     const command = {
       ...input,
       op: action,
       _workspace: principal.workspace,
-      ...(action === 'init' ? { workspace: principal.workspace } : {}),
     };
     const value = await ledger(env, repo, command);
+    if (action === 'accept') await recordPublicationChecks(env, repo, value);
     if (action === 'cancel_run')
       for (const stop of value.stop) {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);

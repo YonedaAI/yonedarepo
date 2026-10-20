@@ -1,4 +1,6 @@
-import { safeId } from './http';
+// Whole-commit reads of a project's source (small snapshots and setup validation), through
+// the platform's public API.
+import { openSource, type SourceRepo } from './source-objects';
 import type { Env, Json } from './types';
 export async function source(
   env: Env,
@@ -6,10 +8,7 @@ export async function source(
   expectedTree?: string,
   limits = { bytes: 8 * 1024 * 1024, files: 500 },
 ) {
-  const [namespace, name, extra] = String(revision.repository).split('/');
-  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !safeId(name))
-    throw new Error('Revision is outside this namespace');
-  using repo = await env.ARTIFACTS.get(name);
+  const repo = await openSource(env, String(revision.repository));
   const commit = await repo.readCommit(revision.commit);
   if (!commit) throw new Error('Captured commit is missing');
   if (expectedTree !== undefined && commit.treeHash !== expectedTree)
@@ -62,16 +61,12 @@ export async function source(
   return { files };
 }
 
-// Validate an imported head without flattening its contents into a JSON workspace.
-export async function validateSourceMetadata(env: Env, revision: Json) {
-  const [namespace, name, extra] = String(revision.repository).split('/');
-  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !safeId(name))
-    throw new Error('Revision is outside this namespace');
-  using repo = await env.ARTIFACTS.get(name);
-  const commit = await repo.readCommit(revision.commit);
+// Validate a project's head shape without reading file contents: regular files and safe
+// paths only, within the source file limit. Byte limits apply when lazy source reads them.
+export async function validateSourceMetadata(repo: SourceRepo, commitId: string) {
+  const commit = await repo.readCommit(commitId);
   if (!commit) throw new Error('Captured commit is missing');
   let count = 0;
-  let bytes = 0;
   async function walk(hash: string, prefix: string, depth: number): Promise<void> {
     if (depth > 512) throw new Error('Source nesting exceeds limit');
     const entries = await repo.readTree(hash);
@@ -93,15 +88,10 @@ export async function validateSourceMetadata(env: Env, revision: Json) {
         throw new Error(
           'Only regular files are supported; symlinks and Git submodules need conversion',
         );
-      const blob = await repo.readBlob(entry.hash);
-      if (!blob) throw new Error('Source blob missing');
-      count++;
-      bytes += blob.size;
-      if (blob.size > 32_000_000 || count > 10_000 || bytes > 100 * 1024 * 1024)
-        throw new Error('Source exceeds workspace limits');
+      if (++count > 10_000) throw new Error('Source exceeds workspace limits');
     }
   }
   await walk(commit.treeHash, '', 0);
   if (!count) throw new Error('Source workspace is empty');
-  return { commit: revision.commit, tree: commit.treeHash, files: count, bytes };
+  return { commit: commitId, tree: commit.treeHash, files: count };
 }

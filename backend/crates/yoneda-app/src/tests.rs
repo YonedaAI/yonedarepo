@@ -221,9 +221,9 @@ fn acceptance_is_idempotent_and_publication_has_a_separate_receipt() {
             .iter()
             .any(|edge| edge["relation"] == "published_as")
     );
-    let publication = format!("publish:{}", receipt["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":publication})).unwrap();
-    call(&db,json!({"op":"finish","job_id":publication,"epoch":1,"result":{"commit":"cccccccccccccccccccccccccccccccccccccccc"}})).unwrap();
+    assert_eq!(receipt["publication"]["commit"], "c".repeat(40));
+    assert_eq!(receipt["publication"]["expected"], "a".repeat(40));
+    call(&db,json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":"cccccccccccccccccccccccccccccccccccccccc","land_version":2})).unwrap();
     let s = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(
         s["repository"]["published_commit"],
@@ -315,20 +315,18 @@ fn migrations_are_versioned_repeatable_and_upgrade_existing_data() {
 mod history_tests;
 
 #[test]
-fn exhausted_publication_exposes_operator_recovery_state() {
+fn a_platform_main_that_moved_elsewhere_blocks_publication_as_a_conflict() {
     let db = repo();
     let request = ready(&db);
     let receipt = call(&db, request).unwrap();
-    let job = format!("publish:{}", receipt["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    call(
-        &db,
-        json!({"op":"fail","job_id":job,"epoch":1,"retryable":false,"error":"Remote unavailable"}),
-    )
-    .unwrap();
+    call(&db,json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":"d".repeat(40)})).unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(snapshot["repository"]["status"], "blocked");
-    assert_eq!(snapshot["decisions"][0]["status"], "publication_failed");
+    assert_eq!(snapshot["decisions"][0]["status"], "publication_conflict");
+    assert_eq!(
+        snapshot["decisions"][0]["observed"]["commit"],
+        "d".repeat(40)
+    );
     assert_ne!(
         snapshot["repository"]["head_commit"],
         snapshot["repository"]["published_commit"]
@@ -411,21 +409,26 @@ fn frozen_context_rejects_unlisted_artifacts_and_completion_hints_do_not_capture
 }
 
 #[test]
-fn publication_retry_keeps_selection_reserved_until_verified_readback() {
+fn publication_stays_reserved_until_the_platform_reads_back_the_landing() {
     let db = repo();
     let receipt = call(&db, ready(&db)).unwrap();
-    let id = format!("publish:{}", receipt["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(&db,json!({"op":"fail","job_id":id,"epoch":1,"retryable":true,"error":"Push acknowledgement lost"})).unwrap();
+    // The owner has not landed yet: main still holds the leased head.
+    let readback = json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":"a".repeat(40)});
+    assert_eq!(
+        call(&db, readback).unwrap()["status"],
+        "publication_pending"
+    );
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(snapshot["repository"]["pending"], receipt["id"]);
     assert_eq!(snapshot["repository"]["published_commit"], "a".repeat(40));
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(&db,json!({"op":"finish","job_id":id,"epoch":2,"result":{"commit":"c".repeat(40),"recovered":true}})).unwrap();
+    let landed = json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":"c".repeat(40),"land_version":3});
+    assert_eq!(call(&db, landed.clone()).unwrap()["land_version"], 3);
     assert_eq!(
         call(&db, json!({"op":"snapshot"})).unwrap()["repository"]["pending"],
         Value::Null
     );
+    // A repeated readback after publication is a no-op.
+    assert_eq!(call(&db, landed).unwrap()["status"], "published");
 }
 
 #[test]

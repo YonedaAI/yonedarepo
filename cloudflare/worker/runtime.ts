@@ -86,6 +86,8 @@ function compatibleRuntime(health: Json, job: Json) {
     )
   )
     throw new Error('Container image lacks lazy source isolation; wait for rollout completion');
+  if (job.kind === 'capture' && health?.capabilities?.platform_capture !== 1)
+    throw new Error('Container image still pushes captures to Git; wait for rollout completion');
   if (
     (comparisonReviewAttempt(job) || job.payload?.execution?.comparison_approval_id != null) &&
     health?.capabilities?.comparison_review !== 1

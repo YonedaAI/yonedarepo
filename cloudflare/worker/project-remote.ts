@@ -1,6 +1,3 @@
-import { safeId } from './http';
-import type { Env, Json } from './types';
-
 const numericCodes: Record<number, string> = {
   10200: 'NOT_FOUND',
   10201: 'ALREADY_EXISTS',
@@ -134,6 +131,7 @@ export function setupMessage(error: any): string {
     MEMORY_LIMIT: 'The repository exceeds the import service limit. Try a smaller repository.',
     INVALID_URL: 'Use the public Git repository URL with a valid default branch.',
     SETUP_TIMEOUT: 'Repository setup took too long. Retry setup; existing source is preserved.',
+    PLATFORM_UNBOUND: 'Repository setup needs you signed in. Retry setup from your workspace.',
   };
   if (known[code]) return known[code];
   // These adapter errors contain only fixed text. SDK error messages may contain capabilities.
@@ -148,39 +146,4 @@ export function setupMessage(error: any): string {
   ];
   if (sourceErrors.includes(error?.message)) return error.message;
   return 'Repository setup failed. Retry setup, or ask the administrator to check its setup logs.';
-}
-
-export async function prepareRemote(env: Env, project: Json) {
-  if (!safeId(project.id)) throw setupError('INVALID_INPUT', 'Invalid project identity');
-  try {
-    using existing = await env.ARTIFACTS.get(project.id);
-    await existing.info();
-    return;
-  } catch (error) {
-    if (pendingSetup(error)) throw error;
-    // Do not mask transient reads as new creation attempts.
-    if (setupCode(error) !== 'NOT_FOUND') throw error;
-  }
-  try {
-    const created = project.source
-      ? await env.ARTIFACTS.import({
-          source: { url: project.source, branch: await sourceBranch(project.source) },
-          target: { name: project.id, opts: { description: 'YonedaRepo project' } },
-        })
-      : await (async () => {
-          using starter = await env.ARTIFACTS.get(env.STARTER_REPO ?? 'yoneda-website-starter');
-          return starter.fork(project.id, { defaultBranchOnly: true });
-        })();
-    using remote = await env.ARTIFACTS.get(project.id);
-    await remote.revokeToken(created.token);
-  } catch (error) {
-    if (pendingSetup(error)) throw error;
-    // Lost creation acknowledgments are recoverable only after a read proves existence.
-    try {
-      using existing = await env.ARTIFACTS.get(project.id);
-      await existing.info();
-    } catch {
-      throw error;
-    }
-  }
 }

@@ -13,35 +13,19 @@ mod guided;
 pub(crate) use commands::run_profile;
 pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
     guided::validate(job)?;
-    let api_source = crate::source_workspace_job::enabled(job);
-    let source_session = if api_source {
-        Some(crate::source_workspace_run::SourceRun::prepare(
-            job,
-            root.parent()
-                .ok_or_else(|| err("Evaluation source parent missing"))?,
-            true,
-        )?)
-    } else {
-        None
-    };
-    let root = source_session
-        .as_ref()
-        .map_or(root, |session| session.root());
-    if !api_source {
-        super::jobs::workspace(job, root).await?;
+    if !crate::source_workspace_job::enabled(job) {
+        return Err(err(
+            "Evaluators read the captured revision through lazy source",
+        ));
     }
-    #[cfg(target_os = "linux")]
-    if !api_source {
-        Command::new("/usr/bin/chown")
-            .args(["-R", "1000:1000", "/work", "/home/agent"])
-            .status()
-            .await
-            .map_err(err)?;
-    }
-    let result = run_evaluation(job, root).await;
-    if let Some(session) = source_session {
-        session.close_evaluation()?;
-    }
+    let session = crate::source_workspace_run::SourceRun::prepare(
+        job,
+        root.parent()
+            .ok_or_else(|| err("Evaluation source parent missing"))?,
+        true,
+    )?;
+    let result = run_evaluation(job, session.root()).await;
+    session.close_evaluation()?;
     result
 }
 async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {

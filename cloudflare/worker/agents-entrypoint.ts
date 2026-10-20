@@ -1,11 +1,10 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { authorizeAppPreview, publishedApp } from './apps';
-import { comparisonReviewAttempt } from './comparison-scope';
+import { refreshCandidate } from './candidate-refresh';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
-import { cleanupLateRemote } from './repository-deletion';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
 import { authorizePreview } from './sites';
@@ -118,49 +117,21 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             created_at: now(),
           };
           await attemptLog(this.env, scope, 'execution.started');
+          // A refresh is a platform merge: no container, no model.
+          if (job.kind === 'capture' && job.payload?.capture_subtype === 'refresh_candidate') {
+            await ledger(this.env, envelope.repo_id, await refreshCandidate(this.env, scope));
+            message.ack();
+            return;
+          }
           if (job.payload?.workspace_transport === 'api-source-v1') {
             if ((await prepareSourceDispatch(this.env, scope)) === 'deferred') {
               message.ack();
               return;
             }
-          } else if (job.kind === 'capture') {
-            const canonical = job.payload.base.repository.split('/')[1];
-            const name = `candidate-${(await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`)).slice(0, 32)}`;
-            using repo = await this.env.ARTIFACTS.get(canonical);
-            try {
-              const info = await repo.info();
-              // Older imports can have a valid canonical branch different from the metadata.
-              // Retain that branch in the fork so capture preserves its ancestry.
-              const repository = await ledger(this.env, envelope.repo_id, {
-                op: 'repository_status',
-              });
-              const fork = await repo.fork(name, {
-                defaultBranchOnly: repository.remote.branch === info.defaultBranch,
-              });
-              using target = await this.env.ARTIFACTS.get(name);
-              await target.revokeToken(fork.token);
-            } catch (e: any) {
-              try {
-                using existing = await this.env.ARTIFACTS.get(name);
-                await existing.info();
-              } catch {
-                throw e;
-              }
-            }
-            job.fork = `${this.env.ARTIFACTS_NAMESPACE}/${name}`;
-            scope.fork = job.fork;
-            try {
-              await ledger(this.env, envelope.repo_id, {
-                op: 'check_attempt',
-                job_id: job.id,
-                epoch: job.epoch,
-              });
-            } catch (error: any) {
-              if (error.code === 'REPOSITORY_DELETED')
-                await cleanupLateRemote(this.env, envelope.repo_id, name);
-              throw error;
-            }
-          }
+          } else
+            throw Object.assign(new Error('Only lazy-source attempts run'), {
+              code: 'NOT_SUPPORTED',
+            });
           const name = await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`);
           launchRequested = true;
           await this.launchExecution(name, scope);
@@ -179,7 +150,12 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
                 job_id: claimed.id,
                 epoch: claimed.epoch,
                 error: `Queue dispatch failed (${code})`,
-                retryable: !['INVALID_CAPTURE', 'INVALID_INPUT', 'FORBIDDEN'].includes(code),
+                retryable: ![
+                  'INVALID_CAPTURE',
+                  'INVALID_INPUT',
+                  'FORBIDDEN',
+                  'NOT_SUPPORTED',
+                ].includes(code),
               });
               // The ledger now owns retry delivery through its transactional outbox.
               message.ack();

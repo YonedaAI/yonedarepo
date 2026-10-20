@@ -156,10 +156,6 @@
         "binding": "EVALUATE_QUEUE",
         "queue": "yonedarepo-agents-dev-evaluate"
       },
-      {
-        "binding": "PUBLISH_QUEUE",
-        "queue": "yonedarepo-agents-dev-publish"
-      }
     ],
     "consumers": [
       {
@@ -180,12 +176,6 @@
         "max_retries": 3,
         "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
       },
-      {
-        "queue": "yonedarepo-agents-dev-publish",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yonedarepo-agents-dev-dead-letter"
-      }
     ]
   },
   "ratelimits": [

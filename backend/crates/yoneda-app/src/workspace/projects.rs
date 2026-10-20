@@ -91,10 +91,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 p["deleted_at"] = json!(now);
                 p["error"] = Value::Null;
                 put(db, &key, &p)?;
+                db.query(
+                    "DELETE FROM workspace_records WHERE id=?",
+                    &[json!(format!("platform-credential:{id}"))],
+                )?;
                 db.query("UPDATE workspace_records SET payload=json_set(payload,'$.revoked',json('true')) WHERE id LIKE 'grant:%' AND json_extract(payload,'$.repo')=?", &[json!(id)])?;
                 audit(db, "project.deleted", now, json!({"id":id}))?;
             }
             Ok(p)
+        }
+        "project_platform_bind" | "project_platform_credential" => {
+            super::project_platform::handle(db, c, &key, now)
         }
         "project_update" | "project_claim" | "project_progress" | "project_retry"
         | "project_schedule" => super::project_setup::handle(db, c, &key, now),

@@ -51,31 +51,6 @@ fn execution_id(job: &Value) -> Option<&str> {
 }
 
 pub(crate) fn check_lineage<S: SqlStore>(db: &S, job: &Value, now: i64) -> Result<()> {
-    if job["kind"] == "publish" {
-        // Selection transfers this immutable revision to owner publication authority.
-        // Only the ledger-issued publisher may bypass live agent ancestry checks.
-        let did = string(&job["payload"], "decision_id")?;
-        let decision = get(db, "decisions", &did)?;
-        let repository = repo(db)?;
-        // Owner recovery issues a new publisher identity and lease; earlier decisions leased
-        // their candidate base under the original identity.
-        let publisher = decision["publisher_job"]
-            .as_str()
-            .map_or_else(|| format!("publish:{did}"), str::to_owned);
-        let expected = decision
-            .get("publication_expected")
-            .unwrap_or(&decision["base"]);
-        if job["id"] != publisher
-            || decision["status"] != "publication_pending"
-            || repository["pending"] != did
-            || repository["head_commit"] != decision["target"]["commit"]
-            || job["payload"]["target"] != decision["target"]
-            || job["payload"]["expected"] != *expected
-        {
-            return Err(Error::new("FENCED", "Publication reservation changed"));
-        }
-        return Ok(());
-    }
     let Some(id) = execution_id(job) else {
         return Ok(());
     };
@@ -132,8 +107,8 @@ pub(crate) fn fence_descendants<S: SqlStore>(db: &S, job: &Value, now: i64) -> R
         save_execution(db, &e, now)?;
     }
     for mut child in run_jobs(db, &run_id)? {
-        if child["kind"] != "publish" && execution_id(&child).is_some_and(|id| ids.contains(id)) {
-            cancel_job(db, &mut child, now)?;
+        if execution_id(&child).is_some_and(|id| ids.contains(id)) {
+            cancel_job(db, &mut child)?;
         }
     }
     let rows = db.query(
@@ -178,7 +153,7 @@ pub(crate) fn run_jobs<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> 
     }).collect()
 }
 
-pub(crate) fn cancel_job<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Result<()> {
+pub(crate) fn cancel_job<S: SqlStore>(db: &S, job: &mut Value) -> Result<()> {
     if job["status"] != "queued" && job["status"] != "running" {
         return Ok(());
     }
@@ -193,31 +168,5 @@ pub(crate) fn cancel_job<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Resu
     job["status"] = json!("cancelled");
     job["epoch"] = json!(epoch + 1);
     save(db, "jobs", &id, job)?;
-    if job["kind"] == "publish" {
-        let did = string(&job["payload"], "decision_id")?;
-        let mut decision = get(db, "decisions", &did)?;
-        decision["status"] = json!("publication_failed");
-        decision["error"] = json!(
-            "Delegating parent attempt was superseded; verify the canonical remote before resynchronizing"
-        );
-        save(db, "decisions", &did, &decision)?;
-        let author = if decision["decision_kind"] == "development_verification" {
-            "owner_automation"
-        } else {
-            "owner"
-        };
-        node(
-            db,
-            &did,
-            "decision",
-            decision["rationale"].as_str().unwrap_or("Decision"),
-            author,
-            now,
-            decision.clone(),
-        )?;
-        let mut repository = repo(db)?;
-        repository["status"] = json!("blocked");
-        save(db, "repository", "repo", &repository)?;
-    }
     Ok(())
 }

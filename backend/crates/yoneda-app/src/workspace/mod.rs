@@ -10,6 +10,7 @@ mod campaign_runs;
 mod campaign_trial;
 mod grants;
 mod project_dispatch;
+mod project_platform;
 mod project_setup;
 mod project_visibility;
 mod projects;
@@ -84,7 +85,9 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             | "project_progress"
             | "project_retry"
             | "project_schedule"
-            | "project_dispatch_sent" => projects::handle(&db, &command, now),
+            | "project_dispatch_sent"
+            | "project_platform_bind"
+            | "project_platform_credential" => projects::handle(&db, &command, now),
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
         }
     }))

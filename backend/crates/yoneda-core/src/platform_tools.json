@@ -959,7 +959,7 @@
   },
   {
     "name": "git_merge",
-    "description": "Create (not land) a merge commit of source (a branch or commit id) into branch `into` (default main), using a three-way merge on the server. Returns up_to_date or fast_forward when no merge commit is needed. Conflicts return CONFLICT with diff3-marked text per path to resolve in a follow-up commit.",
+    "description": "Create (not land) a merge commit of source (a branch or commit id) into branch `into` (default main), using a three-way merge on the server. Returns up_to_date or fast_forward when no merge commit is needed. Conflicts return CONFLICT with diff3-marked text per path to resolve in a follow-up commit. into may be a branch or a commit id. With on_conflict \"workspace\", conflicts return a two-parent workspace commit with every cleanly merged path (conflicted paths keep into's content) plus the conflicting paths, instead of CONFLICT.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -987,6 +987,13 @@
             "email"
           ],
           "additionalProperties": false
+        },
+        "on_conflict": {
+          "type": "string",
+          "enum": [
+            "fail",
+            "workspace"
+          ]
         }
       },
       "required": [

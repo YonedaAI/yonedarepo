@@ -89,7 +89,7 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                     json!({"job_id":old_id,"epoch":old_epoch}),
                 )?;
             }
-            cancel_job(db, &mut old, now)?;
+            cancel_job(db, &mut old)?;
         }
     }
     for mut candidate in all(db, "candidates")?

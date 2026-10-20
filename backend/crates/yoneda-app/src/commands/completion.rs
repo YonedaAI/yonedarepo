@@ -206,32 +206,6 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 super::team::evaluated(db, &run, &candidate, validation.is_ok(), now)?;
             }
         }
-        "publish" => {
-            let did = string(&j["payload"], "decision_id")?;
-            let mut d = get(db, "decisions", &did)?;
-            let mut r = repo(db)?;
-            if r["pending"] != did {
-                return Err(Error::new("FENCED", "Publication reservation changed"));
-            }
-            if result["conflict"] == true || result["commit"] != d["target"]["commit"] {
-                r["status"] = json!("blocked");
-                d["status"] = json!("publication_conflict");
-                d["observed"] = result.clone();
-            } else {
-                record_publication(db, &mut r, &mut d, now)?;
-            }
-            save(db, "repository", "repo", &r)?;
-            save(db, "decisions", &did, &d)?;
-            node(
-                db,
-                &did,
-                "decision",
-                d["rationale"].as_str().unwrap_or("Decision"),
-                "owner",
-                now,
-                d.clone(),
-            )?;
-        }
         _ => return Err(bad("Unknown execution job type")),
     }
     j["status"] = json!("done");

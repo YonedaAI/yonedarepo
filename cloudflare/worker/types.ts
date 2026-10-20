@@ -26,7 +26,6 @@ export interface Env {
   AGENT_QUEUE: Queue<Envelope>;
   CAPTURE_QUEUE: Queue<Envelope>;
   EVALUATE_QUEUE: Queue<Envelope>;
-  PUBLISH_QUEUE: Queue<Envelope>;
   OPENAI_KEY: { get(): Promise<string> };
   ANTHROPIC_KEY: { get(): Promise<string> };
   MIMO_KEY?: { get(): Promise<string> };
@@ -53,8 +52,6 @@ export interface Env {
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
-  ACCEPTANCE_FAULTS?: 'publish-ack-once';
-  ACCEPTANCE_REPOSITORY?: string;
 }
 export type Principal = {
   workspace: string;

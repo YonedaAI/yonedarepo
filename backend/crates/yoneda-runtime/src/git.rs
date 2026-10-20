@@ -77,11 +77,6 @@ pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     Ok(output.stdout)
 }
 
-pub(crate) use crate::{
-    git_capture::capture_fresh,
-    git_revision::{read_git_revision, verify_git_parent},
-};
-
 /// Trusted capture reconstructs a fresh Git tree. It never opens the agent's .git directory.
 pub async fn capture(
     root: &Path,

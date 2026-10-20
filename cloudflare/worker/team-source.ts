@@ -3,18 +3,6 @@ import { error, response } from './http';
 import { ledger } from './storage';
 import type { Env, Json } from './types';
 
-/** Fetch one frozen input at a time; Rust owns assembly and path-scope enforcement. */
-export async function teamAttemptSource(env: Env, job: Json, index: unknown) {
-  if (!['agent', 'capture'].includes(job.kind) || !job.payload.execution?.team_task)
-    throw new Error('This attempt has no team source capability');
-  if (typeof index !== 'number' || !Number.isSafeInteger(index) || index < 0)
-    throw new Error('Invalid frozen team input index');
-  const input = job.payload.team_inputs?.[index];
-  if (!input?.revision || typeof input.tree !== 'string')
-    throw new Error('Frozen team input is missing');
-  return { input, ...(await source(env, input.revision, input.tree)) };
-}
-
 /** Owner inspection resolves immutable task output; query arguments cannot choose a revision. */
 export async function teamTaskSource(env: Env, repo: string, run: string, taskId: string) {
   const snapshot = await ledger(env, repo, { op: 'snapshot' });

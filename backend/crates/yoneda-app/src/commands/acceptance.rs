@@ -98,7 +98,8 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     // A checked working head's base may be an intermediate commit; the publisher leases the
     // canonical head observed before this selection reserves the target.
     let lease = super::publication::canonical_lease(&r)?;
-    let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
+    let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit,
+        "publication":super::publication::owner_landing(&r, &revision.commit, &lease, override_checks)});
     let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now,"publication_expected":lease,"published_before":r["published_commit"],"checks_overridden":override_checks});
     super::comparison::decision_provenance(db, &run, &mut d)?;
     create(db, "decisions", &did, &d)?;
@@ -139,13 +140,6 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     run["status"] = json!("accepted");
     let rid = string(&run, "id")?;
     save(db, "runs", &rid, &run)?;
-    job(
-        db,
-        &format!("publish:{did}"),
-        "publish",
-        now,
-        json!({"decision_id":did,"expected":lease,"target":candidate["revision"],"canonical":r["remote"],"execution":{"id":candidate["execution"],"run_id":candidate["run_id"]}}),
-    )?;
     event(db, "decision.selected", now, receipt.clone())?;
     Ok(receipt)
 }

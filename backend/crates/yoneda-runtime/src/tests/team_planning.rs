@@ -1,5 +1,4 @@
 use super::*;
-use yoneda_agents_core::{FileEntry, Workspace};
 
 #[test]
 fn planner_describes_the_approved_app_host_instead_of_a_static_only_constraint() {
@@ -31,33 +30,4 @@ fn planner_uses_actual_brief_and_frozen_roster_without_source_authority() {
         assert!(result.contains(required), "Missing {required}");
     }
     assert!(prompt(&json!({"run":{"agents":[]}})).is_err());
-}
-
-#[test]
-fn planning_rejects_source_edits_modes_additions_and_deletions() {
-    let baseline = Workspace::from([(
-        "public/index.html".into(),
-        FileEntry::from_bytes(b"<html>base</html>".to_vec(), false),
-    )]);
-    assert!(crate::team_workspace::validate_read_only(&baseline, &baseline).is_ok());
-    for kind in 0..4 {
-        let mut after = baseline.clone();
-        match kind {
-            0 => after.get_mut("public/index.html").unwrap().content = "changed".into(),
-            1 => after.get_mut("public/index.html").unwrap().executable = true,
-            2 => {
-                after.insert("new-file".into(), FileEntry::from_bytes(vec![], false));
-            }
-            _ => {
-                after.remove("public/index.html");
-                after.insert("other-file".into(), FileEntry::from_bytes(vec![], false));
-            }
-        }
-        assert_eq!(
-            crate::team_workspace::validate_read_only(&baseline, &after)
-                .unwrap_err()
-                .code,
-            "PLANNING_SOURCE_CHANGED"
-        );
-    }
 }

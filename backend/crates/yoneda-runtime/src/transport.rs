@@ -1,7 +1,7 @@
 //! Git file maps for legacy JSON workspaces and test bundles.
 use crate::err;
 use std::{collections::BTreeMap, path::Path};
-use yoneda_agents_core::{Result, Workspace};
+use yoneda_agents_core::Result;
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitFile {
@@ -9,22 +9,6 @@ pub(crate) struct GitFile {
     pub(crate) executable: bool,
 }
 pub(crate) type GitWorkspace = BTreeMap<String, GitFile>;
-
-impl GitFile {
-    pub(crate) fn from_entry(entry: yoneda_agents_core::FileEntry) -> Result<Self> {
-        Ok(Self {
-            bytes: entry.bytes()?,
-            executable: entry.executable,
-        })
-    }
-}
-
-pub(crate) fn from_legacy(workspace: Workspace) -> Result<GitWorkspace> {
-    workspace
-        .into_iter()
-        .map(|(path, file)| Ok((path, GitFile::from_entry(file)?)))
-        .collect()
-}
 
 pub(crate) fn materialize_git(root: &Path, files: &GitWorkspace) -> Result<()> {
     if files.is_empty() || files.len() > 10_000 {

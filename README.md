@@ -82,7 +82,7 @@ For browser hot reload, keep Wrangler running and run `pnpm --dir frontend dev`.
   ```sh
   C=.local/deploy/my-yoneda/platform.json
   pnpm exec wrangler r2 bucket create my-yoneda-objects --config $C
-  for q in dead-letter agent capture evaluate publish; do pnpm exec wrangler queues create my-yoneda-$q --config $C; done
+  for q in dead-letter agent capture evaluate platform; do pnpm exec wrangler queues create my-yoneda-$q --config $C; done
   ```
 
 - **Deploy:** `cargo xtask cloudflare-deploy --name my-yoneda` (add `--dry-run` first). It builds, migrates D1, deploys the platform, container and sites Workers, and checks health. It starts no paid inference.
