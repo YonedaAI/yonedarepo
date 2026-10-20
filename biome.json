@@ -4,6 +4,7 @@
     "includes": [
       "cloudflare/worker/**",
       "cloudflare/sites/**",
+      "cloudflare/eval/**",
       "cloudflare/superfan/**",
       "frontend/src/**",
       "shared/**",

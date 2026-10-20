@@ -18,6 +18,7 @@
     "worker/**/*.ts",
     "sites/**/*.ts",
     "apps/**/*.ts",
-    "superfan/**/*.ts"
+    "superfan/**/*.ts",
+    "eval/**/*.ts"
   ]
 }
