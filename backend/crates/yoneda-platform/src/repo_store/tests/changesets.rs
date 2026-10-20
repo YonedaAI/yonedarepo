@@ -498,3 +498,60 @@ fn a_batch_merge_never_lands_write_skew() {
     assert_eq!(code(batch), "WRITE_SKEW");
     assert_eq!(h.status_of(&tickets[0])["status"], "pending");
 }
+
+/// c1 ← c2 ← c3 on root, main still at root: the tip lands as one fast-forward.
+fn chain(h: &Harness, root: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut parent = root.to_owned();
+    for (path, text) in [("c1.txt", "1\n"), ("dir/c2.txt", "2\n"), ("c3.txt", "3\n")] {
+        let id = h.landable(&parent, 1, json!([file(path, text)]), json!([]));
+        ids.push(id.clone());
+        parent = id;
+    }
+    ids
+}
+
+#[test]
+fn a_chain_on_the_head_lands_as_one_fast_forward_carrying_its_whole_changeset() {
+    let (h, root) = seeded();
+    let ids = chain(&h, &root);
+    let landed = h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":ids[2]}),
+    );
+    assert_eq!(landed["version"], 2);
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_refs"}))["refs"]["refs/heads/main"],
+        ids[2]
+    );
+    let entry = h.ok(OWNER, json!({"op":"repo_txlog","after":1}))["entries"][0].clone();
+    let paths: Vec<&str> = entry["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["path"].as_str().unwrap())
+        .collect();
+    assert_eq!(paths, ["c1.txt", "c3.txt", "dir/c2.txt"]);
+    // A later commit on root writing c1.txt meets that entry: a merge, never a lost update.
+    let late = h.landable(&root, 1, json!([file("c1.txt", "other\n")]), json!([]));
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_land","ref":"main","commit":late}))),
+        "MERGE_REQUIRED"
+    );
+}
+
+#[test]
+fn a_queued_chain_on_the_head_lands_as_one_fast_forward() {
+    let (h, root) = seeded();
+    let ids = chain(&h, &root);
+    let ticket = h.enqueue(&ids[2]);
+    let claim = h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}));
+    assert_eq!(claim["items"][0]["fast_forward"], true, "{claim}");
+    let landed = h.ok(
+        MERGER,
+        json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],
+        "head":claim["head"],"landed":[ticket]}),
+    );
+    assert_eq!(landed["version"], 2);
+    assert_eq!(h.status_of(&ticket)["status"], "landed");
+}
