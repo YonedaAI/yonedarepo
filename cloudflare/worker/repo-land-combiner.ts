@@ -26,7 +26,7 @@ const SETTLED_KEPT = 10_000;
 const RETRY_MS = 250;
 const SUBMIT_BATCH = 256;
 type Target = { repo: string; ref: string };
-type Submission = { item: Json; resolve: (outcome: Json | null) => void };
+type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => void };
 
 /**
  * The combiner's logic, apart from the Durable Object so tests can run it in-process with
@@ -75,7 +75,7 @@ export class LandBatcher {
   async submit(target: Target, item: Json, timeoutMs: number) {
     this.target = target;
     const outcome = new Promise<Json | null>((resolve) => {
-      const submission = { item, resolve };
+      const submission = { item, at: Date.now(), resolve };
       this.#submissions.push(submission);
       setTimeout(() => {
         this.#submissions = this.#submissions.filter((s) => s !== submission);
@@ -102,7 +102,8 @@ export class LandBatcher {
     const again: Submission[] = [];
     for (const [i, submission] of batch.entries()) {
       if (out.items[i].status === 'deferred') again.push(submission);
-      else submission.resolve({ ...out.items[i], batch: timing });
+      else
+        submission.resolve({ ...out.items[i], batch: timing, queued_ms: started - submission.at });
     }
     this.#submissions.unshift(...again);
     if (out.items.some((r: Json) => r.status === 'landed'))

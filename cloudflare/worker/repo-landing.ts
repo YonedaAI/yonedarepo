@@ -137,6 +137,7 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, records
     });
     if (!out) continue;
     if (out.batch) record('land.batch', out.batch.ms, out.batch.size);
+    if (out.queued_ms !== undefined) record('land.queued', out.queued_ms);
     if (out.status === 'landed')
       return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
     if (out.status === 'queued')
