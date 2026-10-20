@@ -3,6 +3,7 @@
 // immutable, so a cache entry keyed by id never needs invalidation; keys are per
 // repository so access follows repository auth.
 import { compute } from './repo-compute';
+import { stagedInShards } from './repo-shards';
 import {
   type CachedObject,
   fromBase64,
@@ -144,11 +145,10 @@ export class RepoObjects {
       await this.cache([fromRaw]);
       return { bytes: this.encode(fromRaw), tier: 'r2' };
     }
-    // Accepted but not yet in R2: the authority (or a shard) still holds the staged copy.
-    // A staged copy is dropped only after its R2 write, so a miss here means R2 has it now.
-    let object: CachedObject | null = await this.staged(id).then((o) =>
-      o?.kind === kind ? o : null,
-    );
+    // Accepted but not yet in R2: the authority still holds the staged copy. A staged copy
+    // is dropped only after its R2 write, so a miss there means R2 has it now.
+    const ofKind = (o: CachedObject | null | undefined) => (o?.kind === kind ? o : null);
+    let object: CachedObject | null = ofKind(await this.staged(id));
     object ??= await this.recorded(id, kind);
     if (!object) {
       if (kind === 'tree') {
@@ -161,6 +161,12 @@ export class RepoObjects {
         const commit = await this.store.readCommit(id);
         object = commit && { id, kind, ...commit };
       }
+    }
+    // Commit shards last: finding a staged object there means asking every shard, and
+    // imported objects (in Artifacts only) must not pay that on each first read.
+    if (!object) {
+      object = ofKind((await stagedInShards(this.env, this.repo, [id]))[0] as CachedObject);
+      object ??= await this.recorded(id, kind);
     }
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
@@ -206,9 +212,15 @@ export class RepoObjects {
     for (let i = 0; i < absent.length; i += 64) {
       const ids = absent.slice(i, i + 64).map((w) => w.id);
       const here = (await this.stagedCall({ ids, raw: true })) as RawObject[];
-      found.push(...here);
+      const sharded = (await stagedInShards(
+        this.env,
+        this.repo,
+        ids.filter((id) => !here.some((o) => o.id === id)),
+        true,
+      )) as RawObject[];
+      found.push(...here, ...sharded);
       // A staged copy is dropped only after its R2 write: look in R2 once more.
-      const held = new Set(here.map((o) => o.id));
+      const held = new Set([...here, ...sharded].map((o) => o.id));
       for (const id of ids.filter((i) => !held.has(i))) {
         const stored = await this.env.OBJECTS.get(this.rawKey(id));
         if (stored)

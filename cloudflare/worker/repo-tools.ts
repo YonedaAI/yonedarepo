@@ -8,6 +8,7 @@ import { blame, pathHistory, search } from './repo-derived';
 import { explicitMerge, landWithMerge } from './repo-merge';
 import { diff, getObjects, type Json, listTree, type RepoContext, readFile } from './repo-ops';
 import { plan } from './repo-plan';
+import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -15,7 +16,13 @@ const version = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
 
 export const operations: Record<string, Operation> = {
-  git_status: (ctx) => ctx.call({ op: 'repo_status' }),
+  git_status: async (ctx) => {
+    const [status, shards] = await Promise.all([
+      ctx.call({ op: 'repo_status' }),
+      shardOutboxes(ctx.env, ctx.repo),
+    ]);
+    return { ...status, objects: mergeOutboxes([status.objects, ...shards]) };
+  },
   git_refs: (ctx, a) => ctx.call({ op: 'repo_refs', ...version(a) }),
   git_log: (ctx, a) =>
     a.path
