@@ -1,0 +1,339 @@
+{
+  "env": "prod",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "zone": "yonedarepo.com",
+  "workers_subdomain": "mlong-f01",
+  "prefix": "yonedarepo-dev",
+  "secrets_file": "~/.config/yonedarepo/prod.env",
+  "vars": {},
+  "workers": [
+    {
+      "role": "app",
+      "file": "wrangler.prod.jsonc",
+      "notes": [
+        "Today's live production (old single-Worker layout), as last deployed on 2026-10-15 from",
+        "the private .local/deploy/production/platform.json: a prebuilt runtime image, one container",
+        "class and the api-source-v1 transport vars. cloudflare/wrangler.jsonc is the next, unreleased",
+        "version of this Worker; the N8 cutover replaces this whole spec with the platform/agents/sites",
+        "layout of infra/envs/dev.json."
+      ],
+      "secrets": [
+        "OWNER_TOKEN",
+        "VAULT_KEY"
+      ],
+      "health": "yonedarepo",
+      "config": {
+        "name": "yonedarepo-dev",
+        "main": "worker/index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "workers_dev": true,
+        "routes": [
+          {
+            "pattern": "yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "www.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://www.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
+          }
+        ],
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "assets": {
+          "directory": "../frontend/dist",
+          "binding": "ASSETS",
+          "not_found_handling": "single-page-application",
+          "run_worker_first": true
+        },
+        "vars": {
+          "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+          "ARTIFACTS_NAMESPACE": "yoneda-dev",
+          "CODEX_MODEL": "gpt-5.6-luna",
+          "CLAUDE_MODEL": "claude-sonnet-5-5",
+          "MIMO_MODEL": "mimo-v2.6-flash",
+          "ZAI_MODEL": "glm-5.3-flash",
+          "STARTER_REPO": "yoneda-website-starter",
+          "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev",
+          "APP_ORIGIN": "https://apps.yonedarepo.com",
+          "GUIDED_TASK_BOARD_STARTER_REPO": "yoneda-guided-task-board-v1-20261014",
+          "GUIDED_TASK_BOARD_BUNDLE_DIGEST": "c7c3237e3ef948795dffefabc9596eacfcbb8a37761892f172741d6d145f16e7",
+          "SOURCE_TRANSPORT": "api-source-v1",
+          "SOURCE_TRANSPORT_REPOS": "repo-a3539621c7688c6daa032a6dbe215624,repo-360b2d50b40360240a27de47010ff5a6,repo-b456284f131158a49db378989ba3edc9,repo-1996880d7eb888f611a21ee79a26a346",
+          "SOURCE_GUIDED_ENABLED": "false",
+          "GUIDED_TASK_BOARD_V2_STARTER_REPO": "yoneda-guided-task-board-v1-20261014",
+          "GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST": "08917410fcce7555dfc6274788203c36c9acbaf917ec7eb283dafd7ac38eecbe"
+        },
+        "services": [
+          {
+            "binding": "SELF",
+            "service": "yonedarepo-dev"
+          },
+          {
+            "binding": "APPS",
+            "service": "yonedarepo-apps-dev"
+          }
+        ],
+        "secrets_store_secrets": [
+          {
+            "binding": "OPENAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Codex"
+          },
+          {
+            "binding": "ANTHROPIC_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Claude"
+          },
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "artifacts": [
+          {
+            "binding": "ARTIFACTS",
+            "namespace": "yoneda-dev",
+            "remote": true
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "REPOSITORIES",
+              "class_name": "RepositoryAuthority"
+            },
+            {
+              "name": "LIVE",
+              "class_name": "LiveRoom"
+            },
+            {
+              "name": "EXECUTIONS",
+              "class_name": "ExecutionContainer"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority"
+            },
+            {
+              "name": "SOURCES",
+              "class_name": "SourceWorkspaceAuthority"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "RepositoryAuthority",
+              "LiveRoom",
+              "ExecutionContainer"
+            ]
+          },
+          {
+            "tag": "v2",
+            "new_sqlite_classes": [
+              "WorkspaceAuthority"
+            ]
+          },
+          {
+            "tag": "v3",
+            "new_sqlite_classes": [
+              "SourceWorkspaceAuthority"
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "class_name": "ExecutionContainer",
+            "image": "registry.cloudflare.com/f011d0ee02b23cad26b4b38151b204ad/yoneda-runtime-guided-r24@sha256:9376f412a2488a6a1da9e3b88090d821e2d7b1d6be46e6cfa009c16ce8c0aae2",
+            "max_instances": 16,
+            "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ]
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "yonedarepo-dev-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "yonedarepo-dev-index",
+            "migrations_dir": "migrations"
+          }
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "AGENT_QUEUE",
+              "queue": "yoneda-dev-agent"
+            },
+            {
+              "binding": "CAPTURE_QUEUE",
+              "queue": "yoneda-dev-capture"
+            },
+            {
+              "binding": "EVALUATE_QUEUE",
+              "queue": "yoneda-dev-evaluate"
+            },
+            {
+              "binding": "PUBLISH_QUEUE",
+              "queue": "yoneda-dev-publish"
+            }
+          ],
+          "consumers": [
+            {
+              "queue": "yoneda-dev-agent",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "yoneda-dev-dead-letter"
+            },
+            {
+              "queue": "yoneda-dev-capture",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "yoneda-dev-dead-letter"
+            },
+            {
+              "queue": "yoneda-dev-evaluate",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "yoneda-dev-dead-letter"
+            },
+            {
+              "queue": "yoneda-dev-publish",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "yoneda-dev-dead-letter"
+            }
+          ]
+        },
+        "ratelimits": [
+          {
+            "name": "AUTH_LIMITER",
+            "namespace_id": "1001",
+            "simple": {
+              "limit": 30,
+              "period": 60
+            }
+          }
+        ],
+        "limits": {
+          "subrequests": 50000
+        }
+      }
+    },
+    {
+      "role": "sites",
+      "file": "wrangler.sites.jsonc",
+      "notes": [],
+      "secrets": [],
+      "config": {
+        "name": "yonedarepo-sites-dev",
+        "main": "sites/index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "yonedarepo-dev-objects"
+          }
+        ],
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "yonedarepo-dev"
+          }
+        ],
+        "observability": {
+          "enabled": true
+        }
+      }
+    },
+    {
+      "role": "apps",
+      "file": "wrangler.apps.jsonc",
+      "notes": [],
+      "secrets": [],
+      "config": {
+        "name": "yonedarepo-apps-dev",
+        "main": "apps/index.ts",
+        "compatibility_date": "2026-10-12",
+        "workers_dev": false,
+        "preview_urls": false,
+        "routes": [
+          {
+            "pattern": "apps.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://*.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
+          }
+        ],
+        "vars": {
+          "APP_DOMAIN": "yonedarepo.com",
+          "APP_ORIGIN": "https://apps.yonedarepo.com",
+          "PLATFORM_ORIGIN": "https://yonedarepo.com"
+        },
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "yonedarepo-dev"
+          }
+        ],
+        "worker_loaders": [
+          {
+            "binding": "LOADER"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "APP_RUNNERS",
+              "class_name": "AppRunner"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "AppRunner"
+            ]
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "yonedarepo-dev-objects"
+          }
+        ],
+        "limits": {
+          "cpu_ms": 50
+        }
+      }
+    }
+  ]
+}
