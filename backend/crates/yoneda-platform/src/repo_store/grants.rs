@@ -92,6 +92,11 @@ pub fn precheck<S: crate::storage::SqlStore>(
                 require(grant, change["path"].as_str().unwrap_or_default())?;
             }
         }
+        "repo_begin_commit" => {
+            for path in c["paths"].as_array().into_iter().flatten() {
+                require(grant, path.as_str().unwrap_or_default())?;
+            }
+        }
         "repo_land" | "repo_land_enqueue" | "repo_review" | "repo_check" | "repo_check_request" => {
             let id = super::rows::object_id(c, "commit")?;
             for touch in super::rows::touches(db, &id)? {
