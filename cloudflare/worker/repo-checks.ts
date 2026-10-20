@@ -2,12 +2,10 @@
 // run from the SourceRepository authority with a fenced epoch, ships the exact commit's
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
-import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { parseStore, RepoObjects } from './repo-objects';
 import { caller, type Json, RepoContext, replay } from './repo-ops';
+import { checkFiles } from './repo-seed';
 import type { Env, Envelope } from './types';
-
-const MAX_FILES = 100_000;
-const MAX_BYTES = 192 * 1024 * 1024;
 
 export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefined) {
   // Re-sending a still-queued run is safe (claims are fenced) and recovers a lost message.
@@ -18,29 +16,6 @@ export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefi
       body: { v: 1, kind: 'platform_check', repo_id: repo, job_id: String(run.id) } as Envelope,
     })),
   );
-}
-
-async function files(objects: RepoObjects, tree: string) {
-  const out: CheckJob['files'] = [];
-  let bytes = 0;
-  const visit = async (id: string, prefix: string) => {
-    const entries: TreeEntry[] = await objects.tree(id);
-    for (const entry of entries) {
-      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.type === 'tree') await visit(entry.id, path);
-      else if (entry.type !== 'gitlink') {
-        const data = await objects.blob(entry.id);
-        bytes += data.length;
-        if (out.length >= MAX_FILES || bytes > MAX_BYTES)
-          throw Object.assign(new Error('Commit is too large for a platform check'), {
-            code: 'TOO_LARGE',
-          });
-        out.push({ path, type: entry.type, data_b64: toBase64(data) });
-      }
-    }
-  };
-  await visit(tree, '');
-  return out;
 }
 
 /**
@@ -81,10 +56,11 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
   try {
     const status = await call({ op: 'repo_status' });
     const objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
+    const shipped = await checkFiles(env, repo, objects, run.tree);
     const job: CheckJob = {
       command: run.command,
       timeout_seconds: run.timeout_seconds,
-      files: await files(objects, run.tree),
+      files: shipped.files,
     };
     const executor = env.CHECK_RUNNERS.get(
       env.CHECK_RUNNERS.idFromName(`${run.run_id}:${run.epoch}`),
@@ -101,6 +77,8 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       output_bytes: result.output_bytes,
       output_sha256: result.output_sha256,
       log,
+      // Files came from the branch's warm-start seed plus this many fetched blobs.
+      ...(shipped.seed ? { seed: shipped.seed } : {}),
     });
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     // Advance bisects that were waiting on this result (and queue their next run).
