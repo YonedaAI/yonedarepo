@@ -14,6 +14,8 @@ export interface Env {
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
   /** Platform jobs (check runs); independent of agent queues. */
   PLATFORM_QUEUE: Queue<Envelope>;
+  /** Basin Pipelines stream for change-log analytics (platform-dev only; optional). */
+  CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;

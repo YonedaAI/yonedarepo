@@ -6,6 +6,7 @@
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
+import { changeLogStatus } from './repo-changelog';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { repoMcp } from './repo-mcp';
 import { parseStore } from './repo-objects';
@@ -97,6 +98,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'refs') return run('git_refs', query);
   if (get && resource === 'log') return run('git_log', query);
   if (get && resource === 'txlog') return run('git_txlog', query);
+  if (get && resource === 'changelog') return changeLogStatus(ctx);
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
   if (get && resource === 'blob') return run('git_cat_file', query);

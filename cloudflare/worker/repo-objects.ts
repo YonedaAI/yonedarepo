@@ -49,6 +49,9 @@ const missing = (what: string) =>
 export type ObjectKind = 'tree' | 'blob' | 'commit';
 /** Reads served per tier, for the S12 hit-rate gate: edge (Cache API), R2, object store. */
 export type TierHits = { edge: number; r2: number; store: number };
+type Tier = keyof TierHits;
+/** Object reads in flight in this isolate, by repository, kind and id. */
+const inFlight = new Map<string, Promise<{ bytes: Uint8Array; tier: Tier }>>();
 const EDGE_ORIGIN = 'https://objects.yoneda.internal';
 
 /**
@@ -107,21 +110,30 @@ export class RepoObjects {
     }
   }
 
-  /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). */
+  /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). Concurrent
+   * reads of one object in this isolate share one walk down the tiers. */
   private async read(id: string, kind: ObjectKind): Promise<Uint8Array> {
-    const edge = await caches.default.match(this.edgeKey(id)).catch(() => undefined);
-    if (edge && edge.headers.get('x-kind') === kind) {
-      this.hits.edge++;
-      return new Uint8Array(await edge.arrayBuffer());
+    const key = `${this.repo}/${kind}/${id}`;
+    let reading = inFlight.get(key);
+    if (!reading) {
+      reading = this.walk(id, kind).finally(() => inFlight.delete(key));
+      inFlight.set(key, reading);
     }
+    const { bytes, tier } = await reading;
+    this.hits[tier]++;
+    return bytes;
+  }
+
+  private async walk(id: string, kind: ObjectKind): Promise<{ bytes: Uint8Array; tier: Tier }> {
+    const edge = await caches.default.match(this.edgeKey(id)).catch(() => undefined);
+    if (edge && edge.headers.get('x-kind') === kind)
+      return { bytes: new Uint8Array(await edge.arrayBuffer()), tier: 'edge' };
     const cached = await this.env.OBJECTS.get(this.key(id));
     if (cached && (cached.customMetadata?.kind ?? kind) === kind) {
-      this.hits.r2++;
       const bytes = new Uint8Array(await cached.arrayBuffer());
       await this.edgePut(id, kind, bytes);
-      return bytes;
+      return { bytes, tier: 'r2' };
     }
-    this.hits.store++;
     let object: CachedObject | null = null;
     if (kind === 'tree') {
       const entries = await this.store.readTree(id);
@@ -137,9 +149,11 @@ export class RepoObjects {
     object ??= await this.staged(id).then((o) => (o?.kind === kind ? o : null));
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
-    return object.kind === 'blob'
-      ? fromBase64(object.data_b64)
-      : new TextEncoder().encode(JSON.stringify(object));
+    const bytes =
+      object.kind === 'blob'
+        ? fromBase64(object.data_b64)
+        : new TextEncoder().encode(JSON.stringify(object));
+    return { bytes, tier: 'store' };
   }
 
   /** The authority's staged copy of an accepted object (read as the platform: callers
