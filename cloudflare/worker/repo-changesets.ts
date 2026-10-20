@@ -7,8 +7,7 @@ import { deferred } from './background';
 import { stagedOf } from './repo-merge';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
-import { putRaw } from './repo-stores';
+import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -28,14 +27,15 @@ const PROJECTION_ROUNDS = 64;
 
 /**
  * Builds and records the Git commits of every unprojected changeset (oldest first, up to
- * 256 versions per round, whose new objects are written to R2 side by side before the
- * authority records them). Returns how many versions this call projected.
+ * 64 versions per round). The authority stages their new objects as it records them, and
+ * the object projector writes them to R2. Returns how many versions this call projected.
  */
 export async function projectChangesets(env: Env, repo: string): Promise<number> {
   const projector = new RepoContext(env, repo, caller(env, repo, { _system: 'projection' }));
   let projected = 0;
-  // The last projected head's new trees, carried into the next round.
+  // The previous round's trees, carried into the next round.
   let previous: CachedObject[] = [];
+  const caching: Promise<unknown>[] = [];
   for (let round = 0; round < PROJECTION_ROUNDS; round++) {
     const plan = await projector.call({ op: 'repo_changeset_plan' });
     if (!plan.items?.length) break;
@@ -49,10 +49,10 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     const built = await timed('project.compute', () =>
       withTrees(objects, { op: 'project_changesets', head: plan.head, items: plan.items }, known),
     );
-    // R2, the store of record, holds the new objects before the authority names them.
-    await timed('project.store', () => putRaw(env, (id) => objects.rawKey(id), built.raw));
+    let recorded: Json;
     try {
-      await projector.call({
+      // The authority stages the new objects with the record (R2 follows, off this path).
+      recorded = await projector.call({
         op: 'repo_changeset_record',
         ref: plan.ref,
         from: plan.head.id,
@@ -64,9 +64,18 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       continue;
     }
     projected += built.projected.length;
-    const tip = new Set((built.projected.at(-1).objects as Json[]).map((o) => o.id));
-    previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree' && tip.has(o.id));
+    if (recorded.dispatch_objects)
+      await dispatchObjects(env, repo).catch((e) =>
+        console.warn(`object drain request failed: ${e?.message ?? e}`),
+      );
+    // Reads at the latest version walk the head's new trees: cache them in R2 now (beside
+    // the next round) rather than have every reader ask the authority's staged copies.
+    const head = new Set((built.projected.at(-1).raw as Json[]).map((o) => o.id));
+    const fresh = (built.objects as CachedObject[]).filter((o) => head.has(o.id));
+    caching.push(timed('project.cache', () => objects.cache(fresh)));
+    previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree');
   }
+  await Promise.all(caching);
   // The branch moved in Git: project it to Artifacts. A lost message only delays that.
   if (projected)
     await dispatchProjection(env, repo).catch((e) =>
