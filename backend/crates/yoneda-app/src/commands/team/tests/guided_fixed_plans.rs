@@ -2,7 +2,7 @@
 use super::*;
 use crate::{execute, native::NativeStore};
 
-const PLANS: &str = include_str!("../../../../../yoneda-core/src/guided_plans.json");
+const PLANS: &str = include_str!("../../../../../yoneda-agents-core/src/guided_plans.json");
 
 fn budget(provider: &str, model: &str) -> Value {
     json!({"provider":provider,"model":model,"max_requests":144,"max_output_tokens":4096,"max_execution_ms":600000,"spend_limit_microusd":50000000,"pricing":{"input_microusd_per_million":250000,"output_microusd_per_million":1200000,"source":"owner-approved conservative rates"}})

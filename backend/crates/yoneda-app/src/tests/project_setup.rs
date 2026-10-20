@@ -1,14 +1,14 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut command: Value, now: i64) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut command: Value, now: i64) -> yoneda_agents_core::Result<Value> {
     command["now"] = json!(now);
     execute_workspace(db, command)
 }
 fn project() -> NativeStore {
     let db = NativeStore::memory().unwrap();
     call(&db, json!({"op":"signup","username":"alice","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)}), 1000).unwrap();
-    call(&db, json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_core::Policy::default()}), 1000).unwrap();
+    call(&db, json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_agents_core::Policy::default()}), 1000).unwrap();
     db
 }
 #[test]

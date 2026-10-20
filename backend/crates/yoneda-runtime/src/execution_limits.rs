@@ -1,6 +1,6 @@
 //! The supervisor applies the same frozen model-group limits as the ledger.
 use serde_json::Value;
-use yoneda_core::{Error, Result, model_budget::ModelBudget};
+use yoneda_agents_core::{Error, Result, model_budget::ModelBudget};
 
 pub(crate) fn model_budget(job: &Value) -> Result<Option<ModelBudget>> {
     let execution = &job["payload"]["execution"];

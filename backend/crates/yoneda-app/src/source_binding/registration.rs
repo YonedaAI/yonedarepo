@@ -27,7 +27,7 @@ pub(super) fn register<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     validate_id(&claims.seal_id)?;
     validate_id(&claims.checkpoint_id)?;
     let expected = json!(binding);
-    let compact: yoneda_core::source_changeset::SourceChangesetHeader =
+    let compact: yoneda_agents_core::source_changeset::SourceChangesetHeader =
         decode(&seal["changeset_header"])?;
     let header = json!(compact);
     for field in [
@@ -64,8 +64,8 @@ pub(super) fn register<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     }
     let id = string(c, "request_id")?;
     validate_id(&id)?;
-    let registration = json!({"version":1,"registration_id":format!("source-registration:{}",yoneda_core::fingerprint(&json!({"binding":binding.digest()?,"seal":claims.seal_id}))?),"binding":binding,"seal_id":claims.seal_id,"checkpoint_id":claims.checkpoint_id,"changeset_digest":claims.changeset_digest,"workspace_version":claims.workspace_version,"manifest_header":header,"change_count":seal["change_count"],"baseline_override_count":seal["baseline_override_count"],"attestation":proof,"authority":"staged_source","checked":false,"published":false});
-    let input = yoneda_core::fingerprint(&registration)?;
+    let registration = json!({"version":1,"registration_id":format!("source-registration:{}",yoneda_agents_core::fingerprint(&json!({"binding":binding.digest()?,"seal":claims.seal_id}))?),"binding":binding,"seal_id":claims.seal_id,"checkpoint_id":claims.checkpoint_id,"changeset_digest":claims.changeset_digest,"workspace_version":claims.workspace_version,"manifest_header":header,"change_count":seal["change_count"],"baseline_override_count":seal["baseline_override_count"],"attestation":proof,"authority":"staged_source","checked":false,"published":false});
+    let input = yoneda_agents_core::fingerprint(&registration)?;
     if let Some(old) = job.get("source_registered").filter(|v| !v.is_null()) {
         if old["request_id"] != id || old["fingerprint"] != input {
             return Err(Error::new(
@@ -139,7 +139,7 @@ pub(super) fn capture_record<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result
     let binding: SourceBinding = decode(&registration["binding"])?;
     let run = get(db, "runs", &binding.run_id)?;
     if repo(db)?["policy"] != job["payload"]["policy"]
-        || yoneda_core::fingerprint(&job["payload"]["policy"])? != binding.policy_digest
+        || yoneda_agents_core::fingerprint(&job["payload"]["policy"])? != binding.policy_digest
         || ["cancelled", "accepted"].contains(&run["status"].as_str().unwrap_or(""))
     {
         return Err(Error::new("FENCED", "Capture policy or run changed"));

@@ -1,6 +1,6 @@
 //! Minimal Git v0 negotiation: one exact want, one exact common base, no side-band or shallow state.
 use crate::{source_git_tree::validate_oid, source_refresh_plan::error};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) fn packet(bytes: &[u8]) -> Vec<u8> {
     let mut out = format!("{:04x}", bytes.len() + 4).into_bytes();
     out.extend(bytes);

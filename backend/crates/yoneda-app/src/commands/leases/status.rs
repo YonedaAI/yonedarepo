@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 #[cfg(test)]
 #[path = "status_tests.rs"]
 mod tests;

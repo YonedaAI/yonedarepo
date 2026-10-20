@@ -6,7 +6,7 @@ use crate::{
 };
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) struct Upload {
     remote: String,
     client: reqwest::Client,

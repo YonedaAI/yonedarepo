@@ -1,6 +1,6 @@
 use crate::{capture, git, git::capture_fresh};
 use std::collections::BTreeMap;
-use yoneda_core::{FileEntry, Workspace};
+use yoneda_agents_core::{FileEntry, Workspace};
 
 #[tokio::test]
 async fn fresh_capture_preserves_large_binary_modes_and_base_history_without_agent_config() {
@@ -102,7 +102,7 @@ async fn fresh_capture_rejects_review_patch_over_worker_limit_without_truncating
     let canonical = tempfile::tempdir().unwrap();
     let base_files = Workspace::from([(
         "base.txt".into(),
-        yoneda_core::FileEntry::from_bytes(b"approved".to_vec(), false),
+        yoneda_agents_core::FileEntry::from_bytes(b"approved".to_vec(), false),
     )]);
     let base = capture(canonical.path(), None, &base_files, "approved empty base")
         .await

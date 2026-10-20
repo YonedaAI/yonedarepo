@@ -1,7 +1,7 @@
 //! Approved pool/request authority stays immutable while one planner attests an actual roster.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     adaptive_team::{AdaptiveTeam, AgentSelection, ApprovedModel},
 };
@@ -76,7 +76,7 @@ pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
     Ok(())
 }
 fn digest(run: &Value) -> Result<String> {
-    yoneda_core::fingerprint(
+    yoneda_agents_core::fingerprint(
         &json!({"pool":run["approved_model_pool"],"request":run["adaptive_team"]}),
     )
 }
@@ -115,7 +115,7 @@ fn validate_member(pool: &[ApprovedModel], agent: &Value) -> Result<()> {
 pub(super) fn select(
     run: &Value,
     value: Option<&Value>,
-    plan: &mut yoneda_core::team::TeamPlan,
+    plan: &mut yoneda_agents_core::team::TeamPlan,
 ) -> Result<Option<Value>> {
     if run["adaptive_team"].is_null() {
         if value.is_some() {
@@ -200,7 +200,7 @@ pub(super) fn validate_roster(run: &Value, agents: &Value) -> Result<()> {
 pub(super) fn activate(run: &mut Value, agents: &Value) -> Result<()> {
     validate_roster(run, agents)?;
     run["agents"] = agents.clone();
-    run["planned_roster_digest"] = json!(yoneda_core::fingerprint(agents)?);
+    run["planned_roster_digest"] = json!(yoneda_agents_core::fingerprint(agents)?);
     Ok(())
 }
 pub(super) fn validate_approval(run: &Value) -> Result<()> {
@@ -230,7 +230,7 @@ pub(super) fn validate_approval(run: &Value) -> Result<()> {
     }
     if let Some(digest) = run.get("planned_roster_digest") {
         validate_roster(run, &run["agents"])?;
-        if *digest != json!(yoneda_core::fingerprint(&run["agents"])?) {
+        if *digest != json!(yoneda_agents_core::fingerprint(&run["agents"])?) {
             return Err(Error::new(
                 "FENCED",
                 "Platform-attested planned roster changed",

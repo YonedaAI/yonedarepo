@@ -4,7 +4,7 @@ use crate::{
     source_refresh_plan::error,
 };
 use serde_json::{Value, json};
-use yoneda_core::{Result, source_workspace::SourceRevision};
+use yoneda_agents_core::{Result, source_workspace::SourceRevision};
 pub(crate) struct Api {
     origin: String,
     client: reqwest::Client,
@@ -107,7 +107,7 @@ impl Api {
                 let path = path
                     .as_str()
                     .ok_or_else(|| error("Invalid refresh scope entry"))?;
-                yoneda_core::validate_path(path.strip_suffix('/').unwrap_or(path))?;
+                yoneda_agents_core::validate_path(path.strip_suffix('/').unwrap_or(path))?;
                 if path <= previous.as_str() {
                     return Err(error("Refresh path page repeats or reverses cursor"));
                 }
@@ -129,7 +129,7 @@ impl Api {
             }
         }
         if json!(paths.len()) != reference["count"]
-            || yoneda_core::fingerprint(&json!(paths))?
+            || yoneda_agents_core::fingerprint(&json!(paths))?
                 != reference["digest"]
                     .as_str()
                     .ok_or_else(|| error("Refresh path digest missing"))?
@@ -186,7 +186,7 @@ impl Context {
             let digest = reference["digest"]
                 .as_str()
                 .ok_or_else(|| error("Refresh compact path digest missing"))?;
-            yoneda_core::source_workspace::validate_hash(digest, &[64])?;
+            yoneda_agents_core::source_workspace::validate_hash(digest, &[64])?;
             if reference["version"] != 1
                 || reference["id"] != format!("paths:{digest}")
                 || reference["count"]

@@ -1,6 +1,6 @@
 use crate::err;
 use serde_json::Value;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) fn broker_url(path: &str) -> String {
     format!(
         "{}{}",

@@ -1,7 +1,7 @@
 //! Ordinary owner guided workflow. Progress is computed solely from native ledger evidence.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod binding;
 mod evidence;
 mod retry;
@@ -32,7 +32,7 @@ pub(crate) fn validate_publish<S: SqlStore>(db: &S, candidate: &Value) -> Result
     }
     Ok(())
 }
-const PROFILE: &str = yoneda_core::guided::PROFILE_ID;
+const PROFILE: &str = yoneda_agents_core::guided::PROFILE_ID;
 const STEPS: [&str; 4] = ["build", "extend", "concurrent", "review"];
 pub(super) fn guard(c: &Value) -> Result<()> {
     if !["guided_session", "start_guided_step", "context_get"]
@@ -79,7 +79,7 @@ fn identity(c: &Value) -> Result<String> {
         || c.get("profile_id")
             .is_some_and(|profile| profile != PROFILE)
         || c.get("version")
-            .is_some_and(|version| !yoneda_core::guided::supported_version(version))
+            .is_some_and(|version| !yoneda_agents_core::guided::supported_version(version))
     {
         return Err(bad("Invalid guided session/profile identity"));
     }
@@ -98,7 +98,7 @@ fn repository_version(r: &Value) -> Result<Value> {
         Value::Null => json!(1),
         marker => marker["version"].clone(),
     };
-    if !yoneda_core::guided::supported_version(&version) {
+    if !yoneda_agents_core::guided::supported_version(&version) {
         return Err(mismatch());
     }
     Ok(version)
@@ -119,7 +119,7 @@ fn load<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
         Err(e) if e.code == "NOT_FOUND" => {
             let r = repo(db)?;
             Ok(
-                json!({"session_id":id,"profile_id":PROFILE,"version":repository_version(&r)?,"policy_digest":yoneda_core::fingerprint(&r["policy"])? ,"root_commit":r["published_commit"],"root_version":r["version"],"working_branch_id":format!("guide-{}",&yoneda_core::digest(id.as_bytes())[..24]),"steps":STEPS.iter().map(|id|json!({"id":id,"run_ids":[]})).collect::<Vec<_>>(),"requests":{}}),
+                json!({"session_id":id,"profile_id":PROFILE,"version":repository_version(&r)?,"policy_digest":yoneda_agents_core::fingerprint(&r["policy"])? ,"root_commit":r["published_commit"],"root_version":r["version"],"working_branch_id":format!("guide-{}",&yoneda_agents_core::digest(id.as_bytes())[..24]),"steps":STEPS.iter().map(|id|json!({"id":id,"run_ids":[]})).collect::<Vec<_>>(),"requests":{}}),
             )
         }
         Err(e) => Err(e),

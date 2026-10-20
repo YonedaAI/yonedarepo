@@ -1,7 +1,7 @@
 //! Source SDK access stays in the Worker; assembly and write-scope decisions stay in Rust.
 use crate::{broker::broker, team_workspace::Assembly};
 use serde_json::{Value, json};
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 
 pub(crate) async fn load_git(job: &Value) -> Result<crate::transport::GitWorkspace> {
     let base = &job["payload"]["execution"]["base"];

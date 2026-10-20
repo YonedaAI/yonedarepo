@@ -1,7 +1,7 @@
 //! Preserve only the adapter-verified fresh guided starter and immutable oracle identity.
 use crate::storage::*;
 use serde_json::Value;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> {
     let Some(marker) = command.get("_guided_project") else {
@@ -19,10 +19,10 @@ pub(super) fn initialize(command: &Value, repository: &mut Value) -> Result<()> 
             "test_bundle_digest",
         ]
         .contains(&key.as_str())
-    }) || marker["profile_id"] != yoneda_core::guided::PROFILE_ID
-        || !yoneda_core::guided::supported_version(&marker["version"])
-        || repository["policy"]["version"] != yoneda_core::guided::PROFILE_ID
-        || marker["policy_digest"] != yoneda_core::fingerprint(&repository["policy"])?
+    }) || marker["profile_id"] != yoneda_agents_core::guided::PROFILE_ID
+        || !yoneda_agents_core::guided::supported_version(&marker["version"])
+        || repository["policy"]["version"] != yoneda_agents_core::guided::PROFILE_ID
+        || marker["policy_digest"] != yoneda_agents_core::fingerprint(&repository["policy"])?
         || marker["test_bundle_digest"] != repository["policy"]["build"]["test_bundle"]["digest"]
         || marker["starter"]["commit"] != repository["published_commit"]
         || marker["starter"]["branch"] != repository["remote"]["branch"]
@@ -66,7 +66,7 @@ mod tests {
         json!({"op":"init","id":"fresh-guide","name":"Fresh guide","workspace":"owner",
             "commit":"a".repeat(40),"remote":{"namespace":"test","name":"fresh-guide","branch":"main"},
             "policy":policy,"_guided_project":{"profile_id":"task-board-v1","version":1,
-                "policy_digest":yoneda_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64),
+                "policy_digest":yoneda_agents_core::fingerprint(&policy).unwrap(),"test_bundle_digest":"d".repeat(64),
                 "starter":{"repository":"test/guided-starter","branch":"main","commit":"a".repeat(40),"tree":"b".repeat(40)}}})
     }
 

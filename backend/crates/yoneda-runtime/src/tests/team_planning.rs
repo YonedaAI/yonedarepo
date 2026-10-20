@@ -1,5 +1,5 @@
 use super::*;
-use yoneda_core::{FileEntry, Workspace};
+use yoneda_agents_core::{FileEntry, Workspace};
 
 #[test]
 fn planner_describes_the_approved_app_host_instead_of_a_static_only_constraint() {

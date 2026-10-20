@@ -10,7 +10,7 @@ use crate::{
     source_git_rewrite::rewrite_tree,
 };
 use serde_json::{Value, json};
-use yoneda_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
+use yoneda_agents_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
 
 pub(crate) async fn execute(job: &Value) -> Result<Value> {
     if job["kind"] != "capture" || job["payload"]["capture_subtype"] != "source_changeset" {

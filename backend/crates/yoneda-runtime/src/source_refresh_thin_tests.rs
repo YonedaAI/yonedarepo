@@ -82,7 +82,7 @@ async fn actual_thin_delta_preload_resolves_only_against_retained_base() {
     let receiver = SourceGitHttp::new(&s.url, None).unwrap();
     let reference = format!(
         "refs/yoneda/source-input/{}",
-        yoneda_core::digest(b"thin-job")
+        yoneda_agents_core::digest(b"thin-job")
     );
     receiver
         .push_input_ref(&reference, &candidate, &pack, 1024 * 1024)

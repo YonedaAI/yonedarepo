@@ -4,7 +4,7 @@ fn begin() -> Value {
 }
 #[test]
 fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeline() {
-    let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
+    let db = repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap());
     let attempt = call(&db, begin()).unwrap();
     assert_eq!(attempt["external_grant"], "grant-one");
     assert_eq!(attempt["workspace_transport"], "json-v1");
@@ -56,7 +56,7 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
 
 #[test]
 fn contributions_ignore_stored_repository_transport_and_forged_git_receipts() {
-    let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
+    let db = repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap());
     let mut repository = crate::storage::get(&db, "repository", "repo").unwrap();
     repository["workspace_transport"] = json!("api-source-v1");
     crate::storage::save(&db, "repository", "repo", &repository).unwrap();
@@ -91,7 +91,7 @@ fn contributions_ignore_stored_repository_transport_and_forged_git_receipts() {
 }
 #[test]
 fn expired_external_attempts_never_schedule_a_paid_harness() {
-    let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
+    let db = repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap());
     call(&db, begin()).unwrap();
     assert!(call(&db, json!({"op":"claim","job_id":"job:external-one"})).is_err());
     let mut recover = json!({"op":"recover","now":3601001});

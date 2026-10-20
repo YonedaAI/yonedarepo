@@ -1,6 +1,6 @@
 //! Study retrieval uses frozen selected records, never an unrestricted page filtered afterward.
 use super::*;
-use yoneda_core::Error;
+use yoneda_agents_core::Error;
 
 pub(super) fn run<S: SqlStore>(db: &S, job: &Value) -> Result<Value> {
     let run = get(db, "runs", &string(&job["payload"]["execution"], "run_id")?)?;

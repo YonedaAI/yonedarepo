@@ -9,6 +9,7 @@ native = ["dep:rusqlite", "yoneda-store/native"]
 
 [dependencies]
 yoneda-core.workspace = true
+yoneda-agents-core.workspace = true
 yoneda-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true

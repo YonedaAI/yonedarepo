@@ -5,7 +5,7 @@ use crate::{
 };
 use std::path::Path;
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(crate) async fn read_git_revision(
     remote: &str,
@@ -78,7 +78,7 @@ async fn read_fetched_tree(root: &Path, revision: &str) -> Result<crate::transpo
             ));
         }
         let path = std::str::from_utf8(name).map_err(err)?.to_owned();
-        yoneda_core::validate_path(&path)?;
+        yoneda_agents_core::validate_path(&path)?;
         let bytes = git_raw(root, &["cat-file", "blob", fields[2]]).await?;
         size = size.saturating_add(bytes.len());
         if files.len() >= 10_000 || size > 100 * 1024 * 1024 || bytes.len() > 32_000_000 {
@@ -153,7 +153,7 @@ pub(crate) fn validate_revision(revision: &str) -> Result<()> {
 
 pub(crate) fn validate_shape(files: &crate::transport::GitWorkspace) -> Result<()> {
     for path in files.keys() {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         let mut prefix = path.as_str();
         while let Some((parent, _)) = prefix.rsplit_once('/') {
             if files.contains_key(parent) {

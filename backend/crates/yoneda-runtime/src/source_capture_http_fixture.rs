@@ -160,7 +160,7 @@ fn blob(f: &Fixture, args: &Value, fault: u8) -> Response<Body> {
             },
         )
     };
-    let sha = yoneda_core::digest(&bytes);
+    let sha = yoneda_agents_core::digest(&bytes);
     let size = bytes.len();
     let offset = args["offset"].as_u64().unwrap() as usize;
     let length = (args["limit"].as_u64().unwrap() as usize).min(size - offset);

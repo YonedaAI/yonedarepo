@@ -5,7 +5,7 @@ use crate::{
 use serde_json::{Value, json};
 use std::{path::Path, time::Duration};
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 #[path = "evaluation_commands.rs"]
 mod commands;
 #[path = "evaluation_guided.rs"]
@@ -47,9 +47,9 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
 async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {
     let guide = guided::validate(job)?;
     if !job["payload"]["policy"]["build"].is_null() {
-        let policy: yoneda_core::Policy =
+        let policy: yoneda_agents_core::Policy =
             serde_json::from_value(job["payload"]["policy"].clone()).map_err(err)?;
-        yoneda_core::build::validate_policy(&policy)?;
+        yoneda_agents_core::build::validate_policy(&policy)?;
         let profile = policy
             .build
             .as_ref()
@@ -85,7 +85,7 @@ async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {
                     }
                     report["app_bundle_digest"] = json!(digest);
                     report["app_revision"] = json!(commit);
-                    report["app_policy_digest"] = json!(yoneda_core::fingerprint(
+                    report["app_policy_digest"] = json!(yoneda_agents_core::fingerprint(
                         &serde_json::to_value(&policy).map_err(err)?
                     )?);
                 }
@@ -102,7 +102,7 @@ async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {
                 Err(error) => crate::site::record_failure(&mut report, &error),
             }
         }
-        report["environment"] = json!(yoneda_core::build::ENVIRONMENT);
+        report["environment"] = json!(yoneda_agents_core::build::ENVIRONMENT);
         report["suite"] = json!(policy.suite);
         let mut fields = crate::test_bundle::report_fields(
             profile.test_bundle.as_ref(),
@@ -124,7 +124,8 @@ async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {
     let build = bounded_output(&mut command).await?;
     let mut cases = Vec::new();
     if build["exit"] == 0 {
-        for case in yoneda_core::retry::cases_for_suite(field(&job["payload"]["policy"], "suite")?)?
+        for case in
+            yoneda_agents_core::retry::cases_for_suite(field(&job["payload"]["policy"], "suite")?)?
         {
             let mut command = Command::new("/work/target/release/retry-client");
             untrusted(&mut command, root);

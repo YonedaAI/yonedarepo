@@ -89,7 +89,7 @@ fn public(value: &Value) -> Value {
 }
 
 fn validate_priced_model(provider: &str, model: &str) -> Result<()> {
-    let registry: Vec<Value> = serde_json::from_str(yoneda_core::providers::MANIFEST)
+    let registry: Vec<Value> = serde_json::from_str(yoneda_agents_core::providers::MANIFEST)
         .map_err(|_| bad("Provider registry unavailable"))?;
     let entry = registry
         .iter()

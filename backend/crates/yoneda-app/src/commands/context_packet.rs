@@ -2,7 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 mod ranking;
 mod scope;
 use ranking::{Selection, ranked};
@@ -29,7 +29,7 @@ pub(super) fn search<S: SqlStore>(db: &S, c: &Value, job: Option<&Value>) -> Res
         identity["run_id"] = run["id"].clone();
         identity["study"] = run["context_study"].clone();
     }
-    let fingerprint = yoneda_core::fingerprint(&identity)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&identity)?;
     let latest = db.query("SELECT COALESCE(MAX(rowid),0) AS watermark FROM nodes", &[])?;
     let latest = number(&latest[0], "watermark")?;
     let (offset, watermark) = if let Some(cursor) = c["cursor"].as_str().filter(|v| !v.is_empty()) {
@@ -153,7 +153,7 @@ pub(super) fn freeze<S: SqlStore>(db: &S, run: &mut Value, branch: Option<&Value
     }
     run["context"] = json!(records.iter().map(|r| r["id"].clone()).collect::<Vec<_>>());
     run["context_records"] = json!(records);
-    run["context_packet"] = json!({"version":1,"digest":yoneda_core::fingerprint(&run["context_records"])?
+    run["context_packet"] = json!({"version":1,"digest":yoneda_agents_core::fingerprint(&run["context_records"])?
         ,"source_revision":run["base"],"prior_run_id":(!prior_run.is_empty()).then_some(prior_run),"record_count":ids.len(),"bytes":bytes,"max_bytes":MAX_PACKET_BYTES,"omitted_ranked_records":omitted,"coverage":"ranked retrieval; not the complete repository history"});
     Ok(())
 }

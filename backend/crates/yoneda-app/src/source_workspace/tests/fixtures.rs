@@ -43,7 +43,7 @@ pub(super) fn binding() -> SourceBinding {
         role: SourceRole::Builder,
         access: SourceAccess::ReadWrite,
         view_digest: digest,
-        baseline_overrides_digest: yoneda_core::fingerprint(&json!([])).unwrap(),
+        baseline_overrides_digest: yoneda_agents_core::fingerprint(&json!([])).unwrap(),
         base: view.base.clone(),
         parents: vec![view.base.commit.clone()],
         policy_digest: "d".repeat(64),
@@ -84,7 +84,7 @@ pub(super) fn ticket(
     version: i64,
     file_version: i64,
 ) -> Value {
-    let hash = yoneda_core::digest(bytes);
+    let hash = yoneda_agents_core::digest(bytes);
     let receipt=call(db,json!({"op":"source_upload_ticket","request_id":format!("ticket-{path}-{version}"),"path":path,"sha256":hash,"size":bytes.len(),"mode":"100644","expected_workspace_version":version,"expected_file_version":file_version})).unwrap();
     call(db,json!({"op":"source_verify_upload","request_id":format!("verify-{path}-{version}"),"ticket_id":receipt["ticket"]["id"],"sha256":hash,"size":bytes.len()})).unwrap()
 }

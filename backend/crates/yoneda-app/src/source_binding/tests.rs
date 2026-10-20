@@ -419,7 +419,7 @@ fn failed_comparison_roots_expose_only_actual_captured_review_inputs() {
         let manifest = json!({"version":1,"alternatives":[{"agent_index":0,"candidate_id":null,"revision":null,"status":"failed"},{"agent_index":1,"candidate_id":if captured {json!("captured")}else{Value::Null},"revision":if captured {revision.clone()}else{Value::Null},"status":if captured{"rejected"}else{"failed"}}]});
         let mut job = get(&db, "jobs", "job").unwrap();
         job["payload"]["execution"] = e;
-        job["payload"]["comparison_manifest"] = json!({"manifest":manifest,"manifest_digest":yoneda_core::fingerprint(&manifest).unwrap()});
+        job["payload"]["comparison_manifest"] = json!({"manifest":manifest,"manifest_digest":yoneda_agents_core::fingerprint(&manifest).unwrap()});
         save(&db, "jobs", "job", &job).unwrap();
         let context = call(
             &db,

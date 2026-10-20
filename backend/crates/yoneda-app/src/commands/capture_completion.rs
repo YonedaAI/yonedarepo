@@ -1,7 +1,7 @@
 //! Trusted capture creates final candidates or intermediate team handoffs.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
     let source_lineage = super::capture_source::validate(db, j, result, now)?;
     super::comparison::validate_capture(db, j, result)?;
@@ -16,7 +16,9 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         .as_array()
         .ok_or_else(|| bad("Capture must enumerate changed paths"))?;
     for path in paths {
-        yoneda_core::validate_path(path.as_str().ok_or_else(|| bad("Invalid changed path"))?)?;
+        yoneda_agents_core::validate_path(
+            path.as_str().ok_or_else(|| bad("Invalid changed path"))?,
+        )?;
     }
     if result.get("file_provenance").is_some() {
         super::history::capture_file_provenance(db, j, result, now)?;
@@ -78,14 +80,14 @@ mod tests {
             &db,
             json!({"op":"init","now":1000,"id":"transport","name":"Transport fixture",
             "remote":{"namespace":"test","name":"transport"},"commit":"a".repeat(40),
-            "policy":yoneda_core::Policy::default()}),
+            "policy":yoneda_agents_core::Policy::default()}),
         )
         .unwrap();
         let execution = json!({"id":"execution","run_id":"run","status":"capturing"});
         create(&db, "executions", "execution", &execution).unwrap();
         let job = json!({"id":"capture","payload":{"execution":execution,"base":{"repository":"test/transport","commit":"a".repeat(40)}}});
         let diff = "x".repeat(1024 * 1024 + 1);
-        let digest = yoneda_core::digest(diff.as_bytes());
+        let digest = yoneda_agents_core::digest(diff.as_bytes());
         let result = json!({"id":"candidate","revision":{"repository":"test/fork","commit":"b".repeat(40)},
             "tree":"c".repeat(40),"paths":["large.txt"],"diff":diff,"diff_digest":digest,"summary":"Large candidate"});
         complete(&db, &job, &result, 1000).unwrap();

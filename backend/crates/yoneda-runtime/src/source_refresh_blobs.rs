@@ -6,7 +6,7 @@ use crate::{
 use serde_json::json;
 use std::{fs, path::Path};
 use tokio::io::AsyncWriteExt;
-use yoneda_core::{Result, source_workspace::MAX_FILE_BYTES};
+use yoneda_agents_core::{Result, source_workspace::MAX_FILE_BYTES};
 pub(crate) struct Blob {
     pub file: std::path::PathBuf,
     pub size: u64,

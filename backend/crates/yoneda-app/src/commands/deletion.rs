@@ -2,7 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let workspace = string(c, "_workspace")?;
@@ -59,13 +59,14 @@ pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         let job_id = string(&job, "id")?;
         if job["kind"] == "capture" {
             for epoch in 1..=number(&job, "attempt")?.min(2) {
-                let digest = yoneda_core::digest(format!("{id}:{job_id}:{epoch}").as_bytes());
+                let digest =
+                    yoneda_agents_core::digest(format!("{id}:{job_id}:{epoch}").as_bytes());
                 remotes.insert(format!("candidate-{}", &digest[..32]));
             }
         }
         if job["external"] == true {
             let execution = string(&job["payload"]["execution"], "id")?;
-            let digest = yoneda_core::digest(execution.as_bytes());
+            let digest = yoneda_agents_core::digest(execution.as_bytes());
             let name = format!("contribution-{}", &digest[..32]);
             if job["external_fork"] == format!("{namespace}/{name}") {
                 remotes.insert(name);

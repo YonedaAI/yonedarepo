@@ -7,7 +7,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) struct Metadata {
     pub files: Files,
     pub directories: BTreeMap<String, Vec<TreeEntry>>,
@@ -98,7 +98,7 @@ pub(crate) async fn walk(
             } else {
                 format!("{path}/{}", entry.name)
             };
-            yoneda_core::validate_path(&full)?;
+            yoneda_agents_core::validate_path(&full)?;
             if entry.mode == 0o040000 {
                 pending.push((full, entry.oid.clone()));
             } else if result.files.insert(full, entry.clone()).is_some() {

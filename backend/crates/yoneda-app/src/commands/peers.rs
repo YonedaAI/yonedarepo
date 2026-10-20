@@ -1,7 +1,7 @@
 //! Bounded awareness of assigned work, without exposing competing candidate source.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn read<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let job = active(db, c, now)?;
     if job["kind"] != "agent" {

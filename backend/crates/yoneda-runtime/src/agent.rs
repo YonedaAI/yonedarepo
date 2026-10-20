@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use std::path::Path;
 #[cfg(any(target_os = "linux", test))]
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     validate_reasoning_job(job)?;
     let approved_budget = crate::execution_limits::model_budget(job)?;
@@ -58,13 +58,14 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
 
 fn validate_reasoning_job(job: &Value) -> Result<()> {
     let execution = &job["payload"]["execution"];
-    let effort = yoneda_core::adaptive_team::execution_effort(&job["payload"]["run"], execution)?;
+    let effort =
+        yoneda_agents_core::adaptive_team::execution_effort(&job["payload"]["run"], execution)?;
     if effort.is_some()
         && (job["model"] != execution["model"]
             || execution["harness"]
-                != yoneda_core::providers::provider(field(execution, "provider")?)?.harness)
+                != yoneda_agents_core::providers::provider(field(execution, "provider")?)?.harness)
     {
-        return Err(yoneda_core::Error::new(
+        return Err(yoneda_agents_core::Error::new(
             "FENCED",
             "Reasoning effort model or harness changed",
         ));

@@ -98,7 +98,7 @@ async fn negotiated_pack_excludes_base_objects_preserves_raw_commit_and_recovers
     assert!(!listed.lines().any(|line| line.starts_with(&base)));
     let reference = format!(
         "refs/yoneda/source-input/{}",
-        yoneda_core::digest(b"capture-job")
+        yoneda_agents_core::digest(b"capture-job")
     );
     let receiver = SourceGitHttp::new(&s.url, None).unwrap();
     s.lose_ack.store(true, Ordering::SeqCst);

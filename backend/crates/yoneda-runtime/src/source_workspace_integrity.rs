@@ -1,6 +1,6 @@
 //! Independent evaluator oracle from trusted captured Git path metadata, never model claims.
 use serde_json::Value;
-use yoneda_core::{Result, build::BuildProfile};
+use yoneda_agents_core::{Result, build::BuildProfile};
 pub(crate) fn fields(job: &Value, profile: &BuildProfile, digest: Option<&str>) -> Result<Value> {
     let mut fields = crate::test_bundle::report_fields(profile.test_bundle.as_ref(), digest, job);
     let payload = &job["payload"];
@@ -35,7 +35,7 @@ pub(crate) fn fields(job: &Value, profile: &BuildProfile, digest: Option<&str>) 
         || candidate["paths_ref"]["version"] != 1
         || proof["paths_digest"] != candidate["paths_ref"]["digest"]
         || !hex(&proof["paths_digest"])
-        || proof["policy_digest"] != yoneda_core::fingerprint(&payload["policy"])?
+        || proof["policy_digest"] != yoneda_agents_core::fingerprint(&payload["policy"])?
     {
         return Err(crate::err(
             "Source integrity differs from captured candidate or frozen policy",
@@ -64,14 +64,14 @@ pub(crate) fn fields(job: &Value, profile: &BuildProfile, digest: Option<&str>) 
     Ok(fields)
 }
 
-pub(crate) fn blocked_report(fields: Value, policy: &yoneda_core::Policy) -> Option<Value> {
+pub(crate) fn blocked_report(fields: Value, policy: &yoneda_agents_core::Policy) -> Option<Value> {
     if fields["protected_changes"]
         .as_array()
         .is_none_or(|paths| paths.is_empty())
     {
         return None;
     }
-    let mut report = serde_json::json!({"setup":[],"commands":[],"environment":yoneda_core::build::ENVIRONMENT,"suite":policy.suite});
+    let mut report = serde_json::json!({"setup":[],"commands":[],"environment":yoneda_agents_core::build::ENVIRONMENT,"suite":policy.suite});
     if let (Some(report), Some(fields)) = (report.as_object_mut(), fields.as_object()) {
         report.extend(fields.clone());
     }
@@ -82,14 +82,14 @@ pub(crate) fn blocked_report(fields: Value, policy: &yoneda_core::Policy) -> Opt
 mod tests {
     use super::*;
     use serde_json::json;
-    use yoneda_core::{
+    use yoneda_agents_core::{
         Policy,
         build::{CommandSpec, TestBundlePolicy},
     };
     fn policy() -> Policy {
         Policy {
             suite: "commands-v1".into(),
-            environment: yoneda_core::build::ENVIRONMENT.into(),
+            environment: yoneda_agents_core::build::ENVIRONMENT.into(),
             required_checks: vec!["protected".into()],
             build: Some(BuildProfile {
                 app: None,
@@ -111,13 +111,13 @@ mod tests {
     fn job(policy: &Policy, protected: Value) -> Value {
         let policy = serde_json::to_value(policy).unwrap();
         let revision = json!({"repository":"repo","commit":"1".repeat(40)});
-        json!({"payload":{"workspace_transport":"api-source-v1","policy":policy,"candidate":{"id":"candidate","revision":revision,"paths_ref":{"version":1,"id":"paths","count":10000,"digest":"d".repeat(64)}},"source_integrity":{"version":1,"candidate_id":"candidate","revision":revision,"paths_digest":"d".repeat(64),"protected_changes":protected,"policy_digest":yoneda_core::fingerprint(&policy).unwrap()}}})
+        json!({"payload":{"workspace_transport":"api-source-v1","policy":policy,"candidate":{"id":"candidate","revision":revision,"paths_ref":{"version":1,"id":"paths","count":10000,"digest":"d".repeat(64)}},"source_integrity":{"version":1,"candidate_id":"candidate","revision":revision,"paths_digest":"d".repeat(64),"protected_changes":protected,"policy_digest":yoneda_agents_core::fingerprint(&policy).unwrap()}}})
     }
     fn check(protected: Value) -> String {
         let policy = policy();
         let profile = policy.build.as_ref().unwrap();
         let job = job(&policy, protected);
-        let mut report = json!({"commands":[{"name":"protected","output":{"exit":0}}],"setup":[],"environment":yoneda_core::build::ENVIRONMENT,"suite":policy.suite});
+        let mut report = json!({"commands":[{"name":"protected","output":{"exit":0}}],"setup":[],"environment":yoneda_agents_core::build::ENVIRONMENT,"suite":policy.suite});
         report.as_object_mut().unwrap().extend(
             fields(&job, profile, Some(&"a".repeat(64)))
                 .unwrap()
@@ -125,7 +125,7 @@ mod tests {
                 .unwrap()
                 .clone(),
         );
-        yoneda_core::build::checks_from_report(&policy, &report).unwrap()[0]
+        yoneda_agents_core::build::checks_from_report(&policy, &report).unwrap()[0]
             .status
             .clone()
     }

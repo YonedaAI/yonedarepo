@@ -190,7 +190,7 @@ async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
 #[test]
 fn gemini_turn_budget_uses_approved_request_allowance_and_preserves_legacy_default() {
     let mcp = json!({"mcpServers":{"yonedarepo":{"command":"/usr/local/bin/yoneda-runtime","args":["mcp"]}}});
-    let budget: yoneda_core::model_budget::ModelBudget = serde_json::from_value(json!({
+    let budget: yoneda_agents_core::model_budget::ModelBudget = serde_json::from_value(json!({
         "provider":"gemini","model":"gemini-3.8-flash","max_requests":48,"max_output_tokens":4096,
         "max_execution_ms":600000,"spend_limit_microusd":null,"pricing":null}))
     .unwrap();

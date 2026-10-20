@@ -1,7 +1,7 @@
 //! Personal workspace authority. Only trusted Worker adapters can call these commands.
 use crate::storage::{SqlStore, bad, get, save, string};
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod accounts;
 mod budget;
 mod campaign;
@@ -98,7 +98,7 @@ fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             "SELECT version,digest FROM workspace_migrations ORDER BY version",
             &[],
         )?;
-        let digest = yoneda_core::digest(SQL.as_bytes());
+        let digest = yoneda_agents_core::digest(SQL.as_bytes());
         if applied
             .iter()
             .any(|r| r["version"] != 1 || r["digest"] != digest)

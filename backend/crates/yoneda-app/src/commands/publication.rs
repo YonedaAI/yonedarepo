@@ -1,7 +1,7 @@
 //! Owner rejection and recovery of a falsely conflicted publication. Neither moves canonical Git.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 const MAX_REASON: usize = 2000;
 const MAX_REQUEST_ID: usize = 128;
@@ -61,7 +61,7 @@ fn reject<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let cid = string(c, "candidate")?;
     let input = json!({"request_id":request,"candidate":cid,"expected_commit":c["expected_commit"],
         "expected_version":c["expected_version"],"reason":reason});
-    let fingerprint = yoneda_core::fingerprint(&input)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&input)?;
     for d in all(db, "decisions")? {
         if d["request_id"] == request {
             if d["fingerprint"] != fingerprint {
@@ -130,8 +130,8 @@ fn recover<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     // The trusted adapter's fresh observation is checked below, not fingerprinted, so a replay
     // after acknowledgement loss still returns its receipt once the remote has advanced.
     let fingerprint =
-        yoneda_core::fingerprint(&json!({"decision_id":did,"expected_version":expected}))?;
-    let key = yoneda_core::digest(request.as_bytes());
+        yoneda_agents_core::fingerprint(&json!({"decision_id":did,"expected_version":expected}))?;
+    let key = yoneda_agents_core::digest(request.as_bytes());
     if let Some(prior) = r["publication_recoveries"].get(&key) {
         if prior["fingerprint"] != fingerprint {
             return Err(Error::new(

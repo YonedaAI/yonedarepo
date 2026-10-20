@@ -1,7 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     agents::{MAX_ROOT_AGENTS, MIN_ROOT_AGENTS},
 };
@@ -31,7 +31,7 @@ pub(super) fn validate_agents(c: &Value) -> Result<()> {
         }
         let model = string(agent, "model")?;
         if let Some(value) = agent.get("reasoning_effort").filter(|v| !v.is_null()) {
-            yoneda_core::adaptive_team::validate_effort(
+            yoneda_agents_core::adaptive_team::validate_effort(
                 &provider,
                 &model,
                 value
@@ -40,12 +40,12 @@ pub(super) fn validate_agents(c: &Value) -> Result<()> {
             )?;
         }
         if let Some(value) = agent.get("routing").filter(|v| !v.is_null()) {
-            let route: yoneda_core::provider_routing::ProviderRouting =
+            let route: yoneda_agents_core::provider_routing::ProviderRouting =
                 serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
             route.validate(&provider)?;
         }
         let strategy = string(agent, "strategy")?;
-        if yoneda_core::providers::validate_model(&provider, &model).is_err()
+        if yoneda_agents_core::providers::validate_model(&provider, &model).is_err()
             || model.len() > 128
             || !model
                 .bytes()
@@ -68,7 +68,7 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
         let rid = string(run, "id")?;
         let id = format!("{rid}:agent-{}", index + 1);
         let provider = string(agent, "provider")?;
-        let harness = &yoneda_core::providers::provider(&provider)?.harness;
+        let harness = &yoneda_agents_core::providers::provider(&provider)?.harness;
         let mut e = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(|| json!(provider)),"model":agent["model"],"strategy":agent["strategy"],"role":"coding","status":"queued","context":run["context"],"base":run["base"],"depth":0});
         if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
             e["routing"] = routing.clone();

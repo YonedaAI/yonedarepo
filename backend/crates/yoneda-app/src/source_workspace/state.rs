@@ -37,7 +37,7 @@ pub(super) fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         decode(c.get("baseline_overrides").unwrap_or(&json!([])))?;
     if view.base != binding.base
         || view_digest(&view, &overrides)? != binding.view_digest
-        || yoneda_core::fingerprint(&json!(overrides))? != binding.baseline_overrides_digest
+        || yoneda_agents_core::fingerprint(&json!(overrides))? != binding.baseline_overrides_digest
     {
         return Err(Error::new(
             "FENCED",
@@ -106,7 +106,7 @@ pub(super) fn fingerprint(c: &Value) -> Result<String> {
         .as_object_mut()
         .ok_or_else(|| bad("Invalid source command"))?
         .retain(|k, _| k != "now" && !k.starts_with('_'));
-    yoneda_core::fingerprint(&public)
+    yoneda_agents_core::fingerprint(&public)
 }
 pub(super) fn record<S: SqlStore>(
     db: &S,
@@ -148,7 +148,7 @@ pub(super) fn check_version(c: &Value, state: &Value) -> Result<()> {
     Ok(())
 }
 pub(super) fn row<S: SqlStore>(db: &S, path: &str) -> Result<Value> {
-    yoneda_core::validate_path(path)?;
+    yoneda_agents_core::validate_path(path)?;
     match get(db, "sw_files", path) {
         Ok(value) => Ok(value),
         Err(e) if e.code == "NOT_FOUND" => Ok(json!({"id":path,"file_version":0,"file":null})),

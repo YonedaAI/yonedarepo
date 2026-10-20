@@ -1,5 +1,5 @@
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod active_runs;
 mod history;
 mod jobs;

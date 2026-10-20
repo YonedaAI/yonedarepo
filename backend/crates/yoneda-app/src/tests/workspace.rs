@@ -1,7 +1,7 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut command: Value) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut command: Value) -> yoneda_agents_core::Result<Value> {
     command["now"] = json!(1000);
     execute_workspace(db, command)
 }
@@ -162,7 +162,7 @@ fn project_reservations_validate_policy_and_resume_without_changing_identity() {
 fn repository_grants_are_bounded_hashed_revocable_and_recovery_invalidates_them() {
     let db = NativeStore::memory().unwrap();
     signup(&db);
-    call(&db,json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_core::Policy::default()})).unwrap();
+    call(&db,json!({"op":"project_reserve","id":"repo-one","name":"One","policy":yoneda_agents_core::Policy::default()})).unwrap();
     call(
         &db,
         json!({"op":"project_update","id":"repo-one","status":"ready"}),

@@ -1,7 +1,7 @@
 //! Reversible owner-only history visibility; immutable run evidence remains in the ledger.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let repository = repo(db)?;

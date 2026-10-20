@@ -5,7 +5,11 @@ use crate::storage::{
 mod archive_command {
     use crate::SqlStore;
     use serde_json::{Value, json};
-    pub fn handle<S: SqlStore>(db: &S, mut command: Value, now: i64) -> yoneda_core::Result<Value> {
+    pub fn handle<S: SqlStore>(
+        db: &S,
+        mut command: Value,
+        now: i64,
+    ) -> yoneda_agents_core::Result<Value> {
         command["now"] = json!(now);
         crate::execute(db, command)
     }
@@ -206,7 +210,7 @@ fn archive_commit_replay_and_corruption_keep_audited_receipt() {
     let job = &prepared["job"];
     let digest = job["digest"].as_str().unwrap();
     let bundle_json = prepared["bundle_json"].as_str().unwrap();
-    assert_eq!(yoneda_core::digest(bundle_json.as_bytes()), digest);
+    assert_eq!(yoneda_agents_core::digest(bundle_json.as_bytes()), digest);
     let bundle: Value = serde_json::from_str(bundle_json).unwrap();
     for mutable in ["repository", "archive", "capabilities", "seq", "watermark"] {
         assert!(
@@ -327,10 +331,10 @@ fn run_detail_and_graph_scope_actual_evaluation_and_producer_execution_artifact_
     let run_id = created["id"].as_str().unwrap();
     let execution_id = "run-one:research";
     db.query("INSERT INTO candidates(id,payload) VALUES('candidate-actual',?)", &[json!(json!({"id":"candidate-actual","run_id":run_id,"execution":execution_id,"status":"evaluated"}).to_string())]).unwrap();
-    let evaluation = yoneda_core::Evaluation {
+    let evaluation = yoneda_agents_core::Evaluation {
         id: "evaluation-actual".into(),
         candidate: "candidate-actual".into(),
-        revision: yoneda_core::Revision {
+        revision: yoneda_agents_core::Revision {
             repository: "example/project".into(),
             commit: "a".repeat(40),
         },
@@ -501,7 +505,10 @@ fn migration_eleven_upgrades_a_real_v8_schema_and_repeats_cleanly() {
         }
         db.query(
             "INSERT INTO schema_migrations(version,digest) VALUES(?,?)",
-            &[json!(index + 1), json!(yoneda_core::digest(sql.as_bytes()))],
+            &[
+                json!(index + 1),
+                json!(yoneda_agents_core::digest(sql.as_bytes())),
+            ],
         )
         .unwrap();
     }

@@ -1,10 +1,10 @@
 //! Filesystem-facing projection of the server-authoritative source API.
 use std::sync::atomic::{AtomicBool, Ordering};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub const SOURCE_READ_MAX: usize = 64 * 1024;
 pub const SOURCE_CACHE_MAX: usize = 8 * 1024 * 1024;
-pub const SOURCE_FILE_MAX: u64 = yoneda_core::source_workspace::MAX_FILE_BYTES;
+pub const SOURCE_FILE_MAX: u64 = yoneda_agents_core::source_workspace::MAX_FILE_BYTES;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceNode {
@@ -110,7 +110,7 @@ pub fn validate_path(path: &str, root: bool) -> Result<()> {
     if path.is_empty() && root {
         return Ok(());
     }
-    yoneda_core::validate_path(path)?;
+    yoneda_agents_core::validate_path(path)?;
     if path.len() > 512 || path.contains(':') || path.contains('\\') {
         return Err(failure("INVALID_SOURCE", "Invalid source path"));
     }

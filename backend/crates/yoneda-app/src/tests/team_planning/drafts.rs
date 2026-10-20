@@ -129,7 +129,7 @@ fn team_planner_completion_rejects_a_forged_active_draft_without_dispatching_sou
             "plan" => {
                 draft["data"]["plan"] = changed("Forged source plan");
                 draft["data"]["fingerprint"] =
-                    json!(yoneda_core::fingerprint(&draft["data"]["plan"]).unwrap());
+                    json!(yoneda_agents_core::fingerprint(&draft["data"]["plan"]).unwrap());
             }
             _ => draft["data"][field] = json!("forged"),
         }

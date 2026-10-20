@@ -24,7 +24,7 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("A bounded stable coordination retry ID is required"));
     }
     let mut run = get(db, "runs", &rid)?;
-    let fingerprint = yoneda_core::fingerprint(&json!({"request_id":request,"run_id":rid,
+    let fingerprint = yoneda_agents_core::fingerprint(&json!({"request_id":request,"run_id":rid,
         "job":c["expected_coordinator_job"],"epoch":c["expected_epoch"],"commit":c["expected_commit"],
         "version":c["expected_version"],"plan_revision":c["expected_plan_revision"]}))?;
     if let Some(previous) = run.get("coordinator_owner_retry") {
@@ -42,7 +42,7 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         }
         return Ok(previous["receipt"].clone());
     }
-    let approval: yoneda_core::autonomy::AutonomyPolicy =
+    let approval: yoneda_agents_core::autonomy::AutonomyPolicy =
         serde_json::from_value(run["autonomy_policy"].clone())
             .map_err(|_| Error::new("FORBIDDEN", "Original bounded autonomy approval required"))?;
     approval.validate()?;
@@ -57,7 +57,7 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         || run["intent"] != run["autonomy_approval"]["intent"]
         || run["criteria"] != run["autonomy_approval"]["criteria"]
         || run["agents"] != run["autonomy_approval"]["agents"]
-        || json!(yoneda_core::fingerprint(&run["autonomy_policy"])?)
+        || json!(yoneda_agents_core::fingerprint(&run["autonomy_policy"])?)
             != run["autonomy_policy_digest"]
         || configuration(&run["model_budgets"])?
             != configuration(&run["autonomy_approval"]["model_budgets"])?
@@ -153,7 +153,7 @@ fn observe_shared_limits(c: &Value, run: &mut Value) -> Result<()> {
     if observations.len() > agents.len() {
         return Err(bad("Too many shared model observations"));
     }
-    let budgets: Vec<yoneda_core::model_budget::ModelBudget> =
+    let budgets: Vec<yoneda_agents_core::model_budget::ModelBudget> =
         serde_json::from_value(run["model_budgets"].clone())
             .map_err(|_| bad("Invalid frozen model budgets"))?;
     let mut groups = run["unavailable_model_groups"]
@@ -180,7 +180,7 @@ fn observe_shared_limits(c: &Value, run: &mut Value) -> Result<()> {
         let charged = number(observed, "charged_microusd")?;
         let cap = number(observed, "max_requests")?;
         let spend = number(observed, "spend_limit_microusd")?;
-        let maximum = yoneda_core::model_budget::MAX_SAFE_BUDGET_INTEGER;
+        let maximum = yoneda_agents_core::model_budget::MAX_SAFE_BUDGET_INTEGER;
         if !(0..=maximum).contains(&requests)
             || !(0..=maximum).contains(&charged)
             || budget.max_requests != Some(cap)

@@ -9,7 +9,7 @@ pub(super) fn start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<()> {
     let rid = string(run, "id")?;
     let id = format!("{rid}:planner");
     let provider = string(agent, "provider")?;
-    let harness = &yoneda_core::providers::provider(&provider)?.harness;
+    let harness = &yoneda_agents_core::providers::provider(&provider)?.harness;
     let mut execution = json!({"id":id,"run_id":rid,"harness":harness,"provider":provider,"connection":agent.get("connection").cloned().unwrap_or_else(||json!(provider)),"model":agent["model"],"strategy":"Plan the shared implementation","role":"coding","team_role":"planner","status":"queued","context":run["context"],"base":run["base"],"depth":0,"task":"Inspect the brief, source and prior context. Propose a complementary bounded task DAG with explicit source ownership and an integrator. Do not modify source."});
     if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
         execution["routing"] = routing.clone();

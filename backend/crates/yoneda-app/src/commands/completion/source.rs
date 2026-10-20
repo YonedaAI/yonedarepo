@@ -1,7 +1,7 @@
 //! Coding can only hand off the current independently registered source seal.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     source_workspace::{SourceAccess, SourceBinding, SourceRole},
 };
@@ -53,7 +53,8 @@ pub(super) fn payload<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) 
         now,
     )?;
     let policy = j["payload"]["policy"].clone();
-    if policy != repo(db)?["policy"] || yoneda_core::fingerprint(&policy)? != binding.policy_digest
+    if policy != repo(db)?["policy"]
+        || yoneda_agents_core::fingerprint(&policy)? != binding.policy_digest
     {
         return Err(Error::new(
             "POLICY_CHANGED",

@@ -1,7 +1,7 @@
 //! Frozen approval bounds agent coordination; product ambiguity remains an owner decision.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, autonomy::AutonomyPolicy};
+use yoneda_agents_core::{Error, Result, autonomy::AutonomyPolicy};
 mod intent;
 pub(super) use intent::{hold_candidate, intent_pending, validate_candidate};
 
@@ -46,7 +46,7 @@ pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
         ));
     }
     let approved = serde_json::to_value(policy).map_err(|e| bad(&e.to_string()))?;
-    run["autonomy_policy_digest"] = json!(yoneda_core::fingerprint(&approved)?);
+    run["autonomy_policy_digest"] = json!(yoneda_agents_core::fingerprint(&approved)?);
     run["autonomy_policy"] = approved;
     run["approved_policy"] = run["policy"].clone();
     run["autonomy_approval"] = json!({"intent":run["intent"],"criteria":run["criteria"],"agents":run["agents"],"model_budgets":run["model_budgets"],"policy":run["policy"]});
@@ -91,9 +91,9 @@ pub(super) fn authorize_repair<S: SqlStore>(
         || run["criteria"] != run["autonomy_approval"]["criteria"]
         || super::adaptive_team::validate_approval(run).is_err()
         || run["adaptive_team"].is_object()
-            && yoneda_core::adaptive_team::execution_effort(run, execution).is_err()
+            && yoneda_agents_core::adaptive_team::execution_effort(run, execution).is_err()
         || job["payload"]["run"]["autonomy_approval"] != run["autonomy_approval"]
-        || json!(yoneda_core::fingerprint(&run["autonomy_policy"])?)
+        || json!(yoneda_agents_core::fingerprint(&run["autonomy_policy"])?)
             != run["autonomy_policy_digest"]
     {
         return Err(Error::new(
@@ -122,7 +122,7 @@ pub(super) fn validate_scopes(run: &Value, paths: &[String]) -> Result<()> {
 
 pub(crate) fn validate_plan_scopes(policy: &Value, paths: &[String]) -> Result<()> {
     for path in paths {
-        yoneda_core::validate_path(path.trim_end_matches('/'))?;
+        yoneda_agents_core::validate_path(path.trim_end_matches('/'))?;
         if path.split('/').any(|component| component == ".git")
             || policy["build"]["test_bundle"]["protected_paths"]
                 .as_array()
@@ -172,7 +172,7 @@ pub(super) fn question<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
         return Err(bad("Intent clarification must be bounded"));
     }
     let id = format!("question:{}:{request}", string(&run, "id")?);
-    let fingerprint = yoneda_core::fingerprint(&json!({"question":text,"options":options}))?;
+    let fingerprint = yoneda_agents_core::fingerprint(&json!({"question":text,"options":options}))?;
     if let Ok(old) = get(db, "intent_questions", &id) {
         if job["kind"] != "agent" || old["execution_id"] != job["payload"]["execution"]["id"] {
             return Err(Error::new(

@@ -2,7 +2,7 @@ use crate::{err, materialize};
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 const GIT: &str = "/usr/bin/git";
 pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&git_raw(root, args).await?)

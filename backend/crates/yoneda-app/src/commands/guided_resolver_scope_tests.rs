@@ -74,7 +74,7 @@ fn finish(
     capture: &Value,
     at: &Value,
     delta: &[&str],
-) -> yoneda_core::Result<Value> {
+) -> yoneda_agents_core::Result<Value> {
     let paths = json!([
         "public/app.mjs",
         "public/style.css",

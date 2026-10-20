@@ -89,7 +89,7 @@ fn captured(
         );
         call(
             db,
-            json!({"op":"record_context_access","job_id":claimed[0]["id"],"epoch":claimed[0]["epoch"],"call_id":format!("receipt-{}",&yoneda_core::digest(rid.as_bytes())[..16]),"tool":"context_get","stage":"opened","targets":[{"id":prior}]}),
+            json!({"op":"record_context_access","job_id":claimed[0]["id"],"epoch":claimed[0]["epoch"],"call_id":format!("receipt-{}",&yoneda_agents_core::digest(rid.as_bytes())[..16]),"tool":"context_get","stage":"opened","targets":[{"id":prior}]}),
             17,
         );
         call(

@@ -17,7 +17,7 @@ pub(super) async fn execute(
     let provider = text(connection, "provider")?;
     let key=secret["local_providers"][provider]["key"].as_str().ok_or("Local continuation needs a process-local provider key; Worker vault keys are never exported")?;
     let registry: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../backend/crates/yoneda-core/src/providers.json"
+        "../../../backend/crates/yoneda-agents-core/src/providers.json"
     ))?;
     let definition = registry
         .iter()

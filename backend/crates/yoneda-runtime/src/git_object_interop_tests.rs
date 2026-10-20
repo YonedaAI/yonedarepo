@@ -10,8 +10,14 @@ use yoneda_core::git_object::{
 
 struct NoTrees;
 impl TreeSource for NoTrees {
-    fn tree(&self, _: &yoneda_core::git_object::ObjectId) -> yoneda_core::Result<Vec<TreeEntry>> {
-        Err(yoneda_core::Error::new("TEST", "empty base has no trees"))
+    fn tree(
+        &self,
+        _: &yoneda_core::git_object::ObjectId,
+    ) -> yoneda_agents_core::Result<Vec<TreeEntry>> {
+        Err(yoneda_agents_core::Error::new(
+            "TEST",
+            "empty base has no trees",
+        ))
     }
 }
 

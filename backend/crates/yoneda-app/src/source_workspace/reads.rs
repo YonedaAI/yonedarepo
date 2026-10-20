@@ -55,13 +55,13 @@ fn list<S: SqlStore>(db: &S, c: &Value, state: &Value) -> Result<Value> {
     let prefix = c["prefix"].as_str().unwrap_or("");
     let recursive = c["recursive"].as_bool().unwrap_or(false);
     if !prefix.is_empty() {
-        yoneda_core::validate_path(prefix.trim_end_matches('/'))?;
+        yoneda_agents_core::validate_path(prefix.trim_end_matches('/'))?;
     }
     let limit = c["limit"].as_u64().unwrap_or(50);
     if !(1..=200).contains(&limit) {
         return Err(bad("Source list limit must be 1–200"));
     }
-    let identity = yoneda_core::fingerprint(
+    let identity = yoneda_agents_core::fingerprint(
         &json!({"version":state["workspace_version"],"prefix":prefix,"recursive":recursive}),
     )?;
     let cursor = c["cursor"].as_str().unwrap_or("");

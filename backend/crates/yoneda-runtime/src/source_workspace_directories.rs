@@ -7,7 +7,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     sync::{Arc, Mutex},
 };
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub struct LocalDirectories {
     source: Arc<SourceWorkspace>,

@@ -16,7 +16,7 @@ use std::sync::Arc;
 pub fn source_operation(alias: &str, operation: &str, arguments: Value) -> Result<Value> {
     tools::source_operation(alias, operation, arguments)
 }
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub struct ApiSourceClient {
     http: Arc<SourceHttp>,

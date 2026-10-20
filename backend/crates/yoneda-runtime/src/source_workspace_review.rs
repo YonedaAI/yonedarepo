@@ -6,7 +6,7 @@ use std::{
     os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::Path,
 };
-use yoneda_core::{Result, model_budget::ModelBudget};
+use yoneda_agents_core::{Result, model_budget::ModelBudget};
 pub(crate) async fn execute(
     job: &Value,
     root: &Path,

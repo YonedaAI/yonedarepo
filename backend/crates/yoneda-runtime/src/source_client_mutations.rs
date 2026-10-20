@@ -4,7 +4,7 @@ use crate::source_client::{
     SOURCE_FILE_MAX, SOURCE_READ_MAX, SourceBackend, SourceChange, SourceNode, failure,
 };
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) fn apply(
     client: &ApiSourceClient,
@@ -182,7 +182,7 @@ fn upload(
         .as_str()
         .ok_or_else(|| failure("SOURCE_FENCED", "Source upload mode missing"))?
         .to_string();
-    let hash = yoneda_core::digest(&bytes);
+    let hash = yoneda_agents_core::digest(&bytes);
     let expected_hash = hash.clone();
     let expected_size = bytes.len() as u64;
     let expected_mode = mode.clone();

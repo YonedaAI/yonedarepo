@@ -2,7 +2,7 @@
 //! Adapters supply observations, but identity and routing come from the active job.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let job = active(db, &c, now)?;
@@ -42,7 +42,7 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         (
             "duration_ms",
             0,
-            yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS,
+            yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS,
         ),
         ("request_number", 1, i64::MAX),
     ] {

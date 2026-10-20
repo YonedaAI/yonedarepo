@@ -17,7 +17,7 @@ pub(crate) fn rewrite_tree(
 ) -> io::Result<String> {
     validate_oid(base)?;
     for (path, edit) in edits {
-        yoneda_core::validate_path(path).map_err(io::Error::other)?;
+        yoneda_agents_core::validate_path(path).map_err(io::Error::other)?;
         if let TreeEdit::Set { mode, oid } = edit {
             validate_oid(oid)?;
             if ![0o100644, 0o100755].contains(mode) {

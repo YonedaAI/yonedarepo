@@ -2,7 +2,7 @@ use super::*;
 use crate::native::NativeStore;
 pub(in crate::commands) fn fixture() -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    call(&db,json!({"op":"init","id":"repo","name":"Source integration","remote":{"namespace":"test","name":"source"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()}),1000).unwrap();
+    call(&db,json!({"op":"init","id":"repo","name":"Source integration","remote":{"namespace":"test","name":"source"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()}),1000).unwrap();
     let base = json!({"repository":"test/source","commit":"a".repeat(40)});
     let policy = repo(&db).unwrap()["policy"].clone();
     let run = json!({"id":"run","intent":"Build safely","criteria":[],"context":[],"base":base,"source_base":{"repository":"test/source","commit":"a".repeat(40),"tree":"b".repeat(40)},"base_version":0,"status":"exploring","mode":"collaborate","policy":policy,"workspace_transport":"api-source-v1","model_requests":0});

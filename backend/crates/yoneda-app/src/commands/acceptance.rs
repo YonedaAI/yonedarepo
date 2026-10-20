@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "accept" => accept(db, &c, now),
@@ -24,7 +24,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         .as_object_mut()
         .ok_or_else(|| bad("Invalid request"))?
         .remove("now");
-    let fingerprint = yoneda_core::fingerprint(&input)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&input)?;
     for d in all(db, "decisions")? {
         if d["request_id"] == request {
             if d["fingerprint"] != fingerprint {
@@ -157,7 +157,7 @@ pub(super) fn current_checks<S: SqlStore>(
     cid: &str,
     r: &Value,
     accept_failed_checks: bool,
-) -> Result<yoneda_core::Revision> {
+) -> Result<yoneda_agents_core::Revision> {
     super::publication::not_rejected(candidate)?;
     let eid = string(candidate, "evaluation").map_err(|_| {
         Error::new(
@@ -165,16 +165,16 @@ pub(super) fn current_checks<S: SqlStore>(
             "Candidate has not been independently evaluated",
         )
     })?;
-    let evaluation: yoneda_core::Evaluation =
+    let evaluation: yoneda_agents_core::Evaluation =
         serde_json::from_value(get(db, "evaluations", &eid)?).map_err(|e| bad(&e.to_string()))?;
-    let policy: yoneda_core::Policy =
+    let policy: yoneda_agents_core::Policy =
         serde_json::from_value(r["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-    let revision: yoneda_core::Revision =
+    let revision: yoneda_agents_core::Revision =
         serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_evaluation_binding(&evaluation, cid, &revision, &policy)?;
+    yoneda_agents_core::validate_evaluation_binding(&evaluation, cid, &revision, &policy)?;
     // Failed required checks block publication unless the owner explicitly overrides them.
     if !accept_failed_checks {
-        yoneda_core::validate_required_checks(&evaluation, &policy)?;
+        yoneda_agents_core::validate_required_checks(&evaluation, &policy)?;
     }
     if policy
         .build

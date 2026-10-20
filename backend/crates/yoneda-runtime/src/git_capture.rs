@@ -7,7 +7,7 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 const REVIEW_DIFF_LIMIT: usize = 24 * 1024 * 1024;
 
