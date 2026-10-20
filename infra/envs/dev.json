@@ -10,7 +10,83 @@
     "origin": "https://dev.yonedarepo.com",
     "ratelimit": "2001"
   },
+  "check_instances": 4,
   "workers": [
+    {
+      "role": "superfan",
+      "file": "wrangler.staging-superfan.jsonc",
+      "notes": [
+        "Staging superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the",
+        "staging platform Worker (yonedarepo-staging-platform, dev.yonedarepo.com stack) with its own",
+        "ledger and a $1/day cap. Secrets, set from stdin:",
+        "CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only",
+        "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
+        "Deployed first: the staging platform names this Worker in tail_consumers."
+      ],
+      "secrets": [
+        "CF_ANALYTICS_TOKEN",
+        "SUPERFAN_READ_TOKEN"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-superfan",
+        "main": "superfan/index.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "7 * * * *"
+          ]
+        },
+        "vars": {
+          "CF_ACCOUNT_ID": "{account_id}",
+          "WATCH_SCRIPT": "{prefix}-platform",
+          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "NS_SOURCE_REPOSITORY": "79b971142019457fa1b44173f66dabb3",
+          "NS_OBJECT_PUSH_QUEUE": "77956798d14745adba68db4fb023b7d0",
+          "NS_CHECK_CONTAINER": "2f18b1ca51674599b1dd25c7be2c0862",
+          "QUEUE_JOBS_ID": "c57628b785814cfc9dc2403eb06071cc",
+          "QUEUE_DEAD_LETTER_ID": "4825c46a19af484f968bba559c9d2a16",
+          "CHECK_CONTAINER_APP_ID": "a0306118-835b-440b-be9c-431a68ca1453",
+          "TELEMETRY_SOURCE": "cloudflare",
+          "SUPERFAN_MODEL": "mimo-v2.6-flash",
+          "MIMO_TOKEN_PLAN_REGION": "sgp",
+          "DAILY_CAP_MICROUSD": "1000000"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "LEDGER",
+              "class_name": "SuperfanLedger"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "SuperfanLedger"
+            ]
+          }
+        ]
+      }
+    },
     {
       "role": "platform",
       "file": "wrangler.staging-platform.jsonc",
@@ -139,7 +215,6 @@
             "class_name": "CheckContainer",
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
-            "max_instances": 4,
             "instance_type": "standard-1",
             "rollout_step_percentage": [
               100
@@ -182,7 +257,6 @@
             {
               "queue": "{prefix}-platform-checks",
               "max_batch_size": 1,
-              "max_concurrency": 4,
               "max_retries": 3,
               "dead_letter_queue": "{prefix}-platform-dead-letter"
             }
@@ -454,80 +528,6 @@
         "observability": {
           "enabled": true
         }
-      }
-    },
-    {
-      "role": "superfan",
-      "file": "wrangler.staging-superfan.jsonc",
-      "notes": [
-        "Staging superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the",
-        "staging platform Worker (yonedarepo-staging-platform, dev.yonedarepo.com stack) with its own",
-        "ledger and a $1/day cap. Secrets, set from stdin:",
-        "CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only",
-        "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run"
-      ],
-      "secrets": [
-        "CF_ANALYTICS_TOKEN",
-        "SUPERFAN_READ_TOKEN"
-      ],
-      "ephemeral": false,
-      "config": {
-        "name": "{prefix}-superfan",
-        "main": "superfan/index.ts",
-        "compatibility_date": "2026-10-07",
-        "workers_dev": true,
-        "preview_urls": false,
-        "observability": {
-          "enabled": true
-        },
-        "triggers": {
-          "crons": [
-            "7 * * * *"
-          ]
-        },
-        "vars": {
-          "CF_ACCOUNT_ID": "{account_id}",
-          "WATCH_SCRIPT": "{prefix}-platform",
-          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
-          "NS_SOURCE_REPOSITORY": "79b971142019457fa1b44173f66dabb3",
-          "NS_OBJECT_PUSH_QUEUE": "77956798d14745adba68db4fb023b7d0",
-          "NS_CHECK_CONTAINER": "2f18b1ca51674599b1dd25c7be2c0862",
-          "QUEUE_JOBS_ID": "c57628b785814cfc9dc2403eb06071cc",
-          "QUEUE_DEAD_LETTER_ID": "4825c46a19af484f968bba559c9d2a16",
-          "CHECK_CONTAINER_APP_ID": "a0306118-835b-440b-be9c-431a68ca1453",
-          "TELEMETRY_SOURCE": "cloudflare",
-          "SUPERFAN_MODEL": "mimo-v2.6-flash",
-          "MIMO_TOKEN_PLAN_REGION": "sgp",
-          "DAILY_CAP_MICROUSD": "1000000"
-        },
-        "secrets_store_secrets": [
-          {
-            "binding": "MIMO_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "MiMo"
-          },
-          {
-            "binding": "ZAI_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "ZAI"
-          }
-        ],
-        "durable_objects": {
-          "bindings": [
-            {
-              "name": "LEDGER",
-              "class_name": "SuperfanLedger"
-            }
-          ]
-        },
-        "migrations": [
-          {
-            "tag": "v1",
-            "new_sqlite_classes": [
-              "SuperfanLedger"
-            ]
-          }
-        ]
       }
     }
   ]

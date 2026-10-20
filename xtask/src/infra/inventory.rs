@@ -2,7 +2,7 @@
 use super::spec::{Lock, Spec, WorkerSpec};
 use crate::process::Result;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn items<'a>(config: &'a Value, pointer: &str) -> impl Iterator<Item = &'a Value> {
     config
@@ -10,6 +10,10 @@ fn items<'a>(config: &'a Value, pointer: &str) -> impl Iterator<Item = &'a Value
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
+}
+
+fn strings<'a>(config: &'a Value, pointer: &str, field: &'a str) -> impl Iterator<Item = &'a str> {
+    items(config, pointer).filter_map(move |v| v[field].as_str())
 }
 
 pub(crate) fn worker_name(config: &Value) -> Result<&str> {
@@ -22,6 +26,7 @@ pub(crate) fn worker_name(config: &Value) -> Result<&str> {
 #[derive(Clone, Debug)]
 pub(crate) struct Deployable {
     pub name: String,
+    pub role: String,
     /// Config path relative to the workspace root.
     pub config_path: String,
     pub config: Value,
@@ -49,6 +54,7 @@ fn deployable(spec: &Spec, worker: &WorkerSpec, config: Value) -> Result<Deploya
     };
     let has_containers = items(&config, "/containers").next().is_some();
     Ok(Deployable {
+        role: worker.role.clone(),
         config_path: format!("{}/{}", super::spec::CONFIG_DIR, worker.file),
         has_containers,
         secrets: worker.secrets.clone(),
@@ -97,6 +103,33 @@ pub(crate) fn d1(config: &Value) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+pub(crate) fn r2(config: &Value) -> BTreeSet<String> {
+    strings(config, "/r2_buckets", "bucket_name")
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Every queue the config names (producers, consumers, dead-letter queues).
+pub(crate) fn queues(config: &Value) -> BTreeSet<String> {
+    strings(config, "/queues/producers", "queue")
+        .chain(strings(config, "/queues/consumers", "queue"))
+        .chain(strings(config, "/queues/consumers", "dead_letter_queue"))
+        .map(str::to_owned)
+        .collect()
+}
+
+pub(crate) fn consumers(config: &Value) -> BTreeSet<String> {
+    strings(config, "/queues/consumers", "queue")
+        .map(str::to_owned)
+        .collect()
+}
+
+pub(crate) fn workflows(config: &Value) -> BTreeSet<String> {
+    strings(config, "/workflows", "name")
+        .map(str::to_owned)
+        .collect()
+}
+
 /// Container application name -> declared config. Wrangler names an application
 /// `<worker>-<class in lowercase>`.
 pub(crate) fn containers(config: &Value) -> BTreeMap<String, Value> {
@@ -107,4 +140,11 @@ pub(crate) fn containers(config: &Value) -> BTreeMap<String, Value> {
             Some((format!("{worker}-{}", class.to_lowercase()), c.clone()))
         })
         .collect()
+}
+
+pub(crate) fn last_migration_tag(config: &Value) -> Option<String> {
+    items(config, "/migrations")
+        .last()
+        .and_then(|m| m["tag"].as_str())
+        .map(str::to_owned)
 }
