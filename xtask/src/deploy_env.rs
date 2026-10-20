@@ -69,25 +69,30 @@ pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool) -> Vec<Ste
 
 pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
-    let options = Options::from_args(args);
     let spec = Spec::load(&env)?;
-    let workers = inventory::deployables(&spec, &Lock::load(&env)?)?;
-    let mut facts = guard::git_facts(&spec)?;
+    let lock = Lock::load(&env)?;
+    run(&env, &spec, &lock, &Options::from_args(args)).await
+}
+
+/// Deploys `spec` with the given D1 identities (`infra up` passes the lock it just built).
+pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) -> Result<()> {
+    let workers = inventory::deployables(spec, lock)?;
+    let mut facts = guard::git_facts(spec)?;
     if env.is_prod() {
         prod_facts(&mut facts).await?;
     }
-    guard::preflight(&env, &spec, &facts, &options)?;
+    guard::preflight(env, spec, &facts, options)?;
     let head = facts.head.clone();
-    let plan = steps(&env, &workers, options.dry_run);
+    let plan = steps(env, &workers, options.dry_run);
     if options.dry_run && plan.iter().any(Step::mutates_remote) {
         return Err("Internal error: the dry-run plan contains a remote change".into());
     }
     let mut summary: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     let run = Run {
-        env: &env,
-        spec: &spec,
+        env,
+        spec,
         workers: &workers,
-        options: &options,
+        options,
         head: &head,
     };
     let outcome = run.execute(plan, &mut summary).await;
