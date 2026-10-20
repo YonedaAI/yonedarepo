@@ -36,6 +36,33 @@ const json = (body: unknown, status = 200) =>
 const refuse = (code: string, message: string, status: number) =>
   json({ error: { code, message } }, status);
 
+/**
+ * Arms run for minutes: headers go out at once and a space every 20 s keeps the client and
+ * any proxy from timing out; the JSON result (leading whitespace is valid JSON) follows.
+ * Failures after validation arrive as an `error` body, since the status is already sent.
+ */
+function streamed(work: () => Promise<unknown>) {
+  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const beat = setInterval(() => writer.write(encoder.encode(' ')).catch(() => {}), 20_000);
+  const finish = async () => {
+    let body: unknown;
+    try {
+      body = await work();
+    } catch (e) {
+      body = {
+        error: { code: e instanceof ArmError ? e.code : 'INTERNAL', message: 'Eval run failed' },
+      };
+    }
+    clearInterval(beat);
+    await writer.write(encoder.encode(JSON.stringify(body)));
+    await writer.close();
+  };
+  finish().catch(() => clearInterval(beat));
+  return new Response(readable, { headers: { 'content-type': 'application/json' } });
+}
+
 async function sha256(text: string) {
   return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
 }
@@ -149,18 +176,18 @@ export async function handle(
       const route = await resolveRoute(env, provider(body));
       // Requests include retries: each task's turns once, plus room for backoff retries.
       const maxRequests = spec.tasks * spec.max_turns + 2 * LIMITS.maxRetries;
-      const result = await runArm(
-        route,
-        ledgerOf(env),
-        platformApi(env, repo, token),
-        spec,
-        limits(LIMITS.armWallClockMs, maxRequests, timing.backoffMs),
-      );
-      return json({
-        ...result,
+      const api = platformApi(env, repo, token);
+      return streamed(async () => ({
+        ...(await runArm(
+          route,
+          ledgerOf(env),
+          api,
+          spec,
+          limits(LIMITS.armWallClockMs, maxRequests, timing.backoffMs),
+        )),
         prompts_sha256: await promptsDigest(),
         limits: { ...LIMITS, max_requests: maxRequests },
-      });
+      }));
     }
     if (url.pathname === '/v1/p9') {
       const repo = repoId(body.repo);
@@ -182,20 +209,21 @@ export async function handle(
       const route = await resolveRoute(env, provider(body));
       // At most three agent runs (B may redo once), each within its turns, plus retries.
       const maxRequests = 3 * spec.max_turns + 2 * LIMITS.maxRetries;
-      const result = await runP9(
-        route,
-        ledgerOf(env),
-        platformApi(env, repo, repoToken(body.tokens?.a)),
-        platformApi(env, repo, repoToken(body.tokens?.b)),
-        spec,
-        limits(LIMITS.armWallClockMs, maxRequests, timing.backoffMs),
-        timing.pollMs,
-      );
-      return json({
-        ...result,
+      const a = platformApi(env, repo, repoToken(body.tokens?.a));
+      const b = platformApi(env, repo, repoToken(body.tokens?.b));
+      return streamed(async () => ({
+        ...(await runP9(
+          route,
+          ledgerOf(env),
+          a,
+          b,
+          spec,
+          limits(LIMITS.armWallClockMs, maxRequests, timing.backoffMs),
+          timing.pollMs,
+        )),
         prompts_sha256: await promptsDigest(),
         limits: { ...LIMITS, max_requests: maxRequests },
-      });
+      }));
     }
     return refuse('NOT_FOUND', 'Unknown path', 404);
   } catch (e) {
