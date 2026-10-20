@@ -99,6 +99,12 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             )
             .await
         }
+        // With --env: the spec-driven deploy. Without: the old-layout production deploy,
+        // kept until the N8 cutover.
+        "deploy" if args.iter().any(|a| a == "--env") => crate::deploy_env::deploy(&args).await,
+        "rollback" => crate::deploy_live::rollback(&args).await,
+        "status" => crate::deploy_live::status(&args).await,
+        "infra" => crate::infra::execute(&args).await,
         "deploy" => {
             ensure_token()?;
             build_wasm()?;
@@ -141,7 +147,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy without --env: old-layout production.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }
