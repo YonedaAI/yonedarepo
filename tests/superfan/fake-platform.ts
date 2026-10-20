@@ -1,15 +1,19 @@
-// Test fixture: a fake Cloudflare GraphQL Analytics API, platform /health and model
-// endpoint. The response shape copies a real platform-dev reply (2026-10-20); the numbers
-// are invented. Nothing here reaches the network.
+// Test fixture: fake tail events, a fake Cloudflare GraphQL Analytics API, platform /health
+// and model endpoint. The GraphQL shape copies a real platform-dev reply (2026-10-20) and
+// tail events follow the workers-types TraceItem shape; all numbers are invented. Nothing
+// here reaches the network.
 import { env } from 'cloudflare:test';
 import { vi } from 'vitest';
+import { GRAPHQL_URL } from '../../cloudflare/superfan/analytics';
 import type { SuperfanEnv } from '../../cloudflare/superfan/config';
-import { GRAPHQL_URL } from '../../cloudflare/superfan/telemetry';
+import type { SuperfanLedger } from '../../cloudflare/superfan/ledger';
+import { aggregate, type TailComponent } from '../../cloudflare/superfan/tail';
 import { productionDeps, type WatchDeps } from '../../cloudflare/superfan/watch';
 
 export const ANALYTICS_TOKEN = 'fixture-analytics-token-not-real';
 export const MODEL_KEY = 'tp-fixture-model-key-not-real';
 export const MODEL_URL = 'https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages';
+export const SCRIPT = 'yonedarepo-platform-dev';
 const NS = {
   repo: '11111111111111111111111111111111',
   push: '22222222222222222222222222222222',
@@ -18,39 +22,20 @@ const NS = {
 const JOBS = '44444444444444444444444444444444';
 
 export interface Traffic {
-  repoRequests?: number;
-  repoErrors?: number;
-  repoP95Ms?: number;
   backlog?: [number, number];
-  workerErrors?: number;
+  repoKills?: number;
 }
 
 /** One GraphQL account result; defaults describe a quiet hour. */
 export function account(t: Traffic = {}) {
-  const object = (namespaceId: string, requests: number, errors: number, p95Ms: number) => ({
-    dimensions: { namespaceId },
-    quantiles: { wallTimeP95: p95Ms * 1000 },
-    sum: { requests, errors },
-  });
   return {
-    workerAll: [
-      {
-        quantiles: { cpuTimeP95: 20_000, wallTimeP95: 400_000 },
-        sum: { requests: 1000, errors: t.workerErrors ?? 0 },
-      },
-    ],
-    workerStatus: [{ dimensions: { status: 'success' }, sum: { requests: 1000 } }],
-    objectAll: [
-      object(NS.repo, t.repoRequests ?? 900, t.repoErrors ?? 0, t.repoP95Ms ?? 80),
-      object(NS.push, 200, 0, 700),
-      object(NS.check, 100, 0, 9000),
-    ],
-    objectStatus: [
-      { dimensions: { namespaceId: NS.repo, status: 'success' }, sum: { requests: 900 } },
-    ],
     objectPeriodic: Object.values(NS).map((namespaceId) => ({
       dimensions: { namespaceId },
-      sum: { exceededCpuErrors: 0, exceededMemoryErrors: 0, fatalInternalErrors: 0 },
+      sum: {
+        exceededCpuErrors: namespaceId === NS.repo ? (t.repoKills ?? 0) : 0,
+        exceededMemoryErrors: 0,
+        fatalInternalErrors: 0,
+      },
     })),
     backlog: (t.backlog ?? [2, 3]).map((messages, i) => ({
       avg: { messages },
@@ -71,6 +56,70 @@ export function account(t: Traffic = {}) {
     containers: [{ max: { diskUsagePercentage: 12 } }],
   };
 }
+
+const CLASSES: Partial<Record<TailComponent, string>> = {
+  source_repository: 'SourceRepository',
+  object_push_queue: 'ObjectPushQueue',
+  check_runs: 'CheckContainer',
+};
+
+export interface Calls {
+  component: TailComponent;
+  count: number;
+  wallMs: number;
+  errors?: number;
+  logs?: { level: string; message: unknown[] }[];
+  script?: string;
+}
+
+/** TraceItem-shaped events: `errors` of them threw, all took `wallMs`. */
+export function traces(c: Calls, at: number): TraceItem[] {
+  const object = CLASSES[c.component];
+  const event =
+    c.component === 'api_worker'
+      ? {
+          request: { url: 'https://platform/api/v1/x', method: 'GET', headers: {} },
+          response: { status: 200 },
+        }
+      : c.component === 'derived_jobs'
+        ? { queue: 'yonedarepo-platform-dev-jobs', batchSize: 1 }
+        : { rpcMethod: 'fetch' };
+  return Array.from({ length: c.count }, (_, i) => {
+    const thrown = i < (c.errors ?? 0);
+    return {
+      event,
+      eventTimestamp: at,
+      logs: (c.logs ?? []).map((l) => ({ ...l, timestamp: at })),
+      exceptions: thrown
+        ? [{ name: 'Error', message: 'commit failed: Bearer abc.def.ghi rejected', timestamp: at }]
+        : [],
+      diagnosticsChannelEvents: [],
+      scriptName: c.script ?? SCRIPT,
+      ...(object ? { entrypoint: object } : {}),
+      outcome: thrown ? 'exception' : 'ok',
+      executionModel: object ? 'durableObject' : 'stateless',
+      truncated: false,
+      cpuTime: 2,
+      wallTime: c.wallMs,
+    } as unknown as TraceItem;
+  });
+}
+
+/** A quiet hour of platform traffic, with optional per-component overrides. */
+export function hour(at: number, overrides: Partial<Record<TailComponent, Partial<Calls>>> = {}) {
+  const base: Calls[] = [
+    { component: 'api_worker', count: 100, wallMs: 50 },
+    { component: 'source_repository', count: 200, wallMs: 80 },
+    { component: 'object_push_queue', count: 50, wallMs: 700 },
+    { component: 'check_runs', count: 20, wallMs: 9000 },
+    { component: 'derived_jobs', count: 30, wallMs: 300 },
+  ];
+  return base.flatMap((c) => traces({ ...c, ...overrides[c.component] }, at));
+}
+
+/** What the tail handler stores for these events. */
+export const feed = (ledger: DurableObjectStub<SuperfanLedger>, events: TraceItem[], now: number) =>
+  ledger.ingest(aggregate(events, SCRIPT), now);
 
 export interface FakeCalls {
   graphql: RequestInit[];

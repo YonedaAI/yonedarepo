@@ -53,6 +53,26 @@ export const MIGRATIONS: string[] = [
      run_id INTEGER NOT NULL,
      expires_at INTEGER NOT NULL
    );`,
+  `CREATE TABLE tail_minutes (
+     minute INTEGER NOT NULL,
+     component TEXT NOT NULL,
+     invocations INTEGER NOT NULL DEFAULT 0,
+     errors INTEGER NOT NULL DEFAULT 0,
+     exceptions INTEGER NOT NULL DEFAULT 0,
+     resource_kills INTEGER NOT NULL DEFAULT 0,
+     error_logs INTEGER NOT NULL DEFAULT 0,
+     push_retries INTEGER NOT NULL DEFAULT 0,
+     hist TEXT NOT NULL,
+     PRIMARY KEY (minute, component)
+   );
+   CREATE TABLE tail_samples (
+     id INTEGER PRIMARY KEY,
+     minute INTEGER NOT NULL,
+     component TEXT NOT NULL,
+     name TEXT NOT NULL,
+     message TEXT NOT NULL
+   );
+   CREATE INDEX tail_samples_recent ON tail_samples(component, minute DESC);`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

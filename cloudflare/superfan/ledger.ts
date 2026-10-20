@@ -4,7 +4,9 @@
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
 import { migrate } from './ledger-schema';
+import { ingestRows, tailWindow } from './ledger-tail';
 import type { Baselines } from './signals';
+import type { TailRow } from './tail';
 
 const LEASE_MS = 15 * 60_000;
 /** A problem that returns this soon after resolving reopens its finding instead of a new one. */
@@ -60,6 +62,15 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   #tx<T>(fn: (sql: SqlStorage) => T): T {
     return this.ctx.storage.transactionSync(() => fn(this.ctx.storage.sql));
+  }
+
+  /** Merges one tail batch's counters. */
+  ingest(rows: TailRow[], now: number) {
+    this.#tx((sql) => ingestRows(sql, rows, now));
+  }
+
+  tailStats(start: number, end: number) {
+    return tailWindow(this.ctx.storage.sql, start, end);
   }
 
   /** Starts a run unless another one holds an unexpired lease. */
@@ -187,16 +198,23 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
     });
   }
 
-  /** Resolves open findings of these components whose problem was not seen this run. */
-  resolveAbsent(components: string[], present: string[], now: number) {
+  /**
+   * Resolves open findings that were not seen this run, but only when every rule in their
+   * key (`component:ruleA+ruleB`) was evaluated; a rule whose source was down proves nothing.
+   */
+  resolveAbsent(evaluated: string[], present: string[], now: number) {
     return this.#tx((sql) => {
       let resolved = 0;
       for (const row of sql
-        .exec<{ id: number; dedup_key: string; component: string }>(
-          "SELECT id, dedup_key, component FROM findings WHERE status = 'open'",
+        .exec<{ id: number; dedup_key: string }>(
+          "SELECT id, dedup_key FROM findings WHERE status = 'open'",
         )
-        .toArray())
-        if (components.includes(row.component) && !present.includes(row.dedup_key)) {
+        .toArray()) {
+        const [component, rules = ''] = row.dedup_key.split(':', 2);
+        const checked = rules
+          .split('+')
+          .every((rule) => evaluated.includes(`${component}:${rule}`));
+        if (checked && !present.includes(row.dedup_key)) {
           sql.exec(
             "UPDATE findings SET status = 'resolved', resolved_at = ? WHERE id = ?",
             now,
@@ -204,6 +222,7 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
           );
           resolved++;
         }
+      }
       return resolved;
     });
   }

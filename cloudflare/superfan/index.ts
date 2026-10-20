@@ -1,6 +1,7 @@
-// Superfan Worker: an hourly cron pass over the platform-only Worker's telemetry, and an
-// authenticated read endpoint for its findings. It posts nowhere; readers come to it.
-import type { SuperfanEnv } from './config';
+// Superfan Worker: the platform-only Worker's tail consumer, an hourly cron pass over its
+// telemetry, and an authenticated read endpoint for findings. It posts nowhere.
+import { isWatchable, type SuperfanEnv } from './config';
+import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
 
 export { SuperfanLedger } from './ledger';
@@ -34,18 +35,21 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
     return json(await runWatch(env));
   }
   if (req.method !== 'GET') return refuse('METHOD_NOT_ALLOWED', 405);
-  if (url.pathname === '/status')
+  if (url.pathname === '/status') {
+    const now = Date.now();
     return json({
       watching: env.WATCH_SCRIPT,
-      telemetry:
+      tail_events_last_hour: (await ledger.tailStats(now - 60 * 60_000, now)).events,
+      analytics:
         env.TELEMETRY_SOURCE !== 'cloudflare'
           ? 'disabled'
           : env.CF_ANALYTICS_TOKEN
             ? 'cloudflare'
             : 'waiting_on_token',
       model: env.SUPERFAN_MODEL,
-      ...(await ledger.status(Date.now())),
+      ...(await ledger.status(now)),
     });
+  }
   const status = url.searchParams.get('status') ?? 'open';
   if (status !== 'open' && status !== 'resolved' && status !== 'all')
     return refuse('INVALID_STATUS', 400);
@@ -53,8 +57,18 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
   return json({ findings: await ledger.findings(status, limit) });
 }
 
+/** Counts one batch of the platform Worker's tail events; other producers are ignored. */
+export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
+  if (!isWatchable(env.WATCH_SCRIPT)) return;
+  const rows = aggregate(events, env.WATCH_SCRIPT);
+  if (rows.length) await ledgerStub(env).ingest(rows, Date.now());
+}
+
 export default {
   fetch: superfanFetch,
+  async tail(events, env) {
+    await superfanTail(events, env);
+  },
   async scheduled(_controller, env, ctx) {
     ctx.waitUntil(runWatch(env));
   },

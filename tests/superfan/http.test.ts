@@ -1,10 +1,10 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SuperfanEnv } from '../../cloudflare/superfan/config';
-import { superfanFetch } from '../../cloudflare/superfan/index';
+import { superfanFetch, superfanTail } from '../../cloudflare/superfan/index';
 import type { SuperfanLedger } from '../../cloudflare/superfan/ledger';
 import { MIGRATIONS, migrate } from '../../cloudflare/superfan/ledger-schema';
-import { analytics, fakeUpstreams, testEnv } from './fake-platform';
+import { analytics, fakeUpstreams, hour, testEnv } from './fake-platform';
 
 afterEach(() => vi.restoreAllMocks());
 const get = (e: SuperfanEnv, path: string, token?: string) =>
@@ -31,9 +31,10 @@ describe('superfan read endpoint', () => {
     expect(run.status).toBe(401);
   });
 
-  it('serves findings and status to the bearer', async () => {
+  it('counts tail events and serves findings and status to the bearer', async () => {
     fakeUpstreams(analytics({ backlog: [5, 400] }));
     const e = testEnv({ DAILY_CAP_MICROUSD: '0' });
+    await superfanTail(hour(Date.now() - 60_000), e);
     const run = await superfanFetch(
       new Request('https://superfan.example/run', {
         method: 'POST',
@@ -50,7 +51,8 @@ describe('superfan read endpoint', () => {
     const status = await (await get(e, '/status', 'fixture-read-token')).json();
     expect(status).toMatchObject({
       watching: 'yonedarepo-platform-dev',
-      telemetry: 'cloudflare',
+      tail_events_last_hour: 400,
+      analytics: 'cloudflare',
       open_findings: 1,
     });
     expect((await get(e, '/findings?status=bogus', 'fixture-read-token')).status).toBe(400);
