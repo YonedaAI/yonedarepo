@@ -262,9 +262,10 @@ fn secrets_files_parse_without_comments_or_quotes() {
 }
 
 mod plan_diff {
-    use super::super::apply::{Create, creations, down_allowed};
+    use super::super::apply::{Create, creations};
     use super::super::live::{Live, LiveWorker};
     use super::super::plan::{Action, diff};
+    use super::super::teardown::down_allowed;
     use super::*;
     use std::collections::BTreeSet;
 

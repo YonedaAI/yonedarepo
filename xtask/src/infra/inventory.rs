@@ -118,6 +118,18 @@ pub(crate) fn queues(config: &Value) -> BTreeSet<String> {
         .collect()
 }
 
+pub(crate) fn dead_letter_queues(config: &Value) -> BTreeSet<String> {
+    strings(config, "/queues/consumers", "dead_letter_queue")
+        .map(str::to_owned)
+        .collect()
+}
+
+pub(crate) fn artifacts_namespaces(config: &Value) -> BTreeSet<String> {
+    strings(config, "/artifacts", "namespace")
+        .map(str::to_owned)
+        .collect()
+}
+
 pub(crate) fn consumers(config: &Value) -> BTreeSet<String> {
     strings(config, "/queues/consumers", "queue")
         .map(str::to_owned)
