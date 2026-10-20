@@ -1,15 +1,19 @@
 //! The Git view of changeset landings. Each changeset version gets one Git commit for its
 //! branch, built by stateless compute from the previous version's commit and the landed
 //! commit's changes (parents: previous head, landed commit), so the same versions always
-//! yield the same ids. The adapter stores the new objects in R2 first, then records them
-//! here: recording checks the chain (contiguous versions, parents, paths) and is
-//! idempotent, so any number of projectors may race or crash and retry.
+//! yield the same ids. Recording checks the chain (contiguous versions, parents, paths),
+//! stages the new objects (the object projector writes them to R2) and is idempotent, so
+//! any number of projectors may race or crash and retry.
 use super::merging::MERGE_PRINCIPAL;
 use super::rows::{self, branch_ref, object_id};
 use crate::storage::{SqlStore, bad, number};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::{Error, Result, git_object::ObjectId};
+use yoneda_core::{
+    Error, Result,
+    git_object::{ObjectId, ObjectKind, hash_object},
+};
 
 const PLAN_ITEMS: u64 = 64;
 
@@ -120,6 +124,7 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )?;
     let mut head = from;
     let mut version = 0;
+    let mut dispatch = false;
     for (item, row) in items.iter().zip(&expected) {
         version = row["version"]
             .as_u64()
@@ -130,14 +135,19 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 "Projected versions must be the oldest unprojected, in order",
             ));
         }
-        head = record_one(db, item, version, head, &landed, now)?;
+        let (id, asked) = record_one(db, item, version, head, &landed, now)?;
+        head = id;
+        dispatch |= asked;
     }
     db.query(
         "UPDATE refs SET commit_id=?,version=? WHERE name=?",
         &[json!(head.hex()), json!(version), json!(refname)],
     )?;
     super::projection::target(db, &refname, &head, version, now)?;
-    Ok(json!({ "ref": refname, "projected": items.len(), "head": head, "version": version }))
+    Ok(json!({
+        "ref": refname, "projected": items.len(), "head": head, "version": version,
+        "dispatch_objects": dispatch,
+    }))
 }
 
 /// Records one projected commit: its parents must be the previous head and the landed
@@ -149,7 +159,7 @@ fn record_one<S: SqlStore>(
     previous: ObjectId,
     landed: &ObjectId,
     now: i64,
-) -> Result<ObjectId> {
+) -> Result<(ObjectId, bool)> {
     let id = object_id(item, "commit")?;
     if ids(&item["parents"])? != [previous, *landed] {
         return Err(bad(&format!(
@@ -192,26 +202,43 @@ fn record_one<S: SqlStore>(
             &[json!(id.hex()), touch["path"].clone(), touch["op"].clone(), touch["old_blob"].clone(), touch["new_blob"].clone()],
         )?;
     }
-    // Its new objects (already in R2) travel to Artifacts with the branch.
-    for object in item["objects"].as_array().into_iter().flatten() {
-        let kind = object["kind"].as_str().unwrap_or_default();
-        if !matches!(kind, "commit" | "tree" | "blob") {
-            return Err(bad("Object kinds are commit, tree or blob"));
+    // Its new objects are staged here like any small commit's (read by id until the
+    // object projector has written them to R2), and travel to Artifacts with the branch.
+    let mut objects = Vec::new();
+    for object in item["raw"].as_array().into_iter().flatten() {
+        let kind = match object["kind"].as_str() {
+            Some("commit") => ObjectKind::Commit,
+            Some("tree") => ObjectKind::Tree,
+            Some("blob") => ObjectKind::Blob,
+            _ => return Err(bad("Object kinds are commit, tree or blob")),
+        };
+        let data = STANDARD
+            .decode(object["data_b64"].as_str().unwrap_or_default())
+            .map_err(|_| bad("Object data is not base64"))?;
+        if hash_object(kind, &data) != object_id(object, "id")? {
+            return Err(bad("An object does not hash to its id"));
         }
-        db.query(
-            "INSERT INTO commit_objects(commit_id,id,kind) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-            &[
-                json!(id.hex()),
-                json!(object_id(object, "id")?.hex()),
-                json!(kind),
-            ],
-        )?;
+        objects.push((object_id(object, "id")?, kind, data));
     }
+    let refs: Vec<(ObjectId, ObjectKind, &[u8])> = objects
+        .iter()
+        .map(|(i, k, d)| (*i, *k, d.as_slice()))
+        .collect();
+    if !refs
+        .iter()
+        .any(|(i, k, _)| *i == id && *k == ObjectKind::Commit)
+        || !super::staging::stage(db, &id, &refs)?
+    {
+        return Err(bad(&format!(
+            "The projection of version {version} must bring its commit and fit staging"
+        )));
+    }
+    let dispatch = super::staging::accept(db, &id, now)?;
     db.query(
         "UPDATE changesets SET projected=?,projected_at=? WHERE version=?",
         &[json!(id.hex()), json!(now), json!(version)],
     )?;
-    Ok(id)
+    Ok((id, dispatch))
 }
 
 /// Projected commits of changeset versions in `(after, until]`, for replaying the log.

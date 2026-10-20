@@ -111,7 +111,7 @@ pub fn project_changesets(c: &Value) -> Result<Value> {
     if !missing.is_empty() {
         return Ok(json!({ "need_trees": missing.iter().map(ObjectId::hex).collect::<Vec<_>>() }));
     }
-    let (mut projected, mut raw, mut cached) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut projected, mut cached) = (Vec::new(), Vec::new());
     for item in &items {
         let changes = changes(item, &trees)?;
         let describe = json!({
@@ -130,16 +130,15 @@ pub fn project_changesets(c: &Value) -> Result<Value> {
         for (id, bytes) in &built.trees {
             trees.0.insert(*id, decode_tree(bytes)?);
         }
-        let mut objects = Vec::new();
+        let mut raw = Vec::new();
         for (id, kind, data) in &built.objects {
-            objects.push(json!({ "id": id, "kind": kind.name() }));
             raw.push(json!({ "id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data) }));
             cached.push(object_json(*id, *kind, data)?);
         }
         projected.push(json!({
             "version": item.version, "commit": built.id, "tree": built.root,
             "parents": built.parents, "generation": built.generation,
-            "touches": built.touches, "message": built.message, "objects": objects,
+            "touches": built.touches, "message": built.message, "raw": raw,
         }));
         head = Parent {
             id: built.id,
@@ -147,5 +146,5 @@ pub fn project_changesets(c: &Value) -> Result<Value> {
             generation: built.generation,
         };
     }
-    Ok(json!({ "projected": projected, "raw": raw, "objects": cached }))
+    Ok(json!({ "projected": projected, "objects": cached }))
 }
