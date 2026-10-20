@@ -36,18 +36,21 @@ export async function commitInShard(
   // re-checks access and validates the base against the log).
   const onMain = !body.parent && ['main', 'refs/heads/main'].includes(body.ref);
   const paths = body.changes.map((c: Json) => c?.path);
-  const begun =
+  const fromHead =
     body.begin_from_head === true && onMain
       ? await timed('begin.head', () => beginFromHead(ctx, paths))
-      : await ctx.call({
-          op: 'repo_begin_commit',
-          ...(body.parent
-            ? { parent: body.parent, base_version: body.base_version ?? 0 }
-            : body.ref
-              ? { ref: body.ref }
-              : { parent: null, base_version: body.base_version ?? 0 }),
-          paths: body.changes.map((c: Json) => c?.path),
-        });
+      : null;
+  const begun =
+    fromHead ??
+    (await ctx.call({
+      op: 'repo_begin_commit',
+      ...(body.parent
+        ? { parent: body.parent, base_version: body.base_version ?? 0 }
+        : body.ref
+          ? { ref: body.ref }
+          : { parent: null, base_version: body.base_version ?? 0 }),
+      paths: body.changes.map((c: Json) => c?.path),
+    }));
   const store = given ?? ctx.adopt(begun.object_store);
   let parent = begun.parent;
   if (begun.parent_elsewhere) {

@@ -240,8 +240,8 @@ export class LandCombiner extends DurableObject<Env> {
   }
 
   /** Head role: main's published head, at least at `minVersion`. */
-  head(repo: string, minVersion: number) {
-    return this.#head.head(repo, minVersion);
+  head(repo: string, minVersion: number, since?: number) {
+    return this.#head.head(repo, minVersion, since);
   }
 
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
