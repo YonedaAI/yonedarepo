@@ -377,7 +377,7 @@
   },
   {
     "name": "git_commit",
-    "description": "Create a commit on the server from file changes against a branch head (or an explicit parent). Nothing is landed: the commit is recorded and must pass checks and review before git_land moves a branch. Declare read_set (paths or dir/ prefixes you relied on) so concurrent work is checked for independence.",
+    "description": "Create a commit on the server from file changes against a branch head (or an explicit parent). Nothing is landed: the commit is recorded and must pass checks and review before git_land moves a branch. Declare read_set (paths, dir/ prefixes, or path#symbol entries such as src/lib.rs#Policy::backoff for the symbols you relied on) so concurrent work is checked for independence; the platform derives which symbols your change wrote.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -565,6 +565,69 @@
       "required": [
         "find",
         "replace"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_plan",
+    "description": "Plan proposed work items at one revision of a branch (nothing runs). Items whose symbols share a reference cycle that one of them writes are joined into one item; the rest are staged so items in one stage are independent (neither writes what the other reads or writes) and an item that reads what another writes comes after it. Reads are extended with the symbols their symbols reference (closure_depth). Items with a base_version report stale reads since then. Symbol entries on unparsed files are planned at path level.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "Branch to plan against (default main)"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Log version to plan at (default now)"
+        },
+        "closure_depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3,
+          "description": "Reference steps added to reads (default 1)"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "base_version": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "read_set": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "A path, a dir/ prefix, or path#symbol_path"
+                }
+              },
+              "write_set": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "description": "A path, a dir/ prefix, or path#symbol_path"
+                }
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "items"
       ],
       "additionalProperties": false
     }

@@ -28,7 +28,7 @@ pub fn occ<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<Occ
         read_set: commit.read_set.iter().cloned().collect(),
     };
     let later = rows::entries(db, commit.base_version, current_version(db)?, Some(refname))?;
-    Ok(proposal.check(&later))
+    Ok(proposal.check(&later, &super::symbols::refinements(db, &later)?))
 }
 
 pub fn outcome_error(refname: &str, head: &ObjectId, outcome: OccOutcome) -> Error {

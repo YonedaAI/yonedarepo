@@ -14,6 +14,7 @@ import {
   readFile,
   replay,
 } from './repo-ops';
+import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -43,6 +44,7 @@ export const operations: Record<string, Operation> = {
   symbol_get: getSymbol,
   symbol_edit: editSymbol,
   git_codemod: codemod,
+  git_plan: plan,
   git_blame: blame,
   git_get_objects: getObjects,
   git_diff: diff,

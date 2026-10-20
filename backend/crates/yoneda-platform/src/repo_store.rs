@@ -21,6 +21,7 @@ mod projection;
 mod reads;
 mod record;
 mod rows;
+mod symbols;
 mod vacuum;
 pub use migration::migrate_repo_store;
 
@@ -45,9 +46,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
         "repo_pin" => actor.require("write"),
         // Only the platform classifier records review classes.
-        "repo_record_classes" if !actor.can("classify") => Err(Error::new(
+        "repo_record_classes" | "repo_record_symbols" if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
-            "Only the platform classifier records review classes",
+            "Only the platform classifier records derived classes",
         )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
@@ -85,6 +86,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_merge_plan" => merging::plan(db, c),
         "repo_path_history" => history::path_history(db, c),
         "repo_record_classes" => classes::record(db, c),
+        "repo_record_symbols" => symbols::record(db, c),
+        "repo_stale_reads" => symbols::stale_reads(db, c),
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         "repo_pin" => vacuum::pin(db, c, principal),
