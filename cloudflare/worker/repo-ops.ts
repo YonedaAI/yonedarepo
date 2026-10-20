@@ -5,7 +5,13 @@ import { durableJson } from './durable';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
-import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import {
+  type CachedObject,
+  parseStore,
+  RepoObjects,
+  type TreeEntry,
+  toBase64,
+} from './repo-objects';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
@@ -172,15 +178,21 @@ export async function readFile(ctx: RepoContext, args: Json) {
   };
 }
 
-/** Runs a Rust compute op that walks trees, supplying the trees it asks for. */
-export async function withTrees(objects: RepoObjects, input: Json) {
+/** Runs a Rust compute op that walks trees, supplying the trees it asks for (from
+ * `known` when already in hand, else through the tiers). */
+export async function withTrees(
+  objects: RepoObjects,
+  input: Json,
+  known: Map<string, CachedObject> = new Map(),
+) {
   const trees: Record<string, TreeEntry[]> = {};
   for (let round = 0; round <= 64; round++) {
     const result = compute({ ...input, trees });
     if (!result.need_trees) return result;
     await Promise.all(
       (result.need_trees as string[]).map(async (id) => {
-        trees[id] = await objects.tree(id);
+        const held = known.get(id);
+        trees[id] = held?.kind === 'tree' ? held.entries : await objects.tree(id);
       }),
     );
   }
