@@ -17,14 +17,25 @@ use yoneda_core::{
 pub const MERGE_PRINCIPAL: &str = "platform:merge";
 
 pub fn occ<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<OccOutcome> {
+    let writes = rows::touches(db, &commit.id)?
+        .into_iter()
+        .map(|t| t.path)
+        .collect();
+    occ_writing(db, commit, refname, writes)
+}
+
+/// `occ` for a commit whose written paths are given (one not adopted here).
+pub fn occ_writing<S: SqlStore>(
+    db: &S,
+    commit: &CommitRow,
+    refname: &str,
+    write_set: BTreeSet<String>,
+) -> Result<OccOutcome> {
     let proposal = Proposal {
         refname: refname.into(),
         base_version: commit.base_version,
         expected_old: commit.parents.first().copied(),
-        write_set: rows::touches(db, &commit.id)?
-            .into_iter()
-            .map(|t| t.path)
-            .collect(),
+        write_set,
         read_set: commit.read_set.iter().cloned().collect(),
     };
     let later = rows::entries(db, commit.base_version, current_version(db)?, Some(refname))?;

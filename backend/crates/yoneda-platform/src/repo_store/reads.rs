@@ -50,7 +50,7 @@ fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<Stri
     }
     let from = rows::checkpoint_at_or_before(db, version)?;
     let tail = rows::entries(db, from.version, version, None)?;
-    let projected = super::version_projection::projected_between(db, from.version, version)?;
+    let projected = super::projection_plan::projected_between(db, from.version, version)?;
     Ok(replay_projected(&from, &tail, &projected)?.refs)
 }
 

@@ -50,6 +50,8 @@ pub fn compute(c: Value) -> Result<Value> {
         "parse_objects" => crate::platform_push::parse_objects(&c),
         "build_commit" => crate::platform_build::build_commit(&c),
         "project_changesets" => crate::platform_project::project_changesets(&c),
+        "head_begin" => crate::platform_head::head_begin(&c),
+        "head_access" => crate::platform_head::head_access(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }

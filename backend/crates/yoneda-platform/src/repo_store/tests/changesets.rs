@@ -8,7 +8,7 @@ const PROJECTOR: &str = "platform:projection";
 impl Harness {
     /// A tree from the object store as compute expects it (no cache-copy cross-check:
     /// projected trees were never returned by prepare).
-    fn raw_tree_json(&self, id: &str) -> Value {
+    pub(super) fn raw_tree_json(&self, id: &str) -> Value {
         let (_, bytes) = &self.objects.borrow()[id];
         json!(decode_tree(bytes).unwrap().iter().map(|e| json!({"name": e.name, "id": e.id, "type": match e.mode {
             FileMode::Tree => "tree", FileMode::Executable => "exec", FileMode::Symlink => "symlink",
@@ -16,7 +16,7 @@ impl Harness {
     }
     /// One projector round as the adapter runs it: plan, compute (supplying trees), store
     /// the new objects, record. Returns what was recorded (None when nothing was pending).
-    fn project_once(&self) -> Option<Value> {
+    pub(super) fn project_once(&self) -> Option<Value> {
         let plan = self.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
         if plan["items"].as_array().is_none_or(Vec::is_empty) {
             return None;
@@ -50,7 +50,7 @@ impl Harness {
             json!({"op":"repo_changeset_record","ref":plan["ref"],"from":plan["head"]["id"],"items":built["projected"]}),
         ))
     }
-    fn project_compute(&self, plan: &Value) -> Value {
+    pub(super) fn project_compute(&self, plan: &Value) -> Value {
         let mut trees = serde_json::Map::new();
         loop {
             let step = crate::platform_compute(json!({"op":"project_changesets","head":plan["head"],"items":plan["items"],"trees":trees})).unwrap();
@@ -64,7 +64,7 @@ impl Harness {
             }
         }
     }
-    fn project_all(&self) {
+    pub(super) fn project_all(&self) {
         while self.project_once().is_some() {}
     }
     fn landable(&self, parent: &str, base: u64, changes: Value, read: Value) -> String {
@@ -84,7 +84,7 @@ impl Harness {
     fn status_of(&self, ticket: &Value) -> Value {
         self.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}))
     }
-    fn file_at(&self, commit: &str, path: &str) -> Option<String> {
+    pub(super) fn file_at(&self, commit: &str, path: &str) -> Option<String> {
         let objects = self.objects.borrow();
         let commit = Commit::decode(&objects[commit].1).unwrap();
         let mut tree = commit.tree().unwrap();
