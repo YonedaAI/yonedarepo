@@ -135,18 +135,23 @@ const hitRates = {
   r2: tiers.r2 + tiers.store ? tiers.r2 / (tiers.r2 + tiers.store) : null,
 };
 
-// S3: a one-file commit costs about the same in a small and a large repository.
+// S3: a one-file commit costs about the same in a small and a large repository. 60
+// interleaved samples each, judged on the platform's own time (Server-Timing): 20 client
+// samples over a long network path flipped the ±20% gate on noise alone.
 const large = await repoWith(LARGE);
 const edit = (id, k) => call(`/repos/${id}/commits`, { ref: 'main', changes: [file('seed/0/0.txt', `edit ${k}\n`)], message: 'edit', author });
-for (let k = 0; k < 3; k++) await Promise.all([edit(small.id, k), edit(large.id, k)]);
+for (let k = 0; k < 5; k++) await Promise.all([edit(small.id, k), edit(large.id, k)]);
 const smallSamples = [];
 const largeSamples = [];
+const smallServer = [];
+const largeServer = [];
 const singles = [];
-for (let k = 3; k < 23; k++) {
-  for (const [id, samples] of [[small.id, smallSamples], [large.id, largeSamples]]) {
+for (let k = 5; k < 65; k++) {
+  for (const [id, samples, server] of [[small.id, smallSamples, smallServer], [large.id, largeSamples, largeServer]]) {
     const made = await edit(id, k);
     must(made, 'edit');
     samples.push(made.ms);
+    server.push(made.phases.total?.ms ?? made.ms);
     if (samples === smallSamples) singles.push(made);
   }
 }
@@ -204,9 +209,11 @@ const result = {
   s3_commit_small: latency(smallSamples),
   single_commit_phases: breakdown(singles),
   s3_commit_large: latency(largeSamples),
+  s3_server_small: latency(smallServer),
+  s3_server_large: latency(largeServer),
   s19_time_to_first_edit: baseline,
 };
-const s3 = result.s3_commit_large.p50_ms <= result.s3_commit_small.p50_ms * 1.2 + 3;
+const s3 = result.s3_server_large.p50_ms <= result.s3_server_small.p50_ms * 1.2 + 3;
 const evidence = {
   schema: 1,
   target: url,
