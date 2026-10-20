@@ -7,6 +7,7 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
+mod break_glass;
 mod checks;
 mod classes;
 pub(crate) mod grants;
@@ -71,8 +72,12 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             Error::new("FORBIDDEN", "Only the platform merger lands queued work"),
         ),
         "repo_set_policy" => actor.require_owner(),
+        "repo_break_glass" => actor.require_human_owner(),
         _ => actor.require("read"),
     }?;
+    if !actor.owner && break_glass::PAUSED_OPS.contains(&op.as_str()) {
+        break_glass::refuse_if_paused(db)?;
+    }
     grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
@@ -112,6 +117,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_land_batch" => land_queue::land_batch(db, c, principal),
         "repo_land_release" => land_queue::release(db, c),
         "repo_record_imported" => history_import::record(db, c),
+        "repo_break_glass" => break_glass::execute(db, c, principal, &settings),
         "repo_import" => {
             if !actor.can("import") {
                 actor.require_owner()?;
