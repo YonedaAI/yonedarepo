@@ -33,5 +33,7 @@ export default defineConfig({
     include: ['tests/workers/**/*.test.ts'],
     exclude: ['tests/workers/apps-*.test.ts'],
     testTimeout: 20_000,
+    // One workerd per worker: cap it so parallel builders don't saturate the machine.
+    maxWorkers: 4,
   },
 });
