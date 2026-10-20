@@ -3,6 +3,7 @@ import { CommitView } from './CommitView';
 import { RepoFiles } from './RepoFiles';
 import { RepoHistory } from './RepoHistory';
 import { RepoList } from './RepoList';
+import { RepoOverview } from './RepoOverview';
 import { RepoSearch } from './RepoSearch';
 import { RepoTransactions } from './RepoTransactions';
 import { Failure } from './SourceStatus';
@@ -32,30 +33,23 @@ export function SourceApp() {
     projections?: { refname: string; status: string; detail?: string }[];
   }>(repo ? `/repos/${repo}` : null);
   const drift = status.data?.projections?.filter((p) => p.status === 'drift') ?? [];
-  const tab = (view: 'files' | 'history' | 'transactions' | 'search', label: string) =>
+  type Tab = 'files' | 'overview' | 'history' | 'transactions' | 'search';
+  const entry = (view: Tab, repo: string): SourceRoute =>
+    view === 'files' || view === 'overview'
+      ? { view, repo, path: '', ref: 'main' }
+      : view === 'history'
+        ? { view, repo, ref: 'main' }
+        : view === 'search'
+          ? { view, repo, query: '' }
+          : { view, repo };
+  const tab = (view: Tab, label: string) =>
     repo && (
       <a
-        href={formatSourceRoute(
-          view === 'files'
-            ? { view, repo, path: '', ref: 'main' }
-            : view === 'history'
-              ? { view, repo, ref: 'main' }
-              : view === 'search'
-                ? { view, repo, query: '' }
-                : { view, repo },
-        )}
+        href={formatSourceRoute(entry(view, repo))}
         aria-current={route.view === view ? 'page' : undefined}
         onClick={(e) => {
           e.preventDefault();
-          navigate(
-            view === 'files'
-              ? { view, repo, path: '', ref: 'main' }
-              : view === 'history'
-                ? { view, repo, ref: 'main' }
-                : view === 'search'
-                  ? { view, repo, query: '' }
-                  : { view, repo },
-          );
+          navigate(entry(view, repo));
         }}
       >
         {label}
@@ -85,7 +79,7 @@ export function SourceApp() {
               <p>
                 Git semantics over an API: commits are made on the server, checked on the exact
                 commit, reviewed and landed with optimistic concurrency. Pick a repository to browse
-                files, history and the transaction log.
+                files, a generated overview, history and the transaction log.
               </p>
             </div>
           )}
@@ -115,6 +109,7 @@ export function SourceApp() {
               )}
               <nav className="source-tabs" aria-label="Repository">
                 {tab('files', 'Files')}
+                {tab('overview', 'Overview')}
                 {tab('history', 'History')}
                 {tab('transactions', 'Transactions')}
                 {tab('search', 'Search')}
@@ -122,6 +117,7 @@ export function SourceApp() {
             </>
           )}
           {route.view === 'files' && <RepoFiles route={route} onNavigate={navigate} />}
+          {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
           {route.view === 'history' && (
             <RepoHistory repo={route.repo} refName={route.ref} onNavigate={navigate} />
           )}

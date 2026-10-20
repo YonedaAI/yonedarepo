@@ -2,6 +2,7 @@
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 import { dispatchRuns } from './repo-checks';
 import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
+import { recordContract, symbolContract } from './repo-contracts';
 import { blame, dispatchDerive, pathHistory, search } from './repo-derived';
 import { explicitMerge, landWithMerge } from './repo-merge';
 import {
@@ -15,6 +16,7 @@ import {
   replay,
 } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
+import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
 const version = (args: Json) =>
@@ -42,6 +44,9 @@ export const operations: Record<string, Operation> = {
   symbol_list: listSymbols,
   symbol_get: getSymbol,
   symbol_edit: editSymbol,
+  symbol_contract: symbolContract,
+  symbol_contract_record: recordContract,
+  symbol_view: agentView,
   git_codemod: codemod,
   git_blame: blame,
   git_get_objects: getObjects,
