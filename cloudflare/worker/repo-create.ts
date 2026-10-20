@@ -2,9 +2,9 @@
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
 import { commit } from './repo-commit';
+import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { refreshHead } from './repo-head';
 import { dispatchProjection } from './repo-projection';
 import { shardOutboxes } from './repo-shards';
 import type { Env } from './types';
