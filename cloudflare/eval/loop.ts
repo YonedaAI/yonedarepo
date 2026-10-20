@@ -2,7 +2,7 @@
 // executor runs them against the platform's public API, results go back as tool_result
 // blocks. The loop ends on `finish`, a reply without tool calls, the turn cap, or a cap
 // stop from the model client. What the model says about its work is never a result.
-import { type ModelClient, StopError } from './model';
+import { ArmError, type ModelClient, StopError } from './model';
 import type { Json } from './study';
 
 const RESULT_LIMIT = 16 * 1024;
@@ -35,6 +35,8 @@ export type LoopOutcome = {
   turns: number;
   stop: 'finished' | 'turn_cap' | 'model_error' | StopError['code'];
   tools: string[];
+  /** Why a model_error stopped the task (also counted in the client's failures). */
+  error?: string;
 };
 export type Execute = (name: string, input: Json) => Promise<string>;
 
@@ -52,7 +54,12 @@ export async function toolLoop(
     try {
       reply = await model.messages({ system: SYSTEM, messages, tools });
     } catch (e) {
-      return { turns: turn, stop: e instanceof StopError ? e.code : 'model_error', tools: trace };
+      if (e instanceof StopError) return { turns: turn, stop: e.code, tools: trace };
+      const error =
+        e instanceof ArmError
+          ? `${e.code}: ${e.message}`
+          : `unexpected: ${String((e as Error)?.message ?? e)}`;
+      return { turns: turn, stop: 'model_error', tools: trace, error: error.slice(0, 200) };
     }
     messages.push({ role: 'assistant', content: reply.content });
     const calls = (reply.content as Json[]).filter((block) => block.type === 'tool_use');

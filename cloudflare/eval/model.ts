@@ -166,6 +166,7 @@ export class ModelClient {
         throw new StopError('spend_cap', 'Projected spend would exceed the cap');
       this.usage.requests++;
       let response: Response;
+      let raw: string;
       try {
         response = await fetch(this.#route.url, {
           method: 'POST',
@@ -173,15 +174,19 @@ export class ModelClient {
           body: text,
           signal: AbortSignal.timeout(this.#limits.requestTimeoutMs),
         });
+        raw = await response.text();
       } catch (e: any) {
-        // The provider may have billed a request we never saw answered: charge the reservation.
+        // Timeout, connection or mid-body failure: the provider may have billed a request we
+        // never saw answered, so the reservation is charged.
         await this.#ledger.settle(id, projected);
         this.usage.microusd += projected;
-        this.#fail('timeout', `${String(e?.name ?? 'fetch failed')} (charged at projected cost)`);
+        this.#fail(
+          'timeout',
+          `${String(e?.name ?? 'Error')}: ${String(e?.message ?? '')} (charged at projected cost)`,
+        );
         if (attempt < this.#limits.maxRetries) continue;
         throw new ArmError('timeout', 'Model request failed');
       }
-      const raw = await response.text();
       let parsed: any = null;
       try {
         parsed = JSON.parse(raw);
