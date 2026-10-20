@@ -42,10 +42,25 @@ const bodyOf = (req: Request, limit?: number) =>
     throw new ApiError('INVALID_INPUT', String(e?.message ?? e));
   });
 
+/** Session checks in flight in this isolate, by everything `authenticate` reads: requests
+ * with identical credentials arriving together share one check (no result outlives it). */
+const checking = new Map<string, ReturnType<typeof authenticate>>();
+function authenticateOnce(req: Request, env: Env) {
+  const key = JSON.stringify(
+    ['origin', 'authorization', 'cookie', 'cf-access-jwt-assertion'].map((h) => req.headers.get(h)),
+  ).concat(new URL(req.url).origin);
+  let check = checking.get(key);
+  if (!check) {
+    check = authenticate(req, env).finally(() => checking.delete(key));
+    checking.set(key, check);
+  }
+  return check;
+}
+
 async function credentials(req: Request, env: Env): Promise<Credentials | null> {
   const bearer = req.headers.get('authorization');
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
-  const principal = await authenticate(req, env);
+  const principal = await authenticateOnce(req, env);
   if (!principal || principal.role === 'agent') return null;
   const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
   // Only a personal account session is a person; admin bearers may be held by scripts.
