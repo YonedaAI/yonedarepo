@@ -5,9 +5,10 @@ on:
   pull_request:
 permissions:
   contents: read
+# Pushes to dev/main all finish (deploy-dev waits for a CI success); PR runs supersede.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     runs-on: ubuntu-latest
