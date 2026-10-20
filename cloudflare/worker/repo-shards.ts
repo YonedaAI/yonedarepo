@@ -49,15 +49,45 @@ export async function shardRecord(env: Env, repo: string, commit: string) {
 }
 
 /**
- * Copies `commit` (and any unadopted ancestors, parents first) from its shard into the
- * authority. Returns false when no shard holds it.
+ * Copies `commit` and its unadopted ancestors into the authority in one call, parents
+ * first, then drops their shard records: the walk down the chain stops at the first
+ * commit no shard holds (adopted earlier, or the authority's own). Returns false when no
+ * shard holds `commit`. Idempotent: a racing or repeated adoption finds them adopted.
  */
 export async function adoptCommit(env: Env, repo: string, commit: string) {
+  const chain: Json[] = [];
+  for (let id: string | undefined = commit; id && chain.length < ADOPT_DEPTH; ) {
+    const record = await shardRecord(env, repo, id);
+    if (!record) break;
+    chain.push(record);
+    id = JSON.parse(record.commit.parents)[0];
+  }
+  if (chain.length === 0) return false;
+  const adopted = await authority(env, repo, { op: 'repo_adopt_commit', records: chain.reverse() });
+  if (adopted.error) {
+    // An ancestor's record went missing mid-walk (another adoption forgot it): one by one.
+    if (!NOT_RECORDED.test(adopted.error.message)) throw fail(adopted.error);
+    return adoptStepwise(env, repo, commit);
+  }
+  const byShard = new Map<number, string[]>();
+  for (const r of chain)
+    byShard.set(shardOf(r.commit.id), [...(byShard.get(shardOf(r.commit.id)) ?? []), r.commit.id]);
+  await Promise.all(
+    [...byShard].map(([shard, ids]) => shardCall(env, repo, shard, { op: 'store_forget', ids })),
+  );
+  return true;
+}
+
+async function adoptStepwise(env: Env, repo: string, commit: string) {
   const pending = [commit];
   for (let step = 0; pending.length > 0 && step < ADOPT_DEPTH; step++) {
     const id = pending[pending.length - 1];
     const record = await shardRecord(env, repo, id);
-    if (!record) return false;
+    // Gone from its shard after an adoption raced ahead: the authority has it now.
+    if (!record) {
+      pending.pop();
+      continue;
+    }
     const adopted = await authority(env, repo, { op: 'repo_adopt_commit', record });
     const missing = adopted.error && NOT_RECORDED.exec(adopted.error.message)?.[1];
     if (missing && missing !== id) pending.push(missing);

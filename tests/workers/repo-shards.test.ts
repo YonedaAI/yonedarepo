@@ -92,7 +92,9 @@ it('adopts idempotently when adoptions race or an acknowledgment is lost', async
   // Racing first reads of the chain's tip and middle, then a repeat (as after a lost ack).
   const tip = chain.at(-1) as string;
   await Promise.all([adoptCommit(bindings, id, tip), adoptCommit(bindings, id, chain[1]), api(`/repos/${id}/commits/${tip}`, owner)]);
-  expect(await adoptCommit(bindings, id, tip)).toBe(true);
+  // Repeated (a lost ack): nothing is left to adopt, and reads still find every commit.
+  await adoptCommit(bindings, id, tip);
+  expect((await api(`/repos/${id}/commits/${tip}`, owner)).status).toBe(200);
   const log = await api(`/repos/${id}/merge-base?left=${tip}&right=${created.body.commit}`, owner);
   expect(log.body.merge_bases[0].commit).toBe(created.body.commit);
   for (const c of chain) expect(await authorityHas(id, c)).toBe(true);
