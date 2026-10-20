@@ -11,6 +11,7 @@ pub(crate) mod plan;
 pub(crate) mod secrets;
 pub(crate) mod smoke;
 pub(crate) mod spec;
+pub(crate) mod teardown;
 pub(crate) mod template;
 pub(crate) mod wrangler;
 
@@ -21,7 +22,7 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         Some("gen") => generate::command(args),
         Some("plan") => plan::command(args).await,
         Some("up") => apply::up(args).await,
-        Some("down") => apply::down(args).await,
+        Some("down") => teardown::down(args).await,
         Some("smoke") => smoke::run(args).await,
         _ => {
             println!(
