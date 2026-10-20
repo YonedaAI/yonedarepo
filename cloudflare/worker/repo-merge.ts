@@ -6,6 +6,7 @@ import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
+import { refreshHead } from './repo-head';
 import { type CachedObject, fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
@@ -211,13 +212,15 @@ async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObje
 }
 
 /** After the branch moved: one projection and one derive job per move, sent by whoever
- * moved it (waiters whose work rode along send none). */
+ * moved it (waiters whose work rode along send none), and main's published head marked
+ * stale. */
 export async function moved(ctx: RepoContext, ref: string) {
   // The landing already happened: a lost message delays projection and derived data (the
   // next move or a projector retry catches up), it does not undo or fail the landing.
   await Promise.all([
     dispatchProjection(ctx.env, ctx.repo),
     dispatchDerive(ctx.env, ctx.repo, ref),
+    refreshHead(ctx.env, ctx.repo),
   ]).catch((e) => console.warn(`dispatch after landing failed: ${e?.message ?? e}`));
 }
 

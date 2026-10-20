@@ -7,6 +7,7 @@
 
 import { replay } from './repo-commit';
 import { dispatchDerive } from './repo-derived';
+import { refreshHead } from './repo-head';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 
@@ -14,6 +15,8 @@ const ACTIONS = ['land', 'revert', 'release_land_lease', 'pause_automation', 're
 const AUTHOR = { name: 'YonedaRepo break-glass', email: 'break-glass@yonedarepo.invalid' };
 
 async function nudge(ctx: RepoContext, ref: string, result: Json) {
+  // Every action changes what main's published head carries (its head, or the pause).
+  await refreshHead(ctx.env, ctx.repo);
   if (!result.landed || result.already) return result;
   const sent = await Promise.all([
     dispatchProjection(ctx.env, ctx.repo).then(

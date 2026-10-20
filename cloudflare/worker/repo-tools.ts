@@ -7,17 +7,10 @@ import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
+import { listTree, readFile } from './repo-files';
 import { landWithMerge } from './repo-landing';
 import { explicitMerge } from './repo-merge';
-import {
-  ApiError,
-  diff,
-  getObjects,
-  type Json,
-  listTree,
-  type RepoContext,
-  readFile,
-} from './repo-ops';
+import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { agentView } from './repo-views';
@@ -62,7 +55,8 @@ export const operations: Record<string, Operation> = {
   git_blame: blame,
   git_get_objects: getObjects,
   git_diff: diff,
-  git_commit: (ctx, a) => commit(ctx, null, a),
+  // A client's commit on main begins from the published head (no authority call).
+  git_commit: (ctx, a) => commit(ctx, null, { ...a, begin_from_head: true }),
   git_check: (ctx, a) =>
     ctx.call({
       op: 'repo_check',

@@ -13,10 +13,12 @@ async function setup(name: string, policy: unknown, files: ReturnType<typeof fil
   const created = await api('/repos', owner, { body: { name, policy, files, author } });
   expect(created.status).toBe(200);
   const repo = `/repos/${created.body.id}`;
+  // Lands one commit and returns main's Git head after it: the commit built for its batch,
+  // which is what main's history (log, blame, bisect) is made of.
   const land = async (changes: unknown[], message: string) => {
     const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes, message, author } });
     expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: made.body.commit } })).body.landed).toBe(true);
-    return made.body.commit as string;
+    return (await api(`${repo}/refs`, owner)).body.refs['refs/heads/main'] as string;
   };
   return { owner, repo, root: created.body.commit as string, land };
 }

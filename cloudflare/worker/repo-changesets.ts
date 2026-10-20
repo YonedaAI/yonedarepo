@@ -4,6 +4,7 @@
 // changeset version afterwards, deterministically (same versions, same ids), so it can
 // run in the background, on demand for a read, or twice at once without harm.
 import { dispatchRuns } from './repo-checks';
+import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
@@ -12,10 +13,11 @@ import { shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
-/** `changeset` (the default): landings queue in the authority and the combiner lands them
- * a batch at a time. `batch`: landers submit their commit's shard record to the branch's
+/** `batch` (the default): landers submit their commit's shard record to the branch's
  * combiner, which lands every waiting submission in one authority call (an adopted commit,
- * which has no shard record, or an unreachable combiner, falls back to `changeset`). */
+ * which has no shard record, or an unreachable combiner, falls back to `changeset`).
+ * `changeset`: landings queue in the authority and the combiner lands them a batch at a
+ * time. */
 export type LandMode = 'changeset' | 'batch';
 
 /** A write-path switch: the deployment's default, or what a request picked where the
@@ -32,7 +34,7 @@ export function writeSwitch<T extends string>(
 }
 
 export const landMode = (env: Env, requested?: string | null): LandMode =>
-  writeSwitch(env, ['changeset', 'batch'] as const, 'changeset', env.LAND_MODE, requested);
+  writeSwitch(env, ['changeset', 'batch'] as const, 'batch', env.LAND_MODE, requested);
 
 const PROJECTION_ROUNDS = 64;
 
@@ -44,6 +46,7 @@ const PROJECTION_ROUNDS = 64;
 export async function projectChangesets(env: Env, repo: string): Promise<number> {
   const projector = new RepoContext(env, repo, caller(env, repo, { _system: 'projection' }));
   let projected = 0;
+  const refs = new Set<string>();
   // The previous round's trees, carried into the next round.
   let previous: CachedObject[] = [];
   const caching: Promise<unknown>[] = [];
@@ -81,7 +84,10 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       if (e?.code !== 'STALE_HEAD') throw e;
       continue;
     }
+    // Another projector recorded these exact versions first: nothing new to announce.
+    if (recorded.already) continue;
     projected += built.projected.length;
+    refs.add(String(plan.ref));
     if (recorded.dispatch_objects)
       await dispatchObjects(env, repo).catch((e) =>
         console.warn(`object drain request failed: ${e?.message ?? e}`),
@@ -98,13 +104,14 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree');
   }
   await Promise.all(caching);
-  // The branch moved in Git: project it to Artifacts (a lost message only delays that),
-  // and republish its head.
+  // The branch moved in Git: project it to Artifacts and derive its search segments and
+  // change log (a lost message only delays them), and republish its head.
   if (projected)
     await Promise.all([
-      dispatchProjection(env, repo).catch((e) =>
-        console.warn(`dispatch after projection failed: ${e?.message ?? e}`),
-      ),
+      Promise.all([
+        dispatchProjection(env, repo),
+        ...[...refs].map((ref) => dispatchDerive(env, repo, ref)),
+      ]).catch((e) => console.warn(`dispatch after projection failed: ${e?.message ?? e}`)),
       refreshHead(env, repo),
     ]);
   return projected;
@@ -178,8 +185,11 @@ export async function landChangesets(merger: RepoContext, ref: string): Promise<
   const out = await merger.call({ op: 'repo_land_changesets', ref });
   if (out.wait) return { settled: [], wait: out.retry_after_ms ?? 250, more: true, slow: false };
   if (out.landed.length)
-    await kickProjection(merger.env, merger.repo).catch((e) =>
-      console.warn(`projection kick failed: ${e?.message ?? e}`),
-    );
+    await Promise.all([
+      kickProjection(merger.env, merger.repo).catch((e) =>
+        console.warn(`projection kick failed: ${e?.message ?? e}`),
+      ),
+      refreshHead(merger.env, merger.repo),
+    ]);
   return { settled: [...out.landed, ...out.failed], more: out.more, slow: out.slow.length > 0 };
 }

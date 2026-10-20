@@ -81,8 +81,9 @@ it('imports first-parent history from a remote and lands it', async () => {
   for (const text of ['2\n', '3\n']) {
     const made = await api(`/repos/${source.body.id}/commits`, owner, { body: { ref: 'main', changes: [file('a.txt', text), file(`n${text.trim()}.txt`, text)], message: text, author } }, local);
     await api(`/repos/${source.body.id}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, local);
-    head = made.body.commit;
   }
+  // The remote mirrors main: its Git head, the commit built for the last landed batch.
+  head = (await api(`/repos/${source.body.id}/refs`, owner, {}, local)).body.refs['refs/heads/main'];
   // The remote must hold the landed history: objects into R2, then main into the R2 store.
   await drainObjects(local);
   for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
