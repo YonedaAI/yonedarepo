@@ -40,6 +40,8 @@ function conflictError(conflicts: Json[]) {
     kind: c.kind,
     ...(c.marked_b64 ? { marked: new TextDecoder().decode(fromBase64(c.marked_b64)) } : {}),
     ...(c.regions ? { regions: c.regions } : {}),
+    // The three sides by blob id, for a reconcile commit.
+    ...(c.ours ? { base: c.base ?? null, ours: c.ours, theirs: c.theirs } : {}),
   }));
   return new ApiError(
     'CONFLICT',
@@ -71,6 +73,7 @@ async function landBatch(merger: RepoContext, claim: Json) {
       op: 'repo_land_batch',
       ref: claim.ref,
       epoch: claim.epoch,
+      head: claim.head,
       landed: [fastForward.ticket],
     });
     await moved(merger, claim.ref);
@@ -101,6 +104,7 @@ async function landBatch(merger: RepoContext, claim: Json) {
       op: 'repo_land_batch',
       ref: claim.ref,
       epoch: claim.epoch,
+      head: claim.head,
       landed: [],
       failed,
     });
@@ -120,6 +124,7 @@ async function landBatch(merger: RepoContext, claim: Json) {
     op: 'repo_land_batch',
     ref: claim.ref,
     epoch: claim.epoch,
+    head: claim.head,
     merge: made.commit,
     landed: accepted.map((item) => item.ticket),
     failed,
@@ -197,9 +202,10 @@ export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) 
     }
     try {
       await landBatch(merger, claim);
-    } catch (e) {
+    } catch (e: any) {
       await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch }).catch(() => {});
-      throw e;
+      // Lost the compare-and-swap (the branch moved while the batch was built): rebuild.
+      if (e?.code !== 'STALE_HEAD') throw e;
     }
   }
   throw new ApiError('TIMEOUT', `Landing on ${ref} is still queued; check ticket ${ticket}`, {

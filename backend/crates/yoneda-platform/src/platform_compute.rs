@@ -227,8 +227,22 @@ fn merge(c: &Value) -> Result<Value> {
         let (Some(base), Some(ours), Some(theirs)) = (base, ours, theirs) else {
             continue;
         };
+        // Every content conflict names its three sides, so the writer can reconcile.
+        let sides = json!({ "base": content.base, "ours": content.ours, "theirs": content.theirs });
+        let conflict = |extra: Value| {
+            let mut c = json!({ "path": content.path, "kind": PathConflictKind::Content });
+            for (k, v) in sides
+                .as_object()
+                .into_iter()
+                .flatten()
+                .chain(extra.as_object().into_iter().flatten())
+            {
+                c[k] = v.clone();
+            }
+            c
+        };
         if base.len().max(ours.len()).max(theirs.len()) > MAX_MERGE_BYTES {
-            conflicts.push(json!({ "path": content.path, "kind": PathConflictKind::Content, "too_large": true }));
+            conflicts.push(conflict(json!({ "too_large": true })));
             continue;
         }
         match merge3(&base, &ours, &theirs) {
@@ -236,13 +250,10 @@ fn merge(c: &Value) -> Result<Value> {
                 "path": content.path, "content_b64": STANDARD.encode(merged),
                 "type": entry_type(content.mode), "expect": content.ours,
             })),
-            TextMerge::Conflict { marked, regions } => conflicts.push(json!({
-                "path": content.path, "kind": PathConflictKind::Content,
-                "marked_b64": STANDARD.encode(marked), "regions": regions,
-            })),
-            TextMerge::Binary => conflicts.push(json!({
-                "path": content.path, "kind": PathConflictKind::Content, "binary": true,
-            })),
+            TextMerge::Conflict { marked, regions } => conflicts.push(conflict(
+                json!({ "marked_b64": STANDARD.encode(marked), "regions": regions }),
+            )),
+            TextMerge::Binary => conflicts.push(conflict(json!({ "binary": true }))),
         }
     }
     Ok(json!({ "changes": changes, "conflicts": conflicts }))
