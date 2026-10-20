@@ -1,8 +1,8 @@
 //! Each container reserves UID 1000 exclusively for its one untrusted attempt.
 //! A Linux subreaper and kernel UID signal barrier contain children even after setsid().
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) struct AgentProcesses(bool);
-pub(crate) fn terminate_attempt() -> yoneda_core::Result<()> {
+pub(crate) fn terminate_attempt() -> yoneda_agents_core::Result<()> {
     let mut processes = AgentProcesses::prepare()?;
     processes.finish()
 }

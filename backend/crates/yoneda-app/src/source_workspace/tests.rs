@@ -171,7 +171,7 @@ fn source_schema_upgrade_from_previous_version_preserves_rows_and_replays() {
     }
     db.query(
         "INSERT INTO source_schema_migrations(version,digest) VALUES(1,?)",
-        &[json!(yoneda_core::digest(previous.as_bytes()))],
+        &[json!(yoneda_agents_core::digest(previous.as_bytes()))],
     )
     .unwrap();
     let original = json!(f::file("kept.rs", b"unchanged"));

@@ -3,12 +3,12 @@ import { afterEach, expect, it } from 'vitest';
 import { hex, sourceFingerprint } from '../../cloudflare/worker/source-crypto';
 import { ensureSourceIndex, preparedSourceView, sourceIndexBounded } from '../../cloudflare/worker/source-index';
 import { indexPrefix, type IndexManifest } from '../../cloudflare/worker/source-index-journal';
-import type { Env } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 async function fixture() {
-  const revision = { repository: 'yoneda-test/certified-index', commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const revision = { repository: 'platform/certified-index', commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
   const body = new Uint8Array([0, 255]);
   const prefix = new TextEncoder().encode(`blob ${body.length}\0`);
   const raw = new Uint8Array(prefix.length + body.length); raw.set(prefix); raw.set(body, prefix.length);
@@ -16,7 +16,7 @@ async function fixture() {
   const repo = { readCommit: async () => ({ hash: revision.commit, treeHash: revision.tree }),
     readTree: async () => [{ name: 'source.bin', hash: oid, mode: '100644', type: 'blob' }],
     readBlob: async () => new Blob([body]), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
-  const env = { ...bindings, ARTIFACTS: { get: async () => repo } } as unknown as Env;
+  const env = await syntheticPlatform(bindings, { 'certified-index': repo });
   const state = await sourceIndexBounded(env, revision);
   if (state.state !== 'prepared') throw new Error('Fixture index incomplete');
   const manifest = await (await bindings.OBJECTS.get(state.manifest))!.json<IndexManifest>();

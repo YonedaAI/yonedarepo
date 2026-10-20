@@ -52,11 +52,9 @@ fn checked_branch_can_continue_without_canonical_publication() {
             .any(|r| r["id"] == "intent:run-one")
     );
     let decision = call(&db,json!({"op":"accept","request_id":"publish-branch","candidate":"candidate-a","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Registration behavior is independently checked","alternatives":[]})).unwrap();
-    let publish = format!("publish:{}", decision["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":publish})).unwrap();
     call(
         &db,
-        json!({"op":"finish","job_id":publish,"epoch":1,"result":{"commit":"c".repeat(40)}}),
+        json!({"op":"publication_readback","decision_id":decision["id"],"observed_commit":"c".repeat(40)}),
     )
     .unwrap();
     let published = crate::storage::repo(&db).unwrap();

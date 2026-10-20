@@ -146,13 +146,24 @@ async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
  * branch's queue and this caller either claims the queue (and lands a whole batch) or
  * waits for whoever holds it. No caller ever rebuilds a merge against a moving head.
  */
-export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) {
+export async function landWithMerge(
+  ctx: RepoContext,
+  ref: string,
+  sha: string,
+  fastForwardOnly = false,
+) {
   try {
-    const landed = await ctx.call({ op: 'repo_land', ref, commit: sha });
+    const landed = await ctx.call({
+      op: 'repo_land',
+      ref,
+      commit: sha,
+      fast_forward_only: fastForwardOnly,
+    });
     if (!landed.already) await moved(ctx, ref);
     return landed;
   } catch (e: any) {
-    if (e?.code !== 'MERGE_REQUIRED') throw e;
+    // A fast-forward-only landing never joins the merge queue.
+    if (e?.code !== 'MERGE_REQUIRED' || fastForwardOnly) throw e;
   }
   const { ticket } = await ctx.call({ op: 'repo_land_enqueue', ref, commit: sha });
   const merger = new RepoContext(
@@ -207,10 +218,17 @@ export async function landWithMerge(ctx: RepoContext, ref: string, sha: string) 
   });
 }
 
-/** `git merge <source>` into branch `into`: creates (does not land) a merge commit. */
+/**
+ * `git merge <source>` into branch (or commit) `into`: creates (does not land) a merge
+ * commit. With `on_conflict: "workspace"`, conflicts do not fail the call: it records a
+ * two-parent workspace commit holding every cleanly merged path (conflicted paths keep
+ * `into`'s bytes) and returns it with the conflicting paths, for a resolver to finish.
+ */
 export async function explicitMerge(ctx: RepoContext, args: Json) {
   const into = String(args.into ?? 'main');
-  const head = await ctx.call({ op: 'repo_snapshot', ref: into });
+  const head = SHA.test(into)
+    ? await ctx.call({ op: 'repo_commit', commit: into })
+    : await ctx.call({ op: 'repo_snapshot', ref: into });
   const source = SHA.test(args.source ?? '')
     ? await ctx.call({ op: 'repo_commit', commit: args.source })
     : await ctx
@@ -230,13 +248,27 @@ export async function explicitMerge(ctx: RepoContext, args: Json) {
     ours: head.tree,
     theirs: source.tree,
   });
-  if (merged.conflicts.length > 0) throw await scopedConflict(ctx, merged.conflicts);
-  return commit(ctx, objects, {
-    parent: head.commit,
-    merge_parent: source.commit,
-    base_version: head.version,
-    changes: merged.changes,
-    message: args.message ?? `Merge ${args.source} into ${into}`,
-    author: args.author ?? PLATFORM_AUTHOR,
-  });
+  const merge = (changes: Json[]) =>
+    commit(ctx, objects, {
+      parent: head.commit,
+      merge_parent: source.commit,
+      base_version: head.version ?? head.base_version ?? 0,
+      changes,
+      message: args.message ?? `Merge ${args.source} into ${into}`,
+      author: args.author ?? PLATFORM_AUTHOR,
+    });
+  if (merged.conflicts.length === 0) return merge(merged.changes);
+  if (args.on_conflict !== 'workspace') throw await scopedConflict(ctx, merged.conflicts);
+  const conflicted = new Set(merged.conflicts.map((c) => String(c.path)));
+  if ((await keepAllowed(ctx, merged.conflicts)).length !== merged.conflicts.length)
+    throw outside();
+  const clean = merged.changes.filter((c) => !conflicted.has(String(c.path)));
+  const workspace = await merge(clean);
+  return {
+    conflicts: merged.conflicts.map((c) => ({ path: c.path, kind: c.kind })),
+    workspace: workspace.commit,
+    tree: workspace.tree,
+    parents: workspace.parents,
+    merged_paths: pathsOf(clean),
+  };
 }

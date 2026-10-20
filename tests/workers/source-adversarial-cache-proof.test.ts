@@ -14,8 +14,7 @@ async function cachedFixture() {
   const object = await f.env.OBJECTS.get(`${key}.proof`);
   if (!object) throw new Error('Missing real R2 cache proof');
   const proof = await object.json<Record<string, any>>();
-  const repo = await f.env.ARTIFACTS.get('cache-proof-boundary');
-  return { ...f, base, file, key, proof, repo, oid: file.content.blob };
+  return { ...f, base, file, key, proof, oid: file.content.blob };
 }
 
 for (const field of ['sha256', 'size', 'git_oid', 'etag', 'version', 'signature']) {

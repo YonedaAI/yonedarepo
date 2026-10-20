@@ -82,7 +82,7 @@ For browser hot reload, keep Wrangler running and run `pnpm --dir frontend dev`.
   ```sh
   C=.local/deploy/my-yoneda/platform.json
   pnpm exec wrangler r2 bucket create my-yoneda-objects --config $C
-  for q in dead-letter agent capture evaluate publish; do pnpm exec wrangler queues create my-yoneda-$q --config $C; done
+  for q in dead-letter agent capture evaluate platform; do pnpm exec wrangler queues create my-yoneda-$q --config $C; done
   ```
 
 - **Deploy:** `cargo xtask cloudflare-deploy --name my-yoneda` (add `--dry-run` first). It builds, migrates D1, deploys the platform, container and sites Workers, and checks health. It starts no paid inference.
@@ -96,7 +96,8 @@ Details: [runbook](docs/runbook.md) · [public metadata and custom domains](docs
 ```text
 frontend/            Browser app (React 19, React Flow)
 backend/crates/
-  yoneda-core/       Contracts, Git object model, transaction log and pure validation
+  yoneda-core/       Shared contracts: Git object model, transaction log, merge and validation
+  yoneda-agents-core/ Agent-layer contracts: runs, teams, providers, budgets, evaluation
   yoneda-store/      SQL store trait and the native SQLite store
   yoneda-platform/   Source platform authority, migrations and stateless compute
   yoneda-app/        Agent-layer commands, graph and DO migrations

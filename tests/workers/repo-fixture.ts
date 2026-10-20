@@ -88,7 +88,8 @@ export const fakePushQueues = {
     return batchers.get(name);
   },
 };
-export const scoped = { ...bindings, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues } as unknown as Env;
+// Platform tests choose their object store explicitly; the agent-layer default is R2.
+export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues } as unknown as Env;
 
 /** Registers per-test reset, the D1 listing schema and the Artifacts push endpoint. */
 export function usePlatformFixture() {

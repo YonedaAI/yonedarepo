@@ -6,7 +6,7 @@ use std::{
     os::unix::{ffi::OsStrExt, fs::PermissionsExt},
     path::{Path, PathBuf},
 };
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 const GENERATED: &[&str] = &["node_modules", "target", ".venv", "__pycache__"];
 /// Metadata must be the merged frozen view, including baseline overrides; no directory/content walk.
 pub fn prefixes<'a>(tracked: impl Iterator<Item = &'a str>) -> Vec<String> {

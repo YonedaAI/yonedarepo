@@ -4,7 +4,7 @@ fn session(id: &str, grant: &str) -> Value {
 }
 fn begin(id: &str, session: &str) -> Value {
     json!({"op":"external_begin","id":id,"_grant":"grant-one","session_id":session,
-        "fork":"test/external-fork","intent":"Local contribution","context":[],"criteria":[]})
+        "branch":"contributions/external","intent":"Local contribution","context":[],"criteria":[]})
 }
 fn read(session: Option<&str>, call: &str) -> Value {
     let mut c = json!({"op":"record_context_access","_grant":"grant-one","call_id":call,

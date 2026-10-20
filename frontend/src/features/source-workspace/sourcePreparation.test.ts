@@ -22,9 +22,9 @@ it('moves to working and human review only from the supplied recorded workflow s
   );
 });
 it('does not require a new source preparation state for historical Git transport approvals', () => {
-  expect(preparationView('git-native-v1', undefined, 'working')).toBeNull();
+  expect(preparationView('json-v1', undefined, 'working')).toBeNull();
   const html = renderToStaticMarkup(
-    createElement(SourcePreparationPanel, { transport: 'git-native-v1', stage: 'working' }),
+    createElement(SourcePreparationPanel, { transport: 'json-v1', stage: 'working' }),
   );
   expect(html).toBe('');
 });

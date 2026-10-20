@@ -1,7 +1,7 @@
 //! Bounded comparison review and explicit selection, separate from publication.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod approval;
 mod budgets;
 mod lifecycle;
@@ -65,7 +65,7 @@ fn fingerprint(c: &Value) -> Result<String> {
     if let Some(m) = input.as_object_mut() {
         m.remove("now");
     }
-    yoneda_core::fingerprint(&input)
+    yoneda_agents_core::fingerprint(&input)
 }
 fn pending<S: SqlStore>(db: &S, rid: &str, except: Option<&str>) -> Result<bool> {
     Ok(run_jobs(db, rid)?.iter().any(|j| {

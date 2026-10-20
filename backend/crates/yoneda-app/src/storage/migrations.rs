@@ -1,7 +1,7 @@
 //! Digest-pinned forward-only ledger migrations, shared by native and Durable Object stores.
 use super::SqlStore;
 use serde_json::json;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     const SCHEMA_VERSION: i64 = 14;
@@ -44,7 +44,7 @@ pub fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             ));
         }
         for (version, sql) in migrations {
-            let digest = yoneda_core::digest(sql.as_bytes());
+            let digest = yoneda_agents_core::digest(sql.as_bytes());
             if let Some(existing) = applied.iter().find(|v| v["version"] == version) {
                 if existing["digest"] != digest {
                     return Err(Error::new(

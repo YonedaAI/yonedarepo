@@ -58,6 +58,8 @@ export interface Repository {
   updated_at?: number;
   site?: { digest: string; commit: string };
   remote: { namespace: string; name: string };
+  /** The platform repository holding this project's source; the owner lands there. */
+  platform_repo?: string;
   policy?: {
     suite: string;
     version: string;

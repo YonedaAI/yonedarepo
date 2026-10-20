@@ -29,7 +29,7 @@ pub(super) fn handle<S: SqlStore>(
         .ok_or_else(|| Error::new("SOURCE_LIMIT", "Cumulative upload capacity exceeded"))?;
     let id = format!(
         "upload:{}",
-        yoneda_core::fingerprint(
+        yoneda_agents_core::fingerprint(
             &json!({"workspace":binding.workspace_id,"request_id":c["request_id"]})
         )?
     );

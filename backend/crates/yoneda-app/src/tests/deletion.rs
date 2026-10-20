@@ -86,11 +86,9 @@ fn deletion_confirmation_and_ownership_fail_without_mutation() {
 fn deletion_fences_a_pending_publication_without_accepting_late_readback() {
     let db = repo();
     let decision = call(&db, ready(&db)).unwrap();
-    let id = format!("publish:{}", decision["id"].as_str().unwrap());
-    let attempt = call(&db, json!({"op":"claim","job_id":id})).unwrap();
     delete(&db);
     assert_eq!(crate::storage::repo(&db).unwrap()["pending"], Value::Null);
-    assert_eq!(call(&db, json!({"op":"finish","job_id":id,"epoch":attempt["epoch"],"result":{"commit":"c".repeat(40)}})).unwrap_err().code, "REPOSITORY_DELETED");
+    assert_eq!(call(&db, json!({"op":"publication_readback","decision_id":decision["id"],"observed_commit":"c".repeat(40)})).unwrap_err().code, "REPOSITORY_DELETED");
     assert_eq!(
         crate::storage::repo(&db).unwrap()["published_commit"],
         "a".repeat(40)
@@ -107,14 +105,5 @@ fn deleting_an_uninitialized_project_permanently_reserves_its_identity() {
     assert_eq!(
         call(&db, json!({"op":"init"})).unwrap_err().code,
         "REPOSITORY_DELETED"
-    );
-    let pending = call(&db, json!({"op":"outbox"})).unwrap();
-    assert!(
-        pending["jobs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["kind"] == "delete_artifact"
-                && entry["payload"]["name"] == "repo-pending")
     );
 }

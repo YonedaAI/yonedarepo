@@ -4,8 +4,8 @@ use super::http::{Response, Server};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use yoneda_agents_core::source_workspace::*;
 use yoneda_app::{execute_source_workspace, native::NativeStore};
-use yoneda_core::source_workspace::*;
 
 pub const BASE: [(&str, &[u8]); 2] = [("a.txt", b"alpha"), ("b.txt", b"bravo")];
 
@@ -52,7 +52,7 @@ impl NativeReceiptServer {
             role: SourceRole::Builder,
             access: SourceAccess::ReadWrite,
             view_digest: digest.clone(),
-            baseline_overrides_digest: yoneda_core::fingerprint(&json!([])).unwrap(),
+            baseline_overrides_digest: yoneda_agents_core::fingerprint(&json!([])).unwrap(),
             base: base.clone(),
             parents: vec![base.commit.clone()],
             policy_digest: "d".repeat(64),
@@ -135,8 +135,8 @@ fn upload(
     query: &str,
     bytes: &[u8],
     objects: &mut BTreeMap<String, Vec<u8>>,
-    call: impl Fn(Value, bool) -> yoneda_core::Result<Value>,
-) -> yoneda_core::Result<Value> {
+    call: impl Fn(Value, bool) -> yoneda_agents_core::Result<Value>,
+) -> yoneda_agents_core::Result<Value> {
     let mut args = json!({"op":"source_upload_ticket"});
     for pair in query.split('&') {
         let (key, value) = pair.split_once('=').unwrap();
@@ -155,7 +155,7 @@ fn upload(
     }
     let issued = call(args, false)?;
     let ticket = &issued["ticket"];
-    assert_eq!(ticket["sha256"], yoneda_core::digest(bytes));
+    assert_eq!(ticket["sha256"], yoneda_agents_core::digest(bytes));
     objects.insert(ticket["sha256"].as_str().unwrap().into(), bytes.to_vec());
     let mut verified = call(
         json!({"op":"source_verify_upload","request_id":format!("verify:{}", ticket["id"].as_str().unwrap()),
@@ -214,7 +214,11 @@ fn grant(binding: &SourceBinding, purpose: ActorPurpose) -> ActorGrant {
     key[..32].fill(0xaa);
     inner.update(key.map(|b| b ^ 0x36));
     inner.update(b"yoneda:source-grant:v1\0");
-    inner.update(yoneda_core::fingerprint(&json!(claims)).unwrap().as_bytes());
+    inner.update(
+        yoneda_agents_core::fingerprint(&json!(claims))
+            .unwrap()
+            .as_bytes(),
+    );
     outer.update(key.map(|b| b ^ 0x5c));
     outer.update(inner.finalize());
     ActorGrant {

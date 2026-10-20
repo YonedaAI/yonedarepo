@@ -90,16 +90,6 @@ export async function guidedProjectInput(
   } catch (failure) {
     if (setupCode(failure) !== 'NOT_FOUND') throw failure;
   }
-  try {
-    using target = await env.ARTIFACTS.get(id);
-    await target.info();
-    throw guidedFailure(
-      'IDEMPOTENCY_CONFLICT',
-      'Guided setup cannot reuse an existing source repository.',
-    );
-  } catch (failure) {
-    if (setupCode(failure) !== 'NOT_FOUND') throw failure;
-  }
   const profile = await publishedGuidedProfile(env);
   return {
     source: null,
@@ -114,7 +104,8 @@ export async function guidedProjectInput(
   };
 }
 
-export async function guidedProvisionEnvironment(env: Env, project: Json): Promise<Env> {
+/** The verified immutable starter template of a guided project (null for other projects). */
+export async function guidedStarter(env: Env, project: Json): Promise<string | null> {
   const marker = project.guided_project;
   if (!marker) {
     // An alarm may dispatch a reservation committed by an older Workspace DO.
@@ -124,7 +115,7 @@ export async function guidedProvisionEnvironment(env: Env, project: Json): Promi
         'LEDGER_UPDATING',
         'The workspace has not retained the fixed guided profile; repository setup is updating.',
       );
-    return env;
+    return null;
   }
   if (
     !isGuidedProject(marker) ||
@@ -156,26 +147,5 @@ export async function guidedProvisionEnvironment(env: Env, project: Json): Promi
     actual.parents.length !== 0
   )
     throw guidedFailure('GUIDED_PROFILE_UNAVAILABLE', 'The immutable guided starter changed.');
-  return { ...env, STARTER_REPO: name };
-}
-
-export async function assertGuidedFork(remote: ArtifactsRepo, project: Json) {
-  const marker = project.guided_project;
-  if (!marker) return;
-  const info = await remote.info();
-  const head = (await remote.log({ ref: marker.starter.branch, limit: 1 }))[0]?.hash;
-  const actual = await remote.readCommit(marker.starter.commit);
-  if (
-    info.name !== project.id ||
-    info.source !== `artifacts:${marker.starter.repository}` ||
-    info.readOnly !== false ||
-    info.defaultBranch !== marker.starter.branch ||
-    head !== marker.starter.commit ||
-    !actual ||
-    actual.hash !== marker.starter.commit ||
-    actual.treeHash !== marker.starter.tree ||
-    !Array.isArray(actual.parents) ||
-    actual.parents.length !== 0
-  )
-    throw guidedFailure('IDEMPOTENCY_CONFLICT', 'The target is not the fresh guided starter fork.');
+  return name;
 }

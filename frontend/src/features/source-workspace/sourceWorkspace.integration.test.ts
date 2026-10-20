@@ -115,7 +115,7 @@ it('rejects provenance from another revision rather than linking its context as 
 it('capability gating preserves old approvals and makes no source requests on an older deployment', () => {
   const r = reader();
   const props = {
-    transport: 'git-native-v1',
+    transport: 'json-v1',
     stage: 'working' as const,
     selection: checked,
     reader: r,

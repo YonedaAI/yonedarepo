@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "accept" => accept(db, &c, now),
@@ -24,7 +24,7 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         .as_object_mut()
         .ok_or_else(|| bad("Invalid request"))?
         .remove("now");
-    let fingerprint = yoneda_core::fingerprint(&input)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&input)?;
     for d in all(db, "decisions")? {
         if d["request_id"] == request {
             if d["fingerprint"] != fingerprint {
@@ -98,7 +98,8 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     // A checked working head's base may be an intermediate commit; the publisher leases the
     // canonical head observed before this selection reserves the target.
     let lease = super::publication::canonical_lease(&r)?;
-    let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit});
+    let receipt = json!({"id":did,"status":"publication_pending","version":number(&r,"version")?+1,"commit":revision.commit,
+        "publication":super::publication::owner_landing(&r, &revision.commit, &lease, override_checks)});
     let mut d = json!({"id":did,"request_id":request,"fingerprint":fingerprint,"receipt":receipt,"status":"publication_pending","candidate":cid,"run_id":candidate["run_id"],"base":candidate["base"],"target":candidate["revision"],"rationale":rationale,"decision_kind":kind,"alternatives":c.get("alternatives").cloned().unwrap_or(json!([])),"created_at":now,"publication_expected":lease,"published_before":r["published_commit"],"checks_overridden":override_checks});
     super::comparison::decision_provenance(db, &run, &mut d)?;
     create(db, "decisions", &did, &d)?;
@@ -139,13 +140,6 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     run["status"] = json!("accepted");
     let rid = string(&run, "id")?;
     save(db, "runs", &rid, &run)?;
-    job(
-        db,
-        &format!("publish:{did}"),
-        "publish",
-        now,
-        json!({"decision_id":did,"expected":lease,"target":candidate["revision"],"canonical":r["remote"],"execution":{"id":candidate["execution"],"run_id":candidate["run_id"]}}),
-    )?;
     event(db, "decision.selected", now, receipt.clone())?;
     Ok(receipt)
 }
@@ -157,7 +151,7 @@ pub(super) fn current_checks<S: SqlStore>(
     cid: &str,
     r: &Value,
     accept_failed_checks: bool,
-) -> Result<yoneda_core::Revision> {
+) -> Result<yoneda_agents_core::Revision> {
     super::publication::not_rejected(candidate)?;
     let eid = string(candidate, "evaluation").map_err(|_| {
         Error::new(
@@ -165,16 +159,16 @@ pub(super) fn current_checks<S: SqlStore>(
             "Candidate has not been independently evaluated",
         )
     })?;
-    let evaluation: yoneda_core::Evaluation =
+    let evaluation: yoneda_agents_core::Evaluation =
         serde_json::from_value(get(db, "evaluations", &eid)?).map_err(|e| bad(&e.to_string()))?;
-    let policy: yoneda_core::Policy =
+    let policy: yoneda_agents_core::Policy =
         serde_json::from_value(r["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-    let revision: yoneda_core::Revision =
+    let revision: yoneda_agents_core::Revision =
         serde_json::from_value(candidate["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_evaluation_binding(&evaluation, cid, &revision, &policy)?;
+    yoneda_agents_core::validate_evaluation_binding(&evaluation, cid, &revision, &policy)?;
     // Failed required checks block publication unless the owner explicitly overrides them.
     if !accept_failed_checks {
-        yoneda_core::validate_required_checks(&evaluation, &policy)?;
+        yoneda_agents_core::validate_required_checks(&evaluation, &policy)?;
     }
     if policy
         .build

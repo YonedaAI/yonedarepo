@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 #[path = "tests/comparison_adversarial_tests.rs"]
 mod comparison_adversarial_tests;
 #[path = "tests/comparison_legacy_selection_tests.rs"]

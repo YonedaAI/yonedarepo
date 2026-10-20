@@ -1,7 +1,7 @@
 //! Hosted collaboration policy. Every entry point runs in the enclosing ledger transaction.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, team::TeamPlan};
+use yoneda_agents_core::{Error, Result, team::TeamPlan};
 mod capture;
 mod coordination;
 mod coordination_retry;
@@ -169,7 +169,7 @@ pub(super) fn validate_candidate<S: SqlStore>(
     }
     let manifest = inputs::manifest(db, run)?;
     if candidate["integration_manifest"] != manifest
-        || candidate["integration_digest"] != yoneda_core::fingerprint(&manifest)?
+        || candidate["integration_digest"] != yoneda_agents_core::fingerprint(&manifest)?
     {
         return Err(Error::new(
             "STALE_INTEGRATION",

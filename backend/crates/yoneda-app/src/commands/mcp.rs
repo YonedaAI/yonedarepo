@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "context" => {
@@ -151,7 +151,7 @@ fn validate_assumptions(metadata: &Value, research: bool) -> Result<()> {
                 return Err(bad("Metric name is too long"));
             }
             number(assumption, "limit")?;
-            yoneda_core::validate_path(&string(assumption, "path")?)?;
+            yoneda_agents_core::validate_path(&string(assumption, "path")?)?;
         }
     }
     Ok(())

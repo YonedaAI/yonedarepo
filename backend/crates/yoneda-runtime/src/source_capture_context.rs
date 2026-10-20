@@ -1,6 +1,6 @@
 //! Compact source capture context returned only by the current root capture boundary.
 use serde_json::Value;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_workspace::{SourceAccess, SourceBinding, invalid, validate_hash, validate_id},
 };

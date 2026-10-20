@@ -152,7 +152,7 @@ fn resolver_capture_cannot_create_candidate_after_plan_superseded() {
     let execution_id = receipt["execution_id"].as_str().unwrap();
     let execution = get(&db, "executions", execution_id).unwrap();
     let job_id = format!("capture:{execution_id}");
-    create(&db,"jobs",&job_id,&json!({"id":job_id,"kind":"capture","status":"running","epoch":1,"lease_until":1000,"attempt_deadline":1000,"payload":{"capture_subtype":"resolve_conflict","conflict_id":"conflict","execution":execution}})).unwrap();
+    create(&db,"jobs",&job_id,&json!({"id":job_id,"kind":"capture","status":"running","epoch":1,"lease_until":1000,"attempt_deadline":1000,"payload":{"capture_subtype":"source_changeset","source_resolution":true,"conflict_id":"conflict","execution":execution}})).unwrap();
     let mut run = get(&db, "runs", "run").unwrap();
     run["team_plan_revision"] = json!(2);
     save(&db, "runs", "run", &run).unwrap();

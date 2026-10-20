@@ -1,7 +1,7 @@
 //! Optional source tooling uses the same container-scoped API as the lazy filesystem.
 use crate::{err, source_client_api::source_operation};
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 const TOOLS: &str = include_str!("source_tools.json");
 const READ_ONLY: &[&str] = &[
     "source_status",

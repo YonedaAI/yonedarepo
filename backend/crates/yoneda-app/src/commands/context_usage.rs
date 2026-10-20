@@ -1,7 +1,7 @@
 //! Paginated access receipts and full-run evidence counts for agents and developers.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     context_usage::{UsageCounts, UsageCoverage, UsagePage},
 };

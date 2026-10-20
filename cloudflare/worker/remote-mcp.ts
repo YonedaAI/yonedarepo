@@ -1,4 +1,4 @@
-import tools from '../../backend/crates/yoneda-core/src/mcp_remote_tools.json';
+import tools from '../../backend/crates/yoneda-agents-core/src/mcp_remote_tools.json';
 import { grantPrincipal } from './grants';
 import { error, readJson, response, safeId } from './http';
 import { remoteTool } from './remote-tools';
@@ -43,7 +43,8 @@ export async function remoteMcp(req: Request, env: Env, repo: string): Promise<R
     // This endpoint does not offer a server-initiated SSE stream.
     if (req.method !== 'POST')
       return new Response(null, { status: 405, headers: { Allow: 'POST, DELETE' } });
-    const body = await readJson(req, 256 * 1024);
+    // attempt_commit carries file contents; the grant is already authenticated here.
+    const body = await readJson(req, 4 * 1024 * 1024);
     if (
       body.jsonrpc !== '2.0' ||
       (body.id !== undefined && body.id !== null && !['string', 'number'].includes(typeof body.id))
@@ -91,7 +92,6 @@ export async function remoteMcp(req: Request, env: Env, repo: string): Promise<R
           repo,
           body.params?.name,
           args,
-          new URL(req.url).origin,
           sessionId ?? undefined,
         );
         result = { content: [{ type: 'text', text: JSON.stringify(value) }] };

@@ -15,7 +15,7 @@ afterEach(reset);
 it('preserves the dense native alias when only the second alternative has a capture and denies reviewer base/uncaptured aliases', async () => {
   const f = await readyReviewer('source_one_capture');
   await workspace(f.scoped, f.owner, { op: 'workspace_spend_configure', expected_version: 0, limit_microusd: 50000000 });
-  const base = { repository: `yoneda-test/${f.repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const base = { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree };
   await ledger(f.scoped, f.repo, { ...modernCompareApproval(), op: 'start_run', id: 'source-compare',
     intent: 'Synthetic one-capture mount history; no provider requests', workspace_transport: 'api-source-v1',
     _source_transport_approved: true, _source_base: base });
@@ -31,7 +31,7 @@ it('preserves the dense native alias when only the second alternative has a capt
   const context = await ledger(f.scoped, f.repo, { op: 'source_read_context', job_id: job.id, epoch: job.epoch });
   expect(context.source_mounts.filter((item: any) => item.path !== 'repo')).toEqual([
     { path: 'candidate-0', base: { ...revision, tree } }]);
-  const { env, get, send } = reviewSourceEnv(f.scoped, [candidate]);
+  const { env, get, send } = reviewSourceEnv(f.scoped, [candidate], base.commit);
   await sourceIndexBounded(env, { ...revision, tree });
   const scope = { repo_id: f.repo, job, supervisor: 'synthetic-root', model_calls: 0, created_at: Date.now() } as Scope;
   expect(await prepareSourceDispatch(env, scope)).toBe('ready');

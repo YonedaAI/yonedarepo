@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
-use yoneda_core::{Result, source_workspace::SourceAccess};
+use yoneda_agents_core::{Result, source_workspace::SourceAccess};
 
 struct Mounted {
     spec: SourceMountSpec,

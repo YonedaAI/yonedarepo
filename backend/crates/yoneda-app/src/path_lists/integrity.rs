@@ -25,7 +25,7 @@ pub(crate) fn fields<S: SqlStore>(db: &S, candidate: &Value, policy: &Value) -> 
         }
     }
     Ok(
-        json!({"version":1,"candidate_id":candidate["id"],"revision":candidate["revision"],"paths_digest":reference["digest"],"protected_changes":changed,"policy_digest":yoneda_core::fingerprint(policy)?}),
+        json!({"version":1,"candidate_id":candidate["id"],"revision":candidate["revision"],"paths_digest":reference["digest"],"protected_changes":changed,"policy_digest":yoneda_agents_core::fingerprint(policy)?}),
     )
 }
 pub(crate) fn validate<S: SqlStore>(db: &S, job: &Value, candidate: &Value) -> Result<()> {

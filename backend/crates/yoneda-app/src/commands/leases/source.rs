@@ -1,7 +1,7 @@
 //! Preparation is operational state: it cannot renew time, inference, or approval authority.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(in crate::commands) fn validate_defer<S: SqlStore>(db: &S, j: &Value) -> Result<()> {
     let run_id = j["payload"]["execution"]["run_id"]
         .as_str()

@@ -8,9 +8,9 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     result: &Value,
     now: i64,
 ) -> Result<Value> {
-    let api = job["payload"]["source_resolution"] == true
-        && job["payload"]["capture_subtype"] == "source_changeset";
-    if job["payload"]["capture_subtype"] != "resolve_conflict" && !api {
+    if job["payload"]["source_resolution"] != true
+        || job["payload"]["capture_subtype"] != "source_changeset"
+    {
         return Err(Error::new("FORBIDDEN", "Not a conflict resolver capture"));
     }
     let conflict_id = string(&job["payload"], "conflict_id")?;
@@ -40,16 +40,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         )?;
         return Ok(json!({"conflict_id":conflict_id,"status":"stale","reason":"HEAD_MOVED"}));
     }
-    if api {
-        super::source::validate_capture(db, job, result, now)?;
-    } else {
-        yoneda_core::conflict_capture::validate_capture_result(
-            job,
-            &string(job, "id")?,
-            number(job, "epoch")?,
-            result,
-        )?;
-    }
+    super::source::validate_capture(db, job, result, now)?;
     let captured = result["resolver_delta_paths"]
         .as_array()
         .ok_or_else(|| bad("Resolver capture omitted its Git paths"))?;
@@ -57,7 +48,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         return Err(bad("Resolver capture did not change any path"));
     }
     // Any valid path may be edited except protected verification paths under
-    // the current policy (also enforced for API resolvers, which skip the core check).
+    // the current policy.
     let policy = repo(db)?["policy"].clone();
     let protected: Vec<&str> = policy["build"]["test_bundle"]["protected_paths"]
         .as_array()
@@ -69,7 +60,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         .iter()
         .map(|path| path.as_str().ok_or_else(|| bad("Invalid resolver path")))
         .collect::<Result<Vec<_>>>()?;
-    yoneda_core::resolver_scope::validate_edits(paths.iter().copied(), &protected)?;
+    yoneda_agents_core::resolver_scope::validate_edits(paths.iter().copied(), &protected)?;
     super::super::capture_completion::complete(db, job, result, now)?;
     let cid = string(result, "id")?;
     let mut candidate = get(db, "candidates", &cid)?;

@@ -3,7 +3,7 @@ use crate::{broker::broker, err};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::path::Path;
-use yoneda_core::{Result, Workspace, build::TestBundlePolicy};
+use yoneda_agents_core::{Result, Workspace, build::TestBundlePolicy};
 
 const ROOT: &str = "/opt/yoneda/test-bundle";
 
@@ -13,7 +13,7 @@ pub(crate) async fn install(policy: Option<&TestBundlePolicy>) -> Result<Option<
     };
     let value = broker("/test-bundle", json!({"digest":policy.digest}), true).await?;
     let files: Workspace = serde_json::from_value(value["files"].clone()).map_err(err)?;
-    let digest = yoneda_core::digest(&serde_json::to_vec(&files).map_err(err)?);
+    let digest = yoneda_agents_core::digest(&serde_json::to_vec(&files).map_err(err)?);
     if digest != policy.digest || value["digest"] != policy.digest {
         return Err(err("Owner-approved test bundle digest mismatch"));
     }
@@ -23,7 +23,7 @@ pub(crate) async fn install(policy: Option<&TestBundlePolicy>) -> Result<Option<
     let mut git_files = crate::transport::GitWorkspace::new();
     let mut total = 0usize;
     for (path, file) in &files {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         let bytes = match file.encoding.as_deref() {
             None => file.content.as_bytes().to_vec(),
             Some("base64") => STANDARD.decode(&file.content).map_err(err)?,
@@ -107,7 +107,7 @@ pub(crate) fn report_fields(
 
 #[cfg(test)]
 mod tests {
-    use yoneda_core::{FileEntry, Workspace};
+    use yoneda_agents_core::{FileEntry, Workspace};
 
     #[test]
     fn owner_bundle_digest_input_uses_rust_utf8_path_and_entry_field_order() {

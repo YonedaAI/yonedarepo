@@ -70,7 +70,7 @@ pub fn check(snapshot: &Value, events: &[Value], why: &Value) -> Result<()> {
             "Coding context differs or lacks the selected run's research provenance".into(),
         );
     }
-    let policy: yoneda_core::Policy =
+    let policy: yoneda_agents_core::Policy =
         serde_json::from_value(snapshot["repository"]["policy"].clone())?;
     let mut starts = Vec::new();
     let mut ends = Vec::new();
@@ -79,16 +79,16 @@ pub fn check(snapshot: &Value, events: &[Value], why: &Value) -> Result<()> {
             .iter()
             .find(|c| c["execution"] == execution["id"] && c["run_id"] == *rid)
             .ok_or("Coding execution has no independently captured revision")?;
-        let evaluation: yoneda_core::Evaluation = serde_json::from_value(
+        let evaluation: yoneda_agents_core::Evaluation = serde_json::from_value(
             rows(snapshot, "evaluations")?
                 .iter()
                 .find(|e| e["id"] == candidate["evaluation"])
                 .ok_or("Captured revision has no evaluation")?
                 .clone(),
         )?;
-        let revision: yoneda_core::Revision =
+        let revision: yoneda_agents_core::Revision =
             serde_json::from_value(candidate["revision"].clone())?;
-        let validation = yoneda_core::validate_evaluation(
+        let validation = yoneda_agents_core::validate_evaluation(
             &evaluation,
             candidate["id"].as_str().ok_or("Invalid candidate ID")?,
             &revision,

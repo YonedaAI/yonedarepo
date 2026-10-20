@@ -43,11 +43,9 @@ pub(super) fn publish(db: &NativeStore, candidate: &str, request: &str, commit: 
         "rationale":"Owner selected the independently checked website","alternatives":[]}),
     )
     .unwrap();
-    let job = format!("publish:{}", receipt["id"].as_str().unwrap());
-    call(db, json!({"op":"claim","job_id":job})).unwrap();
     call(
         db,
-        json!({"op":"finish","job_id":job,"epoch":1,"result":{"commit":commit}}),
+        json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":commit}),
     )
     .unwrap();
 }

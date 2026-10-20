@@ -1,6 +1,6 @@
 //! Compose exact retained overrides and sealed edits; source membership is checked against Git trees.
 use std::collections::BTreeMap;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_changeset::SourceChangeset,
     source_workspace::{ContentRef, SourceAccess, SourceBinding, SourceFile, invalid},
@@ -19,7 +19,7 @@ pub(crate) fn manifest_delta(
     let mut delta = BTreeMap::new();
     let mut previous = "";
     for item in &manifest.baseline_overrides {
-        yoneda_core::validate_path(&item.path)?;
+        yoneda_agents_core::validate_path(&item.path)?;
         if item.path.as_str() <= previous {
             return Err(invalid("Baseline overrides are not sorted unique"));
         }

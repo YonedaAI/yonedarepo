@@ -77,7 +77,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         }
         "provider_put" => {
             let provider = string(c, "provider")?;
-            yoneda_core::providers::provider(&provider)?;
+            yoneda_agents_core::providers::provider(&provider)?;
             let label = c["label"].as_str().unwrap_or(&provider).trim();
             if label.is_empty() || label.len() > 80 || label.chars().any(char::is_control) {
                 return Err(bad("Invalid connection label"));
@@ -94,7 +94,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 return Err(bad("Workspace supports up to 32 provider connections"));
             }
             let model = string(c, "model")?;
-            yoneda_core::providers::validate_model(&provider, &model)?;
+            yoneda_agents_core::providers::validate_model(&provider, &model)?;
             if model.len() > 128
                 || !model
                     .bytes()
@@ -107,7 +107,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             string(&c["sealed"], "iv")?;
             string(&c["sealed"], "ciphertext")?;
             let routing = if let Some(value) = c.get("routing").filter(|v| !v.is_null()) {
-                let route: yoneda_core::provider_routing::ProviderRouting =
+                let route: yoneda_agents_core::provider_routing::ProviderRouting =
                     serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
                 route.validate(&provider)?;
                 serde_json::to_value(route).map_err(|e| bad(&e.to_string()))?

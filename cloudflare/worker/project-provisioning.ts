@@ -1,18 +1,12 @@
 import { isCanonicalAccountIdentifier } from '../../shared/account';
+import { PLATFORM_NAMESPACE } from './agents-platform';
 import { validateSourceMetadata } from './artifacts';
-import { assertGuidedFork, guidedProvisionEnvironment } from './guided-project';
 import { safeId } from './http';
 import { writeLog } from './logging';
-import {
-  pendingSetup,
-  prepareRemote,
-  setupCode,
-  setupError,
-  setupMessage,
-  sourceBranch,
-} from './project-remote';
-import { cleanupLateRemote } from './repository-deletion';
+import { platformHead } from './project-platform';
+import { pendingSetup, setupCode, setupError, setupMessage } from './project-remote';
 import { sourceFingerprint } from './source-crypto';
+import { platformSource } from './source-objects';
 import { ledger } from './storage';
 import type { Env, Envelope, Json } from './types';
 import { workspace } from './workspace';
@@ -24,35 +18,12 @@ async function initializeProject(
   progress: (stage: string) => Promise<Json>,
 ) {
   await progress(project.source ? 'importing' : 'creating');
-  await prepareRemote(await guidedProvisionEnvironment(env, project), project);
   const current = await workspace(env, owner, { op: 'project_get', id: project.id });
-  if (current.status === 'deleted') {
-    await cleanupLateRemote(env, project.id, project.id);
+  if (current.status === 'deleted')
     throw setupError('REPOSITORY_DELETED', 'This repository has been deleted');
-  }
-  using remote = await env.ARTIFACTS.get(project.id);
-  await assertGuidedFork(remote, project);
-  // Lost creation acknowledgments may leave the initial Git capability active.
-  for (const token of (await remote.listTokens()).tokens)
-    if (token.state === 'active') await remote.revokeToken(token.id);
-  const info = await remote.info();
-  let branch = info.defaultBranch;
-  let head = (await remote.log({ ref: branch, limit: 1 }))[0]?.hash;
-  // Recover earlier imports whose Artifacts metadata points at a nonexistent "main".
-  if (!head && project.source) {
-    branch = await sourceBranch(project.source);
-    head = (await remote.log({ ref: branch, limit: 1 }))[0]?.hash;
-  }
-  if (!head)
-    throw setupError(
-      'EMPTY_REPOSITORY',
-      'The repository has no commit on its default branch. Push an initial commit, then retry setup.',
-    );
+  const { platform, head } = await platformHead(env, owner, current);
   await progress('checking_source');
-  await validateSourceMetadata(env, {
-    repository: `${env.ARTIFACTS_NAMESPACE}/${project.id}`,
-    commit: head,
-  });
+  const checked = await validateSourceMetadata(platformSource(platform), head);
   await progress('initializing');
   try {
     await ledger(env, project.id, {
@@ -61,8 +32,9 @@ async function initializeProject(
       name: project.name,
       workspace: owner,
       commit: head,
-      workspace_transport: 'git-native-v1',
-      remote: { namespace: env.ARTIFACTS_NAMESPACE, name: project.id, branch },
+      tree: checked.tree,
+      platform_repo: platform.repo,
+      remote: { namespace: PLATFORM_NAMESPACE, name: project.id, branch: 'main' },
       policy: project.policy,
       ...(project.guided_project ? { _guided_project: project.guided_project } : {}),
     });
@@ -142,10 +114,8 @@ export async function provisionProject(env: Env, owner: string, project: Json) {
     return ready;
   } catch (error: any) {
     const current = await workspace(env, owner, { op: 'project_get', id: project.id });
-    if (current.status === 'deleted' || error.code === 'REPOSITORY_DELETED') {
-      await cleanupLateRemote(env, project.id, project.id);
+    if (current.status === 'deleted' || error.code === 'REPOSITORY_DELETED')
       throw setupError('REPOSITORY_DELETED', 'This repository has been deleted');
-    }
     if (current.status === 'ready' || error.code === 'FENCED')
       return { ...current, claimed: false };
     const pending = pendingSetup(error);

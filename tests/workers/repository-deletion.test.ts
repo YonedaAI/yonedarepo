@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:workers';
-import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
+import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
+import { platformRequest, projectPlatform } from '../../cloudflare/worker/agents-platform';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import { deliverOutbox } from '../../cloudflare/worker/outbox-delivery';
 import { deliverDeletion } from '../../cloudflare/worker/repository-deletion';
@@ -9,6 +10,7 @@ import { authorizePreview, previewLink } from '../../cloudflare/worker/sites';
 import { ledger, sha } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
 import type { Env, Json } from '../../cloudflare/worker/types';
+import { bindNewPlatformRepo } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 const policy = {version:'retry-v1',suite:'retry-contract-v1',environment:'rust-1.94-evaluator-v1',required_checks:['build','behavior']};
@@ -17,7 +19,7 @@ async function setup(id='delete-me', name='Delete me', ready=true) {
   await workspace(bindings,'alice',{op:'signup',username:'alice',password:'a long test password',salt:'01'.repeat(16),recovery_hash:'b'.repeat(64),session_hash:await sha('a'.repeat(64))});
   const project=await workspace(bindings,'alice',{op:'project_reserve',id,name,policy});
   if(ready) {
-    await ledger(bindings,id,{op:'init',id,name,workspace:'alice',remote:{namespace:'yoneda-test',name:id},commit:'a'.repeat(40),policy});
+    await ledger(bindings,id,{op:'init',id,name,workspace:'alice',remote:{namespace:'platform',name:id},commit:'a'.repeat(40),policy});
     await workspace(bindings,'alice',{op:'project_update',id,status:'ready'});
   }
   return project;
@@ -94,50 +96,28 @@ it('revokes already issued preview capabilities and blocks all repository contex
     await expect(ledger(bindings,'delete-me',{op})).rejects.toThrow('deleted');
 });
 
-it('records only owned Artifacts names and durably retries an SDK deletion failure',async()=>{
+it('revokes the agent token with the owner\'s own credential and leaves the platform repository to its owner',async()=>{
   await setup();
-  const id='capture:fixture'; const epoch=2;
-  const stub=bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('delete-me'));
-  await runInDurableObject(stub,(_instance,state)=>{
-    state.storage.sql.exec('INSERT INTO jobs(id,payload) VALUES(?,?)',id,JSON.stringify({id,kind:'capture',attempt:epoch,epoch,status:'done'}));
-  });
+  const { repo } = await bindNewPlatformRepo(bindings,'alice','delete-me');
+  const agent = await projectPlatform(bindings,'alice','delete-me');
+  expect((await agent.call('GET','/refs')).refs['refs/heads/main']).toMatch(/^[0-9a-f]{40}$/);
   await remove();
-  const expected=['delete-me'];
-  for(let epoch=1;epoch<=2;epoch++) expected.push(`candidate-${(await sha(`delete-me:${id}:${epoch}`)).slice(0,32)}`);
-  const cleanup=(await ledger(bindings,'delete-me',{op:'outbox'})).jobs.filter((entry:Json)=>entry.kind==='delete_artifact');
-  expect(cleanup.map((entry:Json)=>entry.payload.name).sort()).toEqual(expected.sort());
-  let failed=true;const deleted:string[]=[];
-  const sdk={...bindings,ARTIFACTS:{delete:async(name:string)=>{if(failed){failed=false;throw new Error('SDK outage fixture');}deleted.push(name);return true;}}} as unknown as Env;
-  await expect(deliverDeletion(sdk,'delete-me',cleanup[0])).rejects.toThrow('SDK outage');
-  expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.some((entry:Json)=>entry.id===cleanup[0].id)).toBe(true);
-  await deliverDeletion(sdk,'delete-me',cleanup[0]);
-  await ledger(bindings,'delete-me',{op:'outbox_sent',id:cleanup[0].id});
-  await ledger(bindings,'delete-me',{op:'retry_deletion_cleanup',name:cleanup[0].payload.name});
-  const retried=(await ledger(bindings,'delete-me',{op:'outbox'})).jobs.find((entry:Json)=>entry.payload.name===cleanup[0].payload.name);
-  expect(retried.id).not.toBe(cleanup[0].id);
-  // The old successful response arrives after a newer cleanup has already been scheduled.
-  await ledger(bindings,'delete-me',{op:'outbox_sent',id:cleanup[0].id});
-  expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.some((entry:Json)=>entry.id===retried.id)).toBe(true);
-  expect(deleted).toEqual([cleanup[0].payload.name]);
+  // The sealed credential is gone with the project, and the platform refuses the token itself.
+  await expect(workspace(bindings,'alice',{op:'project_platform_credential',id:'delete-me'})).rejects.toThrow();
+  await expect(agent.call('GET','/refs')).rejects.toMatchObject({ status: 401 });
+  const owner = new Request('https://yoneda/',{headers:{cookie:'yoneda_account=alice.'+'a'.repeat(64)}});
+  const kept = await platformRequest(bindings,{forward:owner},'GET',`/repos/${repo}/refs`);
+  expect(kept.refs['refs/heads/main']).toMatch(/^[0-9a-f]{40}$/);
+  // Deletion records no source cleanup: nothing in the agent layer owns repository storage.
+  await ledger(bindings,'delete-me',{op:'recover'});
+  expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>entry.kind)).not.toContain('delete_artifact');
 });
 
-it('reclaims a provider-side creation after all originating requests have ended',async()=>{
-  await setup('orphan-repo','Delayed import',false);
-  await remove('orphan-repo','Delayed import');
-  const initial=(await ledger(bindings,'orphan-repo',{op:'outbox'})).jobs;
-  for(const entry of initial) await ledger(bindings,'orphan-repo',{op:'outbox_sent',id:entry.id});
-  const names=new Set(['orphan-repo']); // Provider finishes later; no handler remains to re-arm.
-  const stub=bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName('orphan-repo'));
-  await runInDurableObject(stub,(_instance,state)=>{
-    state.storage.sql.exec("UPDATE repository SET payload=json_set(payload,'$.next_cleanup_at',0)");
-  });
-  await evictDurableObject(stub);
-  await ledger(bindings,'orphan-repo',{op:'recover'});
-  const swept=(await ledger(bindings,'orphan-repo',{op:'outbox'})).jobs;
-  expect(swept.some((entry:Json)=>entry.kind==='delete_artifact'&&entry.payload.name==='orphan-repo')).toBe(true);
-  const sdk={...bindings,ARTIFACTS:{delete:async(name:string)=>names.delete(name)}} as unknown as Env;
-  for(const entry of swept) if(entry.kind==='delete_artifact') await deliverDeletion(sdk,'orphan-repo',entry);
-  expect(names.size).toBe(0);
+it('drains Artifacts cleanup recorded before projects moved to the platform',async()=>{
+  const deleted:string[]=[];
+  const sdk={...bindings,ARTIFACTS:{delete:async(name:string)=>{deleted.push(name);return true;}}} as unknown as Env;
+  await deliverDeletion(sdk,'legacy',{kind:'delete_artifact',payload:{name:'legacy-fork'}});
+  expect(deleted).toEqual(['legacy-fork']);
 });
 
 it('continues independent deletion cleanup after a container stop fails and only acknowledges successes',async()=>{
@@ -146,29 +126,11 @@ it('continues independent deletion cleanup after a container stop fails and only
   await ledger(bindings,'delete-me',{op:'claim',job_id:'job:active-run:research'});
   await remove();
   await bindings.INDEX.exec('CREATE TABLE repositories(id TEXT PRIMARY KEY,payload TEXT NOT NULL,seq INTEGER NOT NULL)');
-  let deletes=0;
-  const sdk={...bindings,EXECUTIONS:{idFromName:(name:string)=>name,get:()=>({stop:async()=>{throw new Error('Stop unavailable fixture');}})},ARTIFACTS:{delete:async()=>{deletes++;return true;}}} as unknown as Env;
+  const sdk={...bindings,EXECUTIONS:{idFromName:(name:string)=>name,get:()=>({stop:async()=>{throw new Error('Stop unavailable fixture');}})}} as unknown as Env;
   const pending=(await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>({...entry,repository_deleted:true}));
   const delivered=await deliverOutbox(sdk,'delete-me',pending);
   expect(delivered).toContain('delete:workspace');
-  expect(deletes).toBe(1);
   expect(delivered).not.toContain('stop:job:active-run:research:1');
   for(const id of delivered) await ledger(bindings,'delete-me',{op:'outbox_sent',id});
   expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>entry.kind)).toEqual(['stop']);
-});
-
-it('re-arms canonical cleanup when provisioning finishes after deletion',async()=>{
-  const project=await setup('late-repo','Late import',false);
-  let remoteReady=false;
-  const remote={ [Symbol.dispose](){},fork:async()=>{
-    await remove(project.id,project.name);
-    const cleanup=(await ledger(bindings,project.id,{op:'outbox'})).jobs.find((entry:Json)=>entry.kind==='delete_artifact');
-    await ledger(bindings,project.id,{op:'outbox_sent',id:cleanup.id});
-    remoteReady=true;return {token:'fixture'};
-  },revokeToken:async()=>true,listTokens:async()=>({tokens:[]}),info:async()=>({defaultBranch:'main'}),log:async()=>[{hash:'a'.repeat(40)}],readCommit:async()=>({treeHash:'b'.repeat(40)}),readTree:async()=>[],readBlob:async()=>new Blob()};
-  const sdk={...bindings,ARTIFACTS:{get:async(name:string)=>{if(name===project.id&&!remoteReady)throw Object.assign(new Error('Target does not exist'),{code:'NOT_FOUND'});return remote;}}} as unknown as Env;
-  await expect(provisionProject(sdk,'alice',project)).rejects.toThrow('deleted');
-  expect(remoteReady).toBe(true);
-  expect((await ledger(bindings,project.id,{op:'outbox'})).jobs.some((entry:Json)=>entry.kind==='delete_artifact'&&entry.payload.name===project.id)).toBe(true);
-  expect((await workspace(bindings,'alice',{op:'projects'})).projects).toHaveLength(0);
 });

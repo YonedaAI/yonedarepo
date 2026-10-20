@@ -53,7 +53,7 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
     }
     if run["policy"] != run["approved_policy"]
         || run["policy"] != repo(db)?["policy"]
-        || json!(yoneda_core::fingerprint(&run["autonomy_policy"])?)
+        || json!(yoneda_agents_core::fingerprint(&run["autonomy_policy"])?)
             != run["autonomy_policy_digest"]
     {
         return Ok(());
@@ -102,7 +102,7 @@ pub(super) fn maybe_start<S: SqlStore>(db: &S, run: &Value, now: i64) -> Result<
         .and_then(|a| a.get(index))
         .ok_or_else(|| bad("Missing frozen coordinator agent"))?;
     let provider = string(agent, "provider")?;
-    let mut execution = json!({"id":id,"run_id":rid,"team_role":"coordinator","role":"coding","status":"queued","provider":provider,"model":agent["model"],"connection":agent.get("connection").unwrap_or(&agent["provider"]),"harness":yoneda_core::providers::provider(&provider)?.harness,"strategy":"Coordinate approved team recovery","task":"Inspect failure evidence and peer requests. Negotiate contracts, repair the bounded DAG or ask an intent question within the frozen approval. Source is read-only.","context":run["context"],"base":run["base"],"depth":0,"team_plan_revision":run["team_plan_revision"]});
+    let mut execution = json!({"id":id,"run_id":rid,"team_role":"coordinator","role":"coding","status":"queued","provider":provider,"model":agent["model"],"connection":agent.get("connection").unwrap_or(&agent["provider"]),"harness":yoneda_agents_core::providers::provider(&provider)?.harness,"strategy":"Coordinate approved team recovery","task":"Inspect failure evidence and peer requests. Negotiate contracts, repair the bounded DAG or ask an intent question within the frozen approval. Source is read-only.","context":run["context"],"base":run["base"],"depth":0,"team_plan_revision":run["team_plan_revision"]});
     if let Some(routing) = agent.get("routing").filter(|v| !v.is_null()) {
         execution["routing"] = routing.clone();
     }
@@ -195,7 +195,7 @@ pub(super) fn evaluated<S: SqlStore>(
 }
 
 fn incident(candidate: &Value) -> Result<String> {
-    yoneda_core::fingerprint(
+    yoneda_agents_core::fingerprint(
         &json!({"candidate":candidate["id"],"evaluation":candidate["evaluation"],"status":candidate["status"],"working_branch_state":candidate["working_branch_state"],"signal":candidate["coordination_signal"]}),
     )
 }

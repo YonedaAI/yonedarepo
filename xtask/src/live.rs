@@ -1,6 +1,6 @@
 use crate::process::{Result, token};
 use serde_json::{Value, json};
-use yoneda_core::Policy;
+use yoneda_agents_core::Policy;
 pub(crate) async fn api(url: &str, path: &str, body: Option<Value>) -> Result<Value> {
     api_authenticated(url, path, body, &token()?).await
 }
@@ -31,70 +31,20 @@ pub(crate) async fn api_authenticated(
     }
     Ok(value)
 }
-pub async fn seed(url: &str) -> Result<()> {
-    let bootstrap = api(url, "bootstrap", Some(json!({"name":"retry-client"}))).await?;
-    let commit = if let Some(commit) = bootstrap["commit"].as_str() {
-        commit.to_owned()
-    } else {
-        let workspace =
-            yoneda_runtime::export_workspace(std::path::Path::new("fixtures/retry-client"))?;
-        let dir = tempfile::tempdir()?;
-        let captured =
-            yoneda_runtime::capture(dir.path(), None, &workspace, "Seed retry client fixture")
-                .await?;
-        let secret = bootstrap["token"]
-            .as_str()
-            .ok_or("Missing bootstrap capability")?;
-        let remote = bootstrap["remote"]
-            .as_str()
-            .ok_or("Missing canonical remote")?;
-        let status = tokio::process::Command::new("git")
-            .current_dir(dir.path())
-            .args(["push", remote, "HEAD:refs/heads/main"])
-            .env("GIT_CONFIG_COUNT", "1")
-            .env("GIT_CONFIG_KEY_0", "http.extraHeader")
-            .env(
-                "GIT_CONFIG_VALUE_0",
-                format!("Authorization: Bearer {secret}"),
-            )
-            .status()
-            .await?;
-        if !status.success() {
-            return Err("Fixture push failed".into());
-        }
-        captured["commit"]
-            .as_str()
-            .ok_or("Capture returned no commit")?
-            .to_owned()
-    };
-    let initialized=api(url,"repos/retry-client/init",Some(json!({"id":"retry-client","name":"Retry client","remote":{"namespace":"yoneda-dev","name":"retry-client"},"commit":commit,"policy":Policy::default()}))).await;
-    if let Err(error) = initialized
-        && !error.to_string().contains("ALREADY_EXISTS")
-    {
-        return Err(error);
-    }
-    println!("Retry client is ready at {url}. Canonical commit: {commit}");
-    Ok(())
-}
-pub async fn start(url: &str) -> Result<()> {
-    let run=api(url,"repos/retry-client/start_run",Some(json!({"id":format!("run-{}",uuid::Uuid::new_v4()),"intent":"Add safe retries for transient upstream failures within a bounded total deadline.","criteria":["Retry GET only","Respect total deadline","Read README.md before publishing guidance; preserve its CLI contract, including repeating the final supplied status when the status list is exhausted","Preserve explicit assumptions and tradeoffs"]}))).await?;
+pub async fn start(url: &str, repo: &str) -> Result<()> {
+    let run=api(url,&format!("repos/{repo}/start_run"),Some(json!({"id":format!("run-{}",uuid::Uuid::new_v4()),"intent":"Add safe retries for transient upstream failures within a bounded total deadline.","criteria":["Retry GET only","Respect total deadline","Read README.md before publishing guidance; preserve its CLI contract, including repeating the final supplied status when the status list is exhausted","Preserve explicit assumptions and tradeoffs"]}))).await?;
     println!(
         "Started real agent exploration {} at {url}. Review and select a candidate in the browser.",
         run["id"]
     );
     Ok(())
 }
-pub async fn verify(url: &str) -> Result<()> {
-    let snapshot = api(url, "repos/retry-client/snapshot", None).await?;
+pub async fn verify(url: &str, repo: &str) -> Result<()> {
+    let snapshot = api(url, &format!("repos/{repo}/snapshot"), None).await?;
     let mut events = Vec::new();
     let mut after = 0;
     loop {
-        let page = api(
-            url,
-            &format!("repos/retry-client/events?after={after}"),
-            None,
-        )
-        .await?;
+        let page = api(url, &format!("repos/{repo}/events?after={after}"), None).await?;
         let page = page["events"].as_array().ok_or("No event replay")?;
         if page.is_empty() {
             break;
@@ -124,10 +74,7 @@ pub async fn verify(url: &str) -> Result<()> {
         )?;
         why = api(
             url,
-            &format!(
-                "repos/retry-client/why?{}",
-                query.query().unwrap_or_default()
-            ),
+            &format!("repos/{repo}/why?{}", query.query().unwrap_or_default()),
             None,
         )
         .await?;
@@ -147,10 +94,10 @@ pub async fn verify(url: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn upgrade_policy(url: &str) -> Result<()> {
-    let snapshot = api(url, "repos/retry-client/snapshot", None).await?;
+pub async fn upgrade_policy(url: &str, repo: &str) -> Result<()> {
+    let snapshot = api(url, &format!("repos/{repo}/snapshot"), None).await?;
     let repo = &snapshot["repository"];
-    api(url,"repos/retry-client/update_policy",Some(json!({"expected_commit":repo["head_commit"],"expected_version":repo["version"],"expected_policy":repo["policy"]["version"],"policy":Policy::default()}))).await?;
+    api(url,&format!("repos/{repo}/update_policy"),Some(json!({"expected_commit":repo["head_commit"],"expected_version":repo["version"],"expected_policy":repo["policy"]["version"],"policy":Policy::default()}))).await?;
     println!(
         "Installed current versioned policy; captured candidates will be evaluated again. Historical evidence is retained."
     );

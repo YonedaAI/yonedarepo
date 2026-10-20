@@ -1,14 +1,14 @@
 //! Trusted workspace request-counter observations are operational fences, never approvals.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result, agents::MAX_RUN_MODEL_REQUESTS, model_budget::MAX_SAFE_BUDGET_INTEGER,
 };
 
 pub(super) fn available(run: &Value, agent: &Value) -> Result<bool> {
     if run["adaptive_team"]["version"] == 1
         && run["model_requests"].as_i64().unwrap_or(0)
-            >= yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
+            >= yoneda_agents_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
     {
         return Ok(false);
     }
@@ -169,8 +169,10 @@ pub(super) fn observe<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         run["unavailable_model_groups"] = json!(groups);
         run["coordination_pending"] =
             json!(run["mode"] == "collaborate" && run["team_plan"].is_object());
-        run["coordination_signal"] =
-            json!(format!("model-limit-{}", yoneda_core::fingerprint(&group)?));
+        run["coordination_signal"] = json!(format!(
+            "model-limit-{}",
+            yoneda_agents_core::fingerprint(&group)?
+        ));
         save(db, "runs", &rid, &run)?;
         event(
             db,

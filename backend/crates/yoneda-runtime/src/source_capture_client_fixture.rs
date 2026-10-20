@@ -1,5 +1,5 @@
 //! Ordinary SourceClient HTTP projected directly from native staged SQLite authority.
-use crate::{source_capture_fixture::Fixture, source_git_http_tests::git};
+use crate::{source_capture_fixture::Fixture, source_git_fixture::git};
 use axum::{
     Json,
     body::Body,

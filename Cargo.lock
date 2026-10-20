@@ -3047,12 +3047,13 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 name = "xtask"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "reqwest",
  "serde_json",
  "tempfile",
  "tokio",
  "uuid",
- "yoneda-core",
+ "yoneda-agents-core",
  "yoneda-runtime",
 ]
 
@@ -3080,6 +3081,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoneda-agents-core"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "schemars",
+ "serde",
+ "serde_json",
+ "yoneda-core",
+]
+
+[[package]]
 name = "yoneda-app"
 version = "0.1.0"
 dependencies = [
@@ -3091,6 +3103,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "subtle",
+ "yoneda-agents-core",
  "yoneda-core",
  "yoneda-store",
 ]
@@ -3105,15 +3118,14 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "worker",
+ "yoneda-agents-core",
  "yoneda-app",
- "yoneda-core",
 ]
 
 [[package]]
 name = "yoneda-core"
 version = "0.1.0"
 dependencies = [
- "base64",
  "imara-diff",
  "miniz_oxide",
  "proptest",
@@ -3160,6 +3172,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "walkdir",
+ "yoneda-agents-core",
  "yoneda-app",
  "yoneda-core",
 ]

@@ -1,11 +1,11 @@
 //! Capture static build output without following candidate-controlled links or ignore rules.
 use serde_json::{Value, json};
 use std::path::Path;
-use yoneda_core::{Error, Result, Workspace};
+use yoneda_agents_core::{Error, Result, Workspace};
 fn failure(stage: &str, code: &str, path: Option<&str>, errno: Option<i32>) -> Error {
     let path = path.filter(|p| {
         p.len() <= 512
-            && yoneda_core::validate_path(p).is_ok()
+            && yoneda_agents_core::validate_path(p).is_ok()
             && p.bytes()
                 .all(|c| c.is_ascii_alphanumeric() || b"/._-".contains(&c))
     });
@@ -24,7 +24,7 @@ pub(crate) fn record_failure(report: &mut Value, error: &Error) {
         );
 }
 pub(crate) fn assets(root: &Path, directory: &str) -> Result<Workspace> {
-    yoneda_core::validate_path(directory)
+    yoneda_agents_core::validate_path(directory)
         .map_err(|_| failure("path", "UNSAFE_PATH", Some(directory), None))?;
     let static_root = root.join(directory);
     let mut files = Workspace::new();
@@ -61,7 +61,7 @@ pub(crate) fn assets(root: &Path, directory: &str) -> Result<Workspace> {
         let file = crate::secure_fs::read_regular_detailed(
             root,
             &relative,
-            yoneda_core::MAX_WORKSPACE_BYTES,
+            yoneda_agents_core::MAX_WORKSPACE_BYTES,
         )
         .map_err(|e| failure(e.stage, e.code, Some(&relative), e.errno))?;
         bytes = bytes.saturating_add(
@@ -69,12 +69,14 @@ pub(crate) fn assets(root: &Path, directory: &str) -> Result<Workspace> {
                 .map_err(|_| failure("decode", "INVALID_BYTES", Some(&relative), None))?
                 .len(),
         );
-        if bytes > yoneda_core::MAX_WORKSPACE_BYTES || files.len() >= yoneda_core::MAX_FILES {
+        if bytes > yoneda_agents_core::MAX_WORKSPACE_BYTES
+            || files.len() >= yoneda_agents_core::MAX_FILES
+        {
             return Err(failure("limits", "WORKSPACE_LIMIT", Some(&relative), None));
         }
         files.insert(path, file);
     }
-    yoneda_core::validate_workspace(&files)
+    yoneda_agents_core::validate_workspace(&files)
         .map_err(|_| failure("workspace", "WORKSPACE_LIMIT", Some(directory), None))?;
     if !files.contains_key("index.html") {
         return Err(failure(

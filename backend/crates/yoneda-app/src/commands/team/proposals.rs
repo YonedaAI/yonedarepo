@@ -71,7 +71,7 @@ pub(super) fn roster(proposal: &Value, run: &Value) -> Result<Option<Value>> {
     }
     let agents = &proposal["data"]["agents"];
     super::super::adaptive_team::validate_roster(run, agents)?;
-    if proposal["data"]["roster_digest"] != yoneda_core::fingerprint(agents)? {
+    if proposal["data"]["roster_digest"] != yoneda_agents_core::fingerprint(agents)? {
         return Err(Error::new(
             "FENCED",
             "Proposed adaptive roster digest changed",
@@ -81,7 +81,7 @@ pub(super) fn roster(proposal: &Value, run: &Value) -> Result<Option<Value>> {
 }
 
 fn plan_digest(plan: &TeamPlan, agents: Option<&Value>) -> Result<String> {
-    yoneda_core::fingerprint(&agents.map_or_else(
+    yoneda_agents_core::fingerprint(&agents.map_or_else(
         || json!(plan),
         |agents| json!({"plan":plan,"agents":agents}),
     ))
@@ -179,7 +179,7 @@ pub(super) fn propose<S: SqlStore>(
     let previous_id = previous.as_ref().map(|p| p["id"].clone());
     let mut data = json!({"plan":plan,"fingerprint":fingerprint,"run_id":run["id"],"execution_id":execution["id"],"job_id":job["id"],"epoch":job["epoch"],"authority":"assertion","draft_revision":revision,"supersedes":previous_id});
     if let Some(agents) = agents {
-        data["roster_digest"] = json!(yoneda_core::fingerprint(&agents)?);
+        data["roster_digest"] = json!(yoneda_agents_core::fingerprint(&agents)?);
         data["agents"] = agents;
     }
     node(

@@ -1,4 +1,4 @@
-import plans from '../../backend/crates/yoneda-core/src/guided_plans.json';
+import plans from '../../backend/crates/yoneda-agents-core/src/guided_plans.json';
 import type { GuidedStepId } from '../../shared/guided-runs';
 import { guidedFailure } from './guided-profile';
 import type { ModelMix } from './model-mix';

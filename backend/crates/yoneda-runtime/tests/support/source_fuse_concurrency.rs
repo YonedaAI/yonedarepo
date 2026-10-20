@@ -3,7 +3,7 @@ use super::*;
 use source_client::{SourceBackend, SourceChange, SourceNode, SourceSlice};
 use std::sync::{Mutex, mpsc};
 use std::time::Duration;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 struct DelayedAck {
     base: Arc<MemorySource>,

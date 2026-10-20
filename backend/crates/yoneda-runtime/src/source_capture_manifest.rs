@@ -1,6 +1,6 @@
 //! Compact registered context and bounded, immutable manifest assembly.
 use serde_json::Value;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_changeset::SourceChangeset,
     source_workspace::{MAX_FILES, SourceBinding, invalid},
@@ -55,7 +55,7 @@ pub(crate) fn page_items(page: &Value, digest: &str, after: Option<&str>) -> Res
         let path = item["path"]
             .as_str()
             .ok_or_else(|| invalid("Manifest item has no source path"))?;
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         if path <= previous {
             return Err(invalid("Manifest page paths repeated or out of order"));
         }

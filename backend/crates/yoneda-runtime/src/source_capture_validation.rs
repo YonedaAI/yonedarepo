@@ -1,6 +1,6 @@
 //! Validated metadata planning for registered, sealed API-source capture.
 use std::collections::BTreeMap;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_changeset::SourceChangeset,
     source_workspace::{
@@ -87,7 +87,7 @@ fn validate_content(binding: &SourceBinding, file: &SourceFile) -> Result<()> {
             blob,
             path,
         } => {
-            yoneda_core::validate_path(path)?;
+            yoneda_agents_core::validate_path(path)?;
             crate::source_git_tree::validate_oid(blob)
                 .map_err(|_| invalid("Artifacts v1 blob requires Git SHA-1"))?;
             if !binding

@@ -55,14 +55,7 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
         "One-time resources (skip resources that already exist):\npnpm exec wrangler r2 bucket create {name}-objects --config {0}/platform.json\npnpm exec wrangler d1 create {name}-index --config {0}/platform.json",
         dir.display()
     );
-    for suffix in [
-        "agent",
-        "capture",
-        "evaluate",
-        "publish",
-        "platform",
-        "dead-letter",
-    ] {
+    for suffix in ["agent", "capture", "evaluate", "platform", "dead-letter"] {
         println!(
             "pnpm exec wrangler queues create {name}-{suffix} --config {}/platform.json",
             dir.display()
@@ -183,7 +176,7 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
     platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
     platform["workflows"][0]["name"] = json!(format!("{name}-platform-import"));
-    for (index, suffix) in ["agent", "capture", "evaluate", "publish", "platform"]
+    for (index, suffix) in ["agent", "capture", "evaluate", "platform"]
         .iter()
         .enumerate()
     {
