@@ -87,13 +87,10 @@ export async function landWithMerge(
   fastForwardOnly = false,
   mode: LandMode = landMode(ctx.env),
 ) {
-  try {
-    return await landOn(ctx, ref, sha, fastForwardOnly, mode);
-  } finally {
-    // This isolate's next read sees its own landing, once it settled (others pass
-    // min_version).
-    forgetHead(ctx.repo);
-  }
+  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode);
+  // This isolate's next read and begin see its own landing (others pass min_version).
+  forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined);
+  return landed;
 }
 
 async function landOn(

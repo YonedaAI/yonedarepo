@@ -17,11 +17,13 @@ const STALE_MS = 10_000;
  * (live token digests; changes only with access, versioned), each fetched once per
  * isolate at a time. */
 const heads = new Map<string, { head: Json; at: number }>();
+/** The least version this isolate's reads and begins need: its own latest landing. */
+const floors = new Map<string, number>();
 const accesses = new Map<string, Json>();
 const loading = new Map<string, Promise<Json>>();
 
 type Holder = {
-  head(repo: string, minVersion: number): Promise<Json>;
+  head(repo: string, minVersion: number, since?: number): Promise<Json>;
   access(repo: string): Promise<Json>;
   refresh(repo: string): Promise<void>;
 };
@@ -59,7 +61,8 @@ function once(key: string, load: () => Promise<Json>) {
   return pending;
 }
 
-async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
+async function headOf(env: Env, repo: string, wanted: number): Promise<Json> {
+  const minVersion = Math.max(wanted, floors.get(repo) ?? 0);
   const cached = heads.get(repo);
   if (cached && cached.head.version >= minVersion) {
     const age = Date.now() - cached.at;
@@ -82,14 +85,23 @@ async function headOf(env: Env, repo: string, minVersion: number): Promise<Json>
   return head;
 }
 
-/** Fetches main's head (one fetch per isolate at a time) and caches it. */
+/** Fetches main's head (one fetch per isolate at a time) and caches it. With a cached
+ * copy, only the overlay entries newer than it travel; the rest are kept from the copy. */
 async function fetchInto(env: Env, repo: string, minVersion: number): Promise<Json> {
   const shared = holder(env, repo);
   const head = await once(`head:${repo}`, async () => {
-    if (shared) return shared.head(repo, minVersion);
-    const full = await fetchHead(env, repo);
-    accesses.set(repo, accessOf(full));
-    return withoutTokens(full);
+    const prev = heads.get(repo)?.head;
+    if (!shared) {
+      const full = await fetchHead(env, repo);
+      accesses.set(repo, accessOf(full));
+      return withoutTokens(full);
+    }
+    const next = await shared.head(repo, minVersion, prev?.version);
+    if (!prev || next.overlay_since === null || next.overlay_since === undefined) return next;
+    const kept = (prev.overlay as Json[]).filter(
+      (e) => e.version > (next.projected_version ?? 0) && e.version <= next.overlay_since,
+    );
+    return { ...next, overlay: [...kept, ...next.overlay] };
   });
   const cached = heads.get(repo);
   if (!cached || cached.head.version <= head.version) heads.set(repo, { head, at: Date.now() });
@@ -124,9 +136,11 @@ export async function publishedHead(
   return { ...head, tokens: token ? [token] : [] };
 }
 
-/** Drops this isolate's copy of the head (after this isolate landed something). */
-export function forgetHead(repo: string) {
-  heads.delete(repo);
+/** After this isolate landed at `version`, its reads and begins need at least that
+ * version; without one, its copy of the head is dropped. */
+export function forgetHead(repo: string, version?: number) {
+  if (version === undefined) heads.delete(repo);
+  else floors.set(repo, Math.max(version, floors.get(repo) ?? 0));
 }
 
 /** Marks the published head stale after a landing, projection or access change. */
@@ -200,12 +214,18 @@ export class HeadHolder {
   /** The head it holds when that is recent enough for the caller (a stale one is
    * refreshed in the background: begins validate their base when they land); otherwise
    * waits for a load that reaches `minVersion`. */
-  async head(repo: string, minVersion: number): Promise<Json> {
-    if (this.#head && this.#head.version >= minVersion) {
+  async head(repo: string, minVersion: number, since?: number): Promise<Json> {
+    let head = this.#head;
+    if (head && head.version >= minVersion) {
       if (this.#stale) void this.#load(repo, 0).catch(() => {});
-      return withoutTokens(this.#head);
-    }
-    return withoutTokens(await this.#load(repo, minVersion));
+    } else head = await this.#load(repo, minVersion);
+    // A caller holding a copy at `since` gets only the overlay entries newer than it.
+    if (since === undefined) return withoutTokens(head);
+    return {
+      ...withoutTokens(head),
+      overlay: (head.overlay as Json[]).filter((e) => e.version > since),
+      overlay_since: since,
+    };
   }
 
   async access(repo: string): Promise<Json> {
