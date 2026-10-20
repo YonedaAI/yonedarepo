@@ -419,3 +419,46 @@ fn prepare_resolves_a_branch_head_from_remembered_trees_and_names_the_store() {
         "NOT_FOUND"
     );
 }
+
+#[test]
+fn stateless_build_matches_the_authoritys_prepare() {
+    let (h, root) = seeded();
+    let row = h.ok(OWNER, json!({"op": "repo_commit", "commit": root}));
+    let tree = row["tree"].as_str().unwrap().to_owned();
+    let src = h
+        .tree_json(&tree)
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["name"] == "src")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let trees = json!({tree.clone(): h.tree_json(&tree), src.clone(): h.tree_json(&src)});
+    let changes = json!([
+        file("src/lib.rs", "pub fn b() {}\n"),
+        file("new.txt", "n\n")
+    ]);
+    let author = json!({"name": "Agent", "email": "agent@example.com"});
+    h.db.query("DELETE FROM tree_cache", &[]).unwrap();
+    let prepared = h.ok(
+        AGENT,
+        json!({"op": "repo_prepare_commit", "parent": root, "base_version": 1,
+        "changes": changes, "trees": trees, "message": "same", "author": author}),
+    );
+    let now = *h.now.borrow();
+    let built = platform_compute(json!({"op": "build_commit", "now": now,
+        "parent": {"id": root, "tree": tree, "generation": 1},
+        "changes": changes, "trees": trees, "message": "same", "author": author}))
+    .unwrap();
+    assert_eq!(built["commit"], prepared["commit"]);
+    assert_eq!(built["touches"], prepared["touches"]);
+    assert_eq!(built["objects"], prepared["objects"]);
+    // Without the trees on a changed path it asks, like prepare.
+    let asked = platform_compute(json!({"op": "build_commit", "now": now,
+        "parent": {"id": root, "tree": tree, "generation": 1},
+        "changes": changes, "trees": {}, "message": "same", "author": author}))
+    .unwrap();
+    assert_eq!(asked["need_trees"], json!([tree]));
+}

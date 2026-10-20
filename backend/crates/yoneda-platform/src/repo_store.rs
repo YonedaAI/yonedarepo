@@ -20,7 +20,7 @@ mod land;
 mod land_queue;
 mod merging;
 mod migration;
-mod prepare;
+pub(crate) mod prepare;
 mod projection;
 mod reads;
 mod record;
