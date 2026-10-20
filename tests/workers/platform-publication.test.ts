@@ -7,6 +7,7 @@ import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
 import { api, bindings, signup } from './reviewer-fixture';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 afterEach(reset);
 const owner = 'publish_owner';
@@ -16,7 +17,7 @@ const policy = {
   required_checks: ['build'],
   build: { setup: [], checks: [{ name: 'build', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] },
 };
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 
 async function fixture() {
   const cookie = await signup(owner);
@@ -38,12 +39,12 @@ async function checkedCandidate(f: Awaited<ReturnType<typeof fixture>>, run: str
   const status = await call({ op: 'repository_status' });
   const made = await platformCommit(f.platform, status.head_commit, { 'app.js': content });
   const agent = await call({ op: 'claim', job_id: `job:${run}:agent-1` });
-  await call({ op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: 'd'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, agent);
   const capture = await call({ op: 'claim', job_id: `capture:${run}:agent-1` });
   const id = `candidate-${run}`;
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id,
+  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id,
     revision: { repository: f.base.repository, commit: made.commit }, tree: made.tree,
-    paths: ['app.js'], diff: 'app diff', summary: 'Checked app change' } });
+    paths: ['app.js'], diff: 'app diff', summary: 'Checked app change' }) });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${id}` });
   await call({ op: 'verify_finish', job_id: evaluator.id, epoch: evaluator.epoch,
     report: { suite: policy.suite, environment: policy.environment, setup: [], commands: [{ name: 'build', output: { exit: 0 } }] },

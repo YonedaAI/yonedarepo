@@ -5,6 +5,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { api, reviewerFixture, signup } from './reviewer-fixture';
 import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
+import { approvedLedger, finishSealed } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(reset);
@@ -21,7 +22,7 @@ it('reads the real frozen capture payload projection by public id for its owner 
     commit: 'a'.repeat(40),
     policy: reviewerPolicy,
   });
-  await ledger(bindings, owner.repo, {
+  await approvedLedger(bindings, owner.repo)({
     op: 'start_run',
     id: 'job-status-run',
     intent: 'Inspect bounded capture diagnostics',
@@ -31,10 +32,7 @@ it('reads the real frozen capture payload projection by public id for its owner 
     op: 'claim', job_id: 'job:job-status-run:agent-1',
     models: { codex: 'gpt-5.6-luna', claude: 'claude-sonnet-5-5' },
   });
-  await ledger(bindings, owner.repo, {
-    op: 'finish', job_id: agent.id, epoch: agent.epoch,
-    result: { workspace: 'b'.repeat(64) },
-  });
+  await finishSealed(bindings, owner.repo, agent);
   const capture = await ledger(bindings, owner.repo, { op: 'claim', job_id: 'capture:job-status-run:agent-1' });
 
   const response = await api(

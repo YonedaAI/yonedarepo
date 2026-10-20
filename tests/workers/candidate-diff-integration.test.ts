@@ -6,6 +6,7 @@ import { ledger, object, sha } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
 import { api, bindings, containerBindings, signup } from './reviewer-fixture';
+import { approvedLedger, finishSealed } from './source-kit';
 
 afterEach(reset);
 const repo = 'compact-diff';
@@ -18,10 +19,10 @@ async function fixture() {
   const captured = await platformCommit(platform, base.commit, { 'public/index.html': '<!doctype html>\n' });
   await platform.call('POST', '/branches', { ref: branch, commit: captured.commit, expected: null });
   const revision = { repository, commit: captured.commit };
-  await ledger(bindings, repo, { op: 'start_run', id: 'diff-run', intent: 'Synthetic capture',
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'diff-run', intent: 'Synthetic capture',
     agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Test capture' }] });
   const agent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:diff-run:agent-1' });
-  await ledger(bindings, repo, { op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: 'd'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, agent);
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:diff-run:agent-1' });
   // The broker's dispatch assigns the candidate branch; Container RPC is fake, while the
   // broker, attempt fencing, platform readback, R2 digest storage and ledger are real workerd.
@@ -32,7 +33,9 @@ async function fixture() {
     method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body),
   }), target, { containerId: 'synthetic-capture' } as Parameters<typeof brokerHandler>[2]);
   const result = (diff: string, at = captured) => ({ id: 'diff-candidate', revision: { repository, commit: at.commit },
-    tree: at.tree, paths: ['public/index.html'], diff, summary: 'Synthetic captured diff' });
+    tree: at.tree, paths: ['public/index.html'], diff, summary: 'Synthetic captured diff',
+    parents: registration.binding.parents, source_changeset_digest: registration.changeset_digest,
+    source_manifest_digest: registration.changeset_digest });
   return { cookie, capture, scope, base, platform, captured, revision, container, complete, result };
 }
 

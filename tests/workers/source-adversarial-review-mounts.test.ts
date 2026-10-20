@@ -11,6 +11,7 @@ import type { Scope } from '../../cloudflare/worker/types';
 import { modernCompareApproval } from './comparison-review-fixture';
 import { readyReviewer } from './reviewer-fixture';
 import { checkedSourceAlternative, reviewSourceEnv } from './source-review-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -22,7 +23,7 @@ it('independently checked alternatives enter read-only review with exactly their
     limit_microusd: 50000000,
   });
   const base = { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree };
-  await ledger(f.scoped, f.repo, {
+  await approvedLedger(f.scoped, f.repo)({
     ...modernCompareApproval(),
     op: 'start_run',
     id: 'api-compare',

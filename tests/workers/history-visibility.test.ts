@@ -4,6 +4,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { api, bindings, readyReviewer, signup } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -13,7 +14,7 @@ async function oldProject(owner: string) {
   await workspace(bindings, owner, { op: 'project_reserve', id, name: 'Old study', policy });
   await workspace(bindings, owner, { op: 'project_update', id, status: 'ready' });
   await ledger(bindings, id, { op: 'init', id, name: 'Old study', workspace: owner, remote: { namespace: 'yoneda-test', name: id }, commit: 'a'.repeat(40), policy });
-  await ledger(bindings, id, { op: 'start_run', id: 'old-run', intent: 'Old isolated study' });
+  await approvedLedger(bindings, id)({ op: 'start_run', id: 'old-run', intent: 'Old isolated study' });
   await ledger(bindings, id, { op: 'cancel_run', run_id: 'old-run' });
   return id;
 }
@@ -43,7 +44,7 @@ it('rejects other owners and ignores forged preflight for active history', async
   const foreign = await signup('history_other_owner');
   const input = { hidden: true, expected_hidden: false, reason: 'Old study cleanup', _visibility: { repo_id: repo, workspace: f.owner, quiescent: true, all_runs_hidden: true, current_result: false } };
   expect((await api(f.scoped, `/api/projects/${repo}/visibility`, foreign, input)).status).toBe(403);
-  await ledger(bindings, repo, { op: 'start_run', id: 'active-run', intent: 'Active ordinary work' });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'active-run', intent: 'Active ordinary work' });
   const project = await api(f.scoped, `/api/projects/${repo}/visibility`, f.cookie, input);
   expect(project.status).toBe(409);
   expect((await project.json<Json>()).error.code).toBe('RUN_ACTIVE_WORK');

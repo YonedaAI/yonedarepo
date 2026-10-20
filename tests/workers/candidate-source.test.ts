@@ -7,6 +7,7 @@ import { workspace } from '../../cloudflare/worker/workspace';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import type { Env } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'candidate-inspection';
@@ -26,11 +27,11 @@ async function fixture() {
   // The capture is an actual commit of the project's platform repository.
   const made = await platformCommit(project.platform, project.base.commit, { 'public/index.html': html });
   const revision = { repository: project.base.repository, commit: made.commit };
-  await ledger(bindings, repo, { op: 'start_run', id: 'run-source', intent: 'Candidate fixture', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'minimal' }] });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'run-source', intent: 'Candidate fixture', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'minimal' }] });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:run-source:agent-1' });
-  await ledger(bindings, repo, { op: 'finish', job_id: job.id, epoch: job.epoch, result: { workspace: 'c'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, job);
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:run-source:agent-1' });
-  await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: 'captured-candidate', revision, tree: made.tree, paths: ['public/index.html'], diff: 'Synthetic captured source', summary: 'Synthetic capture fixture' } });
+  await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id: 'captured-candidate', revision, tree: made.tree, paths: ['public/index.html'], diff: 'Synthetic captured source', summary: 'Synthetic capture fixture' }) });
   // Every platform read is recorded: which repository, and which commits were requested.
   const reads: string[] = [];
   const scoped = { ...bindings, PLATFORM: { async fetch(input: RequestInfo, init?: RequestInit) {

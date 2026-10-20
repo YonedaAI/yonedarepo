@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { attemptLog, writeLog } from '../../cloudflare/worker/logging';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Scope } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 it('logs only allowlisted lifecycle observations, without raw payloads or errors', () => {
@@ -19,7 +20,7 @@ async function fixture(): Promise<Scope> {
   await ledger(bindings, repo, { op: 'init', id: repo, name: 'Logging', commit: 'a'.repeat(40),
     remote: { namespace: 'test', name: repo }, policy: { version: 'v1', suite: 'retry-contract-v1',
       environment: 'rust-1.94-evaluator-v1', required_checks: ['build', 'behavior'] } });
-  await ledger(bindings, repo, { op: 'start_run', id: 'logged-run', intent: 'Offline logging fixture' });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'logged-run', intent: 'Offline logging fixture' });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:logged-run:research' });
   return { repo_id: repo, job, supervisor: 'private-supervisor', model_calls: 0, created_at: Date.now() };
 }

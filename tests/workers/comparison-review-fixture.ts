@@ -5,6 +5,7 @@ import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { platformCommit, platformProject } from './platform-fixture';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 export const bindings = env as unknown as Env;
 export const repo = 'comparison-boundary-fixture';
@@ -19,7 +20,7 @@ export const policy = {
 export const agents = ['minimal', 'accessible'].map(strategy => ({
   provider: 'zai', model: 'glm-5.3-flash', connection: `test-${strategy}`, strategy,
 }));
-export const call = (command: Json) => ledger(bindings, repo, command);
+export const call = approvedLedger(bindings, repo);
 
 async function signup() {
   await workspace(bindings, owner, { op: 'signup', username: owner,
@@ -92,15 +93,14 @@ export async function checkedBuilder(index: number, commit: string, active?: Jso
   const execution = `${runId}:agent-${index}`;
   const builder = active ?? await call({ op: 'claim', job_id: `job:${execution}` });
   const files = { 'index.html': { content: `<!doctype html><title>Builder ${index}</title>` } };
-  const workspace = await object(bindings, JSON.stringify({ files: { 'public/index.html': files['index.html'] } }));
-  await call({ op: 'finish', job_id: builder.id, epoch: builder.epoch, result: { workspace: workspace.digest } });
+  const registration = await finishSealed(bindings, repo, builder);
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const id = `candidate-${index}`;
   const revision = { repository: at.repository, commit };
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: {
+  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, {
     id, revision, tree: at.tree, paths: ['public/index.html'], diff: `Booking approach ${index}`,
     summary: `Checked capacity implementation ${index}`,
-  } });
+  }) });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${id}` });
   const site = await object(bindings, JSON.stringify({ repo, revision, files }));
   await call({ op: 'register_site', job_id: evaluator.id, epoch: evaluator.epoch, digest: site.digest, files });

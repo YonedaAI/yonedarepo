@@ -9,6 +9,7 @@ import { seal } from '../../cloudflare/worker/vault';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import { platformProject } from './platform-fixture';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 // Run approval reads the canonical commit back from the project's platform repository.
@@ -28,7 +29,7 @@ async function approvedLegacyFixture(owner: string, repo: string, input: Json) {
       agent.connection ?? agent.provider, agent.model, saved.routing);
     agents.push({ ...agent, routing: credentials.routing });
   }
-  return ledger(bindings, repo, { ...input, agents, op: 'start_run', _workspace: owner });
+  return approvedLedger(bindings, repo)({ ...input, agents, op: 'start_run', _workspace: owner });
 }
 
 it('pins Token Plan requests to the approved region and rejects arbitrary destinations', () => {

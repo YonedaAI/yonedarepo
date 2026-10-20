@@ -9,6 +9,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
 import { syntheticPlatform } from './platform-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -24,7 +25,7 @@ it('continues legitimate cold preparation beyond four queue batches without burn
     readTree: async () => Array.from({ length: 100 }, (_, index) => ({ name: `f-${String(index).padStart(3, '0')}.bin`,
       hash: blob, mode: '100644', type: 'blob' })), readBlob };
   const platform = await syntheticPlatform(bindings, { [repo]: artifact }, 'source_owner');
-  await ledger(bindings, repo, { op: 'start_run', id: 'index-run', intent: 'Prepare immutable source before models',
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'index-run', intent: 'Prepare immutable source before models',
     workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: revision,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic source index' }] });
   const context = await ledger(bindings, repo, { op: 'source_read_context', job_id: 'job:index-run:agent-1' }) as SourceReadContext;

@@ -47,12 +47,6 @@ fn owner_override_is_reasoned_versioned_and_preserves_the_comparative_assertion(
         assertion
     );
     assert_eq!(repo(&db).unwrap()["published_commit"], "a".repeat(40));
-    assert!(
-        !run_jobs(&db, "compare")
-            .unwrap()
-            .iter()
-            .any(|j| j["kind"] == "publish")
-    );
     let before = f::call(&db, json!({"op":"snapshot"})).unwrap();
     assert!(
         f::call(

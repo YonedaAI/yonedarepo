@@ -8,6 +8,7 @@ import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'offline-team';
@@ -37,7 +38,7 @@ async function setup() {
     { version: 'team-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
       required_checks: ['build'], build: { setup: [], checks: [{ name: 'build', argv: ['node', '--check', 'public/search.mjs'], timeout_seconds: 30 }] } });
   base = project.base.commit;
-  await ledger(bindings, repo, request);
+  await approvedLedger(bindings, repo)(request);
   return { cookie, ...project };
 }
 function scope(job: Json): Scope {
@@ -53,12 +54,12 @@ async function captured(task: string, paths: string[], digest?: string,
     } });
     expect((await response.json<Json>()).execution_id).toBe(`team:task:${task}`);
   }
-  await ledger(bindings, repo, { op: 'finish', job_id: job.id, epoch: job.epoch, result: { workspace: 'b'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, job);
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: `capture:team:task:${task}` });
   await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch,
-    result: { id: `captured-${task}`, revision: { repository, commit: at.commit },
+    result: withLineage(registration, { id: `captured-${task}`, revision: { repository, commit: at.commit },
       tree: at.tree, paths, summary: 'Synthetic captured fixture', diff: 'Synthetic diff',
-      ...(digest ? { integration_digest: digest } : {}) },
+      ...(digest ? { integration_digest: digest } : {}) }),
   });
   return job;
 }
@@ -80,9 +81,9 @@ it('captures specialists before integration, records exact retrieved handoffs, c
   const usage = await ledger(bindings, repo, { op: 'context_usage', run_id: 'team' });
   expect(usage.entries.some((e: Json) => e.execution_id === 'team:task:integrate' && e.targets.some((t: Json) => t.id === context.handoffs[0].id))).toBe(true);
   expect(usage.entries.some((e: Json) => e.targets.some((t: Json) => t.id === manifest.manifest_record.id))).toBe(true);
-  await ledger(bindings, repo, { op: 'finish', job_id: active.id, epoch: active.epoch, result: { workspace: 'b'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, active);
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:team:task:integrate' });
-  const result = { id: 'integrated', revision: { repository, commit: 'e'.repeat(40) }, tree: 'f'.repeat(40), paths: ['public/search.mjs', 'public/rsvp.mjs', 'public/index.html'], summary: 'Integrated fixture', diff: 'Synthetic integrated diff' };
+  const result = withLineage(registration, { id: 'integrated', revision: { repository, commit: 'e'.repeat(40) }, tree: 'f'.repeat(40), paths: ['public/search.mjs', 'public/rsvp.mjs', 'public/index.html'], summary: 'Integrated fixture', diff: 'Synthetic integrated diff' });
   await expect(ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result })).rejects.toThrow('manifest');
   await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { ...result, integration_digest: manifest.digest } });
   snapshot = await ledger(bindings, repo, { op: 'snapshot' });

@@ -12,12 +12,13 @@ import type { Json } from '../../cloudflare/worker/types';
 import { platformProject } from './platform-fixture';
 import { attempt, commitSealed, lazyCandidate, sealedProducer } from './platform-source-fixture';
 import { bindings, signup } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 const owner = 'capture_owner';
 const repo = 'platform-capture';
 const baseFiles = { 'public/index.html': '<!doctype html><title>Base</title>\n' };
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 
 async function lazyRun(runs = ['run']) {
   const cookie = await signup(owner);

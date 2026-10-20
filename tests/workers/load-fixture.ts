@@ -8,12 +8,16 @@ import { loadMarker, summarize } from '../../tools/load-metrics.mjs';
 export const bindings = env as unknown as Env;
 export const stub = (repo: string) =>
   bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
-export const start = (id: string) => ({
+// The adapter's source approval at the fixture's frozen base, outside the measured call.
+export const start = (id: string, repo: string) => ({
   op: 'start_run',
   id,
   intent: 'Offline authority load fixture',
   criteria: ['Ledger invariants'],
   agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Offline; dispatch withheld' }],
+  workspace_transport: 'api-source-v1',
+  _source_transport_approved: true,
+  _source_base: { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
 });
 
 export async function initialize(repo: string) {

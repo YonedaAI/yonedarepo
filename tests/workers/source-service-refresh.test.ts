@@ -4,6 +4,7 @@ import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -18,7 +19,7 @@ async function reservedRefresh() {
   const base = { repository: project, commit: 'a'.repeat(40) };
   const head = { repository: project, commit: 'c'.repeat(40) };
   const candidate = { repository: project, commit: 'e'.repeat(40), tree: 'f'.repeat(40) };
-  const call = (command: Json) => ledger(bindings, repo, command);
+  const call = approvedLedger(bindings, repo);
   await call({ op: 'init', id: repo, name: 'Synthetic recorded refresh', workspace: 'source_owner',
     remote: { namespace: 'platform', name: repo, branch: 'main' }, commit: base.commit, policy: reviewerPolicy });
   await call({ op: 'start_run', id: 'native-refresh-run', intent: 'Local sparse refresh fixture',

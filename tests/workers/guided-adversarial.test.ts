@@ -11,6 +11,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { reviewerSignup, signup } from './reviewer-fixture';
 import { providerRegistry } from '../../shared/provider-registry';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'guided-adversarial';
@@ -19,7 +20,7 @@ const session = 'guide-session:adversarial';
 const base = 'a'.repeat(40);
 const bundle = 'd'.repeat(64);
 afterEach(reset);
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 const read = () => call({ op: 'guided_session', session_id: session, _workspace: owner });
 const scope = (job: Json): Scope => ({ repo_id: repo, job, supervisor: 'synthetic-attempt', model_calls: 0, created_at: Date.now() });
 
@@ -73,7 +74,8 @@ async function context(job: Json, record: Json) {
     ...record, intent_id: `intent:${job.payload.execution.run_id}`,
   } })).json<Json>();
 }
-async function completeTeam(rid: string, phase: string, prior?: string) {
+/** Workers and the integrator finish through sealed source; the integration is captured. */
+async function captureTeam(rid: string, phase: string, prior?: string) {
   const workers = await Promise.all(['core', 'ui'].map(task => call({ op: 'claim', job_id: `job:${rid}:task:${task}` })));
   for (const job of workers) await call({ op: 'progress', job_id: job.id, epoch: job.epoch, progress: { stage: 'harness_running' } });
   let choice = '';
@@ -95,23 +97,27 @@ async function completeTeam(rid: string, phase: string, prior?: string) {
   await new Promise(resolve => setTimeout(resolve, 5));
   for (const job of workers) await call({ op: 'record_transcript', job_id: job.id, epoch: job.epoch, digest: 'e'.repeat(64) });
   for (const [index, job] of workers.entries()) {
-    await call({ op: 'finish', job_id: job.id, epoch: job.epoch, result: { workspace: 'f'.repeat(64) } });
+    const registration = await finishSealed(bindings, repo, job);
     const capture = await call({ op: 'claim', job_id: `capture:${job.payload.execution.id}` });
-    await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: {
+    await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, {
       id: `specialist:${rid}:${index}`, revision: { repository: `yoneda-test/specialist-${index}`, commit: String(index + 1).repeat(40) },
       tree: 'c'.repeat(40), paths: [index ? 'public/app.mjs' : 'public/tasks.mjs'], summary: 'Synthetic specialist source', diff: 'Synthetic delta',
-    } });
+    }) });
     expect((await call({ op: 'job_status', id: capture.id })).status).toBe('done');
   }
   const integrator = await call({ op: 'claim', job_id: `job:${rid}:task:integrate` });
-  await call({ op: 'finish', job_id: integrator.id, epoch: integrator.epoch, result: { workspace: 'f'.repeat(64) } });
+  const registration = await finishSealed(bindings, repo, integrator);
   const capture = await call({ op: 'claim', job_id: `capture:${rid}:task:integrate` });
   const cid = `integrated:${rid}`;
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: cid,
+  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id: cid,
     revision: { repository: 'yoneda-test/integrated', commit: (phase === 'parallel'
       ? rid.endsWith('-0') ? 'd' : 'e' : phase === 'build' ? 'b' : 'c').repeat(40) },
     tree: 'c'.repeat(40), paths: ['public/tasks.mjs', 'public/app.mjs'], summary: 'Synthetic integrated source',
-    diff: 'Synthetic delta', integration_digest: capture.payload.integration_digest } });
+    diff: 'Synthetic delta', integration_digest: capture.payload.integration_digest }) });
+  return { choice, cid, capture };
+}
+/** The independent evaluator checks the captured integration for `phase`. */
+async function checkTeam(phase: string, { choice, cid, capture }: Awaited<ReturnType<typeof captureTeam>>) {
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${cid}` });
   expect(evaluator.payload.guided).toMatchObject({ session_id: session,
     step_id: phase === 'parallel' ? 'concurrent' : phase, check_phase: phase });
@@ -129,6 +135,9 @@ async function completeTeam(rid: string, phase: string, prior?: string) {
   expect(evaluation.guided, JSON.stringify(evaluation)).toEqual(evaluator.payload.guided);
   expect((await call({ op: 'job_status', id: capture.id })).status).toBe('done');
   return { choice, cid };
+}
+async function completeTeam(rid: string, phase: string, prior?: string) {
+  return checkTeam(phase, await captureTeam(rid, phase, prior));
 }
 
 it('native guide reads cannot start work or adopt caller-supplied completion claims', async () => {
@@ -235,8 +244,10 @@ it('both concurrent starts commit together from one checked base or roll back al
   await evictDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo)));
   expect((await call(body)).steps[2].run_ids).toEqual(ids);
   expect(await state()).toEqual(committed);
+  // The second variant registers its sealed source before the first one's check moves the branch.
+  const second = await captureTeam(ids[1], 'parallel', extended.choice);
   await completeTeam(ids[0], 'parallel', extended.choice);
-  const stale = await completeTeam(ids[1], 'parallel', extended.choice);
+  const stale = await checkTeam('parallel', second);
   const candidate = await call({ op: 'candidate_record', id: stale.cid });
   expect(candidate.working_branch_state).toBe('stale');
   const recovered = (await call({ op: 'run_detail', run_id: ids[1] })).runs[0];
