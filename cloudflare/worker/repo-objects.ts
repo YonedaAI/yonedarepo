@@ -25,6 +25,9 @@ export function toBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 const PUSH_ATTEMPTS = 5;
+const CACHE_CHUNK = 256;
+/** Commits up to this many objects write the cache alongside their push. */
+export const OVERLAP_CACHE_OBJECTS = 64;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const accepted = (refname: string) =>
   fromBase64(compute({ op: 'push_report', refname }).report_b64);
@@ -53,6 +56,13 @@ export interface ObjectStore {
   readBlob(id: string): Promise<Uint8Array | null>;
 }
 
+/** Per-isolate: a repository's remote never changes. */
+const remotes = new Map<string, string>();
+/** Per-isolate write tokens, reused until shortly before they expire (never logged). */
+const tokens = new Map<string, { plaintext: string; expires: number }>();
+const TOKEN_SECONDS = 60;
+const TOKEN_REUSE_MS = 40_000;
+
 class ArtifactsStore implements ObjectStore {
   constructor(
     private readonly env: Env,
@@ -64,21 +74,35 @@ class ArtifactsStore implements ObjectStore {
   async create() {
     await this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' });
   }
-  /** Pushes through the repository's queue: Artifacts takes one receive-pack at a time. */
+  /**
+   * Pushes through the repository's queue: Artifacts takes one receive-pack at a time. The
+   * remote and a short-lived write token are reused within this isolate; minting and
+   * revoking a token per push cost more than the push itself. A rejected token is replaced.
+   */
   async push(body: Uint8Array) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const info = await repo.info();
-    const token = await repo.createToken('write', 60);
-    try {
-      const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
-      return await queue.push(info.remote, token.plaintext, body);
-    } catch (error) {
-      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
-        code: 'PUSH_FAILED',
-      });
-    } finally {
-      await repo.revokeToken(token.id);
+    const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
+    for (let attempt = 0; ; attempt++) {
+      const { remote, token } = await this.credentials(attempt > 0);
+      try {
+        return await queue.push(remote, token, body);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (attempt === 0 && /returned 40[13]/.test(message)) continue;
+        throw Object.assign(new Error(message), { code: 'PUSH_FAILED' });
+      }
     }
+  }
+  private async credentials(fresh: boolean) {
+    const cached = tokens.get(this.spec);
+    const remote = remotes.get(this.spec);
+    if (!fresh && remote && cached && cached.expires > Date.now())
+      return { remote, token: cached.plaintext };
+    using repo = await this.env.ARTIFACTS.get(this.name);
+    const url = remote ?? (await repo.info()).remote;
+    remotes.set(this.spec, url);
+    const token = await repo.createToken('write', TOKEN_SECONDS);
+    tokens.set(this.spec, { plaintext: token.plaintext, expires: Date.now() + TOKEN_REUSE_MS });
+    return { remote: url, token: token.plaintext };
   }
   async readCommit(id: string) {
     using repo = await this.env.ARTIFACTS.get(this.name);
@@ -221,13 +245,21 @@ export class RepoObjects {
     }
   }
 
+  /** Writes both tiers in bounded chunks: unbounded fan-out stalls on large imports. */
   async cache(objects: CachedObject[]) {
-    await putObjects(this.env, (id) => this.key(id), objects);
-    await Promise.all(
-      objects.map((o) =>
-        this.edgePut(o.id, o.kind, o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o)),
-      ),
-    );
+    for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
+      const chunk = objects.slice(i, i + CACHE_CHUNK);
+      await Promise.all([
+        putObjects(this.env, (id) => this.key(id), chunk),
+        ...chunk.map((o) =>
+          this.edgePut(
+            o.id,
+            o.kind,
+            o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+          ),
+        ),
+      ]);
+    }
   }
 
   /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). */
@@ -287,10 +319,11 @@ export class RepoObjects {
    * itself, never the cache. Artifacts can refuse or lag pushes when several land on one
    * repository at once, so a refusal is retried with jittered backoff and a missing readback
    * is re-read before the push counts as failed. Pushes are idempotent: same objects, same
-   * hidden ref.
+   * hidden ref. `ready` (the cache write running alongside) settles before the readback.
    */
-  async pushCommit(body: Uint8Array, commit: string) {
+  async pushCommit(body: Uint8Array, commit: string, ready: Promise<unknown> = Promise.resolve()) {
     const refname = `refs/yoneda/c/${commit}`;
+    ready.catch(() => {}); // observed below; a push failure must not leave it unhandled
     let reason = 'not readable';
     for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
       if (attempt) await sleep(100 * 2 ** attempt + Math.random() * 100 * 2 ** attempt);
@@ -300,6 +333,7 @@ export class RepoObjects {
         reason = `refused: ${outcome.refused}`;
         console.warn(`object store push attempt ${attempt + 1} ${reason}`);
       }
+      await ready;
       for (let read = 0; read < 3; read++) {
         const readback = await this.store.readCommit(commit);
         // A retried push may be refused because an earlier attempt already created the ref.
