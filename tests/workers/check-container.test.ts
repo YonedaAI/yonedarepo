@@ -41,3 +41,17 @@ it('kills the instance when it never became ready', async () => {
   await expect(runCheckOnce(fake, job)).rejects.toThrow('port timeout');
   expect(calls).toEqual(['start', 'destroy']);
 });
+
+it('ends a stalled check epoch itself, well before its lease, and kills the instance', async () => {
+  const { withDeadline, executorDeadlineMs } = await import('../../cloudflare/worker/repo-checks');
+  let killed = false;
+  const stalled = new Promise<never>(() => {});
+  await expect(
+    withDeadline(stalled, 10, async () => {
+      killed = true;
+    }),
+  ).rejects.toMatchObject({ code: 'CHECK_TIMEOUT' });
+  expect(killed).toBe(true);
+  // The lease is the runner's timeout plus five minutes.
+  for (const timeout of [60, 600]) expect(executorDeadlineMs(timeout)).toBeLessThan((timeout + 300) * 1000);
+});

@@ -8,6 +8,25 @@ import { caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
 import type { Env, Envelope } from './types';
 
+/** Start (90 s port wait), the check's own timeout, and a margin for shipping results. */
+export const executorDeadlineMs = (timeoutSeconds: number) => (90 + timeoutSeconds + 60) * 1000;
+
+/** `work`, or a CHECK_TIMEOUT failure after `ms` (running `onTimeout` first). */
+export function withDeadline<T>(work: Promise<T>, ms: number, onTimeout: () => Promise<unknown>) {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(async () => {
+      await onTimeout();
+      reject(
+        Object.assign(new Error(`Check executor did not finish within ${ms / 1000} s`), {
+          code: 'CHECK_TIMEOUT',
+        }),
+      );
+    }, ms);
+  });
+  return Promise.race([work, expired]).finally(() => timer && clearTimeout(timer));
+}
+
 export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefined) {
   // Re-sending a still-queued run is safe (claims are fenced) and recovers a lost message.
   const queued = (runs ?? []).filter((r) => r.status === 'queued');
@@ -66,7 +85,13 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
     const executor = env.CHECK_RUNNERS.get(
       env.CHECK_RUNNERS.idFromName(`${run.run_id}:${run.epoch}`),
     );
-    const result = (await executor.run(job)) as Json;
+    // The epoch ends itself well before its lease (timeout + 5 min) would: a stalled
+    // container or consumer otherwise holds the run "running" until the lease lapses.
+    const result = (await withDeadline(
+      executor.run(job),
+      executorDeadlineMs(run.timeout_seconds),
+      () => (executor as unknown as { destroy(): Promise<void> }).destroy().catch(() => {}),
+    )) as Json;
     const log = `platform/v1/${repo}/checks/${run.run_id}/${run.epoch}.log`;
     await env.OBJECTS.put(log, String(result.output_tail ?? ''), {
       customMetadata: { sha256: String(result.output_sha256 ?? ''), commit: run.commit },
