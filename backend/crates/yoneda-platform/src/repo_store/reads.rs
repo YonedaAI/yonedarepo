@@ -130,9 +130,22 @@ pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let after = c["after"].as_u64().unwrap_or(0);
     let limit = c["limit"].as_u64().unwrap_or(100).clamp(1, 500);
     let until = current_version(db)?.min(after.saturating_add(limit));
-    Ok(
-        json!({ "entries": rows::entries(db, after, until, None)?, "version": current_version(db)? }),
-    )
+    // Changeset entries carry their projection: the Git commit and when it was built.
+    let projections = db.query(
+        "SELECT version,projected,projected_at FROM changesets WHERE version>? AND version<=?",
+        &[json!(after), json!(until)],
+    )?;
+    let entries = rows::entries(db, after, until, None)?
+        .into_iter()
+        .map(|entry| {
+            let mut value = json!(entry);
+            if let Some(p) = projections.iter().find(|p| p["version"] == entry.version) {
+                value["projected"] = json!({ "commit": p["projected"], "at": p["projected_at"] });
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "entries": entries, "version": current_version(db)? }))
 }
 
 pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {

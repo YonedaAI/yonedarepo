@@ -151,6 +151,10 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
         .map(|e| e["kind"].as_str().unwrap())
         .collect();
     assert_eq!(kinds, ["commit", "changeset"]);
+    assert_eq!(
+        log["entries"][1]["projected"],
+        json!({"commit": null, "at": null})
+    );
     // Head reads fail closed until the projector catches up (the adapter projects and
     // retries); new work still begins, on the last projected head and its version.
     for read in [
@@ -174,6 +178,8 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
     );
     // A slow item is not retried by the next changeset batch.
     assert_eq!(land_changesets(&h)["landed"], json!([]));
+    let fresh = h.landable(&root, 1, json!([file("f.txt", "f\n")]), json!([]));
+    let fresh_ticket = h.enqueue(&fresh);
 
     h.project_all();
     let head = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}));
@@ -184,8 +190,17 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
     assert_eq!(h.file_at(head_id, "b.txt").as_deref(), Some("b\n"));
     assert_eq!(h.file_at(head_id, "README.md").as_deref(), Some("# demo\n"));
     assert_eq!(h.status_of(&tickets[1])["result"]["commit"], head_id);
+    let log = h.ok(OWNER, json!({"op":"repo_txlog","after":2}));
+    assert_eq!(log["entries"][0]["projected"]["commit"], head_id);
+    assert!(
+        log["entries"][0]["projected"]["at"].as_i64().unwrap()
+            > log["entries"][0]["committed_at_ms"].as_i64().unwrap()
+    );
     // The merge path now takes the overlapping items against the projected head.
-    let claim = h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}));
+    let claim = h.ok(
+        MERGER,
+        json!({"op":"repo_land_claim","ref":"main","slow_only":true}),
+    );
     assert_eq!(claim["head"], head_id);
     let claimed: Vec<&Value> = claim["items"]
         .as_array()
@@ -194,6 +209,7 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
         .map(|i| &i["ticket"])
         .collect();
     assert_eq!(claimed, vec![&tickets[2], &tickets[4]]);
+    assert_eq!(h.status_of(&fresh_ticket)["status"], "pending");
 }
 
 #[test]

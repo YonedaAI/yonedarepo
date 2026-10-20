@@ -69,16 +69,18 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     {
         return Ok(json!({ "wait": true, "retry_after_ms": (expires - now).min(250) }));
     }
-    let head = rows::ref_value(db, &refname)?
-        .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
-    let head_row = rows::recorded(db, &head)?;
+    // `slow_only`: changeset landing settles the path-disjoint items itself and leaves
+    // only those on the same files to merges.
     let pending = db.query(
-        "SELECT ticket,commit_id FROM land_queue WHERE refname=? AND status='pending' ORDER BY ticket LIMIT ?",
-        &[json!(refname), json!(BATCH)],
+        "SELECT ticket,commit_id FROM land_queue WHERE refname=? AND status='pending' AND slow>=? ORDER BY ticket LIMIT ?",
+        &[json!(refname), json!(i64::from(c["slow_only"] == true)), json!(BATCH)],
     )?;
     if pending.is_empty() {
         return Ok(json!({ "empty": true }));
     }
+    let head = rows::ref_value(db, &refname)?
+        .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
+    let head_row = rows::recorded(db, &head)?;
     let epoch = lease(db, &refname)?.map_or(1, |(e, _)| e + 1);
     db.query(
         "INSERT INTO land_leases(refname,epoch,expires_at) VALUES(?,?,?) ON CONFLICT(refname) DO UPDATE SET epoch=excluded.epoch,expires_at=excluded.expires_at",

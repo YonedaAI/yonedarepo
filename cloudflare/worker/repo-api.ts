@@ -160,7 +160,12 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
-  if (resource === 'land' && post) return run('git_land', await bodyOf(req));
+  // The landing mode is chosen per request only where the deployment allows it.
+  if (resource === 'land' && post)
+    return run('git_land', {
+      ...(await bodyOf(req)),
+      land_mode: req.headers.get('x-yoneda-land-mode'),
+    });
   if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'clone' && post) {

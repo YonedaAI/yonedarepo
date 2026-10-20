@@ -1,11 +1,14 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
+
+import { landMode } from './repo-changesets';
 import { dispatchRuns } from './repo-checks';
 import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
-import { explicitMerge, landWithMerge } from './repo-merge';
+import { landWithMerge } from './repo-landing';
+import { explicitMerge } from './repo-merge';
 import { diff, getObjects, type Json, listTree, type RepoContext, readFile } from './repo-ops';
 import { plan } from './repo-plan';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
@@ -87,5 +90,12 @@ export const operations: Record<string, Operation> = {
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
   git_branch: (ctx, a) =>
     ctx.call({ op: 'repo_branch_set', ref: a.ref, commit: a.commit, expected: a.expected ?? null }),
-  git_land: (ctx, a) => landWithMerge(ctx, a.ref, a.commit, a.fast_forward_only === true),
+  git_land: (ctx, a) =>
+    landWithMerge(
+      ctx,
+      a.ref,
+      a.commit,
+      a.fast_forward_only === true,
+      landMode(ctx.env, a.land_mode),
+    ),
 };

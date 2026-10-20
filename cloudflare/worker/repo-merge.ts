@@ -2,15 +2,14 @@
 // plan, has Rust compute merge trees and blobs, records a platform merge commit and lands
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
-import { deferred } from './background';
 import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
 import { type CachedObject, fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, batch, caller, type Json, RepoContext } from './repo-ops';
+import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
-import { adoptCommit, forgetChain, shardChain, shardStagedOf } from './repo-shards';
+import { shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
@@ -61,11 +60,6 @@ function conflictError(conflicts: Json[]) {
   );
 }
 
-const LAND_DEADLINE_MS = 120_000;
-const WAIT_ROUND_MS = 20_000;
-const WAIT_FIRST_MS = 20;
-const WAIT_MAX_MS = 320;
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const pathsOf = (changes: Json[]) => changes.map((c) => String(c.path));
 
 /**
@@ -189,31 +183,6 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
   ];
 }
 
-/**
- * Lands `sha`, adopting it first if it is still in its shard: the adoption (as the
- * platform) and the landing (as the caller) travel in one authority request, each in its
- * own transaction, so a thousand landers cost the authority a thousand requests, not two.
- */
-async function adoptAndLand(ctx: RepoContext, sha: string, land: Json) {
-  const chain = await shardChain(ctx.env, ctx.repo, sha);
-  if (chain.length === 0) return ctx.call(land);
-  const adopter = caller(ctx.env, ctx.repo, { _system: 'commits' });
-  const [adopted, landed] = await batch(ctx.env, ctx.repo, [
-    adopter.sign({ op: 'repo_adopt_commit', records: chain }),
-    ctx.call.sign(land),
-  ]);
-  if (adopted.error) {
-    // An ancestor's record moved mid-walk (a racing adoption): adopt stepwise, land again.
-    await adoptCommit(ctx.env, ctx.repo, sha);
-    return ctx.call(land);
-  }
-  // Dropping the shard records can wait for after the answer when the request allows it.
-  const forget = () => forgetChain(ctx.env, ctx.repo, chain);
-  if (!deferred(forget)) await forget();
-  if (landed.error) throw new ApiError(landed.error.code, landed.error.message);
-  return landed;
-}
-
 /** A commit's staged objects (its shard's copy, else the authority's), or none. */
 async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
   const fromShard = await shardStagedOf(merger.env, merger.repo, commit);
@@ -227,7 +196,7 @@ async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObje
 
 /** After the branch moved: one projection and one derive job per move, sent by whoever
  * moved it (waiters whose work rode along send none). */
-async function moved(ctx: RepoContext, ref: string) {
+export async function moved(ctx: RepoContext, ref: string) {
   // The landing already happened: a lost message delays projection and derived data (the
   // next move or a projector retry catches up), it does not undo or fail the landing.
   await Promise.all([
@@ -240,115 +209,6 @@ async function moved(ctx: RepoContext, ref: string) {
 async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
   const visible = await keepAllowed(ctx, conflicts);
   return visible.length === conflicts.length ? conflictError(conflicts) : outside();
-}
-
-/**
- * Lands `sha` on `ref`. A fast-forward lands directly; otherwise the landing joins the
- * branch's queue and this caller either claims the queue (and lands a whole batch) or
- * waits for whoever holds it. No caller ever rebuilds a merge against a moving head.
- */
-export async function landWithMerge(
-  ctx: RepoContext,
-  ref: string,
-  sha: string,
-  fastForwardOnly = false,
-) {
-  // Lands directly, or joins the branch's queue in the same call (never fast-forward-only).
-  const land = {
-    op: 'repo_land',
-    ref,
-    commit: sha,
-    fast_forward_only: fastForwardOnly,
-    ...(fastForwardOnly ? {} : { enqueue: true }),
-  };
-  const landed = await timed('land.request', () => adoptAndLand(ctx, sha, land));
-  if (!landed.queued) {
-    if (!landed.already) await moved(ctx, ref);
-    return landed;
-  }
-  const { ticket } = landed;
-  const merger = new RepoContext(
-    ctx.env,
-    ctx.repo,
-    caller(ctx.env, ctx.repo, { _system: 'merge' }),
-  );
-  const deadline = Date.now() + LAND_DEADLINE_MS;
-  const outcome = (status: Json) => {
-    if (status.status === 'landed') {
-      const via = status.result?.commit;
-      return {
-        landed: true,
-        ref: status.ref,
-        commit: sha,
-        version: status.result?.version,
-        ...(via && via !== sha ? { merge: via, merged: sha } : {}),
-      };
-    }
-    if (status.status === 'failed') {
-      const { code, message, details } = status.result ?? {};
-      throw new ApiError(code ?? 'CONFLICT', message ?? 'Landing failed', details);
-    }
-    throw new ApiError('INVALID_INPUT', 'Unknown landing state');
-  };
-  // The branch's combiner builds the batches and answers when this ticket settles; waiting
-  // there costs the authority nothing. Without one (or if it is evicted), poll.
-  const combiners = ctx.env.LAND_COMBINERS;
-  if (combiners) {
-    const combiner = combiners.get(combiners.idFromName(`${ctx.repo}:${ref}`)) as unknown as {
-      wait(repo: string, ref: string, ticket: number, timeoutMs: number): Promise<Json | null>;
-    };
-    try {
-      while (Date.now() < deadline) {
-        const settled = await timed('land.wait', () =>
-          combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
-        );
-        if (settled) return outcome(settled);
-      }
-    } catch (e) {
-      if (e instanceof ApiError) throw e;
-    }
-  }
-  return pollLanding(merger, ref, ticket, deadline, outcome);
-}
-
-/** The fallback: poll the queue with back-off, building a batch when the lease is free. */
-async function pollLanding(
-  merger: RepoContext,
-  ref: string,
-  ticket: number,
-  deadline: number,
-  outcome: (status: Json) => Json,
-) {
-  // Waiters back off: a hundred waiters polling every few milliseconds would starve the
-  // commits and the merger they wait for.
-  let pause = WAIT_FIRST_MS;
-  const wait = async () => {
-    await sleep(pause / 2 + Math.random() * pause);
-    pause = Math.min(pause * 2, WAIT_MAX_MS);
-  };
-  while (Date.now() < deadline) {
-    // The claim answers for this ticket once it is settled: one authority call per poll.
-    const claim = await merger.call({ op: 'repo_land_claim', ref, ticket });
-    if (claim.settled) return outcome(claim.settled);
-    if (claim.wait) {
-      await wait();
-      continue;
-    }
-    if (claim.empty || !claim.items?.length) {
-      if (!claim.empty) await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch });
-      continue;
-    }
-    try {
-      await landBatch(merger, claim);
-    } catch (e: any) {
-      await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch }).catch(() => {});
-      // Lost the compare-and-swap (the branch moved while the batch was built): rebuild.
-      if (e?.code !== 'STALE_HEAD') throw e;
-    }
-  }
-  throw new ApiError('TIMEOUT', `Landing on ${ref} is still queued; check ticket ${ticket}`, {
-    ticket,
-  });
 }
 
 /**
