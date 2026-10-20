@@ -189,6 +189,14 @@ fn record_step<S: SqlStore>(
         )?;
     }
     let dispatch = stage(db, &id, &step["raw"], now)?;
+    // The landed files' blobs travel with it too: a batch's landed commits are neither its
+    // parents nor adopted, so nothing else would bring them to the object store.
+    for blob in touches.iter().filter_map(|t| t["new_blob"].as_str()) {
+        db.query(
+            "INSERT INTO commit_objects(commit_id,id,kind) VALUES(?,?,'blob') ON CONFLICT DO NOTHING",
+            &[json!(id.hex()), json!(ObjectId::parse(blob)?.hex())],
+        )?;
+    }
     db.query(
         "UPDATE changesets SET projected=?,projected_at=? WHERE refname=? AND version>=? AND version<=?",
         &[json!(id.hex()), json!(now), json!(refname), json!(first), json!(last)],
