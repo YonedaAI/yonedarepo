@@ -22,7 +22,13 @@ function arityCheck(job: any) {
   const ok = calls.every((n) => n === declared);
   return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 1, output_bytes: 0, output_sha256: '0'.repeat(64), output_tail: '' };
 }
-const checks = { ...scoped, CHECK_RUNNERS: { idFromName: (n: string) => n, get: () => ({ run: async (job: any) => arityCheck(job) }) } } as unknown as Env;
+/** Executor failures to inject before checks run (like a container capacity error). */
+const capacity = { failures: 0 };
+const runner = async (job: any) => {
+  if (capacity.failures > 0 && capacity.failures--) throw new Error('Maximum number of running container instances exceeded');
+  return arityCheck(job);
+};
+const checks = { ...scoped, CHECK_RUNNERS: { idFromName: (n: string) => n, get: () => ({ run: runner }) } } as unknown as Env;
 // The platform's queue consumer, in-process: post-land checks run after each API request.
 const platform = {
   fetch: async (request: Request) => {
@@ -83,4 +89,11 @@ it('planned scheduling runs B after A, so nothing is redone', async () => {
   expect(planned).toMatchObject({ head_check: 'pass', stale_read_conflicts: 0, accepted: 2, agent_attempts: 2, plan: { stages: [['pricing'], ['shipping']] } });
   expect(planned.usage.requests).toBe(6);
   expect(planned.usd_per_accepted).toBeCloseTo(planned.usage.usd / 2, 6);
+});
+
+it('re-requests a check that errored in the executor and counts it, instead of judging it', async () => {
+  // Import, A's landing and the head each lose their first run to the executor.
+  capacity.failures = 3;
+  const planned = await scenario('evalcapacity', 'planned');
+  expect(planned).toMatchObject({ head_check: 'pass', accepted: 2, check_executor_errors: 1 });
 });
