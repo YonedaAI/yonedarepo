@@ -462,3 +462,16 @@ fn stateless_build_matches_the_authoritys_prepare() {
     .unwrap();
     assert_eq!(asked["need_trees"], json!([tree]));
 }
+
+#[test]
+fn a_repeated_accept_of_a_commit_awaiting_projection_is_idempotent() {
+    // A shard forgets an adopted commit's record but keeps its outbox row until R2 holds
+    // the objects, so recording the same commit again accepts it a second time.
+    let (h, root) = seeded();
+    let prepared = commit_staged(&h, &root, 1, "a.txt", "a\n");
+    let id =
+        yoneda_core::git_object::ObjectId::parse(prepared["commit"].as_str().unwrap()).unwrap();
+    let before = pending(&h);
+    crate::repo_store::staging::accept(&h.db, &id, 2).unwrap();
+    assert_eq!(pending(&h), before);
+}
