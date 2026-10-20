@@ -1,15 +1,12 @@
 // Deterministic signals per platform component. A model is consulted only when one of these
-// rules fires, so a quiet platform costs nothing. Latency rules compare against a stored
-// baseline (an EWMA fed only by quiet runs, so an incident cannot become the new normal).
-import type { ObjectClass, Snapshot } from './telemetry';
+// rules fires, so a quiet platform costs nothing. Invocation signals come from tail events;
+// queue, resource-kill and disk signals from analytics, and are omitted (not read as quiet)
+// when analytics is unavailable. Latency rules compare against a stored baseline: an EWMA
+// fed only by quiet runs, so an incident cannot become the new normal.
+import type { Analytics, Health } from './analytics';
+import type { TailComponent, TailSample, TailStats } from './tail';
 
-export type Component =
-  | 'api_worker'
-  | 'source_repository'
-  | 'object_push_queue'
-  | 'land_queue'
-  | 'check_runs'
-  | 'derived_jobs';
+export type Component = TailComponent | 'land_queue';
 
 export interface Signal {
   name: string;
@@ -27,98 +24,129 @@ export interface ComponentReport {
   watched: boolean;
   signals: Signal[];
   anomalous: boolean;
+  samples: TailSample[];
+}
+export interface Snapshot {
+  window: { start: string; end: string };
+  health: Health;
+  tail: Partial<Record<TailComponent, TailStats>>;
+  analytics: Analytics | null;
 }
 export type Baselines = Record<string, { value: number; samples: number }>;
 
-const MIN_REQUESTS = 20;
+const MIN_INVOCATIONS = 20;
 const MAX_ERROR_RATE = 0.02;
 const DRIFT_FACTOR = 2;
 /** A p95 rise smaller than this is noise even when it doubles. */
 const DRIFT_FLOOR_MS = 100;
 const MIN_BASELINE_SAMPLES = 3;
 const MAX_EXCEPTIONS = 3;
+const MAX_ERROR_LOGS = 5;
+const MAX_PUSH_RETRIES = 5;
 const MAX_BACKLOG = 50;
 const MAX_LAG_MS = 120_000;
 const MAX_RETRIES = 1;
 const MAX_DISK_PERCENT = 85;
-const EXCEPTION_STATUSES = ['scriptThrewException', 'exceededResources', 'internalError'];
 
 export const baselineKey = (component: Component, signal: string) => `${component}/${signal}`;
-
-function errorRate(requests: number, errors: number): Signal {
-  const value = requests ? errors / requests : 0;
-  return {
-    name: 'error_rate',
-    value: Number(value.toFixed(4)),
-    unit: 'ratio',
-    anomalous: requests >= MIN_REQUESTS && value > MAX_ERROR_RATE,
-    rule: `> ${MAX_ERROR_RATE} with >= ${MIN_REQUESTS} requests`,
-  };
-}
-
-function exceptions(byStatus: Record<string, number>): Signal {
-  const value = EXCEPTION_STATUSES.reduce((total, status) => total + (byStatus[status] ?? 0), 0);
-  return {
-    name: 'exceptions',
-    value,
-    unit: 'count',
-    anomalous: value >= MAX_EXCEPTIONS,
-    rule: `>= ${MAX_EXCEPTIONS} thrown or resource-killed invocations`,
-  };
-}
-
-function drift(
-  component: Component,
-  name: string,
-  value: number | null,
-  requests: number,
-  baselines: Baselines,
-): Signal {
-  const base = baselines[baselineKey(component, name)];
-  const ready = base && base.samples >= MIN_BASELINE_SAMPLES;
-  return {
-    name,
-    value,
-    unit: 'ms',
-    anomalous: Boolean(
-      ready &&
-        value !== null &&
-        requests >= MIN_REQUESTS &&
-        value > base.value * DRIFT_FACTOR &&
-        value - base.value >= DRIFT_FLOOR_MS,
-    ),
-    rule: `> ${DRIFT_FACTOR}x baseline (+${DRIFT_FLOOR_MS} ms) after ${MIN_BASELINE_SAMPLES} quiet runs`,
-    ...(base ? { baseline: Math.round(base.value) } : {}),
-    ...(value !== null && requests >= MIN_REQUESTS ? { sample: value } : {}),
-  };
-}
 
 function threshold(name: string, value: number | null, unit: string, max: number): Signal {
   return { name, value, unit, anomalous: value !== null && value > max, rule: `> ${max}` };
 }
 
-function objectSignals(component: Component, o: ObjectClass, baselines: Baselines): Signal[] {
+function drift(component: Component, t: TailStats, baselines: Baselines): Signal {
+  const base = baselines[baselineKey(component, 'p95_wall_ms')];
+  const value = t.p95WallMs;
+  const enough = value !== null && t.invocations >= MIN_INVOCATIONS;
+  return {
+    name: 'p95_wall_ms',
+    value,
+    unit: 'ms',
+    anomalous: Boolean(
+      enough &&
+        base &&
+        base.samples >= MIN_BASELINE_SAMPLES &&
+        value > base.value * DRIFT_FACTOR &&
+        value - base.value >= DRIFT_FLOOR_MS,
+    ),
+    rule: `> ${DRIFT_FACTOR}x baseline (+${DRIFT_FLOOR_MS} ms) after ${MIN_BASELINE_SAMPLES} quiet runs`,
+    ...(base ? { baseline: Math.round(base.value) } : {}),
+    ...(enough ? { sample: value } : {}),
+  };
+}
+
+/** Error rate, exceptions, error logs and p95 drift from one component's tail events. */
+function invocationSignals(component: Component, s: Snapshot, baselines: Baselines): Signal[] {
+  const t = s.tail[component as TailComponent];
+  if (!t) return [];
+  const rate = t.invocations ? t.errors / t.invocations : 0;
   return [
-    errorRate(o.requests, o.errors),
-    exceptions(o.byStatus),
-    drift(component, 'p95_wall_ms', o.p95WallMs, o.requests, baselines),
-    threshold('resource_kills', o.exceededCpu + o.exceededMemory + o.fatal, 'count', 0),
+    {
+      name: 'error_rate',
+      value: Number(rate.toFixed(4)),
+      unit: 'ratio',
+      anomalous: t.invocations >= MIN_INVOCATIONS && rate > MAX_ERROR_RATE,
+      rule: `> ${MAX_ERROR_RATE} with >= ${MIN_INVOCATIONS} invocations`,
+    },
+    {
+      ...threshold('exceptions', t.exceptions, 'count', MAX_EXCEPTIONS - 1),
+      rule: `>= ${MAX_EXCEPTIONS}`,
+    },
+    threshold('error_logs', t.errorLogs, 'count', MAX_ERROR_LOGS),
+    drift(component, t, baselines),
   ];
 }
 
-function report(component: Component, signals: Signal[], watched = true): ComponentReport {
-  return { component, watched, signals, anomalous: signals.some((s) => s.anomalous) };
+/** Resource kills seen by tail outcomes plus the platform's own periodic count. */
+function kills(component: keyof Analytics['objectKills'], s: Snapshot): Signal {
+  const fromTail = s.tail[component]?.resourceKills ?? 0;
+  return threshold(
+    'resource_kills',
+    fromTail + (s.analytics?.objectKills[component] ?? 0),
+    'count',
+    0,
+  );
+}
+
+function report(
+  component: Component,
+  s: Snapshot,
+  signals: Signal[],
+  watched = true,
+): ComponentReport {
+  return {
+    component,
+    watched,
+    signals,
+    anomalous: signals.some((x) => x.anomalous),
+    samples: s.tail[component as TailComponent]?.samples ?? [],
+  };
+}
+
+function queueSignals(a: Analytics): Signal[] {
+  const q = a.queue;
+  return [
+    threshold('backlog', q.backlogLatest, 'messages', MAX_BACKLOG),
+    {
+      name: 'backlog_growth',
+      value: q.backlogLatest - q.backlogEarliest,
+      unit: 'messages',
+      anomalous: q.backlogLatest > 10 && q.backlogLatest > 2 * Math.max(q.backlogEarliest, 1),
+      rule: 'latest > 2x window start and > 10',
+    },
+    threshold('dead_letter_backlog', q.deadLetterBacklog, 'messages', 0),
+    threshold('dead_lettered', q.deadLettered, 'messages', 0),
+    threshold('lag_ms', q.lagMs, 'ms', MAX_LAG_MS),
+    threshold('retries_per_message', q.retries, 'avg', MAX_RETRIES),
+  ];
 }
 
 /** Evaluates every component's rules against one snapshot. */
 export function evaluate(s: Snapshot, baselines: Baselines): ComponentReport[] {
-  const q = s.queue;
-  const growing = q.backlogLatest > 10 && q.backlogLatest > 2 * Math.max(q.backlogEarliest, 1);
+  const a = s.analytics;
   return [
-    report('api_worker', [
-      errorRate(s.worker.requests, s.worker.errors),
-      exceptions(s.worker.byStatus),
-      drift('api_worker', 'p95_wall_ms', s.worker.p95WallMs, s.worker.requests, baselines),
+    report('api_worker', s, [
+      ...invocationSignals('api_worker', s, baselines),
       {
         name: 'health',
         value: s.health.status,
@@ -128,39 +156,45 @@ export function evaluate(s: Snapshot, baselines: Baselines): ComponentReport[] {
       },
     ]),
     // Commit and land both run inside the repository authority.
-    report(
-      'source_repository',
-      objectSignals('source_repository', s.objects.source_repository, baselines),
-    ),
-    // Push waits grow when Artifacts answers receive-pack busy and the queue retries.
-    report(
-      'object_push_queue',
-      objectSignals('object_push_queue', s.objects.object_push_queue, baselines),
-    ),
-    // The per-branch land queue is SQL state inside SourceRepository; no external counter yet.
-    report('land_queue', [], false),
-    report('check_runs', [
-      ...objectSignals('check_runs', s.objects.check_runs, baselines),
-      threshold('container_disk_percent', s.containers.maxDiskPercent, 'percent', MAX_DISK_PERCENT),
+    report('source_repository', s, [
+      ...invocationSignals('source_repository', s, baselines),
+      kills('source_repository', s),
     ]),
-    report('derived_jobs', [
-      threshold('backlog', q.backlogLatest, 'messages', MAX_BACKLOG),
-      {
-        name: 'backlog_growth',
-        value: q.backlogLatest - q.backlogEarliest,
-        unit: 'messages',
-        anomalous: growing,
-        rule: 'latest > 2x window start and > 10',
-      },
-      threshold('dead_letter_backlog', q.deadLetterBacklog, 'messages', 0),
-      threshold('dead_lettered', q.deadLettered, 'messages', 0),
-      threshold('lag_ms', q.lagMs, 'ms', MAX_LAG_MS),
-      threshold('retries_per_message', q.retries, 'avg', MAX_RETRIES),
+    // Retries are logged when Artifacts refuses a push (receive-pack busy) and it is resent.
+    report('object_push_queue', s, [
+      ...invocationSignals('object_push_queue', s, baselines),
+      kills('object_push_queue', s),
+      threshold(
+        'push_retries',
+        s.tail.object_push_queue?.pushRetries ?? 0,
+        'count',
+        MAX_PUSH_RETRIES,
+      ),
+    ]),
+    // The per-branch land queue is SQL state inside SourceRepository; no external counter yet.
+    report('land_queue', s, [], false),
+    report('check_runs', s, [
+      ...invocationSignals('check_runs', s, baselines),
+      kills('check_runs', s),
+      ...(a
+        ? [
+            threshold(
+              'container_disk_percent',
+              a.containers.maxDiskPercent,
+              'percent',
+              MAX_DISK_PERCENT,
+            ),
+          ]
+        : []),
+    ]),
+    report('derived_jobs', s, [
+      ...invocationSignals('derived_jobs', s, baselines),
+      ...(a ? queueSignals(a) : []),
     ]),
   ];
 }
 
-/** Baseline updates from this run: only drift signals of components that were quiet. */
+/** Baseline updates from this run: only latency samples of components that were quiet. */
 export function baselineSamples(reports: ComponentReport[]) {
   const samples: { key: string; value: number }[] = [];
   for (const r of reports)

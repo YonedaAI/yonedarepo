@@ -1,9 +1,11 @@
 // Superfan configuration. The watcher reads only the isolated platform-only Worker; a config
-// that names any other script (production yonedarepo-dev included) is refused, not watched.
+// that names any other script (production yonedarepo-dev included) is refused, not watched,
+// and tail events from any other script are dropped.
 import type { SuperfanLedger } from './ledger';
 
 /** The scripts this watcher may read. Production is deliberately absent. */
 const WATCHABLE = new Set(['yonedarepo-platform-dev']);
+export const isWatchable = (script: string) => WATCHABLE.has(script);
 /** The hard ceiling on model spend per UTC day, whatever the configuration says ($1.00). */
 export const HARD_DAILY_CAP_MICROUSD = 1_000_000;
 
@@ -18,7 +20,7 @@ export interface SuperfanEnv {
   QUEUE_JOBS_ID: string;
   QUEUE_DEAD_LETTER_ID: string;
   CHECK_CONTAINER_APP_ID: string;
-  /** `cloudflare` reads the GraphQL Analytics API; `disabled` reports that telemetry is off. */
+  /** `cloudflare` also reads the GraphQL Analytics API; `disabled` uses tail events only. */
   TELEMETRY_SOURCE: string;
   SUPERFAN_MODEL: string;
   MIMO_TOKEN_PLAN_REGION?: string;
