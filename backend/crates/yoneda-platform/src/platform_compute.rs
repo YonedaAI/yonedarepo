@@ -45,6 +45,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "push_outcome" => push_outcome(&c),
         "push_combine" => crate::platform_push::push_combine(&c),
         "push_split" => crate::platform_push::push_split(&c),
+        "staged_push" => crate::platform_push::staged_push(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }

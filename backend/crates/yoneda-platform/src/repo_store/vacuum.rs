@@ -1,7 +1,8 @@
 //! Vacuum: the only maintenance the platform does (Scion S5). Every recorded commit keeps
 //! a hidden ref in the object store so it cannot be collected while it may still land.
 //! A hidden ref is released when the commit is safely reachable from a projected branch,
-//! or when unlanded work expired. Pinned commits and in-flight work are never released.
+//! or when unlanded work expired. Pinned commits, in-flight work and commits whose staged
+//! objects are not yet in the store are never released.
 use super::rows;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -20,7 +21,8 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "SELECT DISTINCT c.id FROM commits c JOIN landings l ON l.commit_id=c.id \
          JOIN ref_projections p ON p.refname=l.refname AND p.status='ok' AND l.version<=p.projected_version \
          WHERE c.hidden_ref_deleted_at IS NULL AND c.origin='platform' \
-         AND c.id NOT IN (SELECT commit_id FROM pins) LIMIT 500",
+         AND c.id NOT IN (SELECT commit_id FROM pins) \
+         AND c.id NOT IN (SELECT commit_id FROM object_projections) LIMIT 500",
         &[],
     )?;
     // Expired: never landed anywhere, old, unpinned, and nothing still waits on it.
@@ -28,6 +30,7 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "SELECT c.id FROM commits c WHERE c.hidden_ref_deleted_at IS NULL AND c.origin='platform' \
          AND c.recorded_at<?1 AND c.id NOT IN (SELECT commit_id FROM landings) \
          AND c.id NOT IN (SELECT commit_id FROM pins) \
+         AND c.id NOT IN (SELECT commit_id FROM object_projections) \
          AND c.id NOT IN (SELECT commit_id FROM land_queue WHERE status='pending') \
          AND c.id NOT IN (SELECT commit_id FROM check_runs WHERE status IN ('queued','running') AND created_at>=?1) \
          AND c.id NOT IN (SELECT repair_commit FROM repairs WHERE repair_commit IS NOT NULL) \

@@ -1,19 +1,10 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
-import { dispatchRuns } from './repo-checks';
-import { classifyCommit, deriveSymbols } from './repo-code';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
-import {
-  type CachedObject,
-  fromBase64,
-  OVERLAP_CACHE_OBJECTS,
-  parseStore,
-  RepoObjects,
-  type TreeEntry,
-  toBase64,
-} from './repo-objects';
+import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 export type Json = Record<string, any>;
@@ -33,33 +24,51 @@ export class ApiError extends Error {
   }
 }
 
-export type Call = (command: Json) => Promise<Json>;
+export type Call = ((command: Json) => Promise<Json>) & {
+  /** The command as this caller sends it (credentials attached), for `batch`. */
+  sign(command: Json): Json;
+};
 export function caller(env: Env, repo: string, auth: Credentials): Call {
   const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  return async (command) => {
-    const result = await stub.fetch('https://source-repository/', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...Object.fromEntries(
-          Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k)),
-        ),
-        ...auth,
-      }),
+  const sign = (command: Json) => ({
+    ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
+    ...auth,
+  });
+  const call = async (command: Json) => {
+    const value = await timed(`do.${command.op}`, async () => {
+      const result = await stub.fetch('https://source-repository/', {
+        method: 'POST',
+        body: JSON.stringify(sign(command)),
+      });
+      return result.json<Json>();
     });
-    const value = await result.json<Json>();
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
   };
+  return Object.assign(call, { sign });
+}
+
+/** Signed commands (possibly of different callers) in one round trip to the authority,
+ * each in its own transaction; a failed one answers `{error}` without stopping the rest. */
+export async function batch(env: Env, repo: string, commands: Json[]): Promise<Json[]> {
+  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  return timed(`do.${commands.map((c) => c.op).join('+')}`, async () => {
+    const result = await stub.fetch('https://source-repository/batch', {
+      method: 'POST',
+      body: JSON.stringify(commands),
+    });
+    return result.json<Json[]>();
+  });
 }
 
 /** One repository, as seen by one authenticated caller. */
 export class RepoContext {
-  private cached?: RepoObjects;
   private statusOnce?: Promise<Json>;
   constructor(
     readonly env: Env,
     readonly repo: string,
     readonly call: Call,
+    private cached?: RepoObjects,
   ) {}
   /** The caller's view of the repository (including its grant), read once per request. */
   status() {
@@ -69,8 +78,13 @@ export class RepoContext {
   async objects() {
     if (!this.cached) {
       const status = await this.status();
-      this.cached = new RepoObjects(this.env, this.repo, parseStore(this.env, status.object_store));
+      this.adopt(status.object_store);
     }
+    return this.cached as RepoObjects;
+  }
+  /** Uses the store an authorized answer named, sparing a status read. */
+  adopt(spec: string) {
+    this.cached ??= new RepoObjects(this.env, this.repo, parseStore(this.env, spec));
     return this.cached;
   }
 }
@@ -79,92 +93,11 @@ const SHA = /^[0-9a-f]{40}$/;
 const at = (value: unknown) =>
   value === undefined || value === null || value === '' ? {} : { at: Number(value) };
 
-/** A commit id, or a branch name resolved at version `at` (default: now). */
+/** A commit id, or a branch name resolved at version `at` (default: now): its commit,
+ * tree and parents (and the version, for a branch), in one authority call. */
 export async function target(ctx: RepoContext, spec: string | undefined, version?: unknown) {
-  if (spec && SHA.test(spec)) return ctx.call({ op: 'repo_commit', commit: spec });
-  const snapshot = await ctx.call({ op: 'repo_snapshot', ref: spec || 'main', ...at(version) });
-  return { ...snapshot, ...(await ctx.call({ op: 'repo_commit', commit: snapshot.commit })) };
-}
-
-/** How a commit treats a lost queue: `best_effort` reports undispatched check runs instead
- * of failing (they stay queued in the authority and are re-dispatched on request). */
-export type Dispatch = 'required' | 'best_effort';
-
-/** Prepare (answering tree requests), push, read back from the store, record. */
-export async function commit(
-  ctx: RepoContext,
-  objects: RepoObjects,
-  body: Json,
-  dispatch: Dispatch = 'required',
-) {
-  let { parent, base_version } = body;
-  if (!parent && body.ref) {
-    const snapshot = await ctx.call({ op: 'repo_snapshot', ref: body.ref });
-    parent = snapshot.commit;
-    base_version = snapshot.version;
-  }
-  const trees: Record<string, TreeEntry[]> = {};
-  for (let round = 0; round < 64; round++) {
-    const prepared = await ctx.call({
-      op: 'repo_prepare_commit',
-      parent: parent ?? null,
-      base_version: base_version ?? 0,
-      changes: body.changes,
-      message: body.message,
-      author: body.author,
-      read_set: body.read_set ?? [],
-      ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
-      ...(body.merge_parents ? { merge_parents: body.merge_parents } : {}),
-      trees,
-    });
-    if (prepared.need_trees) {
-      for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
-      continue;
-    }
-    // Immutable and keyed by id, so a small commit's cache write runs alongside its push. A
-    // large import writes through only its commit: thousands of tier writes cost minutes
-    // (Workers keep six connections open) and reads fill the tiers from the store anyway.
-    const all = prepared.objects as CachedObject[];
-    const written =
-      all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
-    const cached = objects.cache(written);
-    const { report, readback } = await objects.pushCommit(
-      fromBase64(prepared.push_b64),
-      prepared.commit,
-      cached,
-    );
-    const recorded = await ctx.call({
-      op: 'repo_record_commit',
-      commit: prepared.commit,
-      push_report_b64: toBase64(report),
-      readback,
-    });
-    let undispatched = false;
-    try {
-      await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
-    } catch (e) {
-      if (dispatch === 'required') throw e;
-      undispatched = true;
-    }
-    await Promise.all([
-      // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
-      // (a human must approve), never classified as safe.
-      classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {}),
-      // Symbol writes narrow what this commit invalidates at landing; without them each
-      // changed file counts as written in full.
-      deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {}),
-    ]);
-    return {
-      commit: prepared.commit,
-      tree: prepared.tree,
-      parents: prepared.parents,
-      touches: prepared.touches,
-      base_version: base_version ?? 0,
-      check_runs: recorded.check_runs ?? [],
-      ...(undispatched ? { check_runs_undispatched: true } : {}),
-    };
-  }
-  throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
+  if (spec && SHA.test(spec)) return ctx.call({ op: 'repo_commit', commit: spec, brief: true });
+  return ctx.call({ op: 'repo_snapshot', ref: spec || 'main', ...at(version) });
 }
 
 export async function walk(objects: RepoObjects, tree: string, path: string) {
@@ -239,48 +172,6 @@ export async function withTrees(objects: RepoObjects, input: Json) {
     );
   }
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
-}
-
-const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
-
-/** Server-side revert or cherry-pick of `args.commit` onto branch `args.ref` (default main). */
-export async function replay(
-  ctx: RepoContext,
-  args: Json,
-  direction: 'revert' | 'pick',
-  dispatch: Dispatch = 'required',
-) {
-  const source = await ctx.call({ op: 'repo_commit', commit: args.commit });
-  const parent = source.parents[0]
-    ? await ctx.call({ op: 'repo_commit', commit: source.parents[0] })
-    : null;
-  const objects = await ctx.objects();
-  const { changes } = await withTrees(objects, {
-    op: 'replay_changes',
-    direction,
-    old: parent?.tree ?? null,
-    new: source.tree,
-  });
-  const subject = String(source.message).split('\n')[0];
-  const message =
-    args.message ??
-    (direction === 'revert'
-      ? `Revert "${subject}"\n\nThis reverts commit ${source.commit}.`
-      : `${source.message}\n\n(cherry picked from commit ${source.commit})`);
-  return commit(
-    ctx,
-    objects,
-    {
-      ref: args.ref ?? 'main',
-      // An explicit parent pins the head the caller decided on.
-      ...(args.parent ? { parent: args.parent, base_version: args.base_version } : {}),
-      changes,
-      message,
-      author: args.author ?? PLATFORM_AUTHOR,
-      read_set: args.read_set,
-    },
-    dispatch,
-  );
 }
 
 const OBJECT_BUDGET = 8 * 1024 * 1024;
