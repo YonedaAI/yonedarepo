@@ -94,10 +94,10 @@ async fn run(job: Value) {
 pub(crate) async fn report_deadline<F, Fut>(
     transcript: Option<&Transcript>,
     mut report: F,
-) -> yoneda_core::Result<Value>
+) -> yoneda_agents_core::Result<Value>
 where
     F: FnMut(&'static str, Value, bool) -> Fut,
-    Fut: std::future::Future<Output = yoneda_core::Result<Value>>,
+    Fut: std::future::Future<Output = yoneda_agents_core::Result<Value>>,
 {
     if let Some(transcript) = transcript
         && !transcript.is_recorded()?
@@ -131,10 +131,10 @@ pub(crate) async fn report_completion<F, Fut>(
     evaluation: bool,
     retryable: bool,
     mut report: F,
-) -> yoneda_core::Result<Value>
+) -> yoneda_agents_core::Result<Value>
 where
     F: FnMut(&'static str, Value, bool) -> Fut,
-    Fut: std::future::Future<Output = yoneda_core::Result<Value>>,
+    Fut: std::future::Future<Output = yoneda_agents_core::Result<Value>>,
 {
     let value = if evaluation {
         crate::report::bounded(value)

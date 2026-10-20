@@ -3,7 +3,7 @@ use super::state::FsState;
 use crate::source_client::{SourceChange, SourceNode, failure};
 use fuser::{FileHandle, INodeNo, RenameFlags};
 use std::ffi::OsStr;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(super) fn rename(
     state: &FsState,

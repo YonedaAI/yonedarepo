@@ -60,7 +60,7 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
         .iter()
         .map(|path| path.as_str().ok_or_else(|| bad("Invalid resolver path")))
         .collect::<Result<Vec<_>>>()?;
-    yoneda_core::resolver_scope::validate_edits(paths.iter().copied(), &protected)?;
+    yoneda_agents_core::resolver_scope::validate_edits(paths.iter().copied(), &protected)?;
     super::super::capture_completion::complete(db, job, result, now)?;
     let cid = string(result, "id")?;
     let mut candidate = get(db, "candidates", &cid)?;

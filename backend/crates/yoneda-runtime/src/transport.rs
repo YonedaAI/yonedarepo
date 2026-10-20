@@ -1,7 +1,7 @@
 //! Git file maps for legacy JSON workspaces and test bundles.
 use crate::err;
 use std::{collections::BTreeMap, path::Path};
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 
 #[derive(Debug, Clone)]
 pub(crate) struct GitFile {
@@ -11,7 +11,7 @@ pub(crate) struct GitFile {
 pub(crate) type GitWorkspace = BTreeMap<String, GitFile>;
 
 impl GitFile {
-    pub(crate) fn from_entry(entry: yoneda_core::FileEntry) -> Result<Self> {
+    pub(crate) fn from_entry(entry: yoneda_agents_core::FileEntry) -> Result<Self> {
         Ok(Self {
             bytes: entry.bytes()?,
             executable: entry.executable,
@@ -32,7 +32,7 @@ pub(crate) fn materialize_git(root: &Path, files: &GitWorkspace) -> Result<()> {
     }
     let mut total = 0usize;
     for (path, file) in files {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         if file.bytes.len() > 32_000_000 {
             return Err(err("Git blob exceeds 32 MB"));
         }

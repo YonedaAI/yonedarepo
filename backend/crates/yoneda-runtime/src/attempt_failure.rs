@@ -5,7 +5,7 @@
 //! (container rollout or eviction): the ledger then requeues a fresh epoch in a new
 //! container, bounded by its attempt limit, the job deadline and the shared run budget.
 use crate::harness_error::INTERRUPTED;
-use yoneda_core::Error;
+use yoneda_agents_core::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Disposition {

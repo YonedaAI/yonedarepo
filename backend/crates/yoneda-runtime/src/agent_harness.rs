@@ -8,7 +8,7 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
-use yoneda_core::{Result, model_budget::ModelBudget};
+use yoneda_agents_core::{Result, model_budget::ModelBudget};
 
 pub(crate) async fn run(
     job: &Value,
@@ -116,7 +116,7 @@ pub(crate) fn codex_configuration(model: &str, execution: &Value) -> String {
 pub(crate) fn gemini_settings(
     model: &str,
     mcp: &Value,
-    budget: Option<&yoneda_core::model_budget::ModelBudget>,
+    budget: Option<&yoneda_agents_core::model_budget::ModelBudget>,
 ) -> Value {
     let turns = budget.map_or(24, |budget| budget.max_requests.unwrap_or(-1));
     json!({"security":{"auth":{"selectedType":"gemini-api-key","enforcedType":"gemini-api-key"}},
@@ -127,7 +127,7 @@ pub(crate) fn gemini_settings(
 
 pub(crate) fn configure_output_limit(
     command: &mut Command,
-    budget: Option<&yoneda_core::model_budget::ModelBudget>,
+    budget: Option<&yoneda_agents_core::model_budget::ModelBudget>,
 ) {
     if let Some(budget) = budget {
         command.env(

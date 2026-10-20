@@ -96,7 +96,8 @@ Details: [runbook](docs/runbook.md) · [public metadata and custom domains](docs
 ```text
 frontend/            Browser app (React 19, React Flow)
 backend/crates/
-  yoneda-core/       Contracts, Git object model, transaction log and pure validation
+  yoneda-core/       Shared contracts: Git object model, transaction log, merge and validation
+  yoneda-agents-core/ Agent-layer contracts: runs, teams, providers, budgets, evaluation
   yoneda-store/      SQL store trait and the native SQLite store
   yoneda-platform/   Source platform authority, migrations and stateless compute
   yoneda-app/        Agent-layer commands, graph and DO migrations

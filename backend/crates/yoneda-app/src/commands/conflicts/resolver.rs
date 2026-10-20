@@ -44,7 +44,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     }
     let autonomous = c.get("job_id").is_some();
     let job_id = format!("job:conflict-resolver:{request}");
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"conflict_id":record["id"],"expected_version":c["expected_version"],"guidance":brief,"expected_plan_revision":c["expected_plan_revision"],"expected_task_revisions":c["expected_task_revisions"],"authorization":authorization}),
     )?;
     if let Some(previous) = record.get("resolver_request_id") {
@@ -114,8 +114,8 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         let provider = string(&source_execution, "provider")?;
         let model = string(&source_execution, "model")?;
         let harness = string(&source_execution, "harness")?;
-        yoneda_core::providers::validate_model(&provider, &model)?;
-        if yoneda_core::providers::provider(&provider)?.harness != harness {
+        yoneda_agents_core::providers::validate_model(&provider, &model)?;
+        if yoneda_agents_core::providers::provider(&provider)?.harness != harness {
             return Err(bad("Frozen provider and harness differ"));
         }
         Ok(())
@@ -146,10 +146,10 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             )
             .map_err(|_| bad("Invalid execution budget"))?
         } else {
-            yoneda_core::team::MAX_TEAM_EXECUTIONS
+            yoneda_agents_core::team::MAX_TEAM_EXECUTIONS
         }
     } else {
-        yoneda_core::agents::MAX_RUN_EXECUTIONS
+        yoneda_agents_core::agents::MAX_RUN_EXECUTIONS
     };
     if count >= limit {
         return Err(Error::new(
@@ -280,7 +280,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
 /// Paths a resolver must never edit: the guided verification floor plus the
 /// policy's protected test-bundle paths. Every other valid path is editable.
 fn protected_paths(policy: &Value) -> Vec<String> {
-    let mut paths: Vec<String> = yoneda_core::resolver_scope::ALWAYS_PROTECTED
+    let mut paths: Vec<String> = yoneda_agents_core::resolver_scope::ALWAYS_PROTECTED
         .iter()
         .map(|path| (*path).to_owned())
         .collect();

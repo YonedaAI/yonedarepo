@@ -28,7 +28,7 @@ pub(crate) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value) -> Result<
     if *binding != expected
         || run["mode"] != "collaborate"
         || run["working_branch_id"] != session["working_branch_id"]
-        || yoneda_core::fingerprint(&run["policy"])? != session["policy_digest"]
+        || yoneda_agents_core::fingerprint(&run["policy"])? != session["policy_digest"]
     {
         return Err(Error::new(
             "FENCED",
@@ -137,7 +137,7 @@ pub(crate) fn validate_report(job: &Value, report: &Value) -> Result<()> {
             .as_str()
             .is_none_or(|id| !id.starts_with("guide-session:"))
         || guide["profile_id"] != PROFILE
-        || !yoneda_core::guided::supported_version(&guide["version"])
+        || !yoneda_agents_core::guided::supported_version(&guide["version"])
         || !matches!(
             (guide["step_id"].as_str(), phase),
             (Some("build"), Some("build"))

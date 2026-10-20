@@ -1,7 +1,7 @@
 //! Git metadata-derived refresh scopes; no source bodies or agent path claims.
 use crate::source_git_tree::TreeEntry;
 use std::collections::{BTreeMap, BTreeSet};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) type Files = BTreeMap<String, TreeEntry>;
 pub(crate) struct Plan {
     pub captured: BTreeSet<String>,
@@ -21,7 +21,7 @@ pub(crate) fn derive(
         return Err(error("Invalid owner-approved declared paths"));
     }
     for scope in declared {
-        yoneda_core::validate_path(scope.strip_suffix('/').unwrap_or(scope))?;
+        yoneda_agents_core::validate_path(scope.strip_suffix('/').unwrap_or(scope))?;
     }
     let captured = changed(base, candidate);
     let intervening = changed(base, head);
@@ -68,6 +68,6 @@ fn changed(before: &Files, after: &Files) -> BTreeSet<String> {
         .cloned()
         .collect()
 }
-pub(crate) fn error(message: &str) -> yoneda_core::Error {
-    yoneda_core::Error::new("SOURCE_REFRESH", message)
+pub(crate) fn error(message: &str) -> yoneda_agents_core::Error {
+    yoneda_agents_core::Error::new("SOURCE_REFRESH", message)
 }

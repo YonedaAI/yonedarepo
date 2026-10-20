@@ -157,7 +157,7 @@ async fn handle(
             let reference = if op == "verify_input" {
                 format!(
                     "refs/yoneda/source-input/{}",
-                    yoneda_core::digest(b"refresh-job")
+                    yoneda_agents_core::digest(b"refresh-job")
                 )
             } else {
                 "refs/heads/main".into()
@@ -253,7 +253,7 @@ pub(crate) async fn fixture(conflict: bool) -> Fixture {
     .into_iter()
     .map(str::to_owned)
     .collect::<Vec<_>>();
-    let digest = yoneda_core::fingerprint(&json!(paths)).unwrap();
+    let digest = yoneda_agents_core::fingerprint(&json!(paths)).unwrap();
     let revision = |repository: &str, commit: &str, repo: &std::path::Path| json!({"repository":repository,"commit":commit,"tree":oid(git(repo,&["rev-parse",&format!("{commit}^{{tree}}")],b""))});
     let context = json!({"version":1,"base":revision("canonical",&base,&dest),"head":revision("canonical",&head,&dest),"candidate":revision("candidate-source",&candidate,&source),"candidateParents":[base],"declaredPathsRef":{"version":1,"id":format!("paths:{digest}"),"digest":digest,"count":paths.len()},"targetVersion":7,"source_capture_ref":{"branch":"main","expected_head":head}});
     let calls = Arc::new(Mutex::new(Vec::new()));

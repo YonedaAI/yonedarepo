@@ -1,4 +1,4 @@
-use yoneda_core::{FileEntry, Workspace};
+use yoneda_agents_core::{FileEntry, Workspace};
 
 use crate::*;
 use serde_json::json;
@@ -287,7 +287,7 @@ fn runtime_health_identifies_protocol_and_evaluator_environment() {
     assert!(health["capabilities"]["merge_guard"].is_null());
     assert_eq!(
         health["environment"],
-        yoneda_core::Policy::default().environment
+        yoneda_agents_core::Policy::default().environment
     );
     assert!(
         health["suites"]

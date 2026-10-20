@@ -1,7 +1,7 @@
 //! Private sparse refresh context: root capture reads only ledger-reserved immutable revisions.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn context<S: SqlStore>(db: &S, command: &Value, now: i64) -> Result<Value> {
     let job = active(db, command, now)?;

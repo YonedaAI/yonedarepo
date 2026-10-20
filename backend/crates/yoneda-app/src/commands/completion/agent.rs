@@ -1,7 +1,7 @@
 //! Agent completion freezes source transport before trusted capture.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
     if super::super::comparison::complete_review(db, j, result, now)? {
         return Ok(());

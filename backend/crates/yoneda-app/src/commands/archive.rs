@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -146,7 +146,7 @@ fn verify_bundle(bundle_json: &str, expected: &Value) -> Result<()> {
 }
 
 fn digest(bundle_json: &str) -> String {
-    yoneda_core::digest(bundle_json.as_bytes())
+    yoneda_agents_core::digest(bundle_json.as_bytes())
 }
 
 fn compact_object(value: &mut Value, keep: &[&str]) {

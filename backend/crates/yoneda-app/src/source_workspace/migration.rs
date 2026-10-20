@@ -27,7 +27,7 @@ pub fn migrate_source_workspace<S: SqlStore>(db: &S) -> Result<()> {
             ));
         }
         for (version, sql) in migrations {
-            let digest = yoneda_core::digest(sql.as_bytes());
+            let digest = yoneda_agents_core::digest(sql.as_bytes());
             if let Some(row) = rows.iter().find(|r| r["version"] == version) {
                 if row["digest"] != digest {
                     return Err(Error::new("MIGRATION_DRIFT", "Source migration differs"));

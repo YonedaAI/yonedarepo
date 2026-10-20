@@ -1,12 +1,12 @@
 //! Compact server-frozen guided oracle context; candidate environments have no authority.
 use serde_json::Value;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(super) fn validate(job: &Value) -> Result<Option<Value>> {
     let Some(binding) = job["payload"].get("guided") else {
         return Ok(None);
     };
     let invalid = || {
-        yoneda_core::Error::new(
+        yoneda_agents_core::Error::new(
             "GUIDED_BINDING",
             "Malformed server-frozen guided check binding",
         )
@@ -21,8 +21,8 @@ pub(super) fn validate(job: &Value) -> Result<Option<Value>> {
     ];
     let object = binding.as_object().ok_or_else(invalid)?;
     if object.keys().any(|key| !fields.contains(&key.as_str()))
-        || !yoneda_core::guided::supported_version(&binding["version"])
-        || binding["profile_id"] != yoneda_core::guided::PROFILE_ID
+        || !yoneda_agents_core::guided::supported_version(&binding["version"])
+        || binding["profile_id"] != yoneda_agents_core::guided::PROFILE_ID
         || binding["session_id"].as_str().is_none_or(|id| {
             !id.strip_prefix("guide-session:").is_some_and(|suffix| {
                 !suffix.is_empty()

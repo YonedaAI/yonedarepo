@@ -1,6 +1,6 @@
 //! Transactional application commands shared by native SQLite and Cloudflare DOs.
 use serde_json::Value;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 mod commands;
 mod path_lists;
 mod source_binding;

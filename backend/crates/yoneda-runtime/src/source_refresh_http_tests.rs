@@ -8,7 +8,7 @@ use crate::{
     source_refresh_upload::Upload,
 };
 use std::sync::atomic::Ordering;
-async fn run(f: &Fixture) -> yoneda_core::Result<serde_json::Value> {
+async fn run(f: &Fixture) -> yoneda_agents_core::Result<serde_json::Value> {
     let api = Api::new(&f.origin, TOKEN)?;
     let target = SourceGitHttp::new(&f.git.url, None).unwrap();
     let source = Upload::new(&f.git.url.replace("fork.git", "candidate.git"), None)?;

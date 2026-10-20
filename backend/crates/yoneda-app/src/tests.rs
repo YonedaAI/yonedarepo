@@ -53,7 +53,7 @@ fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     execute(db, c)
 }
 fn repo() -> NativeStore {
-    repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap())
+    repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap())
 }
 fn repo_with_policy(policy: Value) -> NativeStore {
     let db = NativeStore::memory().unwrap();
@@ -472,7 +472,7 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
     let legacy = json!({"version":"retry-v1","suite":"retry-contract-v1","environment":"rust-1.94-evaluator-v1","required_checks":["build","behavior"]});
     let db = repo_with_policy(legacy);
     let selection = ready(&db);
-    call(&db,json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"retry-v1","policy":yoneda_core::Policy::default()})).unwrap();
+    call(&db,json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"retry-v1","policy":yoneda_agents_core::Policy::default()})).unwrap();
     assert_eq!(
         call(&db, selection.clone()).unwrap_err().code,
         "EVIDENCE_MISMATCH"
@@ -482,11 +482,11 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
     assert_eq!(snapshot["candidates"][0]["status"], "evaluating");
     let job = "evaluate:candidate-a:retry-v2";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    let mut report = json!({"build":{"exit":0},"cases":yoneda_core::retry::cases().iter().map(|c|json!({"input":c,"exit":0,"actual":yoneda_core::retry::expected(c)})).collect::<Vec<_>>()});
+    let mut report = json!({"build":{"exit":0},"cases":yoneda_agents_core::retry::cases().iter().map(|c|json!({"input":c,"exit":0,"actual":yoneda_agents_core::retry::expected(c)})).collect::<Vec<_>>()});
     report["environment"] = json!("rust-1.94-evaluator-v1");
     report["suite"] = json!("retry-contract-v2");
     assert!(call(&db,json!({"op":"verify_finish","job_id":job,"epoch":1,"evidence":"e".repeat(64),"report":report})).is_err());
-    report["environment"] = json!(yoneda_core::Policy::default().environment);
+    report["environment"] = json!(yoneda_agents_core::Policy::default().environment);
     call(&db,json!({"op":"verify_finish","job_id":job,"epoch":1,"evidence":"e".repeat(64),"report":report})).unwrap();
     assert_eq!(
         call(&db, json!({"op":"snapshot"})).unwrap()["evaluations"]

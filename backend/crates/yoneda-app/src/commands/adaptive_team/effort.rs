@@ -1,11 +1,11 @@
 use super::*;
 
 pub(super) fn validate_auto_seed(
-    request: &yoneda_core::adaptive_team::RequestedAgent,
+    request: &yoneda_agents_core::adaptive_team::RequestedAgent,
     agent: &Value,
 ) -> Result<()> {
     if request.connection.is_none()
-        && !yoneda_core::providers::provider(&string(agent, "provider")?)?
+        && !yoneda_agents_core::providers::provider(&string(agent, "provider")?)?
             .models
             .iter()
             .any(|m| agent["model"] == m.id && m.auto_seed_eligible)
@@ -42,6 +42,6 @@ pub(in crate::commands) fn configure_execution(
     if let Some(value) = agent.get("reasoning_effort").filter(|v| !v.is_null()) {
         execution["reasoning_effort"] = value.clone();
     }
-    yoneda_core::adaptive_team::execution_effort(run, execution)?;
+    yoneda_agents_core::adaptive_team::execution_effort(run, execution)?;
     Ok(())
 }

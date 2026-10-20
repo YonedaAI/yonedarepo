@@ -204,7 +204,7 @@ fn supervisor_bearer_only_on_seal_and_normal_requests_have_no_credentials() {
 }
 #[test]
 fn write_uploads_only_touched_file_and_ack_survives_unrelated_version_change() {
-    let ticket = json!({"version":1,"workspace_id":"ws","workspace_version":0,"ticket":{"id":"ticket","path":"app.js","sha256":yoneda_core::digest(b"oXd"),"size":3,"mode":"100644","state":"verified"},"authority":"staged_source"});
+    let ticket = json!({"version":1,"workspace_id":"ws","workspace_version":0,"ticket":{"id":"ticket","path":"app.js","sha256":yoneda_agents_core::digest(b"oXd"),"size":3,"mode":"100644","state":"verified"},"authority":"staged_source"});
     let receipt = json!({"version":1,"workspace_id":"ws","workspace_version":1,"request_id":"write","authority":"staged_source","file_versions":{"app.js":1}});
     let server = Server::new(vec![
         Response::json(status()),
@@ -252,7 +252,7 @@ fn write_uploads_only_touched_file_and_ack_survives_unrelated_version_change() {
 }
 #[test]
 fn verified_upload_response_must_match_bytes_path_mode_and_identity() {
-    let ticket = json!({"version":1,"workspace_id":"ws","workspace_version":0,"ticket":{"id":"ticket","path":"wrong.js","sha256":yoneda_core::digest(b"old"),"size":3,"mode":"100644","state":"verified"},"authority":"staged_source"});
+    let ticket = json!({"version":1,"workspace_id":"ws","workspace_version":0,"ticket":{"id":"ticket","path":"wrong.js","sha256":yoneda_agents_core::digest(b"old"),"size":3,"mode":"100644","state":"verified"},"authority":"staged_source"});
     let receipt = json!({"version":1,"workspace_id":"ws","workspace_version":1,"request_id":"write","authority":"staged_source","file_versions":{"app.js":1}});
     let server = Server::new(vec![
         Response::json(status()),
@@ -297,7 +297,7 @@ fn bounded_mcp_upload_computes_hash_and_preserves_binary_without_authority_heade
     );
     let observed = server.requests.lock().unwrap();
     assert!(observed[1].starts_with("PUT /v1/repo/blob?"));
-    assert!(observed[1].contains(&format!("sha256={}", yoneda_core::digest(&bytes))));
+    assert!(observed[1].contains(&format!("sha256={}", yoneda_agents_core::digest(&bytes))));
     assert!(observed[1].contains("request_id=mcp%3Aupload%3A1"));
     assert!(!observed[1].contains("authorization:"));
     assert!(!observed[1].contains("x-yoneda-source-fuse:"));

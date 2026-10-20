@@ -2,7 +2,7 @@
 use super::{ApiSourceClient, http::SourceHttp};
 use crate::source_client::failure;
 use std::sync::Arc;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 impl ApiSourceClient {
     /// Identities here come only from the trusted job.source_mounts descriptor.
     pub fn new(

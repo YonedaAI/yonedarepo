@@ -16,7 +16,7 @@ use crate::{
 use fuser::*;
 use state::{FsState, errno};
 use std::{ffi::OsStr, io, path::Path, sync::Arc, time::Duration};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 #[derive(Clone)]
 pub struct SourceInvalidator {

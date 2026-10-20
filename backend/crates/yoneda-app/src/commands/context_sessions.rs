@@ -1,7 +1,7 @@
 //! Server-issued MCP sessions freeze attribution at the time a successful read is recorded.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let id = string(&c, "session_id")?;

@@ -27,7 +27,7 @@ pub(in crate::commands) fn launch<S: SqlStore>(
         string(&candidate, "id")?
     );
     let p = string(agent, "provider")?;
-    let mut e = json!({"id":id,"run_id":run["id"],"provider":agent["provider"],"model":agent["model"],"connection":agent.get("connection").filter(|v|!v.is_null()).unwrap_or(&agent["provider"]),"harness":yoneda_core::providers::provider(&p)?.harness,"role":"coding","strategy":agent["strategy"],"status":"queued","base":candidate["revision"],"context":run["context"],"depth":0,"agent_index":index,"comparison_role":"repair","comparison_round":round,"comparison_approval_id":run["comparison"]["approval"]["id"],"comparison_parent_candidate_id":candidate["id"],"budget":{"provider":agent["provider"],"model":agent["model"]}});
+    let mut e = json!({"id":id,"run_id":run["id"],"provider":agent["provider"],"model":agent["model"],"connection":agent.get("connection").filter(|v|!v.is_null()).unwrap_or(&agent["provider"]),"harness":yoneda_agents_core::providers::provider(&p)?.harness,"role":"coding","strategy":agent["strategy"],"status":"queued","base":candidate["revision"],"context":run["context"],"depth":0,"agent_index":index,"comparison_role":"repair","comparison_round":round,"comparison_approval_id":run["comparison"]["approval"]["id"],"comparison_parent_candidate_id":candidate["id"],"budget":{"provider":agent["provider"],"model":agent["model"]}});
     for f in ["reasoning_effort", "routing", "version"] {
         if let Some(v) = agent.get(f) {
             e[f] = v.clone();

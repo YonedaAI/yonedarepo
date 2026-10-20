@@ -61,7 +61,7 @@ pub(super) fn handle<S: SqlStore>(
     let digest = changeset.digest()?;
     let id = format!(
         "checkpoint:{}",
-        yoneda_core::fingerprint(
+        yoneda_agents_core::fingerprint(
             &json!({"workspace":binding.workspace_id,"version":changeset.workspace_version,"digest":digest})
         )?
     );
@@ -120,7 +120,7 @@ fn seal<S: SqlStore>(db: &S, c: &Value, state: &mut Value, b: &SourceBinding) ->
     }
     let seal_id = format!(
         "seal:{}",
-        yoneda_core::fingerprint(&json!({"binding":b.digest()?,"checkpoint":id}))?
+        yoneda_agents_core::fingerprint(&json!({"binding":b.digest()?,"checkpoint":id}))?
     );
     let claims = SealClaims {
         version: 1,
@@ -146,7 +146,7 @@ pub(super) fn manifest<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let section = string(c, "section")?;
     let after = c["after"].as_str().unwrap_or("");
     if !after.is_empty() {
-        yoneda_core::validate_path(after)?;
+        yoneda_agents_core::validate_path(after)?;
     }
     let limit = c["limit"].as_i64().unwrap_or(50);
     if !(1..=200).contains(&limit) {

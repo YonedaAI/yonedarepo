@@ -22,7 +22,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     } else {
         None
     };
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"run_id":c["run_id"],"expected_commit":c["expected_commit"],"expected_version":c["expected_version"],"expected_plan_revision":c["expected_plan_revision"],"task_ids":c["task_ids"],"expected_task_revisions":c["expected_task_revisions"],"owner_brief":c["owner_brief"],"task_definitions":c["task_definitions"]}),
     )?;
     if let Some(receipts) = run["team_repair_receipts"].as_array()
@@ -98,7 +98,7 @@ pub(super) fn repair<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 .ok_or_else(|| bad("Invalid task ID"))
         })
         .collect::<Result<_>>()?;
-    if selected.is_empty() || selected.len() > yoneda_core::team::MAX_TEAM_TASKS {
+    if selected.is_empty() || selected.len() > yoneda_agents_core::team::MAX_TEAM_TASKS {
         return Err(bad("Select 1–16 tasks to repair"));
     }
     let rounds = run["team_repair_rounds"].as_u64().unwrap_or_default();

@@ -1,7 +1,7 @@
 //! Monetary ceilings commit before provider I/O; unknown usage retains its reservation.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result, agents::MAX_RUN_MODEL_REQUESTS, model_budget::MAX_SAFE_BUDGET_INTEGER,
 };
 
@@ -27,7 +27,7 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
     if run["adaptive_team"].is_object() {
         super::adaptive_team::validate_approval(&run)?;
     }
-    yoneda_core::adaptive_team::execution_effort(&run, execution)?;
+    yoneda_agents_core::adaptive_team::execution_effort(&run, execution)?;
     let group = super::model_budgets::group(&run, execution)?;
     let request_number = job["model_requests"]
         .as_i64()
@@ -57,7 +57,7 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
         .ok_or_else(|| bad("Run model request overflow"))?;
     super::comparison::record_request(&mut run, execution, total)?;
     if run["adaptive_team"]["version"] == 1
-        && total > yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
+        && total > yoneda_agents_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS
     {
         return Err(Error::new(
             "RESOURCE_LIMIT",
@@ -71,7 +71,7 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
             "Shared run model request limit reached",
         ));
     }
-    let mut response = json!({"number":request_number,"run_number":total,"run_limit":if run["adaptive_team"]["version"] == 1 {json!(yoneda_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS)} else if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
+    let mut response = json!({"number":request_number,"run_number":total,"run_limit":if run["adaptive_team"]["version"] == 1 {json!(yoneda_agents_core::adaptive_team::MAX_ADAPTIVE_MODEL_REQUESTS)} else if legacy {json!(MAX_RUN_MODEL_REQUESTS)} else {Value::Null}});
     if let Some(campaign) = run.get("campaign") {
         response["campaign"] = campaign.clone();
     }
@@ -114,8 +114,9 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
         super::comparison::put_budget(&mut run, execution, index, json!(budget))?;
         let jid = string(&job, "id")?;
         let epoch = number(&job, "epoch")?;
-        let key =
-            yoneda_core::fingerprint(&json!({"job_id":jid,"epoch":epoch,"number":request_number}))?;
+        let key = yoneda_agents_core::fingerprint(
+            &json!({"job_id":jid,"epoch":epoch,"number":request_number}),
+        )?;
         let id = format!("model-request:{key}");
         let reservation = json!({"id":id,"run_id":rid,"job_id":jid,"epoch":epoch,
             "provider":budget.provider,"model":budget.model,"reserved_microusd":amount,

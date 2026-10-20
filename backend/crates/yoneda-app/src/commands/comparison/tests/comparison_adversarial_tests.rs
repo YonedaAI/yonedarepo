@@ -81,7 +81,7 @@ fn submit(job: &Value, context: &Value, outcome: &str) -> Value {
         "repair_instructions":"Tighten cancellation transaction boundaries within the approved booking goal"})
 }
 
-fn complete(db: &NativeStore, job: &Value, unchanged: bool) -> yoneda_core::Result<Value> {
+fn complete(db: &NativeStore, job: &Value, unchanged: bool) -> yoneda_agents_core::Result<Value> {
     f::call(
         db,
         json!({"op":"finish","job_id":job["id"],"epoch":job["epoch"],
@@ -89,7 +89,7 @@ fn complete(db: &NativeStore, job: &Value, unchanged: bool) -> yoneda_core::Resu
     )
 }
 
-fn reserve(db: &NativeStore, job: &Value) -> yoneda_core::Result<Value> {
+fn reserve(db: &NativeStore, job: &Value) -> yoneda_agents_core::Result<Value> {
     f::call(
         db,
         json!({"op":"reserve_request","job_id":job["id"],"epoch":job["epoch"],

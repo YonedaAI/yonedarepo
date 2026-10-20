@@ -3,7 +3,7 @@
 use crate::native::NativeStore;
 use crate::source_workspace;
 use serde_json::{Value, json};
-use yoneda_core::source_workspace::SourceView;
+use yoneda_agents_core::source_workspace::SourceView;
 
 pub(crate) const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -51,7 +51,7 @@ pub(crate) fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed
         "view":view,"baseline_overrides":overrides}),
     );
     if changed {
-        let sha = yoneda_core::digest(b"captured source");
+        let sha = yoneda_agents_core::digest(b"captured source");
         let ticket = workspace(json!({"op":"source_upload_ticket","request_id":"upload",
             "path":"file.txt","sha256":sha,"size":15,"mode":"100644",
             "expected_workspace_version":0,"expected_file_version":0}));

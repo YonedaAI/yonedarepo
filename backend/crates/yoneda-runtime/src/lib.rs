@@ -1,6 +1,6 @@
 //! Native isolated execution and MCP transport.
 use serde_json::Value;
-use yoneda_core::Error;
+use yoneda_agents_core::Error;
 mod agent;
 mod agent_harness;
 mod agent_transcript;
@@ -97,7 +97,7 @@ pub use workspace::{export_workspace, materialize};
 fn err(e: impl std::fmt::Display) -> Error {
     Error::new("RUNTIME", e.to_string())
 }
-fn field<'a>(v: &'a Value, k: &str) -> yoneda_core::Result<&'a str> {
+fn field<'a>(v: &'a Value, k: &str) -> yoneda_agents_core::Result<&'a str> {
     v[k].as_str().ok_or_else(|| err(format!("Missing {k}")))
 }
 #[cfg(test)]

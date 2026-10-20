@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import plans from '../../../../backend/crates/yoneda-core/src/guided_plans.json';
+import plans from '../../../../backend/crates/yoneda-agents-core/src/guided_plans.json';
 import type { Snapshot } from '../../lib/types';
 import { RunComposer } from './RunComposer';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';

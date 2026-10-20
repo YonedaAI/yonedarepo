@@ -1,6 +1,6 @@
 use crate::storage::{SqlStore, string};
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod acceptance;
 mod adaptive_team;
 mod archive;

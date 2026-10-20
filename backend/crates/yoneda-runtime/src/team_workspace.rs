@@ -2,7 +2,7 @@
 use crate::field;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use yoneda_core::{Error, Result, Workspace, validate_path, validate_workspace};
+use yoneda_agents_core::{Error, Result, Workspace, validate_path, validate_workspace};
 
 pub(crate) struct Assembly<'a> {
     base: &'a Workspace,

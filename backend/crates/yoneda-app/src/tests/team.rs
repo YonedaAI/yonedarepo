@@ -43,7 +43,7 @@ fn captured(db: &NativeStore, local: &str, paths: Value, digest: Option<Value>) 
             format!("capture:{eid}")
         },
     );
-    let mut result = json!({"id":format!("captured-{local}-{revision}"),"revision":{"repository":format!("test/{local}"),"commit":yoneda_core::digest(local.as_bytes())},"tree":"c".repeat(40),"paths":paths,"summary":local,"diff":"trusted diff"});
+    let mut result = json!({"id":format!("captured-{local}-{revision}"),"revision":{"repository":format!("test/{local}"),"commit":yoneda_agents_core::digest(local.as_bytes())},"tree":"c".repeat(40),"paths":paths,"summary":local,"diff":"trusted diff"});
     if let Some(digest) = digest {
         result["integration_digest"] = digest;
     }

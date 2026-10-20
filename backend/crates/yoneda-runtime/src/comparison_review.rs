@@ -2,7 +2,7 @@
 use crate::{agent_transcript::Transcript, broker::broker, err, field};
 use serde_json::{Value, json};
 use std::path::Path;
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     let payload = &job["payload"];
@@ -20,7 +20,8 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     if approval["id"] != frozen["approval_id"]
         || execution["model"] != job["model"]
         || execution["run_id"] != frozen["manifest"]["run_id"]
-        || yoneda_core::fingerprint(&frozen["manifest"])? != field(frozen, "manifest_digest")?
+        || yoneda_agents_core::fingerprint(&frozen["manifest"])?
+            != field(frozen, "manifest_digest")?
         || [
             "provider",
             "model",
@@ -31,7 +32,7 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
         ]
         .iter()
         .any(|key| approval["reviewer"][key] != execution[key])
-        || yoneda_core::providers::provider(field(execution, "provider")?)?.harness
+        || yoneda_agents_core::providers::provider(field(execution, "provider")?)?.harness
             != field(execution, "harness")?
     {
         return Err(err(

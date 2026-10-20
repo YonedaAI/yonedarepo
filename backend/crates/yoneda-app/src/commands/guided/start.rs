@@ -15,13 +15,13 @@ pub(super) fn execute<S: SqlStore>(
         return Err(bad("Invalid guide request identity"));
     }
     let retry = retry::requested(c)?;
-    let key = yoneda_core::digest(request.as_bytes());
+    let key = yoneda_agents_core::digest(request.as_bytes());
     let mut identity = json!({"session":session["session_id"],"profile":session["profile_id"],"step":step,"commit":c["expected_commit"],"version":c["expected_version"]});
     if retry {
         // Only retries carry the flag so receipts recorded before retries existed still replay.
         identity["retry"] = json!(true);
     }
-    let fingerprint = yoneda_core::fingerprint(&identity)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&identity)?;
     if let Some(old) = session["requests"].get(&key) {
         if old["fingerprint"] != fingerprint {
             return Err(Error::new(
@@ -53,7 +53,7 @@ pub(super) fn execute<S: SqlStore>(
     }
     let r = repo(db)?;
     if r["policy"]["version"] != PROFILE
-        || yoneda_core::fingerprint(&r["policy"])? != session["policy_digest"]
+        || yoneda_agents_core::fingerprint(&r["policy"])? != session["policy_digest"]
     {
         return Err(Error::new(
             "POLICY_CHANGED",

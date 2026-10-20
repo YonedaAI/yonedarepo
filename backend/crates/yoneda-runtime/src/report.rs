@@ -1,6 +1,6 @@
 //! Bound serialized evidence without changing verification observations or source diffs.
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(crate) const REPORT_LIMIT: usize = 8 * 1024 * 1024;
 

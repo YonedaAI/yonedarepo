@@ -32,7 +32,7 @@ fn fixed_compare_approved_effort_reaches_root_jobs_and_runtime_authority() {
         let job = get(&db, "jobs", &format!("job:run:agent-{index}")).unwrap();
         assert_eq!(job["payload"]["execution"]["reasoning_effort"], "high");
         assert_eq!(
-            yoneda_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
+            yoneda_agents_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
                 .unwrap(),
             Some("high")
         );
@@ -47,7 +47,7 @@ fn fixed_manual_team_approved_effort_reaches_specialists_and_integrator() {
         let job = get(&db, "jobs", &format!("job:run:task:{task}")).unwrap();
         assert_eq!(job["payload"]["execution"]["reasoning_effort"], "high");
         assert_eq!(
-            yoneda_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
+            yoneda_agents_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
                 .unwrap(),
             Some("high")
         );
@@ -72,7 +72,8 @@ fn fixed_manual_team_approved_effort_reaches_specialists_and_integrator() {
     let job = get(&db, "jobs", "job:run:task:integrate").unwrap();
     assert_eq!(job["payload"]["execution"]["reasoning_effort"], "high");
     assert_eq!(
-        yoneda_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"]).unwrap(),
+        yoneda_agents_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
+            .unwrap(),
         Some("high")
     );
 }
@@ -109,7 +110,7 @@ fn fixed_delegation_inherits_exact_effort_and_original_model_without_approval_mu
     assert_eq!(e["agent_index"], 0);
     assert_eq!(e["model"], before["agents"][0]["model"]);
     assert_eq!(
-        yoneda_core::adaptive_team::execution_effort(&before, e).unwrap(),
+        yoneda_agents_core::adaptive_team::execution_effort(&before, e).unwrap(),
         Some("high")
     );
     let after = get(&db, "runs", "run").unwrap();
@@ -149,13 +150,14 @@ fn fixed_auto_default_jobs_and_delegation_do_not_gain_effort_authority() {
     let job = get(&db, "jobs", "job:run:agent-1").unwrap();
     assert!(job["payload"]["execution"]["reasoning_effort"].is_null());
     assert_eq!(
-        yoneda_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"]).unwrap(),
+        yoneda_agents_core::adaptive_team::execution_effort(&run, &job["payload"]["execution"])
+            .unwrap(),
         None
     );
     let child=execute(&db,json!({"op":"delegate_agent","job_id":"job:run:agent-1","epoch":1,"now":4,"request_id":"delegated-auto-source","task":"Check search independently","strategy":"Scoped delegated check"})).unwrap();
     assert!(child["execution"]["reasoning_effort"].is_null());
     assert_eq!(
-        yoneda_core::adaptive_team::execution_effort(&run, &child["execution"]).unwrap(),
+        yoneda_agents_core::adaptive_team::execution_effort(&run, &child["execution"]).unwrap(),
         None
     );
 }

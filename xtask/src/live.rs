@@ -1,6 +1,6 @@
 use crate::process::{Result, token};
 use serde_json::{Value, json};
-use yoneda_core::Policy;
+use yoneda_agents_core::Policy;
 pub(crate) async fn api(url: &str, path: &str, body: Option<Value>) -> Result<Value> {
     api_authenticated(url, path, body, &token()?).await
 }

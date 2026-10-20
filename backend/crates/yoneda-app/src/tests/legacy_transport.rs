@@ -2,7 +2,7 @@ use super::*;
 #[test]
 fn repaired_legacy_team_agent_keeps_json_workspace_contract() {
     let db = NativeStore::memory().unwrap();
-    let policy = json!({"version":"legacy-v1","suite":"commands-v1","environment":yoneda_core::build::ENVIRONMENT,
+    let policy = json!({"version":"legacy-v1","suite":"commands-v1","environment":yoneda_agents_core::build::ENVIRONMENT,
         "required_checks":["syntax"],"build":{"checks":[{"name":"syntax","argv":["node","-e","process.exit(0)"],"timeout_seconds":10}]}});
     call(&db,json!({"op":"init","id":"repair-legacy","name":"Legacy team repair",
         "commit":"a".repeat(40),"remote":{"namespace":"test","name":"repair-legacy"},"policy":policy})).unwrap();

@@ -9,7 +9,7 @@ pub(super) fn validate_source(
     c: &Value,
 ) -> Result<()> {
     let pointer = &old["payload"]["source_registered"];
-    if yoneda_core::fingerprint(&old["payload"]["policy"])? != b.policy_digest
+    if yoneda_agents_core::fingerprint(&old["payload"]["policy"])? != b.policy_digest
         || producer["kind"] != "agent"
         || producer["status"] != "done"
         || producer["epoch"] != b.epoch
@@ -122,10 +122,10 @@ pub(super) fn validate_run<S: SqlStore>(
         ));
     }
     if r["policy"] != run["policy"]
-        || yoneda_core::fingerprint(&r["policy"])? != b.policy_digest
+        || yoneda_agents_core::fingerprint(&r["policy"])? != b.policy_digest
         || c["expected_policy_digest"] != b.policy_digest
         || b.intent_digest
-            != yoneda_core::fingerprint(
+            != yoneda_agents_core::fingerprint(
                 &json!({"intent":run["intent"],"clarifications":run["intent_clarifications"]}),
             )?
     {

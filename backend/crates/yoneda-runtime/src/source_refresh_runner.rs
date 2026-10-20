@@ -11,7 +11,7 @@ use crate::{
     source_refresh_upload::Upload,
 };
 use serde_json::{Value, json};
-use yoneda_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
+use yoneda_agents_core::{Result, source_workspace::MAX_UPLOAD_BYTES};
 pub(crate) async fn execute(job: &Value) -> Result<Value> {
     validate_job(job)?;
     let token = std::env::var("SUPERVISOR_TOKEN")
@@ -107,7 +107,7 @@ pub(crate) async fn execute_with(
         .ok_or_else(|| error("Refresh job identity missing"))?;
     let input_ref = format!(
         "refs/yoneda/source-input/{}",
-        yoneda_core::digest(id.as_bytes())
+        yoneda_agents_core::digest(id.as_bytes())
     );
     let preload = git
         .push_input_ref(

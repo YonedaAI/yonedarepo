@@ -2,7 +2,7 @@
 use crate::err;
 use serde_json::json;
 use std::{collections::BTreeMap, fs, os::unix::fs::PermissionsExt, path::Path};
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 
 pub(crate) fn materialize(root: &Path, sources: &[(String, Workspace)]) -> Result<String> {
     if sources.len() > 2 || fs::read_dir(root).map_err(err)?.next().is_some() {
@@ -79,10 +79,10 @@ fn fingerprint(root: &Path) -> Result<String> {
         }
         records.insert(
             path.to_owned(),
-            json!({"digest":yoneda_core::digest(&content),"mode":mode}),
+            json!({"digest":yoneda_agents_core::digest(&content),"mode":mode}),
         );
     }
-    yoneda_core::fingerprint(&json!(records))
+    yoneda_agents_core::fingerprint(&json!(records))
 }
 
 #[cfg(test)]

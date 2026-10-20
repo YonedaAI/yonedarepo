@@ -6,7 +6,7 @@ use crate::source_workspace_registry::SourceRegistration;
 use crate::source_workspace_session::SourceSession;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) struct SourceRun {
     #[cfg(target_os = "linux")]
     registration: Option<SourceRegistration>,

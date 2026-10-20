@@ -1,7 +1,7 @@
 //! Versioned campaign approvals, separate from historical workspace/trial spend.
 use super::*;
 use crate::storage::{create, number};
-use yoneda_core::model_budget::ModelBudget;
+use yoneda_agents_core::model_budget::ModelBudget;
 
 pub(super) fn key(id: &str) -> String {
     format!("campaign:{id}")

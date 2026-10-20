@@ -5,7 +5,7 @@ use crate::{execute, native::NativeStore};
 
 fn setup() -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    execute(&db, json!({"op":"init","now":1,"id":"conflict-repo","name":"Conflict","remote":{"namespace":"test","name":"conflict"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    execute(&db, json!({"op":"init","now":1,"id":"conflict-repo","name":"Conflict","remote":{"namespace":"test","name":"conflict"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     for statement in include_str!("../../migrations/0010_conflicts.sql").split(';') {
         if !statement.trim().is_empty() {
             db.query(statement, &[]).unwrap();

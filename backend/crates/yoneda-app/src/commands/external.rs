@@ -1,7 +1,7 @@
 //! External agents contribute assertions and files; they never select or publish canonical source.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 const MAX_ACTIVE_WORK_RUNS: i64 = 6;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let op = string(&c, "op")?;
@@ -86,7 +86,7 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let id = string(c, "id")?;
     let jid = format!("job:{id}");
     let grant = string(c, "_grant")?;
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"id":id,"grant":grant,"intent":c["intent"],"criteria":c["criteria"],"context":c["context"],"fork":c["fork"]}),
     )?;
     if let Ok(existing) = get(db, "jobs", &jid) {

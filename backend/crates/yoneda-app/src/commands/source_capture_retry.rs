@@ -1,7 +1,7 @@
 //! Owner-only bounded verification recovery of an already registered immutable source seal.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     source_workspace::{SourceAccess, SourceBinding, SourceRole},
 };
@@ -19,10 +19,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         ));
     }
     let request = string(c, "request_id")?;
-    yoneda_core::source_workspace::validate_id(&request)?;
+    yoneda_agents_core::source_workspace::validate_id(&request)?;
     let mut old = get(db, "jobs", &string(c, "capture_job_id")?)?;
     let input = json!({"request_id":request,"capture_job_id":old["id"],"expected_producer_epoch":number(c,"expected_producer_epoch")?,"expected_registration_id":string(c,"expected_registration_id")?,"expected_commit":hash(c,"expected_commit",&[40,64])?,"expected_version":number(c,"expected_version")?,"expected_policy_digest":hash(c,"expected_policy_digest",&[64])?});
-    let fingerprint = yoneda_core::fingerprint(&input)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&input)?;
     if !old["source_capture_retry"].is_null() {
         let previous = &old["source_capture_retry"];
         if previous["request_id"] != request {
@@ -63,7 +63,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     guards::validate_run(db, &repository, &run, &execution, &b, c)?;
     let id = format!(
         "capture:source-retry:{}",
-        yoneda_core::fingerprint(
+        yoneda_agents_core::fingerprint(
             &json!({"repo":repository["id"],"producer":b.job_id,"epoch":b.epoch,"registration":registration["registration_id"]})
         )?
     );
@@ -80,7 +80,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     let recovery = json!({"version":1,"kind":"same_registered_source_seal","authority":"owner_verification_recovery","automatic_review":false,"request_id":request,"original_capture_job_id":old["id"],"producer_job_id":b.job_id,"producer_epoch":b.epoch,"registration_id":registration["registration_id"]});
     let audit_id = format!(
         "verification-recovery:{}",
-        yoneda_core::fingerprint(&recovery)?
+        yoneda_agents_core::fingerprint(&recovery)?
     );
     let mut audit = recovery.clone();
     audit["stale_review_id"] = run["comparison"]["latest_review_id"].clone();

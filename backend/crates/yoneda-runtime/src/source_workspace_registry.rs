@@ -9,7 +9,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub type InvalidationTarget = Arc<dyn Fn(&[String]) -> Result<()> + Send + Sync>;
 struct Active {

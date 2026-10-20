@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod agent;
 #[cfg(test)]
 mod guided_evaluation_tests;
@@ -29,14 +29,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             let candidate = &j["payload"]["candidate"];
             let mut checks = if policy["build"].is_null() {
-                yoneda_core::retry::checks_for_suite(&string(policy, "suite")?, &c["report"])?
+                yoneda_agents_core::retry::checks_for_suite(
+                    &string(policy, "suite")?,
+                    &c["report"],
+                )?
             } else {
                 let typed =
                     serde_json::from_value(policy.clone()).map_err(|e| bad(&e.to_string()))?;
-                yoneda_core::build::checks_from_report(&typed, &c["report"])?
+                yoneda_agents_core::build::checks_from_report(&typed, &c["report"])?
             };
             if policy["build"]["static_dir"].is_string() {
-                checks.push(yoneda_core::Check {
+                checks.push(yoneda_agents_core::Check {
                     name: "static_assets".into(),
                     status: if j["site"].is_null() { "fail" } else { "pass" }.into(),
                     detail: "Evaluator captured bounded regular static files from this revision"
@@ -85,43 +88,47 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let rid = string(&candidate, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
             let held = super::autonomy::hold_candidate(db, &run, &mut candidate)?;
-            let evaluation: yoneda_core::Evaluation =
+            let evaluation: yoneda_agents_core::Evaluation =
                 serde_json::from_value(result.clone()).map_err(|e| bad(&e.to_string()))?;
-            let policy: yoneda_core::Policy =
+            let policy: yoneda_agents_core::Policy =
                 serde_json::from_value(j["payload"]["policy"].clone())
                     .map_err(|e| bad(&e.to_string()))?;
-            let revision: yoneda_core::Revision =
+            let revision: yoneda_agents_core::Revision =
                 serde_json::from_value(candidate["revision"].clone())
                     .map_err(|e| bad(&e.to_string()))?;
-            let validation =
-                yoneda_core::validate_evaluation(&evaluation, &candidate_id, &revision, &policy)
-                    .and_then(|()| {
-                        if policy
-                            .build
-                            .as_ref()
-                            .and_then(|b| b.static_dir.as_ref())
-                            .is_some()
-                            && (result["deployment"]["commit"] != candidate["revision"]["commit"]
-                                || result["deployment"]["digest"].as_str().is_none())
-                        {
-                            return Err(Error::new(
-                                "CHECKS_FAILED",
-                                "Static output was not independently captured",
-                            ));
-                        }
-                        if policy.build.as_ref().is_some_and(|b| b.app.is_some())
-                            && (result["app"]["revision"] != candidate["revision"]["commit"]
-                                || result["app"]["bundle_digest"].as_str().is_none()
-                                || result["app"]["policy_digest"]
-                                    != yoneda_core::build::policy_digest(&policy)?)
-                        {
-                            return Err(Error::new(
-                                "CHECKS_FAILED",
-                                "App output was not independently captured for this revision",
-                            ));
-                        }
-                        Ok(())
-                    });
+            let validation = yoneda_agents_core::validate_evaluation(
+                &evaluation,
+                &candidate_id,
+                &revision,
+                &policy,
+            )
+            .and_then(|()| {
+                if policy
+                    .build
+                    .as_ref()
+                    .and_then(|b| b.static_dir.as_ref())
+                    .is_some()
+                    && (result["deployment"]["commit"] != candidate["revision"]["commit"]
+                        || result["deployment"]["digest"].as_str().is_none())
+                {
+                    return Err(Error::new(
+                        "CHECKS_FAILED",
+                        "Static output was not independently captured",
+                    ));
+                }
+                if policy.build.as_ref().is_some_and(|b| b.app.is_some())
+                    && (result["app"]["revision"] != candidate["revision"]["commit"]
+                        || result["app"]["bundle_digest"].as_str().is_none()
+                        || result["app"]["policy_digest"]
+                            != yoneda_agents_core::build::policy_digest(&policy)?)
+                {
+                    return Err(Error::new(
+                        "CHECKS_FAILED",
+                        "App output was not independently captured for this revision",
+                    ));
+                }
+                Ok(())
+            });
             if let Err(error) = &validation
                 && error.code != "CHECKS_FAILED"
             {

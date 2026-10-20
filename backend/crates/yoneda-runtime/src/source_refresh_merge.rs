@@ -14,7 +14,7 @@ use std::{
     path::Path,
     process::{Command, Stdio},
 };
-use yoneda_core::{Result, source_workspace::MAX_FILE_BYTES};
+use yoneda_agents_core::{Result, source_workspace::MAX_FILE_BYTES};
 pub(crate) struct Merged {
     pub edits: BTreeMap<String, TreeEdit>,
     pub conflicts: BTreeSet<String>,

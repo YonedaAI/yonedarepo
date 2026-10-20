@@ -1,6 +1,6 @@
 use super::{SqlStore, bad, get, repo};
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 const MAX_SAFE_JS_INTEGER: i64 = 9_007_199_254_740_991;
 
 pub(crate) fn checked_watermark(value: i64) -> Result<i64> {

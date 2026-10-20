@@ -1,6 +1,6 @@
 //! Only trusted source capture completes specialist tasks and creates dependency versions.
 use super::*;
-use yoneda_core::team::owns_path;
+use yoneda_agents_core::team::owns_path;
 
 pub(super) fn captured<S: SqlStore>(db: &S, job: &Value, result: &Value, now: i64) -> Result<bool> {
     let execution = &job["payload"]["execution"];
@@ -21,7 +21,7 @@ pub(super) fn captured<S: SqlStore>(db: &S, job: &Value, result: &Value, now: i6
     let scopes = crate::path_lists::load(db, &job["payload"], "team_write_paths")?;
     for path in paths {
         let path = path.as_str().ok_or_else(|| bad("Invalid changed path"))?;
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         if !scopes
             .iter()
             .map(String::as_str)
@@ -35,7 +35,7 @@ pub(super) fn captured<S: SqlStore>(db: &S, job: &Value, result: &Value, now: i6
     }
     if execution["team_role"] == "integrator" {
         let manifest = inputs::manifest(db, &run)?;
-        let digest = yoneda_core::fingerprint(&manifest)?;
+        let digest = yoneda_agents_core::fingerprint(&manifest)?;
         if job["payload"]["integration_manifest"] != manifest
             || job["payload"]["integration_digest"] != digest
             || result["integration_digest"] != digest

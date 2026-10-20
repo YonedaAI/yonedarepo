@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 pub(crate) async fn workspace(job: &Value, root: &Path) -> Result<Workspace> {
     let files = crate::team_source::load(job).await?;
     materialize(root, &files)?;

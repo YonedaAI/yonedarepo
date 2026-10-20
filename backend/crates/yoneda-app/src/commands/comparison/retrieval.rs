@@ -91,7 +91,7 @@ pub(in crate::commands) fn read<S: SqlStore>(db: &S, c: &Value, now: i64) -> Res
     if query.len() > 512 || !(1..=50).contains(&limit) {
         return Err(bad("Bounded reviewer context query required"));
     }
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"manifest":frozen["manifest_digest"],"query":query,"kind":c["kind"],"file_path":c["file_path"],"authority":c["authority"],"lineage":c["lineage"]}),
     )?;
     let cursor = c["cursor"].as_str().unwrap_or("");

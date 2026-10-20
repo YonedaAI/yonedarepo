@@ -1,7 +1,7 @@
 use crate::{SqlStore, execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
 
-fn call(db: &NativeStore, mut c: Value) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
     c["now"] = json!(1000);
     execute_workspace(db, c)
 }
@@ -54,7 +54,7 @@ fn seed(db: &NativeStore, overlap: &str) {
 fn status(db: &NativeStore) -> Value {
     call(db, json!({"op":"workspace_spend_status"})).unwrap()
 }
-fn configure(db: &NativeStore, expected: i64, limit: i64) -> yoneda_core::Result<Value> {
+fn configure(db: &NativeStore, expected: i64, limit: i64) -> yoneda_agents_core::Result<Value> {
     call(
         db,
         json!({"op":"workspace_spend_configure","expected_version":expected,"limit_microusd":limit}),

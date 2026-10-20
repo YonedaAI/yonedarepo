@@ -1,6 +1,6 @@
 use super::support::*;
 use super::*;
-use yoneda_core::conflict::TrustedPathEvidence;
+use yoneda_agents_core::conflict::TrustedPathEvidence;
 pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let agent = c.get("job_id").is_some();
     let candidate_id = string(c, "candidate_id")?;
@@ -155,7 +155,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
             "declared_paths"
         )?);
     }
-    yoneda_core::conflict_capture::validate_capture_result(
+    yoneda_agents_core::conflict_capture::validate_capture_result(
         &leased,
         &active_id,
         number(&leased, "epoch")?,

@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 #[path = "provenance.rs"]
 pub(super) mod provenance;
@@ -15,7 +15,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "why" => {
             let path = string(&c, "path")?;
-            yoneda_core::validate_path(&path)?;
+            yoneda_agents_core::validate_path(&path)?;
             let commit = hash(&c, "commit", &[40, 64])?;
             provenance::why(db, &commit, &path)
         }

@@ -4,7 +4,7 @@
 //! specialist always has its own approved cap.
 use super::*;
 use std::collections::BTreeSet;
-use yoneda_core::{
+use yoneda_agents_core::{
     adaptive_team::{AgentRole, MAX_ADAPTIVE_AGENTS},
     team::TeamPlan,
 };

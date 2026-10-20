@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn update<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let mut repository = repo(db)?;
     if !repository["pending"].is_null() {
@@ -15,9 +15,9 @@ pub(super) fn update<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     {
         return Err(Error::new("HEAD_MOVED", "Repository or policy changed"));
     }
-    let typed: yoneda_core::Policy =
+    let typed: yoneda_agents_core::Policy =
         serde_json::from_value(c["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::build::validate_policy(&typed)?;
+    yoneda_agents_core::build::validate_policy(&typed)?;
     let policy = serde_json::to_value(typed).map_err(|e| bad(&e.to_string()))?;
     if repository["policy"] == policy {
         return Ok(repository);

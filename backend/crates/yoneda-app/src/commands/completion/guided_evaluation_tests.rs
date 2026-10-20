@@ -8,13 +8,13 @@ fn fixture() -> NativeStore {
         &db,
         json!({"op":"init","id":"guide-checks","name":"Guide checks",
         "remote":{"namespace":"fixture","name":"guide-checks"},"commit":"a".repeat(40),
-        "policy":yoneda_core::Policy::default(),"now":1}),
+        "policy":yoneda_agents_core::Policy::default(),"now":1}),
     )
     .unwrap();
     create(&db, "jobs", "evaluate:partial", &json!({
         "id":"evaluate:partial","kind":"evaluate","status":"running","epoch":1,
         "lease_until":10000,"attempt_deadline":10000,"payload":{
-            "candidate":{"id":"partial"},"policy":yoneda_core::Policy::default(),
+            "candidate":{"id":"partial"},"policy":yoneda_agents_core::Policy::default(),
             "guided":{"session_id":"guide-session:checks","profile_id":"task-board-v1","version":1,
                 "step_id":"concurrent","check_phase":"parallel","variant":"filter"}
         }

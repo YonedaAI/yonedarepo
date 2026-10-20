@@ -1,12 +1,12 @@
 //! Descendants retain the exact parent attempt identity through capture and evaluation.
 use super::*;
 use std::collections::BTreeSet;
-use yoneda_core::agents::{MAX_DELEGATION_DEPTH, MAX_RUN_EXECUTIONS};
+use yoneda_agents_core::agents::{MAX_DELEGATION_DEPTH, MAX_RUN_EXECUTIONS};
 
 pub(crate) fn run_executions<S: SqlStore>(db: &S, run_id: &str) -> Result<Vec<Value>> {
     let run = get(db, "runs", run_id)?;
     let limit = if run["mode"] == "collaborate" {
-        yoneda_core::team::MAX_TEAM_EXECUTIONS
+        yoneda_agents_core::team::MAX_TEAM_EXECUTIONS
     } else {
         MAX_RUN_EXECUTIONS
     };

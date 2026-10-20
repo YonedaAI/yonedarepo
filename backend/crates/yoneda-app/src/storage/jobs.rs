@@ -1,7 +1,7 @@
 //! Internal job construction keeps queue wait and approved execution time separate.
 use super::{SqlStore, bad, create, get, outbox};
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 /// Attribute lifecycle evidence using the saved job, independent of transport IDs.
 pub(crate) fn job_event(job: &Value) -> Value {
@@ -75,7 +75,7 @@ pub(crate) fn job<S: SqlStore>(
         })
         .and_then(|budget| budget["max_execution_ms"].as_i64())
         .filter(|duration| {
-            (60_000..=yoneda_core::model_budget::MAX_MODEL_EXECUTION_MS).contains(duration)
+            (60_000..=yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS).contains(duration)
         })
         .unwrap_or(0)
     } else {
