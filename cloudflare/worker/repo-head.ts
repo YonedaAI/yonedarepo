@@ -103,6 +103,11 @@ export async function publishedHead(
   return { ...head, tokens: token ? [token] : [] };
 }
 
+/** Drops this isolate's copy of the head (after this isolate landed something). */
+export function forgetHead(repo: string) {
+  heads.delete(repo);
+}
+
 /** Marks the published head stale after a landing, projection or access change. */
 export async function refreshHead(env: Env, repo: string) {
   heads.delete(repo);

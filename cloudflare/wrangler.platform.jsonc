@@ -111,7 +111,7 @@
       "class_name": "CheckContainer",
       "image": "./containers/Dockerfile",
       "image_build_context": "..",
-      "max_instances": 8,
+      "max_instances": 100,
       "instance_type": "standard-1",
       "rollout_step_percentage": [
         100

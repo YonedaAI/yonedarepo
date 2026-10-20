@@ -107,16 +107,26 @@ function front(commits: Json[], limit: number) {
 }
 
 /**
- * Projects every pending protected ref: its new objects and the ref update in one
- * receive-pack. Throws (for queue retry) only on transport failure or unreadable objects.
+ * A refused ref update is retried for this many job attempts before it is recorded as
+ * drift: a concurrent projection of the same ref that moved it first (and has not reported
+ * yet) refuses a stale expected-old exactly as a foreign write does, and the retry plans
+ * again from what that projection reported.
  */
-export async function projectRefs(env: Env, envelope: Envelope) {
+const REFUSED_ATTEMPTS = 3;
+
+/**
+ * Projects every pending protected ref: its new objects and the ref update in one
+ * receive-pack. Throws (for queue retry) only on transport failure or unreadable objects;
+ * asks for a delayed retry (`retry`, seconds) while a refusal may still be a race.
+ */
+export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSED_ATTEMPTS) {
   const call = caller(env, envelope.repo_id, { _system: 'projection' });
   const { pending } = await call({ op: 'repo_projection_pending' });
   if (pending.length === 0) return { projected: 0 };
   const status = await call({ op: 'repo_status' });
   const objects = new RepoObjects(env, envelope.repo_id, parseStore(env, status.object_store));
   let projected = 0;
+  let retry = 0;
   for (const row of pending) {
     const plan = await call({ op: 'repo_projection_objects', refname: row.refname });
     let commits = plan.commits as Json[];
@@ -141,6 +151,10 @@ export async function projectRefs(env: Env, envelope: Envelope) {
       refname: row.refname,
       report_b64: toBase64(report),
     });
+    if (!outcome.accepted && attempt < REFUSED_ATTEMPTS) {
+      retry = 5 * attempt;
+      continue;
+    }
     if (outcome.accepted) {
       // Verified like a commit push: the store itself must serve the target as recorded.
       const [readback, recorded] = await Promise.all([
@@ -160,5 +174,5 @@ export async function projectRefs(env: Env, envelope: Envelope) {
     });
     if (outcome.accepted) projected++;
   }
-  return { projected };
+  return { projected, ...(retry ? { retry } : {}) };
 }

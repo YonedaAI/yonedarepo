@@ -138,6 +138,8 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     Ok(json!({
         "run_id": id, "epoch": epoch, "commit": commit, "tree": tree, "name": row["name"],
         "command": runner.command, "timeout_seconds": runner.timeout_seconds,
+        // How long the run waited for an executor (the check queue).
+        "queued_ms": now - row["created_at"].as_i64().unwrap_or(now),
     }))
 }
 

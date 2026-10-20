@@ -15,8 +15,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
   } else if (envelope.kind === 'platform_project') {
-    await projectRefs(env, envelope);
-    message.ack();
+    const outcome = await projectRefs(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
   } else if (envelope.kind === 'platform_objects') {
     await projectObjects(env, envelope.repo_id, envelope.job_id);
     message.ack();

@@ -21,6 +21,22 @@ const drain = async (target: Env) => {
   }
 };
 
+it('retries a refused update before calling it drift (a racing projection refuses it too)', async () => {
+  const owner = { cookie: await signup('racing') };
+  const created = await api('/repos', owner, { body: { name: 'race', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
+  const repo = `/repos/${created.body.id}`;
+  await drain(scoped);
+  refusals.add('refs/heads/main');
+  const second = await landNext(repo, owner, '1\n');
+  const jobs = queued.splice(0).filter((m) => m.kind === 'platform_project');
+  expect(await projectRefs(scoped, jobs[0], 1)).toMatchObject({ projected: 0, retry: 5 });
+  expect((await api(repo, owner)).body.projections[0].status).toBe('pending');
+  // The ref became pushable (the racing projection reported): the retry lands it.
+  refusals.clear();
+  expect(await projectRefs(scoped, jobs[0], 2)).toEqual({ projected: 1 });
+  expect((await api(repo, owner)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: second });
+});
+
 it('projects landed branches to Artifacts with leases and records drift', async () => {
   const owner = { cookie: await signup('projector') };
   const created = await api('/repos', owner, { body: { name: 'p', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
