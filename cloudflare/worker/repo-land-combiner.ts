@@ -242,8 +242,8 @@ export class LandCombiner extends DurableObject<Env> {
   }
 
   /** Head role: main's published head, at least at `minVersion`. */
-  head(repo: string, minVersion: number, digest: string | null) {
-    return this.#head.head(repo, minVersion, digest);
+  head(repo: string, minVersion: number) {
+    return this.#head.head(repo, minVersion);
   }
 
   /** Head role: the head is stale (a landing, projection or access change). */
