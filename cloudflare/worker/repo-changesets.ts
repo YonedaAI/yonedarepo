@@ -5,10 +5,10 @@
 // run in the background, on demand for a read, or twice at once without harm.
 import { deferred } from './background';
 import { refreshHead } from './repo-head';
-import { stagedOf } from './repo-merge';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -53,15 +53,16 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     const plan = await projector.call({ op: 'repo_changeset_plan' });
     if (!plan.items?.length) break;
     const objects = await projector.objects();
-    // Landed commits' objects are usually still staged (in their commit shard): fetch each
-    // commit's in one call rather than walking the tiers object by object.
+    // Landed commits' objects are usually still staged in their commit shard: fetch each
+    // commit's in one call rather than walking the tiers object by object. Drained ones are
+    // in R2 already (never ask the authority: it is busy landing).
     const staged = await timed('project.staged', () =>
       Promise.all(
         [
           ...new Set(
             (plan.items as Json[]).flatMap((step) => step.changes.map((c: Json) => c.source.id)),
           ),
-        ].map((commit) => stagedOf(projector, commit)),
+        ].map((commit) => shardStagedOf(env, repo, commit)),
       ),
     );
     const known = new Map([...previous, ...staged.flat()].map((o) => [o.id, o]));
