@@ -12,6 +12,7 @@ import { ApiError, type Credentials, caller, commit, type Json, RepoContext } fr
 import { dispatchProjection } from './repo-projection';
 import { operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
+import { humanView } from './repo-views';
 import type { Env } from './types';
 
 const STATUS: Record<string, number> = {
@@ -31,6 +32,7 @@ const STATUS: Record<string, number> = {
   NOT_SUPPORTED: 400,
   TIMEOUT: 503,
   STALE_HANDLE: 409,
+  PARSE_FAILED: 422,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -158,6 +160,10 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'blame') return run('git_blame', query);
   if (get && resource === 'symbols') return run('symbol_list', query);
   if (get && resource === 'symbol') return run('symbol_get', query);
+  if (get && resource === 'contract') return run('symbol_contract', query);
+  if (resource === 'contracts' && post) return run('symbol_contract_record', await bodyOf(req));
+  if (get && resource === 'views' && sha === 'agent') return run('symbol_view', query);
+  if (get && resource === 'views' && sha === 'human') return humanView(ctx, query);
   if (resource === 'symbol-edits' && post)
     return run('symbol_edit', await bodyOf(req, COMMIT_BODY_LIMIT));
   if (resource === 'codemods' && post) return run('git_codemod', await bodyOf(req));

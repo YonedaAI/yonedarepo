@@ -60,7 +60,7 @@ export async function deriveSymbols(ctx: RepoContext, sha: string, touches: Json
   await deriver.call({ op: 'repo_record_symbols', commit: sha, touches: derived.touches });
 }
 
-async function fileAt(ctx: RepoContext, args: Json) {
+export async function fileAt(ctx: RepoContext, args: Json) {
   await requirePath(ctx, String(args.path ?? ''));
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
@@ -81,7 +81,7 @@ async function symbolTable(ctx: RepoContext, path: string, id: string) {
   return table;
 }
 
-const handleOf = (commitId: string, path: string, s: Json) => ({
+export const handleOf = (commitId: string, path: string, s: Json) => ({
   commit: commitId,
   path,
   symbol_path: s.symbol_path,
