@@ -121,11 +121,13 @@ export async function commit(
       for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
       continue;
     }
-    // Immutable and keyed by id, so a small commit's cache write runs alongside its push;
-    // a large import writes the cache first rather than doubling its fan-out.
-    const written = prepared.objects as CachedObject[];
+    // Immutable and keyed by id, so a small commit's cache write runs alongside its push. A
+    // large import writes through only its commit: thousands of tier writes cost minutes
+    // (Workers keep six connections open) and reads fill the tiers from the store anyway.
+    const all = prepared.objects as CachedObject[];
+    const written =
+      all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
     const cached = objects.cache(written);
-    if (written.length > OVERLAP_CACHE_OBJECTS) await cached;
     const { report, readback } = await objects.pushCommit(
       fromBase64(prepared.push_b64),
       prepared.commit,
