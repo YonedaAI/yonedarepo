@@ -212,10 +212,6 @@
         "queue": "yoneda-dev-evaluate"
       },
       {
-        "binding": "PUBLISH_QUEUE",
-        "queue": "yoneda-dev-publish"
-      },
-      {
         "binding": "PLATFORM_QUEUE",
         "queue": "yoneda-dev-platform"
       }
@@ -235,12 +231,6 @@
       },
       {
         "queue": "yoneda-dev-evaluate",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yoneda-dev-dead-letter"
-      },
-      {
-        "queue": "yoneda-dev-publish",
         "max_batch_size": 1,
         "max_retries": 3,
         "dead_letter_queue": "yoneda-dev-dead-letter"

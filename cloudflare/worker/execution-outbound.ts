@@ -3,7 +3,6 @@ import type { OutboundHandler } from '@cloudflare/containers';
 import { brokerHandler } from './broker';
 import { ExecutionContainer } from './container';
 import { dependencyHandler, registries } from './dependencies';
-import { gitHandler } from './git';
 import { modelHandler } from './models';
 import { sourceBroker } from './source-broker';
 
@@ -14,7 +13,6 @@ ExecutionContainer.outboundByHost = {
   'codex.yoneda.internal': modelHandler('codex') as OutboundHandler,
   'gemini.yoneda.internal': modelHandler('gemini') as OutboundHandler,
   'claude.yoneda.internal': modelHandler('claude') as OutboundHandler,
-  'git.yoneda.internal': gitHandler as OutboundHandler,
 };
 
 export { ExecutionContainer };

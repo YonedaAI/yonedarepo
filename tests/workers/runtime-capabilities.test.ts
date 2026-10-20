@@ -28,6 +28,12 @@ it('requires lazy source, incremental capture and child privilege isolation befo
   expect(() => checkRuntime({ protocol: 2, capabilities }, job)).not.toThrow();
 });
 
+it('defers captures until the runtime image commits through the platform', () => {
+  const job = { kind: 'capture', payload: {} };
+  checkFailureCode({ protocol: 2, capabilities: {} }, job);
+  expect(() => checkRuntime({ protocol: 2, capabilities: { platform_capture: 1 } }, job)).not.toThrow();
+});
+
 it('defers frozen test-bundle policy until the runtime image advertises bundle evaluation', () => {
   const job = {
     kind: 'evaluate',

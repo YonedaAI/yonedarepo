@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Repository } from '../../lib/types';
-import { retryablePublication } from './publicationRetry';
+import { pendingLanding, publishOnPlatform } from '../exploration/platformPublication';
 
 export function RepositoryRecovery({
   repository,
@@ -15,13 +15,40 @@ export function RepositoryRecovery({
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const pending = pendingLanding(
+    repository,
+    decisions.find((item) => item.id === repository.pending),
+  );
+  if (pending && repository.pending) {
+    const decisionId = repository.pending;
+    return (
+      <section className="publication-banner" role="status">
+        <div>
+          <strong>Publication is waiting for you</strong>
+          <p>
+            {`You selected ${short(pending.commit)}. Approve and land it on the project's platform repository to publish it.`}
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            void guarded(async () => {
+              await publishOnPlatform(repository.id, decisionId, pending);
+            })
+          }
+        >
+          {busy ? 'Publishing…' : 'Publish'}
+        </button>
+      </section>
+    );
+  }
   if (repository.status !== 'blocked') return null;
-  const retry = retryablePublication(repository, decisions);
-  async function run(action: string, body: Record<string, unknown>) {
+  async function guarded(work: () => Promise<void>) {
     setBusy(true);
     onError('');
     try {
-      await api(`repos/${repository.id}/${action}`, body);
+      await work();
       await onChange();
     } catch (e) {
       onError((e as Error).message);
@@ -29,36 +56,21 @@ export function RepositoryRecovery({
       setBusy(false);
     }
   }
+  const run = (action: string, body: Record<string, unknown>) =>
+    guarded(async () => {
+      await api(`repos/${repository.id}/${action}`, body);
+    });
   return (
     <section className="publication-banner" role="status">
       <div>
-        <strong>
-          {retry ? 'Publication was blocked by a remote conflict' : 'Publication needs recovery'}
-        </strong>
+        <strong>Publication needs recovery</strong>
         <p>
-          {retry
-            ? `The canonical remote still holds ${short(repository.published_commit)}, the revision recorded when you decided. Retry publication re-reads the remote and publishes only if it is unchanged; the conflict stays in the evidence trail.`
-            : 'Read the current canonical Git revision and reconcile this sandbox. The failed decision remains in the evidence trail.'}
+          Read the platform repository&apos;s current main and reconcile this project. The failed
+          decision remains in the evidence trail.
         </p>
       </div>
-      {retry && (
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() =>
-            void run('recover_publication', {
-              request_id: crypto.randomUUID(),
-              decision_id: retry.id,
-              expected_version: repository.version,
-            })
-          }
-        >
-          {busy ? 'Reading canonical Git…' : 'Retry publication'}
-        </button>
-      )}
       <button
         type="button"
-        className={retry ? 'quiet' : undefined}
         disabled={busy}
         onClick={() =>
           void run('resync_repository', {
@@ -67,7 +79,7 @@ export function RepositoryRecovery({
           })
         }
       >
-        {busy ? 'Reading canonical Git…' : 'Recover repository'}
+        {busy ? 'Reading the platform…' : 'Recover repository'}
       </button>
     </section>
   );

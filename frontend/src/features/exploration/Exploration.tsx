@@ -4,6 +4,7 @@ import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { comparisonBusy } from './comparisonView';
+import { publishOnPlatform } from './platformPublication';
 import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunHistory } from './RunHistory';
@@ -130,6 +131,17 @@ export function Exploration({
     }
   }
   const onCompose = () => newRun();
+  async function accept(body: Record<string, unknown>): Promise<boolean> {
+    setBusy(true);
+    try {
+      const receipt = await api<Record<string, any>>(`repos/${repo.id}/accept`, body);
+      await publishOnPlatform(repo.id, receipt.id, receipt.publication);
+      await onChange();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  }
   async function act(action: string, body: unknown): Promise<boolean> {
     setBusy(true);
     try {
@@ -250,7 +262,7 @@ export function Exploration({
                 onComparisonAction={act}
                 onRefresh={onChange}
                 onAccept={(candidate, rationale, alternatives) =>
-                  act('accept', {
+                  accept({
                     request_id: crypto.randomUUID(),
                     candidate,
                     expected_commit: repo.head_commit,

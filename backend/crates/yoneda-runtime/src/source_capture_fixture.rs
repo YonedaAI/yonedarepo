@@ -1,5 +1,5 @@
 //! Native SQLite source authority plus real local Git objects; no provider or workerd claims.
-use crate::source_git_http_tests::{Server, git, oid};
+use crate::source_git_fixture::{Server, git, oid};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

@@ -48,13 +48,18 @@ impl CaptureApi {
         })
     }
     pub async fn request(&self, op: &str, args: Value) -> Result<reqwest::Response> {
-        if !["context", "manifest", "tree", "blob", "verify"].contains(&op) {
+        if !["context", "manifest", "tree", "blob", "commit"].contains(&op) {
             return Err(failure("Unsupported root capture operation"));
         }
-        let response = self
+        let mut request = self
             .client
             .post(format!("{}/v1/capture/{op}", self.origin))
-            .json(&args)
+            .json(&args);
+        if op == "commit" {
+            // The platform builds and stores the commit; allow it more than a page read.
+            request = request.timeout(std::time::Duration::from_secs(180));
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| failure("Source capture request interrupted"))?;

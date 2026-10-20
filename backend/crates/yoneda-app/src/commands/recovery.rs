@@ -61,7 +61,6 @@ fn resync<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             "Only blocked repositories can be resynchronized",
         ));
     }
-    fence_publication(db, pending)?;
     if let Some(did) = pending.as_str() {
         let mut decision = get(db, "decisions", did)?;
         if decision["target"]["commit"] == observed {
@@ -106,26 +105,6 @@ fn resync<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         json!({"expected_version":expected,"expected_pending":pending,"observed_commit":observed,"version":next}),
     )?;
     Ok(receipt)
-}
-
-pub(super) fn fence_publication<S: SqlStore>(db: &S, pending: &Value) -> Result<()> {
-    for row in db.query(
-        "SELECT payload FROM jobs WHERE json_extract(payload,'$.kind')='publish' AND (json_extract(payload,'$.payload.decision_id')=? OR json_extract(payload,'$.status') IN ('queued','running')) ORDER BY id",
-        std::slice::from_ref(pending),
-    )? {
-        let mut job: Value = serde_json::from_str(row["payload"].as_str().ok_or_else(|| bad("Corrupt publisher"))?)
-            .map_err(|e| bad(&e.to_string()))?;
-        let id = string(&job, "id")?;
-        let epoch = number(&job, "epoch")?;
-        outbox(db, &format!("stop:{id}:{epoch}"), "stop", json!({"job_id":id,"epoch":epoch}))?;
-        job["epoch"] = json!(epoch.checked_add(1).ok_or_else(|| bad("Attempt epoch overflow"))?);
-        job["lease_until"] = json!(0);
-        if job["status"] == "queued" || job["status"] == "running" {
-            job["status"] = json!("cancelled");
-        }
-        save(db, "jobs", &id, &job)?;
-    }
-    Ok(())
 }
 
 fn defer<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {

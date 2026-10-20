@@ -25,6 +25,20 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .and_then(Value::as_str)
                 .unwrap_or("_admin");
             let mut r = json!({"id":id,"name":name,"workspace":workspace,"remote":c["remote"],"head_commit":commit,"published_commit":commit,"version":0,"policy":policy,"pending":null,"status":"ready"});
+            // The platform repository holding this project's source, for owner-side review
+            // and landing through the platform's own API.
+            if let Some(platform) = c.get("platform_repo").filter(|v| !v.is_null()) {
+                let repo = platform.as_str().unwrap_or_default();
+                if repo.len() != 21
+                    || !repo.starts_with('r')
+                    || !repo[1..]
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                {
+                    return Err(bad("Invalid platform repository"));
+                }
+                r["platform_repo"] = platform.clone();
+            }
             super::study::initialize(&c, &mut r)?;
             guided_init::initialize(&c, &mut r)?;
             create(db, "repository", "repo", &r)?;

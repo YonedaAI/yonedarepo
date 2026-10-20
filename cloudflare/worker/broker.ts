@@ -1,17 +1,14 @@
 import type { OutboundHandler } from '@cloudflare/containers';
-import { injectPublicationAckLoss } from './acceptance-faults';
-import { source } from './artifacts';
 import { canonicalJson } from './canonical-json';
 import { captureResult } from './capture-result';
-import { comparisonContext, comparisonSources } from './comparison-context';
+import { comparisonContext } from './comparison-context';
 import { comparisonReviewAttempt } from './comparison-scope';
 import { hostedMcp } from './hosted-mcp';
 import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
 import { sourceAgentCompletion } from './source-completion';
-import { ledger, object, readObject } from './storage';
-import { teamAttemptSource } from './team-source';
+import { ledger, object } from './storage';
 import { testBundle } from './test-bundle';
 import type { Env, Json } from './types';
 export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
@@ -25,7 +22,6 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       reviewOnly &&
       ![
         '/mcp',
-        '/comparison-source',
         '/comparison-result',
         '/heartbeat',
         '/progress',
@@ -43,17 +39,8 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
     if (path !== '/mcp' && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted supervisor capability required', 403);
     const body = await readJson(req, path === '/mcp' ? 1024 * 1024 : 32 * 1024 * 1024);
-    if (
-      job.payload?.workspace_transport === 'api-source-v1' &&
-      ['/source', '/team_source', '/workspace', '/comparison-source'].includes(path)
-    )
-      return error('FORBIDDEN', 'Use the scoped lazy source workspace', 403);
     // Await inside this boundary so ledger rejections reach the agent as typed JSON.
     if (path === '/mcp') return await hostedMcp(env, scope, body);
-    if (path === '/comparison-source')
-      return reviewOnly
-        ? response(await comparisonSources(env, scope))
-        : error('FORBIDDEN', 'Only reviewers can read both captured sources', 403);
     if (path === '/comparison-result') {
       if (!reviewOnly) return error('FORBIDDEN', 'Comparison receipt unavailable', 403);
       const context = await comparisonContext(env, scope);
@@ -71,32 +58,6 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
           ...identity,
         }),
       );
-    if (path === '/source') {
-      if (
-        !['agent', 'evaluate'].includes(job.kind) &&
-        !(job.kind === 'capture' && job.payload.execution?.team_task)
-      )
-        return error('FORBIDDEN', 'No source access', 403);
-      return response(
-        await source(
-          env,
-          job.kind === 'evaluate'
-            ? job.payload.candidate.revision
-            : job.kind === 'capture'
-              ? job.payload.base
-              : (job.payload.comparison_repair?.source_revision ?? job.payload.execution.base),
-          job.kind === 'evaluate' ? job.payload.candidate.tree : undefined,
-        ),
-      );
-    }
-    if (path === '/team_source') return response(await teamAttemptSource(env, job, body.index));
-    if (path === '/workspace') {
-      if (job.kind === 'capture')
-        return response(JSON.parse(await readObject(env, job.payload.workspace)));
-      if (job.kind === 'agent' && job.payload.execution.role === 'coding')
-        return response(await object(env, JSON.stringify({ files: body.files }), 12 * 1024 * 1024));
-      return error('FORBIDDEN', 'No workspace upload access', 403);
-    }
     if (path === '/site') {
       if (job.kind !== 'evaluate' || !job.payload.policy.build?.static_dir)
         return error('FORBIDDEN', 'Only static evaluators capture assets', 403);
@@ -169,18 +130,6 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       return response(result);
     }
     if (path === '/complete') {
-      if (await injectPublicationAckLoss(env, scope, body)) {
-        await ledger(env, scope.repo_id, {
-          op: 'progress',
-          ...identity,
-          progress: { stage: 'controlled_publish_ack_loss', target: body.commit },
-        });
-        return error(
-          'CONTROLLED_ACK_LOSS',
-          'Disposable acceptance exercise: publication acknowledgement withheld',
-          503,
-        );
-      }
       let command: Json = { op: 'finish', ...identity, result: body };
       if (
         reviewOnly &&

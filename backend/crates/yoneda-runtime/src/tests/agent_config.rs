@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use tokio::process::Command;
 
 #[test]
 fn reasoning_effort_selected_settings_reach_codex_config_and_claude_native_arguments() {

@@ -5,6 +5,7 @@ import {
 } from './source-cache-proof';
 import { SOURCE_LIMITS, type SourceRevision, sourceError } from './source-contract';
 import { sourceFingerprint } from './source-crypto';
+import type { SourceRepo } from './source-objects';
 import { sourceOid } from './source-path';
 import { sourceStream, streamProof } from './source-stream';
 import type { Env } from './types';
@@ -45,7 +46,7 @@ async function savedProof(env: Env, key: string, oid: string) {
 /** Called only after the enclosing frozen commit/tree/path link has been verified. */
 export async function cacheSourceBlob(
   env: Env,
-  repo: ArtifactsRepo,
+  repo: SourceRepo,
   revision: SourceRevision,
   oid: string,
 ) {

@@ -1,59 +1,21 @@
-use crate::{agent_transcript::Transcript, broker::broker, field, workspace::export_with_baseline};
-use serde_json::{Value, json};
+use crate::{agent_transcript::Transcript, field};
+use serde_json::Value;
 use std::path::Path;
-#[cfg(any(target_os = "linux", test))]
-use tokio::process::Command;
 use yoneda_agents_core::Result;
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     validate_reasoning_job(job)?;
     let approved_budget = crate::execution_limits::model_budget(job)?;
-    if crate::source_workspace_job::enabled(job) {
-        return crate::source_workspace_agent::execute(
-            job,
-            root,
-            transcript,
-            &agent_prompt(job)?,
-            approved_budget.as_ref(),
-        )
-        .await;
+    if !crate::source_workspace_job::enabled(job) {
+        return Err(crate::err("Agents work only in a lazy source workspace"));
     }
-    let baseline = super::jobs::workspace(job, root).await?;
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("/usr/bin/chown")
-            .args(["-R", "1000:1000", "/work", "/home/agent"])
-            .status()
-            .await
-            .map_err(crate::err)?;
-    }
-    let payload = &job["payload"];
-    let execution = &payload["execution"];
-    let model = field(job, "model")?;
-    let prompt = agent_prompt(job)?;
-    let evidence =
-        crate::agent_harness::run(job, root, transcript, &prompt, approved_budget.as_ref()).await?;
-    if execution["role"] == "research" {
-        return Ok(json!({"transcript":evidence["digest"],"model":model}));
-    }
-    let files = export_with_baseline(root, &baseline)?;
-    if payload["team_planning"] == true {
-        crate::team_workspace::validate_read_only(&baseline, &files)?;
-        return Ok(
-            json!({"planning":true,"source_unchanged":true,"transcript":evidence["digest"],"model":model}),
-        );
-    }
-    if let Some(scope) = payload.get("team_owned_paths") {
-        crate::team_workspace::validate_changes(&baseline, &files, scope)?;
-    }
-    if payload["comparison_repair"].is_object() {
-        crate::team_workspace::validate_changes(
-            &baseline,
-            &files,
-            &payload["comparison_repair"]["write_paths"],
-        )?;
-    }
-    let uploaded = broker("/workspace", json!({"files":files}), true).await?;
-    Ok(json!({"workspace":uploaded["digest"],"transcript":evidence["digest"],"model":model}))
+    crate::source_workspace_agent::execute(
+        job,
+        root,
+        transcript,
+        &agent_prompt(job)?,
+        approved_budget.as_ref(),
+    )
+    .await
 }
 
 fn validate_reasoning_job(job: &Value) -> Result<()> {

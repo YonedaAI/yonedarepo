@@ -98,15 +98,11 @@ fn guided_final_scope_check_allows_explicit_owner_publication_and_only_readback_
         json!({"op":"accept","request_id":"guide-publish","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed final checked source"}),
         80,
     );
-    let job = all(&db, "jobs")
-        .unwrap()
-        .into_iter()
-        .find(|j| j["kind"] == "publish")
-        .unwrap();
-    let claimed = call(&db, json!({"op":"claim","job_id":job["id"]}), 81);
+    assert_eq!(approved["publication"]["commit"], "4".repeat(40));
+    assert_ne!(read(&db)["steps"][3]["status"], "complete");
     call(
         &db,
-        json!({"op":"finish","job_id":claimed["id"],"epoch":claimed["epoch"],"result":{"commit":"4".repeat(40)}}),
+        json!({"op":"publication_readback","decision_id":approved["id"],"observed_commit":"4".repeat(40)}),
         82,
     );
     assert_eq!(
@@ -169,13 +165,12 @@ fn guided_publication_leases_canonical_root_not_the_working_base() {
     evidence_fixture::evaluate(&db, &cid, "final");
     let candidate = get(&db, "candidates", &cid).unwrap();
     assert_ne!(candidate["base"]["commit"], "a".repeat(40));
-    call(
+    let receipt = call(
         &db,
         json!({"op":"accept","request_id":"guide-lease","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed final checked source"}),
         80,
     );
-    let job = get(&db, "jobs", "publish:decision:guide-lease").unwrap();
-    assert_eq!(job["payload"]["expected"]["commit"], "a".repeat(40));
+    assert_eq!(receipt["publication"]["expected"], "a".repeat(40));
 }
 
 #[test]

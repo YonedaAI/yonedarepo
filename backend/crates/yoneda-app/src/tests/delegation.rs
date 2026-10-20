@@ -370,28 +370,19 @@ fn accepted_child_publication(queued: bool) {
     .unwrap();
     call(&db,json!({"op":"accept","request_id":"child-publication","candidate":"publication-candidate",
         "expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Choose checked alternative"})).unwrap();
-    let publisher = "publish:decision:child-publication";
-    if queued {
+    // The owner's landing is recorded by readback; parent failure or recovery cannot stop it.
+    let now = if queued {
         call(&db, json!({"op":"recover","now":122000})).unwrap();
         call(
             &db,
             json!({"op":"claim","job_id":"job:scale:agent-1","now":122000}),
         )
         .unwrap();
-        assert_eq!(
-            call(&db, json!({"op":"claim","job_id":publisher,"now":122001})).unwrap()["epoch"],
-            1
-        );
+        122002
     } else {
-        claim(&db, publisher);
         call(&db,json!({"op":"fail","job_id":"job:scale:agent-1","epoch":1,"retryable":false,"error":"Parent failed","now":2000})).unwrap();
-    }
-    let now = if queued { 122002 } else { 2001 };
-    call(
-        &db,
-        json!({"op":"check_attempt","job_id":publisher,"epoch":1,"now":now}),
-    )
-    .unwrap();
+        2001
+    };
     assert_eq!(
         call(
             &db,
@@ -401,18 +392,10 @@ fn accepted_child_publication(queued: bool) {
         .code,
         "FENCED"
     );
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"context","job_id":publisher,"epoch":1,"now":now})
-        )
-        .unwrap_err()
-        .code,
-        "FORBIDDEN"
-    );
     call(
         &db,
-        json!({"op":"finish","job_id":publisher,"epoch":1,"now":now,"result":{"commit":"c".repeat(40)}}),
+        json!({"op":"publication_readback","decision_id":"decision:child-publication",
+        "observed_commit":"c".repeat(40),"land_version":1}),
     )
     .unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();

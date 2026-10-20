@@ -1,8 +1,8 @@
 //! Read-only review never enters the coding fork, export, capture or publish pipeline.
-use crate::{agent_transcript::Transcript, broker::broker, err, field};
-use serde_json::{Value, json};
+use crate::{agent_transcript::Transcript, err, field};
+use serde_json::Value;
 use std::path::Path;
-use yoneda_agents_core::{Result, Workspace};
+use yoneda_agents_core::Result;
 
 pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -> Result<Value> {
     let payload = &job["payload"];
@@ -41,50 +41,12 @@ pub(crate) async fn execute(job: &Value, root: &Path, transcript: &Transcript) -
     }
     let budget = crate::execution_limits::model_budget(job)?
         .ok_or_else(|| err("Comparison review requires an approved model budget"))?;
-    if crate::source_workspace_job::enabled(job) {
-        return crate::source_workspace_review::execute(job, root, transcript, &budget).await;
-    }
-    let delivered = broker("/comparison-source", json!({}), true).await?;
-    if delivered["manifest_digest"] != frozen["manifest_digest"] {
-        return Err(err("Comparison source manifest changed"));
-    }
-    let entries = delivered["candidates"]
-        .as_array()
-        .ok_or_else(|| err("Captured review sources are missing"))?;
-    let alternatives = frozen["manifest"]["alternatives"]
-        .as_array()
-        .ok_or_else(|| err("Frozen alternatives are missing"))?;
-    let expected: Vec<_> = alternatives
-        .iter()
-        .filter(|a| a["candidate_id"].is_string())
-        .collect();
-    if entries.len() != expected.len() {
-        return Err(err("Comparison source set changed"));
-    }
-    let mut sources = Vec::new();
-    for (entry, alternative) in entries.iter().zip(expected) {
-        if entry["candidate_id"] != alternative["candidate_id"]
-            || entry["revision"] != alternative["revision"]
-        {
-            return Err(err("Captured review source revision changed"));
-        }
-        sources.push((
-            field(entry, "candidate_id")?.to_owned(),
-            serde_json::from_value::<Workspace>(entry["files"].clone()).map_err(err)?,
+    if !crate::source_workspace_job::enabled(job) {
+        return Err(err(
+            "Comparison review reads captured sources through lazy source",
         ));
     }
-    let baseline = crate::comparison_checkout::materialize(root, &sources)?;
-    let evidence =
-        crate::agent_harness::run(job, root, transcript, &prompt(job)?, Some(&budget)).await?;
-    crate::comparison_checkout::verify(root, &baseline)?;
-    let receipt = broker("/comparison-result", json!({}), true).await?;
-    if receipt["manifest_digest"] != frozen["manifest_digest"] || !receipt["review_id"].is_string()
-    {
-        return Err(err("No submitted comparison receipt matches this attempt"));
-    }
-    Ok(
-        json!({"review_only":true,"source_unchanged":true,"review_id":receipt["review_id"],"manifest_digest":frozen["manifest_digest"],"transcript":evidence["digest"],"model":job["model"]}),
-    )
+    crate::source_workspace_review::execute(job, root, transcript, &budget).await
 }
 
 pub(crate) fn prompt(job: &Value) -> Result<String> {
