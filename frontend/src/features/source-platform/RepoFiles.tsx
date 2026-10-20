@@ -2,9 +2,9 @@ import { File, Folder } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { FileBlame } from './FileBlame';
 import { Failure, Loading } from './SourceStatus';
-import { SourceApiError, shortSha, sourceApi, when } from './sourceApi';
+import { SourceApiError, shortSha, sourceApi } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
-import { useSource } from './useSource';
+import { VersionPicker } from './VersionPicker';
 
 type Entry = { name: string; type: string; id: string };
 type FileBody = {
@@ -58,10 +58,6 @@ export function RepoFiles({
 }) {
   const listing = useListing(route);
   const [blaming, setBlaming] = useState(false);
-  const txlog = useSource<{
-    entries: { version: number; kind: string; committed_at_ms: number }[];
-    version: number;
-  }>(`/repos/${route.repo}/txlog?limit=500`);
   const go = (path: string) => onNavigate({ ...route, path });
   const crumbs = route.path.split('/').filter(Boolean);
   return (
@@ -84,25 +80,11 @@ export function RepoFiles({
             </span>
           ))}
         </nav>
-        <label className="source-version">
-          Version
-          <select
-            value={route.at ?? ''}
-            onChange={(e) =>
-              onNavigate({
-                ...route,
-                at: e.target.value === '' ? undefined : Number(e.target.value),
-              })
-            }
-          >
-            <option value="">Latest{txlog.data ? ` (v${txlog.data.version})` : ''}</option>
-            {[...(txlog.data?.entries ?? [])].reverse().map((entry) => (
-              <option key={entry.version} value={entry.version}>
-                v{entry.version} · {entry.kind} · {when(entry.committed_at_ms)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <VersionPicker
+          repo={route.repo}
+          at={route.at}
+          onChange={(at) => onNavigate({ ...route, at })}
+        />
       </div>
       {route.at !== undefined && (
         <p className="source-note" role="status">

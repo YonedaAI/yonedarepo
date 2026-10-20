@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
-fn text_blob(c: &Value, key: &str) -> Result<(ObjectId, String)> {
+pub(crate) fn text_blob(c: &Value, key: &str) -> Result<(ObjectId, String)> {
     let id = ObjectId::parse(&string(c, key)?)?;
     let data = verified_blob(c, &id)?.ok_or_else(|| Error::new("NEED_BLOB", id.hex()))?;
     let text = String::from_utf8(data).map_err(|_| bad("Not a UTF-8 text file"))?;

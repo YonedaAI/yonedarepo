@@ -125,7 +125,9 @@ fn password_hash(password: &str, salt: &str) -> Result<String> {
     }
     let bytes: Vec<u8> = salt
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|v| {
             std::str::from_utf8(v)
                 .ok()

@@ -46,8 +46,14 @@ fn git_merge(dir: &Path, base: &str, ours: &str, theirs: &str) -> (bool, String)
         .current_dir(dir)
         .output()
         .unwrap();
+    // merge-file exits with the conflict count (at most 127); higher codes are usage or I/O
+    // errors, which must not be read as "conflicted".
     let code = output.status.code().unwrap();
-    assert!(code >= 0, "git merge-file failed");
+    assert!(
+        (0..128).contains(&code),
+        "git merge-file failed ({code}): {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     (code == 0, String::from_utf8(output.stdout).unwrap())
 }
 

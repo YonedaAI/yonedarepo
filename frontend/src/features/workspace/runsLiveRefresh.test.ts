@@ -67,7 +67,7 @@ describe('Runs tab during live updates', () => {
     const html = render();
     expect(html).not.toContain('Rendered run');
     expect(html).toMatch(
-      /<p class="workspace-inline-status" role="status"><svg[^>]*class="lucide lucide-loader-circle spin"/,
+      /<p class="workspace-inline-status" role="status"><svg[^>]*class="lucide lucide-loader-circle[^"]* spin"/,
     );
   });
 });

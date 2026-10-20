@@ -1,6 +1,6 @@
 //! Campaign claims require an internal signed grant, scoped to the exact command.
 use crate::storage::*;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
 use sha2::Sha256;
 use yoneda_core::{Error, Result};
@@ -26,7 +26,9 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) 
     let signature = hash(&c["_campaign_grant"], "signature", &[64]).map_err(|_| reject())?;
     let bytes = signature
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let pair = std::str::from_utf8(pair).map_err(|_| reject())?;
             u8::from_str_radix(pair, 16).map_err(|_| reject())

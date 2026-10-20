@@ -1,11 +1,13 @@
 use super::*;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 fn key(value: &str) -> Result<Vec<u8>> {
     validate_hash(value, &[64])?;
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| {
             let pair = std::str::from_utf8(c).map_err(|_| bad("Invalid source signing key"))?;
             u8::from_str_radix(pair, 16).map_err(|_| bad("Invalid source signing key"))
