@@ -13,10 +13,13 @@ const MAX_BATCH_BYTES = 24 * 1024 * 1024;
 const BUSY_RETRIES = 6;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Git's report for one ref, with how long it waited for and spent in its receive-pack. */
+export type Pushed = { report: Uint8Array; waited_ms: number; sent_ms: number; batch: number };
 type Waiting = {
   body: Uint8Array;
   ref: string;
-  resolve(report: Uint8Array): void;
+  queued: number;
+  resolve(pushed: Pushed): void;
   reject(error: unknown): void;
 };
 
@@ -62,10 +65,10 @@ export class PushBatcher {
    * caller's short-lived write token; a batch uses the newest one, whose caller is still
    * waiting and so has not revoked it.
    */
-  push(remote: string, token: string, body: Uint8Array): Promise<Uint8Array> {
+  push(remote: string, token: string, body: Uint8Array): Promise<Pushed> {
     this.#remote = { url: remote, token };
     return new Promise((resolve, reject) => {
-      this.#waiting.push({ body, ref: refOf(body), resolve, reject });
+      this.#waiting.push({ body, ref: refOf(body), queued: Date.now(), resolve, reject });
       if (!this.#draining) void this.#drain();
     });
   }
@@ -75,6 +78,7 @@ export class PushBatcher {
     try {
       while (this.#waiting.length > 0) {
         const batch = take(this.#waiting);
+        const sending = Date.now();
         try {
           const body =
             batch.length === 1
@@ -84,15 +88,20 @@ export class PushBatcher {
                     .push_b64,
                 );
           const report = await this.#send(body);
+          const sent_ms = Date.now() - sending;
           for (const w of batch)
-            w.resolve(
-              batch.length === 1
-                ? report
-                : fromBase64(
-                    compute({ op: 'push_split', report_b64: toBase64(report), refname: w.ref })
-                      .report_b64,
-                  ),
-            );
+            w.resolve({
+              report:
+                batch.length === 1
+                  ? report
+                  : fromBase64(
+                      compute({ op: 'push_split', report_b64: toBase64(report), refname: w.ref })
+                        .report_b64,
+                    ),
+              waited_ms: sending - w.queued,
+              sent_ms,
+              batch: batch.length,
+            });
         } catch (error) {
           for (const w of batch) w.reject(error);
         }
@@ -129,7 +138,7 @@ export class PushBatcher {
 export class ObjectPushQueue extends DurableObject<Env> {
   #batcher = new PushBatcher();
 
-  push(remote: string, token: string, body: Uint8Array): Promise<Uint8Array> {
+  push(remote: string, token: string, body: Uint8Array): Promise<Pushed> {
     return this.#batcher.push(remote, token, body);
   }
 }

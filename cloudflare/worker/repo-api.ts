@@ -7,10 +7,12 @@ import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
+import { commit } from './repo-commit';
 import { repoMcp } from './repo-mcp';
 import { newStore, parseStore, RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
+import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
+import { timed, withTimings } from './repo-timing';
 import { operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
@@ -42,10 +44,25 @@ const bodyOf = (req: Request, limit?: number) =>
     throw new ApiError('INVALID_INPUT', String(e?.message ?? e));
   });
 
+/** Session checks in flight in this isolate, by everything `authenticate` reads: requests
+ * with identical credentials arriving together share one check (no result outlives it). */
+const checking = new Map<string, ReturnType<typeof authenticate>>();
+function authenticateOnce(req: Request, env: Env) {
+  const key = JSON.stringify(
+    ['origin', 'authorization', 'cookie', 'cf-access-jwt-assertion'].map((h) => req.headers.get(h)),
+  ).concat(new URL(req.url).origin);
+  let check = checking.get(key);
+  if (!check) {
+    check = authenticate(req, env).finally(() => checking.delete(key));
+    checking.set(key, check);
+  }
+  return check;
+}
+
 async function credentials(req: Request, env: Env): Promise<Credentials | null> {
   const bearer = req.headers.get('authorization');
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
-  const principal = await authenticate(req, env);
+  const principal = await authenticateOnce(req, env);
   if (!principal || principal.role === 'agent') return null;
   const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
   // Only a personal account session is a person; admin bearers may be held by scripts.
@@ -244,7 +261,13 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
 }
 
 export async function repoApi(req: Request, env: Env): Promise<Response> {
-  const auth = await credentials(req, env);
+  const { value, header } = await withTimings(() => handle(req, env));
+  if (header) value.headers.set('server-timing', header);
+  return value;
+}
+
+async function handle(req: Request, env: Env): Promise<Response> {
+  const auth = await timed('auth', () => credentials(req, env));
   if (!auth) return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
   const url = new URL(req.url);
   const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);

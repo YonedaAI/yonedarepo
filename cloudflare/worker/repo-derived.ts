@@ -5,7 +5,7 @@
 import { emitChangeLog } from './repo-changelog';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
-import { toBase64 } from './repo-objects';
+import { type CachedObject, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { writeSeed } from './repo-seed';
 import type { Env, Envelope } from './types';
@@ -13,21 +13,27 @@ import type { Env, Envelope } from './types';
 const MAX_RESULTS = 200;
 
 /** Runs a Rust compute op that walks trees and reads blobs, supplying both on request. */
-export async function withObjects(ctx: RepoContext, input: Json) {
+export async function withObjects(ctx: RepoContext, input: Json, known: CachedObject[] = []) {
   const objects = await ctx.objects();
   const trees: Json = {};
   const blobs: Json = {};
+  // Objects the caller already holds (a commit being built) are only supplied on request.
+  const held = new Map(known.map((o) => [o.id, o]));
+  const supply = async (id: string, kind: 'tree' | 'blob') => {
+    const object = held.get(id);
+    if (object?.kind === 'tree' && kind === 'tree') return object.entries;
+    if (object?.kind === 'blob' && kind === 'blob') return object.data_b64;
+    return kind === 'tree' ? objects.tree(id) : toBase64(await objects.blob(id));
+  };
   for (let round = 0; round <= 256; round++) {
     const result = compute({ ...input, trees, blobs });
     if (result.need_trees)
       await Promise.all(
-        (result.need_trees as string[]).map(async (id) => (trees[id] = await objects.tree(id))),
+        (result.need_trees as string[]).map(async (id) => (trees[id] = await supply(id, 'tree'))),
       );
     else if (result.need_blobs)
       await Promise.all(
-        (result.need_blobs as string[]).map(
-          async (id) => (blobs[id] = toBase64(await objects.blob(id))),
-        ),
+        (result.need_blobs as string[]).map(async (id) => (blobs[id] = await supply(id, 'blob'))),
       );
     else return result;
   }
