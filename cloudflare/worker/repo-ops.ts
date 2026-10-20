@@ -120,9 +120,12 @@ export async function commit(
       for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
       continue;
     }
-    const report = await objects.push(fromBase64(prepared.push_b64));
+    // Immutable and keyed by id, so caching before the push is safe.
     await objects.cache(prepared.objects as CachedObject[]);
-    const readback = await objects.readback(prepared.commit);
+    const { report, readback } = await objects.pushCommit(
+      fromBase64(prepared.push_b64),
+      prepared.commit,
+    );
     const recorded = await ctx.call({
       op: 'repo_record_commit',
       commit: prepared.commit,

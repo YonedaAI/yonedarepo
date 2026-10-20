@@ -1,5 +1,6 @@
 export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceWorkspaceAuthority,SourceRepository } from '../../backend/crates/yoneda-worker/build/index.js';
 import { YonedaEntrypoint } from '../../cloudflare/worker/entrypoint';
+export { ObjectPushQueue } from '../../cloudflare/worker/repo-push-queue';
 import type { Envelope, Scope } from '../../cloudflare/worker/types';
 export default class TestEntrypoint extends YonedaEntrypoint {
   // Intentionally withhold dispatch: tests inspect the real durable outbox,
