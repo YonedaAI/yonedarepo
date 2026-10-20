@@ -34,7 +34,12 @@
     "run_worker_first": true
   },
   "vars": {
-    "ARTIFACTS_NAMESPACE": "yonedarepo-staging"
+    "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
+    // Batched landing, with commits beginning from and main reads served by the published
+    // head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.
+    "LAND_MODE": "batch",
+    "BEGIN_MODE": "head",
+    "READ_MODE": "head"
   },
   "artifacts": [
     {
