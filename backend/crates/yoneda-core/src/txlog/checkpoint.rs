@@ -17,6 +17,16 @@ pub struct Checkpoint {
 
 /// Applies `tail` to `from`, verifying contiguity, the hash chain and each ref's old value.
 pub fn replay(from: &Checkpoint, tail: &[TxEntry]) -> Result<Checkpoint> {
+    replay_projected(from, tail, &BTreeMap::new())
+}
+
+/// `replay`, with the Git commit the projector built for each changeset version. A
+/// changeset version not yet projected has no ref value to replay to.
+pub fn replay_projected(
+    from: &Checkpoint,
+    tail: &[TxEntry],
+    projected: &BTreeMap<u64, ObjectId>,
+) -> Result<Checkpoint> {
     let mut state = from.clone();
     for entry in tail {
         if entry.version != state.version + 1 {
@@ -27,6 +37,18 @@ pub fn replay(from: &Checkpoint, tail: &[TxEntry]) -> Result<Checkpoint> {
             )));
         }
         entry.validate(&state.chain)?;
+        if entry.kind == TxKind::Changeset {
+            let commit = projected.get(&entry.version).ok_or_else(|| {
+                crate::Error::new(
+                    "PROJECTION_PENDING",
+                    format!("Version {} is not projected yet", entry.version),
+                )
+            })?;
+            state.refs.insert(entry.refname.clone(), *commit);
+            state.version = entry.version;
+            state.chain = entry.chain.clone();
+            continue;
+        }
         if state.refs.get(&entry.refname) != entry.old.as_ref() {
             return Err(invalid(format!(
                 "Version {} expected {} at a different value",

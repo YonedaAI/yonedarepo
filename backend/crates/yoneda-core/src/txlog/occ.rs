@@ -78,7 +78,10 @@ pub fn stale_read(
             let theirs = AccessSet::writes(paths, refined.get(&entry.version).map_or(&[], |r| r));
             // Ref moves without path detail (reset, delete) cannot be proven independent.
             let opaque = entry.paths.is_empty()
-                && !matches!(entry.kind, super::TxKind::Commit | super::TxKind::Merge);
+                && !matches!(
+                    entry.kind,
+                    super::TxKind::Commit | super::TxKind::Merge | super::TxKind::Changeset
+                );
             let stale = reads.meeting(&theirs);
             (opaque || !stale.is_empty()).then_some((entry.version, stale))
         })

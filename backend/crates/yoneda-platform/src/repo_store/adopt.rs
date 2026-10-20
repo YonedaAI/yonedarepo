@@ -19,9 +19,11 @@ pub fn begin<S: SqlStore>(
     let (parent, base_version) =
         if c.get("parent").is_none_or(Value::is_null) && c["ref"].is_string() {
             let refname = branch_ref(c)?;
-            let head = rows::ref_value(db, &refname)?
-                .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
-            (Some(head), current_version(db)?)
+            // New work builds on the last projected head, at the version it reflects.
+            let (head, version) = super::changesets::settled_head(db, &refname)?;
+            let head =
+                head.ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
+            (Some(head), version)
         } else {
             let base_version = c["base_version"].as_u64().unwrap_or(0);
             if base_version > current_version(db)? {
@@ -76,7 +78,12 @@ pub fn adopt<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Valu
     adopt_one(db, &c["record"], settings, number(c, "now")?)
 }
 
-fn adopt_one<S: SqlStore>(db: &S, record: &Value, settings: &Settings, now: i64) -> Result<Value> {
+pub(super) fn adopt_one<S: SqlStore>(
+    db: &S,
+    record: &Value,
+    settings: &Settings,
+    now: i64,
+) -> Result<Value> {
     let row = &record["commit"];
     let id = ObjectId::parse(&string(row, "id")?)?;
     if rows::commit_row(db, &id)?.is_some() {
@@ -95,13 +102,13 @@ fn adopt_one<S: SqlStore>(db: &S, record: &Value, settings: &Settings, now: i64)
     )?;
     for path in record["paths"].as_array().into_iter().flatten() {
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?)",
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?)",
             &[
                 json!(id.hex()),
                 path["path"].clone(),
                 path["op"].clone(),
                 path["old_blob"].clone(),
-                path["new_blob"].clone(),
+                path["new_blob"].clone(), path["mode"].clone(),
             ],
         )?;
     }

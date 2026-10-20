@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, merge_bases},
-    txlog::replay,
+    txlog::replay_projected,
 };
 
 fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
@@ -31,6 +31,12 @@ fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
 fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<String, ObjectId>> {
     // Reads without `at` take the fast path; an explicit `at` always verifies.
     if c.get("at").is_none_or(Value::is_null) {
+        if super::changesets::any_unprojected(db)? {
+            return Err(Error::new(
+                "PROJECTION_PENDING",
+                "Landed changesets are not projected to Git yet",
+            ));
+        }
         return db
             .query("SELECT name,commit_id FROM refs", &[])?
             .into_iter()
@@ -44,7 +50,8 @@ fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<Stri
     }
     let from = rows::checkpoint_at_or_before(db, version)?;
     let tail = rows::entries(db, from.version, version, None)?;
-    Ok(replay(&from, &tail)?.refs)
+    let projected = super::projection_plan::projected_between(db, from.version, version)?;
+    Ok(replay_projected(&from, &tail, &projected)?.refs)
 }
 
 pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
@@ -123,9 +130,22 @@ pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let after = c["after"].as_u64().unwrap_or(0);
     let limit = c["limit"].as_u64().unwrap_or(100).clamp(1, 500);
     let until = current_version(db)?.min(after.saturating_add(limit));
-    Ok(
-        json!({ "entries": rows::entries(db, after, until, None)?, "version": current_version(db)? }),
-    )
+    // Changeset entries carry their projection: the Git commit and when it was built.
+    let projections = db.query(
+        "SELECT version,projected,projected_at FROM changesets WHERE version>? AND version<=?",
+        &[json!(after), json!(until)],
+    )?;
+    let entries = rows::entries(db, after, until, None)?
+        .into_iter()
+        .map(|entry| {
+            let mut value = json!(entry);
+            if let Some(p) = projections.iter().find(|p| p["version"] == entry.version) {
+                value["projected"] = json!({ "commit": p["projected"], "at": p["projected_at"] });
+            }
+            value
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({ "entries": entries, "version": current_version(db)? }))
 }
 
 pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {

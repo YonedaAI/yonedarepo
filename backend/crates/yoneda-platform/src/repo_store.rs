@@ -6,31 +6,39 @@ use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod adopt;
-mod auth;
+pub(crate) mod auth;
 mod bisect;
 mod branches;
 mod break_glass;
 mod change_records;
+mod changesets;
+mod checkpoints;
 mod checks;
 mod classes;
 mod contracts;
 pub(crate) mod grants;
+mod head;
 mod history;
 mod history_import;
 mod land;
 mod land_queue;
+mod land_tickets;
 mod merging;
 pub(crate) mod migration;
+mod policy;
 pub(crate) mod prepare;
 mod projection;
+mod projection_plan;
 mod reads;
 mod record;
 mod rows;
 pub(crate) mod staging;
 mod store_lineage;
+mod submitted;
 mod symbols;
 mod tree_cache;
 mod vacuum;
+mod version_projection;
 pub use migration::migrate_repo_store;
 
 pub fn execute_repo_store<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
@@ -81,6 +89,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         | "repo_check_complete"
         | "repo_projection_pending"
         | "repo_projection_result"
+        | "repo_changeset_plan"
+        | "repo_head"
+        | "repo_changeset_record"
         | "repo_record_repair" => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
         // "projected" would drop the only copy of accepted objects.
@@ -105,9 +116,18 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_review" => actor.require("review"),
         "repo_land" | "repo_land_enqueue" => actor.require("land"),
         // Only the platform merger builds and lands batches.
-        "repo_land_claim" | "repo_land_batch" | "repo_land_release" if !actor.can("lander") => Err(
-            Error::new("FORBIDDEN", "Only the platform merger lands queued work"),
-        ),
+        "repo_land_claim"
+        | "repo_land_batch"
+        | "repo_land_release"
+        | "repo_land_changesets"
+        | "repo_land_submitted"
+            if !actor.can("lander") =>
+        {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform merger lands queued work",
+            ))
+        }
         "repo_set_policy" => actor.require_owner(),
         "repo_break_glass" => actor.require_human_owner(),
         "repo_clone_access" => actor.require_human_reader(),
@@ -167,16 +187,21 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         "repo_land" => land::land(db, c, principal, &settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {
-                land_queue::enqueue(db, c, principal, &settings)
+                land_tickets::enqueue(db, c, principal, &settings)
             } else {
                 Err(e)
             }
         }),
-        "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
-        "repo_land_status" => land_queue::status(db, c),
+        "repo_land_enqueue" => land_tickets::enqueue(db, c, principal, &settings),
+        "repo_land_status" => land_tickets::status(db, c),
         "repo_land_claim" => land_queue::claim(db, c),
         "repo_land_batch" => land_queue::land_batch(db, c, principal),
         "repo_land_release" => land_queue::release(db, c),
+        "repo_land_changesets" => changesets::land(db, c),
+        "repo_land_submitted" => submitted::land(db, c, &settings),
+        "repo_changeset_plan" => projection_plan::plan(db, c),
+        "repo_head" => head::head(db, c, &settings),
+        "repo_changeset_record" => version_projection::record(db, c, &settings),
         "repo_record_imported" => history_import::record(db, c),
         "repo_break_glass" => break_glass::execute(db, c, principal, &settings),
         "repo_import" => {

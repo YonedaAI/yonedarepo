@@ -13,6 +13,10 @@ pub enum TxKind {
     /// A ref moved to an existing commit (branch create, reset by owner) without new content.
     RefMove,
     RefDelete,
+    /// A path-disjoint landing appended as its changeset (Scion): `new` is the landed
+    /// commit whose changes it carries, `old` is unset, and the branch's Git commit at this
+    /// version is built later by the deterministic projector.
+    Changeset,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -33,6 +37,10 @@ pub struct PathTouch {
     pub old_blob: Option<ObjectId>,
     #[schemars(with = "Option<String>")]
     pub new_blob: Option<ObjectId>,
+    /// The new file's mode (`blob`, `exec` or `symlink`), so the change applies without
+    /// reading its commit's tree. Absent on deletions and on entries written before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 impl PathTouch {
@@ -41,6 +49,10 @@ impl PathTouch {
             PathOp::Add => self.old_blob.is_none() && self.new_blob.is_some(),
             PathOp::Modify => self.old_blob.is_some() && self.new_blob.is_some(),
             PathOp::Delete => self.old_blob.is_some() && self.new_blob.is_none(),
+        } && match self.mode.as_deref() {
+            None => true,
+            Some("blob" | "exec" | "symlink") => self.new_blob.is_some(),
+            Some(_) => false,
         };
         if !consistent
             || self.path.is_empty()
@@ -85,6 +97,9 @@ impl TxEntry {
         }
         if (self.kind == TxKind::RefDelete) != self.new.is_none() {
             return Err(invalid("Only ref deletion has no new commit"));
+        }
+        if self.kind == TxKind::Changeset && self.old.is_some() {
+            return Err(invalid("A changeset names no old commit"));
         }
         let mut seen = std::collections::BTreeSet::new();
         for touch in &self.paths {

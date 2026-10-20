@@ -2,9 +2,16 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson } from './durable';
+import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
-import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import {
+  type CachedObject,
+  parseStore,
+  RepoObjects,
+  type TreeEntry,
+  toBase64,
+} from './repo-objects';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
@@ -44,11 +51,16 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     return value;
   };
   // A commit the authority has not seen may live in its commit shard: adopt, then retry.
+  // A read at the latest version of a branch with unprojected changesets waits for them.
   const call = async (command: Json) => {
     for (let attempt = 0; ; attempt++) {
       try {
         return await once(command);
       } catch (e) {
+        if (e instanceof ApiError && e.code === 'PROJECTION_PENDING' && attempt < 4) {
+          await awaitProjection(env, repo);
+          continue;
+        }
         const missing = unrecorded(e);
         if (!missing || attempt >= 4) throw e;
         // False also when a racing adoption took it first: retry once in case.
@@ -71,6 +83,8 @@ export async function batch(env: Env, repo: string, commands: Json[]): Promise<J
 /** One repository, as seen by one authenticated caller. */
 export class RepoContext {
   private statusOnce?: Promise<Json>;
+  /** Main's published head, when this request reads from it instead of the authority. */
+  published?: Json;
   constructor(
     readonly env: Env,
     readonly repo: string,
@@ -81,6 +95,11 @@ export class RepoContext {
   status() {
     this.statusOnce ??= this.call({ op: 'repo_status' });
     return this.statusOnce;
+  }
+  /** Serves this request's access and main's head from the published head. */
+  publish(head: Json, access: Json) {
+    this.published = head;
+    this.statusOnce = Promise.resolve({ object_store: head.object_store, ...access });
   }
   async objects() {
     if (!this.cached) {
@@ -147,11 +166,46 @@ export async function listTree(ctx: RepoContext, args: Json) {
   return { commit: where.commit, path, entries };
 }
 
+/** A path's entry at main's published head: from the latest changeset that wrote it
+ * (walked in its landed commit's tree), else from the projected head. */
+async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
+  const changed = [...(head.overlay as Json[])]
+    .reverse()
+    .find((c) => c.paths.some((p: Json) => p.path === path));
+  if (!changed) return walk(objects, head.head.tree, path);
+  const touch = changed.paths.find((p: Json) => p.path === path);
+  if (!touch.blob) throw new ApiError('NOT_FOUND', `${path} does not exist`);
+  // The log recorded the mode: the blob is read by id, no tree walk.
+  if (touch.mode)
+    return { name: path.split('/').pop() ?? path, type: touch.mode, id: touch.blob } as TreeEntry;
+  return walk(objects, changed.tree, path);
+}
+
 export async function readFile(ctx: RepoContext, args: Json) {
   await requirePath(ctx, String(args.path ?? ''));
+  const path = String(args.path ?? '');
+  const published =
+    ctx.published &&
+    !args.commit &&
+    !args.at &&
+    [undefined, 'main', 'refs/heads/main'].includes(args.ref);
+  if (published) {
+    const objects = await ctx.objects();
+    const entry = await publishedEntry(objects, ctx.published as Json, path);
+    if (!['blob', 'exec'].includes(entry.type))
+      throw new ApiError('NOT_FOUND', `${path} is not a file`);
+    const bytes = await objects.blob(entry.id);
+    return {
+      version: ctx.published?.version,
+      path,
+      id: entry.id,
+      executable: entry.type === 'exec',
+      size: bytes.length,
+      ...text(bytes),
+    };
+  }
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
-  const path = String(args.path ?? '');
   const entry = await walk(objects, where.tree, path);
   if (!['blob', 'exec'].includes(entry.type))
     throw new ApiError('NOT_FOUND', `${path} is not a file`);
@@ -166,15 +220,21 @@ export async function readFile(ctx: RepoContext, args: Json) {
   };
 }
 
-/** Runs a Rust compute op that walks trees, supplying the trees it asks for. */
-export async function withTrees(objects: RepoObjects, input: Json) {
+/** Runs a Rust compute op that walks trees, supplying the trees it asks for (from
+ * `known` when already in hand, else through the tiers). */
+export async function withTrees(
+  objects: RepoObjects,
+  input: Json,
+  known: Map<string, CachedObject> = new Map(),
+) {
   const trees: Record<string, TreeEntry[]> = {};
   for (let round = 0; round <= 64; round++) {
     const result = compute({ ...input, trees });
     if (!result.need_trees) return result;
     await Promise.all(
       (result.need_trees as string[]).map(async (id) => {
-        trees[id] = await objects.tree(id);
+        const held = known.get(id);
+        trees[id] = held?.kind === 'tree' ? held.entries : await objects.tree(id);
       }),
     );
   }

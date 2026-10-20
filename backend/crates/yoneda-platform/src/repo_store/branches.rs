@@ -78,6 +78,7 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             json!(entry.chain),
         ],
     )?;
+    super::changesets::index_paths(db, &entry)?;
     db.query(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],

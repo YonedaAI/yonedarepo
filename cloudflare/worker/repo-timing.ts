@@ -7,13 +7,13 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 type Phase = { ms: number; n: number };
 const current = new AsyncLocalStorage<Map<string, Phase>>();
 
-/** Adds `ms` to `phase` in the current request, if one is being timed. */
-export function record(phase: string, ms: number) {
+/** Adds `ms` (over `n` items) to `phase` in the current request, if one is being timed. */
+export function record(phase: string, ms: number, n = 1) {
   const phases = current.getStore();
   if (!phases) return;
   const entry = phases.get(phase) ?? { ms: 0, n: 0 };
   entry.ms += ms;
-  entry.n++;
+  entry.n += n;
   phases.set(phase, entry);
 }
 

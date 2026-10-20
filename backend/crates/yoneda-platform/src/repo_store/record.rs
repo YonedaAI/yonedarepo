@@ -76,13 +76,13 @@ pub fn record<S: SqlStore>(
     )?;
     for touch in touches {
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?)",
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?)",
             &[
                 json!(id.hex()),
                 touch["path"].clone(),
                 touch["op"].clone(),
                 touch["old_blob"].clone(),
-                touch["new_blob"].clone(),
+                touch["new_blob"].clone(), touch["mode"].clone(),
             ],
         )?;
     }

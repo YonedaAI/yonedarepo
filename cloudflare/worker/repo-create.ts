@@ -2,6 +2,7 @@
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
 import { commit } from './repo-commit';
+import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
@@ -73,7 +74,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     author: body.author,
   });
   const landed = await ctx.call({ op: 'repo_import', ref: 'main', commit: seeded.commit });
-  await dispatchProjection(env, id);
+  // Main's head is published (and its holder started) before the first commits need it.
+  await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
   return { id, commit: seeded.commit, tree: seeded.tree, version: landed.version, ...tokens };
 }
 

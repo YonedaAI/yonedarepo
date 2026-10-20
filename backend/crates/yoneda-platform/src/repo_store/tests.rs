@@ -683,7 +683,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        17
+        20
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1546,9 +1546,11 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
     );
 }
 
+mod batches;
 mod branches;
 mod break_glass;
 mod change_records;
+mod changesets;
 mod land_cas;
 mod shards;
 mod staging;
