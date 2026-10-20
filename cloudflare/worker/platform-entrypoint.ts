@@ -1,10 +1,10 @@
 // Worker entrypoint for the source platform alone: HTTP plus its own queue jobs (checks,
-// ref projection, derived data). No agent runs, harnesses, providers or budgets.
+// object and ref projection, derived data). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { platformFetch } from './platform-routes';
 import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
-import { projectRefs } from './repo-projection';
+import { projectObjects, projectRefs } from './repo-projection';
 import type { Env, Envelope } from './types';
 
 export async function platformJob(env: Env, message: Message<Envelope>) {
@@ -15,6 +15,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     else message.ack();
   } else if (envelope.kind === 'platform_project') {
     await projectRefs(env, envelope);
+    message.ack();
+  } else if (envelope.kind === 'platform_objects') {
+    await projectObjects(env, envelope.repo_id);
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await deriveAfterLanding(env, envelope);

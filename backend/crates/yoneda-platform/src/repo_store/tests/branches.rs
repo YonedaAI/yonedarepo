@@ -122,3 +122,32 @@ fn fast_forward_only_landing_is_stale_when_main_moved_and_never_merges() {
         first
     );
 }
+
+#[test]
+fn a_merge_commit_without_clean_changes_keeps_the_first_parent_tree() {
+    let (h, root) = seeded();
+    let side = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn side() {}\n")]),
+            json!([]),
+        )
+        .unwrap();
+    // The conflict-workspace merge: both parents, none of the conflicting paths resolved yet.
+    let merge = h
+        .commit_with(
+            AGENT,
+            Some(&root),
+            1,
+            json!([]),
+            json!([]),
+            json!({"merge_parent": side}),
+        )
+        .unwrap();
+    let commit = Commit::decode(&h.objects.borrow()[&merge].1).unwrap();
+    let parent = Commit::decode(&h.objects.borrow()[&root].1).unwrap();
+    assert_eq!(commit.tree().unwrap(), parent.tree().unwrap());
+    assert_eq!(commit.parents().unwrap().len(), 2);
+}

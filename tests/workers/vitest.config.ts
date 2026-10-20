@@ -28,5 +28,12 @@ export default defineConfig({
       },
     }),
   ],
-  test: { include: ['tests/workers/**/*.test.ts'], setupFiles: ['tests/workers/platform-listing.ts'], exclude: ['tests/workers/apps-*.test.ts'], testTimeout: 20_000 },
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
+  test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
+    include: ['tests/workers/**/*.test.ts'],
+    setupFiles: ['tests/workers/platform-listing.ts'],
+    exclude: ['tests/workers/apps-*.test.ts'],
+    testTimeout: 20_000,
+  },
 });

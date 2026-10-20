@@ -2,10 +2,13 @@
 // plan, has Rust compute merge trees and blobs, records a platform merge commit and lands
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
+import { commit } from './repo-commit';
 import { compute } from './repo-compute';
+import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import { ApiError, caller, commit, type Json, RepoContext } from './repo-ops';
+import { ApiError, caller, type Json, RepoContext } from './repo-ops';
+import { dispatchProjection } from './repo-projection';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const SHA = /^[0-9a-f]{40}$/;
@@ -46,6 +49,8 @@ function conflictError(conflicts: Json[]) {
 }
 
 const LAND_DEADLINE_MS = 60_000;
+const WAIT_FIRST_MS = 20;
+const WAIT_MAX_MS = 320;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const pathsOf = (changes: Json[]) => changes.map((c) => String(c.path));
 
@@ -61,13 +66,16 @@ async function landBatch(merger: RepoContext, claim: Json) {
   const changes: Json[] = [];
   const touched = new Set<string>();
   const fastForward = claim.items.find((item: Json) => item.fast_forward);
-  if (fastForward)
-    return merger.call({
+  if (fastForward) {
+    const landed = await merger.call({
       op: 'repo_land_batch',
       ref: claim.ref,
       epoch: claim.epoch,
       landed: [fastForward.ticket],
     });
+    await moved(merger, claim.ref);
+    return landed;
+  }
   for (const item of claim.items as Json[]) {
     const merged = await mergeTrees(objects, {
       base: item.base_tree,
@@ -108,7 +116,7 @@ async function landBatch(merger: RepoContext, claim: Json) {
         : `Merge ${accepted.length} landings into ${branch}\n\n${accepted.map((i) => i.commit).join('\n')}`,
     author: PLATFORM_AUTHOR,
   });
-  return merger.call({
+  const landed = await merger.call({
     op: 'repo_land_batch',
     ref: claim.ref,
     epoch: claim.epoch,
@@ -116,6 +124,15 @@ async function landBatch(merger: RepoContext, claim: Json) {
     landed: accepted.map((item) => item.ticket),
     failed,
   });
+  await moved(merger, claim.ref);
+  return landed;
+}
+
+/** After the branch moved: one projection and one derive job per move, sent by whoever
+ * moved it (waiters whose work rode along send none). */
+async function moved(ctx: RepoContext, ref: string) {
+  await dispatchProjection(ctx.env, ctx.repo);
+  await dispatchDerive(ctx.env, ctx.repo, ref);
 }
 
 /** Conflict details, refused outright if any conflict lies outside the caller's grant. */
@@ -136,12 +153,14 @@ export async function landWithMerge(
   fastForwardOnly = false,
 ) {
   try {
-    return await ctx.call({
+    const landed = await ctx.call({
       op: 'repo_land',
       ref,
       commit: sha,
       fast_forward_only: fastForwardOnly,
     });
+    if (!landed.already) await moved(ctx, ref);
+    return landed;
   } catch (e: any) {
     // A fast-forward-only landing never joins the merge queue.
     if (e?.code !== 'MERGE_REQUIRED' || fastForwardOnly) throw e;
@@ -153,8 +172,17 @@ export async function landWithMerge(
     caller(ctx.env, ctx.repo, { _system: 'merge' }),
   );
   const deadline = Date.now() + LAND_DEADLINE_MS;
+  // Waiters back off: a hundred waiters polling every few milliseconds would starve the
+  // commits and the merger they wait for.
+  let pause = WAIT_FIRST_MS;
+  const wait = async () => {
+    await sleep(pause / 2 + Math.random() * pause);
+    pause = Math.min(pause * 2, WAIT_MAX_MS);
+  };
   while (Date.now() < deadline) {
-    const status = await ctx.call({ op: 'repo_land_status', ticket });
+    // The claim answers for this ticket once it is settled: one authority call per poll.
+    const claim = await merger.call({ op: 'repo_land_claim', ref, ticket });
+    const status = claim.settled ?? { status: 'pending' };
     if (status.status === 'landed') {
       const via = status.result?.commit;
       return {
@@ -169,9 +197,9 @@ export async function landWithMerge(
       const { code, message, details } = status.result ?? {};
       throw new ApiError(code ?? 'CONFLICT', message ?? 'Landing failed', details);
     }
-    const claim = await merger.call({ op: 'repo_land_claim', ref });
+    if (status.status !== 'pending') throw new ApiError('INVALID_INPUT', 'Unknown landing state');
     if (claim.wait) {
-      await sleep(5 + Math.random() * 20);
+      await wait();
       continue;
     }
     if (claim.empty || !claim.items?.length) {
