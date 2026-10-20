@@ -37,7 +37,7 @@ export async function commitInShard(
   const onMain = !body.parent && ['main', 'refs/heads/main'].includes(body.ref);
   const paths = body.changes.map((c: Json) => c?.path);
   const begun =
-    body.begin_mode === 'head' && onMain
+    body.begin_from_head === true && onMain
       ? await timed('begin.head', () => beginFromHead(ctx, paths))
       : await ctx.call({
           op: 'repo_begin_commit',

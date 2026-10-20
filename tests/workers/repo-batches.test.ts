@@ -7,7 +7,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const batched = { ...scoped, LAND_MODE: 'batch', BEGIN_MODE: 'head', READ_MODE: 'head' } as unknown as Env;
+const batched = { ...scoped, LAND_MODE: 'batch' } as unknown as Env;
 
 async function repoWith(name: string, files: ReturnType<typeof file>[], target: Env) {
   const owner = { cookie: await signup(name) };

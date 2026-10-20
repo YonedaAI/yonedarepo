@@ -25,18 +25,22 @@ it('lands disjoint edits to one file as a platform merge and rejects overlaps', 
   const stale = await work(four, 'readme v2\n', ['src/'], 'README.md');
   // Check runs gate landing? No: approvals 0 and no required checks; runners still run.
   expect((await api(`${repo}/land`, one, { body: { ref: 'main', commit: a.body.commit } })).body.version).toBe(2);
+  // Main's Git head at version 2: the commit built for a's batch (a's tree on the seed).
+  const mainAtA = (await api(`${repo}/refs`, one)).body.refs['refs/heads/main'];
+  expect((await api(`${repo}/blob?path=src/lib.rs&commit=${mainAtA}`, one)).body.content).toBe(BASE.replace('    1\n', '    10\n'));
   const merged = await api(`${repo}/land`, two, { body: { ref: 'main', commit: c.body.commit } });
   expect(merged.status).toBe(200);
   expect(merged.body).toMatchObject({ version: 3, merged: c.body.commit });
   const content = await api(`${repo}/blob?path=src/lib.rs`, one);
   expect(content.body.content).toBe(BASE.replace('    1\n', '    10\n').replace('    3\n', '    30\n'));
   const mergeCommit = await api(`${repo}/commits/${merged.body.merge}`, one);
-  expect(mergeCommit.body).toMatchObject({ parents: [a.body.commit, c.body.commit], principal: 'platform:merge' });
+  expect(mergeCommit.body).toMatchObject({ parents: [mainAtA, c.body.commit], principal: 'platform:merge' });
   // Post-land checks: the merge commit's own runs were queued.
   expect(mergeCommit.body.check_runs.map((r: any) => r.name)).toEqual(['unit']);
   expect(queued.some((m) => m.kind === 'platform_check')).toBe(true);
   const kinds = (await api(`${repo}/txlog`, one)).body.entries.map((e: any) => e.kind);
-  expect(kinds).toEqual(['import', 'commit', 'merge']);
+  // a landed as a changeset (batched); c needed the merge path.
+  expect(kinds).toEqual(['import', 'changeset', 'merge']);
 
   const conflict = await api(`${repo}/land`, three, { body: { ref: 'main', commit: clash.body.commit } });
   expect(conflict.status).toBe(409);
@@ -61,9 +65,12 @@ it('creates explicit merge commits of branches', async () => {
   expect((await api(`${repo}/merges`, owner, { body: { source: 'feature', into: 'main' } })).body.fast_forward).toBe(feature.body.commit);
   const mainEdit = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('a.txt', 'main a\n')], message: 'main', author } });
   await api(`${repo}/land`, owner, { body: { ref: 'main', commit: mainEdit.body.commit } });
+  // Main's Git head is the commit built for mainEdit's batch; the merge builds on it.
+  const mainHead = (await api(`${repo}/refs`, owner)).body.refs['refs/heads/main'];
+  expect((await api(`${repo}/blob?path=a.txt&commit=${mainHead}`, owner)).body.content).toBe('main a\n');
   const merge = await api(`${repo}/merges`, owner, { body: { source: 'feature', into: 'main' } });
   expect(merge.status).toBe(200);
-  expect(merge.body.parents).toEqual([mainEdit.body.commit, feature.body.commit]);
+  expect(merge.body.parents).toEqual([mainHead, feature.body.commit]);
   expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: merge.body.commit } })).body.landed).toBe(true);
   expect((await api(`${repo}/blob?path=b.txt`, owner)).body.content).toBe('feature b\n');
   expect((await api(`${repo}/merges`, owner, { body: { source: 'feature', into: 'main' } })).body.up_to_date).toBe(true);
@@ -87,7 +94,10 @@ it('turns a post-land check failure into a proposed repair commit', async () => 
   const [repair] = detail.body.repairs;
   expect(repair).toMatchObject({ refname: 'refs/heads/main', check_name: 'unit', error: null });
   const proposed = await api(`${repo}/commits/${repair.repair_commit}`, owner);
-  expect(proposed.body).toMatchObject({ parents: [broken.body.commit], principal: 'platform:repair' });
+  // The revert builds on main's Git head: the commit built for the landed batch.
+  const mainHead = (await api(`${repo}/refs`, owner)).body.refs['refs/heads/main'];
+  expect((await api(`${repo}/blob?path=a.txt&commit=${mainHead}`, owner)).body.content).toBe('bad\n');
+  expect(proposed.body).toMatchObject({ parents: [mainHead], principal: 'platform:repair' });
   expect(proposed.body.message).toContain('post-land check unit failed');
   expect((await api(`${repo}/blob?path=a.txt&commit=${repair.repair_commit}`, owner)).body.content).toBe('good\n');
   // The branch itself is never rewritten; the repair awaits its own checks and landing.

@@ -87,7 +87,26 @@ export async function landWithMerge(
   fastForwardOnly = false,
   mode: LandMode = landMode(ctx.env),
 ) {
-  if (mode === 'batch' && !fastForwardOnly && ctx.env.LAND_COMBINERS) {
+  try {
+    return await landOn(ctx, ref, sha, fastForwardOnly, mode);
+  } finally {
+    // This isolate's next read sees its own landing, once it settled (others pass
+    // min_version).
+    forgetHead(ctx.repo);
+  }
+}
+
+async function landOn(
+  ctx: RepoContext,
+  ref: string,
+  sha: string,
+  fastForwardOnly = false,
+  mode: LandMode = landMode(ctx.env),
+) {
+  // Batched landing serves main (the branch with a published head); other branches, and
+  // a branch landed for the first time, take the queued path.
+  const main = ref === 'main' || ref === 'refs/heads/main';
+  if (mode === 'batch' && main && !fastForwardOnly && ctx.env.LAND_COMBINERS) {
     // Batched landing takes the commit's shard record; an adopted commit lands as before.
     const own = await timed('land.record', () => shardRecord(ctx.env, ctx.repo, sha));
     const submitted = own && (await landSubmitted(ctx, ref, sha, own));
@@ -102,7 +121,6 @@ export async function landWithMerge(
     ...(fastForwardOnly ? {} : { enqueue: true }),
   };
   const landed = await timed('land.request', () => adoptAndLand(ctx, sha, land));
-  forgetHead(ctx.repo);
   if (!landed.queued) {
     if (!landed.already) await moved(ctx, ref);
     return landed;
@@ -138,11 +156,8 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, own: Js
     if (!out) continue;
     if (out.batch) record('land.batch', out.batch.ms, out.batch.size);
     if (out.queued_ms !== undefined) record('land.queued', out.queued_ms);
-    if (out.status === 'landed') {
-      // This isolate's next read sees its own landing (others pass min_version).
-      forgetHead(ctx.repo);
+    if (out.status === 'landed')
       return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
-    }
     // A commit on unlanded parents needs the merge path, which adopts its whole chain.
     if (out.status === 'need_chain') {
       item = { ...item, records: await shardChain(ctx.env, ctx.repo, sha) };

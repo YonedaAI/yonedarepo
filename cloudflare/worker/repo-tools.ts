@@ -62,7 +62,8 @@ export const operations: Record<string, Operation> = {
   git_blame: blame,
   git_get_objects: getObjects,
   git_diff: diff,
-  git_commit: (ctx, a) => commit(ctx, null, a),
+  // A client's commit on main begins from the published head (no authority call).
+  git_commit: (ctx, a) => commit(ctx, null, { ...a, begin_from_head: true }),
   git_check: (ctx, a) =>
     ctx.call({
       op: 'repo_check',

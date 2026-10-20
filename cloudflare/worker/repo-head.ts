@@ -4,6 +4,7 @@
 // land batch, a projection or an access change makes it stale; isolates keep it briefly.
 // Stale is safe: landing re-checks access and validates the base against the log, and a
 // reader that passes the version it landed at waits until the head reaches it.
+import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
@@ -116,10 +117,28 @@ export async function refreshHead(env: Env, repo: string) {
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
 }
 
-/** Authorizes a commit on the published head (stateless compute, the authority's rules). */
+/** Paths meet when equal or when one is a directory of the other. */
+const meets = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
+
+/**
+ * Authorizes a commit on the published head (stateless compute, the authority's rules).
+ * A commit writing a path that a landed but unprojected changeset wrote would build on
+ * that path's old content (a conflict at landing for a writer who just landed it), so it
+ * waits for the projection first; work on other paths begins at once on the projected
+ * head and is validated at landing like any concurrent work.
+ */
 export async function beginFromHead(ctx: RepoContext, paths: string[]) {
   const credentials = ctx.call.sign({});
-  const head = await publishedHead(ctx.env, ctx.repo, credentials);
+  let head = await publishedHead(ctx.env, ctx.repo, credentials);
+  for (let round = 0; round < 3; round++) {
+    const pending = (head.overlay as Json[]).some((c) =>
+      c.paths.some((p: Json) => paths.some((path) => meets(path, p.path))),
+    );
+    if (!pending) break;
+    await awaitProjection(ctx.env, ctx.repo);
+    forgetHead(ctx.repo);
+    head = await publishedHead(ctx.env, ctx.repo, credentials, head.version);
+  }
   try {
     return compute({ op: 'head_begin', head, credentials, paths });
   } catch (e: any) {

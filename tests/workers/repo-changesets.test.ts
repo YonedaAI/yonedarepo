@@ -84,5 +84,7 @@ it('runs inside the LandCombiner Durable Object, with its projector', async () =
   const made = await Promise.all(Array.from({ length: 6 }, (_, i) => commitOn(repo, owner, [file(`d/${i}.txt`, `${i}\n`)], target)));
   const landed = await Promise.all(made.map((m) => api(`${repo}/land`, owner, { body: { ref: 'main', commit: m.body.commit } }, target)));
   expect(landed.map((l) => [l.status, l.body.error?.message])).toEqual(Array(6).fill([200, undefined]));
-  for (const i of [0, 5]) expect((await api(`${repo}/blob?path=d/${i}.txt`, owner, {}, target)).body.content).toBe(`${i}\n`);
+  // Read-your-writes across isolates: a reader passes the version its landing reported.
+  for (const i of [0, 5])
+    expect((await api(`${repo}/blob?path=d/${i}.txt&min_version=${landed[i].body.version}`, owner, {}, target)).body.content).toBe(`${i}\n`);
 });

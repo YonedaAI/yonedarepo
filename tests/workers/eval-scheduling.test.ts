@@ -84,9 +84,10 @@ async function scenario(name: string, scheduler: Scheduler) {
     }
     expect(landedB.body.landed).toBe(true);
   }
-  // Post-land combined checks on everything that landed.
-  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_check')) await executeCheckRun(env, message);
+  // Main's Git head (reading it waits for the commit built for the landed work, whose
+  // post-land combined check that projection requested), then every queued check runs.
   const head = (await api(`${repo}/log?ref=main&limit=1`, owner, {}, env)).body.commits[0].commit;
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_check')) await executeCheckRun(env, message);
   const headCheck = (await api(`${repo}/commits/${head}`, owner, {}, env)).body;
   const proposed = (await Promise.all([a, b, head].map((c) => api(`${repo}/commits/${c}`, owner, {}, env)))).flatMap((r) => r.body.repairs ?? []);
   return {
