@@ -79,7 +79,12 @@ export function RepoTransactions({
                 )}
               </td>
               <td title={e.paths.map((p) => `${p.op} ${p.path}`).join('\n')}>{e.paths.length}</td>
-              <td>{e.actor}</td>
+              <td>
+                {e.actor.startsWith('break-glass:') && (
+                  <span className="source-badge-danger">Break-glass</span>
+                )}{' '}
+                {e.actor.replace(/^break-glass:/, '')}
+              </td>
               <td>{when(e.committed_at_ms)}</td>
               <td>
                 <code title={e.chain}>{e.chain.slice(0, 8)}</code>

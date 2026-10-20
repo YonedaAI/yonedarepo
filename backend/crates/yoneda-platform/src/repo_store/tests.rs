@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        11
+        12
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1417,3 +1417,4 @@ fn symbol_reads_conflict_only_with_derived_writes_to_those_symbols() {
         json!([{"id":"y","version":2,"entries":["src/lib.rs#a"]}])
     );
 }
+mod break_glass;

@@ -17,7 +17,7 @@ import type { Env } from './types';
 
 export type Json = Record<string, any>;
 export type Credentials =
-  | { _session: { workspace: string; principal: string } }
+  | { _session: { workspace: string; principal: string; human?: true } }
   | { _token: string }
   | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' };
 // Identity fields come only from the authenticating adapter, never from arguments.
@@ -85,8 +85,17 @@ export async function target(ctx: RepoContext, spec: string | undefined, version
   return { ...snapshot, ...(await ctx.call({ op: 'repo_commit', commit: snapshot.commit })) };
 }
 
+/** How a commit treats a lost queue: `best_effort` reports undispatched check runs instead
+ * of failing (they stay queued in the authority and are re-dispatched on request). */
+export type Dispatch = 'required' | 'best_effort';
+
 /** Prepare (answering tree requests), push, read back from the store, record. */
-export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json) {
+export async function commit(
+  ctx: RepoContext,
+  objects: RepoObjects,
+  body: Json,
+  dispatch: Dispatch = 'required',
+) {
   let { parent, base_version } = body;
   if (!parent && body.ref) {
     const snapshot = await ctx.call({ op: 'repo_snapshot', ref: body.ref });
@@ -120,7 +129,13 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
       push_report_b64: toBase64(report),
       readback,
     });
-    await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
+    let undispatched = false;
+    try {
+      await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
+    } catch (e) {
+      if (dispatch === 'required') throw e;
+      undispatched = true;
+    }
     // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
     // (a human must approve), never classified as safe.
     await classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {});
@@ -134,6 +149,7 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
       touches: prepared.touches,
       base_version: base_version ?? 0,
       check_runs: recorded.check_runs ?? [],
+      ...(undispatched ? { check_runs_undispatched: true } : {}),
     };
   }
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
@@ -216,7 +232,12 @@ export async function withTrees(objects: RepoObjects, input: Json) {
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 
 /** Server-side revert or cherry-pick of `args.commit` onto branch `args.ref` (default main). */
-export async function replay(ctx: RepoContext, args: Json, direction: 'revert' | 'pick') {
+export async function replay(
+  ctx: RepoContext,
+  args: Json,
+  direction: 'revert' | 'pick',
+  dispatch: Dispatch = 'required',
+) {
   const source = await ctx.call({ op: 'repo_commit', commit: args.commit });
   const parent = source.parents[0]
     ? await ctx.call({ op: 'repo_commit', commit: source.parents[0] })
@@ -234,13 +255,20 @@ export async function replay(ctx: RepoContext, args: Json, direction: 'revert' |
     (direction === 'revert'
       ? `Revert "${subject}"\n\nThis reverts commit ${source.commit}.`
       : `${source.message}\n\n(cherry picked from commit ${source.commit})`);
-  return commit(ctx, objects, {
-    ref: args.ref ?? 'main',
-    changes,
-    message,
-    author: args.author ?? PLATFORM_AUTHOR,
-    read_set: args.read_set,
-  });
+  return commit(
+    ctx,
+    objects,
+    {
+      ref: args.ref ?? 'main',
+      // An explicit parent pins the head the caller decided on.
+      ...(args.parent ? { parent: args.parent, base_version: args.base_version } : {}),
+      changes,
+      message,
+      author: args.author ?? PLATFORM_AUTHOR,
+      read_set: args.read_set,
+    },
+    dispatch,
+  );
 }
 
 const OBJECT_BUDGET = 8 * 1024 * 1024;

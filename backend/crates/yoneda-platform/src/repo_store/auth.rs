@@ -11,6 +11,8 @@ pub const SCOPES: [&str; 5] = ["read", "write", "check", "review", "land"];
 pub struct Actor {
     pub principal: String,
     pub owner: bool,
+    /// A person signed in to their own account (never a token, platform role or script).
+    human: bool,
     scopes: Vec<String>,
     /// Directory grant (`None`: whole repository).
     pub grant: super::grants::Grant,
@@ -41,6 +43,14 @@ impl Actor {
             ))
         }
     }
+    /// Break-glass gate: every other caller gets the same refusal, whatever it holds.
+    pub fn require_human_owner(&self) -> Result<()> {
+        if self.owner && self.human {
+            Ok(())
+        } else {
+            Err(super::break_glass::refusal())
+        }
+    }
     pub fn require_owner(&self) -> Result<()> {
         if self.owner {
             Ok(())
@@ -58,7 +68,7 @@ fn token_digest(secret: &str) -> String {
 }
 
 /// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
-/// callers. `_system` names a platform role (check executor, ref projector, importer,
+/// callers. `_session.human` marks a personal account session (not an admin bearer). `_system` names a platform role (check executor, ref projector, importer,
 /// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
     if let Some(system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive")) =
@@ -74,6 +84,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
         return Ok(Actor {
             principal: format!("platform:{system}"),
             owner: false,
+            human: false,
             grant: None,
             scopes: std::iter::once("read")
                 .chain(roles.iter().copied())
@@ -91,6 +102,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
         return Ok(Actor {
             principal: string(session, "principal")?,
             owner: true,
+            human: session["human"] == true,
             scopes: Vec::new(),
             grant: None,
         });
@@ -108,6 +120,7 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
     Ok(Actor {
         principal: format!("token:{}", row["name"].as_str().unwrap_or_default()),
         owner: false,
+        human: false,
         scopes: serde_json::from_str(row["scopes"].as_str().unwrap_or("[]"))
             .map_err(|_| bad("Corrupt scopes"))?,
         grant: match row["paths"].as_str() {
