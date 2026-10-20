@@ -157,7 +157,14 @@ pub(super) fn append<S: SqlStore>(
     commit: &CommitRow,
     principal: &str,
 ) -> Result<Value> {
-    let entry = write_entry(db, c, kind, refname, old, commit, principal)?;
+    // A fast-forward over a chain logs the chain's whole changeset, not the tip's alone.
+    let paths = match old {
+        Some(head) if kind == TxKind::Commit && commit.parents.first() != Some(&head) => {
+            merging::chain_touches(db, &commit.id, &head)?
+        }
+        _ => rows::touches(db, &commit.id)?,
+    };
+    let entry = write_entry_with(db, c, kind, refname, old, commit, paths, principal)?;
     let version = entry.version;
     db.query(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
@@ -206,13 +213,14 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     let Some(head) = current else {
         return append(db, c, TxKind::Commit, &refname, None, &commit, principal);
     };
-    if commit.parents.first() != Some(&head) && c["fast_forward_only"] == true {
+    let on_head = merging::on_head(db, &commit, &head)?;
+    if !on_head && c["fast_forward_only"] == true {
         return Err(Error::new(
             "STALE_HEAD",
             format!("{refname} moved to {head}; refresh the commit onto it before landing"),
         ));
     }
-    if commit.parents.first() == Some(&head) {
+    if on_head {
         return append(
             db,
             c,

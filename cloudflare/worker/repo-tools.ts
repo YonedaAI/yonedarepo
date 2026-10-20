@@ -9,7 +9,15 @@ import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { landWithMerge } from './repo-landing';
 import { explicitMerge } from './repo-merge';
-import { diff, getObjects, type Json, listTree, type RepoContext, readFile } from './repo-ops';
+import {
+  ApiError,
+  diff,
+  getObjects,
+  type Json,
+  listTree,
+  type RepoContext,
+  readFile,
+} from './repo-ops';
 import { plan } from './repo-plan';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { agentView } from './repo-views';
@@ -90,12 +98,15 @@ export const operations: Record<string, Operation> = {
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
   git_branch: (ctx, a) =>
     ctx.call({ op: 'repo_branch_set', ref: a.ref, commit: a.commit, expected: a.expected ?? null }),
-  git_land: (ctx, a) =>
-    landWithMerge(
+  git_land: (ctx, a) => {
+    if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))
+      throw new ApiError('INVALID_INPUT', 'commit must be a 40-character commit id');
+    return landWithMerge(
       ctx,
       a.ref,
       a.commit,
       a.fast_forward_only === true,
       landMode(ctx.env, a.land_mode),
-    ),
+    );
+  },
 };

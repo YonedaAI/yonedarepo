@@ -90,3 +90,46 @@ it('falls back to the queued path when the combiner cannot be reached', async ()
   const landed = await Promise.all(made.map((m) => landOn(repo, owner, m.body.commit, target)));
   expect(landed.map((l) => l.status)).toEqual(Array(4).fill(200));
 });
+
+it('returns the three sides of a content conflict, as changeset mode does', async () => {
+  const base = 'fn a() {\n    1\n}\n';
+  const { owner, repo } = await repoWith('batchclash', [file('src/lib.rs', base)], batched);
+  const [ours, theirs] = await Promise.all([
+    commitOn(repo, owner, [file('src/lib.rs', base.replace('    1\n', '    10\n'))], batched),
+    commitOn(repo, owner, [file('src/lib.rs', base.replace('    1\n', '    100\n'))], batched),
+  ]);
+  expect((await landOn(repo, owner, ours.body.commit, batched)).status).toBe(200);
+  const conflict = await landOn(repo, owner, theirs.body.commit, batched);
+  expect([conflict.status, conflict.body.error?.code]).toEqual([409, 'CONFLICT']);
+  const sides = conflict.body.error.details.conflicts[0];
+  expect(sides).toMatchObject({ path: 'src/lib.rs', kind: 'content' });
+  for (const side of [sides.base, sides.ours, sides.theirs]) expect(side).toMatch(/^[0-9a-f]{40}$/);
+  expect(sides.marked).toContain('<<<<<<< ours\n    10\n||||||| base\n    1\n=======\n    100\n>>>>>>> theirs\n');
+});
+
+it('refuses a landing without a commit id as invalid input', async () => {
+  const { owner, repo } = await repoWith('nocommit', [file('a.txt', '0\n')], batched);
+  for (const commit of [undefined, 'main', 'e'.repeat(39)]) {
+    const landed = await api(`${repo}/land`, owner, { body: { ref: 'main', commit } }, batched);
+    expect([landed.status, landed.body.error?.code]).toEqual([400, 'INVALID_INPUT']);
+  }
+});
+
+it('lands the tip of a chain on an unmoved main as one fast-forward', async () => {
+  const { owner, repo } = await repoWith('batchchain', [file('a.txt', '0\n')], batched);
+  let parent: string | undefined;
+  let version = 1;
+  for (const path of ['c1.txt', 'c2.txt', 'c3.txt']) {
+    const made = await api(`${repo}/commits`, owner, {
+      body: { ...(parent ? { parent, base_version: version } : { ref: 'main' }), changes: [file(path, `${path}\n`)], message: path, author },
+    }, batched);
+    expect(made.status).toBe(200);
+    parent = made.body.commit;
+    version = made.body.base_version;
+  }
+  const landed = await landOn(repo, owner, parent as string, batched);
+  expect([landed.status, landed.body.version]).toEqual([200, 2]);
+  expect((await api(`${repo}/refs`, owner, {}, batched)).body.refs['refs/heads/main']).toBe(parent);
+  for (const path of ['c1.txt', 'c3.txt'])
+    expect((await api(`${repo}/blob?path=${path}&min_version=2`, owner, {}, batched)).body.content).toBe(`${path}\n`);
+});
