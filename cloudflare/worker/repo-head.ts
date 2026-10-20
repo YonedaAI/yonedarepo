@@ -11,6 +11,8 @@ import { timed } from './repo-timing';
 import type { Env } from './types';
 
 const ISOLATE_MS = 1000;
+/** An isolate never serves a head older than this without fetching first. */
+const STALE_MS = 10_000;
 /** Per repository: main's head (small, changes per landing) and the access snapshot
  * (live token digests; changes only with access, versioned), each fetched once per
  * isolate at a time. */
@@ -59,21 +61,38 @@ function once(key: string, load: () => Promise<Json>) {
 
 async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
   const cached = heads.get(repo);
-  if (cached && Date.now() - cached.at < ISOLATE_MS && cached.head.version >= minVersion)
-    return cached.head;
+  if (cached && cached.head.version >= minVersion) {
+    const age = Date.now() - cached.at;
+    if (age < ISOLATE_MS) return cached.head;
+    // Recent enough to serve while a fresh copy loads (a begin validates its base when it
+    // lands; a reader that needs its own landing passes min_version and waits).
+    if (age < STALE_MS) {
+      void fetchInto(env, repo, 0).catch(() => {});
+      return cached.head;
+    }
+  }
+  let head = await fetchInto(env, repo, minVersion);
+  // A shared fetch may have started before this caller's landing: fetch again once.
+  if (head.version < minVersion) {
+    forgetHead(repo);
+    head = await fetchInto(env, repo, minVersion);
+  }
+  if (head.version < minVersion)
+    throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
+  return head;
+}
+
+/** Fetches main's head (one fetch per isolate at a time) and caches it. */
+async function fetchInto(env: Env, repo: string, minVersion: number): Promise<Json> {
   const shared = holder(env, repo);
-  let head = await once(`head:${repo}`, async () => {
+  const head = await once(`head:${repo}`, async () => {
     if (shared) return shared.head(repo, minVersion);
     const full = await fetchHead(env, repo);
     accesses.set(repo, accessOf(full));
     return withoutTokens(full);
   });
-  // A shared fetch may have started before this caller's landing: fetch again once.
-  if (head.version < minVersion)
-    head = shared ? await shared.head(repo, minVersion) : withoutTokens(await fetchHead(env, repo));
-  if (head.version < minVersion)
-    throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
-  heads.set(repo, { head, at: Date.now() });
+  const cached = heads.get(repo);
+  if (!cached || cached.head.version <= head.version) heads.set(repo, { head, at: Date.now() });
   return head;
 }
 
