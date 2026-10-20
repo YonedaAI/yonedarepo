@@ -1,5 +1,5 @@
 name: Deploy prod
-# Manual only, behind the "production" Environment (required reviewer: the owner).
+# Manual only, for the owner (MagnetonIO) from main, in the "production" Environment.
 # `cargo xtask deploy --env prod --confirm` refuses unless HEAD is the tip of main, every dev
 # Worker already runs it, the real-world kit passed for it (evidence from the Kit workflow)
 # and no container instance is busy (rollouts kill runs).
@@ -29,6 +29,13 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
+      # The org's plan has no required reviewers, so the approval gate is this step: only the
+      # owner, only from main.
+      - name: Owner-only gate
+        if: github.actor != 'MagnetonIO' || github.ref != 'refs/heads/main'
+        run: |
+          echo "Refusing: prod deploys run only for MagnetonIO from main (actor ${{ github.actor }}, ref ${{ github.ref }})."
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
