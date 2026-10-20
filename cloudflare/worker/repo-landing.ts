@@ -10,7 +10,7 @@ import { pollLanding } from './repo-land-poll';
 import { moved } from './repo-merge';
 import { ApiError, batch, caller, type Json, RepoContext } from './repo-ops';
 import { adoptCommit, forgetChain, shardChain } from './repo-shards';
-import { timed } from './repo-timing';
+import { record, timed } from './repo-timing';
 
 const LAND_DEADLINE_MS = 120_000;
 const WAIT_ROUND_MS = 20_000;
@@ -136,6 +136,7 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, records
       return null; // the combiner was reset: submit again
     });
     if (!out) continue;
+    if (out.batch) record('land.batch', out.batch.ms, out.batch.size);
     if (out.status === 'landed')
       return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
     if (out.status === 'queued')

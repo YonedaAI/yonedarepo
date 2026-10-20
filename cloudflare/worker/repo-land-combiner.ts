@@ -90,16 +90,19 @@ export class LandBatcher {
   async #landSubmitted(merger: RepoContext, ref: string) {
     const batch = this.#submissions.splice(0, SUBMIT_BATCH);
     let out: Json;
+    const started = Date.now();
     try {
       out = await merger.call({ op: 'repo_land_submitted', ref, items: batch.map((s) => s.item) });
     } catch (e) {
       this.#submissions.unshift(...batch);
       throw e;
     }
+    // Each lander reports its batch's authority call (size and wall time) in Server-Timing.
+    const timing = { size: batch.length, ms: Date.now() - started };
     const again: Submission[] = [];
     for (const [i, submission] of batch.entries()) {
       if (out.items[i].status === 'deferred') again.push(submission);
-      else submission.resolve(out.items[i]);
+      else submission.resolve({ ...out.items[i], batch: timing });
     }
     this.#submissions.unshift(...again);
     if (out.items.some((r: Json) => r.status === 'landed'))

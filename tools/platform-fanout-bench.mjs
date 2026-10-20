@@ -130,8 +130,10 @@ function phases(rows, failed = false) {
   const all = {};
   for (const r of rows.filter((r) => r && (failed || ok(r))))
     for (const part of (r.timing ?? '').split(',').filter(Boolean)) {
-      const [name, dur] = part.trim().split(';');
+      const [name, dur, desc] = part.trim().split(';');
       (all[name] ??= []).push(Number(dur?.slice(4)));
+      // The count a phase covered (its desc), e.g. a land batch's size.
+      if (name === 'land.batch') (all[`${name}.size`] ??= []).push(Number(desc?.match(/\d+/)?.[0]));
     }
   return Object.fromEntries(Object.entries(all).map(([k, v]) => [k, latency(v)]));
 }
