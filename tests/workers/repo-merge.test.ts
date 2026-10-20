@@ -42,6 +42,9 @@ it('lands disjoint edits to one file as a platform merge and rejects overlaps', 
   expect(conflict.status).toBe(409);
   expect(conflict.body.error.code).toBe('CONFLICT');
   expect(conflict.body.error.details.conflicts[0]).toMatchObject({ path: 'src/lib.rs', kind: 'content' });
+  // The three sides come back by blob id for a reconcile commit.
+  const sides = conflict.body.error.details.conflicts[0];
+  for (const side of [sides.base, sides.ours, sides.theirs]) expect(side).toMatch(/^[0-9a-f]{40}$/);
   expect(conflict.body.error.details.conflicts[0].marked).toContain('<<<<<<< ours\n    10\n||||||| base\n    1\n=======\n    100\n>>>>>>> theirs\n');
 
   const staleRead = await api(`${repo}/land`, four, { body: { ref: 'main', commit: stale.body.commit } });
