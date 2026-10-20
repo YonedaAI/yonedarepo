@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use yoneda_core::{
     Error, Result,
     git_object::{ObjectId, is_ancestor, merge_bases},
-    txlog::{OccOutcome, Proposal, overlaps},
+    txlog::{OccOutcome, PathOp, PathTouch, Proposal, overlaps},
 };
 
 /// Principal of merge commits the platform computes; only these land under another
@@ -190,4 +190,59 @@ impl BatchWrites {
     pub fn accept(&mut self, writes: BTreeSet<String>) {
         self.0.extend(writes);
     }
+}
+
+/// Whether `commit` sits on `head`: its parent is the head, or the head is an ancestor
+/// (a chain built on it), so landing it is a fast-forward.
+pub fn on_head<S: SqlStore>(db: &S, commit: &CommitRow, head: &ObjectId) -> Result<bool> {
+    Ok(commit.parents.first() == Some(head) || is_ancestor(&RecordedGraph(db), head, &commit.id)?)
+}
+
+/// The changeset of `tip` relative to `head` (an ancestor): every path its unlanded
+/// commits wrote, from its first old blob to its last new blob, oldest commit first. A
+/// fast-forward over a chain logs this, so later work is validated against all of it.
+pub fn chain_touches<S: SqlStore>(
+    db: &S,
+    tip: &ObjectId,
+    head: &ObjectId,
+) -> Result<Vec<PathTouch>> {
+    let graph = RecordedGraph(db);
+    let mut chain = Vec::new();
+    let mut stack = vec![*tip];
+    let mut seen = BTreeSet::new();
+    while let Some(id) = stack.pop() {
+        if !seen.insert(id) || is_ancestor(&graph, &id, head)? {
+            continue;
+        }
+        let row = rows::recorded(db, &id)?;
+        stack.extend(yoneda_core::git_object::CommitGraph::parents(&graph, &id)?);
+        chain.push(row);
+    }
+    chain.sort_by_key(|c| c.generation);
+    let mut combined: std::collections::BTreeMap<String, PathTouch> = Default::default();
+    for commit in &chain {
+        for touch in rows::touches(db, &commit.id)? {
+            match combined.get_mut(&touch.path) {
+                Some(first) => {
+                    first.new_blob = touch.new_blob;
+                    first.mode = touch.mode;
+                }
+                None => {
+                    combined.insert(touch.path.clone(), touch);
+                }
+            }
+        }
+    }
+    Ok(combined
+        .into_values()
+        .filter(|t| t.old_blob != t.new_blob)
+        .map(|t| PathTouch {
+            op: match (t.old_blob, t.new_blob) {
+                (None, _) => PathOp::Add,
+                (_, None) => PathOp::Delete,
+                _ => PathOp::Modify,
+            },
+            ..t
+        })
+        .collect())
 }
