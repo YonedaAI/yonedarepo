@@ -13,6 +13,7 @@ mod platform_facts;
 mod platform_facts_rust;
 mod platform_facts_script;
 mod platform_graph;
+mod platform_head;
 mod platform_narrative;
 mod platform_objects;
 mod platform_project;

@@ -6,7 +6,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod adopt;
-mod auth;
+pub(crate) mod auth;
 mod bisect;
 mod branches;
 mod break_glass;
@@ -17,6 +17,7 @@ mod checks;
 mod classes;
 mod contracts;
 pub(crate) mod grants;
+mod head;
 mod history;
 mod history_import;
 mod land;
@@ -27,11 +28,13 @@ pub(crate) mod migration;
 mod policy;
 pub(crate) mod prepare;
 mod projection;
+mod projection_plan;
 mod reads;
 mod record;
 mod rows;
 pub(crate) mod staging;
 mod store_lineage;
+mod submitted;
 mod symbols;
 mod tree_cache;
 mod vacuum;
@@ -87,6 +90,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         | "repo_projection_pending"
         | "repo_projection_result"
         | "repo_changeset_plan"
+        | "repo_head"
         | "repo_changeset_record"
         | "repo_record_repair" => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
@@ -112,7 +116,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_review" => actor.require("review"),
         "repo_land" | "repo_land_enqueue" => actor.require("land"),
         // Only the platform merger builds and lands batches.
-        "repo_land_claim" | "repo_land_batch" | "repo_land_release" | "repo_land_changesets"
+        "repo_land_claim"
+        | "repo_land_batch"
+        | "repo_land_release"
+        | "repo_land_changesets"
+        | "repo_land_submitted"
             if !actor.can("lander") =>
         {
             Err(Error::new(
@@ -190,7 +198,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_land_batch" => land_queue::land_batch(db, c, principal),
         "repo_land_release" => land_queue::release(db, c),
         "repo_land_changesets" => changesets::land(db, c),
-        "repo_changeset_plan" => version_projection::plan(db, c),
+        "repo_land_submitted" => submitted::land(db, c, &settings),
+        "repo_changeset_plan" => projection_plan::plan(db, c),
+        "repo_head" => head::head(db, c, &settings),
         "repo_changeset_record" => version_projection::record(db, c),
         "repo_record_imported" => history_import::record(db, c),
         "repo_break_glass" => break_glass::execute(db, c, principal, &settings),

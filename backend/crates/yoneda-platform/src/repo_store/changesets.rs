@@ -154,7 +154,7 @@ fn head_at<S: SqlStore>(db: &S, refname: &str, version: u64) -> Result<Option<Ob
     }
 }
 
-enum Route {
+pub(super) enum Route {
     FastForward(Option<ObjectId>),
     Changeset,
     Merge,
@@ -162,11 +162,27 @@ enum Route {
 }
 
 fn route<S: SqlStore>(db: &S, refname: &str, commit: &CommitRow) -> Result<Route> {
+    let writes = rows::touches(db, &commit.id)?
+        .into_iter()
+        .map(|t| t.path)
+        .collect();
+    route_writing(db, refname, commit, &writes, true)
+}
+
+/// Routes a landing writing `writes`; `fast_forward` lets a commit on the head land as
+/// itself (batched landing always appends a changeset).
+pub(super) fn route_writing<S: SqlStore>(
+    db: &S,
+    refname: &str,
+    commit: &CommitRow,
+    writes: &BTreeSet<String>,
+    fast_forward: bool,
+) -> Result<Route> {
     let head = rows::projected_ref(db, refname)?;
     let [parent] = commit.parents.as_slice() else {
         return Ok(Route::Merge);
     };
-    if head == Some(*parent) && !unprojected(db, refname)? {
+    if fast_forward && head == Some(*parent) && !unprojected(db, refname)? {
         return Ok(Route::FastForward(head));
     }
     // Only a single commit on the branch's head at its base carries its whole changeset
@@ -174,24 +190,23 @@ fn route<S: SqlStore>(db: &S, refname: &str, commit: &CommitRow) -> Result<Route
     if head_at(db, refname, commit.base_version)? != Some(*parent) {
         return Ok(Route::Merge);
     }
-    let mut keys: BTreeSet<String> = rows::touches(db, &commit.id)?
-        .into_iter()
-        .map(|t| t.path)
-        .collect();
+    let mut keys = writes.clone();
     keys.extend(commit.read_set.iter().cloned());
     if !touched_since(db, refname, commit.base_version, &keys)? {
         return Ok(Route::Changeset);
     }
     // Something meets it: the exact check decides (symbol reads may still be independent).
-    Ok(match merging::occ(db, commit, refname)? {
-        OccOutcome::Rebase { .. } => Route::Changeset,
-        OccOutcome::Merge { .. } | OccOutcome::FastForward => Route::Merge,
-        outcome @ OccOutcome::Conflict { .. } => Route::Fail(merging::outcome_error(
-            refname,
-            &head.unwrap_or(*parent),
-            outcome,
-        )),
-    })
+    Ok(
+        match merging::occ_writing(db, commit, refname, writes.clone())? {
+            OccOutcome::Rebase { .. } => Route::Changeset,
+            OccOutcome::Merge { .. } | OccOutcome::FastForward => Route::Merge,
+            outcome @ OccOutcome::Conflict { .. } => Route::Fail(merging::outcome_error(
+                refname,
+                &head.unwrap_or(*parent),
+                outcome,
+            )),
+        },
+    )
 }
 
 /// Appends `commit`'s changeset to `refname`'s log without moving the Git ref.

@@ -78,7 +78,12 @@ pub fn adopt<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Valu
     adopt_one(db, &c["record"], settings, number(c, "now")?)
 }
 
-fn adopt_one<S: SqlStore>(db: &S, record: &Value, settings: &Settings, now: i64) -> Result<Value> {
+pub(super) fn adopt_one<S: SqlStore>(
+    db: &S,
+    record: &Value,
+    settings: &Settings,
+    now: i64,
+) -> Result<Value> {
     let row = &record["commit"];
     let id = ObjectId::parse(&string(row, "id")?)?;
     if rows::commit_row(db, &id)?.is_some() {

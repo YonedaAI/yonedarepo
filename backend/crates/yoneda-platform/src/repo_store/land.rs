@@ -83,6 +83,22 @@ pub(super) fn write_entry<S: SqlStore>(
     commit: &CommitRow,
     principal: &str,
 ) -> Result<TxEntry> {
+    let paths = rows::touches(db, &commit.id)?;
+    write_entry_with(db, c, kind, refname, old, commit, paths, principal)
+}
+
+/// `write_entry` with the commit's path touches given (a commit not adopted here).
+#[allow(clippy::too_many_arguments)]
+pub(super) fn write_entry_with<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    kind: TxKind,
+    refname: &str,
+    old: Option<ObjectId>,
+    commit: &CommitRow,
+    paths: Vec<yoneda_core::txlog::PathTouch>,
+    principal: &str,
+) -> Result<TxEntry> {
     let version = current_version(db)? + 1;
     let previous = db
         .query(
@@ -99,7 +115,7 @@ pub(super) fn write_entry<S: SqlStore>(
         refname: refname.into(),
         old,
         new: Some(commit.id),
-        paths: rows::touches(db, &commit.id)?,
+        paths,
         read_set: commit.read_set.clone(),
         actor: principal.into(),
         intent_digest: yoneda_core::digest(commit.message.as_bytes()),
