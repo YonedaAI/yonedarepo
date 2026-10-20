@@ -215,14 +215,14 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     };
     let read_set: Vec<String> =
         serde_json::from_value(c.get("read_set").cloned().unwrap_or(json!([])))
-            .map_err(|_| bad("read_set must be a list of paths"))?;
+            .map_err(|_| bad("read_set must be a list of paths or path#symbol entries"))?;
     if read_set.len() > 1000
         || read_set
             .iter()
             .any(|p| p.is_empty() || p.starts_with('/') || p.contains(".."))
     {
         return Err(bad(
-            "read_set entries must be relative paths or dir/ prefixes",
+            "read_set entries must be relative paths, dir/ prefixes or path#symbol",
         ));
     }
 

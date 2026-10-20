@@ -2,7 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { dispatchRuns } from './repo-checks';
-import { classifyCommit } from './repo-code';
+import { classifyCommit, deriveSymbols } from './repo-code';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import {
@@ -124,6 +124,9 @@ export async function commit(ctx: RepoContext, objects: RepoObjects, body: Json)
     // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
     // (a human must approve), never classified as safe.
     await classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {});
+    // Symbol writes narrow what this commit invalidates at landing; without them each
+    // changed file counts as written in full.
+    await deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {});
     return {
       commit: prepared.commit,
       tree: prepared.tree,

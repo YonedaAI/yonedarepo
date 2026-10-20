@@ -3,7 +3,7 @@
 //! refused with one uniform error, so refusals reveal nothing about what exists there.
 use crate::storage::bad;
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_core::{Error, Result, txlog::Access};
 
 /// `None`: the whole repository. Entries are file paths or directory prefixes.
 pub type Grant = Option<Vec<String>>;
@@ -98,6 +98,15 @@ pub fn precheck<S: crate::storage::SqlStore>(
             }
         }
         "repo_path_history" => require(grant, c["path"].as_str().unwrap_or_default())?,
+        // Whether a hidden path was written since is itself hidden.
+        "repo_stale_reads" => {
+            for item in c["items"].as_array().into_iter().flatten() {
+                for entry in item["read_set"].as_array().into_iter().flatten() {
+                    let access = Access::parse(entry.as_str().unwrap_or_default());
+                    require(grant, access.path())?;
+                }
+            }
+        }
         // Check output can include any file's content.
         "repo_check_run" | "repo_set_policy" | "repo_vacuum_plan" => return Err(outside()),
         _ => {}
@@ -120,6 +129,11 @@ pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
             if let Some(files) = result["review_classes"]["files"].as_array().cloned() {
                 result["review_classes"]["files"] = Value::Array(filter(grant, files, "path"));
             }
+            let touches = result["symbol_touches"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            result["symbol_touches"] = Value::Array(filter(grant, touches, "path"));
         }
         "repo_txlog" => {
             for entry in result["entries"].as_array_mut().into_iter().flatten() {
