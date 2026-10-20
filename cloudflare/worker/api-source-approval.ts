@@ -1,41 +1,22 @@
-import type { GuidedEnv } from './guided-profile';
-import { isGuidedProject } from './guided-project';
-import { sourceFingerprint } from './source-crypto';
+import { openSource, type SourceCommit } from './source-objects';
 import { ledger } from './storage';
-import type { Env, Json, Principal } from './types';
+import type { Env, Json } from './types';
 
 const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
 
-/** New approvals only: operator-selected repos or explicitly activated verified guides. */
-export async function sourceApprovalSelected(
-  env: GuidedEnv,
-  repo: string,
-  repository: Json,
-): Promise<boolean> {
-  if (env.SOURCE_TRANSPORT !== 'api-source-v1') return false;
-  const configured = env.SOURCE_TRANSPORT_REPOS;
-  return (
-    (typeof configured === 'string' && configured.split(',').some((id) => id.trim() === repo)) ||
-    (env.SOURCE_GUIDED_ENABLED === 'true' &&
-      isGuidedProject(repository.guided_project) &&
-      (await sourceFingerprint(repository.policy)) === repository.guided_project.policy_digest)
-  );
-}
-
-/** Only operator configuration activates the transport; source identity is independently read back. */
+/** Every run works in a lazy source workspace; its base is read back from the platform. */
 export async function freezeSourceApproval(
   env: Env,
-  principal: Principal,
+  owner: string,
   repo: string,
   input: Json,
   repository: Json,
 ): Promise<void> {
   delete input._source_base;
   delete input._source_transport_approved;
-  input.workspace_transport = 'git-native-v1';
-  if (!(await sourceApprovalSelected(env, repo, repository))) return;
+  delete input.workspace_transport;
   if (!env.SOURCES || repository.capabilities?.source_api !== 1)
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
   let revision = {
@@ -46,7 +27,7 @@ export async function freezeSourceApproval(
     const branch = await ledger(env, repo, {
       op: 'working_branch',
       id: input.working_branch_id,
-      _workspace: principal.workspace,
+      _workspace: owner,
     });
     if (
       branch.working_commit !== input.expected_working_commit ||
@@ -55,16 +36,14 @@ export async function freezeSourceApproval(
       fail('WORKING_HEAD_MOVED', 'The working source changed; refresh your brief.');
     revision = branch.working_revision;
   }
-  const [namespace, name, extra] = String(revision.repository).split('/');
-  if (
-    namespace !== env.ARTIFACTS_NAMESPACE ||
-    extra ||
-    !/^[A-Za-z0-9_.-]{1,100}$/.test(name ?? '') ||
-    !/^[a-f0-9]{40}$/.test(revision.commit ?? '')
-  )
+  if (!/^[a-f0-9]{40}$/.test(revision.commit ?? ''))
     fail('INVALID_CAPTURE', 'Approved source identity is unavailable.');
-  using source = await env.ARTIFACTS.get(name);
-  const commit = await source.readCommit(revision.commit);
+  let commit: SourceCommit | null = null;
+  try {
+    commit = await (await openSource(env, String(revision.repository))).readCommit(revision.commit);
+  } catch (failure: any) {
+    if (failure.code !== 'SOURCE_SCOPE') throw failure;
+  }
   if (!commit || commit.hash !== revision.commit || !/^[a-f0-9]{40}$/.test(commit.treeHash)) {
     fail('INVALID_CAPTURE', 'Approved source revision is unavailable.');
     return;

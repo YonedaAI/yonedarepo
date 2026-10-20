@@ -1,7 +1,7 @@
 //! Owner conflict inventory, refresh and scoped resolver operations.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod inventory;
 mod refresh;
 mod repair_authority;

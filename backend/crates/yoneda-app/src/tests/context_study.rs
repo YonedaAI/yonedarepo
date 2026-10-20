@@ -83,7 +83,7 @@ fn local_contributions_get_the_same_frozen_study_without_inline_history() {
     let job = call(
         &db,
         json!({"op":"external_begin","id":"local-trial","_grant":"grant-one",
-        "fork":"test/local-trial","intent":"Local trial","context":["context:colors"]}),
+        "branch":"contributions/local-trial","intent":"Local trial","context":["context:colors"]}),
     )
     .unwrap();
     assert_eq!(job["payload"]["run"]["context_study"], study);
@@ -185,13 +185,13 @@ fn sign_stage(mut command: Value) -> Value {
     }
     let claims = json!({"workspace":"reviewer","repo_id":"booking","run_id":command["id"],
         "campaign":command["campaign"],"model_budgets":command["model_budgets"],
-        "request_digest":yoneda_core::fingerprint(&public).unwrap(),"expires":61000});
+        "request_digest":yoneda_agents_core::fingerprint(&public).unwrap(),"expires":61000});
     let key = "1".repeat(64);
     let mut mac = Hmac::<Sha256>::new_from_slice(key.as_bytes()).unwrap();
     mac.update(
         format!(
             "yoneda:campaign-grant:v1\0{}",
-            yoneda_core::fingerprint(&claims).unwrap()
+            yoneda_agents_core::fingerprint(&claims).unwrap()
         )
         .as_bytes(),
     );

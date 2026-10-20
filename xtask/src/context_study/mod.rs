@@ -1,13 +1,13 @@
 //! Reproducible controls and explicitly invoked paid pilot; no inference in local gates.
 mod catalog;
 mod client;
-mod git;
 mod local;
 mod oracle;
 mod provision;
 mod recheck;
 mod report;
 mod run;
+mod source;
 mod task;
 use crate::process::Result;
 use serde_json::Value;

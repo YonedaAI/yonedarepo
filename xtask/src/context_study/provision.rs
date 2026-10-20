@@ -1,9 +1,7 @@
-use super::{
-    client::{Client, text},
-    git,
-};
+use super::client::{Client, text};
 use crate::process::Result;
 use serde_json::{Value, json};
+use std::path::Path;
 pub(super) struct Project {
     pub id: String,
     pub grant: String,
@@ -53,15 +51,21 @@ async fn seed_and_configure(
     }
     let session = client.session(id, grant).await?;
     let seed=client.mcp(id,grant,Some(&session),"attempt_begin",json!({"request_id":uuid::Uuid::new_v4().to_string(),"intent":"Seed explicitly synthetic context pilot fixture","criteria":["Valid static source; no paid inference"]})).await?;
-    let attempt = text(&seed, "attempt_id")?;
-    let temp = tempfile::tempdir()?;
-    let _submitted_commit = git::seed(
-        temp.path(),
+    let attempt = super::source::Attempt {
+        client,
+        repo: id,
         grant,
-        text(&seed, "git_url")?,
-        text(&seed["base"], "commit")?,
-    )
-    .await?;
+        session: &session,
+        id: text(&seed, "attempt_id")?,
+    };
+    let fixture = yoneda_runtime::export_workspace(Path::new("fixtures/context-study/source"))?;
+    attempt
+        .commit(
+            &attempt.read().await?,
+            &fixture,
+            "Seed synthetic context study fixture",
+        )
+        .await?;
     let mut corpus = Vec::new();
     for record in super::catalog::corpus()? {
         // Fixed IDs and text keep notes identical across arms. Origin is honestly owner-seeded.
@@ -77,7 +81,7 @@ async fn seed_and_configure(
             grant,
             Some(&session),
             "attempt_submit",
-            json!({"attempt_id":attempt}),
+            json!({"attempt_id":attempt.id}),
         )
         .await?;
     let snapshot = super::run::wait(client, id, text(&seed["run"], "id")?, 240).await?;
@@ -90,7 +94,8 @@ async fn seed_and_configure(
         })
         .ok_or("Fixture did not pass independent platform checks")?;
     let commit = text(&candidate["revision"], "commit")?.to_owned();
-    client.api(&format!("repos/{id}/accept"),Some(json!({"request_id":uuid::Uuid::new_v4().to_string(),"candidate":candidate["id"],"expected_commit":snapshot["repository"]["head_commit"],"expected_version":snapshot["repository"]["version"],"decision_kind":"development_verification","rationale":"Automated publication of a synthetic test fixture, not a human selection","alternatives":[]}))).await?;
+    let receipt=client.api(&format!("repos/{id}/accept"),Some(json!({"request_id":uuid::Uuid::new_v4().to_string(),"candidate":candidate["id"],"expected_commit":snapshot["repository"]["head_commit"],"expected_version":snapshot["repository"]["version"],"decision_kind":"development_verification","rationale":"Automated publication of a synthetic test fixture, not a human selection","alternatives":[]}))).await?;
+    super::source::publish(client, id, &receipt).await?;
     for _ in 0..48 {
         let snapshot = client.api(&format!("repos/{id}/snapshot"), None).await?;
         if snapshot["repository"]["pending"].is_null()

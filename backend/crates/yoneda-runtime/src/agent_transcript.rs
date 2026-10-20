@@ -1,7 +1,7 @@
 //! Supervisor-owned bounded memory survives cancellation of an untrusted harness future.
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub(crate) const STREAM_LIMIT: usize = 2 * 1024 * 1024;
 

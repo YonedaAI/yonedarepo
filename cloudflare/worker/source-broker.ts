@@ -5,7 +5,6 @@ import { sourceAuthority } from './source-authority';
 import { sourceCapture } from './source-capture';
 import { type SourceMount, type SourceRead, sourceError } from './source-contract';
 import { publicSourceValue, sourceArguments } from './source-operations';
-import { sourceRefresh } from './source-refresh';
 import { sourceScope } from './source-scope';
 import { registerSourceSeal } from './source-seal';
 import { sourceReadResponse } from './source-storage';
@@ -24,20 +23,7 @@ const uploadFields = [
 export const sourceBroker: OutboundHandler<Env> = async (req, env, ctx) => {
   try {
     const url = new URL(req.url);
-    const refresh = /^\/v1\/refresh\/(context|tree|blob|verify|verify_input|paths)$/.exec(
-      url.pathname,
-    );
-    if (refresh) {
-      const { scope } = await scopeFor(env, ctx.containerId);
-      if (
-        req.headers.get('authorization') !== `Bearer ${scope.supervisor}` ||
-        req.method !== 'POST' ||
-        url.search
-      )
-        return error('FORBIDDEN', 'Trusted current refresh supervisor required', 403);
-      return await sourceRefresh(env, scope, refresh[1], await readJson(req, 32 * 1024));
-    }
-    const capture = /^\/v1\/capture\/(context|manifest|tree|blob|verify)$/.exec(url.pathname);
+    const capture = /^\/v1\/capture\/(context|manifest|tree|blob|commit)$/.exec(url.pathname);
     if (capture) {
       const { scope } = await scopeFor(env, ctx.containerId);
       if (
@@ -46,7 +32,9 @@ export const sourceBroker: OutboundHandler<Env> = async (req, env, ctx) => {
         url.search
       )
         return error('FORBIDDEN', 'Trusted current capture supervisor required', 403);
-      return await sourceCapture(env, scope, capture[1], await readJson(req, 32 * 1024));
+      // A commit carries the captured file bytes for the platform; every other op is metadata.
+      const limit = capture[1] === 'commit' ? 64 * 1024 * 1024 : 32 * 1024;
+      return await sourceCapture(env, scope, capture[1], await readJson(req, limit));
     }
     const match = /^\/v1\/(repo|candidate-0|candidate-1)\/([a-z_]+)(?:\/([^/]+))?$/.exec(
       url.pathname,
@@ -114,11 +102,7 @@ export const sourceBroker: OutboundHandler<Env> = async (req, env, ctx) => {
     return error(
       known.code ?? 'SOURCE_FAILED',
       known.message,
-      known.code === 'FORBIDDEN'
-        ? 403
-        : known.code === 'NOT_FOUND' && new URL(req.url).pathname.startsWith('/v1/refresh/')
-          ? 404
-          : 409,
+      known.code === 'FORBIDDEN' ? 403 : 409,
     );
   }
 };

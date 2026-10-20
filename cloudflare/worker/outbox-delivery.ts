@@ -31,7 +31,6 @@ export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
           agent: env.AGENT_QUEUE,
           capture: env.CAPTURE_QUEUE,
           evaluate: env.EVALUATE_QUEUE,
-          publish: env.PUBLISH_QUEUE,
         };
         if (!queues[entry.kind]) throw new Error('Unknown outbox kind');
         await queues[entry.kind].send(

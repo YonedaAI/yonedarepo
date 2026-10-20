@@ -9,9 +9,11 @@ pub(super) fn fixture() -> NativeStore {
     run["autonomy_policy"] = json!({"version":1,"enabled":true,"max_repair_rounds":2,"max_concurrent_agents":3,"max_executions":20,"source_scope":"project","allow_intent_questions":true});
     run["autonomy_approval"] = json!({"intent":run["intent"],"criteria":run["criteria"],"agents":run["agents"],"model_budgets":run["model_budgets"],"policy":run["policy"]});
     run["autonomy_policy_digest"] =
-        json!(yoneda_core::fingerprint(&run["autonomy_policy"]).unwrap());
+        json!(yoneda_agents_core::fingerprint(&run["autonomy_policy"]).unwrap());
     run["approved_policy"] = run["policy"].clone();
     run["status"] = json!("exploring");
+    // Candidate refresh and conflict resolution exist only for lazy-source runs.
+    run["workspace_transport"] = json!("api-source-v1");
     save(&db, "runs", "run", &run).unwrap();
     for mut task in rows(&db, "team_tasks", "run").unwrap() {
         task["status"] = json!("complete");

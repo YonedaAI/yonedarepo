@@ -6,11 +6,11 @@
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
-import { commit } from './repo-commit';
+import { changeLogStatus } from './repo-changelog';
+import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { repoMcp } from './repo-mcp';
-import { newStore, parseStore, RepoObjects, toBase64 } from './repo-objects';
+import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
 import { timed, withTimings } from './repo-timing';
 import { operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
@@ -69,77 +69,6 @@ async function credentials(req: Request, env: Env): Promise<Credentials | null> 
   return { _session: { workspace: principal.workspace, principal: name, ...human } };
 }
 
-async function createRepository(env: Env, auth: Credentials, body: Json) {
-  if (!('_session' in auth))
-    throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-  const store = newStore(env, `yr-${id}`);
-  await store.create();
-  const ctx = new RepoContext(env, id, caller(env, id, auth));
-  const name = typeof body.name === 'string' && body.name ? body.name : id;
-  await ctx.call({
-    op: 'repo_init',
-    name,
-    object_store: store.spec,
-    policy: body.policy ?? { required_checks: [], approvals: 1 },
-  });
-  // Listing projection, written after the authority accepted the repository.
-  await env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
-  )
-    .bind(id, auth._session.workspace, name, Date.now())
-    .run();
-  if (!Array.isArray(body.files) || body.files.length === 0) return { id };
-  const seeded = await commit(ctx, new RepoObjects(env, id, store), {
-    changes: body.files,
-    message: body.message ?? 'Import',
-    author: body.author,
-  });
-  const landed = await ctx.call({ op: 'repo_import', ref: 'main', commit: seeded.commit });
-  await dispatchProjection(env, id);
-  return { id, commit: seeded.commit, version: landed.version };
-}
-
-/** Starts a durable import of an external Git repository (Artifacts-backed only). */
-async function importRepository(env: Env, auth: Credentials, body: Json) {
-  if (!('_session' in auth))
-    throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
-  if (env.PLATFORM_OBJECT_STORE === 'r2')
-    throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
-  const url = String(body.url ?? '');
-  if (!/^https:\/\/[^\s]+$/.test(url))
-    throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
-  const branch = typeof body.branch === 'string' && body.branch ? body.branch : 'main';
-  const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-  const name = typeof body.name === 'string' && body.name ? body.name : id;
-  const ctx = new RepoContext(env, id, caller(env, id, auth));
-  await ctx.call({
-    op: 'repo_init',
-    name,
-    // Artifacts creates the store itself during import.
-    object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
-    policy: body.policy ?? { required_checks: [], approvals: 1 },
-  });
-  await env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
-  )
-    .bind(id, auth._session.workspace, name, Date.now())
-    .run();
-  const instance = await env.PLATFORM_IMPORT.create({
-    id: `import-${id}`,
-    params: { repo: id, url, branch, max },
-  });
-  return { id, import: instance.id, branch, max_commits: max };
-}
-
-function tokenSecret() {
-  const raw = toBase64(crypto.getRandomValues(new Uint8Array(32)));
-  return `yrp_${raw.replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' })[c] ?? '')}`;
-}
-
 async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
@@ -169,6 +98,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'refs') return run('git_refs', query);
   if (get && resource === 'log') return run('git_log', query);
   if (get && resource === 'txlog') return run('git_txlog', query);
+  if (get && resource === 'changelog') return changeLogStatus(ctx);
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
   if (get && resource === 'blob') return run('git_cat_file', query);
@@ -231,6 +161,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
   if (resource === 'land' && post) return run('git_land', await bodyOf(req));
+  if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.

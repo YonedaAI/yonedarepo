@@ -4,6 +4,7 @@ import { resolveAdaptiveApproval } from '../../cloudflare/worker/adaptive-approv
 import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { platformCommit, platformProject } from './platform-fixture';
 
 export const bindings = env as unknown as Env;
 export const repo = 'comparison-boundary-fixture';
@@ -20,10 +21,13 @@ export const agents = ['minimal', 'accessible'].map(strategy => ({
 }));
 export const call = (command: Json) => ledger(bindings, repo, command);
 
-async function repository() {
+async function signup() {
   await workspace(bindings, owner, { op: 'signup', username: owner,
     password: 'Synthetic comparison test password', salt: '01'.repeat(16),
     recovery_hash: 'b'.repeat(64), session_hash: 'a'.repeat(64) });
+}
+async function repository() {
+  await signup();
   await call({ op: 'init', id: repo, name: 'Comparison boundary fixture',
     workspace: owner, remote: { namespace: 'yoneda-test', name: repo }, commit: initialCommit, policy });
   await call({ op: 'create_working_branch', id: 'development',
@@ -83,7 +87,8 @@ export function selectionArguments(context: Json) {
 }
 
 /** Synthetic runner observations exercise actual repository DO transactions and R2. */
-export async function checkedBuilder(index: number, commit: string, active?: Json) {
+export async function checkedBuilder(index: number, commit: string, active?: Json,
+  at: { repository: string; tree: string } = { repository: `yoneda-test/builder-${index}`, tree: 'f'.repeat(40) }) {
   const execution = `${runId}:agent-${index}`;
   const builder = active ?? await call({ op: 'claim', job_id: `job:${execution}` });
   const files = { 'index.html': { content: `<!doctype html><title>Builder ${index}</title>` } };
@@ -91,9 +96,9 @@ export async function checkedBuilder(index: number, commit: string, active?: Jso
   await call({ op: 'finish', job_id: builder.id, epoch: builder.epoch, result: { workspace: workspace.digest } });
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const id = `candidate-${index}`;
-  const revision = { repository: `yoneda-test/builder-${index}`, commit };
+  const revision = { repository: at.repository, commit };
   await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: {
-    id, revision, tree: 'f'.repeat(40), paths: ['public/index.html'], diff: `Booking approach ${index}`,
+    id, revision, tree: at.tree, paths: ['public/index.html'], diff: `Booking approach ${index}`,
     summary: `Checked capacity implementation ${index}`,
   } });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${id}` });
@@ -104,4 +109,24 @@ export async function checkedBuilder(index: number, commit: string, active?: Jso
     report: { suite: policy.suite, environment: policy.environment,
       setup: [], commands: [{ name: 'build', output: { exit: 0 } }] }, evidence: evidence.digest });
   return { id, revision };
+}
+
+/** A ready review whose project and both captured builders are real platform commits. */
+export async function platformReadyReview() {
+  await signup();
+  const { base, platform } = await platformProject(bindings, owner, repo, { 'app.js': 'void 0;\n' }, policy);
+  await call({ op: 'create_working_branch', id: 'development', expected_commit: base.commit, expected_version: 0 });
+  await workspace(bindings, owner, { op: 'workspace_spend_configure', expected_version: 0, limit_microusd: 50000000 });
+  await call({ ...modernCompareApproval(), op: 'start_run', id: runId,
+    intent: 'Compare booking capacity implementations before selecting one',
+    working_branch_id: 'development', expected_working_commit: base.commit, expected_working_version: 0 });
+  const built = [];
+  for (const index of [1, 2]) {
+    const made = await platformCommit(platform, base.commit,
+      { 'public/index.html': `<!doctype html><title>Builder ${index}</title>\n` });
+    built.push(await checkedBuilder(index, made.commit, undefined, { repository: base.repository, tree: made.tree }));
+  }
+  const detail = await call({ op: 'run_detail', run_id: runId });
+  const job = await call({ op: 'claim', job_id: `job:${detail.run.comparison.review_execution_id}` });
+  return { base, first: built[0], second: built[1], job };
 }

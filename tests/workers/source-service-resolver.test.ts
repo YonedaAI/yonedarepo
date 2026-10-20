@@ -1,29 +1,41 @@
 import { reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
 import { sourceAuthority } from '../../cloudflare/worker/source-authority';
 import { hex } from '../../cloudflare/worker/source-crypto';
 import { sourceIndexBounded } from '../../cloudflare/worker/source-index';
 import { activateSourceMounts, sourceScope } from '../../cloudflare/worker/source-scope';
 import { ledger } from '../../cloudflare/worker/storage';
-import type { Env, Scope } from '../../cloudflare/worker/types';
+import type { Scope } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 it('mounts the native resolver target with preserved clean edits and both actual readonly sides without writable scratch', async () => {
   const repo = 'source-native-resolver';
   const runId = 'resolver-run';
-  const initial = { repository: 'yoneda-test/solver-head', commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Synthetic resolver views', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: 'solver-head' }, commit: initial.commit, policy: reviewerPolicy });
+  const initial = { repository: `platform/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const bytes = new TextEncoder().encode('synthetic preserved content');
+  const prefix = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const raw = new Uint8Array(prefix.length + bytes.length); raw.set(prefix); raw.set(bytes, prefix.length);
+  const blob = hex(await crypto.subtle.digest('SHA-1', raw));
+  // Every side is a commit of the project's own platform repository, addressed by its id.
+  let inputs: any[] = [];
+  const local = await syntheticPlatform(bindings, { [repo]: {
+    readCommit: async (hash: string) => {
+      const ref = inputs.find((input) => input.commit === hash);
+      return ref ? { hash, treeHash: ref.tree } : null;
+    },
+    readTree: async () => ['clean.rs', 'conflict.rs'].map(path => ({ name: path, mode: '100644', type: 'blob', hash: blob })),
+    readBlob: async () => new Blob([bytes]),
+  } }, 'source_owner');
   await ledger(bindings, repo, { op: 'start_run', id: runId, intent: 'Resolve only frozen conflicts',
     workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: initial,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic resolver' }] });
   const jobId = `job:${runId}:agent-1`;
   await ledger(bindings, repo, { op: 'claim', job_id: jobId });
   const target = { repository: initial.repository, commit: 'c'.repeat(40) };
-  const candidate = { id: 'original-candidate', run_id: runId, revision: { repository: 'yoneda-test/solver-candidate', commit: 'f'.repeat(40) }, tree: 'd'.repeat(40) };
-  const merge = { repository: 'yoneda-test/solver-merge', commit: 'e'.repeat(40) };
+  const candidate = { id: 'original-candidate', run_id: runId, revision: { repository: initial.repository, commit: 'f'.repeat(40) }, tree: 'd'.repeat(40) };
+  const merge = { repository: initial.repository, commit: 'e'.repeat(40) };
   const stub = bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
   // Seed trusted synthetic premerge history exactly as the native fixture; no paid resolver execution.
   await runInDurableObject(stub, (_instance, state) => {
@@ -45,16 +57,7 @@ it('mounts the native resolver target with preserved clean edits and both actual
   });
   const context = await ledger(bindings, repo, { op: 'source_read_context', job_id: jobId, epoch: 1 });
   expect(context.source_resolution).toBe(true);
-  const bytes = new TextEncoder().encode('synthetic preserved content');
-  const prefix = new TextEncoder().encode(`blob ${bytes.length}\0`);
-  const raw = new Uint8Array(prefix.length + bytes.length); raw.set(prefix); raw.set(bytes, prefix.length);
-  const blob = hex(await crypto.subtle.digest('SHA-1', raw));
-  const local = { ...bindings, ARTIFACTS: { get: async (name: string) => {
-    const ref = context.inputs.find((input: any) => input.repository === `yoneda-test/${name}`);
-    return { readCommit: async () => ({ hash: ref.commit, treeHash: ref.tree }),
-      readTree: async () => ['clean.rs', 'conflict.rs'].map(path => ({ name: path, mode: '100644', type: 'blob', hash: blob })),
-      readBlob: async () => new Blob([bytes]), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
-  } } } as unknown as Env;
+  inputs = context.inputs;
   for (const input of context.inputs) expect((await sourceIndexBounded(local, input)).state).toBe('prepared');
   const scope = { repo_id: repo, job: { id: jobId, epoch: 1, kind: 'agent' }, supervisor: 'synthetic-root', model_calls: 0, created_at: Date.now() } as Scope;
   const mounts = await activateSourceMounts(local, scope);
@@ -67,7 +70,7 @@ it('mounts the native resolver target with preserved clean edits and both actual
   }
   const primary = await sourceScope(local, scope, 'repo');
   const clean = await sourceAuthority<any>(local, primary.binding.workspace_id, { op: 'source_stat', path: 'clean.rs', _actor: primary.actor });
-  expect(clean.content.repository).toBe(merge.repository);
+  expect(clean.content).toMatchObject({ repository: merge.repository, commit: merge.commit });
   expect(primary.binding.write_paths).toEqual(['**']);
   expect(scope.model_calls).toBe(0);
 });

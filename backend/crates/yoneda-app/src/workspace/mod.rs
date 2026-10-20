@@ -1,7 +1,7 @@
 //! Personal workspace authority. Only trusted Worker adapters can call these commands.
 use crate::storage::{SqlStore, bad, get, save, string};
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod accounts;
 mod budget;
 mod campaign;
@@ -10,6 +10,7 @@ mod campaign_runs;
 mod campaign_trial;
 mod grants;
 mod project_dispatch;
+mod project_platform;
 mod project_setup;
 mod project_visibility;
 mod projects;
@@ -84,7 +85,9 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             | "project_progress"
             | "project_retry"
             | "project_schedule"
-            | "project_dispatch_sent" => projects::handle(&db, &command, now),
+            | "project_dispatch_sent"
+            | "project_platform_bind"
+            | "project_platform_credential" => projects::handle(&db, &command, now),
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
         }
     }))
@@ -98,7 +101,7 @@ fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             "SELECT version,digest FROM workspace_migrations ORDER BY version",
             &[],
         )?;
-        let digest = yoneda_core::digest(SQL.as_bytes());
+        let digest = yoneda_agents_core::digest(SQL.as_bytes());
         if applied
             .iter()
             .any(|r| r["version"] != 1 || r["digest"] != digest)

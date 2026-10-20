@@ -18,14 +18,12 @@ Human reviewer rehearsal remains pending after the final handoff; the key sheet 
 
 ## History, archives and Git conflicts
 
-New source-transport deployments require the additive `SOURCES` binding and `v3` SQLite
-class migration, the matching runtime image and all four health markers:
-`source_api`, `lazy_source`, `source_capture` and `child_privilege_drop`. The last marker
-requires an observed UID/GID 1000 process with zero capability masks and `NoNewPrivs=1`.
-Enable `SOURCE_TRANSPORT=api-source-v1` only for new approvals after rollout, then complete
-bounded hosted acceptance before claiming readiness. Never rewrite an existing run's
-transport or funding. Missing capabilities fail before inference. The operator flag is
-not a user-facing run setting.
+Every run works in a lazy source workspace (`api-source-v1`); agents never clone or push.
+Deployments require the `SOURCES` binding and `v3` SQLite class migration, the matching
+runtime image and all four health markers: `source_api`, `lazy_source`, `source_capture`
+and `child_privilege_drop`. The last marker requires an observed UID/GID 1000 process with
+zero capability masks and `NoNewPrivs=1`. Without them, starts fail with `LEDGER_UPDATING`
+or `RUNTIME_UPDATING` before inference. Never rewrite an existing run's transport or funding.
 
 Source indexing progresses through bounded queue messages before launching models. Signed
 metadata journals and completed index manifests bind the verified Git root, immutable
@@ -56,7 +54,7 @@ The repository history interface separates compact metadata from run detail. `ru
 
 Terminal runs older than 30 days are eligible for archive only after the immutable archive object is uploaded and read back with its digest verified. Commit/compaction must follow that acknowledgment; replay after a lost acknowledgment must be idempotent, and a digest mismatch must leave hot records intact. Archived detail is read through the verified bundle and overlaid with current authoritative repository state. The ledger retains summaries, receipts, provenance and the archive index. Outbox payload cleanup applies only after seven days and preserves replay guards. Unknown or globally shared content-addressed objects are retained. Archive behavior is implemented and deployed, but the current isolated acceptance record does not establish a live archive/replay cycle; verify that separately before making operational retention claims.
 
-The active-work limit is six live runs: queued/running jobs and running external executions count even when a run has already reached a review-ready status. A ready run with no live work does not consume a slot. Completed lifetime history does not consume active capacity. Isolated production acceptance exercised real container-capacity deferrals with attempt refunds. Git-native candidate refresh and conflict resolution use frozen manifests and trusted Git readback; preserve both revisions and the decision/history records when a conflict occurs. The accepted fixture produced a clean, freshly checked disjoint two-parent refresh and retained both files; this does not claim semantic conflict resolution quality or broad-scale capacity.
+The active-work limit is six live runs: queued/running jobs and running external executions count even when a run has already reached a review-ready status. A ready run with no live work does not consume a slot. Completed lifetime history does not consume active capacity. Isolated production acceptance exercised real container-capacity deferrals with attempt refunds. Candidate refresh and conflict resolution run only on lazy-source runs and use frozen manifests and trusted Git readback; preserve both revisions and the decision/history records when a conflict occurs. The accepted fixture produced a clean, freshly checked disjoint two-parent refresh and retained both files; this does not claim semantic conflict resolution quality or broad-scale capacity.
 
 ## Team runs and container rollout
 
@@ -83,11 +81,11 @@ jobs require runtime capability `collaborative_runs: 1`; automatic planning also
 If work was attempted during rollout, inspect its error and retry the failed team tasks after the
 rollout finishes. Container stop observations are available in Cloudflare Workers Logs.
 
-For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). External agents use [repository-scoped MCP and Git keys](remote-mcp.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
+For personal signup, provider setup and website publishing, see [the website workflow](website-workflow.md). External agents use [repository-scoped MCP keys](remote-mcp.md). The [retry fixture walkthrough](demo.md) is an operator verification example.
 
 For request failures, open the approach's **View logs**. For platform diagnostics, search the Worker's **Cloudflare Observability** logs by execution/job ID. Rust emits JSON using `tracing`; retained per-agent history lives in Repo DO SQLite. See [logging and retention](logging.md). Existing MiMo connections can be corrected through **Agent providers → Edit connection** without replacing their encrypted keys.
 
-Repository deletion is available under the selected repository's **Repository options (⋯)** menu. The Rust ledger records a permanent tombstone and cancels active jobs before asynchronous cleanup. The Repo DO alarm retries stop, discovery and managed Artifacts deletion entries independently, so a failed container stop cannot block access revocation or Git cleanup. Owned remote names are swept again after one minute, with backoff up to a daily sweep, to reclaim imports or forks that finish after their callers exit. Each sweep uses new outbox IDs so an old acknowledgment cannot discard new cleanup work. `repository.deleted` and `repository.cleanup_deferred` are safe operational log events. Do not remove the tombstone or reset the DO identity: old queue messages and in-flight provisioning must stay fenced. Deletion preserves shared provider connections, internal audit records and content-addressed R2 evidence. See [the user workflow and retention boundary](website-workflow.md#delete-a-repository).
+Repository deletion is available under the selected repository's **Repository options (⋯)** menu. The Rust ledger records a permanent tombstone and cancels active jobs before asynchronous cleanup. The Repo DO alarm retries stop and discovery entries independently, so a failed container stop cannot block access revocation. The owner's delete request also revokes the project's agent token on its platform repository with the owner's own session; the platform repository itself stays with its owner (`repository.token_revocation_deferred` means revoke the `yoneda-agents` token there). Cleanup entries recorded before the platform cutover still drain their Artifacts deletions. `repository.deleted` and `repository.cleanup_deferred` are safe operational log events. Do not remove the tombstone or reset the DO identity: old queue messages and in-flight provisioning must stay fenced. Deletion preserves shared provider connections, internal audit records and content-addressed R2 evidence. See [the user workflow and retention boundary](website-workflow.md#delete-a-repository).
 
 ## Local prerequisites
 
@@ -105,7 +103,7 @@ Root `pnpm dev`, `pnpm build` and `pnpm deploy` delegate to `xtask`. For raw Wra
 
 `cloudflare/wrangler.jsonc` contains this project's development account, Secrets Store IDs and resource names. Those identifiers are configuration, not secret values. For another account, authenticate using `pnpm exec wrangler login`, update the account and store IDs, provision an R2 bucket, D1 database and queues, then update their identifiers before deployment. Do not reuse production resources for tests.
 
-The provisioned resources are `yonedarepo-dev-objects`, `yonedarepo-dev-index`, `yoneda-dev-{agent,capture,evaluate,publish}` and `yoneda-dev-dead-letter`. D1 discovery uses `cloudflare/migrations/`; repository DO schema uses `backend/crates/yoneda-app/src/migrations/`.
+The provisioned resources are `yonedarepo-dev-objects`, `yonedarepo-dev-index`, `yoneda-dev-{agent,capture,evaluate,platform}` and `yoneda-dev-dead-letter`. D1 discovery uses `cloudflare/migrations/`; repository DO schema uses `backend/crates/yoneda-app/src/migrations/`.
 
 Secrets Store names are `Codex`, `Claude`, `MiMo` and `ZAI`, with Workers service scope. Bindings are `OPENAI_KEY`, `ANTHROPIC_KEY`, `MIMO_KEY` and `ZAI_KEY`. Personal accounts use their encrypted BYOK vault instead. See [vault and budget operation](providers.md). Never fetch these values into the shell, browser or model environment. Regular Worker secret `OWNER_TOKEN` protects the owner API in development. `cargo xtask deploy` sets it from the private local token file, applies D1 migrations and deploys the built Worker/container.
 
@@ -119,13 +117,13 @@ For Cloudflare Access, protect the host with an Access policy and configure `ACC
 
 ## Legacy retry fixture workflow
 
-Run `cargo xtask seed-demo --url URL` once. Bootstrap issues a five-minute repository-scoped Git token to the trusted local setup command only; provider keys remain in the Worker. The fixture push establishes a real Artifacts commit before the ledger is initialized. Repeating seed keeps existing source and ledger data.
+Create the retry fixture as an ordinary console project from `fixtures/retry-client` (its source lives in the project's platform repository, created in your own request); there is no separate seed command or Git push. Pass its id to `demo`, `verify-live` and `upgrade-policy` with `--repo ID`.
 
 `cargo xtask demo --url URL` starts real inference. Defaults are `gpt-5.6-luna` and `claude-sonnet-5-5` in Wrangler variables. Legacy fixture executions retain 24 model requests per execution across retries, 256 KiB per request and 4096 output tokens per request; legacy Anthropic CLI runs also retain a $1 estimate. New console runs use their approved per-model budgets. Do not silently upgrade a model. Containers are capped at sixteen instances, agents at their owner-approved 1–30 minute execution limit (10 by default), evaluators at two minutes, and infrastructure attempts at two.
 
 Open the browser and connect with the workspace owner token from `.local/owner-token` (paste it or choose the token file), or use the configured Cloudflare Access login. Provider keys are different credentials and stay in Secrets Store. Describe the change in Exploration: research agents inspect the repository and publish guidance and assumptions, then three coding agents consume the same frozen context and produce alternatives. Review their source changes and external checks, then select with a rationale. Humans provide intent and judgment; agents author the context.
 
-`publication_pending` means the decision is recorded but canonical Git readback is still pending. `published` is the separate publication receipt. `cargo xtask verify-live --url URL` requires one published run with completed Claude research and all three coding executions, identical research context and successful content reads by each completed attempt, actual harness overlap in the completed attempt epochs, captured revisions, evaluations matching current policy, and source history linking a labelled simulated incident to the original assumption and alternatives. It exports `artifacts/live-verification.json` on both success and incomplete verification. A development fixture selection is not human acceptance.
+`publication_pending` means the decision is recorded but the owner's platform landing has not been read back yet. The browser approves and lands the selected commit on the project's platform repository with the owner's own session (fast-forward only; break-glass when checks were overridden), then asks the agent layer to read `main` back. `published` is the separate publication receipt. `cargo xtask verify-live --url URL` requires one published run with completed Claude research and all three coding executions, identical research context and successful content reads by each completed attempt, actual harness overlap in the completed attempt epochs, captured revisions, evaluations matching current policy, and source history linking a labelled simulated incident to the original assumption and alternatives. It exports `artifacts/live-verification.json` on both success and incomplete verification. A development fixture selection is not human acceptance.
 
 The normal browser selection records a human decision. An owner-controlled fixture test can explicitly send `decision_kind: "development_verification"` with its rationale; the decision and graph then identify automated development verification. Agents have no owner selection capability. `verify-live` reads existing evidence and never selects code itself.
 
@@ -135,7 +133,7 @@ The current policy is `retry-v2`, suite `retry-contract-v2`, environment `rust-1
 
 Hosted coding runs accept one to six initial agents. The owner can add, remove or change agents before approving each brief; one-agent updates use the same capture, evaluation and publication rules. The snapshot advertises `agent_limits.min_root_agents: 1`; a single-agent request against an older ledger returns `LEDGER_UPDATING` before any provider validation or inference. Existing run rosters remain frozen. Delegation is explicitly approved with the brief, disabled by default, and frozen for the run: at most 12 total agents through two delegation levels. Infrastructure retries retain their existing two-attempt allowance and do not consume another agent slot. Any approved request allowances are reserved durably across the run, including retries; approved per-model budgets and the Claude workspace ceiling also apply. Agent arguments cannot override child identity, provider, model, source, context or these limits.
 
-Children produce independent alternatives from the frozen base. They are separately captured and evaluated, and no automatic merge occurs. A parent can finish while its children continue; parent expiry, failure or retry fences descendants, their eligible candidates and pending publication. Cancelling the run fences the entire tree. Durable stop requests terminate active descendant containers. An already verified canonical publication remains historical evidence. A fenced pending publisher blocks the repository until its canonical remote is explicitly read back and reconciled.
+Children produce independent alternatives from the frozen base. They are separately captured and evaluated, and no automatic merge occurs. A parent can finish while its children continue; parent expiry, failure or retry fences descendants, their eligible candidates and pending publication. Cancelling the run fences the entire tree. Durable stop requests terminate active descendant containers. An already verified canonical publication remains historical evidence. A pending landing is completed only by the owner on the platform and its readback.
 
 Deploy both the Worker/Repo DO and the new container image. The snapshot advertises `agent_limits`; the browser retains its earlier four-agent maximum until these limits appear. The Worker refuses six-agent or delegated runs against an older ledger. The supervisor must advertise `capabilities.agent_delegation: 1` before a delegated root or child starts inference. During propagation or image rollout, retry after the compatibility error; do not bypass the guard.
 
@@ -173,7 +171,7 @@ Artifact lookup accepts canonical IDs and bare UUID aliases only within the curr
 
 Each execution container runs one attempt. The root supervisor reserves UID 1000 for untrusted code, sets no-new-privileges, becomes a Linux subreaper, and terminates and reaps that UID before exporting source or trusting evaluator output. The barrier also catches daemonized descendants that leave their process group. Docker builds run Linux regressions serially because tests intentionally share that reserved UID.
 
-A remote publication conflict blocks the repository. Preserve both commits and the decision record; inspect Artifacts HEAD and reconcile explicitly. The MVP does not provide automatic rebase or overwrite. A publisher that exhausts attempts must leave the logical/published split visible for operator recovery.
+A publication conflict (platform `main` moved to another commit before the owner's fast-forward landing) blocks the repository. Preserve both commits and the decision record; inspect the platform repository and reconcile explicitly. Nothing rebases or overwrites automatically.
 
 Migration changes must be additive and appended. Check fresh, repeat and preceding-version upgrades locally, then apply D1 migrations before deploying code that needs them. Do not modify an already-applied SQL file or remove DO class migration history. Roll back code only to versions compatible with the deployed schema.
 
@@ -188,6 +186,6 @@ Operator bootstrap on the configured development account: `node tools/provision-
 
 Reviewer access permits the fixed trial and sandbox selection/cancellation/recovery. Provider changes, new projects, contribution grants, policy changes and arbitrary run approvals are refused server-side. The $50 workspace allowance reserves all configured trial providers before upstream I/O. Verified usage can settle downward; unknown or failed usage remains charged. Access expires at 2026-10-23 00:00 UTC. Operator revocation uses authenticated `POST /api/admin/reviewer/revoke` with the username; it revokes sessions and further inference.
 
-For blocked repositories, **Recover repository** invokes `resync_repository` with expected version and pending decision. The Worker derives the observed HEAD from Artifacts, never from caller JSON. The ledger fences superseded publishers and retains failed/conflicting decision history. A matching target confirms publication; a different target reconciles to observed source and clears stale site metadata. Stale recovery requests are rejected.
+For blocked repositories, **Recover repository** invokes `resync_repository` with expected version and pending decision. The Worker derives the observed head from the platform repository's `main`, never from caller JSON. The ledger retains conflicting decision history. A matching target confirms publication; a different target reconciles to observed source and clears stale site metadata. Stale recovery requests are rejected.
 
 Known container allocation/rate-limit errors defer dispatch with durable backoff and fence the old epoch without consuming the execution-attempt allowance. Other boot failures retain the ordinary retry limit. HTTPS interception requires the ephemeral Cloudflare CA installed at runtime, before harnesses start; it cannot be installed during Docker image construction.

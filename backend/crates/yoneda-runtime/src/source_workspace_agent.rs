@@ -2,7 +2,7 @@
 use crate::{agent_transcript::Transcript, source_workspace_run::SourceRun};
 use serde_json::{Value, json};
 use std::path::Path;
-use yoneda_core::{Result, model_budget::ModelBudget};
+use yoneda_agents_core::{Result, model_budget::ModelBudget};
 pub(crate) async fn execute(
     job: &Value,
     root: &Path,

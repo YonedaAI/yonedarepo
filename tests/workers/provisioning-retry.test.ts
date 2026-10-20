@@ -5,19 +5,24 @@ import { provisionMessage } from '../../cloudflare/worker/project-provisioning';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { bindProject, interceptPlatform, platformJson } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 const owner = 'provision_latency';
 const id = 'pending-project';
 afterEach(reset);
 
-async function fixture(code: string | number = 'FORK_IN_PROGRESS') {
+async function fixture(code = 'FORK_IN_PROGRESS') {
   await workspace(bindings, owner, { op: 'signup', username: owner, password: 'Synthetic provisioning test password',
     salt: '01'.repeat(16), recovery_hash: 'b'.repeat(64), session_hash: 'a'.repeat(64) });
   await workspace(bindings, owner, { op: 'project_reserve', id, name: 'Pending fork latency', policy: sitePolicy });
+  // The project is bound; every read of its platform repository reports `code`.
+  const repo = `r${'7'.repeat(20)}`;
+  await bindProject(bindings, owner, id, repo, 'yrp_pending_fixture');
   const send = vi.fn(async () => {});
-  const get = vi.fn(async () => { throw Object.assign(new Error('Synthetic Artifacts observation'), { code }); });
-  const local = { ...bindings, AGENT_QUEUE: { send }, ARTIFACTS: { get } } as unknown as Env;
+  const get = vi.fn(() => platformJson({ error: { code, message: 'Synthetic platform observation' } }, 409));
+  const local = { ...interceptPlatform(bindings, (path) => (path.startsWith(`/repos/${repo}/`) ? get() : undefined)),
+    AGENT_QUEUE: { send } } as unknown as Env;
   const body = { v: 1, kind: 'provision', repo_id: id, job_id: id, workspace: owner } as Envelope;
   const message = (loseAck = false) => ({ body, ack: vi.fn(() => {
     if (loseAck) throw new Error('Synthetic acknowledgment loss');
@@ -26,7 +31,7 @@ async function fixture(code: string | number = 'FORK_IN_PROGRESS') {
   return { local, send, get, body, message, project };
 }
 
-it.each(['FORK_IN_PROGRESS', 'IMPORT_IN_PROGRESS', 'CREATE_IN_PROGRESS', 10303])(
+it.each(['FORK_IN_PROGRESS', 'IMPORT_IN_PROGRESS', 'CREATE_IN_PROGRESS'])(
   'queues the first explicit pending retry in two seconds before acknowledging (%s)', async code => {
     const f = await fixture(code);
     const message = f.message();
@@ -54,7 +59,7 @@ it('does not short-poll a duplicate delivery while the native setup lease is act
   expect((await f.project()).setup_epoch).toBe(active.setup_epoch);
 });
 
-it('does not turn arbitrary Artifacts failures into short pending retries', async () => {
+it('does not turn arbitrary platform failures into short pending retries', async () => {
   const f = await fixture('UPSTREAM_UNAVAILABLE');
   const message = f.message();
   await provisionMessage(f.local, message);

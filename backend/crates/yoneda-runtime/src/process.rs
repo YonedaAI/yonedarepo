@@ -2,7 +2,7 @@ use crate::{broker::broker_url, err};
 use serde_json::Value;
 use std::{path::Path, process::Stdio};
 use tokio::process::Command;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) fn untrusted(command: &mut Command, root: &Path) {
     command
         .current_dir(root)
@@ -67,7 +67,7 @@ pub(crate) async fn captured_output_with_input(
     use crate::agent_transcript::Channel;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     if input.is_some_and(|text| text.len() > crate::report::REPORT_LIMIT) {
-        return Err(yoneda_core::Error::new(
+        return Err(yoneda_agents_core::Error::new(
             "PROMPT_LIMIT",
             "Harness prompt exceeds the 8 MiB stdin cap",
         ));
@@ -119,14 +119,14 @@ pub(crate) async fn captured_output_with_input(
         #[cfg(unix)]
         drop(_group);
         processes.finish()?;
-        Ok::<_, yoneda_core::Error>(status)
+        Ok::<_, yoneda_agents_core::Error>(status)
     };
     let write = async {
         if let (Some(mut pipe), Some(input)) = (stdin, input) {
             pipe.write_all(input.as_bytes()).await.map_err(err)?;
             pipe.shutdown().await.map_err(err)?;
         }
-        Ok::<_, yoneda_core::Error>(())
+        Ok::<_, yoneda_agents_core::Error>(())
     };
     let (out, errors, status, written) = tokio::join!(
         read(out, transcript, Channel::Stdout),

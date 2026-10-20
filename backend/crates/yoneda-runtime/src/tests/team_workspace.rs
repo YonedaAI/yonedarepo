@@ -1,6 +1,6 @@
 use super::*;
 use serde_json::json;
-use yoneda_core::FileEntry;
+use yoneda_agents_core::FileEntry;
 fn source(value: Value) -> Workspace {
     serde_json::from_value(value).unwrap()
 }

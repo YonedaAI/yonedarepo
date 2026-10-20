@@ -3,7 +3,7 @@ use crate::source_client::failure;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_workspace::{SourceAccess, SourceRevision},
 };
@@ -136,7 +136,7 @@ pub fn comparison_candidates(job: &Value) -> Result<Vec<&Value>> {
         || approval.is_none()
         || frozen["approval_id"] != payload["execution"]["comparison_approval_id"]
         || frozen["approval_id"] != payload["run"]["comparison"]["approval"]["id"]
-        || frozen["manifest_digest"] != yoneda_core::fingerprint(&frozen["manifest"])?
+        || frozen["manifest_digest"] != yoneda_agents_core::fingerprint(&frozen["manifest"])?
     {
         return Err(failure(
             "SOURCE_SCOPE",

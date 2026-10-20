@@ -1,5 +1,6 @@
 //! Real Native command sequence; Root Git observations are explicit protocol fixtures.
 use super::*;
+use crate::commands::source_kit;
 fn call(db: &NativeStore, input: Value, now: i64) -> Value {
     let mut input = input;
     input["now"] = json!(now);
@@ -9,6 +10,7 @@ fn resolved_capture() -> (NativeStore, String) {
     let (db, run, candidate) = stale_capture();
     let cid = candidate["id"].as_str().unwrap();
     evidence_fixture::evaluate(&db, cid, "parallel");
+    lazy_source(&db, &run);
     let view = read(&db);
     let head = view["working_revision"]["commit"].clone();
     let version = view["working_version"].clone();
@@ -18,13 +20,14 @@ fn resolved_capture() -> (NativeStore, String) {
         65,
     );
     let refresh = call(&db, json!({"op":"claim","job_id":receipt["job_id"]}), 66);
+    let declared = crate::path_lists::load(&db, &refresh["payload"], "declared_paths").unwrap();
     let paths = json!(["public/app.mjs", "public/tasks.mjs"]);
     call(
         &db,
         json!({"op":"conflict_refresh_complete","job_id":refresh["id"],"epoch":refresh["epoch"],"result":{
-        "status":"unresolved","evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":refresh["payload"]["declared_paths"],"captured_paths":paths,"intervening_paths":paths,"overlapping_paths":paths},
-        "merge_workspace_commit":"3".repeat(40),"workspace_revision":{"repository":"owner/merge","commit":"3".repeat(40)},"conflict_paths":["public/tasks.mjs"],
-        "readback":{"observed_head":head,"version":version,"parents":[head,candidate["revision"]["commit"]],"candidate_paths":paths,"intervening_paths":paths,"workspace_commit":"3".repeat(40),"conflict_paths":["public/tasks.mjs"]}}}),
+        "status":"unresolved","evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":declared,"captured_paths":paths,"intervening_paths":paths,"overlapping_paths":paths},
+        "merge_workspace_commit":"3".repeat(40),"merge_tree":"7".repeat(40),"workspace_revision":{"repository":"owner/merge","commit":"3".repeat(40)},"conflict_paths":["public/tasks.mjs"],
+        "readback":{"observed_head":head,"version":version,"parents":[head,candidate["revision"]["commit"]],"candidate_paths":paths,"intervening_paths":paths,"workspace_commit":"3".repeat(40),"conflict_paths":["public/tasks.mjs"],"expected_head_tree":"8".repeat(40),"merged_paths":paths}}}),
         67,
     );
     let updated = get(&db, "runs", run["id"].as_str().unwrap()).unwrap();
@@ -44,22 +47,25 @@ fn resolved_capture() -> (NativeStore, String) {
         json!({"op":"record_transcript","job_id":resolver["id"],"epoch":resolver["epoch"],"digest":"a".repeat(64)}),
         71,
     );
-    call(
-        &db,
-        json!({"op":"finish","job_id":resolver["id"],"epoch":resolver["epoch"],"result":{"git_verified":true,"fork_revision":{"repository":"owner/resolver","commit":"5".repeat(40)}}}),
-        72,
-    );
+    let registration = source_kit::finish_agent(&db, &resolver, 72);
     let capture = call(
         &db,
         json!({"op":"claim","job_id":format!("capture:{}",resolved["execution_id"].as_str().unwrap())}),
         73,
     );
     let final_id = "candidate:guide-final";
+    let parents = registration["binding"]["parents"].clone();
+    let result = source_kit::capture_result(
+        &registration,
+        final_id,
+        &"4".repeat(40),
+        paths.clone(),
+        json!({"resolver_delta_paths":["public/tasks.mjs"],"readback":{"observed_head":head,"version":version,
+            "parents":parents,"candidate_commit":"4".repeat(40),"resolver_delta_paths":["public/tasks.mjs"],"captured_paths":paths}}),
+    );
     call(
         &db,
-        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":{
-        "id":final_id,"revision":{"repository":"owner/resolved","commit":"4".repeat(40)},"tree":"f".repeat(40),"paths":paths,"resolver_delta_paths":["public/tasks.mjs"],
-        "readback":{"observed_head":head,"version":version,"parents":[head],"candidate_commit":"4".repeat(40),"resolver_delta_paths":["public/tasks.mjs"],"captured_paths":paths}}}),
+        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":result}),
         74,
     );
     (db, final_id.to_owned())
@@ -92,15 +98,11 @@ fn guided_final_scope_check_allows_explicit_owner_publication_and_only_readback_
         json!({"op":"accept","request_id":"guide-publish","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed final checked source"}),
         80,
     );
-    let job = all(&db, "jobs")
-        .unwrap()
-        .into_iter()
-        .find(|j| j["kind"] == "publish")
-        .unwrap();
-    let claimed = call(&db, json!({"op":"claim","job_id":job["id"]}), 81);
+    assert_eq!(approved["publication"]["commit"], "4".repeat(40));
+    assert_ne!(read(&db)["steps"][3]["status"], "complete");
     call(
         &db,
-        json!({"op":"finish","job_id":claimed["id"],"epoch":claimed["epoch"],"result":{"commit":"4".repeat(40)}}),
+        json!({"op":"publication_readback","decision_id":approved["id"],"observed_commit":"4".repeat(40)}),
         82,
     );
     assert_eq!(
@@ -116,15 +118,17 @@ fn guided_final_candidate_without_trusted_overlap_cannot_complete_collaboration(
     evidence_fixture::evaluate(&db, &cid, "final");
     assert_eq!(read(&db)["steps"][2]["status"], "complete");
     let mut conflict = get(&db, "conflicts", "conflict:guide-conflict").unwrap();
-    conflict["evidence"]["overlapping_paths"] = json!([]);
+    conflict["evidence"]["overlapping_paths_ref"] =
+        crate::path_lists::persist(&db, &json!([])).unwrap();
     save(&db, "conflicts", "conflict:guide-conflict", &conflict).unwrap();
     assert_ne!(read(&db)["steps"][2]["status"], "complete");
 }
 
 #[test]
 fn guided_registered_clean_refresh_gets_final_checks_without_claiming_conflict_resolution() {
-    let (db, _, candidate) = stale_capture();
+    let (db, run, candidate) = stale_capture();
     evidence_fixture::evaluate(&db, candidate["id"].as_str().unwrap(), "parallel");
+    lazy_source(&db, &run);
     let view = read(&db);
     let head = view["working_revision"]["commit"].clone();
     let version = view["working_version"].clone();
@@ -134,13 +138,14 @@ fn guided_registered_clean_refresh_gets_final_checks_without_claiming_conflict_r
         65,
     );
     let job = call(&db, json!({"op":"claim","job_id":receipt["job_id"]}), 66);
+    let declared = crate::path_lists::load(&db, &job["payload"], "declared_paths").unwrap();
     let paths = json!(["public/app.mjs", "public/tasks.mjs"]);
     let cid = format!("candidate:refresh:{}", "6".repeat(40));
     call(
         &db,
         json!({"op":"conflict_refresh_complete","job_id":job["id"],"epoch":job["epoch"],"result":{
         "status":"clean","candidate_id":cid,"revision":{"repository":"owner/refreshed","commit":"6".repeat(40)},"tree":"f".repeat(40),"merge_commit":"6".repeat(40),"paths":paths,"diff_digest":"d".repeat(64),
-        "evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":job["payload"]["declared_paths"],"captured_paths":paths,"intervening_paths":paths,"overlapping_paths":paths},
+        "evidence":{"base_commit":candidate["base"]["commit"],"observed_head":head,"candidate_commit":candidate["revision"]["commit"],"declared_paths":declared,"captured_paths":paths,"intervening_paths":paths,"overlapping_paths":paths},
         "readback":{"observed_head":head,"version":version,"parents":[head,candidate["revision"]["commit"]],"candidate_paths":paths,"intervening_paths":paths,"merge_commit":"6".repeat(40),"merged_paths":paths}}}),
         67,
     );
@@ -160,13 +165,12 @@ fn guided_publication_leases_canonical_root_not_the_working_base() {
     evidence_fixture::evaluate(&db, &cid, "final");
     let candidate = get(&db, "candidates", &cid).unwrap();
     assert_ne!(candidate["base"]["commit"], "a".repeat(40));
-    call(
+    let receipt = call(
         &db,
         json!({"op":"accept","request_id":"guide-lease","candidate":cid,"expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Owner reviewed final checked source"}),
         80,
     );
-    let job = get(&db, "jobs", "publish:decision:guide-lease").unwrap();
-    assert_eq!(job["payload"]["expected"]["commit"], "a".repeat(40));
+    assert_eq!(receipt["publication"]["expected"], "a".repeat(40));
 }
 
 #[test]

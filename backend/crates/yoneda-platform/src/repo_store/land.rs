@@ -166,6 +166,12 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     let Some(head) = current else {
         return append(db, c, TxKind::Commit, &refname, None, &commit, principal);
     };
+    if commit.parents.first() != Some(&head) && c["fast_forward_only"] == true {
+        return Err(Error::new(
+            "STALE_HEAD",
+            format!("{refname} moved to {head}; refresh the commit onto it before landing"),
+        ));
+    }
     if commit.parents.first() == Some(&head) {
         return append(
             db,

@@ -115,7 +115,7 @@ export function studyConfig(plan,chain){return {id:plan.id,case:plan.case,arm:ch
 export function stageRequest(plan,chain,stage,branch){
   if(branch.id!==chain.branch_id||branch.status==='closed'||! /^[a-f0-9]{40,64}$/.test(branch.working_commit)
     ||!Number.isSafeInteger(branch.version)||branch.version<0)fail('Invalid checked working head');
-  return {id:stage.run_id,workspace_transport:'git-native-v1',intent:stage.brief,
+  return {id:stage.run_id,intent:stage.brief,
     criteria:['Protected event-booking behavioral checks pass at the exact captured revision'],
     agents:[{provider:plan.budget.provider,model:plan.budget.model,connection:plan.connection,
       strategy:'Implement the requested maintenance stage; preserve prior behavior and persisted data.'}],

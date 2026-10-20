@@ -1,7 +1,7 @@
 //! Initial owner assertions seed disposable studies without dispatching an agent job.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Result, context::ContextInput};
+use yoneda_agents_core::{Result, context::ContextInput};
 
 pub(super) fn initialize<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
     let Some(seed) = c.get("context_seed") else {

@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 const MAX_FILE_PROVENANCE_RECEIPTS: usize = 10_000;
 
@@ -58,7 +58,7 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
         .iter()
         .map(|v| {
             let path = v.as_str().ok_or_else(|| bad("Invalid changed path"))?;
-            yoneda_core::validate_path(path)?;
+            yoneda_agents_core::validate_path(path)?;
             Ok(path.to_owned())
         })
         .collect::<Result<_>>()?;
@@ -75,7 +75,7 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
     let mut receipts = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
         let path = string(entry, "path")?;
-        yoneda_core::validate_path(&path)?;
+        yoneda_agents_core::validate_path(&path)?;
         let change = string(entry, "change")?;
         if !["add", "modify", "rename", "delete"].contains(&change.as_str()) {
             return Err(bad("Unknown file provenance change"));
@@ -85,7 +85,7 @@ pub(in crate::commands) fn capture_file_provenance<S: SqlStore>(
             .and_then(Value::as_str)
             .map(str::to_owned);
         if let Some(old) = &old_path {
-            yoneda_core::validate_path(old)?;
+            yoneda_agents_core::validate_path(old)?;
         }
         if !declared.contains(&path) && !old_path.as_ref().is_some_and(|old| declared.contains(old))
         {

@@ -24,7 +24,6 @@ const reads = new Set([
   'conflict_paths',
 ]);
 const writes = new Set([
-  'init',
   'start_run',
   'create_working_branch',
   'answer_intent',

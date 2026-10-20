@@ -2,6 +2,7 @@
 // segments are keyed by partition (subtree) id in R2, so a segment is built once and
 // reused by every commit and branch containing that subtree; only changed partitions
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
+import { emitChangeLog } from './repo-changelog';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { type CachedObject, toBase64 } from './repo-objects';
@@ -138,6 +139,8 @@ export function pathHistory(ctx: RepoContext, args: Json) {
 
 /** Eager derived builds after a landing: the new head's search segments. */
 export async function deriveAfterLanding(env: Env, envelope: Envelope) {
+  // Change-log analytics first and independent of the builds below; it never throws.
+  await emitChangeLog(env, envelope.repo_id);
   const ctx = new RepoContext(
     env,
     envelope.repo_id,

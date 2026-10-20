@@ -1,5 +1,6 @@
 import { username } from './accounts';
 import { error, readJson, response } from './http';
+import { ensureProjectPlatform } from './project-platform';
 import { scheduleProject } from './project-provisioning';
 import { ownerCommandInput } from './repository-command';
 import { reviewerCampaignStatus } from './reviewer-campaign';
@@ -72,6 +73,8 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
       policy: initialPolicy,
     });
     if (project.status === 'ready') await configureReviewPolicy(env, owner, repo);
+    // The operator creates the reviewer's platform repository on their behalf.
+    else await ensureProjectPlatform(env, req, owner, project, undefined, true);
     await scheduleProject(env, owner, project);
     return response({
       username: owner,

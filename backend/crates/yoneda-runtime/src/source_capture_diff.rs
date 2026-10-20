@@ -71,17 +71,17 @@ fn snapshot_tree(
     objects: &mut SourceGitObjects,
     files: &BTreeMap<String, SnapshotFile>,
 ) -> io::Result<String> {
-    if files.len() > yoneda_core::source_workspace::MAX_FILES {
+    if files.len() > yoneda_agents_core::source_workspace::MAX_FILES {
         return Err(io::Error::other("Touched snapshot exceeds file capability"));
     }
     objects.execute(&["read-tree", "--empty"], b"", 1024)?;
     let mut index = Vec::new();
     let mut total = 0u64;
     for (path, file) in files {
-        yoneda_core::validate_path(path).map_err(io::Error::other)?;
+        yoneda_agents_core::validate_path(path).map_err(io::Error::other)?;
         let metadata = fs::symlink_metadata(&file.file)?;
         if !metadata.file_type().is_file()
-            || metadata.len() > yoneda_core::source_workspace::MAX_FILE_BYTES
+            || metadata.len() > yoneda_agents_core::source_workspace::MAX_FILE_BYTES
         {
             return Err(io::Error::other(
                 "Touched snapshot contains nonregular or oversized file",
@@ -89,7 +89,7 @@ fn snapshot_tree(
         }
         total = total
             .checked_add(metadata.len())
-            .filter(|n| *n <= yoneda_core::source_workspace::MAX_SOURCE_BYTES)
+            .filter(|n| *n <= yoneda_agents_core::source_workspace::MAX_SOURCE_BYTES)
             .ok_or_else(|| io::Error::other("Touched snapshot exceeds byte capability"))?;
         let blob = objects.write_reader("blob", metadata.len(), fs::File::open(&file.file)?)?;
         let mode = if file.executable { "100755" } else { "100644" };

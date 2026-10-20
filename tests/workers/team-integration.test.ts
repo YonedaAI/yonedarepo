@@ -6,12 +6,13 @@ import { hostedMcp } from '../../cloudflare/worker/hosted-mcp';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 import { ledger } from '../../cloudflare/worker/storage';
-import { teamAttemptSource } from '../../cloudflare/worker/team-source';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
+import { platformCommit, platformProject } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 const repo = 'offline-team';
-const base = 'a'.repeat(40);
+let base = 'a'.repeat(40);
+const repository = `platform/${repo}`;
 afterEach(reset);
 const request = {
   op: 'start_run', id: 'team', intent: 'Offline complementary team fixture', mode: 'collaborate',
@@ -32,18 +33,18 @@ async function setup() {
   });
   expect(signup.status).toBe(200);
   const cookie = signup.headers.get('set-cookie')!.split(';')[0];
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Offline team fixture', workspace: 'alice',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: base,
-    policy: { version: 'team-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
-      required_checks: ['build'], build: { setup: [], checks: [{ name: 'build', argv: ['node', '--check', 'public/search.mjs'], timeout_seconds: 30 }] } },
-  });
+  const project = await platformProject(bindings, 'alice', repo, { 'public/index.html': '<!doctype html>\n' },
+    { version: 'team-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+      required_checks: ['build'], build: { setup: [], checks: [{ name: 'build', argv: ['node', '--check', 'public/search.mjs'], timeout_seconds: 30 }] } });
+  base = project.base.commit;
   await ledger(bindings, repo, request);
-  return cookie;
+  return { cookie, ...project };
 }
 function scope(job: Json): Scope {
   return { repo_id: repo, job, supervisor: 'private-test-token', model_calls: 0, created_at: Date.now() };
 }
-async function captured(task: string, paths: string[], digest?: string) {
+async function captured(task: string, paths: string[], digest?: string,
+  at: { commit: string; tree: string } = { commit: 'c'.repeat(40), tree: 'd'.repeat(40) }) {
   const job = await ledger(bindings, repo, { op: 'claim', job_id: `job:team:task:${task}` });
   if (task !== 'integrate') {
     const response = await hostedMcp(bindings, scope(job), { name: 'task_handoff', arguments: {
@@ -55,8 +56,8 @@ async function captured(task: string, paths: string[], digest?: string) {
   await ledger(bindings, repo, { op: 'finish', job_id: job.id, epoch: job.epoch, result: { workspace: 'b'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: `capture:team:task:${task}` });
   await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch,
-    result: { id: `captured-${task}`, revision: { repository: `yoneda-test/${task}`, commit: 'c'.repeat(40) },
-      tree: 'd'.repeat(40), paths, summary: 'Synthetic captured fixture', diff: 'Synthetic diff',
+    result: { id: `captured-${task}`, revision: { repository, commit: at.commit },
+      tree: at.tree, paths, summary: 'Synthetic captured fixture', diff: 'Synthetic diff',
       ...(digest ? { integration_digest: digest } : {}) },
   });
   return job;
@@ -81,7 +82,7 @@ it('captures specialists before integration, records exact retrieved handoffs, c
   expect(usage.entries.some((e: Json) => e.targets.some((t: Json) => t.id === manifest.manifest_record.id))).toBe(true);
   await ledger(bindings, repo, { op: 'finish', job_id: active.id, epoch: active.epoch, result: { workspace: 'b'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:team:task:integrate' });
-  const result = { id: 'integrated', revision: { repository: 'yoneda-test/integrated', commit: 'e'.repeat(40) }, tree: 'f'.repeat(40), paths: ['public/search.mjs', 'public/rsvp.mjs', 'public/index.html'], summary: 'Integrated fixture', diff: 'Synthetic integrated diff' };
+  const result = { id: 'integrated', revision: { repository, commit: 'e'.repeat(40) }, tree: 'f'.repeat(40), paths: ['public/search.mjs', 'public/rsvp.mjs', 'public/index.html'], summary: 'Integrated fixture', diff: 'Synthetic integrated diff' };
   await expect(ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result })).rejects.toThrow('manifest');
   await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { ...result, integration_digest: manifest.digest } });
   snapshot = await ledger(bindings, repo, { op: 'snapshot' });
@@ -93,31 +94,23 @@ it('captures specialists before integration, records exact retrieved handoffs, c
   await expect(hostedMcp(bindings, scope(active), { name: 'team_context' })).rejects.toThrow();
 });
 
-it('owner source inspection and broker assembly resolve only recorded exact captures and tree identities', async () => {
-  const cookie = await setup();
-  const job = await captured('search', ['public/search.mjs']);
-  const reads: string[] = [];
-  let tree = 'd'.repeat(40);
-  const remote = { [Symbol.dispose]() {}, readCommit: async (commit: string) => { reads.push(commit); return { treeHash: tree }; },
-    readTree: async () => [{ name: 'search.mjs', type: 'blob', hash: 'e'.repeat(40) }], readBlob: async () => new Blob(['export const search = () => [];']) };
-  const scoped = { ...bindings, ARTIFACTS: { get: async (name: string) => { reads.push(name); return remote; } } } as unknown as Env;
-  const read = (headers = { cookie }, task = 'search') => fetchRequest(new Request(`https://yoneda/api/repos/${repo}/team_source?run_id=team&task_id=${task}&repository=forged&commit=forged`, { headers }), scoped);
+it('owner source inspection resolves only recorded exact captures and tree identities', async () => {
+  const { cookie, platform } = await setup();
+  const search = await platformCommit(platform, base, { 'public/search.mjs': 'export const search = () => [];\n' });
+  await captured('search', ['public/search.mjs'], undefined, search);
+  // A recorded output whose tree is not the commit's tree must never be served.
+  await captured('rsvp', ['public/rsvp.mjs'], undefined, { commit: search.commit, tree: 'd'.repeat(40) });
+  const read = (headers = { cookie }, task = 'search') => fetchRequest(new Request(`https://yoneda/api/repos/${repo}/team_source?run_id=team&task_id=${task}&repository=forged&commit=forged`, { headers }), bindings);
   expect((await read({ cookie: '' })).status).toBe(401);
-  expect((await read(undefined, 'rsvp')).status).toBe(404);
-  expect(reads).toEqual([]);
+  expect((await read(undefined, 'integrate')).status).toBe(404);
   const source = await read();
   expect(source.status).toBe(200);
   expect(source.headers.get('cache-control')).toBe('no-store');
-  expect((await source.json<Json>()).revision).toEqual({ repository: 'yoneda-test/search', commit: 'c'.repeat(40) });
-  expect(reads).toEqual(['search', 'c'.repeat(40)]);
-  const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
-  const input = snapshot.team_tasks.find((t: Json) => t.task_id === 'search').output;
-  const integration = { kind: 'agent', payload: { execution: { team_task: 'task' }, team_inputs: [input] } };
-  expect((await teamAttemptSource(scoped, integration, 0)).input).toEqual(input);
-  await expect(teamAttemptSource(scoped, integration, 1)).rejects.toThrow('missing');
-  await expect(teamAttemptSource(scoped, job, -1)).rejects.toThrow('index');
-  tree = '0'.repeat(40);
-  await expect(teamAttemptSource(scoped, integration, 0)).rejects.toThrow('tree');
+  const body = await source.json<Json>();
+  expect(body.revision).toEqual({ repository, commit: search.commit });
+  expect(body.tree).toBe(search.tree);
+  expect(JSON.stringify(body)).toContain('export const search');
+  expect((await read(undefined, 'rsvp')).status).not.toBe(200);
 });
 
 it('fences old ledger and image versions before starting collaborative work', () => {

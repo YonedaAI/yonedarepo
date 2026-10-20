@@ -3,7 +3,7 @@
   "main": "entrypoint.ts",
   "compatibility_date": "2026-10-07",
   "compatibility_flags": ["nodejs_compat"],
-  "vars": { "ARTIFACTS_NAMESPACE": "yoneda-test", "VAULT_KEY": "1111111111111111111111111111111111111111111111111111111111111111" },
+  "vars": { "ARTIFACTS_NAMESPACE": "yoneda-test", "OWNER_TOKEN": "local-test-owner", "VAULT_KEY": "1111111111111111111111111111111111111111111111111111111111111111" },
   "services": [{ "binding": "SELF", "service": "yoneda-platform-test" }],
   "durable_objects": {
     "bindings": [

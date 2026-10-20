@@ -1,31 +1,29 @@
-//! Native SQLite staged authority -> exact root HTTP -> real receive-pack; no workerd/provider claim.
+//! Native SQLite staged authority -> exact root HTTP -> a platform-commit stand-in over real Git;
+//! no workerd/provider claim.
 use crate::{
     source_capture_api::CaptureApi,
     source_capture_fixture::{TOKEN, fixture},
     source_capture_http_fixture::root,
     source_capture_runner::execute_with,
-    source_git_http::SourceGitHttp,
-    source_git_http_tests::{git, oid, server},
+    source_git_fixture::{git, oid, server},
 };
 use serde_json::json;
 use std::sync::atomic::Ordering;
 
 fn job() -> serde_json::Value {
-    json!({"kind":"capture","id":"capture","epoch":1,"fork":"candidate-fork","source_capture_ref":{"branch":"main"},"payload":{"capture_subtype":"source_changeset","execution":{"strategy":"Native integration"}}})
+    json!({"kind":"capture","id":"capture","epoch":1,"source_capture_ref":{"branch":"agents/capture-test"},"payload":{"capture_subtype":"source_changeset","execution":{"strategy":"Native integration"}}})
 }
 #[tokio::test]
-async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_replays_ack() {
+async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_commits_on_platform() {
     let (git_server, _, _) = server().await;
     let f = fixture(&git_server);
     let base = f.binding.base.commit.clone();
     let base_tree = f.binding.base.tree.clone();
     let root = root(f).await;
     let mut job = job();
-    job["source_capture_ref"]["expected_head"] = json!(base);
     // Integrator captures must attest the frozen integration input manifest digest.
     job["payload"]["integration_digest"] = json!("integration-digest-fixture");
     let api = CaptureApi::new(&root.origin, TOKEN).unwrap();
-    let client = SourceGitHttp::new(&git_server.url, None).unwrap();
     let source_origin = root.origin.clone();
     let workspace = root.fixture.binding.workspace_id.clone();
     let view = root.fixture.binding.view_digest.clone();
@@ -62,8 +60,7 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     })
     .await
     .unwrap();
-    git_server.lose_ack.store(true, Ordering::SeqCst);
-    let result = execute_with(&job, &api, &client).await.unwrap();
+    let result = execute_with(&job, &api).await.unwrap();
     assert_eq!(result["id"], "candidate:capture:1");
     assert_eq!(result["integration_digest"], "integration-digest-fixture");
     assert_eq!(
@@ -72,7 +69,6 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     );
     assert_eq!(result["parents"], json!([base]));
     assert!(result.get("source_lineage").is_none());
-    assert_eq!(result["incremental_capture"]["recovered_ack"], true);
     assert_eq!(
         result["paths"],
         json!([
@@ -142,18 +138,20 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     .unwrap();
     assert_eq!(reference_diff, result["diff"].as_str().unwrap());
     assert_ne!(base_tree, result["tree"]);
-    let received = std::fs::read(git_server.root.path().join("received.request")).unwrap();
-    let pack = received.windows(4).position(|p| p == b"PACK").unwrap();
-    let count = u32::from_be_bytes(received[pack + 8..pack + 12].try_into().unwrap());
-    assert_eq!(
-        count, 6,
-        "only 2 new blobs, 3 affected trees, 1 commit; renamed base blob already retained"
-    );
-    let repeated = execute_with(&job, &api, &client).await.unwrap();
-    assert_eq!(repeated["commit"], result["commit"]);
-    assert_eq!(repeated["diff"], result["diff"]);
-    assert_eq!(repeated["incremental_capture"]["pack_uploaded"], false);
     let requests = root.requests.lock().unwrap();
+    // Only touched paths travel to the platform, with their final bytes.
+    let sent: Vec<_> = requests
+        .iter()
+        .filter(|(op, _)| op == "commit")
+        .flat_map(|(_, args)| {
+            args["changes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["path"].clone())
+        })
+        .collect();
+    assert_eq!(json!(sent), result["paths"]);
     assert!(
         requests
             .iter()
@@ -178,40 +176,42 @@ async fn sealed_http_capture_retains_overlay_closure_emits_actual_patch_and_repl
     );
 }
 #[tokio::test]
-async fn streamed_corruption_and_bad_ancestor_hash_fail_before_git_upload() {
+async fn streamed_corruption_and_bad_ancestor_hash_fail_before_any_platform_commit() {
     for fault in [1, 2] {
         let (git_server, _, _) = server().await;
         let f = fixture(&git_server);
         let base = f.binding.base.commit.clone();
         let root = root(f).await;
         root.fault.store(fault, Ordering::SeqCst);
-        let mut job = job();
-        job["source_capture_ref"]["expected_head"] = json!(base);
+        let job = job();
         let api = CaptureApi::new(&root.origin, TOKEN).unwrap();
-        let client = SourceGitHttp::new(&git_server.url, None).unwrap();
-        assert!(execute_with(&job, &api, &client).await.is_err());
+        assert!(execute_with(&job, &api).await.is_err());
         assert_eq!(
             oid(git(&root.fixture.destination, &["rev-parse", "main"], b"")),
             base
         );
-        assert!(!git_server.root.path().join("received.request").exists());
+        assert!(
+            root.requests
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|(op, _)| op != "commit")
+        );
     }
 }
 #[tokio::test]
-async fn independent_parent_readback_is_required_after_real_git_push() {
+async fn independent_parent_readback_is_required_after_the_platform_commit() {
     let (git_server, _, _) = server().await;
     let f = fixture(&git_server);
     let base = f.binding.base.commit.clone();
     let root = root(f).await;
     root.fault.store(3, Ordering::SeqCst);
-    let mut job = job();
-    job["source_capture_ref"]["expected_head"] = json!(base);
+    let job = job();
     let api = CaptureApi::new(&root.origin, TOKEN).unwrap();
-    let client = SourceGitHttp::new(&git_server.url, None).unwrap();
-    assert!(execute_with(&job, &api, &client).await.is_err());
+    assert!(execute_with(&job, &api).await.is_err());
     assert_ne!(
         oid(git(&root.fixture.destination, &["rev-parse", "main"], b"")),
         base,
-        "uploaded ref alone is never successful capture authority"
+        "a recorded commit alone is never successful capture authority"
     );
 }

@@ -1,6 +1,6 @@
 use crate::storage::{SqlStore, string};
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 mod acceptance;
 mod adaptive_team;
 mod archive;
@@ -46,6 +46,8 @@ mod runs;
 mod scheduling;
 mod sites;
 mod source_capture_retry;
+#[cfg(test)]
+pub(crate) mod source_kit;
 mod source_refresh;
 mod source_transport;
 mod study;
@@ -77,12 +79,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     {
         match op.as_str() {
             "claim" => return Ok(serde_json::json!({"already_done":true,"deleted":true})),
-            "recover" => return deletion::recover(db, now),
-            "repository_status"
-            | "deletion_status"
-            | "retry_deletion_cleanup"
-            | "outbox"
-            | "outbox_sent" => {}
+            "recover" => return Ok(serde_json::json!({"recovered":0})),
+            "repository_status" | "deletion_status" | "outbox" | "outbox_sent" => {}
             _ => {
                 return Err(Error::new(
                     "REPOSITORY_DELETED",
@@ -128,7 +126,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "resolve_conflict"
         | "conflict_refresh_complete" => conflicts::handle(db, &c, now),
         "deletion_status" => deletion::status(db),
-        "retry_deletion_cleanup" => deletion::retry_cleanup(db, &c),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
         "peer_status" => peers::read(db, &c, now),
@@ -179,7 +176,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
-        "reject_candidate" | "recover_publication" => publication::handle(db, &c, now),
+        "reject_candidate" | "publication_readback" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
         "record_transcript" => transcripts::record(db, c, now),
         "record_execution_log" => execution_logs::record(db, c, now),

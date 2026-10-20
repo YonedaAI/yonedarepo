@@ -53,6 +53,8 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             run("pnpm", &["test:apps"])?;
             // The source platform must pass on its own, with the agent layer switched off.
             run("pnpm", &["test:platform"])?;
+            run("pnpm", &["test:superfan"])?;
+            run("pnpm", &["test:eval"])?;
             run("pnpm", &["test:runtime"])?;
             run("pnpm", &["test:frontend"])?;
             run("pnpm", &["--dir", FRONTEND, "build"])?;
@@ -115,27 +117,31 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             crate::cloudflare::wrangler(std::path::Path::new(PLATFORM_CONFIG), &["deploy"])?;
             crate::cloudflare::wrangler(std::path::Path::new(SITES_CONFIG), &["deploy"])
         }
-        "seed-template" | "seed-demo" | "demo" | "verify-live" | "upgrade-policy" => {
+        "seed-template" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args
                 .windows(2)
                 .find(|v| v[0] == "--url")
                 .map(|v| v[1].as_str())
                 .unwrap_or("http://127.0.0.1:8787");
+            // The retry fixture is an ordinary console project; name it with --repo.
+            let repo = args
+                .windows(2)
+                .find(|v| v[0] == "--repo")
+                .map(|v| v[1].as_str())
+                .unwrap_or("retry-client");
             if command == "seed-template" {
                 crate::bootstrap::seed_template(url).await
-            } else if command == "seed-demo" {
-                live::seed(url).await
             } else if command == "demo" {
-                live::start(url).await
+                live::start(url, repo).await
             } else if command == "upgrade-policy" {
-                live::upgrade_policy(url).await
+                live::upgrade_policy(url, repo).await
             } else {
-                live::verify(url).await
+                live::verify(url, repo).await
             }
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|seed-template|seed-demo|demo|verify-live|upgrade-policy> [--url URL]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }

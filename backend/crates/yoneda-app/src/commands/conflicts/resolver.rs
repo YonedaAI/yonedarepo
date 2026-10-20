@@ -36,9 +36,15 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         );
     }
     let (mut run, authorization, brief) = super::repair_authority::prepare(db, c, &record, now)?;
+    if run["workspace_transport"] != "api-source-v1" {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Only lazy-source runs can resolve conflicts",
+        ));
+    }
     let autonomous = c.get("job_id").is_some();
     let job_id = format!("job:conflict-resolver:{request}");
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"conflict_id":record["id"],"expected_version":c["expected_version"],"guidance":brief,"expected_plan_revision":c["expected_plan_revision"],"expected_task_revisions":c["expected_task_revisions"],"authorization":authorization}),
     )?;
     if let Some(previous) = record.get("resolver_request_id") {
@@ -88,7 +94,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         .collect::<Result<_>>()?;
     validate_path_list(&scopes)?;
     // SourceBinding v1 freezes at most 64 write scopes; reject before scheduling or charging.
-    if run["workspace_transport"] == "api-source-v1" && scopes.len() > 64 {
+    if scopes.len() > 64 {
         return Err(Error::new(
             "SOURCE_SCOPE_LIMIT",
             "API source conflict resolution requires at most 64 approved write scopes",
@@ -108,8 +114,8 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         let provider = string(&source_execution, "provider")?;
         let model = string(&source_execution, "model")?;
         let harness = string(&source_execution, "harness")?;
-        yoneda_core::providers::validate_model(&provider, &model)?;
-        if yoneda_core::providers::provider(&provider)?.harness != harness {
+        yoneda_agents_core::providers::validate_model(&provider, &model)?;
+        if yoneda_agents_core::providers::provider(&provider)?.harness != harness {
             return Err(bad("Frozen provider and harness differ"));
         }
         Ok(())
@@ -140,10 +146,10 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             )
             .map_err(|_| bad("Invalid execution budget"))?
         } else {
-            yoneda_core::team::MAX_TEAM_EXECUTIONS
+            yoneda_agents_core::team::MAX_TEAM_EXECUTIONS
         }
     } else {
-        yoneda_core::agents::MAX_RUN_EXECUTIONS
+        yoneda_agents_core::agents::MAX_RUN_EXECUTIONS
     };
     if count >= limit {
         return Err(Error::new(
@@ -162,28 +168,15 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         scopes.join(", "),
         protected.join(", ")
     );
-    let legacy_task = format!(
-        "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The source checkout is the trusted merge workspace at {}, with checked target head {} and immutable candidate {} as its two Git parents. Its conflict markers contain both sides, and its tree already preserves cleanly merged candidate changes. Read and integrate both sides semantically; do not discard either side by choosing current or candidate wholesale. {} The trusted capture and independent evaluator will inspect the resulting revision against the checked target head.",
+    let resolver_task = format!(
+        "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The repo workspace is rooted at target {} with the trusted premerged changes from {} already applied; unresolved paths may still contain target bytes, without conflict markers. Read ../candidate-0 for the exact original candidate {} and ../candidate-1 for the exact preserved premerge workspace. Both views are read-only. Integrate both sides semantically and preserve clean premerged changes; do not select either side wholesale. {} Trusted capture preserves the ordered target and original candidate parents, then independent checks evaluate the exact result.",
         record["id"],
         brief,
-        record["merge_workspace_commit"],
         record["head_commit"],
+        record["merge_workspace_commit"],
         record["candidate_revision"],
         scope_rule
     );
-    let resolver_task = if run["workspace_transport"] == "api-source-v1" {
-        format!(
-            "Resolve the actual three-way merge for conflict {}. Approved guidance: {}. The repo workspace is rooted at target {} with the trusted premerged changes from {} already applied; unresolved paths may still contain target bytes, without conflict markers. Read ../candidate-0 for the exact original candidate {} and ../candidate-1 for the exact preserved premerge workspace. Both views are read-only. Integrate both sides semantically and preserve clean premerged changes; do not select either side wholesale. {} Trusted capture preserves the ordered target and original candidate parents, then independent checks evaluate the exact result.",
-            record["id"],
-            brief,
-            record["head_commit"],
-            record["merge_workspace_commit"],
-            record["candidate_revision"],
-            scope_rule
-        )
-    } else {
-        legacy_task
-    };
     let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":if autonomous {"Autonomous three-way conflict resolver"} else {"Owner-approved three-way conflict resolver"},"role":"coding","status":"queued","context":if autonomous { &run["context"] } else { &source_execution["context"] },"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"resolver_protected_paths":protected,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
@@ -261,7 +254,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         &job_id,
         "agent",
         now,
-        json!({"workspace_transport":"git-native-v1","execution":execution,"run":run,"policy":policy,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":compact_record["evidence"],"serverguard":"own_repository_only"}}),
+        json!({"workspace_transport":"api-source-v1","execution":execution,"run":run,"policy":policy,"conflict_resolver":{"working_branch_id":record["working_branch_id"],"target_revision":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"conflict_id":record["id"],"expected_base":record["candidate_base"],"expected_head":record["head_commit"],"expected_version":record["expected_version"],"candidate":record["candidate"],"merge_workspace_commit":record["merge_workspace_commit"],"merge_workspace_repository":record["workspace_revision"]["repository"],"merge_workspace_revision":record["workspace_revision"],"approved_manifest":compact_record["evidence"],"serverguard":"own_repository_only"}}),
     )?;
     record["resolver_request_input"] = request_input;
     record["resolver_authorization"] = authorization;
@@ -287,7 +280,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
 /// Paths a resolver must never edit: the guided verification floor plus the
 /// policy's protected test-bundle paths. Every other valid path is editable.
 fn protected_paths(policy: &Value) -> Vec<String> {
-    let mut paths: Vec<String> = yoneda_core::resolver_scope::ALWAYS_PROTECTED
+    let mut paths: Vec<String> = yoneda_agents_core::resolver_scope::ALWAYS_PROTECTED
         .iter()
         .map(|path| (*path).to_owned())
         .collect();

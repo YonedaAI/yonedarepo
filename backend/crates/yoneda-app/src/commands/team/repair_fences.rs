@@ -30,7 +30,7 @@ pub(super) fn supersede_task_attempts<S: SqlStore>(
                 .as_str()
                 .is_some_and(|eid| affected.contains(eid));
         if task_job {
-            cancel_job(db, &mut job, now)?;
+            cancel_job(db, &mut job)?;
             let jid = string(&job, "id")?;
             let mut latest = get(db, "jobs", &jid)?;
             if latest["status"] != "cancelled" {

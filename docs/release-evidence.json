@@ -479,7 +479,7 @@
     "worker_version": "a12a0a89-0064-4a9d-a2d5-b4c0a7f1ce6f",
     "runtime_version": 24,
     "runtime_digest": "sha256:4b5439bb9e9504b3ee0466bf73edfa77ae02addea599707e1b3a7615f2f197b6",
-    "native_acceptance_record": "git-native-acceptance.json",
+    "native_acceptance_record": "git-native-acceptance.json (removed with the Git-clone agent transport at N8; see git history at 5596bc8)",
     "human_reviewer_rehearsal": "pending after development"
   },
   "october_10_final_delivery_gate": {
@@ -505,8 +505,8 @@
     "worker_version": "b8877feb-1e20-49bd-b9ca-18667466b99e",
     "runtime_version": 24,
     "native_acceptance_records": [
-      "git-native-acceptance.json",
-      "git-native-repair-acceptance.json"
+      "git-native-acceptance.json (removed with the Git-clone agent transport at N8; see git history at 5596bc8)",
+      "git-native-repair-acceptance.json (removed with the Git-clone agent transport at N8; see git history at 5596bc8)"
     ],
     "human_reviewer_rehearsal": "pending after development",
     "includes": [

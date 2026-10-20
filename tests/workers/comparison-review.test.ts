@@ -6,7 +6,7 @@ import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { reserveWorkspaceSpend, settleWorkspaceSpend, workspaceSpendForAttempt } from '../../cloudflare/worker/workspace-spend';
 import { bindings, call, checkedBuilder, initialCommit, legacyCompare, modernCompareApproval,
-  newCompare, owner, readyReview, repo, runId, selectionArguments } from './comparison-review-fixture';
+  newCompare, owner, platformReadyReview, readyReview, repo, runId, selectionArguments } from './comparison-review-fixture';
 
 afterEach(reset);
 
@@ -100,35 +100,24 @@ it('denies every generic reviewer mutator before ledger, storage, or publication
 });
 
 it('reads both exact captured sources and refuses a foreign candidate, traversal, and unrelated evidence', async () => {
-  const { first, second, job } = await readyReview();
-  const reads: string[] = [];
-  const scoped = { ...bindings, ARTIFACTS: { get: async (name: string) => ({
-    [Symbol.dispose]() {},
-    readCommit: async (commit: string) => { reads.push(`${name}:${commit}`); return { treeHash: 'f'.repeat(40) }; },
-    readTree: async (tree: string) => tree === 'f'.repeat(40)
-      ? [{ name: 'public', type: 'tree', hash: 'd'.repeat(40) }]
-      : [{ name: 'index.html', type: 'blob', hash: 'e'.repeat(40) }],
-    readBlob: async () => new Blob([`<!doctype html><title>${name}</title>`]),
-  }) } } as unknown as Env;
+  const { base, first, second, job } = await platformReadyReview();
   const scope = scopeFor(job);
-  for (const candidate of [first, second]) {
-    const response = await hostedMcp(scoped, scope, { name: 'comparison_context', arguments: {
+  for (const [index, candidate] of [first, second].entries()) {
+    const response = await hostedMcp(bindings, scope, { name: 'comparison_context', arguments: {
       candidate_id: candidate.id, path: 'public/index.html', offset: 0, limit: 100,
     } });
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ candidate_id: candidate.id,
-      revision: candidate.revision, content: expect.stringContaining(candidate.revision.repository.split('/')[1]) });
+      revision: candidate.revision, content: expect.stringContaining(`Builder ${index + 1}`) });
   }
-  expect(reads).toEqual([`builder-1:${first.revision.commit}`, `builder-2:${second.revision.commit}`]);
   for (const args of [
     { candidate_id: 'foreign-candidate', path: 'public/index.html' },
     { candidate_id: first.id, path: '../other-repo/private-key' },
     { digest: '0'.repeat(64) },
-    { candidate_id: first.id, revision: { repository: 'yoneda-test/foreign', commit: initialCommit } },
+    { candidate_id: first.id, revision: { repository: 'platform/foreign', commit: base.commit } },
   ]) {
-    await expect(hostedMcp(scoped, scope, { name: 'comparison_context', arguments: args })).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    await expect(hostedMcp(bindings, scope, { name: 'comparison_context', arguments: args })).rejects.toMatchObject({ code: 'FORBIDDEN' });
   }
-  expect(reads).toHaveLength(2);
 });
 
 it('keeps a submitted assertion pending, applies only trusted completion, and exposes the exact decision to later relevant retrieval', async () => {

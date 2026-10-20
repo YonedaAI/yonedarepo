@@ -48,7 +48,7 @@ async function release(run: string, commit: string) {
   });
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const candidate = `candidate-${run}`;
-  const revision = { repository: 'yoneda-test/fixture-fork', commit };
+  const revision = { repository: `platform/${repo}`, commit };
   await call({
     op: 'finish',
     job_id: capture.id,
@@ -84,8 +84,8 @@ async function release(run: string, commit: string) {
     expected_version: repository.version,
     rationale: 'Synthetic owner selection',
   });
-  const publisher = await call({ op: 'claim', job_id: `publish:${decision.id}` });
-  await call({ op: 'finish', job_id: publisher.id, epoch: publisher.epoch, result: { commit } });
+  // The owner lands on the platform; the trusted adapter records the platform readback.
+  await call({ op: 'publication_readback', decision_id: decision.id, observed_commit: commit });
   return decision.id as string;
 }
 async function initialize() {
@@ -93,7 +93,7 @@ async function initialize() {
     op: 'init',
     id: repo,
     name: 'Published website',
-    remote: { namespace: 'yoneda-test', name: repo },
+    remote: { namespace: 'platform', name: repo, branch: 'main' },
     commit: 'a'.repeat(40),
     policy,
   });

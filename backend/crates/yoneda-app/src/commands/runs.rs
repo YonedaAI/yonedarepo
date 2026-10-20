@@ -1,7 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::agents::DelegationPolicy;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::agents::DelegationPolicy;
+use yoneda_agents_core::{Error, Result};
 const MAX_ACTIVE_WORK_RUNS: i64 = 6;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
@@ -105,11 +105,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 run["agents"] = c["agents"].clone();
             }
-            if let Some(transport) = c
-                .get("workspace_transport")
-                .or_else(|| r.get("workspace_transport"))
-            {
-                if transport != "git-native-v1" && transport != "api-source-v1" {
+            if let Some(transport) = c.get("workspace_transport") {
+                if transport != "api-source-v1" {
                     return Err(bad("Unsupported workspace transport"));
                 }
                 run["workspace_transport"] = transport.clone();
@@ -226,7 +223,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 if j["status"] == "queued" || j["status"] == "running" {
                     let jid = string(&j, "id")?;
                     stops.push(json!({"job_id":jid,"epoch":j["epoch"]}));
-                    cancel_job(db, &mut j, now)?;
+                    cancel_job(db, &mut j)?;
                     if let Some(eid) = j["payload"]["execution"]["id"]
                         .as_str()
                         .or_else(|| j["payload"]["candidate"]["execution"].as_str())

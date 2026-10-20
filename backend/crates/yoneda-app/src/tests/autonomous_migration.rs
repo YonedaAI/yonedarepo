@@ -29,7 +29,10 @@ fn real_version_twelve_upgrades_without_changing_history_and_repeats() {
         }
         db.query(
             "INSERT INTO schema_migrations(version,digest) VALUES(?,?)",
-            &[json!(index + 1), json!(yoneda_core::digest(sql.as_bytes()))],
+            &[
+                json!(index + 1),
+                json!(yoneda_agents_core::digest(sql.as_bytes())),
+            ],
         )
         .unwrap();
     }

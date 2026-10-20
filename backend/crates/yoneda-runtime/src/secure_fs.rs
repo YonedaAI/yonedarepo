@@ -10,10 +10,10 @@ use std::{
     },
     path::Path,
 };
-use yoneda_core::{FileEntry, Result};
+use yoneda_agents_core::{FileEntry, Result};
 
 pub(crate) struct ReadFailure {
-    pub(crate) error: yoneda_core::Error,
+    pub(crate) error: yoneda_agents_core::Error,
     pub(crate) stage: &'static str,
     pub(crate) code: &'static str,
     pub(crate) errno: Option<i32>,
@@ -56,7 +56,7 @@ fn open_at(
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 pub(crate) fn read_regular(root: &Path, path: &str) -> Result<FileEntry> {
-    read_regular_bounded(root, path, yoneda_core::MAX_WORKSPACE_BYTES)
+    read_regular_bounded(root, path, yoneda_agents_core::MAX_WORKSPACE_BYTES)
 }
 pub(crate) fn read_regular_bounded(root: &Path, path: &str, limit: usize) -> Result<FileEntry> {
     read_regular_detailed(root, path, limit).map_err(|failure| failure.error)
@@ -68,7 +68,8 @@ pub(crate) fn read_regular_detailed(
 ) -> std::result::Result<FileEntry, ReadFailure> {
     let limit =
         u64::try_from(limit).map_err(|e| ReadFailure::bounded("limits", "FILE_LIMIT", e))?;
-    yoneda_core::validate_path(path).map_err(|e| ReadFailure::bounded("path", "UNSAFE_PATH", e))?;
+    yoneda_agents_core::validate_path(path)
+        .map_err(|e| ReadFailure::bounded("path", "UNSAFE_PATH", e))?;
     let root_name = CString::new(root.as_os_str().as_bytes())
         .map_err(|e| ReadFailure::bounded("open_root", "UNSAFE_PATH", e))?;
     let mut directory = open_at(

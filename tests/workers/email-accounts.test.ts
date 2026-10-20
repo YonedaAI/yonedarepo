@@ -6,6 +6,7 @@ import { projectRoute, sitePolicy } from '../../cloudflare/worker/projects';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { templateArtifacts } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 afterEach(reset);
@@ -66,11 +67,11 @@ it('keeps email MCP grants scoped and revokes them on account recovery', async (
 });
 
 it('provisions email-owned projects through queued and alarm dispatch without dropping their owner', async () => {
-  await signup();
+  // The owner's own session creates the platform repository; setup then runs in the background.
+  const { cookie } = await signup();
   const send = vi.fn(async () => {});
-  const remote = { [Symbol.dispose]() {}, info: async () => ({ defaultBranch: 'main' }), log: async () => [{ hash: 'c'.repeat(40) }], listTokens: async () => ({ tokens: [] }), revokeToken: async () => true, readCommit: async () => ({ treeHash: 'd'.repeat(40) }), readTree: async () => [{ name: 'README.md', type: 'blob', hash: 'e'.repeat(40) }], readBlob: async () => new Blob(['Source']) };
-  const fake = { ...bindings, AGENT_QUEUE: { send }, ARTIFACTS: { get: async () => remote } } as unknown as Env;
-  const response = await projectRoute(new Request('https://yoneda/api/projects', { method: 'POST', body: JSON.stringify({ request_id: 'email-request-1234567890', name: 'New email project' }) }), fake, { role: 'user', workspace: owner });
+  const fake = { ...bindings, AGENT_QUEUE: { send }, ARTIFACTS: await templateArtifacts() } as unknown as Env;
+  const response = await projectRoute(new Request('https://yoneda/api/projects', { method: 'POST', headers: { cookie }, body: JSON.stringify({ request_id: 'email-request-1234567890', name: 'New email project' }) }), fake, { role: 'user', workspace: owner });
   expect(response?.status).toBe(202);
   const project = await response!.json<any>();
   expect(await enqueueProjects(fake, owner, [{ id: project.id }])).toEqual([project.id]);

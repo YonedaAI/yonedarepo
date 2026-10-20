@@ -1,6 +1,6 @@
 use crate::source_capture::capture_delta;
 use serde_json::json;
-use yoneda_core::{
+use yoneda_agents_core::{
     source_changeset::{SourceChange, SourceChangeset},
     source_workspace::*,
 };
@@ -43,7 +43,7 @@ pub(crate) fn fixture() -> (
     }];
     let digest = view_digest(&view, &overrides).unwrap();
     let id = workspace_id("repo", "producer", 1, &digest).unwrap();
-    let binding:SourceBinding=serde_json::from_value(json!({"version":1,"transport":"api-source-v1","workspace_id":id,"repo_id":"repo","run_id":"run","job_id":"producer","epoch":1,"execution_id":"execution","role":"integrator","access":"read_write","view_digest":digest,"baseline_overrides_digest":yoneda_core::fingerprint(&serde_json::to_value(&overrides).unwrap()).unwrap(),"base":base,"parents":[base.commit],"policy_digest":"7".repeat(64),"intent_digest":"8".repeat(64),"write_paths":["**"],"protected_paths":["schema.json"],"inputs":[base,input],"repo_base_version":0,"working_branch_id":null,"working_branch_version":null})).unwrap();
+    let binding:SourceBinding=serde_json::from_value(json!({"version":1,"transport":"api-source-v1","workspace_id":id,"repo_id":"repo","run_id":"run","job_id":"producer","epoch":1,"execution_id":"execution","role":"integrator","access":"read_write","view_digest":digest,"baseline_overrides_digest":yoneda_agents_core::fingerprint(&serde_json::to_value(&overrides).unwrap()).unwrap(),"base":base,"parents":[base.commit],"policy_digest":"7".repeat(64),"intent_digest":"8".repeat(64),"write_paths":["**"],"protected_paths":["schema.json"],"inputs":[base,input],"repo_base_version":0,"working_branch_id":null,"working_branch_version":null})).unwrap();
     let mut after = overrides[0].file.clone().unwrap();
     after.path = "added".into();
     let changeset = SourceChangeset {

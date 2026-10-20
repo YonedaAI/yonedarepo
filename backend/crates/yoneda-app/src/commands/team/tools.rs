@@ -77,7 +77,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 links.push(json!({"relation":"supports","target":target}));
             }
             let data = json!({"summary":summary,"interface_contract":contract,"references":references,"links":links,"epoch":job["epoch"],"authority":"assertion"});
-            let fingerprint = yoneda_core::fingerprint(&data)?;
+            let fingerprint = yoneda_agents_core::fingerprint(&data)?;
             let id = format!(
                 "handoff-assertion:{}:{}:{fingerprint}",
                 string(execution, "id")?,

@@ -23,9 +23,19 @@ export default defineConfig({
           ARTIFACTS_NAMESPACE: 'yoneda-test',
           CODEX_MODEL: 'gpt-5.6-luna',
           CLAUDE_MODEL: 'claude-sonnet-5-5',
+          PLATFORM_OBJECT_STORE: 'r2',
         },
       },
     }),
   ],
-  test: { include: ['tests/workers/**/*.test.ts'], exclude: ['tests/workers/apps-*.test.ts'], testTimeout: 20_000 },
+  // Module cache per checkout: worktrees share one symlinked node_modules, its default home.
+  test: {
+    fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
+    include: ['tests/workers/**/*.test.ts'],
+    setupFiles: ['tests/workers/platform-listing.ts'],
+    exclude: ['tests/workers/apps-*.test.ts'],
+    testTimeout: 20_000,
+    // One workerd per worker: cap it so parallel builders don't saturate the machine.
+    maxWorkers: 4,
+  },
 });

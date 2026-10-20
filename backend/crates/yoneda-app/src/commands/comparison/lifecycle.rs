@@ -97,12 +97,12 @@ pub(in crate::commands) fn wake<S: SqlStore>(db: &S, rid: &str, now: i64) -> Res
         )?;
         return Ok(());
     }
-    let digest = yoneda_core::fingerprint(&manifest)?;
+    let digest = yoneda_agents_core::fingerprint(&manifest)?;
     let round = number(&run["comparison"], "round")?;
     let id = format!("comparison-review:{rid}:r{round}:{digest}");
     let mut e = run["comparison"]["approval"]["reviewer"].clone();
     let p = string(&e, "provider")?;
-    for (k,v) in json!({"id":id,"run_id":rid,"harness":yoneda_core::providers::provider(&p)?.harness,"role":"reviewer","status":"queued","base":run["base"],"context":run["context"],"depth":0,"comparison_approval_id":run["comparison"]["approval"]["id"],"comparison_role":"reviewer","comparison_round":round,"budget":{"provider":e["provider"],"model":e["model"]}}).as_object().ok_or_else(||bad("Invalid execution"))? {e[k]=v.clone();}
+    for (k,v) in json!({"id":id,"run_id":rid,"harness":yoneda_agents_core::providers::provider(&p)?.harness,"role":"reviewer","status":"queued","base":run["base"],"context":run["context"],"depth":0,"comparison_approval_id":run["comparison"]["approval"]["id"],"comparison_role":"reviewer","comparison_round":round,"budget":{"provider":e["provider"],"model":e["model"]}}).as_object().ok_or_else(||bad("Invalid execution"))? {e[k]=v.clone();}
     run["execution_count"] = json!(
         number(&run, "execution_count")?
             .checked_add(1)

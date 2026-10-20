@@ -1,5 +1,6 @@
-import { safeId } from './http';
+import { revisionProject } from './agents-platform';
 import { SOURCE_LIMITS, type SourceRevision, sourceError } from './source-contract';
+import { openSource, type SourceRepo, type SourceTreeEntry } from './source-objects';
 import type { Env } from './types';
 
 export function sourcePath(path: unknown, root = false): string {
@@ -34,15 +35,23 @@ export const sourceOid = (oid: string) => {
     throw sourceError('SOURCE_OBJECT', 'Artifacts source requires an exact Git SHA-1 object');
   return oid;
 };
-export function sourceRepository(env: Env, revision: SourceRevision): string {
-  const [namespace, name, extra] = revision.repository.split('/');
-  if (extra || namespace !== env.ARTIFACTS_NAMESPACE || !safeId(name))
+/** The project whose platform repository holds `revision`, after checking its object ids. */
+export function sourceRepository(revision: SourceRevision): string {
+  let project: string;
+  try {
+    project = revisionProject(revision.repository);
+  } catch {
     throw sourceError('SOURCE_SCOPE', 'Source revision is outside the approved namespace');
+  }
   sourceOid(revision.commit);
   sourceOid(revision.tree);
-  return name;
+  return project;
 }
-export function sourceEntry(entry: ArtifactsTreeEntry): void {
+export async function sourceRepo(env: Env, revision: SourceRevision): Promise<SourceRepo> {
+  sourceRepository(revision);
+  return openSource(env, revision.repository);
+}
+export function sourceEntry(entry: SourceTreeEntry): void {
   sourcePath(entry.name);
   if (entry.name.includes('/')) throw sourceError('SOURCE_PATH', 'Invalid Git tree child');
   sourceOid(entry.hash);
@@ -58,7 +67,7 @@ export function sourceEntry(entry: ArtifactsTreeEntry): void {
 }
 
 /** Prove the frozen commit/root/path link before any cached content read. */
-export async function sourceLink(repo: ArtifactsRepo, revision: SourceRevision, path: string) {
+export async function sourceLink(repo: SourceRepo, revision: SourceRevision, path: string) {
   sourcePath(path);
   const commit = await repo.readCommit(sourceOid(revision.commit));
   if (!commit || commit.hash !== revision.commit || commit.treeHash !== revision.tree)

@@ -13,7 +13,7 @@ pub(super) const TERMINAL: [&str; 6] = [
 pub(super) fn view<S: SqlStore>(db: &S, session: &Value) -> Result<Value> {
     let r = repo(db)?;
     let mut steps = Vec::new();
-    let mut unlocked = yoneda_core::fingerprint(&r["policy"])? == session["policy_digest"];
+    let mut unlocked = yoneda_agents_core::fingerprint(&r["policy"])? == session["policy_digest"];
     let mut next = Value::Null;
     let mut choice = None;
     let mut lineage = Vec::new();

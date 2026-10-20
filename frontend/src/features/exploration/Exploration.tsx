@@ -4,6 +4,7 @@ import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { comparisonBusy } from './comparisonView';
+import { acceptRequest, publishOnPlatform } from './platformPublication';
 import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
 import { RunHistory } from './RunHistory';
@@ -130,10 +131,14 @@ export function Exploration({
     }
   }
   const onCompose = () => newRun();
-  async function act(action: string, body: unknown): Promise<boolean> {
+  async function act(
+    action: string,
+    body: unknown,
+    then?: (value: Record<string, any>) => Promise<unknown>,
+  ): Promise<boolean> {
     setBusy(true);
     try {
-      await api(`repos/${repo.id}/${action}`, body);
+      await then?.(await api<Record<string, any>>(`repos/${repo.id}/${action}`, body));
       await onChange();
       return true;
     } catch (error) {
@@ -250,14 +255,11 @@ export function Exploration({
                 onComparisonAction={act}
                 onRefresh={onChange}
                 onAccept={(candidate, rationale, alternatives) =>
-                  act('accept', {
-                    request_id: crypto.randomUUID(),
-                    candidate,
-                    expected_commit: repo.head_commit,
-                    expected_version: repo.version,
-                    rationale,
-                    alternatives,
-                  })
+                  act(
+                    'accept',
+                    acceptRequest(repo, candidate, rationale, alternatives),
+                    (receipt) => publishOnPlatform(repo.id, receipt.id, receipt.publication),
+                  )
                 }
                 onReject={(candidate, reason) =>
                   act('reject_candidate', {

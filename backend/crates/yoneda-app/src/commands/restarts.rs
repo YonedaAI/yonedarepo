@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::Value;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn validate<S: SqlStore>(db: &S, c: &Value) -> Result<Option<String>> {
     if c.get("restart_of").is_none() {

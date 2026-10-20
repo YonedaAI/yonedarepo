@@ -109,7 +109,8 @@ pub(super) async fn collect(
             if captured["revision"] != candidate["revision"] {
                 return Err("Oracle source revision mismatch".into());
             }
-            let files: yoneda_core::Workspace = serde_json::from_value(captured["files"].clone())?;
+            let files: yoneda_agents_core::Workspace =
+                serde_json::from_value(captured["files"].clone())?;
             yoneda_runtime::materialize(temp.path(), &files)?;
             let feature = oracle_feature(case, execution["parent_execution"].is_string());
             observed["oracle"] = super::oracle::check(temp.path(), feature).await?;

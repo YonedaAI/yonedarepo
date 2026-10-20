@@ -50,7 +50,7 @@ async function start(requestId: string, retry?: true) {
 it('a cancelled build attempt is retried once with suffixed runs and replays without allocation', async () => {
   const policy = guidedPolicy('d'.repeat(64));
   await call({ op: 'init', id: repo, name: 'Offline guided retry fixture', workspace: owner,
-    remote: { namespace: 'yoneda-test', name: repo, branch: 'main' }, commit: base, policy,
+    remote: { namespace: 'yoneda-test', name: repo, branch: 'main' }, commit: base, tree: 'b'.repeat(40), policy,
     _guided_project: { profile_id: 'task-board-v1', version: 1, policy_digest: await sourceFingerprint(policy),
       test_bundle_digest: 'd'.repeat(64),
       starter: { repository: 'yoneda-test/starter', branch: 'main', commit: base, tree: 'b'.repeat(40) } } });

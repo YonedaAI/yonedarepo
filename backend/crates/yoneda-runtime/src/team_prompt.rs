@@ -1,7 +1,7 @@
 //! Team instructions preserve the frozen contract and captured dependency identities.
 use crate::field;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 // Codex 0.161 offers local MCP tools through deferred functions.exec discovery.
 pub(crate) const CODEX_READ_ONLY_TOOLS: &str = r#"Codex read-only platform checkpoint: before workspace analysis or local commands, discover the YonedaRepo MCP tools through functions.exec and ALL_TOOLS. An empty top-level tool catalog does not mean the MCP tools are unavailable. In functions.exec, run:

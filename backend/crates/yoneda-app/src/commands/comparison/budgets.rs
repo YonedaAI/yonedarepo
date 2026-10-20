@@ -53,14 +53,14 @@ pub(in crate::commands) fn authorize_execution(run: &Value, job: &Value) -> Resu
         ));
     }
     if e["comparison_role"] == "reviewer" {
-        yoneda_core::comparison::validate_reviewer(run, e)?;
+        yoneda_agents_core::comparison::validate_reviewer(run, e)?;
         if run["comparison"]["review_execution_id"] != e["id"]
             || e["comparison_round"] != run["comparison"]["round"]
         {
             return Err(Error::new("FENCED", "Reviewer superseded"));
         }
     } else if e["comparison_role"] == "repair" || e["comparison_role"] == "builder" {
-        yoneda_core::adaptive_team::execution_effort(run, e)?;
+        yoneda_agents_core::adaptive_team::execution_effort(run, e)?;
     } else {
         return Err(Error::new("FENCED", "Unknown comparison execution role"));
     }

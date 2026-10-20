@@ -35,7 +35,7 @@ it.each(['source_only', 'plain_notes'] as const)('%s rejects every historical re
   for (const tool of ['context_search', 'context_get', 'graph', 'why', 'decision', 'artifact_get']) {
     const args = { id: 'context:historical-note', query: canary, path: 'index.html', commit: 'a'.repeat(40) };
     await expect(guardContextAccess(bindings, repo, identity, tool, args)).rejects.toThrow('CONTEXT_STUDY_RESTRICTED');
-    await expect(remoteTool(bindings, principal, repo, tool, args, 'https://yoneda')).rejects.toThrow('CONTEXT_STUDY_RESTRICTED');
+    await expect(remoteTool(bindings, principal, repo, tool, args)).rejects.toThrow('CONTEXT_STUDY_RESTRICTED');
   }
   const usage = await ledger(bindings, repo, { op: 'context_usage', ...identity });
   expect(usage.counts.read_calls).toBe(0);
@@ -65,15 +65,13 @@ it.each(arms)('%s sanitizes initial and status responses recursively, with notes
     if (arm === 'plain_notes') expect(value.plain_notes).toEqual([note]);
     else expect(JSON.stringify(value)).not.toContain(canary);
   }
-  const remote = await remoteTool(bindings, principal, repo, 'repo_context', {}, 'https://yoneda');
+  const remote = await remoteTool(bindings, principal, repo, 'repo_context', {});
   expect(remote.runs).toEqual([]);
   expect(remote.context).toEqual([]);
   if (arm === 'plain_notes') expect(remote.plain_notes).toEqual([note]);
   else expect(JSON.stringify(remote)).not.toContain(canary);
-  const fakeRemote = { [Symbol.dispose]() {}, fork: async () => ({ token: 'test-capability' }), info: async () => ({}), listTokens: async () => ({ tokens: [] }), revokeToken: async () => true };
-  const scoped = { ...bindings, ARTIFACTS: { get: async () => fakeRemote } } as unknown as Env;
-  const attempt = await remoteTool(scoped, principal, repo, 'attempt_begin', { request_id: crypto.randomUUID(), intent: 'Continue the study' }, 'https://yoneda');
-  const status = await remoteTool(scoped, principal, repo, 'attempt_status', { attempt_id: attempt.attempt_id }, 'https://yoneda');
+  const attempt = await remoteTool(bindings, principal, repo, 'attempt_begin', { request_id: crypto.randomUUID(), intent: 'Continue the study' });
+  const status = await remoteTool(bindings, principal, repo, 'attempt_status', { attempt_id: attempt.attempt_id });
   for (const value of [attempt, status]) {
     expect(JSON.stringify(value)).not.toContain('context_study');
     if (arm === 'plain_notes') expect(value.plain_notes).toEqual([note]);
@@ -86,12 +84,12 @@ it.each(arms)('%s sanitizes initial and status responses recursively, with notes
 
 it('graph permits explicit retrieval and records exact opened nodes without preloading the corpus', async () => {
   const { note } = await setup('graph');
-  const value = await remoteTool(bindings, principal, repo, 'context_get', { id: note.id }, 'https://yoneda');
+  const value = await remoteTool(bindings, principal, repo, 'context_get', { id: note.id });
   expect(value).toEqual(note);
-  const graph = await remoteTool(bindings, principal, repo, 'graph', { id: note.id, depth: 1 }, 'https://yoneda');
+  const graph = await remoteTool(bindings, principal, repo, 'graph', { id: note.id, depth: 1 });
   expect(graph.nodes.some((node: Json) => node.id === note.id)).toBe(true);
   expect(JSON.stringify(graph)).not.toContain('context_study');
-  const usage = await remoteTool(bindings, principal, repo, 'context_usage', {}, 'https://yoneda');
+  const usage = await remoteTool(bindings, principal, repo, 'context_usage', {});
   expect(usage.version).toBe(1);
   expect(usage.counts.read_calls).toBe(2);
   expect(usage.coverage.status).toBe('partial');

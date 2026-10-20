@@ -123,7 +123,10 @@ async fn agent_deadline_preserves_acknowledged_evidence_and_still_reports_reject
         captured.lock().unwrap().push((path, trusted));
         async move {
             if path == "/evidence" {
-                Err(yoneda_core::Error::new("FENCED", "Simulated stale attempt"))
+                Err(yoneda_agents_core::Error::new(
+                    "FENCED",
+                    "Simulated stale attempt",
+                ))
             } else {
                 Ok(json!({}))
             }

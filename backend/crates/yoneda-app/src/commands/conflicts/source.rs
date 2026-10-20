@@ -16,6 +16,11 @@ pub(super) fn hydrate<S: SqlStore>(db: &S, record: &Value) -> Result<Value> {
     for key in EVIDENCE_PATHS {
         if !record["evidence"][format!("{key}_ref")].is_null() {
             value["evidence"][key] = json!(crate::path_lists::load(db, &record["evidence"], key)?);
+            // Typed evidence rejects unknown fields; `compact` restores the reference on save.
+            if let Some(evidence) = value["evidence"].as_object_mut() {
+                evidence.remove(&format!("{key}_ref"));
+                evidence.remove(&format!("{key}_count"));
+            }
         }
     }
     Ok(value)

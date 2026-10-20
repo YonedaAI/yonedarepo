@@ -7,14 +7,6 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Result, git_object::ObjectId};
 
-/// Protected refs (Scion: refs only for main and releases) are the ones Git clients see;
-/// other branches live only in the authority.
-pub fn protected(refname: &str) -> bool {
-    refname == "refs/heads/main"
-        || refname == "refs/heads/release"
-        || refname.starts_with("refs/heads/release/")
-}
-
 /// Called in the same transaction as the ref move; only protected refs are projected.
 pub fn target<S: SqlStore>(
     db: &S,
@@ -23,7 +15,7 @@ pub fn target<S: SqlStore>(
     version: u64,
     now: i64,
 ) -> Result<()> {
-    if !protected(refname) {
+    if !super::rows::protected(refname) {
         return Ok(());
     }
     db.query(

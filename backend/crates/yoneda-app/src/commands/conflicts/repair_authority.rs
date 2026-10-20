@@ -53,7 +53,11 @@ fn affected<S: SqlStore>(db: &S, run: &Value, paths: &[String]) -> Result<Vec<Va
                 .into_iter()
                 .flatten()
                 .filter_map(Value::as_str)
-                .any(|scope| paths.iter().any(|p| yoneda_core::team::owns_path(scope, p)))
+                .any(|scope| {
+                    paths
+                        .iter()
+                        .any(|p| yoneda_agents_core::team::owns_path(scope, p))
+                })
         {
             tasks.push(task);
         }

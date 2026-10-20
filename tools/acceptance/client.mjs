@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
@@ -34,23 +33,6 @@ export function client(origin) {
     return JSON.parse(value.result.content[0].text);
   }
   return { api, mcp };
-}
-
-/** Header stays in child environment; captured diagnostics never print it. */
-export async function git(root, argv, token) {
-  const environment = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' };
-  for (const key of Object.keys(environment))
-    if (/^GIT_(TRACE|CURL_VERBOSE|CONFIG_(COUNT|KEY_|VALUE_))/.test(key)) delete environment[key];
-  if (token) Object.assign(environment, { GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}` });
-  return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/git', ['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.file.allow=never', ...argv], { cwd: root, env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '';
-    child.stdout.on('data', chunk => { if (output.length < 1024 * 1024) output += chunk; });
-    child.stderr.resume();
-    const timer = setTimeout(() => child.kill('SIGKILL'), 60000);
-    child.on('error', () => { clearTimeout(timer); reject(new Error('Git fixture process failed to start')); });
-    child.on('close', code => { clearTimeout(timer); code === 0 ? resolve(output.trim()) : reject(new Error(`Git fixture ${argv[0]} failed (${code})`)); });
-  });
 }
 
 export async function until(check, description, deadline) {

@@ -113,22 +113,17 @@ fn externally_stopped_agent_requeues_once_in_a_fresh_epoch_then_fails_terminally
     );
 }
 
-fn blocked(db: &NativeStore, conflict: bool) -> Value {
+/// The platform readback observed `main` at another commit than the selected one.
+fn blocked(db: &NativeStore) -> Value {
     let receipt = call(db, ready(db)).unwrap();
-    let id = format!("publish:{}", receipt["id"].as_str().unwrap());
-    call(db, json!({"op":"claim","job_id":id})).unwrap();
-    if conflict {
-        call(db,json!({"op":"finish","job_id":id,"epoch":1,"result":{"conflict":true,"commit":"f".repeat(40)}})).unwrap();
-    } else {
-        call(db,json!({"op":"fail","job_id":id,"epoch":1,"retryable":false,"error":"Acknowledgement lost"})).unwrap();
-    }
+    call(db,json!({"op":"publication_readback","decision_id":receipt["id"],"observed_commit":"f".repeat(40)})).unwrap();
     json!({"op":"resync_repository","_workspace":"_admin","observed_commit":"f".repeat(40),"expected_version":1,"expected_pending":receipt["id"]})
 }
 
 #[test]
 fn owner_resync_preserves_conflict_audit_and_clears_stale_site() {
     let db = repo();
-    let request = blocked(&db, true);
+    let request = blocked(&db);
     db.query(
         "UPDATE repository SET payload=json_set(payload,'$.site',json(?))",
         &[json!(
@@ -157,11 +152,9 @@ fn owner_resync_preserves_conflict_audit_and_clears_stale_site() {
 }
 
 #[test]
-fn owner_resync_recognizes_success_after_acknowledgement_loss_and_fences_publisher() {
+fn owner_resync_recognizes_a_later_landing_of_the_selected_commit() {
     let db = repo();
-    let mut request = blocked(&db, false);
-    // Simulate a still-running superseded publisher at the recovery boundary.
-    db.query("UPDATE jobs SET payload=json_set(payload,'$.status','running','$.lease_until',121000) WHERE id='publish:decision:request-a'", &[]).unwrap();
+    let mut request = blocked(&db);
     request["observed_commit"] = json!("c".repeat(40));
     let recovered = call(&db, request).unwrap();
     assert_eq!(recovered["published_commit"], "c".repeat(40));
@@ -174,26 +167,6 @@ fn owner_resync_recognizes_success_after_acknowledgement_loss_and_fences_publish
             .unwrap()
             .iter()
             .any(|e| e["relation"] == "published_as")
-    );
-    let job = crate::storage::get(&db, "jobs", "publish:decision:request-a").unwrap();
-    assert_eq!(job["status"], "cancelled");
-    assert_eq!(job["epoch"], 2);
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"finish","job_id":job["id"],"epoch":1,"result":{"commit":"c".repeat(40)}})
-        )
-        .unwrap_err()
-        .code,
-        "FENCED"
-    );
-    assert!(
-        !db.query(
-            "SELECT id FROM outbox WHERE id='stop:publish:decision:request-a:1'",
-            &[]
-        )
-        .unwrap()
-        .is_empty()
     );
     let graph = call(&db, json!({"op":"graph","id":"decision:request-a"})).unwrap();
     assert!(
@@ -208,7 +181,7 @@ fn owner_resync_recognizes_success_after_acknowledgement_loss_and_fences_publish
 #[test]
 fn owner_resync_requires_owner_explicit_cas_and_blocked_state() {
     let db = repo();
-    let request = blocked(&db, false);
+    let request = blocked(&db);
     let before = call(&db, json!({"op":"snapshot"})).unwrap();
     for (field, value, code) in [
         ("_workspace", json!("other"), "FORBIDDEN"),
@@ -343,22 +316,17 @@ fn rollout_defer_preserves_attempt_before_execution_and_rejects_after_start() {
 }
 
 #[test]
-fn resync_without_pending_fences_orphaned_publishers_and_does_not_reblock() {
+fn resync_without_pending_does_not_reblock() {
     let db = repo();
-    blocked(&db, false);
+    blocked(&db);
     db.query(
         "UPDATE repository SET payload=json_set(payload,'$.pending',null)",
         &[],
     )
     .unwrap();
-    db.query("UPDATE jobs SET payload=json_set(payload,'$.status','queued') WHERE id='publish:decision:request-a'", &[]).unwrap();
     let request = json!({"op":"resync_repository","_workspace":"_admin","expected_version":1,
         "expected_pending":null,"observed_commit":"a".repeat(40)});
     call(&db, request.clone()).unwrap();
-    assert_eq!(
-        crate::storage::get(&db, "jobs", "publish:decision:request-a").unwrap()["status"],
-        "cancelled"
-    );
     call(&db, json!({"op":"recover","now":1201000})).unwrap();
     assert_eq!(
         call(&db, json!({"op":"repository_status"})).unwrap()["status"],
@@ -370,7 +338,7 @@ fn resync_without_pending_fences_orphaned_publishers_and_does_not_reblock() {
 #[test]
 fn recovery_replay_rejects_same_commit_advance_and_changed_pending_decision() {
     let db = repo();
-    let request = blocked(&db, false);
+    let request = blocked(&db);
     call(&db, request.clone()).unwrap();
     db.query(
         "UPDATE repository SET payload=json_set(payload,'$.version',3,'$.pending','decision:next')",

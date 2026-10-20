@@ -44,9 +44,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             if name.len() > 100 {
                 return Err(bad("Project name exceeds 100 bytes"));
             }
-            let policy: yoneda_core::Policy =
+            let policy: yoneda_agents_core::Policy =
                 serde_json::from_value(c["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-            yoneda_core::build::validate_policy(&policy)?;
+            yoneda_agents_core::build::validate_policy(&policy)?;
             let source = c.get("source").cloned().unwrap_or(Value::Null);
             let guided = guided_project(c)?;
             if let Ok(existing) = get(db, TABLE, &key) {
@@ -91,10 +91,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 p["deleted_at"] = json!(now);
                 p["error"] = Value::Null;
                 put(db, &key, &p)?;
+                db.query(
+                    "DELETE FROM workspace_records WHERE id=?",
+                    &[json!(format!("platform-credential:{id}"))],
+                )?;
                 db.query("UPDATE workspace_records SET payload=json_set(payload,'$.revoked',json('true')) WHERE id LIKE 'grant:%' AND json_extract(payload,'$.repo')=?", &[json!(id)])?;
                 audit(db, "project.deleted", now, json!({"id":id}))?;
             }
             Ok(p)
+        }
+        "project_platform_bind" | "project_platform_credential" => {
+            super::project_platform::handle(db, c, &key, now)
         }
         "project_update" | "project_claim" | "project_progress" | "project_retry"
         | "project_schedule" => super::project_setup::handle(db, c, &key, now),
@@ -115,8 +122,8 @@ fn guided_project(c: &Value) -> Result<Value> {
                     .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         })
     };
-    if value["profile_id"] != yoneda_core::guided::PROFILE_ID
-        || !yoneda_core::guided::supported_version(&value["version"])
+    if value["profile_id"] != yoneda_agents_core::guided::PROFILE_ID
+        || !yoneda_agents_core::guided::supported_version(&value["version"])
         || !oid(&value["starter"]["commit"])
         || !oid(&value["starter"]["tree"])
         || value["starter"]["repository"].as_str().is_none_or(|s| {
@@ -145,8 +152,8 @@ fn guided_project(c: &Value) -> Result<Value> {
                 || s.bytes()
                     .any(|b| b <= b' ' || b == 127 || b"~^:?*[\\".contains(&b))
         })
-        || value["policy_digest"] != yoneda_core::fingerprint(&c["policy"])?
-        || c["policy"]["version"] != yoneda_core::guided::PROFILE_ID
+        || value["policy_digest"] != yoneda_agents_core::fingerprint(&c["policy"])?
+        || c["policy"]["version"] != yoneda_agents_core::guided::PROFILE_ID
         || value["test_bundle_digest"] != c["policy"]["build"]["test_bundle"]["digest"]
         || value["test_bundle_digest"]
             .as_str()

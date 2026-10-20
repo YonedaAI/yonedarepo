@@ -1,7 +1,7 @@
 //! Checked working heads are separate from canonical publication and advance with a CAS.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match string(c, "op")?.as_str() {
@@ -132,7 +132,7 @@ pub(super) fn promote<S: SqlStore>(
         candidate["working_branch_state"] = json!("stale");
         let coordinate = run["mode"] == "collaborate" && run["autonomy_policy"]["enabled"] == true;
         if coordinate {
-            candidate["coordination_signal"] = json!(yoneda_core::fingerprint(&json!({
+            candidate["coordination_signal"] = json!(yoneda_agents_core::fingerprint(&json!({
                 "branch_id":id,"version":branch["version"],
                 "target":branch["working_revision"],"candidate":candidate["id"]
             }))?);

@@ -1,7 +1,7 @@
 //! Isolated attempt/view staging authority. All operations use synchronous SQL transactions.
 use crate::storage::{SqlStore, bad, create, get, number, save, string};
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, source_changeset::*, source_workspace::*};
+use yoneda_agents_core::{Error, Result, source_changeset::*, source_workspace::*};
 mod auth;
 mod checkpoints;
 mod gc;

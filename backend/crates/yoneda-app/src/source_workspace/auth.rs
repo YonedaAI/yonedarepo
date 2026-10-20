@@ -19,7 +19,7 @@ fn signature<T: serde::Serialize>(claims: &T, domain: &str, secret: &str) -> Res
         Hmac::<Sha256>::new_from_slice(&key(secret)?).map_err(|_| bad("Invalid source signer"))?;
     let value = serde_json::to_value(claims).map_err(|_| bad("Invalid grant claims"))?;
     mac.update(domain.as_bytes());
-    mac.update(yoneda_core::fingerprint(&value)?.as_bytes());
+    mac.update(yoneda_agents_core::fingerprint(&value)?.as_bytes());
     Ok(mac
         .finalize()
         .into_bytes()

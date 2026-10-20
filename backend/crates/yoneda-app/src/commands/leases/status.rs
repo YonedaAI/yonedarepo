@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 #[cfg(test)]
 #[path = "status_tests.rs"]
 mod tests;
@@ -102,32 +102,6 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
                 }
             }
         }
-    }
-    if job["kind"] == "publish" && job["status"] == "failed" {
-        let did = string(&job["payload"], "decision_id")?;
-        let mut repository = repo(db)?;
-        if repository["pending"] != did {
-            // A superseded publisher cannot re-block a recovered or advanced repository.
-            return Ok(());
-        }
-        let mut decision = get(db, "decisions", &did)?;
-        decision["status"] = json!("publication_failed");
-        decision["error"] = job
-            .get("error")
-            .cloned()
-            .unwrap_or(json!("Publisher attempt budget exhausted"));
-        repository["status"] = json!("blocked");
-        save(db, "repository", "repo", &repository)?;
-        save(db, "decisions", &did, &decision)?;
-        node(
-            db,
-            &did,
-            "decision",
-            decision["rationale"].as_str().unwrap_or("Decision"),
-            "owner",
-            now,
-            decision.clone(),
-        )?;
     }
     if let Some(rid) = job["payload"]["execution"]["run_id"]
         .as_str()

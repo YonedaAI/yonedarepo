@@ -4,36 +4,36 @@ import { brokerHandler } from '../../cloudflare/worker/broker';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import { ledger, object, sha } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
+import { platformCommit, platformProject } from './platform-fixture';
 import { api, bindings, containerBindings, signup } from './reviewer-fixture';
 
 afterEach(reset);
 const repo = 'compact-diff';
-const revision = { repository: 'yoneda-test/trusted-capture-fork', commit: 'b'.repeat(40) };
-const tree = 'c'.repeat(40);
+const repository = `platform/${repo}`;
+const branch = 'agents/capture-00112233445566778899aabbccddeeff';
 const supervisor = 'synthetic-trusted-supervisor';
 async function fixture() {
   const cookie = await signup('diff_owner');
-  await ledger(bindings, repo, { op: 'init', id: repo, workspace: 'diff_owner', name: 'Diff transport fixture',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: 'a'.repeat(40), policy: sitePolicy });
+  const { base, platform } = await platformProject(bindings, 'diff_owner', repo, { 'README.md': '# Diff\n' }, sitePolicy);
+  const captured = await platformCommit(platform, base.commit, { 'public/index.html': '<!doctype html>\n' });
+  await platform.call('POST', '/branches', { ref: branch, commit: captured.commit, expected: null });
+  const revision = { repository, commit: captured.commit };
   await ledger(bindings, repo, { op: 'start_run', id: 'diff-run', intent: 'Synthetic capture',
     agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Test capture' }] });
   const agent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:diff-run:agent-1' });
   await ledger(bindings, repo, { op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: 'd'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:diff-run:agent-1' });
-  const scope: Scope = { repo_id: repo, job: capture, supervisor, fork: revision.repository, model_calls: 0, created_at: Date.now() };
-  const readCommit = vi.fn(async (hash: string) => ({ hash, treeHash: hash === 'a'.repeat(40) ? 'a'.repeat(40) : tree, parents: ['a'.repeat(40)] }));
-  const readTree = async (hash: string) => hash === 'a'.repeat(40) ? [] : hash === tree
-    ? [{name:'public',type:'tree',hash:'d'.repeat(40)}]
-    : [{name:'index.html',type:'blob',hash:'e'.repeat(40)}];
-  // Artifacts commit verification and Container RPC are fake; the broker,
-  // attempt fencing, R2 digest storage and ledger transition are real workerd.
-  const scoped = { ...bindings, ARTIFACTS: { get: async () => ({ [Symbol.dispose]() {}, readCommit, readTree }) } } as unknown as Env;
-  const container = containerBindings(scoped, scope);
+  // The broker's dispatch assigns the candidate branch; Container RPC is fake, while the
+  // broker, attempt fencing, platform readback, R2 digest storage and ledger are real workerd.
+  const scope: Scope = { repo_id: repo, job: { ...capture, source_capture_ref: { branch } }, supervisor,
+    model_calls: 0, created_at: Date.now() };
+  const container = containerBindings(bindings, scope);
   const complete = (body: Json, token = supervisor, target = container.scoped) => brokerHandler(new Request('http://yoneda.internal/complete', {
     method: 'POST', headers: { authorization: `Bearer ${token}` }, body: JSON.stringify(body),
   }), target, { containerId: 'synthetic-capture' } as Parameters<typeof brokerHandler>[2]);
-  const result = (diff: string) => ({ id: 'diff-candidate', revision, tree, paths: ['public/index.html'], diff, summary: 'Synthetic captured diff' });
-  return { cookie, capture, scope, readCommit, container, complete, result };
+  const result = (diff: string, at = captured) => ({ id: 'diff-candidate', revision: { repository, commit: at.commit },
+    tree: at.tree, paths: ['public/index.html'], diff, summary: 'Synthetic captured diff' });
+  return { cookie, capture, scope, base, platform, captured, revision, container, complete, result };
 }
 
 it('stores a >1 MiB trusted diff in R2, keeps candidate/evaluator compact and hydrates authorized owner routes', async () => {
@@ -44,11 +44,10 @@ it('stores a >1 MiB trusted diff in R2, keeps candidate/evaluator compact and hy
   const completed = await f.complete({ ...f.result(diff), diff_digest: forged, job_id: 'forged-job', epoch: 999 });
   expect(completed.status).toBe(200);
   expect(f.container.stop).toHaveBeenCalledOnce();
-  expect(f.readCommit).toHaveBeenCalledWith(revision.commit);
   const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
   const candidate = snapshot.candidates[0];
   const digest = await sha(diff);
-  expect(candidate).toMatchObject({ id: 'diff-candidate', diff_digest: digest, revision });
+  expect(candidate).toMatchObject({ id: 'diff-candidate', diff_digest: digest, revision: f.revision });
   expect(candidate.diff).toBeUndefined();
   expect(candidate.diff_digest).not.toBe(forged);
   const evaluator = await ledger(bindings, repo, { op: 'claim', job_id: 'evaluate:diff-candidate' });
@@ -76,7 +75,7 @@ it('rejects missing full diff, foreign captured revision and untrusted superviso
   const target = { ...f.container.scoped, OBJECTS: { put } } as unknown as Env;
   const metadata = { ...f.result(''), diff: undefined, diff_digest: 'f'.repeat(64) };
   expect((await f.complete(metadata, supervisor, target)).status).toBe(409);
-  expect((await f.complete({ ...f.result('foreign'), revision: { ...revision, repository: 'yoneda-test/foreign' } }, supervisor, target)).status).toBe(403);
+  expect((await f.complete({ ...f.result('foreign'), revision: { ...f.revision, repository: 'platform/foreign' } }, supervisor, target)).status).toBe(403);
   expect((await f.complete(f.result('untrusted'), 'forged-supervisor', target)).status).toBe(403);
   expect(put).not.toHaveBeenCalled();
   const after = await ledger(bindings, repo, { op: 'snapshot' });
@@ -87,10 +86,14 @@ it('rejects missing full diff, foreign captured revision and untrusted superviso
 
 it('rejects a forged commit parent and rolls back completion on simulated R2 upload failure', async () => {
   const f = await fixture();
-  f.readCommit.mockResolvedValueOnce({ hash: revision.commit, treeHash: tree, parents: ['e'.repeat(40)] });
-  const invalid = await f.complete(f.result('Rejected parent'));
+  // The assigned branch holds a commit whose parent is not the frozen base.
+  const detour = await platformCommit(f.platform, f.base.commit, { 'other.txt': 'detour\n' });
+  const forged = await platformCommit(f.platform, detour.commit, { 'public/index.html': '<!doctype html>\n' });
+  await f.platform.call('POST', '/branches', { ref: branch, commit: forged.commit, expected: f.captured.commit });
+  const invalid = await f.complete(f.result('Rejected parent', forged));
   expect(invalid.status).toBe(409);
   expect((await invalid.json<Json>()).error.code).toBe('INVALID_CAPTURE');
+  await f.platform.call('POST', '/branches', { ref: branch, commit: f.captured.commit, expected: forged.commit });
   const put = vi.fn(async () => { throw new Error('Simulated R2 unavailable'); });
   const target = { ...f.container.scoped, OBJECTS: { put } } as unknown as Env;
   const failed = await f.complete(f.result('Retryable capture diff'), supervisor, target);

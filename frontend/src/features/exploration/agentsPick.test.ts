@@ -3,8 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { comparisonFixture } from '../../../../tests/frontend/comparisonFixture';
 import type { Snapshot } from '../../lib/types';
-import { retryablePublication } from '../workspace/publicationRetry';
 import { activeDecision, recordedRationale, rejectionOf, supersededResults } from './agentsPick';
+import { pendingLanding } from './platformPublication';
 import { RunCandidates } from './RunCandidates';
 import { runAttention, selectionBlocker } from './runReviewState';
 
@@ -92,32 +92,32 @@ it('treats an owner rejection as a recorded decision that blocks only that resul
   expect(attention.title).not.toBe('Publication in progress');
 });
 
-it('offers publication retry only for a conflict against the unchanged decision-time head', () => {
+it('finishes only a pending publication, landing its exact target on the leased head', () => {
   const f = comparisonFixture();
   const repository = {
     ...f.snapshot.repository,
-    status: 'blocked',
     pending: 'decision:a',
-    published_commit: 'canonical',
+    platform_repo: 'r0123456789abcdef0123',
   };
-  const conflict = {
+  const decision = {
     id: 'decision:a',
-    status: 'publication_conflict',
-    observed: { conflict: true, observed: 'canonical' },
+    status: 'publication_pending',
+    target: { commit: 'target' },
+    publication_expected: { commit: 'leased' },
+    checks_overridden: false,
   };
-  expect(retryablePublication(repository, [conflict])).toBe(conflict);
-  expect(
-    retryablePublication(repository, [{ ...conflict, observed: { observed: 'moved' } }]),
-  ).toBeUndefined();
-  expect(
-    retryablePublication(repository, [{ ...conflict, status: 'publication_failed' }]),
-  ).toBeUndefined();
-  expect(retryablePublication({ ...repository, status: 'ready' }, [conflict])).toBeUndefined();
-  expect(
-    retryablePublication(repository, [
-      { ...conflict, published_before: 'older', observed: { observed: 'older' } },
-    ]),
-  ).toBeDefined();
+  expect(pendingLanding(repository, decision)).toEqual({
+    platform_repo: 'r0123456789abcdef0123',
+    ref: 'main',
+    commit: 'target',
+    expected: 'leased',
+    break_glass: false,
+  });
+  expect(pendingLanding(repository, { ...decision, status: 'publication_conflict' })).toBeNull();
+  expect(pendingLanding({ ...repository, platform_repo: undefined }, decision)).toBeNull();
+  expect(pendingLanding(repository, { ...decision, checks_overridden: true })?.break_glass).toBe(
+    true,
+  );
 });
 
 function renderPick(snapshot: Snapshot, run: Record<string, any>, current: Record<string, any>) {
