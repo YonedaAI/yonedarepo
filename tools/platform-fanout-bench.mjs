@@ -168,6 +168,9 @@ const result = {
   repo,
   writers: WRITERS,
   principals: values.principals,
+  // Every writer shares one account session, verified on that account's one workspace
+  // Durable Object per request (no auth result outlives its check, by decision).
+  ...(values.principals === 'session' ? { known: 'shared-session auth serialization' } : {}),
   mode: values.mode ?? 'default',
   begin: values.begin ?? 'default',
   read_mode: values.read ?? 'default',
