@@ -169,6 +169,18 @@ fn a_failed_push_after_accept_stays_pending_visible_and_readable() {
 }
 
 #[test]
+fn a_projector_that_dies_before_reporting_is_visible() {
+    let (h, root) = seeded();
+    commit_staged(&h, &root, 1, "a.txt", "a\n");
+    h.ok(PROJECTOR, json!({"op": "repo_objects_pending"}));
+    h.ok(PROJECTOR, json!({"op": "repo_objects_pending"}));
+    let status = pending(&h);
+    assert_eq!(status["pending"], 1);
+    assert_eq!(status["oldest"]["attempts"], 2);
+    assert_eq!(status["oldest"]["detail"], "No outcome reported yet");
+}
+
+#[test]
 fn duplicate_projection_and_record_are_idempotent() {
     let (h, root) = seeded();
     let prepared = commit_staged(&h, &root, 1, "a.txt", "a\n");
@@ -230,6 +242,19 @@ fn large_commits_are_pushed_and_outbox_ops_are_platform_only() {
     }));
     assert!(prepared.get("staged").is_none());
     assert!(prepared["push_b64"].is_string());
+    // So are commits of many objects (imports), however small.
+    let many: Vec<Value> = (0..super::super::staging::STAGE_OBJECTS)
+        .map(|i| file(&format!("many/{i}.txt"), &format!("{i}\n")))
+        .collect();
+    let prepared = h.ok(
+        AGENT,
+        json!({
+            "op": "repo_prepare_commit", "parent": root, "base_version": 1, "stage": true,
+            "changes": many, "message": "many", "trees": {tree.clone(): h.tree_json(&tree)},
+            "author": {"name": "Agent", "email": "agent@example.com"},
+        }),
+    );
+    assert!(prepared.get("staged").is_none());
     assert_eq!(
         code(h.run(
             AGENT,

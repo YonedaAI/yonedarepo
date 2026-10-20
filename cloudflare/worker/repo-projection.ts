@@ -21,13 +21,17 @@ export async function dispatchObjects(env: Env, repo: string) {
   });
 }
 
-const OUTBOX_ROUNDS = 16;
+// Rounds of up to 64 commits per invocation: each commit costs a few subrequests (its
+// push, readback and commit cache entry), and a Worker invocation has a bounded number.
+const OUTBOX_ROUNDS = 4;
 
-/** Pushes one staged commit (its objects fill the R2 tier alongside) and reads it back. */
+/** Pushes one staged commit and reads it back. Only its commit object is written to the
+ * R2 tier (the edge copy was written at commit time; reads fill the rest on demand). */
 async function projectCommit(objects: RepoObjects, entry: Json) {
   try {
     const built = compute({ op: 'staged_push', commit: entry.commit, objects: entry.objects });
-    const cached = objects.cache(built.objects as CachedObject[]);
+    const own = (built.objects as CachedObject[]).filter((o) => o.id === entry.commit);
+    const cached = objects.cache(own, 'r2');
     const { readback } = await objects.pushCommit(fromBase64(built.push_b64), entry.commit, cached);
     if (
       readback.tree !== built.tree ||
@@ -45,7 +49,7 @@ async function projectCommit(objects: RepoObjects, entry: Json) {
  * Drains the object outbox: every staged commit is pushed (together, so the store's push
  * queue combines them into one receive-pack) and read back, and the authority drops its
  * staged copies only for verified ones. Idempotent under duplicate delivery; throws (for
- * queue retry) while anything stays pending.
+ * queue retry) while a commit fails, and hands a long outbox to a fresh job (`more`).
  */
 export async function projectObjects(env: Env, repo: string) {
   const call = caller(env, repo, { _system: 'projection' });
@@ -53,7 +57,7 @@ export async function projectObjects(env: Env, repo: string) {
   let projected = 0;
   for (let round = 0; round < OUTBOX_ROUNDS; round++) {
     const { commits } = await call({ op: 'repo_objects_pending' });
-    if (commits.length === 0) return { projected };
+    if (commits.length === 0) return { projected, more: false };
     if (!objects) {
       const status = await call({ op: 'repo_status' });
       objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
@@ -66,7 +70,8 @@ export async function projectObjects(env: Env, repo: string) {
       throw new Error(`${failed.length} staged commits are not in the object store yet`);
     projected += results.length;
   }
-  throw new Error('The object outbox did not drain');
+  await dispatchObjects(env, repo);
+  return { projected, more: true };
 }
 
 /** Pushes every pending ref target; throws (for queue retry) only on transport failure. */
@@ -75,7 +80,8 @@ export async function projectRefs(env: Env, envelope: Envelope) {
   const { pending, objects_pending } = await call({ op: 'repo_projection_pending' });
   if (pending.length === 0) return { projected: 0 };
   // A ref to objects the store lacks would be refused (and misread as drift).
-  if (objects_pending > 0) await projectObjects(env, envelope.repo_id);
+  if (objects_pending > 0 && (await projectObjects(env, envelope.repo_id)).more)
+    throw new Error('Staged objects are still being projected');
   const status = await call({ op: 'repo_status' });
   const objects = new RepoObjects(env, envelope.repo_id, parseStore(env, status.object_store));
   let projected = 0;
