@@ -9,8 +9,6 @@ pub(crate) fn untrusted(command: &mut Command, root: &Path) {
         .env_clear()
         .env("PATH", "/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin")
         .env("HOME", "/home/agent")
-        // Vitest 5 always writes an API token under the XDG data dir; HOME may be read-only.
-        .env("XDG_DATA_HOME", "/tmp")
         .env("CARGO_HOME", "/home/agent/.cargo")
         .env("RUSTUP_HOME", "/usr/local/rustup")
         .env("CARGO_TARGET_DIR", "/work/target")
