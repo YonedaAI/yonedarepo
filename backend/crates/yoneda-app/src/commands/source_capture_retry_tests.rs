@@ -7,6 +7,7 @@ fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
         c["now"] = json!(16000);
     }
     c["_workspace"] = json!("owner");
+    crate::commands::source_kit::approve_start(db, &mut c);
     crate::execute(db, c)
 }
 fn budget(model: &str) -> Value {

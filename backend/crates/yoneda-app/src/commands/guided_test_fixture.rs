@@ -1,7 +1,9 @@
 //! Native ledger command pipeline with fixture observations; no model or hosted claim.
 use super::*;
+use crate::commands::source_kit;
 fn call(db: &NativeStore, mut input: Value, now: i64) -> Value {
     input["now"] = json!(now);
+    source_kit::approve_start(db, &mut input);
     execute(db, input).unwrap()
 }
 pub(super) fn checked(db: &NativeStore, rid: &str, phase: &str, overlap: bool) -> String {
@@ -104,11 +106,7 @@ fn captured(
             json!({"op":"record_transcript","job_id":job["id"],"epoch":job["epoch"],"digest":"c".repeat(64)}),
             30 + index as i64,
         );
-        call(
-            db,
-            json!({"op":"finish","job_id":job["id"],"epoch":job["epoch"],"result":{"workspace":"e".repeat(64)}}),
-            32 + index as i64,
-        );
+        let registration = source_kit::finish_agent(db, job, 32 + index as i64);
         let eid = job["payload"]["execution"]["id"].as_str().unwrap();
         let capture = call(
             db,
@@ -118,9 +116,9 @@ fn captured(
         call(
             db,
             json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],
-            "result":{"id":format!("contribution:{eid}"),"revision":{"repository":"owner/contribution","commit":if index==0{"c".repeat(40)}else{"d".repeat(40)}},
+            "result":source_kit::with_lineage(&registration,json!({"id":format!("contribution:{eid}"),"revision":{"repository":"owner/contribution","commit":if index==0{"c".repeat(40)}else{"d".repeat(40)}},
             "tree":"f".repeat(40),"paths":[if index==0{"public/tasks.mjs"}else{"public/app.mjs"}],
-            "summary":"Native capture protocol fixture observation"}}),
+            "summary":"Native capture protocol fixture observation"}))}),
             42 + index as i64,
         );
         assert_eq!(
@@ -146,11 +144,7 @@ fn captured(
         json!({"op":"record_transcript","job_id":integrator["id"],"epoch":integrator["epoch"],"digest":"d".repeat(64)}),
         51,
     );
-    call(
-        db,
-        json!({"op":"finish","job_id":integrator["id"],"epoch":integrator["epoch"],"result":{"workspace":"e".repeat(64)}}),
-        52,
-    );
+    let registration = source_kit::finish_agent(db, &integrator, 52);
     let capture = call(
         db,
         json!({"op":"claim","job_id":format!("capture:{eid}")}),
@@ -160,9 +154,9 @@ fn captured(
     call(
         db,
         json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],
-        "result":{"id":cid,"revision":{"repository":"owner/captured","commit":if rid.ends_with("-concurrent-0"){"1".repeat(40)}else if rid.ends_with("-concurrent-1"){"2".repeat(40)}else{"b".repeat(40)}},"tree":"f".repeat(40),
+        "result":source_kit::with_lineage(&registration,json!({"id":cid,"revision":{"repository":"owner/captured","commit":if rid.ends_with("-concurrent-0"){"1".repeat(40)}else if rid.ends_with("-concurrent-1"){"2".repeat(40)}else{"b".repeat(40)}},"tree":"f".repeat(40),
         "paths":["public/tasks.mjs","public/app.mjs"],"integration_digest":capture["payload"]["integration_digest"],
-        "summary":"Native integrated capture fixture observation"}}),
+        "summary":"Native integrated capture fixture observation"}))}),
         54,
     );
     cid

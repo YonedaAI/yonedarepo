@@ -1,6 +1,6 @@
 //! Guide v2 fixed plans start specialists immediately under the real guided scope protections.
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 const PLANS: &str = include_str!("../../../../../yoneda-agents-core/src/guided_plans.json");
 

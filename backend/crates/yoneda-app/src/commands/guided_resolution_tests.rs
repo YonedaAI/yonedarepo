@@ -4,6 +4,7 @@ use crate::commands::source_kit;
 fn call(db: &NativeStore, input: Value, now: i64) -> Value {
     let mut input = input;
     input["now"] = json!(now);
+    crate::commands::source_kit::approve_start(db, &mut input);
     execute(db, input).unwrap()
 }
 fn resolved_capture() -> (NativeStore, String) {

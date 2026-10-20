@@ -22,10 +22,11 @@ fn captured(db: &NativeStore, index: usize) -> String {
     let eid = format!("compare:agent-{index}");
     let cid = format!("candidate-{index}");
     f::call(db, json!({"op":"claim","job_id":format!("job:{eid}")})).unwrap();
-    f::call(db,json!({"op":"finish","job_id":format!("job:{eid}"),"epoch":1,"result":{"workspace":"e".repeat(64)}})).unwrap();
+    let registration =
+        crate::commands::source_kit::finish_job(db, &format!("job:{eid}"), 1000, json!({}));
     assert!(reviewers(db).is_empty(), "Pending capture must wait");
     f::call(db, json!({"op":"claim","job_id":format!("capture:{eid}")})).unwrap();
-    f::call(db,json!({"op":"finish","job_id":format!("capture:{eid}"),"epoch":1,"result":{"id":cid,"revision":{"repository":"test/fork","commit":"b".repeat(40)},"tree":"f".repeat(40),"paths":["src/booking.rs"],"summary":"Synthetic captured booking","diff_digest":"d".repeat(64)}})).unwrap();
+    f::call(db,json!({"op":"finish","job_id":format!("capture:{eid}"),"epoch":1,"result":crate::commands::source_kit::with_lineage(&registration,json!({"id":cid,"revision":{"repository":"test/fork","commit":"b".repeat(40)},"tree":"f".repeat(40),"paths":["src/booking.rs"],"summary":"Synthetic captured booking","diff_digest":"d".repeat(64)}))})).unwrap();
     cid
 }
 fn checked(db: &NativeStore, cid: &str, status: &str) {

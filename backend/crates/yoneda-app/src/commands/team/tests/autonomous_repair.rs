@@ -1,5 +1,5 @@
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 pub(super) fn fixture() -> NativeStore {
     let db = NativeStore::memory().unwrap();

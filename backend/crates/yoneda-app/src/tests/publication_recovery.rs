@@ -11,15 +11,11 @@ fn checked_step(db: &NativeStore, run: &str, candidate: &str, commit: &str) {
     )
     .unwrap();
     let coding = format!("job:{run}:codex-minimal");
-    call(db, json!({"op":"claim","job_id":coding})).unwrap();
-    call(
-        db,
-        json!({"op":"finish","job_id":coding,"epoch":1,"result":{"workspace":"b".repeat(64)}}),
-    )
-    .unwrap();
+    let claimed = call(db, json!({"op":"claim","job_id":coding})).unwrap();
+    let registration = source_kit::finish_agent(db, &claimed, 1000);
     let capture = format!("capture:{run}:codex-minimal");
     call(db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":candidate,"revision":{"repository":"yoneda-dev/fork-a","commit":commit},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Checked step"}})).unwrap();
+    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":candidate,"revision":{"repository":"yoneda-dev/fork-a","commit":commit},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Checked step"}))})).unwrap();
     let evaluate = format!("evaluate:{candidate}");
     call(db, json!({"op":"claim","job_id":evaluate})).unwrap();
     let policy = crate::storage::repo(db).unwrap()["policy"].clone();

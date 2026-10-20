@@ -1,4 +1,4 @@
-use crate::{SqlStore, execute, native::NativeStore};
+use crate::{SqlStore, commands::source_kit::execute, native::NativeStore};
 use serde_json::{Value, json};
 
 fn fixture() -> NativeStore {

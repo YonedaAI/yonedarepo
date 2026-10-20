@@ -1,5 +1,5 @@
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn start(db: &NativeStore) {
     execute(db, json!({"op":"init","now":10,"id":"repair-repo","name":"Repair","remote":{"namespace":"test","name":"repair"},"commit":"a".repeat(40),"policy":{"version":"repair-v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1","required_checks":["build"],"build":{"setup":[],"checks":[{"name":"build","argv":["node","--check","public/index.js"],"timeout_seconds":30}]}}})).unwrap();

@@ -170,7 +170,9 @@ fn stage_request(id: &str, ids: Value) -> Value {
         "campaign":{"id":"booking-study","version":2,"chain_id":id,"bucket":"routine","purpose":"routine"}})
 }
 
-fn sign_stage(mut command: Value) -> Value {
+/// The Worker approves the source base, then signs the stage grant over the whole request.
+fn sign_stage(db: &NativeStore, mut command: Value) -> Value {
+    crate::commands::source_kit::approve_start(db, &mut command);
     use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
     let mut public = command.clone();
@@ -212,7 +214,7 @@ fn signed_stage_corpus_excludes_future_requirements_and_stays_frozen() {
         let db = booking_trial(arm);
         let initial = call(
             &db,
-            sign_stage(stage_request("initial", json!(["context:capacity"]))),
+            sign_stage(&db, stage_request("initial", json!(["context:capacity"]))),
         )
         .unwrap();
         assert_eq!(
@@ -237,10 +239,10 @@ fn signed_stage_corpus_excludes_future_requirements_and_stays_frozen() {
         .unwrap();
         let feature = call(
             &db,
-            sign_stage(stage_request(
-                "feature",
-                json!(["context:waitlist", "context:capacity"]),
-            )),
+            sign_stage(
+                &db,
+                stage_request("feature", json!(["context:waitlist", "context:capacity"])),
+            ),
         )
         .unwrap();
         assert_eq!(
@@ -284,13 +286,13 @@ fn stage_selection_requires_a_signed_owner_request_and_known_unique_nonempty_ids
         json!(["context:capacity", "context:capacity"]),
     ] {
         assert_eq!(
-            call(&db, sign_stage(stage_request("invalid", ids)))
+            call(&db, sign_stage(&db, stage_request("invalid", ids)))
                 .unwrap_err()
                 .code,
             "INVALID_INPUT"
         );
     }
-    let mut tampered = sign_stage(stage_request("tampered", json!(["context:capacity"])));
+    let mut tampered = sign_stage(&db, stage_request("tampered", json!(["context:capacity"])));
     tampered["current_context_ids"] = json!(["context:waitlist"]);
     assert_eq!(call(&db, tampered).unwrap_err().code, "FORBIDDEN");
     assert_eq!(call(&db, json!({"op":"snapshot"})).unwrap(), before);

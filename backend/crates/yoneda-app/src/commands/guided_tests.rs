@@ -1,5 +1,5 @@
 //! Native SQLite command regressions; no inference, network or funding.
-use crate::{execute, native::NativeStore, storage::*};
+use crate::{commands::source_kit::execute, native::NativeStore, storage::*};
 use serde_json::{Value, json};
 #[path = "guided_test_fixture.rs"]
 mod evidence_fixture;

@@ -24,7 +24,6 @@ mod deletion;
 mod execution_logs;
 #[path = "tests/graph_status.rs"]
 mod graph_status;
-mod legacy_transport;
 #[path = "tests/model_budgets.rs"]
 mod model_budgets;
 #[path = "tests/peer_messages.rs"]
@@ -46,10 +45,12 @@ mod single_agent;
 #[path = "tests/working_branches.rs"]
 mod working_branches;
 
+use crate::commands::source_kit;
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {
         c["now"] = json!(1000);
     }
+    source_kit::approve_start(db, &mut c);
     execute(db, c)
 }
 fn repo() -> NativeStore {
@@ -168,16 +169,15 @@ fn captured(db: &NativeStore) {
         json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
     )
     .unwrap();
-    let coding = "job:run-one:codex-minimal";
-    call(db, json!({"op":"claim","job_id":coding})).unwrap();
-    call(
+    let coding = call(
         db,
-        json!({"op":"finish","job_id":coding,"epoch":1,"result":{"workspace":"b".repeat(64)}}),
+        json!({"op":"claim","job_id":"job:run-one:codex-minimal"}),
     )
     .unwrap();
+    let registration = source_kit::finish_agent(db, &coding, 1000);
     let capture = "capture:run-one:codex-minimal";
     call(db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}})).unwrap();
+    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}))})).unwrap();
 }
 fn ready(db: &NativeStore) -> Value {
     captured(db);

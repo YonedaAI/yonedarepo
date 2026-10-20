@@ -12,6 +12,71 @@ fn call(db: &NativeStore, mut c: Value, now: i64) -> Value {
     crate::execute(db, c).unwrap()
 }
 
+fn published(db: &NativeStore) -> Value {
+    crate::storage::repo(db)
+        .map(|r| {
+            json!({"repository":format!("{}/{}",r["remote"]["namespace"].as_str().unwrap_or_default(),
+                r["remote"]["name"].as_str().unwrap_or_default()),"commit":r["published_commit"]})
+        })
+        .unwrap_or(Value::Null)
+}
+
+fn working(db: &NativeStore, id: Option<&str>) -> Option<Value> {
+    crate::storage::get(db, "working_branches", id?)
+        .ok()
+        .map(|b| b["working_revision"].clone())
+}
+
+fn approve(run: &mut Value, base: &Value) {
+    if run.get("workspace_transport").is_some() {
+        return;
+    }
+    run["workspace_transport"] = json!("api-source-v1");
+    run["_source_transport_approved"] = json!(true);
+    run["_source_base"] =
+        json!({"repository":base["repository"],"commit":base["commit"],"tree":"b".repeat(40)});
+}
+
+/// What the Worker adds to every owner run approval after reading the platform: the API source
+/// transport and its approved frozen base (the working branch head, else the published commit).
+pub(crate) fn approve_start(db: &NativeStore, c: &mut Value) {
+    if c["op"] == "start_run" {
+        let base = working(db, c["working_branch_id"].as_str()).unwrap_or_else(|| published(db));
+        approve(c, &base);
+    } else if c["op"] == "start_guided_step" {
+        let session = c["session_id"].as_str().unwrap_or_default();
+        let branch = crate::storage::get(db, "nodes", session)
+            .ok()
+            .and_then(|n| n["data"]["working_branch_id"].as_str().map(str::to_owned));
+        let mut base = working(db, branch.as_deref()).unwrap_or_else(|| published(db));
+        // A concurrent retry restarts from the checked extend checkpoint, not the branch head.
+        if c["retry"] == true && c["step_id"] == "concurrent" {
+            let view = crate::execute(
+                db,
+                json!({"op":"guided_session","_workspace":c["_workspace"],"id":session,"now":c["now"]}),
+            )
+            .unwrap_or(Value::Null);
+            if let Some(extend) = view["steps"].as_array().and_then(|steps| {
+                steps
+                    .iter()
+                    .find(|step| step["id"] == "extend")
+                    .map(|step| step["revision"].clone())
+            }) {
+                base = extend;
+            }
+        }
+        for run in c["_guided_runs"].as_array_mut().into_iter().flatten() {
+            approve(run, &base);
+        }
+    }
+}
+
+/// `crate::execute` with the adapter's start-run approval applied.
+pub(crate) fn execute(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
+    approve_start(db, &mut c);
+    crate::execute(db, c)
+}
+
 /// Seal the leased producer's approved view (optionally with one staged file) and register it.
 pub(crate) fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed: bool) -> Value {
     let context = call(
@@ -25,11 +90,15 @@ pub(crate) fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed
         files: vec![],
     };
     // Exact dependency paths start absent; a capture reads the premerged bytes itself.
-    let overrides: Vec<Value> = context["baseline_inputs"]
+    let paths: std::collections::BTreeSet<String> = context["baseline_inputs"]
         .as_array()
         .into_iter()
         .flatten()
         .flat_map(|input| input["paths"].as_array().cloned().unwrap_or_default())
+        .filter_map(|path| path.as_str().map(str::to_owned))
+        .collect();
+    let overrides: Vec<Value> = paths
+        .into_iter()
         .map(|path| json!({"path":path,"file":null}))
         .collect();
     let bound = call(
@@ -97,6 +166,24 @@ pub(crate) fn finish_agent(db: &NativeStore, job: &Value, now: i64) -> Value {
     registration
 }
 
+/// Finish the leased coding job `job_id` through its registered seal; `extra` adds result
+/// fields (a transcript). Returns the registration.
+pub(crate) fn finish_job(db: &NativeStore, job_id: &str, now: i64, extra: Value) -> Value {
+    let job = crate::storage::get(db, "jobs", job_id).unwrap();
+    let epoch = job["epoch"].as_i64().unwrap();
+    let registration = seal(db, job_id, epoch, now, false);
+    let mut result = json!({"source_verified":true,"source_registered":pointer(&registration)});
+    for (key, value) in extra.as_object().into_iter().flatten() {
+        result[key] = value.clone();
+    }
+    call(
+        db,
+        json!({"op":"finish","job_id":job_id,"epoch":epoch,"result":result}),
+        now,
+    );
+    registration
+}
+
 /// A trusted capture result bound to `registration`; `extra` adds readback or provenance.
 pub(crate) fn capture_result(
     registration: &Value,
@@ -120,4 +207,15 @@ pub(crate) fn capture_result(
         result[key] = value.clone();
     }
     result
+}
+
+/// `result` (a capture's revision, tree, paths, summary...) bound to `registration`'s lineage.
+pub(crate) fn with_lineage(registration: &Value, result: Value) -> Value {
+    let id = result["id"].as_str().unwrap_or_default().to_owned();
+    let commit = result["revision"]["commit"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    let paths = result["paths"].clone();
+    capture_result(registration, &id, &commit, paths, result)
 }

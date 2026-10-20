@@ -204,12 +204,12 @@ fn explicit_citation_remains_an_assertion_while_its_candidate_revision_is_indepe
     call(&db, json!({"op":"context_publish","job_id":"job:update:agent-1","epoch":1,
         "record":{"id":"context:choice","kind":"proposed_decision","statement":"Keep blue navigation",
         "purpose":"Follow the earlier constraint","links":[{"relation":"supports","target":"context:colors"}]}})).unwrap();
-    call(&db, json!({"op":"finish","job_id":"job:update:agent-1","epoch":1,"result":{"workspace":"e".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_job(&db, "job:update:agent-1", 1000, json!({}));
     let capture = "capture:update:agent-1";
     call(&db, json!({"op":"claim","job_id":capture})).unwrap();
     let revision = json!({"repository":"yoneda-dev/fixture-fork","commit":"b".repeat(40)});
-    call(&db, json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"checked-update",
-        "revision":revision,"tree":"f".repeat(40),"paths":["public/index.html"],"diff":"fixture","summary":"Synthetic captured revision"}})).unwrap();
+    call(&db, json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"checked-update",
+        "revision":revision,"tree":"f".repeat(40),"paths":["public/index.html"],"diff":"fixture","summary":"Synthetic captured revision"}))})).unwrap();
     let evaluator = "evaluate:checked-update";
     call(&db, json!({"op":"claim","job_id":evaluator})).unwrap();
     call(

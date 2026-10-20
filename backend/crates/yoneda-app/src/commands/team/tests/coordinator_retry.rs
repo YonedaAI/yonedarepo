@@ -1,5 +1,5 @@
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn fixture() -> NativeStore {
     let db = autonomous_tests::fixture();
