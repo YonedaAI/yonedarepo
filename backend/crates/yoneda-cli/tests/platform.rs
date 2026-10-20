@@ -108,6 +108,19 @@ fn three_offline_commits_land(platform: &Platform) -> TestResult {
         out.contains("Pushed 3 platform commit(s)") && out.contains("Landed 3 commit(s)"),
         &out,
     )?;
+    // The chain's tip lands as one fast-forward: one log version on main, not three.
+    let log = platform.owner_call("GET", &format!("/repos/{}/txlog", s.repo), None)?;
+    let on_main: Vec<&Value> = log["entries"]
+        .as_array()
+        .ok_or("txlog has no entries")?
+        .iter()
+        .filter(|e| e["refname"] == "refs/heads/main" && e["kind"] != "import")
+        .collect();
+    check(
+        // a.txt, the renamed note and tool.sh; the note's first path came and went.
+        on_main.len() == 1 && on_main[0]["paths"].as_array().map(Vec::len) == Some(3),
+        &format!("one landing carrying the chain's net changes, got {on_main:?}"),
+    )?;
     check(
         content(&platform.blob(&s.repo, "a.txt")?) == "a2\n",
         "a.txt landed",
