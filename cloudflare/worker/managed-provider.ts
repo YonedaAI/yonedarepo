@@ -50,6 +50,17 @@ async function storeKey(env: Env, provider: string) {
 const reference = async (env: Env, owner: string, provider: string) =>
   `${PREFIX}${provider}:${await proof(env, owner, provider)}`;
 
+/** Whether a value has the managed-reference shape; user-supplied keys never may. */
+export const isManagedReference = (value: unknown) =>
+  typeof value === 'string' && value.trim().startsWith(PREFIX);
+
+/** Constant-time equality: fixed-length SHA-256 digests compared by the runtime. */
+async function sameSecret(a: string, b: string) {
+  const digest = (v: string) => crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  const [x, y] = await Promise.all([digest(a), digest(b)]);
+  return crypto.subtle.timingSafeEqual(x, y);
+}
+
 /**
  * The provider key behind a decrypted vault value: the value itself, or, for a managed
  * reference, the Secrets Store key. A reference that is forged, bound to another account
@@ -60,7 +71,7 @@ export async function resolveProviderKey(env: Env, owner: string, provider: stri
   if (
     !enabled(env) ||
     !PROVIDERS.includes(provider) ||
-    value !== (await reference(env, owner, provider))
+    !(await sameSecret(value, await reference(env, owner, provider)))
   )
     throw missing('Managed provider key is unavailable');
   return storeKey(env, provider);
