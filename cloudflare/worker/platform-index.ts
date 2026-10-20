@@ -7,4 +7,5 @@ export {
 export { CheckContainer } from './check-container';
 export { PlatformEntrypoint as default } from './platform-entrypoint';
 export { PlatformImportWorkflow } from './repo-import-workflow';
+export { LandCombiner } from './repo-land-combiner';
 export { ObjectPushQueue } from './repo-push-queue';

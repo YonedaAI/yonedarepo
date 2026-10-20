@@ -65,6 +65,10 @@
       {
         "name": "COMMIT_SHARDS",
         "class_name": "CommitShard"
+      },
+      {
+        "name": "LAND_COMBINERS",
+        "class_name": "LandCombiner"
       }
     ]
   },
@@ -87,6 +91,12 @@
       "tag": "v3",
       "new_sqlite_classes": [
         "CommitShard"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "LandCombiner"
       ]
     }
   ],
@@ -121,6 +131,10 @@
       {
         "binding": "PLATFORM_QUEUE",
         "queue": "yonedarepo-platform-dev-jobs"
+      },
+      {
+        "binding": "PLATFORM_CHECKS",
+        "queue": "yonedarepo-platform-dev-checks"
       }
     ],
     "consumers": [
@@ -129,6 +143,15 @@
         "max_batch_size": 10,
         "max_batch_timeout": 1,
         "max_concurrency": 20,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-platform-dev-dead-letter"
+      },
+      // Check runs take minutes (container start, the check): one per invocation, up to
+      // the container limit at once, apart from the derive and projection jobs above.
+      {
+        "queue": "yonedarepo-platform-dev-checks",
+        "max_batch_size": 1,
+        "max_concurrency": 8,
         "max_retries": 3,
         "dead_letter_queue": "yonedarepo-platform-dev-dead-letter"
       }
