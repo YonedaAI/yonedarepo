@@ -159,6 +159,11 @@ export function fakeUpstreams(graphql: () => Response | Promise<Response>): Fake
         usage: { input_tokens: 900, output_tokens: 120 },
       });
     }
+    if (url.endsWith('/tokens/verify'))
+      return Response.json(
+        { success: false, errors: [{ message: 'Invalid API Token' }] },
+        { status: 400 },
+      );
     throw new Error(`Unexpected fetch in superfan test: ${url}`);
   });
   return calls;

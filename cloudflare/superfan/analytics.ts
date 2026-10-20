@@ -131,12 +131,48 @@ export class CloudflareAnalytics implements AnalyticsSource {
       // Cloudflare's error messages name the problem (auth, budget, schema), never the token.
       const message = errors.map((e: Row) => String(e?.message ?? '')).join('; ');
       const status = res.ok ? 'GraphQL error' : `GraphQL HTTP ${res.status}`;
+      const diagnosis = /authenticat/i.test(message) ? ` (${await this.diagnose()})` : '';
       throw new TelemetryError(
         'fetch_failed',
-        `${status}${message ? `: ${message}` : ''}`.slice(0, 300),
+        `${status}${message ? `: ${message}` : ''}${diagnosis}`.slice(0, 300),
       );
     }
     return parseAccount(account, t, window);
+  }
+
+  /**
+   * Why a token failed authentication, in terms safe to store: whether Cloudflare knows it
+   * as a user or an account token, and its shape. Never any of its characters.
+   */
+  async diagnose() {
+    const verify = async (path: string) => {
+      const res = await fetch(`https://api.cloudflare.com/client/v4${path}/tokens/verify`, {
+        headers: { authorization: `Bearer ${this.token}` },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+      }).catch(() => null);
+      const body = (await res?.json().catch(() => null)) as Row | null;
+      return body?.result?.status ?? `HTTP ${res?.status ?? 'none'}`;
+    };
+    const [user, account] = await Promise.all([
+      verify('/user'),
+      verify(`/accounts/${this.target.account}`),
+    ]);
+    // Named markers only, so a pasted command or header is recognisable without its value.
+    const markers = Object.entries({
+      whitespace: /\s/,
+      quotes: /["']/,
+      'Bearer prefix': /Bearer/i,
+      'a URL': /https?:/i,
+      'a curl command': /curl/i,
+    })
+      .filter(([, pattern]) => pattern.test(this.token))
+      .map(([name]) => name);
+    const pieces = this.token.split(/\s+/).map((piece) => piece.length);
+    const shape = markers.length
+      ? `contains ${markers.join(', ')}; piece lengths ${pieces.join('/')}`
+      : 'plain';
+    return `user token: ${user}; account token: ${account}; length ${this.token.length}, ${shape}`;
   }
 }
 
