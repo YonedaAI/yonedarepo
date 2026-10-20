@@ -48,6 +48,9 @@ export async function writeSeed(
   ref: string,
   head: { commit: string; tree: string },
 ) {
+  // Every landing on the ref queues a derive job; one seed per head is enough.
+  const current = await env.OBJECTS.head(seedKey(repo, ref));
+  if (current?.customMetadata?.tree === head.tree) return { commit: head.commit, unchanged: true };
   let files: SeedFile[];
   try {
     files = await treeFiles(objects, head.tree, MAX_SEED_BYTES);
