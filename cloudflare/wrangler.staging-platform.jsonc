@@ -27,6 +27,13 @@
     "mode": "targeted",
     "region": "aws:us-east-1"
   },
+  // The staging superfan (wrangler.staging-superfan.jsonc) receives this Worker's tail
+  // events: outcomes, logs, exceptions and CPU/wall time, with no API token.
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-staging-superfan"
+    }
+  ],
   "assets": {
     "directory": "../frontend/dist",
     "binding": "ASSETS",
