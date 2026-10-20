@@ -80,6 +80,14 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       log,
       // Files came from the branch's warm-start seed plus this many fetched blobs.
       ...(shipped.seed ? { seed: shipped.seed } : {}),
+      // Per-tier counts for S12: files served by the seed (the executor's warm tier; its
+      // containers are single-use, so nothing is cached inside them), then object reads
+      // served by the edge Cache API, R2 and the object store.
+      tiers: {
+        seed: shipped.seed ? shipped.files.length - shipped.seed.fetched : 0,
+        files: shipped.files.length,
+        ...objects.hits,
+      },
     });
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     // Advance bisects that were waiting on this result (and queue their next run).

@@ -122,6 +122,15 @@
       }
     ]
   },
+  // Change-log analytics (P4): stream yonedarepo_platform_dev_changes_v1, schema in
+  // basin/change-log.schema.json, sunk to an Iceberg table in the Basin Catalog on the
+  // yonedarepo-platform-dev-analytics bucket.
+  "pipelines": [
+    {
+      "binding": "CHANGELOG",
+      "stream": "e855956706484e489eeb0dfa41a383d2"
+    }
+  ],
   "workflows": [
     {
       "name": "yonedarepo-platform-dev-import",

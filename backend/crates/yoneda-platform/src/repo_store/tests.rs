@@ -1545,4 +1545,5 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 }
 
 mod break_glass;
+mod change_records;
 mod staging;
