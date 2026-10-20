@@ -3,7 +3,7 @@
 // combiner is unreachable, landers fall back to polling and still land.
 import { expect, it } from 'vitest';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -35,4 +35,11 @@ it('falls back to polling when the combiner cannot be reached', async () => {
   const { owner, repo, commits } = await repoWithWork('fallback', 4, target);
   const landed = await Promise.all(commits.map((commit) => api(`${repo}/land`, owner, { body: { ref: 'main', commit } }, target)));
   expect(landed.map((l) => l.status)).toEqual(Array(4).fill(200));
+});
+
+it('runs the same way inside the LandCombiner Durable Object', async () => {
+  const target = { ...scoped, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const { owner, repo, commits } = await repoWithWork('durable', 6, target);
+  const landed = await Promise.all(commits.map((commit) => api(`${repo}/land`, owner, { body: { ref: 'main', commit } }, target)));
+  expect(landed.map((l) => l.status)).toEqual(Array(6).fill(200));
 });

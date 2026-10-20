@@ -11,19 +11,30 @@ import type { Env } from './types';
 
 const SETTLED_KEPT = 10_000;
 const RETRY_MS = 250;
+type Target = { repo: string; ref: string };
 
-export class LandCombiner extends DurableObject<Env> {
+/**
+ * The combiner's logic, apart from the Durable Object so tests can run it in-process with
+ * their own bindings. `schedule(ms)` asks for one `step()` after `ms`.
+ */
+export class LandBatcher {
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
+  target?: Target;
+
+  constructor(
+    private readonly env: Env,
+    private readonly schedule: (ms: number) => Promise<void>,
+  ) {}
 
   /**
    * Resolves with `ticket`'s outcome once a batch settles it, or null after `timeoutMs`
    * (the caller checks the authority and waits again).
    */
-  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
+  async wait(target: Target, ticket: number, timeoutMs: number) {
     const done = this.#settled.get(ticket);
     if (done) return done;
-    await this.ctx.storage.put('target', { repo, ref });
+    this.target = target;
     const settled = new Promise<Settled | null>((resolve) => {
       const list = this.#waiters.get(ticket) ?? [];
       list.push(resolve);
@@ -35,13 +46,13 @@ export class LandCombiner extends DurableObject<Env> {
         resolve(null);
       }, timeoutMs);
     });
-    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now());
+    await this.schedule(0);
     return settled;
   }
 
-  /** Builds one batch per invocation (each has its own subrequest budget), then re-arms. */
-  async alarm() {
-    const target = await this.ctx.storage.get<{ repo: string; ref: string }>('target');
+  /** Builds one batch (each step has its own subrequest budget), then asks for the next. */
+  async step() {
+    const target = this.target;
     if (!target) return;
     const merger = new RepoContext(
       this.env,
@@ -51,9 +62,7 @@ export class LandCombiner extends DurableObject<Env> {
     const claim = await merger.call({ op: 'repo_land_claim', ref: target.ref });
     if (claim.wait) {
       // A polling lander (a fallback) holds the lease; look again shortly.
-      await this.ctx.storage.setAlarm(
-        Date.now() + Math.min(claim.retry_after_ms ?? RETRY_MS, RETRY_MS),
-      );
+      await this.schedule(Math.min(claim.retry_after_ms ?? RETRY_MS, RETRY_MS));
       return;
     }
     if (claim.empty) {
@@ -71,10 +80,10 @@ export class LandCombiner extends DurableObject<Env> {
       // A lost compare-and-swap rebuilds at once; anything else waits a moment.
       if (e?.code !== 'STALE_HEAD')
         console.warn(`land batch failed: ${e?.code ?? ''} ${e?.message ?? e}`);
-      await this.ctx.storage.setAlarm(Date.now() + (e?.code === 'STALE_HEAD' ? 0 : 1000));
+      await this.schedule(e?.code === 'STALE_HEAD' ? 0 : 1000);
       return;
     }
-    await this.ctx.storage.setAlarm(Date.now());
+    await this.schedule(0);
   }
 
   /** The queue is empty: tickets still awaited were settled elsewhere (a polling lander). */
@@ -98,5 +107,23 @@ export class LandCombiner extends DurableObject<Env> {
       if (this.#settled.size <= SETTLED_KEPT) break;
       this.#settled.delete(old);
     }
+  }
+}
+
+export class LandCombiner extends DurableObject<Env> {
+  #batcher = new LandBatcher(this.env, async (ms) => {
+    const at = Date.now() + ms;
+    const current = await this.ctx.storage.getAlarm();
+    if (current === null || current > at) await this.ctx.storage.setAlarm(at);
+  });
+
+  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
+    await this.ctx.storage.put('target', { repo, ref });
+    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs);
+  }
+
+  async alarm() {
+    this.#batcher.target ??= await this.ctx.storage.get<Target>('target');
+    await this.#batcher.step();
   }
 }
