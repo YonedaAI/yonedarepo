@@ -15,6 +15,7 @@ import { shardCall, shardOf, shardRecord } from './repo-shards';
 import { timed } from './repo-timing';
 
 const STAGE_OBJECTS = 256;
+const SHARD_DRAIN_DELAY_S = 10;
 const STAGE_BYTES = 1024 * 1024;
 
 /** Whether `body` can be built statelessly here. */
@@ -140,7 +141,9 @@ export async function commitInShard(
     }
   }
   // The commit is durable; its drain request can leave after the answer.
-  const send = () => dispatchObjects(ctx.env, ctx.repo, shard);
+  // The drain starts a little later: a burst of commits records into the shard without
+  // competing with it (meanwhile reads find the objects staged in the shard).
+  const send = () => dispatchObjects(ctx.env, ctx.repo, shard, SHARD_DRAIN_DELAY_S);
   const unprojected =
     recorded.dispatch_objects &&
     !deferred(send) &&

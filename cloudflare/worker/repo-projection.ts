@@ -15,14 +15,18 @@ export async function dispatchProjection(env: Env, repo: string) {
   await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_project', repo_id: repo, job_id: 'refs' });
 }
 
-/** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s. */
-export async function dispatchObjects(env: Env, repo: string, shard?: number) {
-  await env.PLATFORM_QUEUE.send({
-    v: 1,
-    kind: 'platform_objects',
-    repo_id: repo,
-    job_id: shard === undefined ? 'objects' : `shard:${shard}`,
-  });
+/** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s,
+ * now or after `delaySeconds`. */
+export async function dispatchObjects(env: Env, repo: string, shard?: number, delaySeconds = 0) {
+  await env.PLATFORM_QUEUE.send(
+    {
+      v: 1,
+      kind: 'platform_objects',
+      repo_id: repo,
+      job_id: shard === undefined ? 'objects' : `shard:${shard}`,
+    },
+    delaySeconds ? { delaySeconds } : undefined,
+  );
 }
 
 // Rounds of up to 64 commits per invocation: each object write is a subrequest, and a

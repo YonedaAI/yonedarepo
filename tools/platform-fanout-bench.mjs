@@ -137,6 +137,18 @@ function phases(rows, failed = false) {
     }
   return Object.fromEntries(Object.entries(all).map(([k, v]) => [k, latency(v)]));
 }
+/** The most landings answered within any one second (throughput while work is queued,
+ * apart from how fast the load generator sends it). */
+function landPeak(rows) {
+  const ends = rows.filter(ok).map((r) => r.started_at + r.ms).sort((a, b) => a - b);
+  let best = 0;
+  for (let i = 0, j = 0; j < ends.length; j++) {
+    while (ends[j] - ends[i] >= 1000) i++;
+    best = Math.max(best, j - i + 1);
+  }
+  return best;
+}
+
 /** Successful landings per second, from the first landing request to the last answer. */
 function landRate(rows) {
   const done = rows.filter(ok);
@@ -154,7 +166,7 @@ const result = {
   read_mode: values.read ?? 'default',
   elapsed_ms: Math.round(elapsed),
   commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits) },
-  land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },
+  land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands), peak_per_second: landPeak(lands) },
   projection,
   overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,
   read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length, errors: errors(reads.map((r) => r.read)), phases: phases(reads.map((r) => r.read), true) },
