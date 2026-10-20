@@ -148,3 +148,17 @@ export function mergeOutboxes(outboxes: Json[]) {
     oldest: oldest ?? null,
   };
 }
+
+/** Every staged object of `commit` from its shard (none once R2 holds them). */
+export async function shardStagedOf(
+  env: Env,
+  repo: string,
+  commit: string,
+): Promise<CachedObject[]> {
+  if (!env.COMMIT_SHARDS) return [];
+  const found = await shardCall(env, repo, shardOf(commit), {
+    op: 'store_staged_objects',
+    commit,
+  }).catch(() => ({ objects: [] }));
+  return found.objects as CachedObject[];
+}
