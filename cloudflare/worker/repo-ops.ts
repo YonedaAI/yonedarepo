@@ -8,6 +8,7 @@ import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import {
   type CachedObject,
   fromBase64,
+  OVERLAP_CACHE_OBJECTS,
   parseStore,
   RepoObjects,
   type TreeEntry,
@@ -120,11 +121,15 @@ export async function commit(
       for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
       continue;
     }
-    // Immutable and keyed by id, so caching before the push is safe.
-    await objects.cache(prepared.objects as CachedObject[]);
+    // Immutable and keyed by id, so a small commit's cache write runs alongside its push;
+    // a large import writes the cache first rather than doubling its fan-out.
+    const written = prepared.objects as CachedObject[];
+    const cached = objects.cache(written);
+    if (written.length > OVERLAP_CACHE_OBJECTS) await cached;
     const { report, readback } = await objects.pushCommit(
       fromBase64(prepared.push_b64),
       prepared.commit,
+      cached,
     );
     const recorded = await ctx.call({
       op: 'repo_record_commit',
@@ -139,12 +144,14 @@ export async function commit(
       if (dispatch === 'required') throw e;
       undispatched = true;
     }
-    // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
-    // (a human must approve), never classified as safe.
-    await classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {});
-    // Symbol writes narrow what this commit invalidates at landing; without them each
-    // changed file counts as written in full.
-    await deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {});
+    await Promise.all([
+      // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
+      // (a human must approve), never classified as safe.
+      classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {}),
+      // Symbol writes narrow what this commit invalidates at landing; without them each
+      // changed file counts as written in full.
+      deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {}),
+    ]);
     return {
       commit: prepared.commit,
       tree: prepared.tree,
