@@ -160,12 +160,7 @@ fn legacy_manual_choice_accepts_a_checked_delegate_with_original_approved_lineag
     // A completed parent retains the same epoch and permits its issued delegate
     // to finish. Failed parents correctly fence descendants and are not a valid
     // positive fixture for deliberate selection.
-    f::call(
-        &db,
-        json!({"op":"finish","job_id":parent["id"],"epoch":parent["epoch"],
-            "result":{"workspace":"e".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = crate::commands::source_kit::finish_agent(&db, &parent, 1000);
     f::call(
         &db,
         json!({"op":"claim","job_id":"capture:compare:agent-1"}),
@@ -174,9 +169,9 @@ fn legacy_manual_choice_accepts_a_checked_delegate_with_original_approved_lineag
     let revision = json!({"repository":"test/fork","commit":"e".repeat(40)});
     f::call(
         &db,
-        json!({"op":"finish","job_id":"capture:compare:agent-1","epoch":1,"result":{
+        json!({"op":"finish","job_id":"capture:compare:agent-1","epoch":1,"result":crate::commands::source_kit::with_lineage(&registration,json!({
         "id":"candidate-1","revision":revision,"tree":"f".repeat(40),"paths":["src/booking.rs"],
-        "summary":"Synthetic checked parent capture"}}),
+        "summary":"Synthetic checked parent capture"}))}),
     )
     .unwrap();
     f::call(&db, json!({"op":"claim","job_id":"evaluate:candidate-1"})).unwrap();

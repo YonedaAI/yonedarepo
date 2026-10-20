@@ -174,13 +174,9 @@ fn general_evaluator_uses_exit_observations_and_only_evaluator_can_submit_them()
     call(&db, json!({"op":"claim","job_id":agent})).unwrap();
     let report = json!({"suite":"commands-v1","environment":"linux-node24-rust1.94-v1","setup":[],"commands":[{"name":"build","status":"pass","output":{"exit":1}}]});
     assert_eq!(call(&db, json!({"op":"verify_finish","job_id":agent,"epoch":1,"report":report,"evidence":"e".repeat(64)})).unwrap_err().code, "FORBIDDEN");
-    call(
-        &db,
-        json!({"op":"finish","job_id":agent,"epoch":1,"result":{"workspace":"b".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = source_kit::finish_job(&db, agent, 1000, json!({}));
     call(&db, json!({"op":"claim","job_id":"capture:site:agent-1"})).unwrap();
-    call(&db, json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":{"id":"site-candidate","revision":{"repository":"yoneda-dev/site-fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Accessible portfolio","diff":"html"}})).unwrap();
+    call(&db, json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"site-candidate","revision":{"repository":"yoneda-dev/site-fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Accessible portfolio","diff":"html"}))})).unwrap();
     call(
         &db,
         json!({"op":"claim","job_id":"evaluate:site-candidate"}),
@@ -275,22 +271,20 @@ fn attempt_request_limits_are_durable_fenced_and_capability_specific() {
 }
 
 #[test]
-fn capture_after_policy_update_schedules_current_independent_verification() {
+fn policy_update_fences_an_in_flight_source_capture() {
     let db = repo_with_policy(product_policy());
     call(&db, run_command()).unwrap();
     call(&db, json!({"op":"claim","job_id":"job:site:agent-1"})).unwrap();
+    // The agent finished under the original policy; the owner updates it before capture ends.
+    let registration = source_kit::finish_job(&db, "job:site:agent-1", 1000, json!({}));
     let mut next = product_policy();
     next["version"] = json!("site-v2");
     call(&db, json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"site-v1","policy":next})).unwrap();
-    call(&db,json!({"op":"finish","job_id":"job:site:agent-1","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
     call(&db, json!({"op":"claim","job_id":"capture:site:agent-1"})).unwrap();
-    call(&db,json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":{"id":"site-candidate","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Website","diff":"html"}})).unwrap();
-    let evaluation = call(
-        &db,
-        json!({"op":"claim","job_id":"evaluate:site-candidate"}),
-    )
-    .unwrap();
-    assert_eq!(evaluation["payload"]["policy"]["version"], "site-v2");
+    let finish = json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"site-candidate","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Website","diff":"html"}))});
+    // Sealed source is bound to the policy it was approved under; no candidate is created.
+    assert_eq!(call(&db, finish).unwrap_err().code, "FENCED");
+    assert!(crate::storage::get(&db, "candidates", "site-candidate").is_err());
 }
 
 #[test]

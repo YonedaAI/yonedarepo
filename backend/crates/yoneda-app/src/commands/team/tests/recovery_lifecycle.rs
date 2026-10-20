@@ -1,6 +1,6 @@
 use super::autonomous_tests::{conflict, fixture, request, resolver_request};
 use super::*;
-use crate::execute;
+use crate::commands::source_kit::execute;
 
 #[test]
 fn terminal_coordinator_failure_reconciles_run_without_consuming_repair_or_budget() {

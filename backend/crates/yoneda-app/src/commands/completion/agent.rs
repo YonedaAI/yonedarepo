@@ -46,7 +46,12 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
                 payload["capture_subtype"] = json!("platform_commit");
                 payload["contribution"] = j["submitted_revision"].clone();
             }
-            _ => payload["workspace"] = json!(hash(result, "workspace", &[64])?),
+            _ => {
+                return Err(Error::new(
+                    "INVALID_CAPTURE",
+                    "Attempts submit a sealed API source workspace or a platform contribution",
+                ));
+            }
         }
         if let Some(resolver) = j["payload"].get("conflict_resolver") {
             if payload["capture_subtype"] != "source_changeset" {

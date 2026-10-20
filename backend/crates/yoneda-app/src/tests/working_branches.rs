@@ -20,14 +20,10 @@ fn checked_branch_can_continue_without_canonical_publication() {
     .unwrap();
     let coding = "job:run-one:codex-minimal";
     call(&db, json!({"op":"claim","job_id":coding})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":coding,"epoch":1,"result":{"workspace":"b".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = source_kit::finish_job(&db, coding, 1000, json!({}));
     let capture = "capture:run-one:codex-minimal";
     call(&db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(&db,json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Registration implemented"}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Registration implemented"}))})).unwrap();
     call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
     let policy = crate::storage::repo(&db).unwrap()["policy"].clone();
     call(&db,json!({"op":"finish","job_id":"evaluate:candidate-a","epoch":1,"result":{"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();

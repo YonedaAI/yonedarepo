@@ -3,9 +3,6 @@ use serde_json::Value;
 use yoneda_agents_core::{Error, Result, source_workspace::SourceRevision};
 
 pub(super) fn freeze(command: &Value, run: &mut Value) -> Result<()> {
-    if run["workspace_transport"] != "api-source-v1" {
-        return Ok(());
-    }
     if command["_source_transport_approved"] != true {
         return Err(Error::new(
             "FORBIDDEN",
@@ -49,12 +46,5 @@ mod tests {
         assert_eq!(freeze(&moved, &mut pending).unwrap_err().code, "HEAD_MOVED");
         freeze(&approved(), &mut pending).unwrap();
         assert_eq!(pending["source_base"], approved()["_source_base"]);
-    }
-    #[test]
-    fn legacy_run_transport_and_approval_remain_unchanged() {
-        let mut legacy = json!({"base":{"commit":"old"}});
-        let before = legacy.clone();
-        freeze(&approved(), &mut legacy).unwrap();
-        assert_eq!(legacy, before);
     }
 }

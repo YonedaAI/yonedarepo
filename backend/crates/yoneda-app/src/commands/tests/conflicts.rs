@@ -1,7 +1,7 @@
 use super::refresh::{complete, refresh};
 use super::*;
 use super::{inventory::status, resolver::resolve};
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn setup() -> NativeStore {
     let db = NativeStore::memory().unwrap();

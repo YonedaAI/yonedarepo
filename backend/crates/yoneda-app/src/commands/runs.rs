@@ -105,12 +105,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 run["agents"] = c["agents"].clone();
             }
-            if let Some(transport) = c.get("workspace_transport") {
-                if transport != "api-source-v1" {
-                    return Err(bad("Unsupported workspace transport"));
-                }
-                run["workspace_transport"] = transport.clone();
+            // Every attempt works on lazy API source; the adapter approves its frozen base.
+            if c["workspace_transport"] != "api-source-v1" {
+                return Err(bad(
+                    "Runs use the approved api-source-v1 workspace transport",
+                ));
             }
+            run["workspace_transport"] = json!("api-source-v1");
             if automatic {
                 run["team_planning"] = json!("automatic");
                 run["execution_count"] = json!(1);
