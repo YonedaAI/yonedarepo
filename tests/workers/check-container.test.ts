@@ -26,7 +26,7 @@ const job = { command: ['true'], timeout_seconds: 5, files: [] };
 
 it('kills the instance after a finished check', async () => {
   const { fake, calls } = instance({});
-  expect(await runCheckOnce(fake, job)).toEqual({ outcome: 'pass' });
+  expect(await runCheckOnce(fake, job)).toEqual({ outcome: 'pass', start_ms: expect.any(Number) });
   expect(calls).toEqual(['start', 'fetch', 'destroy']);
 });
 
