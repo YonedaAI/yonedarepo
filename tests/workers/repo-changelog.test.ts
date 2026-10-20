@@ -101,3 +101,26 @@ it('lands and derives while the pipeline throws, counts the failure, then catche
   // Without a bound stream the job skips emission entirely.
   expect((await api(`/repos/${id}/changelog`, owner, {}, scoped)).body.enabled).toBe(false);
 });
+
+it('sends each event once when two derive jobs for one repository race', async () => {
+  const { env, fake } = pipeline();
+  const { owner, id, land, derive } = await setup('racer', env);
+  await land('a.txt');
+  await land('b.txt');
+  await Promise.all([derive(), derive(), derive()]);
+  expect(fake.sent.flat().map((e) => e.event_key).sort()).toEqual([`${id}:v1`, `${id}:v2`, `${id}:v3`]);
+  expect((await api(`/repos/${id}/changelog`, owner, {}, env)).body).toMatchObject({ version: 3, sent: 3, failures: 0 });
+});
+
+it('returns a claimed range when its send fails, so a later job re-sends it', async () => {
+  const { env, fake } = pipeline();
+  const { owner, id, land, derive } = await setup('rollback', env);
+  await land('a.txt');
+  fake.failing = true;
+  await derive();
+  expect((await api(`/repos/${id}/changelog`, owner, {}, env)).body).toMatchObject({ version: 0, sent: 0, failures: 1 });
+  fake.failing = false;
+  await derive();
+  expect(fake.sent.flat().map((e) => e.event_key)).toEqual([`${id}:v1`, `${id}:v2`]);
+  expect((await api(`/repos/${id}/changelog`, owner, {}, env)).body).toMatchObject({ version: 2, sent: 2, failures: 1 });
+});
