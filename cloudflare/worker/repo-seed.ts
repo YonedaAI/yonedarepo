@@ -1,0 +1,105 @@
+// Warm-start seeds (Scion S13): after a branch lands, the platform writes one R2 object with
+// every file at the new head. A check run on a nearby commit starts from the seed and
+// fetches only the blobs that differ, instead of one tiered read per file. Seeds are a cache:
+// a missing, oversized or stale one only means the run reads everything itself.
+import type { CheckJob } from './check-container';
+import { type RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { ApiError, type Json, withTrees } from './repo-ops';
+import type { Env } from './types';
+
+const MAX_FILES = 100_000;
+const MAX_BYTES = 192 * 1024 * 1024;
+/** Seeds are skipped above this size; reading them would cost more than they save. */
+const MAX_SEED_BYTES = 64 * 1024 * 1024;
+
+type SeedFile = CheckJob['files'][number] & { id: string };
+type Seed = { commit: string; tree: string; files: SeedFile[] };
+
+const seedKey = (repo: string, ref: string) =>
+  `platform/v1/${repo}/seeds/${encodeURIComponent(ref)}.json`;
+
+/** Every file under `tree`, read through the object tiers. */
+export async function treeFiles(objects: RepoObjects, tree: string, limit = MAX_BYTES) {
+  const out: SeedFile[] = [];
+  let bytes = 0;
+  const visit = async (id: string, prefix: string) => {
+    const entries: TreeEntry[] = await objects.tree(id);
+    for (const entry of entries) {
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.type === 'tree') await visit(entry.id, path);
+      else if (entry.type !== 'gitlink') {
+        const data = await objects.blob(entry.id);
+        bytes += data.length;
+        if (out.length >= MAX_FILES || bytes > limit)
+          throw new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
+        out.push({ path, type: entry.type, id: entry.id, data_b64: toBase64(data) });
+      }
+    }
+  };
+  await visit(tree, '');
+  return out;
+}
+
+/** Writes the seed for `ref` at `head` (best effort: an oversized tree gets no seed). */
+export async function writeSeed(
+  env: Env,
+  repo: string,
+  objects: RepoObjects,
+  ref: string,
+  head: { commit: string; tree: string },
+) {
+  let files: SeedFile[];
+  try {
+    files = await treeFiles(objects, head.tree, MAX_SEED_BYTES);
+  } catch (e: any) {
+    if (e?.code === 'TOO_LARGE') return null;
+    throw e;
+  }
+  const seed: Seed = { commit: head.commit, tree: head.tree, files };
+  await env.OBJECTS.put(seedKey(repo, ref), JSON.stringify(seed), {
+    customMetadata: { commit: head.commit, tree: head.tree },
+  });
+  return { commit: head.commit, files: files.length };
+}
+
+/**
+ * The files of `tree` for a check run: from the seed of `ref` plus the blobs that differ,
+ * or read in full without a usable seed. Reports how many blobs it fetched.
+ */
+export async function checkFiles(
+  env: Env,
+  repo: string,
+  objects: RepoObjects,
+  tree: string,
+  ref = 'main',
+): Promise<{ files: CheckJob['files']; seed: { commit: string; fetched: number } | null }> {
+  const stored = await env.OBJECTS.get(seedKey(repo, ref));
+  if (!stored) return { files: strip(await treeFiles(objects, tree)), seed: null };
+  const seed = await stored.json<Seed>();
+  const byPath = new Map(seed.files.map((f) => [f.path, f]));
+  const { changes } = await withTrees(objects, { op: 'tree_diff', old: seed.tree, new: tree });
+  let fetched = 0;
+  for (const change of changes as Json[]) {
+    if (change.old_path) byPath.delete(change.old_path);
+    if (!change.new) {
+      byPath.delete(change.path);
+      continue;
+    }
+    if (change.new.type === 'gitlink') continue;
+    const data = await objects.blob(change.new.id);
+    fetched++;
+    byPath.set(change.path, {
+      path: change.path,
+      type: change.new.type,
+      id: change.new.id,
+      data_b64: toBase64(data),
+    });
+  }
+  const files = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
+  const bytes = files.reduce((sum, f) => sum + (f.data_b64.length * 3) / 4, 0);
+  if (files.length > MAX_FILES || bytes > MAX_BYTES)
+    throw new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
+  return { files: strip(files), seed: { commit: seed.commit, fetched } };
+}
+
+const strip = (files: SeedFile[]) => files.map(({ id: _id, ...file }) => file);

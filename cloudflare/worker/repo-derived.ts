@@ -6,6 +6,7 @@ import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
+import { writeSeed } from './repo-seed';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
@@ -137,7 +138,11 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     caller(env, envelope.repo_id, { _system: 'derive' }),
   );
   const head = await ctx.call({ op: 'repo_snapshot', ref: envelope.job_id });
-  return searchSegments(ctx, head.tree);
+  const segments = await searchSegments(ctx, head.tree);
+  // Warm-start seed for check runs on nearby commits; a failure only costs them speed.
+  const at = { commit: String(head.commit), tree: String(head.tree) };
+  await writeSeed(env, envelope.repo_id, await ctx.objects(), envelope.job_id, at).catch(() => {});
+  return segments;
 }
 
 export async function dispatchDerive(env: Env, repo: string, ref: string) {
