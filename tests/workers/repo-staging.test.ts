@@ -63,7 +63,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   expect(status.objects.oldest).toMatchObject({ commit_id: made.body.commit, attempts: 1 });
   expect(status.objects.oldest.detail).toContain('R2 unavailable');
 
-  // Without cached copies, reads fall through R2 and the store to the staged copy.
+  // Without cached copies, reads fall through R2 to the staged copy (before Artifacts).
   const tree = (await api(`${path}/commits/${made.body.commit}`, owner)).body.tree;
   const listed = (await api(`${path}/tree?commit=${made.body.commit}&path=dir`, owner)).body;
   for (const object of [tree, ...listed.entries.map((e: any) => e.id)]) {
@@ -73,7 +73,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   misses.length = 0;
   const read = await api(`${path}/blob?commit=${made.body.commit}&path=dir/b.txt`, owner);
   expect(read.body.content).toBe('b\n');
-  expect(misses.length).toBeGreaterThan(0); // Artifacts did not have them
+  expect(misses).toEqual([]); // never asked Artifacts
 
   // Artifacts is down too: main lands, its projection fails and retries; never drift.
   receivePacks.down = true;
@@ -109,4 +109,34 @@ it('settles duplicate and concurrent projections exactly once', async () => {
   await projectObjects(scoped, id);
   for (const m of made) expect(await bindings.OBJECTS.head(`platform/v1/${id}/git/${m.body.commit}`)).not.toBeNull();
   expect((await api(path, owner)).body.objects.pending).toBe(0);
+});
+
+it('finds an object that moves from the staged copy to R2 in the middle of a read', async () => {
+  const { owner, id, path } = await repo('handover');
+  const made = await api(`${path}/commits`, owner, { body: { ref: 'main', changes: [file('h.txt', 'h\n')], message: 'h', author } });
+  const blob = made.body.touches[0].new_blob;
+  await caches.default.delete(new Request(`${EDGE}/${id}/${blob}`));
+  const jobs = queued.splice(0).filter((m) => m.kind === 'platform_objects');
+  // The reader misses R2; before it asks for the staged copy, the projector writes R2 and
+  // drops that copy. The read must still succeed.
+  let handedOver = false;
+  const r2 = new Proxy(bindings.OBJECTS, {
+    get(target, prop) {
+      if (prop === 'get')
+        return async (key: string, ...rest: unknown[]) => {
+          if (!handedOver && key.endsWith(`/git/${blob}`)) {
+            handedOver = true;
+            for (const job of jobs) await projectObjects(scoped, id, job.job_id);
+            return null;
+          }
+          return (target.get as any)(key, ...rest);
+        };
+      const value = (target as any)[prop];
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+  const env = { ...scoped, OBJECTS: r2 } as unknown as Env;
+  const read = await api(`${path}/blob?commit=${made.body.commit}&path=h.txt`, owner, {}, env);
+  expect(handedOver).toBe(true);
+  expect(read.body.content).toBe('h\n');
 });

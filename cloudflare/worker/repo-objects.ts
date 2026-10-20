@@ -139,30 +139,41 @@ export class RepoObjects {
       await this.edgePut(id, kind, bytes);
       return { bytes, tier: 'r2' };
     }
-    const raw = await this.env.OBJECTS.get(this.rawKey(id));
-    if (raw && raw.customMetadata?.kind === kind) {
-      const data_b64 = toBase64(new Uint8Array(await raw.arrayBuffer()));
-      const [object] = compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
-        .objects as CachedObject[];
-      await this.cache([object]);
-      return { bytes: this.encode(object), tier: 'r2' };
+    const fromRaw = await this.recorded(id, kind);
+    if (fromRaw) {
+      await this.cache([fromRaw]);
+      return { bytes: this.encode(fromRaw), tier: 'r2' };
     }
-    let object: CachedObject | null = null;
-    if (kind === 'tree') {
-      const entries = await this.store.readTree(id);
-      object = entries && { id, kind, entries };
-    } else if (kind === 'blob') {
-      const bytes = await this.store.readBlob(id);
-      object = bytes && { id, kind, data_b64: toBase64(bytes) };
-    } else {
-      const commit = await this.store.readCommit(id);
-      object = commit && { id, kind, ...commit };
+    // Accepted but not yet in R2: the authority (or a shard) still holds the staged copy.
+    // A staged copy is dropped only after its R2 write, so a miss here means R2 has it now.
+    let object: CachedObject | null = await this.staged(id).then((o) =>
+      o?.kind === kind ? o : null,
+    );
+    object ??= await this.recorded(id, kind);
+    if (!object) {
+      if (kind === 'tree') {
+        const entries = await this.store.readTree(id);
+        object = entries && { id, kind, entries };
+      } else if (kind === 'blob') {
+        const bytes = await this.store.readBlob(id);
+        object = bytes && { id, kind, data_b64: toBase64(bytes) };
+      } else {
+        const commit = await this.store.readCommit(id);
+        object = commit && { id, kind, ...commit };
+      }
     }
-    // Accepted but not yet projected: the authority still holds the staged copy.
-    object ??= await this.staged(id).then((o) => (o?.kind === kind ? o : null));
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
     return { bytes: this.encode(object), tier: 'store' };
+  }
+
+  /** The store of record's copy (raw Git content in R2), parsed. */
+  private async recorded(id: string, kind: ObjectKind): Promise<CachedObject | null> {
+    const raw = await this.env.OBJECTS.get(this.rawKey(id));
+    if (!raw || raw.customMetadata?.kind !== kind) return null;
+    const data_b64 = toBase64(new Uint8Array(await raw.arrayBuffer()));
+    return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
+      .objects[0] as CachedObject;
   }
 
   private encode(object: CachedObject) {
@@ -194,7 +205,19 @@ export class RepoObjects {
     }
     for (let i = 0; i < absent.length; i += 64) {
       const ids = absent.slice(i, i + 64).map((w) => w.id);
-      found.push(...((await this.stagedCall({ ids, raw: true })) as RawObject[]));
+      const here = (await this.stagedCall({ ids, raw: true })) as RawObject[];
+      found.push(...here);
+      // A staged copy is dropped only after its R2 write: look in R2 once more.
+      const held = new Set(here.map((o) => o.id));
+      for (const id of ids.filter((i) => !held.has(i))) {
+        const stored = await this.env.OBJECTS.get(this.rawKey(id));
+        if (stored)
+          found.push({
+            id,
+            kind: stored.customMetadata?.kind as RawObject['kind'],
+            data_b64: toBase64(new Uint8Array(await stored.arrayBuffer())),
+          });
+      }
     }
     return found;
   }
