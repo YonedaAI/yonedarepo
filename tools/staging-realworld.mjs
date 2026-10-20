@@ -6,8 +6,9 @@
 // many-repo bursts, and project deletion. Prints a pass/fail table and writes evidence to
 // .local/staging/. Credentials come only from 0600 files in ~/.config/yonedarepo/:
 //   staging.env       OWNER_TOKEN (staging-only owner credential)
-//   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run), ZAI_KEY and
-//                     MIMO_KEY (placed by the owner; the compare items skip without them)
+//   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
+// Model keys stay in the Secrets Store: the owner route binds them to the kit account as
+// managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts]
 import { execFile } from 'node:child_process';
@@ -18,7 +19,7 @@ import { parseArgs, promisify } from 'node:util';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
-import { CHEAP, compareRun, connectCheapProviders, createProject, deleteProject, ensureAllowance, publish, refreshOther, spend } from './staging/project-flow.mjs';
+import { bindManagedProviders, compareRun, createProject, deleteProject, ensureAllowance, publish, refreshOther, spend } from './staging/project-flow.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -39,7 +40,6 @@ const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const owner = new Session(values.origin, { bearer: OWNER_TOKEN });
 const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PASSWORD);
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
-const keysPresent = CHEAP.every((c) => kit[c.key]);
 const rec = new Recorder();
 const state = {};
 const step = (id, title, run) => (wanted(id) ? rec.step(id, title, run) : null);
@@ -53,9 +53,8 @@ await step('1', 'Create project (browser flow, API)', async (m) => {
   m.project = state.project.id;
 });
 await step('2', 'Compare run, cheap real models', async (m) => {
-  if (!keysPresent) return { skip: 'ZAI_KEY / MIMO_KEY not in staging-kit.env' };
   if (!state.project) return { skip: 'No project (item 1)' };
-  await connectCheapProviders(account, kit);
+  await bindManagedProviders(owner, kit.KIT_USERNAME);
   await ensureAllowance(account, owner, kit.KIT_USERNAME);
   state.run = await compareRun(account, state.project.id, m);
 });
