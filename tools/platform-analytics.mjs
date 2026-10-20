@@ -67,13 +67,14 @@ async function sql(query) {
   return { rows: value.result?.rows ?? value.result, metrics: value.result?.metrics };
 }
 
-// One row per event_key (duplicate deliveries are identical apart from __ingest_ts).
+// One row per event_key: the first delivery wins (re-sends repeat the same record).
+// actor_kind 'test' rows are the labelled probe events sent to verify the pipeline.
 // Accepted changes: a landed version that was not an octopus batch, or a commit a batch landed.
 const changes = `WITH changes AS (
-  SELECT DISTINCT event_key, event, repo, version, ticket, ref, "commit", kind, actor, actor_kind,
+  SELECT DISTINCT ON (event_key) event_key, event, repo, version, ticket, ref, "commit", kind, actor, actor_kind,
     paths_changed, read_set_size, base_lag, merged_landings, checks_passed, checks_failed,
     check_runs, check_run_ms, repairs, land_latency_ms, queue_wait_ms, error_code, occurred_at
-  FROM ${NAMESPACE}.${TABLE} WHERE occurred_at >= '${since}'
+  FROM ${NAMESPACE}.${TABLE} WHERE occurred_at >= '${since}' AND actor_kind <> 'test' ORDER BY event_key, __ingest_ts
 ), accepted AS (
   SELECT * FROM changes WHERE event = 'merged' OR (event = 'land' AND merged_landings = 0)
 )`;
