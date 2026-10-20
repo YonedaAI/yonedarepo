@@ -120,6 +120,11 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
                 worker: 2,
                 dry_run: false
             },
+            Step::Deploy {
+                worker: 3,
+                dry_run: false
+            },
+            Step::Secrets { worker: 3 },
         ]
     );
     assert!(

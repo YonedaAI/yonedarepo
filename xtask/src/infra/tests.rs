@@ -16,6 +16,9 @@ fn committed(file: &str) -> Value {
         "wrangler.staging-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.staging-agents.jsonc")
         }
+        "wrangler.staging-superfan.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.staging-superfan.jsonc")
+        }
         "wrangler.staging-sites.jsonc" => {
             include_str!("../../../cloudflare/wrangler.staging-sites.jsonc")
         }
@@ -47,9 +50,10 @@ fn dev_spec_regenerates_the_committed_staging_configs() {
         [
             "wrangler.staging-platform.jsonc",
             "wrangler.staging-agents.jsonc",
-            "wrangler.staging-sites.jsonc"
+            "wrangler.staging-sites.jsonc",
+            "wrangler.staging-superfan.jsonc"
         ],
-        "cutover order: platform, agents, sites"
+        "cutover order: platform, agents, sites, then the watcher"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(

@@ -26,6 +26,10 @@
         "Run next to the data: a commit makes about ten round trips to its repository's",
         "Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo",
         "otherwise. New repository objects are created near the placed Worker.",
+        "The staging superfan (wrangler.staging-superfan.jsonc) receives this Worker's tail",
+        "events: outcomes, logs, exceptions and CPU/wall time, with no API token.",
+        "Batched landing, with commits beginning from and main reads served by the published",
+        "head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above."
       ],
@@ -50,6 +54,11 @@
           "mode": "targeted",
           "region": "aws:us-east-1"
         },
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
         "assets": {
           "directory": "../frontend/dist",
           "binding": "ASSETS",
@@ -57,7 +66,10 @@
           "run_worker_first": true
         },
         "vars": {
-          "ARTIFACTS_NAMESPACE": "{prefix}"
+          "ARTIFACTS_NAMESPACE": "{prefix}",
+          "LAND_MODE": "batch",
+          "BEGIN_MODE": "head",
+          "READ_MODE": "head"
         },
         "artifacts": [
           {
@@ -442,6 +454,80 @@
         "observability": {
           "enabled": true
         }
+      }
+    },
+    {
+      "role": "superfan",
+      "file": "wrangler.staging-superfan.jsonc",
+      "notes": [
+        "Staging superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the",
+        "staging platform Worker (yonedarepo-staging-platform, dev.yonedarepo.com stack) with its own",
+        "ledger and a $1/day cap. Secrets, set from stdin:",
+        "CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only",
+        "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run"
+      ],
+      "secrets": [
+        "CF_ANALYTICS_TOKEN",
+        "SUPERFAN_READ_TOKEN"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-superfan",
+        "main": "superfan/index.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "7 * * * *"
+          ]
+        },
+        "vars": {
+          "CF_ACCOUNT_ID": "{account_id}",
+          "WATCH_SCRIPT": "{prefix}-platform",
+          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "NS_SOURCE_REPOSITORY": "79b971142019457fa1b44173f66dabb3",
+          "NS_OBJECT_PUSH_QUEUE": "77956798d14745adba68db4fb023b7d0",
+          "NS_CHECK_CONTAINER": "2f18b1ca51674599b1dd25c7be2c0862",
+          "QUEUE_JOBS_ID": "c57628b785814cfc9dc2403eb06071cc",
+          "QUEUE_DEAD_LETTER_ID": "4825c46a19af484f968bba559c9d2a16",
+          "CHECK_CONTAINER_APP_ID": "a0306118-835b-440b-be9c-431a68ca1453",
+          "TELEMETRY_SOURCE": "cloudflare",
+          "SUPERFAN_MODEL": "mimo-v2.6-flash",
+          "MIMO_TOKEN_PLAN_REGION": "sgp",
+          "DAILY_CAP_MICROUSD": "1000000"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "LEDGER",
+              "class_name": "SuperfanLedger"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "SuperfanLedger"
+            ]
+          }
+        ]
       }
     }
   ]
