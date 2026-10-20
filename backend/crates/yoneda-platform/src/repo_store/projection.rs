@@ -37,7 +37,8 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
         "SELECT refname,target_commit,target_version,projected_commit FROM ref_projections WHERE status='pending' ORDER BY refname",
         &[],
     )?;
-    Ok(json!({ "pending": rows }))
+    // Refs wait for the objects they point at: the store refuses a ref to missing objects.
+    Ok(json!({ "pending": rows, "objects_pending": super::staging::count(db)? }))
 }
 
 pub fn result<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {

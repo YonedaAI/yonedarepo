@@ -4,8 +4,10 @@
 // needs the check runners, the platform queue or an agent service: queue sends after the
 // authority committed are best effort, and the durable state they would nudge (queued
 // check runs, pending ref projections) is picked up again by the next dispatch.
+
+import { replay } from './repo-commit';
 import { dispatchDerive } from './repo-derived';
-import { ApiError, type Json, type RepoContext, replay } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 
 const ACTIONS = ['land', 'revert', 'release_land_lease', 'pause_automation', 'resume_automation'];

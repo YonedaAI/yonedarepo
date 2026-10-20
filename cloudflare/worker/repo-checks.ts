@@ -2,8 +2,9 @@
 // run from the SourceRepository authority with a fenced epoch, ships the exact commit's
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
+import { replay } from './repo-commit';
 import { parseStore, RepoObjects } from './repo-objects';
-import { caller, type Json, RepoContext, replay } from './repo-ops';
+import { caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
 import type { Env, Envelope } from './types';
 
@@ -79,6 +80,14 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       log,
       // Files came from the branch's warm-start seed plus this many fetched blobs.
       ...(shipped.seed ? { seed: shipped.seed } : {}),
+      // Per-tier counts for S12: files served by the seed (the executor's warm tier; its
+      // containers are single-use, so nothing is cached inside them), then object reads
+      // served by the edge Cache API, R2 and the object store.
+      tiers: {
+        seed: shipped.seed ? shipped.files.length - shipped.seed.fetched : 0,
+        files: shipped.files.length,
+        ...objects.hits,
+      },
     });
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     // Advance bisects that were waiting on this result (and queue their next run).

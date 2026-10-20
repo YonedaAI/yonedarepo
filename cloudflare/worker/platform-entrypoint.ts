@@ -1,10 +1,10 @@
 // Worker entrypoint for the source platform alone: HTTP plus its own queue jobs (checks,
-// ref projection, derived data). No agent runs, harnesses, providers or budgets.
+// object and ref projection, derived data). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { platformFetch } from './platform-routes';
 import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
-import { projectRefs } from './repo-projection';
+import { projectObjects, projectRefs } from './repo-projection';
 import type { Env, Envelope } from './types';
 
 export async function platformJob(env: Env, message: Message<Envelope>) {
@@ -16,6 +16,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
   } else if (envelope.kind === 'platform_project') {
     await projectRefs(env, envelope);
     message.ack();
+  } else if (envelope.kind === 'platform_objects') {
+    await projectObjects(env, envelope.repo_id);
+    message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await deriveAfterLanding(env, envelope);
     message.ack();
@@ -26,13 +29,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   fetch(req: Request) {
     return platformFetch(req, this.env);
   }
+  /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
-    for (const message of batch.messages) {
-      try {
-        await platformJob(this.env, message);
-      } catch {
-        message.retry();
-      }
-    }
+    await Promise.all(
+      batch.messages.map((message) => platformJob(this.env, message).catch(() => message.retry())),
+    );
   }
 }

@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        13
+        16
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -690,6 +690,11 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     );
     assert!(
         db.query("SELECT id FROM check_runs", &[])
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        db.query("SELECT commit_id FROM object_projections", &[])
             .unwrap()
             .is_empty()
     );
@@ -1071,6 +1076,19 @@ fn queued_landings_batch_under_a_fenced_lease() {
     assert!(
         h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}))["wait"] == true,
         "the lease is held"
+    );
+    // A waiter polling with its ticket learns a settled outcome from the claim itself.
+    let settled = h.ok(
+        MERGER,
+        json!({"op":"repo_land_claim","ref":"main","ticket":tickets[2]}),
+    );
+    assert_eq!(settled["settled"]["status"], "failed");
+    assert!(
+        h.ok(
+            MERGER,
+            json!({"op":"repo_land_claim","ref":"main","ticket":tickets[0]})
+        )["wait"]
+            == true
     );
     let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
     let merge = h
@@ -1527,3 +1545,5 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 }
 
 mod break_glass;
+mod change_records;
+mod staging;
