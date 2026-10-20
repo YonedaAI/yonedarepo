@@ -3,6 +3,7 @@
 //! A spec holds one wrangler config fragment per Worker, in cutover order. Strings may use
 //! `{prefix}`, `{account_id}`, `{subdomain}`, `{zone}` and the spec's own `vars`; D1
 //! `database_id`s come from the lock, so resource identities are never hand-edited.
+use super::template::{expand, substitute};
 use crate::process::Result;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -124,6 +125,14 @@ impl Lock {
         serde_json::from_slice(&std::fs::read(&path)?)
             .map_err(|error| format!("Invalid lock {}: {error}", path.display()).into())
     }
+    pub(crate) fn save(&self, env: &Env) -> Result<()> {
+        let path = env.lock_path();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(&path, format!("{}\n", serde_json::to_string_pretty(self)?))?;
+        Ok(())
+    }
 }
 
 impl Spec {
@@ -227,48 +236,40 @@ impl Spec {
         }
         Ok(config)
     }
+    /// Worker names in cutover order, templates expanded.
+    pub(crate) fn worker_names(&self) -> Result<Vec<String>> {
+        let vars = self.substitutions();
+        self.workers
+            .iter()
+            .map(|w| {
+                substitute(
+                    w.config["name"].as_str().ok_or("Worker without a name")?,
+                    &vars,
+                )
+            })
+            .collect()
+    }
+    /// Every D1 database name the spec declares, templates expanded.
+    pub(crate) fn d1_names(&self) -> Result<Vec<String>> {
+        let vars = self.substitutions();
+        let mut names = Vec::new();
+        for worker in &self.workers {
+            for database in worker.config["d1_databases"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                if let Some(name) = database["database_name"].as_str() {
+                    names.push(substitute(name, &vars)?);
+                }
+            }
+        }
+        Ok(names)
+    }
     pub(crate) fn configs(&self, lock: &Lock) -> Result<Vec<(WorkerSpec, Value)>> {
         self.workers
             .iter()
             .map(|w| Ok((w.clone(), self.worker_config(w, lock)?)))
             .collect()
     }
-}
-
-fn expand(value: &mut Value, vars: &BTreeMap<String, String>) -> Result<()> {
-    match value {
-        Value::String(text) => *text = substitute(text, vars)?,
-        Value::Array(items) => {
-            for item in items {
-                expand(item, vars)?;
-            }
-        }
-        Value::Object(map) => {
-            for item in map.values_mut() {
-                expand(item, vars)?;
-            }
-        }
-        _ => {}
-    }
-    Ok(())
-}
-
-fn substitute(text: &str, vars: &BTreeMap<String, String>) -> Result<String> {
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find('{') {
-        out.push_str(&rest[..start]);
-        let tail = &rest[start + 1..];
-        let end = tail
-            .find('}')
-            .ok_or_else(|| format!("Unclosed template in {text:?}"))?;
-        let key = &tail[..end];
-        out.push_str(
-            vars.get(key)
-                .ok_or_else(|| format!("Unknown template {{{key}}} in {text:?}"))?,
-        );
-        rest = &tail[end + 1..];
-    }
-    out.push_str(rest);
-    Ok(out)
 }

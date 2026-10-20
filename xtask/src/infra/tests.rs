@@ -254,3 +254,263 @@ fn secrets_files_parse_without_comments_or_quotes() {
     assert_eq!(parsed.get("VAULT_KEY").map(String::as_str), Some("0f"));
     assert_eq!(parsed.len(), 2);
 }
+
+mod plan_diff {
+    use super::super::apply::{Create, creations, down_allowed};
+    use super::super::live::{Live, LiveWorker};
+    use super::super::plan::{Action, diff};
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// A live snapshot that matches the dev spec exactly.
+    fn matching() -> (Spec, Lock, Vec<inventory::Deployable>, Live) {
+        let spec = Spec::parse(DEV).unwrap();
+        let lock = lock(DEV_LOCK);
+        let workers = inventory::deployables(&spec, &lock).unwrap();
+        let mut live = Live {
+            d1: lock.d1.clone(),
+            ..Live::default()
+        };
+        for w in &workers {
+            live.r2.extend(inventory::r2(&w.config));
+            for queue in inventory::queues(&w.config) {
+                live.queues.entry(queue).or_default();
+            }
+            for queue in inventory::consumers(&w.config) {
+                live.queues.entry(queue).or_default().insert(w.name.clone());
+            }
+            live.workflows.extend(inventory::workflows(&w.config));
+            for (app, declared) in inventory::containers(&w.config) {
+                live.containers
+                    .insert(app, json!({"max_instances": declared["max_instances"]}));
+            }
+            for route in inventory::routes(&w.config) {
+                let map = if route.custom_domain {
+                    &mut live.domains
+                } else {
+                    &mut live.routes
+                };
+                map.insert(route.pattern, w.name.clone());
+            }
+            let bindings: Vec<Value> = super::super::drift::declared_bindings(&w.config)
+                .into_keys()
+                .map(|name| json!({"name": name, "type": "inherit"}))
+                .collect();
+            live.workers.insert(
+                w.name.clone(),
+                LiveWorker {
+                    settings: json!({
+                        "bindings": bindings,
+                        "compatibility_date": w.config["compatibility_date"],
+                        "compatibility_flags": w.config["compatibility_flags"],
+                        "observability": w.config["observability"],
+                        "placement": w.config["placement"],
+                        "limits": w.config["limits"],
+                    }),
+                    secrets: w.secrets.iter().cloned().collect::<BTreeSet<_>>(),
+                    migration_tag: inventory::last_migration_tag(&w.config),
+                    workers_dev: w.config["workers_dev"].as_bool(),
+                },
+            );
+        }
+        (spec, lock, workers, live)
+    }
+    fn action(rows: &[super::super::plan::Row], kind: &str, name: &str) -> Action {
+        rows.iter()
+            .find(|r| r.kind == kind && r.name == name)
+            .unwrap_or_else(|| panic!("no {kind} {name}"))
+            .action
+    }
+
+    #[test]
+    fn a_matching_account_is_all_unchanged() {
+        let (spec, lock, workers, live) = matching();
+        let rows = diff(&spec, &lock, &workers, &live);
+        let unsettled: Vec<_> = rows
+            .iter()
+            .filter(|r| r.action != Action::Unchanged)
+            .collect();
+        assert!(unsettled.is_empty(), "{unsettled:?}");
+        assert!(rows.len() > 20, "every resource is listed ({})", rows.len());
+        assert!(creations(&rows).is_empty());
+    }
+
+    #[test]
+    fn missing_resources_are_created_and_only_data_resources_need_explicit_creation() {
+        let (spec, lock, workers, mut live) = matching();
+        live.d1.remove("yonedarepo-staging-agents-index");
+        live.r2.remove("yonedarepo-staging-platform-objects");
+        live.queues.remove("yonedarepo-staging-agents-dead-letter");
+        live.workers.remove("yonedarepo-staging-sites");
+        live.domains.clear();
+        let rows = diff(&spec, &lock, &workers, &live);
+        assert_eq!(
+            action(&rows, "d1", "yonedarepo-staging-agents-index"),
+            Action::Create
+        );
+        assert_eq!(
+            action(&rows, "worker", "yonedarepo-staging-sites"),
+            Action::Create
+        );
+        assert_eq!(
+            action(&rows, "domain", "dev.yonedarepo.com"),
+            Action::Create
+        );
+        assert_eq!(
+            creations(&rows),
+            [
+                Create::R2("yonedarepo-staging-platform-objects".into()),
+                Create::D1("yonedarepo-staging-agents-index".into()),
+                Create::Queue("yonedarepo-staging-agents-dead-letter".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn changed_settings_bindings_and_identities_are_drift() {
+        let (spec, lock, workers, mut live) = matching();
+        live.d1.insert(
+            "yonedarepo-staging-platform-index".into(),
+            "other-id".into(),
+        );
+        let platform = live.workers.get_mut("yonedarepo-staging-platform").unwrap();
+        platform.settings["compatibility_date"] = json!("2026-01-01");
+        platform.settings["bindings"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"name": "LAND_MODE", "type": "plain_text", "text": "batch"}));
+        platform.migration_tag = Some("v3".into());
+        let agents = live.workers.get_mut("yonedarepo-staging-agents").unwrap();
+        for binding in agents.settings["bindings"].as_array_mut().unwrap() {
+            if binding["name"] == "PUBLIC_APP_ORIGIN" {
+                *binding = json!({"name": "PUBLIC_APP_ORIGIN", "type": "plain_text", "text": "https://elsewhere"});
+            }
+        }
+        live.routes.insert(
+            "https://dev.yonedarepo.com/*".into(),
+            "yonedarepo-apps-dev".into(),
+        );
+        live.containers.insert(
+            "yonedarepo-staging-agents-executioncontainer".into(),
+            json!({"max_instances": 16}),
+        );
+        let rows = diff(&spec, &lock, &workers, &live);
+        assert_eq!(
+            action(&rows, "d1", "yonedarepo-staging-platform-index"),
+            Action::Drift
+        );
+        let platform = rows
+            .iter()
+            .find(|r| r.name == "yonedarepo-staging-platform" && r.kind == "worker")
+            .unwrap();
+        assert_eq!(platform.action, Action::Drift);
+        for needle in [
+            "compatibility_date",
+            "binding LAND_MODE (plain_text) not declared",
+            "DO migration tag: declared v4",
+        ] {
+            assert!(
+                platform.detail.contains(needle),
+                "{needle} not in {}",
+                platform.detail
+            );
+        }
+        let agents = rows
+            .iter()
+            .find(|r| r.name == "yonedarepo-staging-agents" && r.kind == "worker")
+            .unwrap();
+        assert!(
+            agents.detail.contains("PUBLIC_APP_ORIGIN"),
+            "{}",
+            agents.detail
+        );
+        assert_eq!(
+            action(&rows, "route", "https://dev.yonedarepo.com/*"),
+            Action::Drift
+        );
+        assert_eq!(
+            action(
+                &rows,
+                "container",
+                "yonedarepo-staging-agents-executioncontainer"
+            ),
+            Action::Drift
+        );
+    }
+
+    #[test]
+    fn deploy_time_vars_and_secret_bindings_are_not_drift() {
+        let (spec, lock, workers, mut live) = matching();
+        let platform = live.workers.get_mut("yonedarepo-staging-platform").unwrap();
+        let bindings = platform.settings["bindings"].as_array_mut().unwrap();
+        bindings.push(json!({"name": "BUILD_REVISION", "type": "plain_text", "text": "abc"}));
+        bindings.push(json!({"name": "OWNER_TOKEN", "type": "secret_text"}));
+        let rows = diff(&spec, &lock, &workers, &live);
+        assert_eq!(
+            action(&rows, "worker", "yonedarepo-staging-platform"),
+            Action::Unchanged
+        );
+    }
+
+    #[test]
+    fn unreadable_sections_are_unverified_never_unchanged_or_create() {
+        let (spec, lock, workers, mut live) = matching();
+        live.containers.clear();
+        live.errors.push("Containers: HTTP 403".into());
+        live.workers.clear();
+        live.errors.push("Workers: HTTP 403".into());
+        let rows = diff(&spec, &lock, &workers, &live);
+        assert_eq!(
+            action(
+                &rows,
+                "container",
+                "yonedarepo-staging-platform-checkcontainer"
+            ),
+            Action::Unknown
+        );
+        assert_eq!(
+            action(&rows, "worker", "yonedarepo-staging-agents"),
+            Action::Unknown
+        );
+        assert_eq!(
+            action(&rows, "secret", "yonedarepo-staging-agents/VAULT_KEY"),
+            Action::Unknown
+        );
+        assert!(creations(&rows).is_empty());
+    }
+
+    #[test]
+    fn undeclared_resources_under_the_prefix_are_extra() {
+        let (spec, lock, workers, mut live) = matching();
+        live.workers
+            .insert("yonedarepo-staging-bench".into(), LiveWorker::default());
+        live.workers
+            .insert("yonedarepo-platform-dev".into(), LiveWorker::default());
+        live.r2.insert("yonedarepo-staging-leftover".into());
+        let rows = diff(&spec, &lock, &workers, &live);
+        assert_eq!(
+            action(&rows, "worker", "yonedarepo-staging-bench"),
+            Action::Extra
+        );
+        assert_eq!(
+            action(&rows, "r2", "yonedarepo-staging-leftover"),
+            Action::Extra
+        );
+        assert!(
+            !rows.iter().any(|r| r.name == "yonedarepo-platform-dev"),
+            "other prefixes are ignored"
+        );
+    }
+
+    #[test]
+    fn prod_down_is_refused_in_code() {
+        let error = down_allowed(&Env::Prod, true).unwrap_err().to_string();
+        assert!(error.contains("never runs against prod"), "{error}");
+        assert!(
+            down_allowed(&Env::Dev, false).is_err(),
+            "--confirm required"
+        );
+        down_allowed(&Env::Dev, true).unwrap();
+        down_allowed(&Env::parse("ephemeral-x").unwrap(), true).unwrap();
+    }
+}
