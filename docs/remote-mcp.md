@@ -54,3 +54,19 @@ Hosted coding attempts additionally receive `delegate_agent` and `delegation_sta
 The remote endpoint implements stateless Streamable HTTP JSON-RPC: POST JSON responses, no persistent sessions or server-initiated SSE stream. Read keys cannot begin attempts or publish context. No MCP tool selects candidates or moves `main`. Platform credentials are never returned to a client. In-flight requests may complete after revocation; later requests reauthenticate.
 
 Each `attempt_commit` carries at most 500 regular files of 1 MiB each within a 4 MiB request, including executable bits and base64 binary transfer. Symlinks and submodules must be converted. Expired attempts fail without scheduling paid hosted inference. Local workerd tests cover durable grants, revocation after eviction, cross-repository denial, canonical-write denial, attribution, platform branch commits, frozen revision submission and fresh capture on the base. Actual third-party client connections are recorded separately in the release evidence.
+
+## Offline CLI
+
+`yoneda` (crate `backend/crates/yoneda-cli`) lets a local agent or person work offline and sync later. The work is one long optimistic transaction pinned to the clone's base version; landing applies the platform's usual path-level checks and same-file three-way merge.
+
+```sh
+cargo install --path backend/crates/yoneda-cli
+yoneda login --origin https://YOUR-PLATFORM      # reads the token from stdin; ~/.config/yoneda/credentials, mode 0600
+yoneda clone rXXXXXXXXXXXXXXXXXXXX work          # git clone for a person reading the whole repo, else an API snapshot
+cd work && git commit -am "offline work"         # plain Git, no network
+yoneda status                                    # base version, pending commits, platform and projection lag
+yoneda sync --land                               # push oldest first, then land; exit 2 on CONFLICT
+yoneda pull                                      # rebase pending commits onto the latest main
+```
+
+`YONEDA_TOKEN` overrides the stored token; a stored token is sent only to its own origin. A repository token needs `read`, `write` and `land` for `sync --land`. Each pushed commit moves the checkout's `offline/<id>` branch by compare-and-swap, so a sync rerun after a crash or lost acknowledgment adopts commits that already arrived instead of pushing them again. On CONFLICT the three sides are written to `.yoneda/conflicts/<path>.{base,ours,theirs}` (ours = local, theirs = main). Keys without land rights use `yoneda sync --attempt <attempt-id> [--mcp-url URL]` with `YONEDA_MCP_TOKEN`: the commits go through `attempt_commit` and `attempt_submit` above. Symlinks and submodules are refused; files over 32 MiB (1 MiB for attempts) cannot sync. The local workerd test is `cargo test -p yoneda-cli -- --include-ignored`.
