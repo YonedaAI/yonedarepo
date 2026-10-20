@@ -177,7 +177,10 @@ fn script(path: &str, source: &str) -> Result<Vec<Symbol>, String> {
     use oxc_span::SourceType;
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).map_err(|e| format!("{e:?}"))?;
-    let parsed = Parser::new(&allocator, source, source_type).parse();
+    // The same parser configuration as `platform_facts_script`, so one parser is compiled.
+    let parsed = Parser::new(&allocator, source, source_type)
+        .with_config(oxc_parser::config::TokensParserConfig)
+        .parse();
     if parsed.panicked || parsed.diagnostics.has_errors() {
         return Err("Syntax error".into());
     }
