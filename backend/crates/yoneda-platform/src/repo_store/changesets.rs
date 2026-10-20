@@ -218,7 +218,7 @@ fn append_changeset<S: SqlStore>(
 /// `repo_land_changesets`: lands every pending, path-disjoint queued landing on `ref` in
 /// one transaction. Items on the same files are marked for the merge path; stale reads
 /// fail. Waits while a merge-path builder holds the branch.
-pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn land<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
     if let Some((_, expires)) = lease(db, &refname)?
@@ -227,12 +227,14 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         return Ok(json!({ "wait": true, "retry_after_ms": (expires - now).min(250) }));
     }
     let pending = db.query(
-        "SELECT ticket,commit_id FROM land_queue WHERE refname=? AND status='pending' AND slow=0 ORDER BY ticket LIMIT ?",
+        "SELECT ticket,commit_id,principal FROM land_queue WHERE refname=? AND status='pending' AND slow=0 ORDER BY ticket LIMIT ?",
         &[json!(refname), json!(BATCH)],
     )?;
     let (mut landed, mut failed, mut slow) = (Vec::new(), Vec::new(), Vec::new());
     for row in &pending {
         let ticket = &row["ticket"];
+        // The log records who asked to land (authorized when the landing was queued).
+        let principal = row["principal"].as_str().unwrap_or_default();
         let commit = rows::recorded(
             db,
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,

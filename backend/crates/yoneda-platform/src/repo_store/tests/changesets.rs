@@ -157,6 +157,10 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
         .collect();
     assert_eq!(kinds, ["commit", "changeset"]);
     assert_eq!(
+        log["entries"][1]["actor"], OWNER,
+        "who queued it, not the merger"
+    );
+    assert_eq!(
         log["entries"][1]["projected"],
         json!({"commit": null, "at": null})
     );
