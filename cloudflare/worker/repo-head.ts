@@ -9,12 +9,27 @@ import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 const ISOLATE_MS = 1000;
+/** Per repository and caller: the head carries only that caller's token row. */
 const isolate = new Map<string, { head: Json; at: number }>();
 
 type Holder = {
-  head(repo: string, minVersion: number): Promise<Json>;
+  head(repo: string, minVersion: number, digest: string | null): Promise<Json>;
   refresh(repo: string): Promise<void>;
 };
+
+/** The digest the authority files a repository token under (as `auth.rs` computes it). */
+async function tokenDigest(credentials: Json): Promise<string | null> {
+  if (typeof credentials._token !== 'string') return null;
+  const bytes = new TextEncoder().encode(`yonedarepo:repo-token:v1:${credentials._token}`);
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  return [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The head with only `digest`'s live token (the snapshot is never sent whole). */
+function forCaller(head: Json, digest: string | null): Json {
+  const token = digest && (head.tokens as Json[]).find((t) => t.digest === digest);
+  return { ...head, tokens: token ? [token] : [] };
+}
 
 function holder(env: Env, repo: string): Holder | null {
   const namespace = env.LAND_COMBINERS;
@@ -27,22 +42,32 @@ function holder(env: Env, repo: string): Holder | null {
 export const fetchHead = (env: Env, repo: string) =>
   caller(env, repo, { _system: 'projection' })({ op: 'repo_head', ref: 'main' });
 
-/** Main's published head, at least at `minVersion` (a reader's own landing). */
-export async function publishedHead(env: Env, repo: string, minVersion = 0): Promise<Json> {
-  const cached = isolate.get(repo);
+/** Main's published head for `credentials`, at least at `minVersion` (a reader's own
+ * landing). */
+export async function publishedHead(
+  env: Env,
+  repo: string,
+  credentials: Json,
+  minVersion = 0,
+): Promise<Json> {
+  const digest = await tokenDigest(credentials);
+  const key = `${repo}|${digest ?? 'session'}`;
+  const cached = isolate.get(key);
   if (cached && Date.now() - cached.at < ISOLATE_MS && cached.head.version >= minVersion)
     return cached.head;
   const shared = holder(env, repo);
-  const head = shared ? await shared.head(repo, minVersion) : await fetchHead(env, repo);
+  const head = shared
+    ? await shared.head(repo, minVersion, digest)
+    : forCaller(await fetchHead(env, repo), digest);
   if (head.version < minVersion)
     throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
-  isolate.set(repo, { head, at: Date.now() });
+  isolate.set(key, { head, at: Date.now() });
   return head;
 }
 
 /** Marks the published head stale after a landing, projection or access change. */
 export async function refreshHead(env: Env, repo: string) {
-  isolate.delete(repo);
+  for (const key of isolate.keys()) if (key.startsWith(`${repo}|`)) isolate.delete(key);
   await holder(env, repo)
     ?.refresh(repo)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
@@ -50,9 +75,10 @@ export async function refreshHead(env: Env, repo: string) {
 
 /** Authorizes a commit on the published head (stateless compute, the authority's rules). */
 export async function beginFromHead(ctx: RepoContext, paths: string[]) {
-  const head = await publishedHead(ctx.env, ctx.repo);
+  const credentials = ctx.call.sign({});
+  const head = await publishedHead(ctx.env, ctx.repo, credentials);
   try {
-    return compute({ op: 'head_begin', head, credentials: ctx.call.sign({}), paths });
+    return compute({ op: 'head_begin', head, credentials, paths });
   } catch (e: any) {
     throw new ApiError(e.code ?? 'FORBIDDEN', e.message);
   }
@@ -60,9 +86,10 @@ export async function beginFromHead(ctx: RepoContext, paths: string[]) {
 
 /** The caller's read access and main's head for a read served from the published head. */
 export async function readFromHead(ctx: RepoContext, minVersion = 0) {
-  const head = await publishedHead(ctx.env, ctx.repo, minVersion);
+  const credentials = ctx.call.sign({});
+  const head = await publishedHead(ctx.env, ctx.repo, credentials, minVersion);
   try {
-    const access = compute({ op: 'head_access', head, credentials: ctx.call.sign({}) });
+    const access = compute({ op: 'head_access', head, credentials });
     return { head, access };
   } catch (e: any) {
     throw new ApiError(e.code ?? 'FORBIDDEN', e.message);
@@ -77,9 +104,12 @@ export class HeadHolder {
 
   constructor(private readonly env: Env) {}
 
-  async head(repo: string, minVersion: number): Promise<Json> {
-    if (this.#head && !this.#stale && this.#head.version >= minVersion) return this.#head;
-    return this.#load(repo, minVersion);
+  async head(repo: string, minVersion: number, digest: string | null): Promise<Json> {
+    const head =
+      this.#head && !this.#stale && this.#head.version >= minVersion
+        ? this.#head
+        : await this.#load(repo, minVersion);
+    return forCaller(head, digest);
   }
 
   refresh(repo: string) {

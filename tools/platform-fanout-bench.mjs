@@ -149,7 +149,7 @@ const result = {
   principals: values.principals,
   mode: values.mode ?? 'default',
   begin: values.begin ?? 'default',
-  read: values.read ?? 'default',
+  read_mode: values.read ?? 'default',
   elapsed_ms: Math.round(elapsed),
   commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits) },
   land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },
