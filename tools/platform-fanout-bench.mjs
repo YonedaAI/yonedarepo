@@ -86,18 +86,26 @@ const reads = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i
 /** Waits (up to 5 min) until every changeset is projected; lag = projected - landed. */
 async function projectionLag() {
   const started = Date.now();
+  let refused = 0;
   for (;;) {
     const entries = [];
     for (let after = 0; ; after += 500) {
       const response = await fetch(`${url}/api/v1/repos/${repo}/txlog?after=${after}&limit=500`, { headers: { cookie } });
-      const page = await response.json();
+      const page = await response.json().catch(() => ({}));
+      // A busy authority may refuse a log read; count it and read again.
+      if (response.status !== 200) {
+        refused++;
+        await new Promise((r) => setTimeout(r, 1000));
+        after -= 500;
+        continue;
+      }
       entries.push(...page.entries);
       if (page.entries.length < 500) break;
     }
     const changes = entries.filter((e) => e.kind === 'changeset');
     const pending = changes.filter((e) => !e.projected?.at).length;
     if (!pending || Date.now() - started > 300_000)
-      return { changesets: changes.length, unprojected: pending, lag: latency(changes.filter((e) => e.projected?.at).map((e) => e.projected.at - e.committed_at_ms)) };
+      return { changesets: changes.length, unprojected: pending, refused_reads: refused, lag: latency(changes.filter((e) => e.projected?.at).map((e) => e.projected.at - e.committed_at_ms)) };
     await new Promise((r) => setTimeout(r, 2000));
   }
 }
@@ -114,9 +122,9 @@ const errors = (rows) => {
   return Object.entries(counts);
 };
 /** Per Server-Timing phase: latency of its total across requests. */
-function phases(rows) {
+function phases(rows, failed = false) {
   const all = {};
-  for (const r of rows.filter(ok))
+  for (const r of rows.filter((r) => r && (failed || ok(r))))
     for (const part of (r.timing ?? '').split(',').filter(Boolean)) {
       const [name, dur] = part.trim().split(';');
       (all[name] ??= []).push(Number(dur?.slice(4)));
@@ -132,6 +140,7 @@ function landRate(rows) {
   return Number(((done.length * 1000) / Math.max(1, last - first)).toFixed(1));
 }
 const result = {
+  repo,
   writers: WRITERS,
   principals: values.principals,
   mode: values.mode ?? 'default',
@@ -140,7 +149,7 @@ const result = {
   land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },
   projection,
   overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,
-  read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length, errors: errors(reads.map((r) => r.read)) },
+  read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length, errors: errors(reads.map((r) => r.read)), phases: phases(reads.map((r) => r.read), true) },
 };
 const evidence = {
   schema: 1,
