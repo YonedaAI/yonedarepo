@@ -3,7 +3,7 @@
 //! agents or runs. Every operation is synchronous SQL; object-store I/O (Artifacts, R2)
 //! happens in the adapter before `repo_record_commit` and never inside a transaction.
 use crate::storage::{SqlStore, string};
-use serde_json::Value;
+use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
@@ -74,6 +74,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         ),
         "repo_set_policy" => actor.require_owner(),
         "repo_break_glass" => actor.require_human_owner(),
+        "repo_clone_access" => actor.require_human_reader(),
         _ => actor.require("read"),
     }?;
     if !actor.owner && break_glass::PAUSED_OPS.contains(&op.as_str()) {
@@ -83,6 +84,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
         "repo_status" => reads::status(db, &settings),
+        "repo_clone_access" => Ok(json!({ "object_store": settings.object_store })),
         "repo_refs" => reads::refs(db, c),
         "repo_snapshot" => reads::snapshot(db, c),
         "repo_log" => reads::log(db, c),

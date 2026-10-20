@@ -2,9 +2,15 @@
 // Live source-platform check against a deployed Worker backed by real Artifacts. It is an
 // explicit, separate command (never part of local gates): it creates one repository,
 // commits on the server (receive-pack to refs/yoneda/c/<commit> plus readback), diffs,
-// approves and lands. Credentials come from YONEDA_USERNAME / YONEDA_PASSWORD.
+// approves and lands, then `git clone`s the Artifacts repository once the branch ref is
+// projected and checks it holds exactly the landed commit. Credentials come from
+// YONEDA_USERNAME / YONEDA_PASSWORD; the clone token travels in Git's environment config.
 // Usage: node tools/platform-live.mjs --url https://<deployment>
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 
 const { values } = parseArgs({ options: { url: { type: 'string' } } });
@@ -49,4 +55,34 @@ assert.equal(diff.changes[0].patch, '@@ -0,0 +1 @@\n+a\n');
 const landed = await call(`/repos/${repo.id}/land`, { ref: 'main', commit: commit.commit });
 assert.equal(landed.version, 2);
 assert.equal((await call(`/repos/${repo.id}/blob?path=src/a.txt`)).content, 'a\n');
-console.log(JSON.stringify({ ok: true, repo: repo.id, commit: commit.commit }));
+
+// Any Git client sees the platform's ids: main is projected to the landed commit.
+const access = await call(`/repos/${repo.id}/clone`, {});
+const gitEnv = {
+  ...process.env,
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_CONFIG_COUNT: '1',
+  GIT_CONFIG_KEY_0: 'http.extraHeader',
+  GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}`,
+};
+const git = (args, cwd) => execFileSync('git', args, { cwd, env: gitEnv, encoding: 'utf8' }).trim();
+const projectedAt = Date.now();
+let remoteMain = '';
+while (Date.now() - projectedAt < 120_000) {
+  remoteMain = git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] ?? '';
+  if (remoteMain === commit.commit) break;
+  await new Promise((r) => setTimeout(r, 2000));
+}
+assert.equal(remoteMain, commit.commit, 'main was not projected to the landed commit');
+const dir = mkdtempSync(join(tmpdir(), 'yoneda-live-'));
+try {
+  const started = Date.now();
+  git(['clone', '--quiet', access.remote, dir]);
+  console.log(`git clone ${Date.now() - started}ms; projection visible after ${started - projectedAt}ms`);
+  assert.equal(git(['rev-parse', 'HEAD'], dir), commit.commit);
+  assert.equal(readFileSync(join(dir, 'src/a.txt'), 'utf8'), 'a\n');
+  git(['fsck', '--strict'], dir);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
+console.log(JSON.stringify({ ok: true, repo: repo.id, commit: commit.commit, cloned: true }));
