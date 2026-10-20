@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        10
+        11
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1360,5 +1360,60 @@ fn directory_grants_bound_writes_reviews_landings_and_reads() {
     assert_eq!(
         code(h.run(PUBLIC, json!({"op":"repo_land","ref":"main","commit":docs}))),
         "MERGE_REQUIRED"
+    );
+}
+
+#[test]
+fn symbol_reads_conflict_only_with_derived_writes_to_those_symbols() {
+    let (h, root) = seeded();
+    const DERIVER: &str = "platform:derive";
+    let edit = |reads: Value| {
+        let id = h
+            .commit(
+                AGENT,
+                Some(&root),
+                1,
+                json!([file("src/lib.rs", "pub fn a() { 1; }\n")]),
+                reads,
+            )
+            .unwrap();
+        h.approve_and_check(&id);
+        id
+    };
+    let writer = edit(json!([]));
+    let reads_other = edit(json!(["src/lib.rs#b"]));
+    let reads_a = edit(json!(["src/lib.rs#a"]));
+    let reads_file = edit(json!(["src/lib.rs"]));
+    // Only the platform deriver records symbol writes, and only for changed paths.
+    let record = |principal: &str, path: &str| {
+        h.run(principal, json!({"op":"repo_record_symbols","commit":writer,"touches":[{"path":path,"symbols":["a"]}]}))
+    };
+    assert_eq!(code(record(AGENT, "src/lib.rs")), "FORBIDDEN");
+    assert_eq!(code(record(DERIVER, "README.md")), "INVALID_INPUT");
+    record(DERIVER, "src/lib.rs").unwrap();
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":writer}))["symbol_touches"],
+        json!([{"path":"src/lib.rs","symbols":["a"]}])
+    );
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":writer}),
+    );
+    let land = |id: &str| code(h.run(OWNER, json!({"op":"repo_land","ref":"main","commit":id})));
+    // Another symbol of the same file: a three-way merge, not a stale read.
+    assert_eq!(land(&reads_other), "MERGE_REQUIRED");
+    assert_eq!(land(&reads_a), "CONFLICT");
+    assert_eq!(land(&reads_file), "CONFLICT");
+    // Planning sees the same stale reads.
+    let stale = h.ok(
+        AGENT,
+        json!({"op":"repo_stale_reads","ref":"main","items":[
+        {"id":"x","base_version":1,"read_set":["src/lib.rs#b"]},
+        {"id":"y","base_version":1,"read_set":["src/lib.rs#a"]},
+        {"id":"z","read_set":["src/lib.rs"]}]}),
+    );
+    assert_eq!(
+        stale["stale"],
+        json!([{"id":"y","version":2,"entries":["src/lib.rs#a"]}])
     );
 }

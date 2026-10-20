@@ -1,9 +1,11 @@
 //! YonedaRepo source platform: the SourceRepository authority (refs, hash-chained log,
 //! checks, reviews, landing, grants) and the stateless Rust compute the Worker runs next
 //! to the object cache (diffs, merges, search, blame, symbols, review classes).
+mod platform_access;
 mod platform_code;
 mod platform_compute;
 mod platform_derived;
+mod platform_graph;
 mod platform_objects;
 mod platform_review;
 mod platform_symbols;

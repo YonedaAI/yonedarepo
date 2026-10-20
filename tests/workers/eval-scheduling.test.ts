@@ -2,7 +2,8 @@
 // signature (and its own callers); B adds a new price() call in another file. Each passes
 // alone. File-disjoint scheduling lands both and only the post-land combined check sees
 // the break; dependency-aware scheduling (B declares what it read) turns it into a stale-
-// read conflict that B redoes on the new head. Scripted agents; no model calls.
+// read conflict that B redoes on the new head; planned scheduling (git_plan over declared
+// symbol sets) runs B after A, so nothing is redone. Scripted agents; no model calls.
 import { expect, it } from 'vitest';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
 import type { Env } from '../../cloudflare/worker/types';
@@ -24,7 +25,15 @@ function arityCheck(job: any) {
 }
 const env = { ...scoped, CHECK_RUNNERS: { idFromName: (n: string) => n, get: () => ({ run: async (job: any) => arityCheck(job) }) } } as unknown as Env;
 
-async function scenario(name: string, declareReads: boolean) {
+type Scheduler = 'disjoint' | 'aware' | 'planned';
+const LABELS: Record<Scheduler, string> = {
+  disjoint: 'file-disjoint',
+  aware: 'dependency-aware (read sets)',
+  planned: 'planned (git_plan stages)',
+};
+
+async function scenario(name: string, scheduler: Scheduler) {
+  const declareReads = scheduler === 'aware';
   const owner = { cookie: await signup(name) };
   const policy = { required_checks: [], approvals: 0, runners: { combined: { command: ['check-arity'] } } };
   const created = await api('/repos', owner, { body: { name, policy, files: [file('src/pricing.ts', PRICING), file('src/cart.ts', CART)], author } }, env);
@@ -41,27 +50,47 @@ async function scenario(name: string, declareReads: boolean) {
     const cart = `${CART}\nexport function shipping(): number {\n  return ${twoArgs ? "price(5, 'usd')" : 'price(5)'};\n}\n`;
     return (await api(`${repo}/commits`, agentB, { body: { parent, base_version: 1, changes: [file('src/cart.ts', cart)], message: 'Add shipping', author, read_set: declareReads ? ['src/pricing.ts'] : [] } }, env)).body.commit;
   };
-  // Both start from the same base (scheduled in parallel: their files are disjoint).
-  attempts++;
-  const a = (await api(`${repo}/commits`, agentA, { body: { parent: base, base_version: 1, changes: [file('src/pricing.ts', PRICING_V2)], message: 'Price in currencies', author } }, env)).body.commit;
-  let b = await runB(base);
-  expect((await api(`${repo}/land`, agentA, { body: { ref: 'main', commit: a } }, env)).body.landed).toBe(true);
-  let landedB = await api(`${repo}/land`, agentB, { body: { ref: 'main', commit: b } }, env);
+  const runA = async () => {
+    attempts++;
+    return (await api(`${repo}/commits`, agentA, { body: { parent: base, base_version: 1, changes: [file('src/pricing.ts', PRICING_V2)], message: 'Price in currencies', author } }, env)).body.commit;
+  };
+  const land = (who: { token: string }, commit: string) => api(`${repo}/land`, who, { body: { ref: 'main', commit } }, env);
+  const headOf = async () => (await api(`${repo}/log?ref=main&limit=1`, agentB, {}, env)).body.commits[0].commit as string;
   let conflicts = 0;
-  if (landedB.body.error?.code === 'CONFLICT') {
-    conflicts++;
-    const head = (await api(`${repo}/log?ref=main&limit=1`, agentB, {}, env)).body.commits[0].commit;
-    b = await runB(head);
-    landedB = await api(`${repo}/land`, agentB, { body: { ref: 'main', commit: b } }, env);
+  let a: string;
+  let b: string;
+  if (scheduler === 'planned') {
+    // The platform plans from the declared symbol sets; each stage starts on the head it finds.
+    const items = [
+      { id: 'shipping', read_set: ['src/pricing.ts#price'], write_set: ['src/cart.ts'] },
+      { id: 'pricing', write_set: ['src/pricing.ts#price', 'src/pricing.ts#quote'] },
+    ];
+    const plan = (await api(`${repo}/plans`, owner, { body: { items } }, env)).body;
+    expect(plan.stages.map((stage: number[]) => stage.flatMap((k) => plan.items[k].members))).toEqual([['pricing'], ['shipping']]);
+    a = await runA();
+    expect((await land(agentA, a)).body.landed).toBe(true);
+    b = await runB(await headOf());
+    expect((await land(agentB, b)).body.landed).toBe(true);
+  } else {
+    // Both start from the same base (scheduled in parallel: their files are disjoint).
+    a = await runA();
+    b = await runB(base);
+    expect((await land(agentA, a)).body.landed).toBe(true);
+    let landedB = await land(agentB, b);
+    if (landedB.body.error?.code === 'CONFLICT') {
+      conflicts++;
+      b = await runB(await headOf());
+      landedB = await land(agentB, b);
+    }
+    expect(landedB.body.landed).toBe(true);
   }
-  expect(landedB.body.landed).toBe(true);
   // Post-land combined checks on everything that landed.
   for (const message of queued.splice(0).filter((m) => m.kind === 'platform_check')) await executeCheckRun(env, message);
   const head = (await api(`${repo}/log?ref=main&limit=1`, owner, {}, env)).body.commits[0].commit;
   const headCheck = (await api(`${repo}/commits/${head}`, owner, {}, env)).body;
   const proposed = (await Promise.all([a, b, head].map((c) => api(`${repo}/commits/${c}`, owner, {}, env)))).flatMap((r) => r.body.repairs ?? []);
   return {
-    scheduler: declareReads ? 'dependency-aware (read sets)' : 'file-disjoint',
+    scheduler: LABELS[scheduler],
     landed: 2,
     head_check: headCheck.checks.find((c: any) => c.name === 'combined')?.status ?? 'missing',
     stale_read_conflicts: conflicts,
@@ -71,12 +100,15 @@ async function scenario(name: string, declareReads: boolean) {
   };
 }
 
-it('file-disjoint scheduling breaks semantically; read sets turn it into a redo', async () => {
-  const disjoint = await scenario('disjointsched', false);
-  const aware = await scenario('awaresched', true);
-  console.log(`YONEDA_EVAL_P9 ${JSON.stringify({ manifest: { study: 'P9', agents: 'scripted-v1 (no model calls)', check: 'price() arity (combined, post-land)' }, results: [disjoint, aware] })}`);
+it('file-disjoint scheduling breaks semantically; read sets turn it into a redo; plans avoid it', async () => {
+  const disjoint = await scenario('disjointsched', 'disjoint');
+  const aware = await scenario('awaresched', 'aware');
+  const planned = await scenario('plannedsched', 'planned');
+  console.log(`YONEDA_EVAL_P9 ${JSON.stringify({ manifest: { study: 'P9', agents: 'scripted-v1 (no model calls)', check: 'price() arity (combined, post-land)' }, results: [disjoint, aware, planned] })}`);
   expect(disjoint).toMatchObject({ head_check: 'fail', stale_read_conflicts: 0, accepted: 0 });
   expect(disjoint.repairs_proposed).toBeGreaterThan(0);
   expect(aware).toMatchObject({ head_check: 'pass', stale_read_conflicts: 1, accepted: 2, repairs_proposed: 0 });
   expect(aware.agent_attempts).toBe(disjoint.agent_attempts + 1);
+  expect(planned).toMatchObject({ head_check: 'pass', stale_read_conflicts: 0, accepted: 2, repairs_proposed: 0 });
+  expect(planned.agent_attempts).toBe(disjoint.agent_attempts);
 }, 300_000);
