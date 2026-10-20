@@ -4,7 +4,6 @@ use super::plan::{self, Action};
 use super::spec::{Env, Lock, Spec};
 use super::{generate, inventory, secrets, wrangler};
 use crate::process::Result;
-use std::collections::BTreeSet;
 
 /// Placeholder D1 id for dry runs of an env whose databases do not exist yet.
 const DRY_RUN_D1: &str = "00000000-0000-4000-8000-000000000000";
@@ -30,18 +29,7 @@ pub(crate) fn creations(rows: &[plan::Row]) -> Vec<Create> {
         .collect()
 }
 
-/// Down is for disposable stacks only. Production is never torn down by this tool.
-pub(crate) fn down_allowed(env: &Env, confirm: bool) -> Result<()> {
-    if env.is_prod() {
-        return Err("Refusing: `infra down` never runs against prod.".into());
-    }
-    if !confirm {
-        return Err(format!("Refusing to tear down {} without --confirm.", env.name()).into());
-    }
-    Ok(())
-}
-
-async fn snapshot(spec: &Spec, token: &str) -> Result<Live> {
+pub(crate) async fn snapshot(spec: &Spec, token: &str) -> Result<Live> {
     let live = live::read(spec, token.to_owned(), &spec.worker_names()?).await;
     Ok(live)
 }
@@ -137,94 +125,6 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
         let live = snapshot(&spec, &token).await?;
         let workers = inventory::deployables(&spec, &lock)?;
         plan::print(&env, &plan::diff(&spec, &lock, &workers, &live), &live);
-    }
-    Ok(())
-}
-
-pub(crate) async fn down(args: &[String]) -> Result<()> {
-    let env = Env::from_args(args)?;
-    down_allowed(&env, args.iter().any(|a| a == "--confirm"))?;
-    let purge = args.iter().any(|a| a == "--purge");
-    let spec = Spec::load(&env)?;
-    let token = live::token(args)?;
-    let live = snapshot(&spec, &token).await?;
-    let lock = plan::effective_lock(&spec, &Lock::load(&env)?, &live)?;
-    let workers = inventory::deployables(&spec, &lock)?;
-    let mut failures = Vec::new();
-    let mut attempt = |label: String, args: Vec<&str>| {
-        if let Err(error) = wrangler::run(&spec.account_id, &args) {
-            failures.push(format!("{label}: {error}"));
-        }
-    };
-    for worker in workers
-        .iter()
-        .rev()
-        .filter(|w| live.workers.contains_key(&w.name))
-    {
-        attempt(
-            format!("Worker {}", worker.name),
-            vec!["delete", &worker.name, "--force"],
-        );
-    }
-    for (name, app) in &live.containers {
-        let declared = workers
-            .iter()
-            .any(|w| inventory::containers(&w.config).contains_key(name));
-        if let (true, Some(id)) = (declared, app["id"].as_str()) {
-            attempt(
-                format!("Container {name}"),
-                vec!["containers", "delete", id],
-            );
-        }
-    }
-    if purge {
-        let mut queues = BTreeSet::new();
-        let mut buckets = BTreeSet::new();
-        for worker in &workers {
-            queues.extend(inventory::queues(&worker.config));
-            buckets.extend(inventory::r2(&worker.config));
-        }
-        for queue in queues.iter().filter(|q| live.queues.contains_key(*q)) {
-            attempt(format!("Queue {queue}"), vec!["queues", "delete", queue]);
-        }
-        for database in lock.d1.keys() {
-            if live.d1.contains_key(database) {
-                attempt(
-                    format!("D1 {database}"),
-                    vec!["d1", "delete", database, "--skip-confirmation"],
-                );
-            }
-        }
-        for bucket in buckets.iter().filter(|b| live.r2.contains(*b)) {
-            attempt(
-                format!("R2 {bucket} (must be empty)"),
-                vec!["r2", "bucket", "delete", bucket],
-            );
-        }
-    }
-    drop(attempt);
-    if matches!(env, Env::Ephemeral(_)) && purge && failures.is_empty() {
-        for worker in &spec.workers {
-            let _ = std::fs::remove_file(
-                std::path::Path::new(super::spec::CONFIG_DIR).join(&worker.file),
-            );
-        }
-        std::fs::remove_dir_all(env.state_dir())?;
-    }
-    let after = snapshot(&spec, &token).await?;
-    plan::print(&env, &plan::diff(&spec, &lock, &workers, &after), &after);
-    if !failures.is_empty() {
-        return Err(format!(
-            "{} teardown step(s) failed:\n{}",
-            failures.len(),
-            failures.join("\n")
-        )
-        .into());
-    }
-    if !purge {
-        println!(
-            "Data kept (D1, R2, queues, lock, secrets file). Durable Object state went with the deleted Workers."
-        );
     }
     Ok(())
 }
