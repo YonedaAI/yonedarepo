@@ -109,41 +109,53 @@ export const fakePushQueues = {
 };
 // Platform tests choose their object store explicitly; the agent-layer default is R2.
 // Land combiners run in-process too, so their post-land dispatches reach the fakes above.
-const combiners = new Map<string, LandBatcher>();
+// Each keeps its due timers and its running step, so a test's teardown can stop them.
+type InProcess = { batcher: LandBatcher; timers: Set<ReturnType<typeof setTimeout>>; running: Promise<void> | null };
+const combiners = new Map<string, InProcess>();
 export const fakeCombiners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
     wait: (repo: string, ref: string, ticket: number, timeoutMs: number) => {
-      if (!combiners.has(name)) {
-        let running = false;
+      let combiner = combiners.get(name);
+      if (!combiner) {
+        const self: InProcess = { batcher: undefined as unknown as LandBatcher, timers: new Set(), running: null };
         let again = false;
-        const batcher: LandBatcher = new LandBatcher(scoped, async (ms) => {
-          setTimeout(async () => {
-            if (running) return void (again = true);
-            running = true;
-            try {
-              do {
-                again = false;
-                // A test may end (and reset storage) while a step is still due.
-                await batcher.step().catch(() => {});
-              } while (again);
-            } finally {
-              running = false;
-            }
+        const run = async () => {
+          do {
+            again = false;
+            await self.batcher.step();
+          } while (again);
+        };
+        self.batcher = new LandBatcher(scoped, async (ms) => {
+          const timer = setTimeout(() => {
+            self.timers.delete(timer);
+            if (self.running) return void (again = true);
+            self.running = run().finally(() => {
+              self.running = null;
+            });
           }, ms);
+          self.timers.add(timer);
         });
-        combiners.set(name, batcher);
+        combiners.set(name, (combiner = self));
       }
-      return combiners.get(name)?.wait({ repo, ref }, ticket, timeoutMs);
+      return combiner.batcher.wait({ repo, ref }, ticket, timeoutMs);
     },
   }),
 };
+/** Stops every in-process combiner: cancels due steps and waits out the running one. */
+async function quiesceCombiners() {
+  for (const c of combiners.values()) for (const timer of c.timers) clearTimeout(timer);
+  await Promise.all([...combiners.values()].map((c) => c.running));
+  combiners.clear();
+}
 export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 
 /** Registers per-test reset, the D1 listing schema and the Artifacts push endpoint. */
 export function usePlatformFixture() {
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  // A combiner step still running would meet the reset storage: let it finish first.
+  await quiesceCombiners();
   return reset();
 });
 beforeEach(async () => {
@@ -156,7 +168,6 @@ beforeEach(async () => {
   receivePacks.busy = 0;
   receivePacks.down = false;
   queued.length = 0;
-  combiners.clear();
   executed.length = 0;
   const original = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {

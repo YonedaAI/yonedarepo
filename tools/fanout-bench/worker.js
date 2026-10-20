@@ -8,7 +8,13 @@ const json = (value, status = 200) => Response.json(value, { status });
 
 async function timed(url, init) {
   const started = Date.now();
-  const response = await fetch(url, init);
+  let response;
+  try {
+    response = await fetch(url, init);
+  } catch (e) {
+    // Reported, not thrown: one failed request must not hide the batch's other results.
+    return { status: 0, ms: Date.now() - started, server: null, timing: '', body: { error: { code: 'CLIENT_FETCH', message: String(e?.message ?? e) } } };
+  }
   const body = await response.json().catch(() => ({}));
   const timing = response.headers.get('server-timing') ?? '';
   const server = Number(timing.match(/total;dur=([\d.]+)/)?.[1]);
