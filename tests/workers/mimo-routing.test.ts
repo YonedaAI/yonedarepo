@@ -8,12 +8,11 @@ import { ledger } from '../../cloudflare/worker/storage';
 import { seal } from '../../cloudflare/worker/vault';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { fetchRequest } from '../../cloudflare/worker/routes';
-import { sourceArtifacts } from './reviewer-fixture';
+import { platformProject } from './platform-fixture';
 
 const bindings = env as unknown as Env;
-// Run approval reads the canonical commit back from (fake) Artifacts.
-const startRun = (url: string, init: RequestInit) =>
-  fetchRequest(new Request(url, init), { ...bindings, ARTIFACTS: sourceArtifacts() } as unknown as Env);
+// Run approval reads the canonical commit back from the project's platform repository.
+const startRun = (url: string, init: RequestInit) => fetchRequest(new Request(url, init), bindings);
 afterEach(async () => { await reset(); });
 const routing = { plan: 'token_plan', region: 'sgp' };
 const job = (route?: object) => ({ kind: 'agent', model: 'mimo-v2.6-flash', payload: {
@@ -54,10 +53,8 @@ it('blocks a legacy Token Plan key on the API route before scheduling and repair
   const saved = await workspace(bindings, owner, { op: 'provider_put', provider: 'mimo',
     model: 'mimo-v2.6-flash', sealed });
   const repo = 'legacy-plan-fixture';
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Legacy plan', workspace: owner,
-    commit: 'a'.repeat(40), remote: { namespace: 'yoneda-test', name: repo },
-    policy: { version: 'v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
-      required_checks: ['syntax'], build: { checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] } } });
+  await platformProject(bindings, owner, repo, { 'app.js': 'void 0;\n' }, { version: 'v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+      required_checks: ['syntax'], build: { checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] } });
   const start = () => startRun(`https://yoneda/api/repos/${repo}/start_run`, {
     method: 'POST', headers: { cookie }, body: JSON.stringify({ id: 'repaired', intent: 'Build a site',
       agents: ['minimal', 'accessible'].map(strategy => ({ strategy, provider: 'mimo', model: 'mimo-v2.6-flash' })) }),
@@ -118,10 +115,8 @@ it('stores only encrypted plan keys, exposes the route and fences changed routin
   expect(text).not.toContain('tp-offline-fixture-key');
   expect(text).not.toContain('ciphertext');
   const repo = 'token-plan-routing-fixture';
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Route fixture',
-    workspace: 'token_plan_user', commit: 'a'.repeat(40), remote: { namespace: 'yoneda-test', name: repo },
-    policy: { version: 'route-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
-      required_checks: ['syntax'], build: { checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] } } });
+  await platformProject(bindings, 'token_plan_user', repo, { 'app.js': 'void 0;\n' }, { version: 'route-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+      required_checks: ['syntax'], build: { checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] } });
   const started = await startRun(`https://yoneda/api/repos/${repo}/start_run`, {
     method: 'POST', headers: { cookie }, body: JSON.stringify({ id: 'routed', intent: 'Build a site',
       agents: ['minimal', 'accessible'].map(strategy => ({ strategy, connection: connection.id,

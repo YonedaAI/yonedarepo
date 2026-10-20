@@ -1,10 +1,12 @@
 import { env } from 'cloudflare:workers';
 import { expect, vi } from 'vitest';
+import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { templateArtifacts } from './platform-fixture';
 
 export const bindings = env as unknown as Env;
 export const expires = Date.UTC(2026, 9, 23);
@@ -31,21 +33,14 @@ export async function reviewerSignup(owner: string) {
     expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
   return cookie;
 }
-/** Fake Artifacts readback for run approval: every requested commit exists with one tree. */
-export const sourceArtifacts = () => ({
-  get: async () => ({
-    readCommit: async (hash: string) => ({ hash, treeHash: 'b'.repeat(40) }),
-    [Symbol.dispose]() {},
-  }),
-});
 export async function reviewerFixture(owner = 'review_alice') {
   const cookie = await signup(owner);
-  // External Secrets Store, Queue and Artifacts are fake. Signup, vault sealing and both
-  // authoritative ledgers execute in workerd against real Rust/Wasm DO SQLite.
+  // External Secrets Store, Queue and the template store are fake. Signup, vault sealing, the
+  // platform repository and both ledgers execute in workerd against real Rust/Wasm DO SQLite.
   const send = vi.fn(async () => {});
   const scoped = { ...bindings, OPENAI_KEY: { get: async () => testKeys[0] },
     ANTHROPIC_KEY: { get: async () => testKeys[1] }, AGENT_QUEUE: { send },
-    ARTIFACTS: sourceArtifacts() } as unknown as Env;
+    ARTIFACTS: await templateArtifacts() } as unknown as Env;
   const response = await api(scoped, '/api/admin/reviewer/provision', '', { username: owner }, true);
   expect(response.status).toBe(200);
   const provisioned = await response.json<Json>();
@@ -54,11 +49,15 @@ export async function reviewerFixture(owner = 'review_alice') {
 export async function readyReviewer(owner = 'review_alice') {
   const fixture = await reviewerFixture(owner);
   const { repo } = fixture;
-  // Setup completion is synthetic: no external repository/container is launched.
+  // Setup completion is synthetic (no container is launched) over the provisioned platform repo.
+  const platform = await projectPlatform(bindings, owner, repo);
+  const head = (await platform.call('GET', '/refs')).refs['refs/heads/main'];
+  const { tree } = await platform.call('GET', `/commits/${head}`);
   await ledger(bindings, repo, { op: 'init', id: repo, name: 'Reviewer sandbox', workspace: owner,
-    remote: { namespace: 'yoneda-test', name: repo }, commit: 'a'.repeat(40), policy: reviewerPolicy });
+    remote: { namespace: 'platform', name: repo, branch: 'main' }, commit: head, tree,
+    platform_repo: platform.repo, policy: reviewerPolicy });
   await workspace(bindings, owner, { op: 'project_update', id: repo, status: 'ready' });
-  return fixture;
+  return { ...fixture, head: head as string, tree: tree as string };
 }
 export function containerBindings(scoped: Env, scope: Scope) {
   // Fake Container RPC supplies only the trusted attempt identity. scopeFor

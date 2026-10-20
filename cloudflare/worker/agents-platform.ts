@@ -69,8 +69,9 @@ export type ProjectPlatform = {
 };
 
 const TOKEN_TTL_MS = 60_000;
-const tokens = new Map<string, { repo: string; token: string; until: number }>();
-/** Repository owners never change, so this cache never needs invalidation. */
+type Credential = { repo: string; token: string; until: number; fresh: boolean };
+const tokens = new Map<string, Credential>();
+/** Repository owners never change; a stale entry (an identity reused after reset) is re-read. */
 const owners = new Map<string, string>();
 
 /** Seal and bind a freshly issued agent token; the first binding of a project wins. */
@@ -90,35 +91,58 @@ export async function bindPlatform(
   return bound.platform.repo;
 }
 
-/** The project's platform repository, acting with the project's agent token. */
+async function credential(env: Env, owner: string, project: string, reread: boolean) {
+  const key = `${owner}\0${project}`;
+  const cached = tokens.get(key);
+  if (!reread && cached && cached.until >= Date.now()) return { ...cached, fresh: false };
+  const sealed = await workspace(env, owner, { op: 'project_platform_credential', id: project });
+  const token = await open(env, owner, 'platform', sealed.sealed, project);
+  const next = { repo: sealed.repo, token, until: Date.now() + TOKEN_TTL_MS, fresh: true };
+  tokens.set(key, next);
+  return next;
+}
+
+/**
+ * The project's platform repository, acting with the project's agent token. A cached token
+ * the platform refuses (revoked, or a reused identity) is re-read once before failing.
+ */
 export async function projectPlatform(
   env: Env,
   owner: string,
   project: string,
 ): Promise<ProjectPlatform> {
-  const key = `${owner}\0${project}`;
-  let cached = tokens.get(key);
-  if (!cached || cached.until < Date.now()) {
-    const credential = await workspace(env, owner, {
-      op: 'project_platform_credential',
-      id: project,
-    });
-    const token = await open(env, owner, 'platform', credential.sealed, project);
-    cached = { repo: credential.repo, token, until: Date.now() + TOKEN_TTL_MS };
-    tokens.set(key, cached);
-  }
-  const { repo, token } = cached;
+  let current: Credential = await credential(env, owner, project, false);
+  const send = (method: string, path: string, body?: unknown) =>
+    platformRequest(env, { token: current.token }, method, `/repos/${current.repo}${path}`, body);
   return {
-    repo,
-    call: (method, path, body) =>
-      platformRequest(env, { token }, method, `/repos/${repo}${path}`, body),
+    get repo() {
+      return current.repo;
+    },
+    async call(method, path, body) {
+      try {
+        return await send(method, path, body);
+      } catch (failure: any) {
+        if (current.fresh || ![401, 403, 404].includes(failure.status)) throw failure;
+        current = await credential(env, owner, project, true);
+        return send(method, path, body);
+      }
+    },
   };
 }
 
 /** The platform of an initialized agent repository (its ledger names the owner). */
 export async function repositoryPlatform(env: Env, project: string): Promise<ProjectPlatform> {
-  const owner =
-    owners.get(project) ?? (await ledger(env, project, { op: 'repository_status' })).workspace;
-  owners.set(project, owner);
-  return projectPlatform(env, owner, project);
+  const lookup = async () => {
+    const owner: string = (await ledger(env, project, { op: 'repository_status' })).workspace;
+    owners.set(project, owner);
+    return owner;
+  };
+  const cached = owners.get(project);
+  if (cached === undefined) return projectPlatform(env, await lookup(), project);
+  try {
+    return await projectPlatform(env, cached, project);
+  } catch (failure: any) {
+    if (failure.code !== 'NOT_FOUND') throw failure;
+    return projectPlatform(env, await lookup(), project);
+  }
 }

@@ -91,7 +91,8 @@ export async function ensureProjectPlatform(
 ): Promise<string> {
   if (project.platform?.repo) return project.platform.repo;
   const common = {
-    name: String(project.name ?? project.id).slice(0, 100),
+    // Platform names are identifiers; the display name stays on the workspace project.
+    name: project.id,
     policy: PLATFORM_POLICY,
     tokens: [{ name: 'yoneda-agents', scopes: AGENT_SCOPES }],
     ...(onBehalf ? { workspace: owner } : {}),
