@@ -52,6 +52,20 @@ export async function shardRecord(env: Env, repo: string, commit: string) {
  * shard holds `commit`. Idempotent: a racing or repeated adoption finds them adopted.
  */
 export async function adoptCommit(env: Env, repo: string, commit: string) {
+  const chain = await shardChain(env, repo, commit);
+  if (chain.length === 0) return false;
+  const adopted = await authority(env, repo, { op: 'repo_adopt_commit', records: chain });
+  if (adopted.error) {
+    // An ancestor's record went missing mid-walk (another adoption forgot it): one by one.
+    if (!NOT_RECORDED.test(adopted.error.message)) throw fail(adopted.error);
+    return adoptStepwise(env, repo, commit);
+  }
+  await forgetChain(env, repo, chain);
+  return true;
+}
+
+/** `commit` and its ancestors still held by shards, parents first (empty when none). */
+export async function shardChain(env: Env, repo: string, commit: string) {
   const chain: Json[] = [];
   for (let id: string | undefined = commit; id && chain.length < ADOPT_DEPTH; ) {
     const record = await shardRecord(env, repo, id);
@@ -59,20 +73,17 @@ export async function adoptCommit(env: Env, repo: string, commit: string) {
     chain.push(record);
     id = JSON.parse(record.commit.parents)[0];
   }
-  if (chain.length === 0) return false;
-  const adopted = await authority(env, repo, { op: 'repo_adopt_commit', records: chain.reverse() });
-  if (adopted.error) {
-    // An ancestor's record went missing mid-walk (another adoption forgot it): one by one.
-    if (!NOT_RECORDED.test(adopted.error.message)) throw fail(adopted.error);
-    return adoptStepwise(env, repo, commit);
-  }
+  return chain.reverse();
+}
+
+/** Drops the shard records of an adopted chain, so the next walk stops before it. */
+export async function forgetChain(env: Env, repo: string, chain: Json[]) {
   const byShard = new Map<number, string[]>();
   for (const r of chain)
     byShard.set(shardOf(r.commit.id), [...(byShard.get(shardOf(r.commit.id)) ?? []), r.commit.id]);
   await Promise.all(
     [...byShard].map(([shard, ids]) => shardCall(env, repo, shard, { op: 'store_forget', ids })),
   );
-  return true;
 }
 
 async function adoptStepwise(env: Env, repo: string, commit: string) {

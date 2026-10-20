@@ -48,6 +48,10 @@
       {
         "name": "COMMIT_SHARDS",
         "class_name": "CommitShard"
+      },
+      {
+        "name": "LAND_COMBINERS",
+        "class_name": "LandCombiner"
       }
     ]
   },
@@ -87,6 +91,12 @@
       "tag": "v6",
       "new_sqlite_classes": [
         "CommitShard"
+      ]
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": [
+        "LandCombiner"
       ]
     }
   ],
