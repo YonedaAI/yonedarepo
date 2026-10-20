@@ -9,6 +9,7 @@ mod graph;
 mod id;
 mod pack;
 mod protocol;
+mod push_batch;
 mod rewrite;
 mod tree;
 
@@ -21,6 +22,7 @@ pub use protocol::{
     HIDDEN_REF_PREFIX, ReceivedPush, hidden_ref, parse_receive_pack_request, receive_pack_delete,
     receive_pack_outcome, receive_pack_report, receive_pack_request, verify_receive_pack_report,
 };
+pub use push_batch::{combine_receive_pack_requests, split_receive_pack_report};
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};
 pub use tree::{FileMode, MAX_TREE_ENTRIES, TreeEntry, decode_tree, encode_tree};
 

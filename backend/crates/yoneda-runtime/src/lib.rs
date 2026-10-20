@@ -29,6 +29,8 @@ mod process;
 mod process_guard;
 mod process_privileges;
 mod prompt;
+#[cfg(all(test, unix))]
+mod push_batch_interop_tests;
 mod refresh_capture;
 mod report;
 mod secure_fs;
