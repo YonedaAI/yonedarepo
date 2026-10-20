@@ -9,11 +9,11 @@ import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 const ISOLATE_MS = 1000;
-/** Per repository and caller: the head carries only that caller's token row. */
+/** Per repository: the whole head (one holder call per isolate, not per caller). */
 const isolate = new Map<string, { head: Json; at: number }>();
 
 type Holder = {
-  head(repo: string, minVersion: number, digest: string | null): Promise<Json>;
+  head(repo: string, minVersion: number): Promise<Json>;
   refresh(repo: string): Promise<void>;
 };
 
@@ -25,7 +25,7 @@ async function tokenDigest(credentials: Json): Promise<string | null> {
   return [...hash].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** The head with only `digest`'s live token (the snapshot is never sent whole). */
+/** The head with only `digest`'s live token, as access compute needs it. */
 function forCaller(head: Json, digest: string | null): Json {
   const token = digest && (head.tokens as Json[]).find((t) => t.digest === digest);
   return { ...head, tokens: token ? [token] : [] };
@@ -51,23 +51,20 @@ export async function publishedHead(
   minVersion = 0,
 ): Promise<Json> {
   const digest = await tokenDigest(credentials);
-  const key = `${repo}|${digest ?? 'session'}`;
-  const cached = isolate.get(key);
+  const cached = isolate.get(repo);
   if (cached && Date.now() - cached.at < ISOLATE_MS && cached.head.version >= minVersion)
-    return cached.head;
+    return forCaller(cached.head, digest);
   const shared = holder(env, repo);
-  const head = shared
-    ? await shared.head(repo, minVersion, digest)
-    : forCaller(await fetchHead(env, repo), digest);
+  const head = shared ? await shared.head(repo, minVersion) : await fetchHead(env, repo);
   if (head.version < minVersion)
     throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
-  isolate.set(key, { head, at: Date.now() });
-  return head;
+  isolate.set(repo, { head, at: Date.now() });
+  return forCaller(head, digest);
 }
 
 /** Marks the published head stale after a landing, projection or access change. */
 export async function refreshHead(env: Env, repo: string) {
-  for (const key of isolate.keys()) if (key.startsWith(`${repo}|`)) isolate.delete(key);
+  isolate.delete(repo);
   await holder(env, repo)
     ?.refresh(repo)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
@@ -104,12 +101,9 @@ export class HeadHolder {
 
   constructor(private readonly env: Env) {}
 
-  async head(repo: string, minVersion: number, digest: string | null): Promise<Json> {
-    const head =
-      this.#head && !this.#stale && this.#head.version >= minVersion
-        ? this.#head
-        : await this.#load(repo, minVersion);
-    return forCaller(head, digest);
+  async head(repo: string, minVersion: number): Promise<Json> {
+    if (this.#head && !this.#stale && this.#head.version >= minVersion) return this.#head;
+    return this.#load(repo, minVersion);
   }
 
   refresh(repo: string) {
