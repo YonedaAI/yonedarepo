@@ -93,7 +93,7 @@ pub(crate) fn frontier(
     missing
 }
 
-fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEntry> {
+pub(crate) fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEntry> {
     let mut dir = root?;
     let parts: Vec<&str> = path.split('/').collect();
     for (depth, part) in parts.iter().enumerate() {

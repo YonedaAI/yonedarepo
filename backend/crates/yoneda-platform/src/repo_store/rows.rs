@@ -1,77 +1,13 @@
 //! Typed access to platform tables.
+pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint};
+pub use super::policy::{Policy, Runner, check_name};
 use crate::storage::{SqlStore, bad, string};
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
     git_object::{CommitGraph, ObjectId},
-    txlog::{Checkpoint, PathTouch, TxEntry},
+    txlog::{PathTouch, TxEntry},
 };
-
-/// Landing policy: which checks must pass and how many independent approvals are needed.
-/// `runners` are owner-defined commands the platform executes itself; definitions come
-/// from policy, never from the commit under test, so a change cannot weaken its own check.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Policy {
-    pub required_checks: Vec<String>,
-    pub approvals: u32,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub runners: BTreeMap<String, Runner>,
-    /// Review classes that satisfy the approval requirement without a human (semantic
-    /// approval). Only `docs`, `formatting` and `comment_only` may be listed.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub auto_approve: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Runner {
-    /// argv, executed without a shell unless the owner writes `["sh", "-c", ...]`.
-    pub command: Vec<String>,
-    #[serde(default = "default_timeout")]
-    pub timeout_seconds: u32,
-}
-fn default_timeout() -> u32 {
-    600
-}
-
-impl Policy {
-    pub fn parse(value: &Value) -> Result<(Self, Value, String)> {
-        let policy: Policy = serde_json::from_value(value.clone())
-            .map_err(|e| bad(&format!("Invalid policy: {e}")))?;
-        policy
-            .required_checks
-            .iter()
-            .chain(policy.runners.keys())
-            .try_for_each(|name| check_name(name))?;
-        if policy.runners.len() > 32
-            || policy.runners.values().any(|r| {
-                r.command.is_empty()
-                    || r.command.len() > 64
-                    || r.command.iter().any(|a| a.len() > 4096 || a.contains('\0'))
-                    || !(1..=3600).contains(&r.timeout_seconds)
-            })
-        {
-            return Err(bad(
-                "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
-            ));
-        }
-        if let Some(class) = policy
-            .auto_approve
-            .iter()
-            .find(|c| !crate::platform_review::ReviewClass::AUTO_APPROVABLE.contains(&c.as_str()))
-        {
-            return Err(bad(&format!(
-                "Review class {class} cannot be auto-approved (only docs, formatting, comment_only)"
-            )));
-        }
-        let json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
-        let digest = yoneda_core::fingerprint(&json)?;
-        Ok((policy, json, digest))
-    }
-}
 
 pub struct Settings {
     pub name: String,
@@ -91,23 +27,6 @@ pub struct CommitRow {
     pub principal: String,
     pub message: String,
     pub read_set: Vec<String>,
-}
-
-pub fn check_name(name: &str) -> Result<()> {
-    let valid = !name.is_empty()
-        && name.len() <= 64
-        && name.bytes().enumerate().all(|(i, b)| {
-            b.is_ascii_lowercase()
-                || b.is_ascii_digit()
-                || (i > 0 && matches!(b, b'.' | b'_' | b'-'))
-        });
-    if valid {
-        Ok(())
-    } else {
-        Err(bad(
-            "Check names are lowercase [a-z0-9._-], up to 64 characters",
-        ))
-    }
 }
 
 pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
@@ -224,7 +143,24 @@ pub fn current_version<S: SqlStore>(db: &S) -> Result<u64> {
     )
 }
 
+/// A branch head at the latest log version. Fails closed while landed changesets on it
+/// are not projected to Git yet (the adapter projects them and retries).
 pub fn ref_value<S: SqlStore>(db: &S, name: &str) -> Result<Option<ObjectId>> {
+    if super::changesets::unprojected(db, name)? {
+        return Err(projection_pending(name));
+    }
+    projected_ref(db, name)
+}
+
+pub fn projection_pending(name: &str) -> Error {
+    Error::new(
+        "PROJECTION_PENDING",
+        format!("{name} has landed changesets not yet projected to Git"),
+    )
+}
+
+/// The ref's last projected Git commit (behind any unprojected changesets).
+pub fn projected_ref<S: SqlStore>(db: &S, name: &str) -> Result<Option<ObjectId>> {
     db.query("SELECT commit_id FROM refs WHERE name=?", &[json!(name)])?
         .first()
         .map(|row| ObjectId::parse(row["commit_id"].as_str().unwrap_or_default()))
@@ -304,59 +240,4 @@ impl<S: SqlStore> CommitGraph for RecordedGraph<'_, S> {
     fn generation(&self, id: &ObjectId) -> Result<u64> {
         Ok(recorded(self.0, id)?.generation)
     }
-}
-
-/// Checkpoints are written every `CHECKPOINT_EVERY` log versions.
-pub const CHECKPOINT_EVERY: u64 = 64;
-
-/// The latest checkpoint at or before `version` (the empty state when none). A checkpoint
-/// must agree with the log's chain digest at its version, or reads refuse to trust it.
-pub fn checkpoint_at_or_before<S: SqlStore>(db: &S, version: u64) -> Result<Checkpoint> {
-    let Some(row) = db
-        .query(
-            "SELECT c.checkpoint,t.chain FROM txlog_checkpoints c JOIN txlog t ON t.version=c.version WHERE c.version<=? ORDER BY c.version DESC LIMIT 1",
-            &[json!(version)],
-        )?
-        .into_iter()
-        .next()
-    else {
-        return Ok(Checkpoint::default());
-    };
-    let checkpoint: Checkpoint =
-        serde_json::from_str(row["checkpoint"].as_str().unwrap_or_default())
-            .map_err(|_| corrupt("checkpoint"))?;
-    if row["chain"].as_str() != Some(checkpoint.chain.as_str()) {
-        return Err(Error::new(
-            "TXLOG_INVALID",
-            "A checkpoint disagrees with the log",
-        ));
-    }
-    Ok(checkpoint)
-}
-
-/// Records the refs after `version` when it is a checkpoint version.
-pub fn maybe_checkpoint<S: SqlStore>(db: &S, version: u64, chain: &str) -> Result<()> {
-    if !version.is_multiple_of(CHECKPOINT_EVERY) {
-        return Ok(());
-    }
-    let refs = db
-        .query("SELECT name,commit_id FROM refs", &[])?
-        .into_iter()
-        .map(|r| {
-            Ok((
-                r["name"].as_str().unwrap_or_default().to_owned(),
-                ObjectId::parse(r["commit_id"].as_str().unwrap_or_default())?,
-            ))
-        })
-        .collect::<Result<_>>()?;
-    let checkpoint = Checkpoint {
-        version,
-        refs,
-        chain: chain.into(),
-    };
-    db.query(
-        "INSERT INTO txlog_checkpoints(version,checkpoint) VALUES(?,?) ON CONFLICT(version) DO NOTHING",
-        &[json!(version), json!(serde_json::to_string(&checkpoint).map_err(|e| bad(&e.to_string()))?)],
-    )?;
-    Ok(())
 }

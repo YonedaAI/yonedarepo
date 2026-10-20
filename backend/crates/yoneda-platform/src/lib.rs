@@ -15,6 +15,7 @@ mod platform_facts_script;
 mod platform_graph;
 mod platform_narrative;
 mod platform_objects;
+mod platform_project;
 mod platform_push;
 mod platform_review;
 mod platform_symbol_graph;
