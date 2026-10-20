@@ -101,28 +101,16 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         // With --env: the spec-driven deploy. Without: the old-layout production deploy,
         // kept until the N8 cutover.
-        "deploy" if args.iter().any(|a| a == "--env") => crate::deploy_env::deploy(&args).await,
+        "deploy" => match crate::deploy_env::mode(&args)? {
+            crate::deploy_env::Mode::Spec => crate::deploy_env::deploy(&args).await,
+            crate::deploy_env::Mode::Legacy => {
+                crate::deploy_env::legacy_preflight(&args).await?;
+                legacy_deploy()
+            }
+        },
         "rollback" => crate::deploy_live::rollback(&args).await,
         "status" => crate::deploy_live::status(&args).await,
         "infra" => crate::infra::execute(&args).await,
-        "deploy" => {
-            ensure_token()?;
-            build_wasm()?;
-            run("pnpm", &["--dir", FRONTEND, "build"])?;
-            deploy_token()?;
-            crate::cloudflare::wrangler(
-                std::path::Path::new(PLATFORM_CONFIG),
-                &[
-                    "d1",
-                    "migrations",
-                    "apply",
-                    "yonedarepo-dev-index",
-                    "--remote",
-                ],
-            )?;
-            crate::cloudflare::wrangler(std::path::Path::new(PLATFORM_CONFIG), &["deploy"])?;
-            crate::cloudflare::wrangler(std::path::Path::new(SITES_CONFIG), &["deploy"])
-        }
         "seed-template" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args
                 .windows(2)
@@ -147,7 +135,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy without --env: old-layout production.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }
@@ -162,4 +150,27 @@ pub(crate) fn build_wasm() -> Result<()> {
         return Err("Wasm build failed".into());
     }
     Ok(())
+}
+
+/// The old single-Worker production deploy (cloudflare/wrangler.jsonc + sites). Note that
+/// cloudflare/wrangler.jsonc is not what production runs today (see infra/envs/prod.json),
+/// so this path is reachable only as `deploy --env prod-legacy --confirm` behind the prod
+/// guards, until the N8 cutover removes it.
+fn legacy_deploy() -> Result<()> {
+    ensure_token()?;
+    build_wasm()?;
+    run("pnpm", &["--dir", FRONTEND, "build"])?;
+    deploy_token()?;
+    crate::cloudflare::wrangler(
+        std::path::Path::new(PLATFORM_CONFIG),
+        &[
+            "d1",
+            "migrations",
+            "apply",
+            "yonedarepo-dev-index",
+            "--remote",
+        ],
+    )?;
+    crate::cloudflare::wrangler(std::path::Path::new(PLATFORM_CONFIG), &["deploy"])?;
+    crate::cloudflare::wrangler(std::path::Path::new(SITES_CONFIG), &["deploy"])
 }
