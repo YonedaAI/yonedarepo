@@ -43,6 +43,8 @@ pub fn compute(c: Value) -> Result<Value> {
         "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
         "push_outcome" => push_outcome(&c),
+        "push_combine" => crate::platform_push::push_combine(&c),
+        "push_split" => crate::platform_push::push_split(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }

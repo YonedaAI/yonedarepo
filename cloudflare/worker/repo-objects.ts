@@ -24,6 +24,21 @@ export function toBase64(bytes: Uint8Array) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
   return btoa(binary);
 }
+const PUSH_ATTEMPTS = 5;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const accepted = (refname: string) =>
+  fromBase64(compute({ op: 'push_report', refname }).report_b64);
+/** Git's report-status for one ref; anything else (an unpack failure, a server error line)
+ * is a refusal carrying the report's printable text. */
+function pushOutcome(report: Uint8Array, refname: string): { accepted: boolean; refused?: string } {
+  try {
+    const outcome = compute({ op: 'push_outcome', refname, report_b64: toBase64(report) });
+    return { accepted: outcome.accepted === true, refused: outcome.refused ?? undefined };
+  } catch {
+    const text = new TextDecoder().decode(report).replace(/[^\x20-\x7e]+/g, ' ');
+    return { accepted: false, refused: text.trim().slice(0, 300) || 'empty report' };
+  }
+}
 const missing = (what: string) =>
   Object.assign(new Error(`${what} is missing`), { code: 'NOT_FOUND' });
 
@@ -49,26 +64,18 @@ class ArtifactsStore implements ObjectStore {
   async create() {
     await this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' });
   }
+  /** Pushes through the repository's queue: Artifacts takes one receive-pack at a time. */
   async push(body: Uint8Array) {
     using repo = await this.env.ARTIFACTS.get(this.name);
     const info = await repo.info();
     const token = await repo.createToken('write', 60);
     try {
-      const result = await fetch(`${info.remote}/git-receive-pack`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token.plaintext}`,
-          'content-type': 'application/x-git-receive-pack-request',
-          accept: 'application/x-git-receive-pack-result',
-        },
-        body,
-        redirect: 'manual',
+      const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
+      return await queue.push(info.remote, token.plaintext, body);
+    } catch (error) {
+      throw Object.assign(new Error(error instanceof Error ? error.message : String(error)), {
+        code: 'PUSH_FAILED',
       });
-      if (result.status !== 200)
-        throw Object.assign(new Error(`Object store push returned ${result.status}`), {
-          code: 'PUSH_FAILED',
-        });
-      return new Uint8Array(await result.arrayBuffer());
     } finally {
       await repo.revokeToken(token.id);
     }
@@ -275,12 +282,35 @@ export class RepoObjects {
       : { id, kind, tree: parsed.tree, parents: parsed.parents };
   }
 
-  /** Readback always asks the object store itself, never the cache. */
-  async readback(id: string) {
-    const commit = await this.store.readCommit(id);
-    if (!commit)
-      throw Object.assign(new Error('Pushed commit is not readable'), { code: 'PUSH_FAILED' });
-    return commit;
+  /**
+   * Pushes a commit's pack to its hidden ref and reads the commit back from the object store
+   * itself, never the cache. Artifacts can refuse or lag pushes when several land on one
+   * repository at once, so a refusal is retried with jittered backoff and a missing readback
+   * is re-read before the push counts as failed. Pushes are idempotent: same objects, same
+   * hidden ref.
+   */
+  async pushCommit(body: Uint8Array, commit: string) {
+    const refname = `refs/yoneda/c/${commit}`;
+    let reason = 'not readable';
+    for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
+      if (attempt) await sleep(100 * 2 ** attempt + Math.random() * 100 * 2 ** attempt);
+      const report = await this.store.push(body);
+      const outcome = pushOutcome(report, refname);
+      if (!outcome.accepted) {
+        reason = `refused: ${outcome.refused}`;
+        console.warn(`object store push attempt ${attempt + 1} ${reason}`);
+      }
+      for (let read = 0; read < 3; read++) {
+        const readback = await this.store.readCommit(commit);
+        // A retried push may be refused because an earlier attempt already created the ref.
+        if (readback) return { report: outcome.accepted ? report : accepted(refname), readback };
+        if (!outcome.accepted) break;
+        await sleep(50 * 2 ** read);
+      }
+    }
+    throw Object.assign(new Error(`Pushed commit is not readable (${reason})`), {
+      code: 'PUSH_FAILED',
+    });
   }
 
   push(body: Uint8Array) {

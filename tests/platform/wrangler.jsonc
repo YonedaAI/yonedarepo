@@ -8,10 +8,14 @@
   "durable_objects": {
     "bindings": [
       { "name": "SOURCE_REPOS", "class_name": "SourceRepository" },
-      { "name": "WORKSPACES", "class_name": "WorkspaceAuthority" }
+      { "name": "WORKSPACES", "class_name": "WorkspaceAuthority" },
+      { "name": "OBJECT_PUSHES", "class_name": "ObjectPushQueue" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority"] },
+    { "tag": "v2", "new_sqlite_classes": ["ObjectPushQueue"] }
+  ],
   "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yoneda-platform-test" }],
   "d1_databases": [{ "binding": "INDEX", "database_name": "yoneda-platform-index", "database_id": "00000000-0000-0000-0000-000000000001" }]
 }
