@@ -1,0 +1,26 @@
+name: Deploy toolchain
+description: Node, pnpm, locked dependencies, worker-build and a cargo cache for xtask deploys.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: '24.22.0'
+    - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      with:
+        version: '12.14.0'
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          ~/.cargo/bin/worker-build
+          target
+        key: deploy-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+        restore-keys: deploy-${{ runner.os }}-
+    - name: Install locked dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - name: Install Worker build tool
+      shell: bash
+      run: command -v worker-build >/dev/null || cargo install worker-build --version 0.8.7 --locked
