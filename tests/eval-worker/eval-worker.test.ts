@@ -143,3 +143,17 @@ it('smoke-tests a route with one fixed request and reports provider errors witho
   expect(await (await call('/v1/smoke', { run: 'x', provider: 'zai' })).json()).toMatchObject({ ok: true, reply: 'ok', route: 'coding_plan' });
   expect(await (await call('/v1/smoke', { run: 'x', provider: 'mimo' })).json()).toMatchObject({ ok: false, error: 'provider_error', usage: { requests: 1, failures: { provider_error: 1 } } });
 });
+
+it('counts a reply that breaks mid-body as a failure and retries it', async () => {
+  const repo = await armRepo('evalbroken');
+  const player = symbolPlayer();
+  const seen = fakeModel((body, n) => {
+    if (n !== 2) return player(body);
+    const broken = new ReadableStream({ start: (c) => c.error(new Error('connection reset')) });
+    return new Response(broken, { status: 200 });
+  });
+  const result = (await (await call('/v1/arms', arm(repo, { tasks: 1 }))).json()) as any;
+  expect(seen).toHaveLength(4);
+  expect(result).toMatchObject({ accepted: 1, usage: { requests: 4, failures: { timeout: 1 } } });
+  expect(result.usage.errors[0]).toContain('connection reset');
+});
