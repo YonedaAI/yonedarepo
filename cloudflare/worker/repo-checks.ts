@@ -31,7 +31,7 @@ export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefi
   // Re-sending a still-queued run is safe (claims are fenced) and recovers a lost message.
   const queued = (runs ?? []).filter((r) => r.status === 'queued');
   if (queued.length === 0) return;
-  await env.PLATFORM_QUEUE.sendBatch(
+  await (env.PLATFORM_CHECKS ?? env.PLATFORM_QUEUE).sendBatch(
     queued.map((run) => ({
       body: { v: 1, kind: 'platform_check', repo_id: repo, job_id: String(run.id) } as Envelope,
     })),
