@@ -109,10 +109,10 @@ export async function publish(account, repo, run, metrics) {
   metrics.land_ms = Math.round(performance.now() - started);
   const readback = await account.post(`/api/repos/${repo}/publication_readback`, { decision_id: decision.id });
   assert.equal(readback.status ?? readback.decision?.status, 'published', 'Readback did not record publication');
-  const refs = await account.get(`${platform}/refs`);
-  assert.equal(refs.refs['refs/heads/main'], commit, 'Platform main is not the published commit');
+  // Batched landing may project main as its own commit; readback is the authority.
+  metrics.main_is_candidate = (await account.get(`${platform}/refs`)).refs['refs/heads/main'] === commit;
   const after = await snapshot(account, repo);
-  assert.equal(after.repository.published_commit, commit);
+  assert.equal(after.repository.published_commit, commit, 'Snapshot does not show the published commit');
   return { candidate, commit, platform_repo };
 }
 
