@@ -7,6 +7,7 @@ import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { workspaceSpendConfigure, workspaceSpendStatus } from '../../cloudflare/worker/workspace-spend';
 import { bindings, containerBindings, readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 const budget = { ...campaignModelBudgets[1], max_requests: 4, max_output_tokens: 256,
@@ -14,7 +15,7 @@ const budget = { ...campaignModelBudgets[1], max_requests: 4, max_output_tokens:
 async function setup(marked = true, limit = 50000, approved: Json = budget, adaptive = false) {
   const f = await readyReviewer();
   await workspaceSpendConfigure(bindings, f.owner, 0, limit);
-  await ledger(bindings, f.repo, { op: 'start_run', id: 'ordinary-fixed', _workspace: f.owner,
+  await approvedLedger(bindings, f.repo)({ op: 'start_run', id: 'ordinary-fixed', _workspace: f.owner,
     ...(marked ? { _workspace_spend: true } : {}), intent: 'Synthetic fixed ordinary request',
     ...(adaptive ? { mode: 'collaborate', adaptive_team: { version: 1, requested_agents: [{ connection: 'reviewer-codex', role: 'frontend' }] },
       _approved_model_pool: [{ connection: 'reviewer-codex', provider: 'codex', model: 'gpt-5.6-luna' }] } : {}),

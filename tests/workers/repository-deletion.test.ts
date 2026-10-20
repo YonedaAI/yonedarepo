@@ -11,6 +11,7 @@ import { ledger, sha } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { bindNewPlatformRepo } from './platform-fixture';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 const policy = {version:'retry-v1',suite:'retry-contract-v1',environment:'rust-1.94-evaluator-v1',required_checks:['build','behavior']};
@@ -44,7 +45,7 @@ it('deletes through the authenticated API, fences retries and preserves other re
   await setup();
   await workspace(bindings,'alice',{op:'project_reserve',id:'keep-me',name:'Keep me',policy});
   await workspace(bindings,'alice',{op:'provider_put',provider:'mimo',model:'mimo-v2.6-flash',sealed:{iv:'fixture',ciphertext:'fixture'}});
-  await ledger(bindings,'delete-me',{op:'start_run',id:'delete-run',intent:'Disposable deletion fixture'});
+  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'delete-run',intent:'Disposable deletion fixture'});
   const active=await ledger(bindings,'delete-me',{op:'claim',job_id:'job:delete-run:research'});
   await workspace(bindings,'alice',{op:'grant_issue',id:'grant-deletion-fixture',repo:'delete-me',scope:'contribute',label:'Disposable grant',expires:Date.now()+60000,token_hash:'b'.repeat(64)});
   await remove();
@@ -122,7 +123,7 @@ it('drains Artifacts cleanup recorded before projects moved to the platform',asy
 
 it('continues independent deletion cleanup after a container stop fails and only acknowledges successes',async()=>{
   await setup();
-  await ledger(bindings,'delete-me',{op:'start_run',id:'active-run',intent:'Disposable stop failure fixture'});
+  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'active-run',intent:'Disposable stop failure fixture'});
   await ledger(bindings,'delete-me',{op:'claim',job_id:'job:active-run:research'});
   await remove();
   await bindings.INDEX.exec('CREATE TABLE repositories(id TEXT PRIMARY KEY,payload TEXT NOT NULL,seq INTEGER NOT NULL)');

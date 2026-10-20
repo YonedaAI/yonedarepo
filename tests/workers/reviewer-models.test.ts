@@ -7,6 +7,7 @@ import type { Json, Scope } from '../../cloudflare/worker/types';
 import { seal } from '../../cloudflare/worker/vault';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { api, bindings, containerBindings, readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 
@@ -23,7 +24,7 @@ async function modelFixture(provider = 'codex') {
   // Legacy funding belongs to a durable original trial, not every job owned by this account.
   const trialId = 'reviewer-funded-model';
   await workspace(bindings, f.owner, { op: 'reviewer_trial', id: trialId });
-  await ledger(bindings, f.repo, { op: 'start_run', id: trialId, intent: 'Synthetic provider accounting',
+  await approvedLedger(bindings, f.repo)({ op: 'start_run', id: trialId, intent: 'Synthetic provider accounting',
     agents: [{ provider, model, connection, strategy: 'Test charging' }],
     model_budgets: [{ provider, model, max_requests: 3, max_output_tokens: 512,
       max_execution_ms: 120000, spend_limit_microusd: 1_000_000,

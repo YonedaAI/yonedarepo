@@ -4,10 +4,11 @@ import { afterEach, expect, it } from 'vitest';
 import { checkLedger } from '../../cloudflare/worker/runtime';
 import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'single-agent-test';
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 const policy = {
   version: 'single-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
   required_checks: ['build'],
@@ -34,13 +35,12 @@ async function checkedCandidate(run: string, index: number, commit: string) {
   const execution = `${run}:agent-${index}`;
   const agent = await call({ op: 'claim', job_id: `job:${execution}` });
   const files = { 'index.html': { content: '<!doctype html><title>Ledger fixture</title>' } };
-  const workspace = await object(bindings, JSON.stringify({ files: { 'public/index.html': files['index.html'] } }));
-  await call({ op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: workspace.digest } });
+  const registration = await finishSealed(bindings, repo, agent);
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const candidate = `candidate-${run}-${index}`;
   const revision = { repository: `platform/${repo}`, commit };
   // Synthetic observations exercise real DO/R2 transitions, without invoking Git, builds or models.
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: candidate, revision, tree: 'f'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Website fixture' } });
+  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id: candidate, revision, tree: 'f'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Website fixture' }) });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${candidate}` });
   const site = await object(bindings, JSON.stringify({ repo, revision, files }));
   await call({ op: 'register_site', job_id: evaluator.id, epoch: evaluator.epoch, digest: site.digest, files });

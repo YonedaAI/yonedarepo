@@ -5,7 +5,7 @@ use crate::source_workspace;
 use serde_json::{Value, json};
 use yoneda_agents_core::source_workspace::SourceView;
 
-pub(crate) const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+pub const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn call(db: &NativeStore, mut c: Value, now: i64) -> Value {
     c["now"] = json!(now);
@@ -39,7 +39,7 @@ fn approve(run: &mut Value, base: &Value) {
 
 /// What the Worker adds to every owner run approval after reading the platform: the API source
 /// transport and its approved frozen base (the working branch head, else the published commit).
-pub(crate) fn approve_start(db: &NativeStore, c: &mut Value) {
+pub fn approve_start(db: &NativeStore, c: &mut Value) {
     if c["op"] == "start_run" {
         let base = working(db, c["working_branch_id"].as_str()).unwrap_or_else(|| published(db));
         approve(c, &base);
@@ -72,13 +72,13 @@ pub(crate) fn approve_start(db: &NativeStore, c: &mut Value) {
 }
 
 /// `crate::execute` with the adapter's start-run approval applied.
-pub(crate) fn execute(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
+pub fn execute(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
     approve_start(db, &mut c);
     crate::execute(db, c)
 }
 
 /// Seal the leased producer's approved view (optionally with one staged file) and register it.
-pub(crate) fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed: bool) -> Value {
+pub fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed: bool) -> Value {
     let context = call(
         db,
         json!({"op":"source_read_context","job_id":job_id,"epoch":epoch}),
@@ -146,14 +146,14 @@ pub(crate) fn seal(db: &NativeStore, job_id: &str, epoch: i64, now: i64, changed
 }
 
 /// The registration pointer an adapter-verified coding completion reports.
-pub(crate) fn pointer(registration: &Value) -> Value {
+pub fn pointer(registration: &Value) -> Value {
     let b = &registration["binding"];
     json!({"producer_job_id":b["job_id"],"producer_epoch":b["epoch"],
         "registration_id":registration["registration_id"],"changeset_digest":registration["changeset_digest"]})
 }
 
 /// Finish a leased coding job through its registered seal; returns the registration.
-pub(crate) fn finish_agent(db: &NativeStore, job: &Value, now: i64) -> Value {
+pub fn finish_agent(db: &NativeStore, job: &Value, now: i64) -> Value {
     let id = job["id"].as_str().unwrap();
     let epoch = job["epoch"].as_i64().unwrap();
     let registration = seal(db, id, epoch, now, false);
@@ -168,7 +168,7 @@ pub(crate) fn finish_agent(db: &NativeStore, job: &Value, now: i64) -> Value {
 
 /// Finish the leased coding job `job_id` through its registered seal; `extra` adds result
 /// fields (a transcript). Returns the registration.
-pub(crate) fn finish_job(db: &NativeStore, job_id: &str, now: i64, extra: Value) -> Value {
+pub fn finish_job(db: &NativeStore, job_id: &str, now: i64, extra: Value) -> Value {
     let job = crate::storage::get(db, "jobs", job_id).unwrap();
     let epoch = job["epoch"].as_i64().unwrap();
     let registration = seal(db, job_id, epoch, now, false);
@@ -185,7 +185,7 @@ pub(crate) fn finish_job(db: &NativeStore, job_id: &str, now: i64, extra: Value)
 }
 
 /// A trusted capture result bound to `registration`; `extra` adds readback or provenance.
-pub(crate) fn capture_result(
+pub fn capture_result(
     registration: &Value,
     id: &str,
     commit: &str,
@@ -210,7 +210,7 @@ pub(crate) fn capture_result(
 }
 
 /// `result` (a capture's revision, tree, paths, summary...) bound to `registration`'s lineage.
-pub(crate) fn with_lineage(registration: &Value, result: Value) -> Value {
+pub fn with_lineage(registration: &Value, result: Value) -> Value {
     let id = result["id"].as_str().unwrap_or_default().to_owned();
     let commit = result["revision"]["commit"]
         .as_str()

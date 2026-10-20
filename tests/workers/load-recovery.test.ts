@@ -19,7 +19,7 @@ it('bounds admission and recovers contended expired claims with real SQLite and 
   try {
     const starts = await Promise.all(
       Array.from({ length: 64 }, (_, i) =>
-        measured.call(repo, start(`admission-${i}`), ['ACTIVE_RUN_LIMIT']),
+        measured.call(repo, start(`admission-${i}`, repo), ['ACTIVE_RUN_LIMIT']),
       ),
     );
     const admitted = starts.filter((run) => run !== null);
@@ -87,7 +87,7 @@ it('bounds admission and recovers contended expired claims with real SQLite and 
     // Duplicate creation must leave run/execution/graph state, events and outbox intact.
     await Promise.all(
       Array.from({ length: 32 }, () =>
-        measured.call(repo, start(admitted[0].id), ['ALREADY_EXISTS']),
+        measured.call(repo, start(admitted[0].id, repo), ['ALREADY_EXISTS']),
       ),
     );
     expect(await audit(repo, 6)).toEqual(cancelled);

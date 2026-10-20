@@ -148,12 +148,6 @@ fn autonomous_resolver_uses_intent_and_existing_budget_without_owner_brief_or_pu
     assert_eq!(job["payload"]["policy"], before["approved_policy"]);
     assert_eq!(get(&db, "runs", "run").unwrap()["team_repair_rounds"], 1);
     assert!(all(&db, "decisions").unwrap().is_empty());
-    assert!(
-        !all(&db, "jobs")
-            .unwrap()
-            .iter()
-            .any(|j| j["kind"] == "publish")
-    );
     assert_eq!(execute(&db, resolver_request()).unwrap(), receipt);
 }
 

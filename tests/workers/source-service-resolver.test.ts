@@ -8,6 +8,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Scope } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
 import { syntheticPlatform } from './platform-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 it('mounts the native resolver target with preserved clean edits and both actual readonly sides without writable scratch', async () => {
@@ -28,7 +29,7 @@ it('mounts the native resolver target with preserved clean edits and both actual
     readTree: async () => ['clean.rs', 'conflict.rs'].map(path => ({ name: path, mode: '100644', type: 'blob', hash: blob })),
     readBlob: async () => new Blob([bytes]),
   } }, 'source_owner');
-  await ledger(bindings, repo, { op: 'start_run', id: runId, intent: 'Resolve only frozen conflicts',
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: runId, intent: 'Resolve only frozen conflicts',
     workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: initial,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic resolver' }] });
   const jobId = `job:${runId}:agent-1`;

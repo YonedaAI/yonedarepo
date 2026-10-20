@@ -7,6 +7,7 @@ import type { Json, Scope } from '../../cloudflare/worker/types';
 import { seal } from '../../cloudflare/worker/vault';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { containerBindings, readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(async () => {
   vi.unstubAllGlobals();
@@ -179,7 +180,7 @@ it.each([
       connection,
       sealed: await seal(f.scoped, f.owner, 'claude', 'synthetic-thinking-key', connection),
     });
-    await ledger(f.scoped, f.repo, {
+    await approvedLedger(f.scoped, f.repo)({
       op: 'start_run',
       id: 'thinking-fixture',
       intent: 'Synthetic compatibility test',

@@ -38,11 +38,10 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
   const job = scope.job;
   const identity = { job_id: job.id, epoch: job.epoch };
   const repository = platformRevision(scope.repo_id);
-  const sourceCapture =
-    job.payload.workspace_transport === 'api-source-v1' &&
-    job.payload.capture_subtype === 'source_changeset'
-      ? await sourceCaptureCompletion(env, scope, body)
-      : undefined;
+  // Runtime captures are of a registered seal; refreshes and contributions finish in the Worker.
+  if (job.payload.capture_subtype !== 'source_changeset')
+    invalid('Only a sealed source capture completes through the broker');
+  const sourceCapture = await sourceCaptureCompletion(env, scope, body);
   const commitHash = body.revision?.commit;
   if (!/^[a-f0-9]{40}$|^[a-f0-9]{64}$/.test(commitHash ?? ''))
     invalid('Captured revision is invalid');
@@ -54,8 +53,8 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
   const branch = job.source_capture_ref?.branch;
   if (typeof branch !== 'string' || (await captured.head(branch)) !== commitHash)
     invalid('Captured commit is not the head of its assigned candidate branch');
-  const base = sourceCapture?.context.base.commit ?? job.payload.base.commit;
-  const parents = sourceCapture?.context.parents ?? [base];
+  const base = sourceCapture.context.base.commit;
+  const parents = sourceCapture.context.parents;
   if (
     !commit ||
     commit.hash !== commitHash ||
@@ -77,11 +76,13 @@ export async function captureResult(env: Env, scope: Scope, body: Json): Promise
     source_verified: _sourceVerified,
     ...metadata
   } = body;
-  const result: Json = { ...metadata, paths, file_provenance: fileProvenance };
-  if (sourceCapture) {
-    result.source_lineage = sourceCapture.lineage;
-    result.source_verified = true;
-  }
+  const result: Json = {
+    ...metadata,
+    paths,
+    file_provenance: fileProvenance,
+    source_lineage: sourceCapture.lineage,
+    source_verified: true,
+  };
   if (job.payload.source_resolution === true) {
     const workspace = job.payload.merge_workspace_revision;
     if (typeof workspace?.repository !== 'string' || typeof workspace?.commit !== 'string')

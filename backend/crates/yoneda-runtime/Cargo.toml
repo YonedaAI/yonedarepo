@@ -24,4 +24,4 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 fuser = "=0.18.0"
 
 [dev-dependencies]
-yoneda-app = { workspace = true, features = ["native"] }
+yoneda-app = { workspace = true, features = ["native", "test-kit"] }

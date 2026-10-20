@@ -4,8 +4,10 @@ import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { captureResult } from '../../cloudflare/worker/capture-result';
+import { ledger, sha } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { gitSnapshot, platformCommit, platformProject } from './platform-fixture';
+import { approvedLedger, finishSealed } from './source-kit';
 
 afterEach(reset);
 const bindings = env as unknown as Env;
@@ -16,20 +18,27 @@ const blob = async (text: string) => [...(await gitSnapshot({ f: text })).blobs.
 
 async function fixture(files: Record<string, string> = { 'file.txt': 'target\n' }, onto?: string) {
   const { base, platform } = await platformProject(bindings, 'capture_owner', project, { 'file.txt': 'base\n' });
+  // A real sealed attempt: its capture job carries the registered seal the readback checks.
+  await approvedLedger(bindings, project)({ op: 'start_run', id: 'readback', intent: 'Capture readback',
+    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Readback fixture' }] });
+  const agent = await ledger(bindings, project, { op: 'claim', job_id: 'job:readback:agent-1' });
+  const registration = await finishSealed(bindings, project, agent);
+  const capture = await ledger(bindings, project, { op: 'claim', job_id: 'capture:readback:agent-1' });
   const target = await platformCommit(platform, onto ?? base.commit, files);
   await platform.call('POST', '/branches', { ref: branch, commit: target.commit, expected: null });
-  const scope = { repo_id: project, job: { id: 'capture-job', epoch: 3, kind: 'capture',
-    source_capture_ref: { branch }, payload: { base: { repository, commit: base.commit } } } } as unknown as Scope;
+  const scope = { repo_id: project, job: { ...capture, source_capture_ref: { branch } }, supervisor: 'fixture',
+    model_calls: 0, created_at: Date.now() } as Scope;
   const result: Json = { id: 'candidate', tree: target.tree, revision: { repository, commit: target.commit },
     diff: 'recorded diff', paths: ['forged.txt'], file_provenance: [{ path: 'forged.txt', authority: 'agent' }],
-    diff_digest: 'f'.repeat(64) };
-  return { base, platform, target, scope, result };
+    diff_digest: 'f'.repeat(64), parents: registration.binding.parents,
+    source_changeset_digest: registration.changeset_digest, source_manifest_digest: registration.changeset_digest };
+  return { base, platform, target, scope, result, capture };
 }
 
 it('replaces every path, blob and diff pointer claim using independent platform/R2 readback', async () => {
-  const { scope, result } = await fixture();
+  const { scope, result, capture } = await fixture();
   const command = await captureResult(bindings, scope, result);
-  expect(command).toMatchObject({ op: 'finish', job_id: 'capture-job', epoch: 3,
+  expect(command).toMatchObject({ op: 'finish', job_id: capture.id, epoch: capture.epoch,
     result: { paths: ['file.txt'], file_provenance: [{ path: 'file.txt', change: 'modify',
       old_blob: await blob('base\n'), new_blob: await blob('target\n') }] } });
   expect(command.result.diff_digest).not.toBe(result.diff_digest);
@@ -49,7 +58,8 @@ it('rejects an unapproved parent, a foreign repository and a commit off its assi
   await expect(captureResult(bindings, seeded.scope, seeded.result)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
   const foreign = { ...seeded.result, revision: { repository: 'platform/other-project', commit: seeded.target.commit } };
   await expect(captureResult(bindings, seeded.scope, foreign)).rejects.toMatchObject({ code: 'FORBIDDEN' });
-  expect((await bindings.OBJECTS.list({ prefix: 'sha256/' })).objects).toHaveLength(0);
+  // No diff was stored for any refused capture.
+  expect(await bindings.OBJECTS.get(`sha256/${await sha('recorded diff')}`)).toBeNull();
 });
 
 it('resolver readback separates approved conflict edits from already merged clean changes', async () => {

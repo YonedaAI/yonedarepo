@@ -4,10 +4,11 @@ import { afterEach, expect, it } from 'vitest';
 import { checkLedger } from '../../cloudflare/worker/runtime';
 import { ledger, object, readObject } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'published-continuation';
-const call = (input: Json) => ledger(bindings, repo, input);
+const call = approvedLedger(bindings, repo);
 const agents = [{ provider: 'mimo', model: 'mimo-v2.6-flash', strategy: 'minimal' }];
 const policy = {
   version: 'continuation-v1',
@@ -36,16 +37,7 @@ async function release(run: string, commit: string) {
     label: 'Published design notes',
     kind: 'design',
   });
-  const workspace = await object(
-    bindings,
-    JSON.stringify({ files: { 'app.js': { content: 'console.log("fixture");' } } }),
-  );
-  await call({
-    op: 'finish',
-    job_id: agent.id,
-    epoch: agent.epoch,
-    result: { workspace: workspace.digest },
-  });
+  const registration = await finishSealed(bindings, repo, agent);
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const candidate = `candidate-${run}`;
   const revision = { repository: `platform/${repo}`, commit };
@@ -53,14 +45,14 @@ async function release(run: string, commit: string) {
     op: 'finish',
     job_id: capture.id,
     epoch: capture.epoch,
-    result: {
+    result: withLineage(registration, {
       id: candidate,
       revision,
       tree: 'f'.repeat(40),
       paths: ['app.js'],
       diff: 'fixture diff',
       summary: 'Published fixture',
-    },
+    }),
   });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${candidate}` });
   await call({

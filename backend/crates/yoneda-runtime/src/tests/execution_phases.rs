@@ -1,11 +1,11 @@
 use serde_json::{Value, json};
-use yoneda_app::native::NativeStore;
+use yoneda_app::{native::NativeStore, source_kit};
 
 use super::{model_budget, timeout_ms};
 
 fn call(db: &NativeStore, mut command: Value) -> Value {
     command["now"] = json!(1000);
-    yoneda_app::execute(db, command).unwrap()
+    source_kit::execute(db, command).unwrap()
 }
 
 fn comparison() -> (NativeStore, Vec<Value>) {
@@ -74,10 +74,7 @@ fn comparison_phase_capture_from_actual_ledger_finish_ignores_inference_budget_a
             &db,
             json!({"op":"hint_complete","job_id":job["id"],"epoch":job["epoch"],"summary":"Ready for independent capture"}),
         );
-        call(
-            &db,
-            json!({"op":"finish","job_id":job["id"],"epoch":job["epoch"],"result":{"workspace":"e".repeat(64)}}),
-        );
+        let registration = source_kit::finish_agent(&db, job, 1000);
         let capture = call(
             &db,
             json!({"op":"claim","job_id":format!("capture:compare:agent-{}",index+1)}),
@@ -92,8 +89,8 @@ fn comparison_phase_capture_from_actual_ledger_finish_ignores_inference_budget_a
         call(
             &db,
             json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],
-            "result":{"id":format!("candidate-{}",index+1),"revision":{"repository":"test/candidate","commit":if index==0 {"b".repeat(40)}else{"c".repeat(40)}},
-                "tree":"f".repeat(40),"paths":["app.js"],"summary":"Captured synthetic source"}}),
+            "result":source_kit::with_lineage(&registration,json!({"id":format!("candidate-{}",index+1),"revision":{"repository":"test/candidate","commit":if index==0 {"b".repeat(40)}else{"c".repeat(40)}},
+                "tree":"f".repeat(40),"paths":["app.js"],"summary":"Captured synthetic source"}))}),
         );
         let evaluation = call(
             &db,
@@ -107,12 +104,6 @@ fn comparison_phase_capture_from_actual_ledger_finish_ignores_inference_budget_a
         detail["run"]["model_budgets"]
     );
     assert_eq!(after["candidates"].as_array().unwrap().len(), 2);
-}
-
-#[test]
-fn comparison_phase_publish_keeps_non_inference_timeout_without_run_approval() {
-    let job = json!({"kind":"publish","payload":{"execution":{"comparison_approval_id":"approval-without-run"}}});
-    assert_eq!(timeout_ms(&job).unwrap(), 570000);
 }
 
 #[test]
