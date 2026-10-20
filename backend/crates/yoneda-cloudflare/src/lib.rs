@@ -62,8 +62,10 @@ impl SqlStore for CloudStore {
         let saved = result.clone();
         let callback = Closure::wrap(Box::new(move || {
             let r = action.take().expect("transaction called once")();
+            // The value stays on the Rust side; JavaScript only needs to know whether to
+            // roll back (serializing every result for it cost CPU on each request).
             let value = match &r {
-                Ok(v) => json!({"value":v}),
+                Ok(_) => json!({}),
                 Err(e) => json!({"error":{"code":e.code,"message":e.message}}),
             };
             *saved.borrow_mut() = Some(r);

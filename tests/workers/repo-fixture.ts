@@ -6,6 +6,7 @@ import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
 
@@ -40,6 +41,11 @@ export const fakeArtifacts = {
 // for the Container by evaluating the shipped files (the real one is tested in Rust).
 export const queued: any[] = [];
 export const executed: any[] = [];
+/** Runs queued object projections (staged commits to the object store), like the consumer. */
+export async function drainObjects(target: Env = scoped) {
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_objects'))
+    await projectObjects(target, message.repo_id);
+}
 export const fakeQueue = {
   send: async (body: any) => void queued.push(body),
   sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)),
@@ -47,8 +53,9 @@ export const fakeQueue = {
 /** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
 export const pushes: string[] = [];
 export const refusals = new Set<string>();
-/** Receive-pack requests the fake saw, and how many more it answers "busy" like Artifacts. */
-export const receivePacks = { requests: 0, busy: 0 };
+/** Receive-pack requests the fake saw, how many more it answers "busy" like Artifacts, and
+ * whether it is down (answers 503). */
+export const receivePacks = { requests: 0, busy: 0, down: false };
 const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
 /** The ref-update commands of a receive-pack body, up to its flush packet. */
 function commands(body: Uint8Array) {
@@ -97,6 +104,7 @@ beforeEach(async () => {
   refusals.clear();
   receivePacks.requests = 0;
   receivePacks.busy = 0;
+  receivePacks.down = false;
   queued.length = 0;
   executed.length = 0;
   const original = globalThis.fetch;
@@ -106,6 +114,7 @@ beforeEach(async () => {
     expect(url).toMatch(/\/git-receive-pack$/);
     const body = new Uint8Array(init?.body as ArrayBuffer);
     receivePacks.requests++;
+    if (receivePacks.down) return new Response('unavailable', { status: 503 });
     const headers = { 'content-type': 'application/x-git-receive-pack-result' };
     if (receivePacks.busy > 0) {
       receivePacks.busy--;

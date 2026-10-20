@@ -10,7 +10,8 @@ use yoneda_core::{
 };
 
 /// Moves a prepared commit into history once the adapter has read it back from the
-/// object store; the readback must match exactly what this store built.
+/// object store (the readback must match exactly what this store built), or once this
+/// store holds its staged objects.
 pub fn record<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -31,17 +32,26 @@ pub fn record<S: SqlStore>(
         .ok_or_else(|| Error::new("NOT_FOUND", "No prepared commit for this principal"))?;
     let prepared: Value = serde_json::from_str(row["payload"].as_str().unwrap_or_default())
         .map_err(|_| rows::corrupt("prepared commit"))?;
-    // The adapter relays the object store's own receive-pack report and readback.
-    let report = STANDARD
-        .decode(string(c, "push_report_b64")?)
-        .map_err(|_| bad("push_report_b64 is not base64"))?;
-    verify_receive_pack_report(&report, &hidden_ref(&id))?;
-    let readback = &c["readback"];
-    if readback["tree"] != prepared["tree"] || readback["parents"] != prepared["parents"] {
-        return Err(Error::new(
-            "READBACK_MISMATCH",
-            "Object store readback differs from the prepared commit",
-        ));
+    let now = number(c, "now")?;
+    let staged = c["staged"] == true;
+    let mut dispatch = false;
+    if staged {
+        // This store holds the objects it built; the projector pushes them after this.
+        dispatch = super::staging::accept(db, &id, now)?;
+    } else {
+        // The adapter relays the object store's own receive-pack report and readback.
+        let report = STANDARD
+            .decode(string(c, "push_report_b64")?)
+            .map_err(|_| bad("push_report_b64 is not base64"))?;
+        verify_receive_pack_report(&report, &hidden_ref(&id))?;
+        let readback = &c["readback"];
+        if readback["tree"] != prepared["tree"] || readback["parents"] != prepared["parents"] {
+            return Err(Error::new(
+                "READBACK_MISMATCH",
+                "Object store readback differs from the prepared commit",
+            ));
+        }
+        super::staging::discard(db, &id)?;
     }
     let touches = prepared["touches"]
         .as_array()
@@ -57,7 +67,7 @@ pub fn record<S: SqlStore>(
             json!(principal),
             prepared["message"].clone(),
             json!(prepared["read_set"].to_string()),
-            json!(number(c, "now")?),
+            json!(now),
         ],
     )?;
     for touch in touches {
@@ -77,8 +87,10 @@ pub fn record<S: SqlStore>(
         &[json!(id.hex())],
     )?;
     // Platform checks start on every recorded commit (Scion: CI per changeset).
-    let runs = super::checks::request(db, &id, None, principal, settings, number(c, "now")?)?;
-    Ok(json!({ "commit": id, "recorded": true, "paths": touches.len(), "check_runs": runs }))
+    let runs = super::checks::request(db, &id, None, principal, settings, now)?;
+    Ok(
+        json!({ "commit": id, "recorded": true, "paths": touches.len(), "check_runs": runs, "staged": staged, "dispatch_objects": dispatch }),
+    )
 }
 
 /// Records a check result for the exact commit under the repository's current policy.
