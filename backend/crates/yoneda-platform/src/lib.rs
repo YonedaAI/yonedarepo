@@ -3,6 +3,7 @@
 //! to the object cache (diffs, merges, search, blame, symbols, review classes, contracts
 //! and the agent and human views).
 mod platform_access;
+mod platform_build;
 mod platform_code;
 mod platform_compute;
 mod platform_contracts;
