@@ -1088,8 +1088,8 @@
     }
   },
   {
-    "name": "git_land",
-    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details.",
+    "name": "git_branch",
+    "description": "Create or move a working branch (any branch except main) to a recorded commit, by compare-and-swap: expected is the branch's current commit, or null to create it. Requires the write scope; a mismatch returns STALE_HEAD. main moves only through git_land.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1099,6 +1099,37 @@
         "commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
+        },
+        "expected": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "ref",
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_land",
+    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "fast_forward_only": {
+          "type": "boolean"
         }
       },
       "required": [
