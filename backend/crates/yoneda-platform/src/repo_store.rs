@@ -24,6 +24,7 @@ mod reads;
 mod record;
 mod rows;
 mod staging;
+mod store_lineage;
 mod symbols;
 mod tree_cache;
 mod vacuum;
@@ -69,7 +70,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         | "repo_record_repair" => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
         // "projected" would drop the only copy of accepted objects.
-        "repo_objects_pending" | "repo_objects_projected" | "repo_staged_objects"
+        "repo_objects_pending"
+        | "repo_objects_projected"
+        | "repo_staged_objects"
+        | "repo_projection_objects"
+        | "repo_objects_stored"
             if !actor.can("system") =>
         {
             Err(Error::new(
@@ -138,6 +143,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_pending" => staging::pending(db),
         "repo_objects_projected" => staging::projected(db, c),
         "repo_staged_objects" => staging::read(db, c),
+        "repo_projection_objects" => store_lineage::unprojected(db, c),
+        "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),

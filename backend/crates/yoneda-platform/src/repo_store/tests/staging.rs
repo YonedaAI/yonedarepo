@@ -49,22 +49,28 @@ fn commit_staged(h: &Harness, parent: &str, version: u64, path: &str, text: &str
     }
 }
 
-/// Plays the projector: push every pending commit to the harness store and report `outcome`.
+/// Plays the R2 projector: write every pending commit's raw objects to the store of record
+/// (the harness store) and report `outcome`.
 fn project(h: &Harness, outcome: &str) -> Vec<String> {
     let pending = h.ok(PROJECTOR, json!({"op": "repo_objects_pending"}));
     let mut results = Vec::new();
     let mut commits = Vec::new();
     for entry in pending["commits"].as_array().unwrap() {
         let commit = entry["commit"].as_str().unwrap().to_owned();
-        let push = platform_compute(
-            json!({"op": "staged_push", "commit": commit, "objects": entry["objects"]}),
-        )
-        .unwrap();
         if outcome == "ok" {
-            h.receive(
-                &STANDARD.decode(push["push_b64"].as_str().unwrap()).unwrap(),
-                &format!("refs/yoneda/c/{commit}"),
-            );
+            for object in entry["objects"].as_array().unwrap() {
+                let kind = match object["kind"].as_str().unwrap() {
+                    "commit" => ObjectKind::Commit,
+                    "tree" => ObjectKind::Tree,
+                    _ => ObjectKind::Blob,
+                };
+                let data = STANDARD
+                    .decode(object["data_b64"].as_str().unwrap())
+                    .unwrap();
+                h.objects
+                    .borrow_mut()
+                    .insert(object["id"].as_str().unwrap().into(), (kind, data));
+            }
         }
         results.push(json!({"commit": commit, "outcome": outcome, "detail": "store unavailable"}));
         commits.push(commit);
@@ -109,11 +115,6 @@ fn staged_commits_are_readable_until_projected_then_live_in_the_store() {
     for object in &read {
         assert_eq!(&h.cached.borrow()[object["id"].as_str().unwrap()], object);
     }
-    // A ref cannot be projected to objects the store lacks.
-    assert_eq!(
-        h.ok(PROJECTOR, json!({"op": "repo_projection_pending"}))["objects_pending"],
-        1
-    );
     // Work keeps going on top of a staged parent.
     let child = commit_staged(
         &h,
@@ -140,10 +141,6 @@ fn staged_commits_are_readable_until_projected_then_live_in_the_store() {
     }
     assert_eq!(pending(&h)["pending"], 0);
     assert!(staged_read(&h, &ids).is_empty());
-    assert_eq!(
-        h.ok(PROJECTOR, json!({"op": "repo_projection_pending"}))["objects_pending"],
-        0
-    );
 }
 
 #[test]
@@ -273,9 +270,10 @@ fn large_commits_are_pushed_and_outbox_ops_are_platform_only() {
 }
 
 #[test]
-fn vacuum_keeps_hidden_refs_of_commits_still_staged() {
+fn staged_commits_get_no_hidden_ref_so_vacuum_never_releases_one() {
     let (h, root) = seeded();
     let prepared = commit_staged(&h, &root, 1, "a.txt", "a\n");
+    project(&h, "ok");
     *h.now.borrow_mut() += 30 * 24 * 60 * 60 * 1000;
     let plan = h.ok(OWNER, json!({"op": "repo_vacuum_plan"}));
     assert!(
@@ -284,7 +282,11 @@ fn vacuum_keeps_hidden_refs_of_commits_still_staged() {
             .unwrap()
             .contains(&prepared["commit"])
     );
-    project(&h, "ok");
+    // Stored under its own hidden ref (an oversized projection), it can be released.
+    h.ok(
+        PROJECTOR,
+        json!({"op": "repo_objects_stored", "commits": [prepared["commit"]]}),
+    );
     let plan = h.ok(OWNER, json!({"op": "repo_vacuum_plan"}));
     assert!(
         plan["expired"]
@@ -292,6 +294,79 @@ fn vacuum_keeps_hidden_refs_of_commits_still_staged() {
             .unwrap()
             .contains(&prepared["commit"])
     );
+}
+
+#[test]
+fn a_protected_ref_projects_every_commit_artifacts_lacks_in_one_push() {
+    let (h, root) = seeded();
+    let first = commit_staged(&h, &root, 1, "a.txt", "a\n");
+    let second = commit_staged(&h, first["commit"].as_str().unwrap(), 1, "b.txt", "b\n");
+    project(&h, "ok"); // in R2 now; Artifacts still lacks both
+    // A non-protected branch is never projected.
+    h.approve_and_check(first["commit"].as_str().unwrap());
+    h.ok(
+        OWNER,
+        json!({"op": "repo_land", "ref": "work", "commit": first["commit"]}),
+    );
+    assert!(
+        h.ok(PROJECTOR, json!({"op": "repo_projection_pending"}))["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["refname"] != "refs/heads/work")
+    );
+    h.approve_and_check(second["commit"].as_str().unwrap());
+    for commit in [&first["commit"], &second["commit"]] {
+        h.ok(
+            OWNER,
+            json!({"op": "repo_land", "ref": "main", "commit": commit}),
+        );
+    }
+    let plan = h.ok(
+        PROJECTOR,
+        json!({"op": "repo_projection_objects", "refname": "refs/heads/main"}),
+    );
+    let commits: Vec<&Value> = plan["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| &c["commit"])
+        .collect();
+    assert_eq!(
+        commits,
+        vec![&first["commit"], &second["commit"]],
+        "oldest first, root already held"
+    );
+    // One receive-pack: every listed object plus the ref update.
+    let objects: Vec<Value> = plan["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["objects"].as_array().unwrap().clone())
+        .map(|o| {
+            let id = o["id"].as_str().unwrap();
+            json!({"id": id, "kind": o["kind"], "data_b64": STANDARD.encode(&h.objects.borrow()[id].1)})
+        })
+        .collect();
+    let push = platform_compute(json!({"op": "branch_push", "refname": "refs/heads/main",
+        "old": root, "new": second["commit"], "objects": objects}))
+    .unwrap();
+    h.receive(
+        &STANDARD.decode(push["push_b64"].as_str().unwrap()).unwrap(),
+        "refs/heads/main",
+    );
+    let pending = h.ok(PROJECTOR, json!({"op": "repo_projection_pending"}));
+    let version = pending["pending"][0]["target_version"].clone();
+    h.ok(
+        PROJECTOR,
+        json!({"op": "repo_projection_result", "refname": "refs/heads/main", "version": version,
+        "outcome": "ok", "commit": second["commit"], "commits": commits}),
+    );
+    let plan = h.ok(
+        PROJECTOR,
+        json!({"op": "repo_projection_objects", "refname": "refs/heads/main"}),
+    );
+    assert_eq!(plan["commits"], json!([]));
 }
 
 #[test]

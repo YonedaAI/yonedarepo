@@ -45,9 +45,10 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         .take(16_384)
         .collect();
     db.query(
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin) VALUES(?,?,?,?,0,?,?,'[]',?,'import')",
+        // Imported history was read from Artifacts, which holds it.
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,artifacts_at) VALUES(?,?,?,?,0,?,?,'[]',?,'import',?)",
         &[json!(id.hex()), json!(tree.hex()), json!(json!(parents).to_string()), json!(generation),
-          json!(IMPORT_PRINCIPAL), json!(message), json!(number(c, "now")?)],
+          json!(IMPORT_PRINCIPAL), json!(message), json!(number(c, "now")?), json!(number(c, "now")?)],
     )?;
     for touch in &touches {
         yoneda_core::validate_path(&touch.path)?;
