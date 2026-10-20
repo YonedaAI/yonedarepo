@@ -29,13 +29,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   fetch(req: Request) {
     return platformFetch(req, this.env);
   }
+  /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
-    for (const message of batch.messages) {
-      try {
-        await platformJob(this.env, message);
-      } catch {
-        message.retry();
-      }
-    }
+    await Promise.all(
+      batch.messages.map((message) => platformJob(this.env, message).catch(() => message.retry())),
+    );
   }
 }

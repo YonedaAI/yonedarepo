@@ -10,14 +10,26 @@ export type CheckJob = {
   files: { path: string; type: string; data_b64: string }[];
 };
 
-export class CheckContainer extends Container<Env> {
-  defaultPort = 8080;
-  enableInternet = false;
-  sleepAfter = '2m';
+/** The container operations one check needs (the Durable Object, or a test double). */
+export type CheckInstance = {
+  startAndWaitForPorts(options: unknown): Promise<unknown>;
+  containerFetch(request: Request): Promise<Response>;
+  destroy(): Promise<void>;
+};
 
-  async run(job: CheckJob): Promise<Record<string, unknown>> {
-    const secret = crypto.randomUUID() + crypto.randomUUID();
-    await this.startAndWaitForPorts({
+/**
+ * Runs one check and kills the instance whatever happens. One run per instance: a
+ * container that executed untrusted code is never reused. The runtime is PID 1 without a
+ * SIGTERM handler, so a polite stop is ignored and would hold a container slot until the
+ * account limit refuses every later check; SIGKILL (destroy) always frees it.
+ */
+export async function runCheckOnce(
+  instance: CheckInstance,
+  job: CheckJob,
+): Promise<Record<string, unknown>> {
+  const secret = crypto.randomUUID() + crypto.randomUUID();
+  try {
+    await instance.startAndWaitForPorts({
       ports: [8080],
       startOptions: {
         entrypoint: ['/usr/local/bin/start-runtime', 'check-server'],
@@ -25,23 +37,35 @@ export class CheckContainer extends Container<Env> {
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });
-    try {
-      const result = await this.containerFetch(
-        new Request('http://check/check', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
-          body: JSON.stringify(job),
-        }),
-      );
-      const body = await result.json<Record<string, any>>();
-      if (!result.ok)
-        throw Object.assign(new Error(body.error?.message ?? 'Check executor failed'), {
-          code: body.error?.code ?? 'CHECK_EXECUTOR',
-        });
-      return body;
-    } finally {
-      // One run per instance: never reuse a container that executed untrusted code.
-      await this.stop();
-    }
+    const result = await instance.containerFetch(
+      new Request('http://check/check', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${secret}` },
+        body: JSON.stringify(job),
+      }),
+    );
+    const body = await result.json<Record<string, any>>();
+    if (!result.ok)
+      throw Object.assign(new Error(body.error?.message ?? 'Check executor failed'), {
+        code: body.error?.code ?? 'CHECK_EXECUTOR',
+      });
+    return body;
+  } finally {
+    await instance.destroy();
+  }
+}
+
+export class CheckContainer extends Container<Env> {
+  defaultPort = 8080;
+  enableInternet = false;
+  sleepAfter = '2m';
+
+  run(job: CheckJob): Promise<Record<string, unknown>> {
+    return runCheckOnce(this, job);
+  }
+
+  /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */
+  override async onActivityExpired() {
+    if (this.ctx.container?.running) await this.destroy();
   }
 }

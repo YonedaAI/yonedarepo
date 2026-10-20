@@ -109,7 +109,9 @@
     "consumers": [
       {
         "queue": "yonedarepo-platform-dev-jobs",
-        "max_batch_size": 1,
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_concurrency": 20,
         "max_retries": 3,
         "dead_letter_queue": "yonedarepo-platform-dev-dead-letter"
       }
