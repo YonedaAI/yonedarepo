@@ -11,6 +11,12 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     } else {
         owner(c)?;
     }
+    if run["workspace_transport"] != "api-source-v1" {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Only lazy-source runs can refresh candidates",
+        ));
+    }
     let request_id = string(c, "request_id")?;
     if let Some(old) = by_request(db, &request_id)? {
         for field in [
@@ -73,10 +79,8 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     record["receipt"] = receipt.clone();
     super::source::compact(db, &mut record)?;
     create(db, "conflicts", &id, &record)?;
-    let mut payload = json!({"workspace_transport":"git-native-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"target_revision":target["revision"],"working_branch_id":target["working_branch_id"],"declared_paths":paths,"run_id":candidate["run_id"],"policy":if agent { &run["policy"] } else { &repository["policy"] }});
-    if run["workspace_transport"] == "api-source-v1" {
-        crate::path_lists::compact(db, &mut payload, "declared_paths")?;
-    }
+    let mut payload = json!({"workspace_transport":"api-source-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"target_revision":target["revision"],"working_branch_id":target["working_branch_id"],"declared_paths":paths,"run_id":candidate["run_id"],"policy":if agent { &run["policy"] } else { &repository["policy"] }});
+    crate::path_lists::compact(db, &mut payload, "declared_paths")?;
     job(db, &job_id, "capture", now, payload)?;
     event(db, "candidate.refresh_requested", now, receipt.clone())?;
     Ok(receipt)
@@ -85,11 +89,7 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
 pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let mut active_job = active(db, c, now)?;
     if active_job["kind"] != "capture"
-        || !["refresh_candidate", "resolve_conflict"].contains(
-            &active_job["payload"]["capture_subtype"]
-                .as_str()
-                .unwrap_or_default(),
-        )
+        || active_job["payload"]["capture_subtype"] != "refresh_candidate"
     {
         return Err(Error::new(
             "FORBIDDEN",
@@ -115,42 +115,36 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
         save(db, "jobs", &active_id, &active_job)?;
         return Ok(json!({"conflict_id":id,"status":"stale","reason":"HEAD_MOVED"}));
     }
-    if active_job["payload"]["capture_subtype"] == "refresh_candidate" {
-        // Only the authenticated broker capture path can finish this internal operation.
-        // Bind its readback to the server-frozen Git-native job; a result flag supplied by
-        // the caller is not evidence that Git was read back from the canonical Artifact.
-        if !["git-native-v1", "api-source-v1"].contains(
-            &active_job["payload"]["workspace_transport"]
-                .as_str()
-                .unwrap_or_default(),
-        ) {
-            return Err(Error::new(
-                "FORBIDDEN",
-                "Remote head readback requires a trusted Git-native capture job",
-            ));
-        }
-        let observed_head = hash(&c["result"]["readback"], "observed_head", &[40, 64])?;
-        if c["result"]["readback"]["version"] != record["expected_version"] {
-            return Err(bad(
-                "Canonical Git readback version differs from the reserved version",
-            ));
-        }
-        if observed_head != record["head_commit"] {
-            record["status"] = json!("stale");
-            record["stale_reason"] = json!("REMOTE_CHANGE");
-            record["observed_remote_head"] = json!(observed_head);
-            save(db, "conflicts", &id, &record)?;
-            event(
-                db,
-                "candidate.refresh_fenced",
-                now,
-                json!({"conflict_id":id,"reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
-            )?;
-            save(db, "jobs", &active_id, &active_job)?;
-            return Ok(
-                json!({"conflict_id":id,"status":"stale","reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
-            );
-        }
+    // Only the authenticated broker capture path can finish this internal operation.
+    // Bind its readback to the server-frozen source job; a result flag supplied by
+    // the caller is not evidence that Git was read back from the canonical Artifact.
+    if active_job["payload"]["workspace_transport"] != "api-source-v1" {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Remote head readback requires a trusted source capture job",
+        ));
+    }
+    let observed_head = hash(&c["result"]["readback"], "observed_head", &[40, 64])?;
+    if c["result"]["readback"]["version"] != record["expected_version"] {
+        return Err(bad(
+            "Canonical Git readback version differs from the reserved version",
+        ));
+    }
+    if observed_head != record["head_commit"] {
+        record["status"] = json!("stale");
+        record["stale_reason"] = json!("REMOTE_CHANGE");
+        record["observed_remote_head"] = json!(observed_head);
+        save(db, "conflicts", &id, &record)?;
+        event(
+            db,
+            "candidate.refresh_fenced",
+            now,
+            json!({"conflict_id":id,"reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
+        )?;
+        save(db, "jobs", &active_id, &active_job)?;
+        return Ok(
+            json!({"conflict_id":id,"status":"stale","reason":"REMOTE_CHANGE","observed_remote_head":observed_head}),
+        );
     }
     let mut leased = active_job.clone();
     leased["status"] = json!("running");
@@ -184,12 +178,10 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
             json!(hash(result, "merge_workspace_commit", &[40, 64])?);
         record["conflict_paths"] = result["conflict_paths"].clone();
         record["workspace_revision"] = result["workspace_revision"].clone();
-        if active_job["payload"]["workspace_transport"] == "api-source-v1" {
-            record["expected_head_tree"] =
-                json!(hash(&result["readback"], "expected_head_tree", &[40, 64])?);
-            record["merged_paths"] = result["readback"]["merged_paths"].clone();
-            crate::path_lists::compact(db, &mut record, "merged_paths")?;
-        }
+        record["expected_head_tree"] =
+            json!(hash(&result["readback"], "expected_head_tree", &[40, 64])?);
+        record["merged_paths"] = result["readback"]["merged_paths"].clone();
+        crate::path_lists::compact(db, &mut record, "merged_paths")?;
         attach_typed(db, &mut record)?;
         save(db, "conflicts", &id, &record)?;
         event(
@@ -218,10 +210,8 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     if let Some(id) = record.get("working_branch_id") {
         candidate["working_branch_id"] = id.clone();
     }
-    if active_job["payload"]["workspace_transport"] == "api-source-v1" {
-        crate::path_lists::compact(db, &mut candidate, "paths")?;
-        crate::path_lists::compact(db, &mut candidate, "declared_paths")?;
-    }
+    crate::path_lists::compact(db, &mut candidate, "paths")?;
+    crate::path_lists::compact(db, &mut candidate, "declared_paths")?;
     hash(result, "diff_digest", &[64])?;
     create(db, "candidates", &new_id, &candidate)?;
     if result.get("file_provenance").is_some() {
@@ -245,10 +235,8 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     )?;
     let policy = repository["policy"].clone();
     let mut evaluation_payload = json!({"candidate":candidate,"run_id":candidate["run_id"],"policy":policy,"workspace_transport":active_job["payload"]["workspace_transport"]});
-    if active_job["payload"]["workspace_transport"] == "api-source-v1" {
-        evaluation_payload["source_integrity"] =
-            crate::path_lists::integrity::fields(db, &candidate, &policy)?;
-    }
+    evaluation_payload["source_integrity"] =
+        crate::path_lists::integrity::fields(db, &candidate, &policy)?;
     job(
         db,
         &format!("evaluate:{new_id}"),

@@ -7,14 +7,12 @@ export const gitHandler: OutboundHandler<Env> = async (req, env, ctx) => {
   try {
     const { scope } = await scopeFor(env, ctx.containerId);
     const job = scope.job;
-    const agentGit =
-      scope.job.payload?.workspace_transport === 'git-native-v1' && scope.job.kind === 'agent';
-    if (!agentGit && req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
+    // Agents never hold Git access; only the supervisor's trusted capture and publish do.
+    if (req.headers.get('authorization') !== `Bearer ${scope.supervisor}`)
       return error('FORBIDDEN', 'Trusted Git client required', 403);
     const url = new URL(req.url);
     const [_, role, ...tail] = url.pathname.split('/');
-    const gitNative = ['git-native-v1', 'api-source-v1'].includes(job.payload?.workspace_transport);
-    if (gitNative) {
+    if (job.payload?.workspace_transport === 'api-source-v1') {
       const capability = role ? gitRole(scope, role) : null;
       if (!capability) return error('FORBIDDEN', 'Attempt Git capability unavailable', 403);
       const repository = capability.repository;

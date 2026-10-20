@@ -14,11 +14,7 @@ pub fn validate_capture_result(
         || job["id"] != job_id
         || job["epoch"] != epoch
         || job["status"] != "running"
-        || !["refresh_candidate", "resolve_conflict"].contains(
-            &job["payload"]["capture_subtype"]
-                .as_str()
-                .unwrap_or_default(),
-        )
+        || job["payload"]["capture_subtype"] != "refresh_candidate"
     {
         return Err(Error::new(
             "FENCED",
@@ -35,80 +31,39 @@ pub fn validate_capture_result(
     {
         return Err(bad("Canonical Git readback differs from the reserved head"));
     }
-    let subtype = job["payload"]["capture_subtype"]
+    let base = job["payload"]["expected_base"]
         .as_str()
-        .ok_or_else(|| bad("Missing conflict capture subtype"))?;
-    if subtype == "refresh_candidate" {
-        let base = job["payload"]["expected_base"]
-            .as_str()
-            .ok_or_else(|| bad("Missing expected base"))?;
-        let candidate = job["payload"]["candidate"]["revision"]["commit"]
-            .as_str()
-            .ok_or_else(|| bad("Missing original candidate revision"))?;
-        git_hash(base)?;
-        git_hash(candidate)?;
-        let evidence: TrustedPathEvidence =
-            serde_json::from_value(result["evidence"].clone()).map_err(|e| bad(&e.to_string()))?;
-        evidence.validate(base, head, candidate)?;
-        if serde_json::json!(evidence.declared_paths) != job["payload"]["declared_paths"] {
-            return Err(bad(
-                "Git evidence differs from the approved refresh manifest",
-            ));
-        }
-        if readback["parents"] != serde_json::json!([head, candidate]) {
-            return Err(bad(
-                "Git readback parents do not match the approved refresh inputs",
-            ));
-        }
-        let candidate_paths = paths(readback, "candidate_paths")?;
-        let intervening_paths = paths(readback, "intervening_paths")?;
-        let overlaps: Vec<_> = candidate_paths
-            .iter()
-            .filter(|path| intervening_paths.contains(path))
-            .cloned()
-            .collect();
-        if candidate_paths != evidence.captured_paths
-            || intervening_paths != evidence.intervening_paths
-            || overlaps != evidence.overlapping_paths
-        {
-            return Err(bad("Runtime path claims differ from Git-derived readback"));
-        }
-    } else {
-        let candidate_commit = result["revision"]["commit"]
-            .as_str()
-            .ok_or_else(|| bad("Resolver capture omitted its revision"))?;
-        git_hash(candidate_commit)?;
-        if readback["parents"] != serde_json::json!([head]) {
-            return Err(bad(
-                "Resolver capture is not based on the reserved canonical head",
-            ));
-        }
-        // Any valid, unprotected path may be edited (see `resolver_scope`).
-        let protected = crate::resolver_scope::frozen_protected(&job["payload"])?;
-        let captured = result["resolver_delta_paths"]
-            .as_array()
-            .ok_or_else(|| bad("Resolver capture omitted Git paths"))?;
-        if captured.is_empty() {
-            return Err(bad("Resolver capture did not change any path"));
-        }
-        let captured = captured
-            .iter()
-            .map(|path| path.as_str().ok_or_else(|| bad("Invalid resolver path")))
-            .collect::<Result<Vec<_>>>()?;
-        crate::resolver_scope::validate_edits(captured.iter().copied(), &protected)
-            .map_err(|e| bad(&e.message))?;
-        if result["id"].as_str().is_none_or(str::is_empty)
-            || result["tree"].as_str().is_none_or(str::is_empty)
-        {
-            return Err(bad("Resolver capture is missing candidate identities"));
-        }
-        if paths(readback, "resolver_delta_paths")? != paths(result, "resolver_delta_paths")?
-            || paths(readback, "captured_paths")? != paths(result, "paths")?
-            || readback["candidate_commit"] != candidate_commit
-        {
-            return Err(bad("Resolver paths or revision differ from Git readback"));
-        }
-        return Ok(());
+        .ok_or_else(|| bad("Missing expected base"))?;
+    let candidate = job["payload"]["candidate"]["revision"]["commit"]
+        .as_str()
+        .ok_or_else(|| bad("Missing original candidate revision"))?;
+    git_hash(base)?;
+    git_hash(candidate)?;
+    let evidence: TrustedPathEvidence =
+        serde_json::from_value(result["evidence"].clone()).map_err(|e| bad(&e.to_string()))?;
+    evidence.validate(base, head, candidate)?;
+    if serde_json::json!(evidence.declared_paths) != job["payload"]["declared_paths"] {
+        return Err(bad(
+            "Git evidence differs from the approved refresh manifest",
+        ));
+    }
+    if readback["parents"] != serde_json::json!([head, candidate]) {
+        return Err(bad(
+            "Git readback parents do not match the approved refresh inputs",
+        ));
+    }
+    let candidate_paths = paths(readback, "candidate_paths")?;
+    let intervening_paths = paths(readback, "intervening_paths")?;
+    let overlaps: Vec<_> = candidate_paths
+        .iter()
+        .filter(|path| intervening_paths.contains(path))
+        .cloned()
+        .collect();
+    if candidate_paths != evidence.captured_paths
+        || intervening_paths != evidence.intervening_paths
+        || overlaps != evidence.overlapping_paths
+    {
+        return Err(bad("Runtime path claims differ from Git-derived readback"));
     }
     if result["status"] == "clean" {
         for field in ["candidate_id", "tree", "merge_commit"] {
@@ -197,7 +152,3 @@ fn git_hash(value: &str) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "conflict_capture_tests.rs"]
-mod tests;

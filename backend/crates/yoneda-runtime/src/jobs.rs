@@ -1,7 +1,7 @@
 use crate::{
     broker::broker,
     err, field,
-    git::{capture_fresh, git, read_git_revision},
+    git::{capture_fresh, git},
     workspace::materialize,
 };
 use serde_json::{Value, json};
@@ -33,31 +33,18 @@ pub(crate) async fn execute_job(
                 return crate::source_capture::execute(job).await;
             }
             if job["payload"]["capture_subtype"] == "refresh_candidate" {
-                return crate::refresh_capture::execute(job, &root).await;
+                if !crate::source_workspace_job::enabled(job) {
+                    return Err(err("Refresh capture requires a lazy-source job"));
+                }
+                return crate::source_refresh::execute(job).await;
             }
-            let git_native = crate::transport::enabled(job);
-            let source_commit = job["payload"]["source_revision"]["commit"].as_str();
-            let files = if git_native {
-                let revision =
-                    source_commit.ok_or_else(|| err("Frozen agent Git revision is missing"))?;
-                read_git_revision("http://git.yoneda.internal/fork", revision).await?
-            } else {
-                let data = broker("/workspace", json!({}), true).await?;
-                let files: Workspace =
-                    serde_json::from_value(data["files"].clone()).map_err(err)?;
-                crate::transport::from_legacy(files)?
-            };
-            let resolver_delta = if job["payload"]["capture_subtype"] == "resolve_conflict" {
-                let delta = crate::refresh_capture::resolver_capture_scope(job, &files).await?;
-                crate::team_workspace::validate_git_shape(&files)?;
-                Some(delta)
-            } else if let Some(scope) = job["payload"].get("team_owned_paths") {
+            let data = broker("/workspace", json!({}), true).await?;
+            let files: Workspace = serde_json::from_value(data["files"].clone()).map_err(err)?;
+            let files = crate::transport::from_legacy(files)?;
+            if let Some(scope) = job["payload"].get("team_owned_paths") {
                 let before = crate::team_source::load_git(job).await?;
                 crate::team_workspace::validate_changes_git(&before, &files, scope)?;
-                None
-            } else {
-                None
-            };
+            }
             let base = job["payload"]["execution"]["base"]["commit"]
                 .as_str()
                 .or_else(|| job["payload"]["base"]["commit"].as_str())
@@ -70,29 +57,17 @@ pub(crate) async fn execute_job(
                 "YonedaRepo captured candidate",
             )
             .await?;
-            let push = if git_native {
-                vec![
-                    "push".to_owned(),
-                    format!(
-                        "--force-with-lease=refs/heads/main:{}",
-                        source_commit.unwrap_or_default()
-                    ),
-                    "http://git.yoneda.internal/fork".to_owned(),
-                    "HEAD:refs/heads/main".to_owned(),
-                ]
-            } else {
-                vec![
-                    "push".into(),
-                    "http://git.yoneda.internal/candidate".into(),
-                    "HEAD:refs/heads/main".into(),
-                ]
-            };
-            git(&root, &push.iter().map(String::as_str).collect::<Vec<_>>()).await?;
+            git(
+                &root,
+                &[
+                    "push",
+                    "http://git.yoneda.internal/candidate",
+                    "HEAD:refs/heads/main",
+                ],
+            )
+            .await?;
             result["id"] = json!(format!("candidate:{}:{}", field(job, "id")?, job["epoch"]));
             result["revision"] = json!({"repository":job["fork"],"commit":result["commit"]});
-            if let Some(delta) = resolver_delta {
-                result["resolver_delta_paths"] = json!(delta);
-            }
             result["summary"] = json!(format!(
                 "{} approach",
                 job["payload"]["execution"]["strategy"]

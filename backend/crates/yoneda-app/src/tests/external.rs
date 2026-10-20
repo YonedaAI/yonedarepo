@@ -55,25 +55,15 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
 }
 
 #[test]
-fn git_v1_submission_uses_only_the_worker_bound_revision_and_skips_workspace_object() {
+fn contributions_ignore_stored_repository_transport_and_forged_git_receipts() {
     let db = repo_with_policy(serde_json::to_value(yoneda_core::Policy::default()).unwrap());
     let mut repository = crate::storage::get(&db, "repository", "repo").unwrap();
-    repository["workspace_transport"] = json!("git-native-v1");
+    repository["workspace_transport"] = json!("api-source-v1");
     crate::storage::save(&db, "repository", "repo", &repository).unwrap();
 
     let attempt = call(&db, begin()).unwrap();
-    assert_eq!(attempt["workspace_transport"], "git-native-v1");
-    assert_eq!(
-        attempt["payload"]["run"]["workspace_transport"],
-        "git-native-v1"
-    );
-    let mut changed_repository = crate::storage::get(&db, "repository", "repo").unwrap();
-    changed_repository["workspace_transport"] = json!("json-v1");
-    crate::storage::save(&db, "repository", "repo", &changed_repository).unwrap();
-    assert_eq!(
-        crate::storage::get(&db, "jobs", "job:external-one").unwrap()["workspace_transport"],
-        "git-native-v1"
-    );
+    assert_eq!(attempt["workspace_transport"], "json-v1");
+    assert_eq!(attempt["payload"]["run"]["workspace_transport"], "json-v1");
     call(
         &db,
         json!({"op":"external_freeze","attempt_id":"external-one","_grant":"grant-one"}),
@@ -85,39 +75,19 @@ fn git_v1_submission_uses_only_the_worker_bound_revision_and_skips_workspace_obj
         json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":revision}),
     )
     .unwrap();
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"external_submit","attempt_id":"external-one","_grant":"wrong"}),
-        )
-        .unwrap_err()
-        .code,
-        "FORBIDDEN"
-    );
-    let submitted = call(
+    call(
         &db,
-        json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64),"fork_revision":{"repository":"attacker/other","commit":"c".repeat(40)},"git_verified":false}),
+        json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64),"fork_revision":{"repository":"attacker/other","commit":"c".repeat(40)},"git_verified":true}),
     )
     .unwrap();
-    assert_eq!(submitted["status"], "completed");
     let completed = crate::storage::get(&db, "jobs", "job:external-one").unwrap();
-    assert_eq!(completed["result"]["git_verified"], true);
-    assert_eq!(completed["result"]["fork_revision"], revision);
-    assert!(completed["result"].get("workspace").is_none());
-    assert_eq!(completed["result"]["submitted_revision"], revision);
-    assert_eq!(completed["submitted_revision"], revision);
+    assert!(completed["result"].get("git_verified").is_none());
+    assert!(completed["result"].get("fork_revision").is_none());
     let capture = crate::storage::get(&db, "jobs", "capture:external-one").unwrap();
-    assert_eq!(capture["payload"]["workspace_transport"], "git-native-v1");
-    assert_eq!(capture["payload"]["source_revision"], revision);
-    assert!(capture["payload"].get("workspace").is_none());
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"e".repeat(64)}),
-        )
-        .unwrap(),
-        submitted
-    );
+    assert_eq!(capture["payload"]["workspace"], "f".repeat(64));
+    assert!(capture["payload"].get("source_revision").is_none());
+    let replay = json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64)});
+    assert_eq!(call(&db, replay).unwrap()["workspace"], "f".repeat(64));
 }
 #[test]
 fn expired_external_attempts_never_schedule_a_paid_harness() {

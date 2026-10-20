@@ -52,7 +52,7 @@ mod tests {
     }
     #[test]
     fn legacy_run_transport_and_approval_remain_unchanged() {
-        let mut legacy = json!({"workspace_transport":"git-native-v1","base":{"commit":"old"}});
+        let mut legacy = json!({"base":{"commit":"old"}});
         let before = legacy.clone();
         freeze(&approved(), &mut legacy).unwrap();
         assert_eq!(legacy, before);

@@ -26,8 +26,7 @@ async function activeSource(count = 1) {
     readBlob: vi.fn(async () => new Blob([body])), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
   const local = { ...bindings, ARTIFACTS: { get: vi.fn(async () => artifacts) } } as unknown as Env;
   await ledger(bindings, repoId, { op: 'init', id: repoId, name: 'Source scope fixture', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: repoId }, commit: base.commit, policy: reviewerPolicy,
-    workspace_transport: 'git-native-v1' });
+    remote: { namespace: 'yoneda-test', name: repoId }, commit: base.commit, policy: reviewerPolicy });
   await ledger(bindings, repoId, { op: 'start_run', id: 'source-scope-run', intent: 'Check scoped source transport',
     workspace_transport: 'api-source-v1',
     _source_transport_approved: true, _source_base: base,

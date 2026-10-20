@@ -59,22 +59,6 @@ fn reasoning_effort_runtime_fences_unsupported_or_substituted_frozen_settings() 
 }
 
 #[test]
-fn git_native_planner_returns_read_only_flags_and_worker_receipt_revision() {
-    let job = json!({"fork":"repo/attempt","payload":{"workspace_transport":"git-native-v1"}});
-    let result = git_agent_result(
-        &job,
-        "a".repeat(40),
-        true,
-        &json!("evidence"),
-        "cheap-model",
-    );
-    assert_eq!(result["planning"], true);
-    assert_eq!(result["source_unchanged"], true);
-    assert_eq!(result["fork_revision"]["repository"], "repo/attempt");
-    assert_eq!(result["fork_revision"]["commit"], "a".repeat(40));
-}
-
-#[test]
 fn harness_budget_actual_anthropic_and_legacy_claude_keep_one_dollar_allowance() {
     for execution in [
         json!({"harness":"claude","provider":"claude"}),
@@ -226,14 +210,14 @@ fn gemini_turn_budget_uses_approved_request_allowance_and_preserves_legacy_defau
 }
 
 fn prompt_job(role: &str, harness: &str) -> Value {
-    json!({"kind":"agent","payload":{"workspace_transport":"git-native-v1","team_planning":role=="planner"||role=="coordinator",
+    json!({"kind":"agent","payload":{"workspace_transport":"api-source-v1","team_planning":role=="planner"||role=="coordinator",
         "execution":{"id":"execution","harness":harness,"provider":"codex","model":"gpt-5.6-luna","role":"coding","team_role":role,"strategy":"Approved strategy","task":"Approved task","team_task":if role=="worker"||role=="integrator" {json!("task")} else {Value::Null},"budget":{"provider":"codex","model":"gpt-5.6-luna"}},
         "run":{"id":"run","intent":"Preserve booking integrity","criteria":["Exact independently checked integration"],"agents":[{"provider":"codex","model":"gpt-5.6-luna"}],"autonomy_policy":{"version":1,"enabled":true,"max_repair_rounds":2},"intent_clarifications":[{"answer":"Retain the original contract"}],"team_plan":{"contract":"Original contract"},"model_budgets":[{"provider":"codex","model":"gpt-5.6-luna","max_requests":24,"max_output_tokens":4096,"max_execution_ms":600000,"spend_limit_microusd":null,"pricing":null,"requests":4,"charged_microusd":0}]},
         "policy":{"build":{"static_dir":"public"}}}})
 }
 
 #[test]
-fn read_only_git_native_prompt_never_directs_commit_or_push() {
+fn read_only_prompt_never_directs_commit_or_push() {
     for role in ["planner", "coordinator"] {
         for harness in ["codex", "claude", "gemini"] {
             let job = prompt_job(role, harness);
@@ -286,12 +270,12 @@ fn codex_read_only_prompt_discovers_and_calls_platform_before_workspace_analysis
 }
 
 #[test]
-fn coding_git_native_prompt_keeps_source_commit_and_push() {
+fn coding_source_prompt_forbids_clone_commit_and_push() {
     for role in ["worker", "integrator"] {
         let job = prompt_job(role, "codex");
         let text = agent_prompt(&job).unwrap();
-        assert!(text.contains("Commit your completed changes on branch main"));
-        assert!(text.contains("push them to origin"));
+        assert!(text.contains("Workspace transport: api-source-v1"));
+        assert!(text.contains("Do not clone, Git commit, push or publish"));
         assert!(!text.contains("ALL_TOOLS"));
     }
 }

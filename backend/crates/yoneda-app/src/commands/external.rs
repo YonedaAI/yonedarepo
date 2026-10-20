@@ -21,9 +21,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         return Ok(j);
     }
     if op == "external_submit" && j["status"] == "done" {
-        if j["workspace_transport"] == "git-native-v1" {
-            return Ok(json!({"status":"completed","id":jid}));
-        }
         if j["result"]["workspace"] != c["workspace"] {
             return Err(Error::new(
                 "IDEMPOTENCY_CONFLICT",
@@ -65,44 +62,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             j["submitted_revision"] = c["revision"].clone();
-            if j["workspace_transport"] == "git-native-v1" {
-                j["git_verified"] = json!(true);
-                j["fork_revision"] = c["revision"].clone();
-            }
             save(db, "jobs", &jid, &j)?;
             let mut e = get(db, "executions", &id)?;
             e["contribution_revision"] = c["revision"].clone();
-            if j["workspace_transport"] == "git-native-v1" {
-                e["workspace_transport"] = json!("git-native-v1");
-                e["git_verified"] = json!(true);
-                e["fork_revision"] = c["revision"].clone();
-                e["submitted_revision"] = c["revision"].clone();
-            }
             save_execution(db, &e, now)?;
             Ok(j)
         }
         "external_submit" => {
             if j["external_phase"] != "frozen" || j["submitted_revision"].is_null() {
                 return Err(Error::new("FENCED", "Bind the frozen submission first"));
-            }
-            if j["workspace_transport"] == "git-native-v1" {
-                if j["git_verified"] != true
-                    || j["fork_revision"] != j["submitted_revision"]
-                    || j["fork_revision"]["repository"] != j["external_fork"]
-                {
-                    return Err(Error::new(
-                        "FENCED",
-                        "Git contribution revision is not the verified immutable fork binding",
-                    ));
-                }
-                let revision = j["submitted_revision"].clone();
-                let result = json!({"git_verified":true,"submitted_revision":revision,"fork_revision":revision});
-                let completed = super::completion::handle(
-                    db,
-                    json!({"op":"finish","job_id":jid,"epoch":j["epoch"],"result":result}),
-                    now,
-                )?;
-                return Ok(completed);
             }
             let workspace = hash(&c, "workspace", &[64])?;
             super::completion::handle(
@@ -176,11 +144,8 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("Criteria must be bounded statements"));
     }
     let rid = format!("run:{id}");
-    let transport = if r["workspace_transport"] == "git-native-v1" {
-        "git-native-v1"
-    } else {
-        "json-v1"
-    };
+    // Contributions arrive as a flattened file snapshot; Git history never crosses this boundary.
+    let transport = "json-v1";
     let base = json!({"repository":format!("{}/{}",string(&r["remote"],"namespace")?,string(&r["remote"],"name")?),"commit":r["published_commit"]});
     let mut run = json!({"id":rid,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":base,"base_version":r["version"],"status":"exploring","created_at":now,"external":true,"workspace_transport":transport,"context_usage_version":1});
     super::study::apply(&mut run, super::study::freeze(db, &r)?);

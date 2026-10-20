@@ -35,9 +35,9 @@ it('rejects reviewer mutation tools before reading or writing any authority bind
 
 it('never gives a review-only harness a writable fork or generic source Git capability', () => {
   const scope = { fork: 'namespace/claimed-fork', job: { kind: 'agent', payload: {
-    workspace_transport: 'git-native-v1', review_only: true, comparison_review: true,
+    workspace_transport: 'api-source-v1', review_only: true, comparison_review: true,
     execution: { base: { repository: 'namespace/base' } },
     team_inputs: [{ revision: { repository: 'namespace/other-builder' } }],
   } } } as unknown as Scope;
-  for (const role of ['fork', 'canonical', 'team-0', 'target']) expect(gitRole(scope, role)).toBeNull();
+  for (const role of ['fork', 'canonical', 'candidate', 'team-0', 'target']) expect(gitRole(scope, role)).toBeNull();
 });

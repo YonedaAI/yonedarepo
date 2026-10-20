@@ -20,8 +20,7 @@ async function ownerSource(count = 3) {
       hash: blob, mode: '100644', type: 'blob' }))), readBlob: vi.fn(async () => new Blob([bytes])), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
   const local = { ...bindings, ARTIFACTS: { get: vi.fn(async () => artifacts) } } as unknown as Env;
   await ledger(bindings, repo, { op: 'init', id: repo, name: 'Legacy immutable owner view', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: revision.commit, policy: reviewerPolicy,
-    workspace_transport: 'git-native-v1' });
+    remote: { namespace: 'yoneda-test', name: repo }, commit: revision.commit, policy: reviewerPolicy });
   const stub = bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
   // Synthetic immutable historical capture; no active producer, no grants or paid start.
   await runInDurableObject(stub, (_instance, state) => {

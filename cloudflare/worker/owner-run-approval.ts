@@ -20,14 +20,15 @@ export async function approveOwnerRun(
   repo: string,
   input: Json,
 ): Promise<Json> {
-  input.workspace_transport = 'git-native-v1';
   const repository = await ledger(env, repo, {
     op: 'repository_status',
     _workspace: principal.workspace,
   });
-  await freezeSourceApproval(env, principal, repo, input, repository);
   checkLedger(repository, input);
-  if (principal.role !== 'user') return input;
+  if (principal.role !== 'user') {
+    await freezeSourceApproval(env, principal.workspace, repo, input, repository);
+    return input;
+  }
   if (
     typeof input.id !== 'string' ||
     !input.id ||
@@ -99,6 +100,10 @@ export async function approveOwnerRun(
     }
     checked.add(id);
   }
+  // Source is read back only for a credentialed start, before funding activation.
+  await freezeSourceApproval(env, principal.workspace, repo, input, repository);
+  approved = resolve(allowance.limit_microusd);
+  validateWorkspaceSpendRun(approved);
   // Recheck after saved routing and every generated marker/budget have been normalized.
   checkLedger(repository, approved);
   if (allowance.version === 0) {

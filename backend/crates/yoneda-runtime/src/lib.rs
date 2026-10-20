@@ -14,7 +14,6 @@ mod check_server;
 mod child_privileges;
 mod comparison_checkout;
 mod comparison_review;
-mod conflict_merge;
 mod evaluation;
 mod execution_limits;
 mod git;
@@ -31,7 +30,6 @@ mod process_privileges;
 mod prompt;
 #[cfg(all(test, unix))]
 mod push_batch_interop_tests;
-mod refresh_capture;
 mod report;
 mod secure_fs;
 mod site;
@@ -103,8 +101,8 @@ fn field<'a>(v: &'a Value, k: &str) -> yoneda_core::Result<&'a str> {
     v[k].as_str().ok_or_else(|| err(format!("Missing {k}")))
 }
 #[cfg(test)]
-#[path = "tests/git_native.rs"]
-mod git_native_tests;
+#[path = "tests/git_capture.rs"]
+mod git_capture_tests;
 #[cfg(test)]
 mod tests;
 

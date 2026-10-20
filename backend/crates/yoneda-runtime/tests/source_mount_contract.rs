@@ -84,7 +84,7 @@ fn captured_manifest_denies_missing_extra_foreign_and_mutable_mounts() {
 #[test]
 fn old_transport_missing_index_and_model_selected_identity_fail_before_launch() {
     let mut old = job();
-    old["payload"]["workspace_transport"] = json!("git-native-v1");
+    old["payload"]["workspace_transport"] = json!("json-v1");
     assert!(!source_workspace_job::enabled(&old));
     assert_eq!(
         source_workspace_job::mounts(&old).unwrap_err().code,

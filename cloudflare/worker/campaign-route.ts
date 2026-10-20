@@ -1,4 +1,5 @@
 import { username } from './accounts';
+import { freezeSourceApproval } from './api-source-approval';
 import { retryCampaignCoordinator } from './campaign-coordinator';
 import { campaignGrant } from './campaign-grant';
 import { reconcileCampaignModelLimit } from './campaign-model-limit';
@@ -44,6 +45,7 @@ export async function campaignRoute(req: Request, env: Env, principal: Principal
       repair_escalation: approval.repair_escalation ?? null,
       access: 'owner',
     });
+    await freezeSourceApproval(env, owner, repo, approval, repository);
     const grant = await campaignGrant(env, owner, repo, approval, binding);
     return response(
       await ledger(env, repo, {
