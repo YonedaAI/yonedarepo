@@ -3,6 +3,7 @@
 // staged objects in its commit shard. Nothing is written to the authority, which adopts
 // the commit when it first needs it. Merges, replays of known blobs and commits too large
 // to stage keep the authority's prepare path.
+import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
@@ -130,9 +131,12 @@ export async function commitInShard(
       undispatched = true;
     }
   }
+  // The commit is durable; its drain request can leave after the answer.
+  const send = () => dispatchObjects(ctx.env, ctx.repo, shard);
   const unprojected =
     recorded.dispatch_objects &&
-    (await timed('dispatch', () => dispatchObjects(ctx.env, ctx.repo, shard)).then(
+    !deferred(send) &&
+    (await timed('dispatch', send).then(
       () => false,
       () => true,
     ));
