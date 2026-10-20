@@ -1,5 +1,6 @@
 import { providers } from '../../shared/providers';
 import { error, readJson, response } from './http';
+import { resolveProviderKey } from './managed-provider';
 import { type MiMoRouting, mimoRouting, validateMiMoKey } from './mimo-routing';
 import { providerModelAlias } from './provider-model-alias';
 import type { Env, Principal } from './types';
@@ -50,7 +51,12 @@ export async function settingsRoute(
     const routing = mimoRouting(old.provider, body.routing ?? old.routing);
     const key =
       body.key == null || body.key === ''
-        ? await open(env, principal.workspace, old.provider, old.sealed, connection)
+        ? await resolveProviderKey(
+            env,
+            principal.workspace,
+            old.provider,
+            await open(env, principal.workspace, old.provider, old.sealed, connection),
+          )
         : typeof body.key === 'string'
           ? body.key.trim()
           : body.key;

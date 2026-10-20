@@ -6,19 +6,14 @@ import { requestId, until } from './client.mjs';
 
 /** Cheap builders only; GLM runs at low effort by default (model-reasoning.ts). */
 export const CHEAP = [
-  { provider: 'zai', model: 'glm-5.3-flash', key: 'ZAI_KEY' },
-  { provider: 'mimo', model: 'mimo-v2.6-flash', key: 'MIMO_KEY' },
+  { provider: 'zai', model: 'glm-5.3-flash' },
+  { provider: 'mimo', model: 'mimo-v2.6-flash' },
 ];
 const TERMINAL = ['selected', 'needs_attention', 'stale'];
 
-/** Saves the owner-provided provider keys as the kit account's connections (idempotent). */
-export async function connectCheapProviders(account, keys) {
-  const saved = (await account.get('/api/settings')).providers ?? [];
-  for (const { provider, model, key } of CHEAP) {
-    if (saved.some((c) => c.id === provider && c.model === model)) continue;
-    const routing = provider === 'mimo' && /^(tp-|ttp-)/.test(keys[key]) ? { plan: 'token_plan', region: 'sgp' } : undefined;
-    await account.post(`/api/settings/providers/${provider}`, { key: keys[key], model, ...(routing ? { routing } : {}) });
-  }
+/** Binds the deployment's Secrets Store keys to the kit account as managed connections. */
+export async function bindManagedProviders(owner, username) {
+  for (const { provider, model } of CHEAP) await owner.post('/api/admin/providers/managed', { username, provider, model });
 }
 
 /** Gives the kit account the staging allowance ($5 total) if it has none yet. */
@@ -56,7 +51,7 @@ export async function compareRun(account, repo, metrics) {
     intent: 'Add a footer to the home page that reads "Staged on dev.yonedarepo.com".',
     criteria: ['The footer text is visible on the home page', 'Existing content is unchanged'],
     context: [],
-    adaptive_team: { version: 1, requested_agents: CHEAP.map((c) => ({ connection: c.provider, role: 'auto' })) },
+    adaptive_team: { version: 1, requested_agents: CHEAP.map((c) => ({ connection: `managed-${c.provider}`, role: 'auto' })) },
     comparison: { version: 1 },
   });
   const run = await until(

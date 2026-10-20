@@ -4,7 +4,9 @@
 // WORKSPACES script binding. Its stores, containers and secrets are its own. App previews are
 // off: the apps Worker is bound to production, so APPS and APP_ORIGIN are unset here.
 // Only the cheap providers have keys (ZAI glm-5.3-flash at low effort, MiMo mimo-v2.6-flash);
-// Codex and Claude have no binding and fail closed with PROVIDER_MISSING.
+// Codex and Claude have no binding and fail closed with PROVIDER_MISSING. MANAGED_PROVIDER_KEYS
+// lets the owner bind those two store keys to a named account as managed connections
+// (POST /api/admin/providers/managed); no other config sets it, so production stays off.
 // Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy
 // (POST /api/admin/workspace/allowance); it is a total, not a daily reset.
 // Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:
@@ -55,7 +57,8 @@
     "MIMO_MODEL": "mimo-v2.6-flash",
     "ZAI_MODEL": "glm-5.3-flash",
     "STARTER_REPO": "yoneda-website-starter",
-    "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev"
+    "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev",
+    "MANAGED_PROVIDER_KEYS": "secrets-store"
   },
   "services": [
     {
