@@ -44,52 +44,108 @@ export function changeEvent(repo: string, record: Json): ChangeEvent {
   ) as ChangeEvent;
 }
 
+const EMPTY: ChangeLogState = { version: 0, ticket: 0, sent: 0, failures: 0 };
+
 async function readState(env: Env, repo: string): Promise<ChangeLogState> {
+  return (await readCursor(env, repo)).state;
+}
+
+/** The cursor and its etag; `etag` is null while no cursor exists yet. */
+async function readCursor(env: Env, repo: string) {
   const stored = await env.OBJECTS.get(stateKey(repo));
-  return stored
-    ? await stored.json<ChangeLogState>()
-    : { version: 0, ticket: 0, sent: 0, failures: 0 };
+  if (!stored) return { state: { ...EMPTY }, etag: null };
+  return { state: await stored.json<ChangeLogState>(), etag: stored.etag };
+}
+
+/** Writes the cursor only if it is still the one read (or, with no etag, still absent);
+ * returns the new etag, or null when another job moved it first. */
+async function swapCursor(env: Env, repo: string, etag: string | null, state: ChangeLogState) {
+  const onlyIf = etag ? { etagMatches: etag } : { etagDoesNotMatch: '*' };
+  const written = await env.OBJECTS.put(stateKey(repo), JSON.stringify(state), { onlyIf });
+  return written ? written.etag : null;
 }
 
 /**
- * Sends every change record after the repository's cursor. Never throws: returns the new
- * state, or null when no change-log stream is bound to this deployment.
+ * Sends every change record after the repository's cursor. Each range is claimed first
+ * by a conditional cursor write, so concurrent jobs for one repository (a burst of
+ * landings) send it once; a job that loses the claim stops. A failed send gives its
+ * range back, keeping delivery at least once. Never throws: returns the cursor state, or
+ * null when no change-log stream is bound to this deployment.
  */
 export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogState | null> {
   const stream = env.CHANGELOG;
   if (!stream) return null;
-  let state: ChangeLogState = { version: 0, ticket: 0, sent: 0, failures: 0 };
+  let state: ChangeLogState = { ...EMPTY };
+  let claimed: { from: ChangeLogState; count: number } | null = null;
   try {
-    state = await readState(env, repo);
     const call = caller(env, repo, { _system: 'derive' });
     for (let round = 0; round < ROUNDS; round++) {
+      const cursor = await readCursor(env, repo);
+      state = cursor.state;
       const page = await call({
         op: 'repo_change_records',
         after_version: state.version,
         after_ticket: state.ticket,
       });
       const events = (page.records as Json[]).map((r) => changeEvent(repo, r));
-      if (events.length > 0) {
-        await stream.send(events);
-        state.sent += events.length;
-        state.last_sent_at = new Date().toISOString();
-      }
-      state.version = page.version;
-      state.ticket = page.ticket;
+      if (events.length === 0 && page.version === state.version && page.ticket === state.ticket)
+        break;
+      const next: ChangeLogState = {
+        ...state,
+        version: page.version,
+        ticket: page.ticket,
+        sent: state.sent + events.length,
+        ...(events.length > 0 ? { last_sent_at: new Date().toISOString() } : {}),
+      };
+      const etag = await swapCursor(env, repo, cursor.etag, next);
+      if (!etag) return state; // another job claimed this range
+      claimed = { from: state, count: events.length };
+      if (events.length > 0) await stream.send(events);
+      claimed = null;
+      state = next;
       if (page.version >= page.head_version) break;
     }
   } catch (e: any) {
-    state.failures++;
-    state.last_error = {
+    const error = {
       code: e instanceof ApiError ? e.code : String(e?.code ?? 'CHANGELOG_SEND'),
       message: String(e?.message ?? e).slice(0, 200),
       at: new Date().toISOString(),
     };
-    console.error(JSON.stringify({ event: 'changelog.emit_failed', repo, ...state.last_error }));
+    console.error(JSON.stringify({ event: 'changelog.emit_failed', repo, ...error }));
+    state = await giveBack(env, repo, claimed, error).catch(() => state);
   }
-  // Progress made before a failure is kept; the cursor write is itself best effort.
-  await env.OBJECTS.put(stateKey(repo), JSON.stringify(state)).catch(() => {});
   return state;
+}
+
+/**
+ * Records a failure and, for a claimed range that was not sent, moves the cursor back to
+ * the range's start (never forward). Later jobs then re-send it, and anything claimed
+ * after it, which only costs duplicates that consumers dedupe on `event_key`.
+ */
+async function giveBack(
+  env: Env,
+  repo: string,
+  claimed: { from: ChangeLogState; count: number } | null,
+  error: NonNullable<ChangeLogState['last_error']>,
+) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cursor = await readCursor(env, repo);
+    const from = claimed?.from;
+    const state: ChangeLogState = {
+      ...cursor.state,
+      ...(claimed && from && from.version <= cursor.state.version
+        ? {
+            version: from.version,
+            ticket: Math.min(from.ticket, cursor.state.ticket),
+            sent: cursor.state.sent - claimed.count,
+          }
+        : {}),
+      failures: cursor.state.failures + 1,
+      last_error: error,
+    };
+    if (await swapCursor(env, repo, cursor.etag, state)) return state;
+  }
+  throw new Error('Change-log cursor is contended');
 }
 
 /** Emission counters for a repository's readers (`GET /repos/{id}/changelog`). */

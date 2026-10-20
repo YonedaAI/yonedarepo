@@ -67,14 +67,36 @@ async function sql(query) {
   return { rows: value.result?.rows ?? value.result, metrics: value.result?.metrics };
 }
 
-// One row per event_key: the first delivery wins (re-sends repeat the same record).
+// One row per event_key (re-sends repeat the same record, so any value per key will do).
+// GROUP BY, not DISTINCT ON: Basin SQL rejects DISTINCT ON under a second aggregate once
+// the table spans several files.
 // actor_kind 'test' rows are the labelled probe events sent to verify the pipeline.
 // Accepted changes: a landed version that was not an octopus batch, or a commit a batch landed.
 const changes = `WITH changes AS (
-  SELECT DISTINCT ON (event_key) event_key, event, repo, version, ticket, ref, "commit", kind, actor, actor_kind,
-    paths_changed, read_set_size, base_lag, merged_landings, checks_passed, checks_failed,
-    check_runs, check_run_ms, repairs, land_latency_ms, queue_wait_ms, error_code, occurred_at
-  FROM ${NAMESPACE}.${TABLE} WHERE occurred_at >= '${since}' AND actor_kind <> 'test' ORDER BY event_key, __ingest_ts
+  SELECT event_key,
+    MAX(event) AS event,
+    MAX(repo) AS repo,
+    MAX(version) AS version,
+    MAX(ticket) AS ticket,
+    MAX(ref) AS ref,
+    MAX("commit") AS "commit",
+    MAX(kind) AS kind,
+    MAX(actor) AS actor,
+    MAX(actor_kind) AS actor_kind,
+    MAX(paths_changed) AS paths_changed,
+    MAX(read_set_size) AS read_set_size,
+    MAX(base_lag) AS base_lag,
+    MAX(merged_landings) AS merged_landings,
+    MAX(checks_passed) AS checks_passed,
+    MAX(checks_failed) AS checks_failed,
+    MAX(check_runs) AS check_runs,
+    MAX(check_run_ms) AS check_run_ms,
+    MAX(repairs) AS repairs,
+    MAX(land_latency_ms) AS land_latency_ms,
+    MAX(queue_wait_ms) AS queue_wait_ms,
+    MAX(error_code) AS error_code,
+    MAX(occurred_at) AS occurred_at
+  FROM ${NAMESPACE}.${TABLE} WHERE occurred_at >= '${since}' AND actor_kind <> 'test' GROUP BY event_key
 ), accepted AS (
   SELECT * FROM changes WHERE event = 'merged' OR (event = 'land' AND merged_landings = 0)
 )`;
