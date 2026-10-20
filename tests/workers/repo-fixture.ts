@@ -8,6 +8,7 @@ import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
@@ -107,7 +108,37 @@ export const fakePushQueues = {
   },
 };
 // Platform tests choose their object store explicitly; the agent-layer default is R2.
-export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues } as unknown as Env;
+// Land combiners run in-process too, so their post-land dispatches reach the fakes above.
+const combiners = new Map<string, LandBatcher>();
+export const fakeCombiners = {
+  idFromName: (name: string) => name,
+  get: (name: string) => ({
+    wait: (repo: string, ref: string, ticket: number, timeoutMs: number) => {
+      if (!combiners.has(name)) {
+        let running = false;
+        let again = false;
+        const batcher: LandBatcher = new LandBatcher(scoped, async (ms) => {
+          setTimeout(async () => {
+            if (running) return void (again = true);
+            running = true;
+            try {
+              do {
+                again = false;
+                // A test may end (and reset storage) while a step is still due.
+                await batcher.step().catch(() => {});
+              } while (again);
+            } finally {
+              running = false;
+            }
+          }, ms);
+        });
+        combiners.set(name, batcher);
+      }
+      return combiners.get(name)?.wait({ repo, ref }, ticket, timeoutMs);
+    },
+  }),
+};
+export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 
 /** Registers per-test reset, the D1 listing schema and the Artifacts push endpoint. */
 export function usePlatformFixture() {
@@ -125,6 +156,7 @@ beforeEach(async () => {
   receivePacks.busy = 0;
   receivePacks.down = false;
   queued.length = 0;
+  combiners.clear();
   executed.length = 0;
   const original = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
