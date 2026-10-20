@@ -1,5 +1,6 @@
 /target/
 /node_modules
+/.vitest/
 /frontend/node_modules
 /frontend/dist/
 /backend/crates/yoneda-worker/build/
