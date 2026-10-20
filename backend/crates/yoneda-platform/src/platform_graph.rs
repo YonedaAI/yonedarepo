@@ -139,7 +139,7 @@ fn script_idents(path: &str, source: &str) -> Result<Vec<(usize, String)>, Strin
     let parsed = Parser::new(&allocator, source, source_type)
         .with_config(TokensParserConfig)
         .parse();
-    if parsed.panicked || parsed.diagnostics.has_errors() {
+    if parsed.fatal_error || parsed.diagnostics.has_errors() {
         return Err("Syntax error".into());
     }
     Ok(parsed
