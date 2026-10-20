@@ -1,7 +1,7 @@
-// Code-aware platform operations: review classes for every recorded commit, symbols with
-// handles, symbol edits that reject stale handles, and partitioned codemods that reduce
-// to one commit. Parsing and classification run in Rust compute; results that depend
-// only on content are cached by blob id.
+// Code-aware platform operations: review classes and symbol-level write sets for every
+// recorded commit, symbols with handles, symbol edits that reject stale handles, and
+// partitioned codemods that reduce to one commit. Parsing and classification run in Rust
+// compute; results that depend only on content are cached by blob id.
 
 import { compute } from './repo-compute';
 import { searchSegments, withObjects } from './repo-derived';
@@ -40,7 +40,27 @@ export async function classifyCommit(ctx: RepoContext, sha: string, touches: Jso
   });
 }
 
-async function fileAt(ctx: RepoContext, args: Json) {
+/**
+ * Derives which symbols a recorded commit's modifications touched (Rust compute over both
+ * sides) and records them as the platform. Files it cannot resolve are left out and stay
+ * whole-file writes for landing.
+ */
+export async function deriveSymbols(ctx: RepoContext, sha: string, touches: Json[]) {
+  const changes = touches
+    .filter((t) => t.op === 'modify')
+    .map((t) => ({ path: t.path, old: t.old_blob, new: t.new_blob }));
+  if (changes.length === 0 || changes.length > MAX_CLASSIFIED_FILES) return;
+  const deriver = new RepoContext(
+    ctx.env,
+    ctx.repo,
+    caller(ctx.env, ctx.repo, { _system: 'derive' }),
+  );
+  const derived = await withObjects(deriver, { op: 'symbol_touches', changes });
+  if (derived.touches.length === 0) return;
+  await deriver.call({ op: 'repo_record_symbols', commit: sha, touches: derived.touches });
+}
+
+export async function fileAt(ctx: RepoContext, args: Json) {
   await requirePath(ctx, String(args.path ?? ''));
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
@@ -61,7 +81,7 @@ async function symbolTable(ctx: RepoContext, path: string, id: string) {
   return table;
 }
 
-const handleOf = (commitId: string, path: string, s: Json) => ({
+export const handleOf = (commitId: string, path: string, s: Json) => ({
   commit: commitId,
   path,
   symbol_path: s.symbol_path,

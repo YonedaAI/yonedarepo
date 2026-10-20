@@ -1,5 +1,6 @@
-// Platform-only Worker: the source platform with the agent layer switched off. Not yet
-// deployed; deploying it is part of N8 and needs the owner's go-ahead.
+// Platform-only Worker: the source platform with the agent layer switched off. Its stores
+// (Artifacts namespace, R2, D1, queues) are its own, so it never shares state with the
+// production yonedarepo-dev Worker.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "yonedarepo-platform-dev",
@@ -20,12 +21,12 @@
     "run_worker_first": true
   },
   "vars": {
-    "ARTIFACTS_NAMESPACE": "yoneda-dev"
+    "ARTIFACTS_NAMESPACE": "yoneda-platform-dev"
   },
   "artifacts": [
     {
       "binding": "ARTIFACTS",
-      "namespace": "yoneda-dev",
+      "namespace": "yoneda-platform-dev",
       "remote": true
     }
   ],
@@ -70,14 +71,14 @@
   "r2_buckets": [
     {
       "binding": "OBJECTS",
-      "bucket_name": "yonedarepo-dev-objects"
+      "bucket_name": "yonedarepo-platform-dev-objects"
     }
   ],
   "d1_databases": [
     {
       "binding": "INDEX",
-      "database_name": "yonedarepo-dev-index",
-      "database_id": "182c0b3e-8f82-4038-9b3e-630b0b5275c5",
+      "database_name": "yonedarepo-platform-dev-index",
+      "database_id": "1fdff638-62c5-4c56-b01b-1480877ed239",
       "migrations_dir": "migrations"
     }
   ],

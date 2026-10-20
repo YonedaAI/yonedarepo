@@ -61,6 +61,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
         "policy_digest": settings.policy_digest,
         "refs": refs,
         "projections": super::projection::list(db)?,
+        "automation": super::break_glass::state(db)?,
     }))
 }
 
@@ -98,9 +99,14 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "SELECT version,landed_at FROM landings WHERE commit_id=? AND refname=? AND version<=?",
             &[json!(id.hex()), json!(refname), json!(version)],
         )?;
+        let broke_glass = db.query(
+            "SELECT action FROM break_glass WHERE commit_id=? AND refname=? AND version<=?",
+            &[json!(id.hex()), json!(refname), json!(version)],
+        )?;
         commits.push(json!({
             "commit": id, "tree": row.tree, "parents": row.parents, "message": row.message,
             "principal": row.principal, "landed": landed.first(),
+            "break_glass": broke_glass.first().map(|r| r["action"].clone()),
         }));
         next = match row.parents.first() {
             Some(parent) if rows::commit_row(db, parent)?.is_some() => Some(*parent),
@@ -133,6 +139,8 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "check_runs": super::checks::runs_for(db, &id)?,
         "repairs": super::checks::repairs_for(db, &id)?,
         "review_classes": super::classes::for_commit(db, &id)?,
+        "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),
+        "break_glass": super::break_glass::for_commit(db, &id)?,
         "gates": gates(db, &id, settings)?,
     }))
 }

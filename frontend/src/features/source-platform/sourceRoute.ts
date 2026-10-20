@@ -2,6 +2,7 @@
 export type SourceRoute =
   | { view: 'repos' }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
+  | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
@@ -22,9 +23,9 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
-  const path = view === 'files' ? rest.join('/') : '';
+  const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
   return {
-    view: 'files',
+    view: view === 'overview' ? 'overview' : 'files',
     repo,
     path,
     ref,
@@ -48,5 +49,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.at !== undefined) query.set('at', String(route.at));
   const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   const suffix = query.size ? `?${query}` : '';
+  if (route.view === 'overview')
+    return path ? `${base}/overview/${path}${suffix}` : `${base}/overview${suffix}`;
   return path ? `${base}/files/${path}${suffix}` : `${base}${suffix}`;
 }

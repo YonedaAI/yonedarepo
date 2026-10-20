@@ -7,8 +7,10 @@ use serde_json::Value;
 use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
+mod break_glass;
 mod checks;
 mod classes;
+mod contracts;
 pub(crate) mod grants;
 mod history;
 mod history_import;
@@ -21,6 +23,7 @@ mod projection;
 mod reads;
 mod record;
 mod rows;
+mod symbols;
 mod vacuum;
 pub use migration::migrate_repo_store;
 
@@ -43,11 +46,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
-        "repo_pin" => actor.require("write"),
+        "repo_pin" | "repo_record_contract" => actor.require("write"),
         // Only the platform classifier records review classes.
-        "repo_record_classes" if !actor.can("classify") => Err(Error::new(
+        "repo_record_classes" | "repo_record_symbols" if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
-            "Only the platform classifier records review classes",
+            "Only the platform classifier records derived classes",
         )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
@@ -70,8 +73,12 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             Error::new("FORBIDDEN", "Only the platform merger lands queued work"),
         ),
         "repo_set_policy" => actor.require_owner(),
+        "repo_break_glass" => actor.require_human_owner(),
         _ => actor.require("read"),
     }?;
+    if !actor.owner && break_glass::PAUSED_OPS.contains(&op.as_str()) {
+        break_glass::refuse_if_paused(db)?;
+    }
     grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
@@ -85,6 +92,10 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_merge_plan" => merging::plan(db, c),
         "repo_path_history" => history::path_history(db, c),
         "repo_record_classes" => classes::record(db, c),
+        "repo_record_symbols" => symbols::record(db, c),
+        "repo_stale_reads" => symbols::stale_reads(db, c),
+        "repo_record_contract" => contracts::record(db, c, principal),
+        "repo_contracts" => contracts::list(db, c),
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         "repo_pin" => vacuum::pin(db, c, principal),
@@ -109,6 +120,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_land_batch" => land_queue::land_batch(db, c, principal),
         "repo_land_release" => land_queue::release(db, c),
         "repo_record_imported" => history_import::record(db, c),
+        "repo_break_glass" => break_glass::execute(db, c, principal, &settings),
         "repo_import" => {
             if !actor.can("import") {
                 actor.require_owner()?;

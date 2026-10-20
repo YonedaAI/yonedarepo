@@ -51,6 +51,9 @@ fn log() -> Vec<TxEntry> {
     let e3 = entry(&e2.chain, 3, Some(11), 12, &["web/app.tsx"], &["web/"]);
     vec![e1, e2, e3]
 }
+fn none() -> Refinements {
+    Refinements::new()
+}
 fn set(items: &[&str]) -> BTreeSet<String> {
     items.iter().map(|s| s.to_string()).collect()
 }
@@ -92,18 +95,18 @@ fn replay_rebuilds_refs_and_verifies_the_chain() {
 fn independent_writes_rebase_and_overlaps_conflict() {
     let later = &log()[1..];
     assert_eq!(
-        proposal(&["docs/guide.md"], &["docs/"]).check(&[]),
+        proposal(&["docs/guide.md"], &["docs/"]).check(&[], &none()),
         OccOutcome::FastForward
     );
     assert_eq!(
-        proposal(&["docs/guide.md"], &["docs/"]).check(later),
+        proposal(&["docs/guide.md"], &["docs/"]).check(later, &none()),
         OccOutcome::Rebase {
             concurrent: vec![2, 3]
         }
     );
     // Write/write on the same file: a three-way merge decides.
     assert_eq!(
-        proposal(&["web/app.tsx"], &[]).check(later),
+        proposal(&["web/app.tsx"], &[]).check(later, &none()),
         OccOutcome::Merge {
             concurrent: vec![2, 3],
             paths: vec!["web/app.tsx".into()]
@@ -111,13 +114,13 @@ fn independent_writes_rebase_and_overlaps_conflict() {
     );
     // They read a directory I write: they serialize before me, so this is independent.
     assert_eq!(
-        proposal(&["src/auth/session.rs"], &[]).check(later),
+        proposal(&["src/auth/session.rs"], &[]).check(later, &none()),
         OccOutcome::Rebase {
             concurrent: vec![2, 3]
         }
     );
     // They wrote something I declared as read.
-    match proposal(&["docs/a.md"], &["src/"]).check(later) {
+    match proposal(&["docs/a.md"], &["src/"]).check(later, &none()) {
         OccOutcome::Conflict { version, paths } => {
             assert_eq!(version, 2);
             assert_eq!(paths, vec!["src/".to_string()]);
@@ -132,7 +135,7 @@ fn opaque_ref_moves_are_never_assumed_independent() {
     later[0].kind = TxKind::RefMove;
     later[0].paths.clear();
     assert!(matches!(
-        proposal(&["docs/a.md"], &[]).check(&later),
+        proposal(&["docs/a.md"], &[]).check(&later, &none()),
         OccOutcome::Conflict { .. }
     ));
 }
@@ -144,4 +147,44 @@ fn path_overlap_respects_component_boundaries() {
     assert!(overlaps("src", "src/a.rs"));
     assert!(!overlaps("src", "src2/a.rs"));
     assert!(!overlaps("src/a.rs", "src/a.rsx"));
+}
+
+#[test]
+fn symbol_reads_conflict_only_with_writes_to_that_symbol() {
+    let e1 = entry("", 1, None, 10, &["README.md"], &[]);
+    let e2 = entry(&e1.chain, 2, Some(10), 11, &["src/lib.rs"], &[]);
+    let later = vec![e2];
+    let refined: Refinements = [(
+        2,
+        vec![SymbolTouch {
+            path: "src/lib.rs".into(),
+            symbols: vec!["retry".into()],
+        }],
+    )]
+    .into();
+    // Reading another symbol of the same file: a same-file merge, not a stale read.
+    assert_eq!(
+        proposal(&["src/lib.rs"], &["src/lib.rs#backoff"]).check(&later, &refined),
+        OccOutcome::Merge {
+            concurrent: vec![2],
+            paths: vec!["src/lib.rs".into()]
+        }
+    );
+    assert_eq!(
+        proposal(&["docs/a.md"], &["src/lib.rs#retry"]).check(&later, &refined),
+        OccOutcome::Conflict {
+            version: 2,
+            paths: vec!["src/lib.rs#retry".into()]
+        }
+    );
+    // Without a derived refinement the write is the whole file.
+    assert!(matches!(
+        proposal(&["docs/a.md"], &["src/lib.rs#backoff"]).check(&later, &none()),
+        OccOutcome::Conflict { .. }
+    ));
+    // Path-level readers always see the write.
+    assert!(matches!(
+        proposal(&["docs/a.md"], &["src/lib.rs"]).check(&later, &refined),
+        OccOutcome::Conflict { .. }
+    ));
 }
