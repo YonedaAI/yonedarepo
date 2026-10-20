@@ -256,13 +256,16 @@ pub fn entries<S: SqlStore>(
         .collect()
 }
 
-/// Accepts `main` or `refs/heads/main`; only branch refs are writable through the API.
-/// Protected refs move only by landing an approved, checked commit (or the human break-glass
-/// path), never by a working-branch compare-and-swap.
+/// Protected refs (Scion: refs only for main and releases) move only by landing an
+/// approved, checked commit (or the human break-glass path), never by a working-branch
+/// compare-and-swap; they are also the refs projected to the Git object store.
 pub fn protected(refname: &str) -> bool {
     refname == "refs/heads/main"
+        || refname == "refs/heads/release"
+        || refname.starts_with("refs/heads/release/")
 }
 
+/// Accepts `main` or `refs/heads/main`; only branch refs are writable through the API.
 pub fn branch_ref(c: &Value) -> Result<String> {
     let name = string(c, "ref")?;
     let full = if name.starts_with("refs/") {

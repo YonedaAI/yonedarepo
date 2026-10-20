@@ -16,7 +16,7 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     if rows::protected(&refname) {
         return Err(Error::new(
             "FORBIDDEN",
-            "main moves only by landing an approved, checked commit",
+            "Protected branches move only by landing an approved, checked commit",
         ));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;

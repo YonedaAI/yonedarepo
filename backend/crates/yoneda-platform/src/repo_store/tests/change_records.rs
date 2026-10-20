@@ -39,7 +39,7 @@ fn change_records_cover_lands_merges_and_refusals_by_cursor() {
             json!([{"path":"a.txt","blob":blob("x\n"),"type":"blob"},{"path":"b.txt","blob":blob("x\n"),"type":"blob"}]),
             json!([]), json!({"merge_parents": [a, b]}))
         .unwrap();
-    h.ok(MERGER, json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],"merge":merge,"landed":[tickets[0], tickets[1]]}));
+    h.ok(MERGER, json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],"head":claim["head"],"merge":merge,"landed":[tickets[0], tickets[1]]}));
 
     assert_eq!(
         code(h.run(AGENT, json!({"op":"repo_change_records"}))),

@@ -1,11 +1,13 @@
 //! Staged objects: a small commit is accepted once this authority durably holds every
-//! object it built for it, instead of after a receive-pack round trip (Artifacts takes one
-//! receive-pack per repository at a time, so synchronous pushes queue behind each other).
-//! Each accepted staged commit gets an object-outbox row in the same transaction; the
-//! projector pushes it to its hidden ref, reads it back and reports, and only then are the
-//! staged copies dropped. Until then reads fall back to them by id, and branch refs are not
-//! projected (the object store would refuse a ref to objects it lacks). Failures stay
-//! pending with their reason, visible in `repo_status`; nothing is dropped unprojected.
+//! object it built for it, instead of after a write to the object store (R2 writes take
+//! about a second; Artifacts takes one receive-pack per repository at a time). Each
+//! accepted staged commit gets an object-outbox row in the same transaction; the projector
+//! writes its objects to R2 (the store of record), confirms each write and reports, and
+//! only then are the staged copies dropped. Until then reads fall back to them by id.
+//! Failures stay pending with their reason, visible in `repo_status`; nothing is dropped
+//! unwritten. The object ids stay listed (`commit_objects`) until Artifacts holds the commit
+//! (see projection). Written against `SqlStore` alone, so any authority can own a staging
+//! area.
 use super::rows::{corrupt, object_id};
 use crate::platform_objects::object_json;
 use crate::storage::{SqlStore, bad, number};
@@ -56,6 +58,19 @@ pub fn stage<S: SqlStore>(
             &params,
         )?;
     }
+    for chunk in objects.chunks(33) {
+        let params: Vec<_> = chunk
+            .iter()
+            .flat_map(|(id, kind, _)| [json!(commit.hex()), json!(id.hex()), json!(kind.name())])
+            .collect();
+        let rows = vec!["(?,?,?)"; chunk.len()].join(",");
+        db.query(
+            &format!(
+                "INSERT INTO commit_objects(commit_id,id,kind) VALUES{rows} ON CONFLICT DO NOTHING"
+            ),
+            &params,
+        )?;
+    }
     Ok(true)
 }
 
@@ -68,11 +83,15 @@ pub fn expire<S: SqlStore>(db: &S, now: i64) -> Result<()> {
     if expired.is_empty() {
         return Ok(());
     }
-    db.query(
-        "DELETE FROM staged_objects WHERE commit_id IN (SELECT commit_id FROM prepared_commits WHERE expires_at<?) \
-         AND commit_id NOT IN (SELECT commit_id FROM object_projections)",
-        &[json!(now)],
-    )?;
+    for table in ["staged_objects", "commit_objects"] {
+        db.query(
+            &format!(
+                "DELETE FROM {table} WHERE commit_id IN (SELECT commit_id FROM prepared_commits WHERE expires_at<?) \
+                 AND commit_id NOT IN (SELECT id FROM commits)"
+            ),
+            &[json!(now)],
+        )?;
+    }
     db.query(
         "DELETE FROM prepared_commits WHERE expires_at<?",
         &[json!(now)],
@@ -111,12 +130,15 @@ fn should_dispatch<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
     Ok(!claimed.is_empty())
 }
 
-/// A commit accepted through the object store needs no staged copies.
+/// A commit pushed to Artifacts before it was accepted needs neither staged copies nor a
+/// list of objects still to project.
 pub fn discard<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<()> {
-    db.query(
-        "DELETE FROM staged_objects WHERE commit_id=?",
-        &[json!(commit.hex())],
-    )?;
+    for table in ["staged_objects", "commit_objects"] {
+        db.query(
+            &format!("DELETE FROM {table} WHERE commit_id=?"),
+            &[json!(commit.hex())],
+        )?;
+    }
     Ok(())
 }
 
@@ -156,7 +178,7 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
     Ok(json!({ "commits": commits }))
 }
 
-/// The projector's outcome per commit: `ok` (pushed and read back) drops the staged
+/// The projector's outcome per commit: `ok` (every object written to R2) drops the staged
 /// copies; `failed` keeps them pending with the reason (attempts count hand-outs).
 pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let now = number(c, "now")?;
@@ -172,7 +194,10 @@ pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                     "DELETE FROM object_projections WHERE commit_id=?",
                     &[json!(id.hex())],
                 )?;
-                discard(db, &id)?;
+                db.query(
+                    "DELETE FROM staged_objects WHERE commit_id=?",
+                    &[json!(id.hex())],
+                )?;
                 done += 1;
             }
             Some("failed") => {
@@ -193,7 +218,8 @@ pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     Ok(json!({ "projected": done, "pending": count(db)? }))
 }
 
-/// Accepted objects not yet in the object store, by id (the read tier behind the store).
+/// Accepted objects not yet in the object store, by id (the read tier behind the store):
+/// structured, or the raw Git content with `raw` (for packs).
 pub fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let ids = c["ids"]
         .as_array()
@@ -223,7 +249,11 @@ pub fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         if hash_object(kind, &data) != id {
             return Err(corrupt("staged object"));
         }
-        objects.push(object_json(id, kind, &data)?);
+        objects.push(if c["raw"] == true {
+            json!({ "id": id, "kind": kind.name(), "data_b64": row["data_b64"] })
+        } else {
+            object_json(id, kind, &data)?
+        });
     }
     Ok(json!({ "objects": objects }))
 }

@@ -36,32 +36,60 @@ pub fn push_split(c: &Value) -> Result<Value> {
     Ok(json!({ "report_b64": STANDARD.encode(split) }))
 }
 
+/// Raw objects (`{id, kind, data_b64}`), each verified against its id.
+pub fn raw_objects(c: &Value) -> Result<Vec<(ObjectKind, Vec<u8>)>> {
+    c["objects"]
+        .as_array()
+        .ok_or_else(|| bad("objects must be a list"))?
+        .iter()
+        .map(|object| {
+            let kind = match object["kind"].as_str() {
+                Some("commit") => ObjectKind::Commit,
+                Some("tree") => ObjectKind::Tree,
+                Some("blob") => ObjectKind::Blob,
+                _ => return Err(bad("Objects are commits, trees or blobs")),
+            };
+            let data = STANDARD
+                .decode(object["data_b64"].as_str().unwrap_or_default())
+                .map_err(|_| bad("data_b64 is not base64"))?;
+            if hash_object(kind, &data) != ObjectId::parse(&string(object, "id")?)? {
+                return Err(Error::new(
+                    "OBJECT_INVALID",
+                    "An object does not match its id",
+                ));
+            }
+            Ok((kind, data))
+        })
+        .collect()
+}
+
+/// A protected branch's projection: its new objects and the ref update (with the last
+/// projected value as the expected old one) in one receive-pack request.
+pub fn branch_push(c: &Value) -> Result<Value> {
+    let refname = string(c, "refname")?;
+    if !refname.starts_with("refs/heads/") {
+        return Err(bad("Only branch refs are projected"));
+    }
+    let old = match c.get("old").filter(|o| !o.is_null()) {
+        Some(_) => Some(ObjectId::parse(&string(c, "old")?)?),
+        None => None,
+    };
+    let objects = raw_objects(c)?;
+    let pack = write_pack(
+        &objects
+            .iter()
+            .map(|(k, d)| (*k, d.as_slice()))
+            .collect::<Vec<_>>(),
+    )?;
+    let body = receive_pack_request(&refname, old, ObjectId::parse(&string(c, "new")?)?, &pack)?;
+    Ok(json!({ "push_b64": STANDARD.encode(body) }))
+}
+
 /// The receive-pack request creating a staged commit's hidden ref, from the raw objects the
 /// authority staged for it; each must hash to its id and the commit must be among them.
 pub fn staged_push(c: &Value) -> Result<Value> {
     let commit = ObjectId::parse(&string(c, "commit")?)?;
-    let mut objects = Vec::new();
-    for object in c["objects"]
-        .as_array()
-        .ok_or_else(|| bad("objects must be a list"))?
-    {
-        let kind = match object["kind"].as_str() {
-            Some("commit") => ObjectKind::Commit,
-            Some("tree") => ObjectKind::Tree,
-            Some("blob") => ObjectKind::Blob,
-            _ => return Err(bad("Staged objects are commits, trees or blobs")),
-        };
-        let data = STANDARD
-            .decode(object["data_b64"].as_str().unwrap_or_default())
-            .map_err(|_| bad("data_b64 is not base64"))?;
-        if hash_object(kind, &data) != ObjectId::parse(&string(object, "id")?)? {
-            return Err(Error::new(
-                "OBJECT_INVALID",
-                "A staged object does not match its id",
-            ));
-        }
-        objects.push((kind, data));
-    }
+    let objects = raw_objects(c)?;
     let header = objects
         .iter()
         .find(|(k, d)| *k == ObjectKind::Commit && hash_object(*k, d) == commit)
@@ -81,4 +109,13 @@ pub fn staged_push(c: &Value) -> Result<Value> {
         "parents": header.parents()?,
         "objects": objects.iter().map(|(k, d)| object_json(hash_object(*k, d), *k, d)).collect::<Result<Vec<_>>>()?,
     }))
+}
+
+/// The structured form of raw objects read from the store of record (R2), verified.
+pub fn parse_objects(c: &Value) -> Result<Value> {
+    let objects = raw_objects(c)?
+        .iter()
+        .map(|(k, d)| object_json(hash_object(*k, d), *k, d))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(json!({ "objects": objects }))
 }

@@ -8,6 +8,7 @@ import {
   fromBase64,
   type ObjectStore,
   putObjects,
+  type RawObject,
   type TreeEntry,
   toBase64,
 } from './repo-stores';
@@ -62,11 +63,15 @@ const EDGE_ORIGIN = 'https://objects.yoneda.internal';
 export class RepoObjects {
   readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
   constructor(
-    private readonly env: Env,
+    readonly env: Env,
     private readonly repo: string,
     readonly store: ObjectStore,
   ) {}
 
+  /** The store of record: raw Git content of platform-built objects, never deleted. */
+  rawKey(id: string) {
+    return `platform/v1/${this.repo}/git/${id}`;
+  }
   private key(id: string) {
     return `platform/v1/${this.repo}/objects/${id}`;
   }
@@ -134,43 +139,108 @@ export class RepoObjects {
       await this.edgePut(id, kind, bytes);
       return { bytes, tier: 'r2' };
     }
-    let object: CachedObject | null = null;
-    if (kind === 'tree') {
-      const entries = await this.store.readTree(id);
-      object = entries && { id, kind, entries };
-    } else if (kind === 'blob') {
-      const bytes = await this.store.readBlob(id);
-      object = bytes && { id, kind, data_b64: toBase64(bytes) };
-    } else {
-      const commit = await this.store.readCommit(id);
-      object = commit && { id, kind, ...commit };
+    const fromRaw = await this.recorded(id, kind);
+    if (fromRaw) {
+      await this.cache([fromRaw]);
+      return { bytes: this.encode(fromRaw), tier: 'r2' };
     }
-    // Accepted but not yet projected: the authority still holds the staged copy.
-    object ??= await this.staged(id).then((o) => (o?.kind === kind ? o : null));
+    // Accepted but not yet in R2: the authority (or a shard) still holds the staged copy.
+    // A staged copy is dropped only after its R2 write, so a miss here means R2 has it now.
+    let object: CachedObject | null = await this.staged(id).then((o) =>
+      o?.kind === kind ? o : null,
+    );
+    object ??= await this.recorded(id, kind);
+    if (!object) {
+      if (kind === 'tree') {
+        const entries = await this.store.readTree(id);
+        object = entries && { id, kind, entries };
+      } else if (kind === 'blob') {
+        const bytes = await this.store.readBlob(id);
+        object = bytes && { id, kind, data_b64: toBase64(bytes) };
+      } else {
+        const commit = await this.store.readCommit(id);
+        object = commit && { id, kind, ...commit };
+      }
+    }
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
-    const bytes =
-      object.kind === 'blob'
-        ? fromBase64(object.data_b64)
-        : new TextEncoder().encode(JSON.stringify(object));
-    return { bytes, tier: 'store' };
+    return { bytes: this.encode(object), tier: 'store' };
+  }
+
+  /** The store of record's copy (raw Git content in R2), parsed. */
+  private async recorded(id: string, kind: ObjectKind): Promise<CachedObject | null> {
+    const raw = await this.env.OBJECTS.get(this.rawKey(id));
+    if (!raw || raw.customMetadata?.kind !== kind) return null;
+    const data_b64 = toBase64(new Uint8Array(await raw.arrayBuffer()));
+    return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
+      .objects[0] as CachedObject;
+  }
+
+  private encode(object: CachedObject) {
+    return object.kind === 'blob'
+      ? fromBase64(object.data_b64)
+      : new TextEncoder().encode(JSON.stringify(object));
+  }
+
+  /**
+   * Raw content of objects for a pack: the store of record (R2), then the authority's
+   * staged copy for objects still in flight. Missing ones are left out.
+   */
+  async raw(wanted: { id: string; kind: string }[]): Promise<RawObject[]> {
+    const found: RawObject[] = [];
+    const absent: { id: string; kind: string }[] = [];
+    for (let i = 0; i < wanted.length; i += CACHE_CHUNK) {
+      await Promise.all(
+        wanted.slice(i, i + CACHE_CHUNK).map(async (w) => {
+          const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
+          if (stored)
+            found.push({
+              id: w.id,
+              kind: w.kind as RawObject['kind'],
+              data_b64: toBase64(new Uint8Array(await stored.arrayBuffer())),
+            });
+          else absent.push(w);
+        }),
+      );
+    }
+    for (let i = 0; i < absent.length; i += 64) {
+      const ids = absent.slice(i, i + 64).map((w) => w.id);
+      const here = (await this.stagedCall({ ids, raw: true })) as RawObject[];
+      found.push(...here);
+      // A staged copy is dropped only after its R2 write: look in R2 once more.
+      const held = new Set(here.map((o) => o.id));
+      for (const id of ids.filter((i) => !held.has(i))) {
+        const stored = await this.env.OBJECTS.get(this.rawKey(id));
+        if (stored)
+          found.push({
+            id,
+            kind: stored.customMetadata?.kind as RawObject['kind'],
+            data_b64: toBase64(new Uint8Array(await stored.arrayBuffer())),
+          });
+      }
+    }
+    return found;
   }
 
   /** The authority's staged copy of an accepted object (read as the platform: callers
    * reach this tier only through the same authorization as the object store). */
   private async staged(id: string): Promise<CachedObject | null> {
+    return ((await this.stagedCall({ ids: [id] })) as CachedObject[])[0] ?? null;
+  }
+
+  private async stagedCall(args: { ids: string[]; raw?: true }): Promise<unknown[]> {
     const stub = this.env.SOURCE_REPOS.get(this.env.SOURCE_REPOS.idFromName(this.repo));
     const response = await stub.fetch('https://source-repository/', {
       method: 'POST',
-      body: JSON.stringify({ op: 'repo_staged_objects', ids: [id], _system: 'projection' }),
+      body: JSON.stringify({ op: 'repo_staged_objects', ...args, _system: 'projection' }),
     });
     const value = await response.json<{
-      objects?: CachedObject[];
+      objects?: unknown[];
       error?: { code: string; message: string };
     }>();
     if (value.error)
       throw Object.assign(new Error(value.error.message), { code: value.error.code });
-    return value.objects?.[0] ?? null;
+    return value.objects ?? [];
   }
 
   async tree(id: string): Promise<TreeEntry[]> {

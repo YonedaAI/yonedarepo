@@ -4,7 +4,7 @@ import { expect, it } from 'vitest';
 import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
 import { parseStore } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, file, pushes, queued, refusals, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, artifacts, author, bindings, file, pushes, queued, receivePacks, refusals, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 const zero = '0'.repeat(40);
@@ -45,7 +45,31 @@ it('projects landed branches to Artifacts with leases and records drift', async 
   await landNext(repo, owner, '3\n');
   await drain(scoped);
   expect(pushes.filter((p) => p.endsWith(' refs/heads/main')).length).toBe(branchPushes().length);
-  expect(pushes.length).toBe(count + 1); // only the new commit's hidden ref
+  expect(pushes.length).toBe(count); // staged commits get no hidden refs either
+});
+
+it('projects only protected refs, carrying every object Artifacts lacks in one push', async () => {
+  const owner = { cookie: await signup('protector') };
+  const created = await api('/repos', owner, { body: { name: 'q', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
+  const repo = `/repos/${created.body.id}`;
+  await drain(scoped);
+  const name = `yr-${created.body.id}`;
+  // Work on another branch stays in the authority.
+  const side = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('s.txt', 's\n')], message: 's', author } });
+  expect((await api(`${repo}/land`, owner, { body: { ref: 'side', commit: side.body.commit } })).body.landed).toBe(true);
+  const before = pushes.length;
+  await drain(scoped);
+  expect(pushes.length).toBe(before);
+  expect(artifacts.get(name)?.has(side.body.commit)).toBe(false);
+  // Two landings on main, projected together: one receive-pack with both commits' objects.
+  const one = await landNext(repo, owner, '1\n');
+  const two = await landNext(repo, owner, '2\n');
+  const packs = receivePacks.requests;
+  await drain(scoped);
+  expect(receivePacks.requests - packs).toBe(1);
+  expect(pushes.slice(before)).toEqual([`${created.body.commit} ${two} refs/heads/main`]);
+  for (const commit of [one, two]) expect(artifacts.get(name)?.get(commit)?.kind).toBe('commit');
+  expect((await api(repo, owner)).body.projections.map((p: any) => p.refname)).toEqual(['refs/heads/main']);
 });
 
 it('keeps R2-store refs in step and detects tampering', async () => {

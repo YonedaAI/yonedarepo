@@ -1,5 +1,5 @@
-//! Branch refs in the object store (Artifacts) are a projection of this authority's refs,
-//! so humans can `git clone` what landed. Every ref move records a target; the adapter
+//! Protected branch refs in the object store (Artifacts) are a projection of this
+//! authority's refs, so humans can `git clone` what landed. Every ref move records a target; the adapter
 //! pushes each pending target with the last projected value as an expected-old lease and
 //! reports back. A rejected lease is drift: surfaced, never overwritten.
 use super::rows::corrupt;
@@ -7,7 +7,7 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Result, git_object::ObjectId};
 
-/// Called in the same transaction as the ref move.
+/// Called in the same transaction as the ref move; only protected refs are projected.
 pub fn target<S: SqlStore>(
     db: &S,
     refname: &str,
@@ -15,6 +15,9 @@ pub fn target<S: SqlStore>(
     version: u64,
     now: i64,
 ) -> Result<()> {
+    if !super::rows::protected(refname) {
+        return Ok(());
+    }
     db.query(
         "INSERT INTO ref_projections(refname,target_commit,target_version,status,updated_at) VALUES(?,?,?,'pending',?) \
          ON CONFLICT(refname) DO UPDATE SET target_commit=excluded.target_commit,target_version=excluded.target_version,\
@@ -37,8 +40,7 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
         "SELECT refname,target_commit,target_version,projected_commit FROM ref_projections WHERE status='pending' ORDER BY refname",
         &[],
     )?;
-    // Refs wait for the objects they point at: the store refuses a ref to missing objects.
-    Ok(json!({ "pending": rows, "objects_pending": super::staging::count(db)? }))
+    Ok(json!({ "pending": rows }))
 }
 
 pub fn result<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
@@ -74,6 +76,10 @@ pub fn result<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 "UPDATE ref_projections SET projected_commit=?,projected_version=?,status=?,detail=NULL,updated_at=? WHERE refname=?",
                 &[json!(commit.hex()), json!(version), json!(status), json!(now), json!(refname)],
             )?;
+            // The commits whose objects travelled with the ref are now held by Artifacts.
+            if let Some(commits) = c["commits"].as_array() {
+                super::store_lineage::stored(db, commits, false, now)?;
+            }
             Ok(json!({ "refname": refname, "status": status }))
         }
         "drift" => {
