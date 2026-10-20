@@ -9,10 +9,15 @@ import { api, artifacts, author, bindings, file, pushes, queued, receivePacks, r
 usePlatformFixture();
 const zero = '0'.repeat(40);
 
+/** Lands one commit on main and returns main's Git head after it (the commit built for its
+ * batch; reading it waits for that projection, which queues the ref projection). */
 async function landNext(repo: string, owner: { cookie: string }, text: string, target: Env = scoped) {
-  const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('a.txt', text)], message: text, author } }, target);
+  return landOnMain(repo, owner, [file('a.txt', text)], target);
+}
+async function landOnMain(repo: string, owner: { cookie: string }, changes: unknown[], target: Env = scoped) {
+  const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes, message: 'change', author } }, target);
   expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, target)).body.landed).toBe(true);
-  return made.body.commit as string;
+  return (await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/main'] as string;
 }
 const drain = async (target: Env) => {
   for (const message of queued.splice(0)) {
@@ -115,9 +120,7 @@ it('projects a long backlog in one receive-pack per chunk, never a refused push'
   const landedCommits: string[] = [];
   for (let i = 0; i < 12; i++) {
     const files = Array.from({ length: 40 }, (_, k) => file(`b${i}/${k}.txt`, `${i}.${k}\n`));
-    const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: files, message: `b${i}`, author } });
-    expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: made.body.commit } })).body.landed).toBe(true);
-    landedCommits.push(made.body.commit);
+    landedCommits.push(await landOnMain(repo, owner, files));
   }
   const warn = vi.spyOn(console, 'warn');
   const packs = receivePacks.requests;

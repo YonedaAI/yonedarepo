@@ -7,9 +7,8 @@ import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
-import { writeSwitch } from './repo-changesets';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
-import { readFromHead, refreshHead } from './repo-head';
+import { refreshHead } from './repo-head';
 import { repoMcp } from './repo-mcp';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -103,22 +102,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
   if (get && resource === 'changelog') return changeLogStatus(ctx);
   if (get && resource === 'merge-base') return run('git_merge_base', query);
   if (get && resource === 'tree') return run('git_ls_tree', query);
-  if (get && resource === 'blob') {
-    // Main reads may be served from the published head (read-your-writes: min_version).
-    if (
-      writeSwitch(
-        env,
-        ['authority', 'head'] as const,
-        'authority',
-        env.READ_MODE,
-        req.headers.get('x-yoneda-read'),
-      ) === 'head'
-    ) {
-      const { head, access } = await readFromHead(ctx, Number(query.min_version ?? 0));
-      ctx.publish(head, access);
-    }
-    return run('git_cat_file', query);
-  }
+  if (get && resource === 'blob') return run('git_cat_file', query);
   if (get && resource === 'search')
     return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
   if (get && resource === 'blame') return run('git_blame', query);
@@ -145,16 +129,7 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
     });
   if (resource === 'commits' && sha && !sub && get) return run('git_show', { commit: sha });
   if (resource === 'commits' && !sha && post)
-    return run('git_commit', {
-      ...(await bodyOf(req, COMMIT_BODY_LIMIT)),
-      begin_mode: writeSwitch(
-        env,
-        ['authority', 'head'] as const,
-        'authority',
-        env.BEGIN_MODE,
-        req.headers.get('x-yoneda-begin'),
-      ),
-    });
+    return run('git_commit', await bodyOf(req, COMMIT_BODY_LIMIT));
   if (resource === 'commits' && sha && sub === 'checks' && post)
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'reviews' && post)
