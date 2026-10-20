@@ -3110,6 +3110,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "yoneda-cli"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "yoneda-core",
+]
+
+[[package]]
 name = "yoneda-cloudflare"
 version = "0.1.0"
 dependencies = [
