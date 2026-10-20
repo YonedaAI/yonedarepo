@@ -1,0 +1,182 @@
+// Staging platform Worker (dev.yonedarepo.com stack): the same source platform as
+// wrangler.platform.jsonc, with its own Durable Object namespaces, Artifacts namespace, R2,
+// D1, queues, workflow, check containers and secrets, so it shares nothing with production
+// (yonedarepo-dev) or platform-dev. Browsers reach it through the staging agent Worker's
+// /api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.
+// Keep this file in step with wrangler.platform.jsonc. Secrets, set from stdin:
+//   OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)
+//   VAULT_KEY    64 hex characters, shared with yonedarepo-staging-agents
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "yonedarepo-staging-platform",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "main": "worker/platform-index.ts",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  // Run next to the data: a commit makes about ten round trips to its repository's
+  // Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo
+  // otherwise. New repository objects are created near the placed Worker.
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "ARTIFACTS_NAMESPACE": "yonedarepo-staging"
+  },
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "yonedarepo-staging",
+      "remote": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "WORKSPACES",
+        "class_name": "WorkspaceAuthority"
+      },
+      {
+        "name": "SOURCE_REPOS",
+        "class_name": "SourceRepository"
+      },
+      {
+        "name": "CHECK_RUNNERS",
+        "class_name": "CheckContainer"
+      },
+      {
+        "name": "OBJECT_PUSHES",
+        "class_name": "ObjectPushQueue"
+      },
+      {
+        "name": "COMMIT_SHARDS",
+        "class_name": "CommitShard"
+      },
+      {
+        "name": "LAND_COMBINERS",
+        "class_name": "LandCombiner"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "SourceRepository",
+        "WorkspaceAuthority",
+        "CheckContainer"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "ObjectPushQueue"
+      ]
+    },
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "CommitShard"
+      ]
+    },
+    {
+      "tag": "v4",
+      "new_sqlite_classes": [
+        "LandCombiner"
+      ]
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "CheckContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 4,
+      "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-staging-platform-objects"
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "INDEX",
+      "database_name": "yonedarepo-staging-platform-index",
+      "database_id": "2acaf105-815e-46b5-bb2f-b734192c09f0",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yonedarepo-staging-platform-jobs"
+      },
+      {
+        "binding": "PLATFORM_CHECKS",
+        "queue": "yonedarepo-staging-platform-checks"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "yonedarepo-staging-platform-jobs",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_concurrency": 20,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-staging-platform-dead-letter"
+      },
+      // Check runs take minutes (container start, the check): one per invocation, up to
+      // the container limit (4) at once, apart from the derive and projection jobs above.
+      {
+        "queue": "yonedarepo-staging-platform-checks",
+        "max_batch_size": 1,
+        "max_concurrency": 4,
+        "max_retries": 3,
+        "dead_letter_queue": "yonedarepo-staging-platform-dead-letter"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "yonedarepo-staging-platform-import",
+      "binding": "PLATFORM_IMPORT",
+      "class_name": "PlatformImportWorkflow"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "2001",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-staging-platform"
+    }
+  ]
+}
