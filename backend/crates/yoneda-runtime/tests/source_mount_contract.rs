@@ -20,7 +20,7 @@ fn review(indices: &[usize]) -> Value {
         } else { json!({"agent_index":index,"candidate_id":null,"status":"failed"}) }
     }).collect();
     let manifest = json!({"version":1,"alternatives":alternatives});
-    job["payload"]["comparison_manifest"] = json!({"version":1,"approval_id":"approval","manifest_digest":yoneda_core::fingerprint(&manifest).unwrap(),"manifest":manifest});
+    job["payload"]["comparison_manifest"] = json!({"version":1,"approval_id":"approval","manifest_digest":yoneda_agents_core::fingerprint(&manifest).unwrap(),"manifest":manifest});
     let mounts: Vec<_> = indices.iter().enumerate().map(|(ordinal,index)| {
         json!({"path":format!("candidate-{ordinal}"),"workspace_id":format!("source-workspace:{}", char::from(b'a'+ordinal as u8).to_string().repeat(64)),"base":{"repository":format!("repo-{index}"),"commit":"1".repeat(40),"tree":"2".repeat(40)},"view_digest":"b".repeat(64),"access":"read_only","scratch_paths":[]})
     }).collect();
@@ -84,7 +84,7 @@ fn captured_manifest_denies_missing_extra_foreign_and_mutable_mounts() {
 #[test]
 fn old_transport_missing_index_and_model_selected_identity_fail_before_launch() {
     let mut old = job();
-    old["payload"]["workspace_transport"] = json!("git-native-v1");
+    old["payload"]["workspace_transport"] = json!("json-v1");
     assert!(!source_workspace_job::enabled(&old));
     assert_eq!(
         source_workspace_job::mounts(&old).unwrap_err().code,

@@ -1,7 +1,7 @@
 //! Translate terminal CLI transport observations into safe, actionable diagnostics.
 //! Raw provider responses stay in transcript evidence and never become UI messages.
 use serde_json::Value;
-use yoneda_core::Error;
+use yoneda_agents_core::Error;
 
 /// Error code for a harness stopped from outside the attempt. It is the only runtime
 /// failure a hosted agent attempt may retry; see `attempt_failure`.

@@ -1,7 +1,7 @@
 import { error, response } from './http';
 import { type SourceRevision, sourceError } from './source-contract';
 import { preparedSourceView, sourceIndexBounded } from './source-index';
-import { compareSourcePaths, sourceRepository } from './source-path';
+import { compareSourcePaths, sourceRepo } from './source-path';
 import { sourceProvenance } from './source-provenance';
 import { immutableSourceFile } from './source-storage';
 import { ledger } from './storage';
@@ -25,7 +25,7 @@ async function selectedRevision(env: Env, repoId: string, principal: Principal, 
   };
   // The selector resolves authority in RepoDO; SDK supplies exact root metadata, never an input hash.
   const ref: SourceRevision = { ...revision, tree: candidate?.tree ?? '0'.repeat(40) };
-  using artifacts = await env.ARTIFACTS.get(sourceRepository(env, ref));
+  const artifacts = await sourceRepo(env, ref);
   const commit = await artifacts.readCommit(ref.commit);
   if (
     !commit ||
@@ -108,7 +108,7 @@ export async function sourceRoute(
       return read;
     }
     if (op === 'history') {
-      using artifacts = await env.ARTIFACTS.get(sourceRepository(env, revision));
+      const artifacts = await sourceRepo(env, revision);
       const offset = integer(url, 'offset', 0, 10000);
       const limit = integer(url, 'limit', 50, 200);
       const items = await artifacts.log({ ref: revision.commit, limit, offset });

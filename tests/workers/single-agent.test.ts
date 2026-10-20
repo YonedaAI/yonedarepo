@@ -38,7 +38,7 @@ async function checkedCandidate(run: string, index: number, commit: string) {
   await call({ op: 'finish', job_id: agent.id, epoch: agent.epoch, result: { workspace: workspace.digest } });
   const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const candidate = `candidate-${run}-${index}`;
-  const revision = { repository: 'yoneda-test/fixture-fork', commit };
+  const revision = { repository: `platform/${repo}`, commit };
   // Synthetic observations exercise real DO/R2 transitions, without invoking Git, builds or models.
   await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: candidate, revision, tree: 'f'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Website fixture' } });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${candidate}` });
@@ -50,12 +50,12 @@ async function checkedCandidate(run: string, index: number, commit: string) {
 async function publish(candidate: string, request_id: string, commit: string) {
   const snapshot = await call({ op: 'snapshot' });
   const receipt = await call({ op: 'accept', request_id, candidate, expected_commit: snapshot.repository.head_commit, expected_version: snapshot.repository.version, rationale: 'Owner selects an independently checked website', alternatives: [] });
-  const publisher = await call({ op: 'claim', job_id: `publish:${receipt.id}` });
-  await call({ op: 'finish', job_id: publisher.id, epoch: publisher.epoch, result: { commit } });
+  // The owner lands on the platform; the trusted adapter records the platform readback.
+  await call({ op: 'publication_readback', decision_id: receipt.id, observed_commit: commit });
 }
 
 it('publishes a single-agent update from the canonical two-agent release while preserving its history across eviction', async () => {
-  await call({ op: 'init', id: repo, name: 'Website', remote: { namespace: 'yoneda-test', name: repo }, commit: 'a'.repeat(40), policy });
+  await call({ op: 'init', id: repo, name: 'Website', remote: { namespace: 'platform', name: repo, branch: 'main' }, commit: 'a'.repeat(40), policy });
   await call({ op: 'start_run', id: 'initial', intent: 'Build a website', agents });
   const selected = await checkedCandidate('initial', 1, 'b'.repeat(40));
   await checkedCandidate('initial', 2, 'c'.repeat(40));
@@ -64,7 +64,7 @@ it('publishes a single-agent update from the canonical two-agent release while p
   const remaining = agents.slice(1);
   checkLedger(before, { agents: remaining });
   const update = await call({ op: 'start_run', id: 'update', intent: 'Improve the website', agents: remaining, context: ['intent:initial'] });
-  expect(update).toMatchObject({ base: { repository: `yoneda-test/${repo}`, commit: 'b'.repeat(40) }, base_version: 1, execution_count: 1, delegation: { enabled: false, max_depth: 0, max_executions: 1 } });
+  expect(update).toMatchObject({ base: { repository: `platform/${repo}`, commit: 'b'.repeat(40) }, base_version: 1, execution_count: 1, delegation: { enabled: false, max_depth: 0, max_executions: 1 } });
   expect(update.model_budgets).toHaveLength(1);
   expect(update.model_budgets[0]).toMatchObject({ provider: 'zai', model: agents[1].model, requests: 0 });
   const candidate = await checkedCandidate('update', 1, 'd'.repeat(40));

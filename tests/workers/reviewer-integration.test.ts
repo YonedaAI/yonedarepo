@@ -5,6 +5,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { seal } from '../../cloudflare/worker/vault';
+import { interceptPlatform } from './platform-fixture';
 import { api, bindings, expires, readyReviewer, reviewerFixture, signup, testKeys } from './reviewer-fixture';
 
 afterEach(reset);
@@ -60,20 +61,18 @@ it('allows owner review and recovery on the legacy repository without rewriting 
   // Fake Container stop RPC; cancellation itself goes through the real ledger.
   f.scoped.EXECUTIONS = { idFromName: (name: string) => name, get: () => ({ stop: async () => {} }) } as unknown as typeof f.scoped.EXECUTIONS;
   expect((await api(f.scoped, `/api/repos/${f.repo}/cancel_run`, f.cookie, { run_id: run.run_id })).status).toBe(200);
-  const remote = { [Symbol.dispose]() {}, info: async () => ({ defaultBranch: 'main' }), log: async () => [{ hash: 'a'.repeat(40) }] };
-  const recoveryEnv = { ...f.scoped, ARTIFACTS: { get: async () => remote } } as unknown as typeof f.scoped;
   // Simulate an already-observed remote conflict in durable state, then exercise
-  // the real owner CAS recovery command with fake Artifacts HEAD readback.
+  // the real owner CAS recovery command, which reads the platform repository's main.
   await runInDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(f.repo)), (_instance, state) => {
     state.storage.sql.exec("UPDATE repository SET payload=json_set(payload,'$.status','blocked') WHERE id='repo'");
   });
   const status = await ledger(bindings, f.repo, { op: 'repository_status' });
-  const recovered = await api(recoveryEnv, `/api/repos/${f.repo}/resync_repository`, f.cookie, { expected_version: status.version, expected_pending: null });
+  const recovered = await api(f.scoped, `/api/repos/${f.repo}/resync_repository`, f.cookie, { expected_version: status.version, expected_pending: null });
   expect(recovered.status).toBe(200);
-  expect(await recovered.json()).toMatchObject({ status: 'ready', head_commit: 'a'.repeat(40) });
+  expect(await recovered.json()).toMatchObject({ status: 'ready', head_commit: f.head });
 });
 
-it('routes owner rejection and publication recovery to the real ledger with an observed remote', async () => {
+it('routes owner rejection and publication readback to the real ledger with the observed platform head', async () => {
   const f = await readyReviewer();
   const status = await ledger(bindings, f.repo, { op: 'repository_status' });
   // A missing reason is refused by the ledger, proving the route reaches the domain rule.
@@ -83,17 +82,17 @@ it('routes owner rejection and publication recovery to the real ledger with an o
   });
   expect(reject.status).toBe(409);
   expect((await reject.json<Json>()).error.code).toBe('INVALID_INPUT');
-  const invalid = await api(f.scoped, `/api/repos/${f.repo}/recover_publication`, f.cookie, { request_id: 'x' });
+  const invalid = await api(f.scoped, `/api/repos/${f.repo}/publication_readback`, f.cookie, {});
   expect(invalid.status).toBe(400);
   const observed: string[] = [];
-  const remote = { [Symbol.dispose]() {}, info: async () => ({ defaultBranch: 'main' }), log: async () => { observed.push('read'); return [{ hash: 'a'.repeat(40) }]; } };
-  const recoveryEnv = { ...f.scoped, ARTIFACTS: { get: async () => remote } } as unknown as typeof f.scoped;
-  const recover = await api(recoveryEnv, `/api/repos/${f.repo}/recover_publication`, f.cookie, {
-    request_id: 'recover-absent', decision_id: 'decision:absent', expected_version: status.version, observed_commit: 'f'.repeat(40),
-  });
+  const readbackEnv = { ...interceptPlatform(f.scoped, (path) => {
+    if (path.endsWith('/refs')) observed.push('read');
+    return undefined;
+  }) } as typeof f.scoped;
+  const readback = await api(readbackEnv, `/api/repos/${f.repo}/publication_readback`, f.cookie, { decision_id: 'decision:absent' });
   expect(observed).toEqual(['read']);
-  expect(recover.status).toBe(409);
-  expect((await recover.json<Json>()).error.code).toBe('NOT_FOUND');
+  expect(readback.status).toBe(409);
+  expect((await readback.json<Json>()).error.code).toBe('NOT_FOUND');
 });
 
 it('creates exactly one fixed two-agent $5 trial on concurrent replay and rejects another active trial', async () => {

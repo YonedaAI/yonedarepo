@@ -1,5 +1,5 @@
 //! Shared validation for adapter-verified Git conflict capture results.
-pub use yoneda_core::conflict_capture::validate_capture_result;
+pub use yoneda_agents_core::conflict_capture::validate_capture_result;
 
 #[cfg(test)]
 mod tests {

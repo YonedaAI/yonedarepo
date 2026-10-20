@@ -4,9 +4,10 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 
 ## Layout and boundaries
 
-- `backend/crates/yoneda-core`: typed contracts, the Git object model, transaction log rules and pure validation. No Cloudflare or network dependencies.
+- `backend/crates/yoneda-core`: contracts both layers share: the Git object model, transaction log rules, merge, derived data and pure validation. No Cloudflare or network dependencies.
+- `backend/crates/yoneda-agents-core`: agent-layer contracts (runs, teams, providers, budgets, guided, evaluation, attempt source workspaces). Depends only on `yoneda-core`; the platform never depends on it.
 - `backend/crates/yoneda-store`: the SQL store trait shared by Durable Object and native SQLite adapters.
-- `backend/crates/yoneda-platform`: the source platform (SourceRepository authority, its migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store`; it must never import agent-layer code. Agent identity reaches it only as an API principal.
+- `backend/crates/yoneda-platform`: the source platform (SourceRepository authority, its migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store`; it must never import agent-layer code (enforced by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
 - `backend/crates/yoneda-app`: agent-layer commands and its transactional ledger, with native SQLite and DO adapters. Domain operations must be shared by local and deployed execution.
 - `backend/crates/yoneda-cloudflare`: binding interoperability; no product policy.
 - `backend/crates/yoneda-worker`: Rust Durable Objects and Worker integration.

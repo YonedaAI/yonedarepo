@@ -1,48 +1,8 @@
 use super::*;
 use crate::commands::recovery::source_tests as f;
-use crate::source_workspace;
-use yoneda_core::source_workspace::{SourceRevision, SourceView};
-pub(super) const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-pub(super) fn registered(db: &crate::native::NativeStore) -> Value {
-    registered_at(db, 1, 1000, false)
-}
-fn registered_at(db: &crate::native::NativeStore, epoch: i64, now: i64, changed: bool) -> Value {
-    let base = SourceRevision {
-        repository: "test/source".into(),
-        commit: "a".repeat(40),
-        tree: "b".repeat(40),
-    };
-    let view = SourceView {
-        version: 1,
-        base,
-        files: vec![],
-    };
-    let bound=f::call(db,json!({"op":"source_bind","job_id":"job:execution","epoch":epoch,"_source_view":view,"_supervisor":true,"_source_signing_key":KEY}),now).unwrap();
-    let source = crate::native::NativeStore::memory().unwrap();
-    let actor = bound["actor_grant"].clone();
-    let call = |mut c: Value| {
-        c["now"] = json!(now);
-        c["_source_signing_key"] = json!(KEY);
-        c["_actor"] = actor.clone();
-        source_workspace::execute_source_workspace(&source, c)
-    };
-    call(json!({"op":"source_init","request_id":"init","binding":bound["binding"],"view":view,"baseline_overrides":[]})).unwrap();
-    if changed {
-        let sha = yoneda_core::digest(b"captured source");
-        let ticket=call(json!({"op":"source_upload_ticket","request_id":"upload","path":"file.txt","sha256":sha,"size":15,"mode":"100644","expected_workspace_version":0,"expected_file_version":0})).unwrap();
-        call(json!({"op":"source_verify_upload","request_id":"verify","ticket_id":ticket["ticket"]["id"],"sha256":sha,"size":15})).unwrap();
-        call(json!({"op":"source_create","request_id":"create","path":"file.txt","ticket_id":ticket["ticket"]["id"],"expected_workspace_version":0,"expected_file_version":0})).unwrap();
-    }
-    let version = i64::from(changed);
-    let checkpoint = call(
-        json!({"op":"source_checkpoint","request_id":"checkpoint","expected_workspace_version":version}),
-    )
-    .unwrap();
-    let seal=call(json!({"op":"source_seal","request_id":"seal","expected_workspace_version":version,"checkpoint_id":checkpoint["checkpoint_id"],"expected_checkpoint_digest":checkpoint["changeset_digest"]})).unwrap();
-    f::call(db,json!({"op":"source_register_changeset","job_id":"job:execution","epoch":epoch,"request_id":"register","view_digest":bound["binding"]["view_digest"],"_source_seal":seal,"_source_signing_key":KEY}),now).unwrap()
-}
-pub(super) fn pointer(r: &Value) -> Value {
-    json!({"producer_job_id":"job:execution","producer_epoch":r["binding"]["epoch"],"registration_id":r["registration_id"],"changeset_digest":r["changeset_digest"]})
+use crate::commands::source_kit::{pointer, seal};
+fn registered(db: &crate::native::NativeStore) -> Value {
+    seal(db, "job:execution", 1, 1000, false)
 }
 #[test]
 fn api_agent_completion_uses_registered_seal_compact_refs_and_rejects_forged_pointer() {
@@ -204,7 +164,7 @@ fn deferred_epoch_three_registered_source_finishes_capture_with_real_file_proven
         producer["payload"]["execution"].get("epoch").is_none(),
         "queued payload must remain epoch-free like hosted claims"
     );
-    let registration = registered_at(&db, 3, 6000, true);
+    let registration = seal(&db, "job:execution", 3, 6000, true);
     let mut live = get(&db, "executions", "execution").unwrap();
     live["epoch"] = json!(2);
     save_execution(&db, &live, 6000).unwrap();

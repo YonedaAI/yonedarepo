@@ -17,7 +17,7 @@ pub(super) async fn execute(
     let provider = text(connection, "provider")?;
     let key=secret["local_providers"][provider]["key"].as_str().ok_or("Local continuation needs a process-local provider key; Worker vault keys are never exported")?;
     let registry: Vec<Value> = serde_json::from_str(include_str!(
-        "../../../backend/crates/yoneda-core/src/providers.json"
+        "../../../backend/crates/yoneda-agents-core/src/providers.json"
     ))?;
     let definition = registry
         .iter()
@@ -36,12 +36,15 @@ pub(super) async fn execute(
     let run = text(&attempt["run"], "id")?.to_owned();
     let work = tempfile::tempdir()?;
     let config = tempfile::tempdir()?;
-    super::git::git(
-        work.path(),
-        &project.grant,
-        &["clone", text(&attempt, "git_url")?, "."],
-    )
-    .await?;
+    let source = super::source::Attempt {
+        client,
+        repo: &project.id,
+        grant: &project.grant,
+        session: &session,
+        id: text(&attempt, "attempt_id")?,
+    };
+    let source_base = source.read().await?;
+    yoneda_runtime::materialize(work.path(), &source_base)?;
     std::fs::write(
         config.path().join("relay.mjs"),
         include_str!("../../../tools/context-study/mcp-relay.mjs"),
@@ -214,38 +217,11 @@ pub(super) async fn execute(
             .await?;
         return Ok((run, metrics));
     }
+    // The runner, not the agent, commits the files it left; history never crosses over.
     let files = yoneda_runtime::export_workspace(work.path())?;
-    let trusted = tempfile::tempdir()?;
-    super::git::git(
-        trusted.path(),
-        &project.grant,
-        &["clone", text(&attempt, "git_url")?, "."],
-    )
-    .await?;
-    for entry in std::fs::read_dir(trusted.path())? {
-        let entry = entry?;
-        if entry.file_name() == ".git" {
-            continue;
-        }
-        if entry.file_type()?.is_dir() {
-            std::fs::remove_dir_all(entry.path())?;
-        } else {
-            std::fs::remove_file(entry.path())?;
-        }
-    }
-    yoneda_runtime::capture(
-        trusted.path(),
-        Some(text(&attempt["base"], "commit")?),
-        &files,
-        "Trusted capture of fresh local continuation",
-    )
-    .await?;
-    super::git::git(
-        trusted.path(),
-        &project.grant,
-        &["push", text(&attempt, "git_url")?, "HEAD:refs/heads/main"],
-    )
-    .await?;
+    source
+        .commit(&source_base, &files, "Fresh local continuation")
+        .await?;
     client
         .mcp(
             &project.id,

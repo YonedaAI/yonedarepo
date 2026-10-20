@@ -8,7 +8,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 use tokio::io::AsyncWriteExt;
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_workspace::{ContentRef, FileMode, MAX_FILE_BYTES, SourceBinding, SourceFile},
 };
@@ -158,7 +158,7 @@ async fn download_with_first(
         .map_err(|_| failure("Capture spool flush failed"))?;
     drop(output);
     if let ContentRef::R2 { sha256, .. } = &file.content
-        && yoneda_core::hex(&hash.finalize()) != *sha256
+        && yoneda_agents_core::hex(&hash.finalize()) != *sha256
     {
         return Err(failure(
             "Received R2 bytes differ from immutable sealed digest",

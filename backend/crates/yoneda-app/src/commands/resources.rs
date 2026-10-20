@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn reserve<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = number(&c, "now")?;

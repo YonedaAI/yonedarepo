@@ -7,7 +7,7 @@ use crate::source_client::{
 };
 use cache::{Cache, Key};
 use std::sync::{Arc, Mutex};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 pub struct SourceWorkspace {
     backend: Arc<dyn SourceBackend>,

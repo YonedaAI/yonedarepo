@@ -40,11 +40,9 @@ fn static_candidates_need_evaluator_manifest_and_publish_it_only_after_git_readb
     assert!(snapshot["repository"]["site"].is_null());
     let decision=call(&db,json!({"op":"accept","request_id":"publish-site","candidate":"candidate-site","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Chosen for useful interactions","alternatives":[]})).unwrap();
     assert!(call(&db, json!({"op":"snapshot"})).unwrap()["repository"]["site"].is_null());
-    let job = format!("publish:{}", decision["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":job})).unwrap();
     call(
         &db,
-        json!({"op":"finish","job_id":job,"epoch":1,"result":{"commit":"c".repeat(40)}}),
+        json!({"op":"publication_readback","decision_id":decision["id"],"observed_commit":"c".repeat(40)}),
     )
     .unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
@@ -80,9 +78,11 @@ fn old_evaluations_without_assets_cannot_publish_and_conflicts_keep_the_previous
     )
     .unwrap();
     let d=call(&db,json!({"op":"accept","request_id":"conflict-site","candidate":"candidate-site","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Choose","alternatives":[]})).unwrap();
-    let job = format!("publish:{}", d["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    call(&db,json!({"op":"finish","job_id":job,"epoch":1,"result":{"conflict":true,"observed":"b".repeat(40)}})).unwrap();
+    call(
+        &db,
+        json!({"op":"publication_readback","decision_id":d["id"],"observed_commit":"b".repeat(40)}),
+    )
+    .unwrap();
     assert_eq!(
         call(&db, json!({"op":"snapshot"})).unwrap()["repository"]["site"],
         old
@@ -90,7 +90,7 @@ fn old_evaluations_without_assets_cannot_publish_and_conflicts_keep_the_previous
 }
 
 #[test]
-fn owner_resync_restores_only_the_selected_evaluator_site_after_lost_acknowledgement() {
+fn owner_resync_restores_only_the_selected_evaluator_site_after_a_conflict() {
     let db = evaluating();
     let site = call(
         &db,
@@ -105,11 +105,9 @@ fn owner_resync_restores_only_the_selected_evaluator_site_after_lost_acknowledge
         "expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Choose checked site"}),
     )
     .unwrap();
-    let job = format!("publish:{}", decision["id"].as_str().unwrap());
-    call(&db, json!({"op":"claim","job_id":job})).unwrap();
     call(
         &db,
-        json!({"op":"fail","job_id":job,"epoch":1,"retryable":false,"error":"Readback lost"}),
+        json!({"op":"publication_readback","decision_id":decision["id"],"observed_commit":"b".repeat(40)}),
     )
     .unwrap();
     call(
@@ -125,5 +123,8 @@ fn owner_resync_restores_only_the_selected_evaluator_site_after_lost_acknowledge
         snapshot["repository"]["published_commit"]
     );
     assert_eq!(snapshot["decisions"][0]["status"], "published");
-    assert_eq!(snapshot["decisions"][0]["error"], "Readback lost");
+    assert_eq!(
+        snapshot["decisions"][0]["observed"]["commit"],
+        "b".repeat(40)
+    );
 }

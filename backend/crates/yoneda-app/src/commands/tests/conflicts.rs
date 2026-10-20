@@ -5,7 +5,7 @@ use crate::{execute, native::NativeStore};
 
 fn setup() -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    execute(&db, json!({"op":"init","now":1,"id":"conflict-repo","name":"Conflict","remote":{"namespace":"test","name":"conflict"},"commit":"a".repeat(40),"policy":yoneda_core::Policy::default()})).unwrap();
+    execute(&db, json!({"op":"init","now":1,"id":"conflict-repo","name":"Conflict","remote":{"namespace":"test","name":"conflict"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
     for statement in include_str!("../../migrations/0010_conflicts.sql").split(';') {
         if !statement.trim().is_empty() {
             db.query(statement, &[]).unwrap();
@@ -16,7 +16,7 @@ fn setup() -> NativeStore {
     repository["published_commit"] = json!("b".repeat(40));
     repository["version"] = json!(1);
     save(&db, "repository", "repo", &repository).unwrap();
-    create(&db,"runs","run",&json!({"id":"run","mode":"compare","status":"exploring","base":{"repository":"test/conflict","commit":"a".repeat(40)}})).unwrap();
+    create(&db,"runs","run",&json!({"id":"run","mode":"compare","status":"exploring","workspace_transport":"api-source-v1","base":{"repository":"test/conflict","commit":"a".repeat(40)}})).unwrap();
     create(
         &db,
         "executions",
@@ -113,7 +113,7 @@ fn trusted_remote_only_head_move_completes_refresh_as_stale() {
 }
 
 #[test]
-fn caller_claim_cannot_authorize_remote_head_staleness_without_frozen_git_transport() {
+fn caller_claim_cannot_authorize_remote_head_staleness_without_frozen_source_transport() {
     let db = setup();
     let receipt = refresh(&db, &request(), 2).unwrap();
     let job_id = receipt["job_id"].as_str().unwrap();
@@ -141,6 +141,19 @@ fn caller_claim_cannot_authorize_remote_head_staleness_without_frozen_git_transp
         get(&db, "conflicts", receipt["conflict_id"].as_str().unwrap()).unwrap(),
         before
     );
+}
+
+#[test]
+fn runs_without_lazy_source_cannot_refresh_or_resolve() {
+    let db = setup();
+    let mut run = get(&db, "runs", "run").unwrap();
+    run.as_object_mut().unwrap().remove("workspace_transport");
+    save(&db, "runs", "run", &run).unwrap();
+    assert_eq!(
+        refresh(&db, &request(), 2).unwrap_err().code,
+        "NOT_SUPPORTED"
+    );
+    assert!(all(&db, "conflicts").unwrap().is_empty());
 }
 
 #[test]
@@ -216,7 +229,7 @@ fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
         job["payload"]["execution"]["task"]
             .as_str()
             .unwrap()
-            .contains("conflict markers contain both sides")
+            .contains("trusted premerged changes")
     );
 }
 
@@ -226,7 +239,7 @@ fn clean_refresh_terminates_capture_and_freezes_fresh_evaluation_with_two_parent
     let receipt = refresh(&db, &request(), 2).unwrap();
     let job_id = receipt["job_id"].as_str().unwrap();
     let leased = execute(&db, json!({"op":"claim","job_id":job_id,"now":3})).unwrap();
-    assert_eq!(leased["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(leased["payload"]["workspace_transport"], "api-source-v1");
     let cid = format!("candidate:refresh:{}", "e".repeat(40));
     let result = json!({"status":"clean","evidence":evidence(),"candidate_id":cid,
         "revision":{"repository":"test/refresh-fork","commit":"e".repeat(40)},"tree":"f".repeat(40),
@@ -249,7 +262,7 @@ fn clean_refresh_terminates_capture_and_freezes_fresh_evaluation_with_two_parent
     );
     assert_eq!(candidate["refresh_expected_version"], 1);
     let evaluator = get(&db, "jobs", &format!("evaluate:{cid}")).unwrap();
-    assert_eq!(evaluator["payload"]["workspace_transport"], "git-native-v1");
+    assert_eq!(evaluator["payload"]["workspace_transport"], "api-source-v1");
     assert_eq!(
         evaluator["payload"]["candidate"]["diff_digest"],
         "d".repeat(64)

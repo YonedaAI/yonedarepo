@@ -6,7 +6,7 @@ use crate::{
 };
 use serde_json::json;
 use std::collections::BTreeMap;
-use yoneda_core::{Result, source_workspace::SourceRevision};
+use yoneda_agents_core::{Result, source_workspace::SourceRevision};
 const METADATA_BYTES: usize = 128 * 1024 * 1024;
 pub(crate) struct TreeCache {
     entries: BTreeMap<(Option<String>, String), Vec<TreeEntry>>,
@@ -124,7 +124,7 @@ impl TreeCache {
         path: &str,
         input: Option<&str>,
     ) -> Result<Option<TreeEntry>> {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         let mut directory = String::new();
         let mut tree = revision.tree.clone();
         let parts = path.split('/').collect::<Vec<_>>();

@@ -2,7 +2,7 @@
 use crate::{err, secure_fs::read_regular};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use std::path::{Path, PathBuf};
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 
 pub(crate) struct SourceFilter {
     root: PathBuf,

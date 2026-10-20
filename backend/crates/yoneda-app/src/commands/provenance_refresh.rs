@@ -55,7 +55,7 @@ pub(super) fn capture_file_provenance<S: SqlStore>(
         .iter()
         .map(|value| {
             let path = value.as_str().ok_or_else(|| bad("Invalid changed path"))?;
-            yoneda_core::validate_path(path)?;
+            yoneda_agents_core::validate_path(path)?;
             Ok(path.to_owned())
         })
         .collect::<Result<_>>()?;
@@ -71,7 +71,7 @@ pub(super) fn capture_file_provenance<S: SqlStore>(
     let mut receipts = Vec::with_capacity(entries.len());
     for (index, entry) in entries.iter().enumerate() {
         let path = string(entry, "path")?;
-        yoneda_core::validate_path(&path)?;
+        yoneda_agents_core::validate_path(&path)?;
         if !declared.contains(&path) {
             return Err(bad(
                 "File receipt path is outside the trusted changed-path list",
@@ -86,7 +86,7 @@ pub(super) fn capture_file_provenance<S: SqlStore>(
             .and_then(Value::as_str)
             .map(str::to_owned);
         if let Some(old) = &old_path {
-            yoneda_core::validate_path(old)?;
+            yoneda_agents_core::validate_path(old)?;
         }
         if change == "rename" && old_path.is_none() {
             return Err(bad("Rename receipt requires its previous path"));

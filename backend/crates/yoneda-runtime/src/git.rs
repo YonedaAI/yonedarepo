@@ -2,7 +2,7 @@ use crate::{err, materialize};
 use serde_json::{Value, json};
 use std::path::Path;
 use tokio::process::Command;
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 const GIT: &str = "/usr/bin/git";
 pub async fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&git_raw(root, args).await?)
@@ -76,11 +76,6 @@ pub(crate) async fn git_raw(root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     }
     Ok(output.stdout)
 }
-
-pub(crate) use crate::{
-    git_capture::capture_fresh,
-    git_revision::{read_git_revision, verify_git_parent},
-};
 
 /// Trusted capture reconstructs a fresh Git tree. It never opens the agent's .git directory.
 pub async fn capture(

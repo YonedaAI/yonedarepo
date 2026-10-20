@@ -20,7 +20,14 @@ import {
   indexPrefix,
   readIndexJournal,
 } from './source-index-journal';
-import { compareSourcePaths, sourceEntry, sourcePath, sourceRepository } from './source-path';
+import type { SourceRepo } from './source-objects';
+import {
+  compareSourcePaths,
+  sourceEntry,
+  sourcePath,
+  sourceRepo,
+  sourceRepository,
+} from './source-path';
 import type { Env } from './types';
 
 export type SourceIndexResult =
@@ -61,7 +68,7 @@ export async function sourceIndexBounded(
   revision: SourceRevision,
   cursor?: number,
 ): Promise<SourceIndexResult> {
-  const name = sourceRepository(env, revision);
+  sourceRepository(revision);
   const prefix = await indexPrefix(revision);
   const prior = await readIndexJournal(env, prefix, revision);
   if (
@@ -69,7 +76,7 @@ export async function sourceIndexBounded(
     (prior.value.state !== 'preparing' || (cursor !== undefined && cursor !== prior.value.step))
   )
     return result(env, prefix, prior.value);
-  using repo = await env.ARTIFACTS.get(name);
+  const repo = await sourceRepo(env, revision);
   const commit = await repo.readCommit(revision.commit);
   if (!commit || commit.hash !== revision.commit || commit.treeHash !== revision.tree)
     throw sourceError('SOURCE_CHANGED', 'Approved source root is unavailable');
@@ -87,7 +94,7 @@ export async function sourceIndexBounded(
       };
   const files: SourceFile[] = [];
   // Cache only this bounded step; immutable tree metadata is shared by adjacent file entries.
-  const trees = new Map<string, NonNullable<Awaited<ReturnType<ArtifactsRepo['readTree']>>>>();
+  const trees = new Map<string, NonNullable<Awaited<ReturnType<SourceRepo['readTree']>>>>();
   let metadataOps = 0;
   let streamedBytes = 0;
   try {
@@ -188,7 +195,7 @@ export async function ensureSourceIndex(
   env: Env,
   revision: SourceRevision,
 ): Promise<SourceIndexResult> {
-  sourceRepository(env, revision);
+  sourceRepository(revision);
   const prefix = await indexPrefix(revision);
   const journal = await readIndexJournal(env, prefix, revision);
   return journal?.value

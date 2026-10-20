@@ -3,7 +3,7 @@ use super::campaign::{approval, identifier, key, require};
 use super::campaign_runs::run_key;
 use super::*;
 use crate::storage::{create, number};
-use yoneda_core::model_budget::ModelBudget;
+use yoneda_agents_core::model_budget::ModelBudget;
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let reservation_id = identifier(c, "reservation_id")?;

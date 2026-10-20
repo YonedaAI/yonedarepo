@@ -1,5 +1,5 @@
+import type { AgentsEntrypoint } from './agents-entrypoint';
 import type { ExecutionContainer } from './container';
-import type { YonedaEntrypoint } from './entrypoint';
 export type Json = Record<string, any>;
 export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
 export interface Env {
@@ -20,7 +20,7 @@ export interface Env {
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
-  SELF: Service<YonedaEntrypoint>;
+  SELF: Service<AgentsEntrypoint>;
   OBJECTS: R2Bucket;
   INDEX: D1Database;
   ARTIFACTS: Artifacts;
@@ -28,7 +28,6 @@ export interface Env {
   AGENT_QUEUE: Queue<Envelope>;
   CAPTURE_QUEUE: Queue<Envelope>;
   EVALUATE_QUEUE: Queue<Envelope>;
-  PUBLISH_QUEUE: Queue<Envelope>;
   OPENAI_KEY: { get(): Promise<string> };
   ANTHROPIC_KEY: { get(): Promise<string> };
   MIMO_KEY?: { get(): Promise<string> };
@@ -50,13 +49,11 @@ export interface Env {
   SITE_ORIGIN?: string;
   APP_ORIGIN?: string;
   APPS?: Fetcher;
+  /** The source platform Worker (agents-only deployment); its public API is all we call. */
+  PLATFORM?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
-  /** Operator activation only; every run freezes its selected transport. */
-  SOURCE_TRANSPORT?: 'api-source-v1';
   /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
-  ACCEPTANCE_FAULTS?: 'publish-ack-once';
-  ACCEPTANCE_REPOSITORY?: string;
 }
 export type Principal = {
   workspace: string;

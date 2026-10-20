@@ -1,7 +1,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 
 #[derive(Clone, Copy)]
 pub(super) struct Selection<'a> {
@@ -31,7 +31,7 @@ pub(super) fn ranked<S: SqlStore>(
         return Err(bad("Ranked context needs bounded query and limit"));
     }
     if let Some(path) = file {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
     }
     if authority.is_some_and(|v| {
         ![

@@ -1,7 +1,7 @@
 //! Ordered, bounded same-team messages and platform-written delivery receipts.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn page<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let run = string(c, "run_id")?;
@@ -93,7 +93,7 @@ fn send<S: SqlStore>(
         )?;
     }
     let id = format!("{}:{epoch}:{request}", string(e, "id")?);
-    let fingerprint = yoneda_core::fingerprint(
+    let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"recipient":recipient,"kind":kind,"body":body,"context_ids":references}),
     )?;
     let old = db.query(

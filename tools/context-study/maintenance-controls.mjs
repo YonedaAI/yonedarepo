@@ -1,5 +1,5 @@
 // Existing-project bug/feature acceptance controls. Hand-authored patches, no agents.
-// Copies the committed yoneda-core into .local; Cargo is strictly offline.
+// Copies the committed yoneda-core and yoneda-agents-core into .local; Cargo is strictly offline.
 // Reproduce: node tools/context-study/maintenance-controls.mjs
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -15,11 +15,12 @@ function git(args) {
   return result.stdout;
 }
 const revision = git(['rev-parse', 'HEAD']).trim();
-const core = 'backend/crates/yoneda-core';
-const paths = git(['ls-tree', '-r', '--name-only', revision, core]).trim().split('\n');
+const core = 'backend/crates/yoneda-agents-core';
+const crates = [core, 'backend/crates/yoneda-core'];
+const paths = crates.flatMap((crate) => git(['ls-tree', '-r', '--name-only', revision, crate]).trim().split('\n'));
 const source = git(['show', `${revision}:${core}/src/model_budget.rs`]);
 assert.equal(source.split('.checked_add(999_999)').length, 2, 'rounding injection anchor must be unique');
-const workspace = git(['show', `${revision}:Cargo.toml`]).replace(/^members = .*$/m, 'members = ["backend/crates/yoneda-core"]');
+const workspace = git(['show', `${revision}:Cargo.toml`]).replace(/^members = .*$/m, `members = ${JSON.stringify(crates)}`);
 const lock = git(['show', `${revision}:Cargo.lock`]);
 const contracts = [
   { id: 'maintenance:round-once', statement: 'Sum input and output fixed-point cost, then round upward once; retain checked arithmetic.' },
@@ -45,7 +46,7 @@ impl ModelBudget {
 `;
 // Trusted tests are outside src; candidates never choose the acceptance cases.
 const acceptance = `
-use yoneda_core::model_budget::{ModelBudget, MAX_MODEL_INPUT_BYTES};
+use yoneda_agents_core::model_budget::{ModelBudget, MAX_MODEL_INPUT_BYTES};
 fn budget() -> ModelBudget {
     serde_json::from_value(serde_json::json!({"provider":"mimo","model":"flash",
         "max_requests":null,"max_output_tokens":4096,"max_execution_ms":600000,
@@ -110,7 +111,7 @@ for (const variant of variants) {
   mkdirSync(join(directory, core, 'tests'), { recursive: true });
   writeFileSync(join(directory, core, 'tests/maintenance_acceptance.rs'), acceptance);
   const tested = spawnSync('cargo', ['test', '--offline', '--manifest-path', join(directory, 'Cargo.toml'),
-    '-p', 'yoneda-core', '--test', 'maintenance_acceptance', '--', '--nocapture'], {
+    '-p', 'yoneda-agents-core', '--test', 'maintenance_acceptance', '--', '--nocapture'], {
     encoding: 'utf8', timeout: 120000, maxBuffer: 4 * 1024 * 1024,
     env: { ...process.env, CARGO_TARGET_DIR: join(output, 'target') },
   });
@@ -130,7 +131,7 @@ for (const variant of variants) {
   console.log(`${variant.id}: ${variant.expectedPasses}/5 maintenance contracts pass`);
 }
 const result = {
-  version: 1, existing_project: 'YonedaRepo yoneda-core ModelBudget', source_revision: revision,
+  version: 1, existing_project: 'YonedaRepo yoneda-agents-core ModelBudget', source_revision: revision,
   source_path: `${core}/src/model_budget.rs`, source_sha256: createHash('sha256').update(source).digest('hex'),
   task: 'Fix an injected fractional-cost regression and add a raw-text reservation helper while retaining established contracts',
   injected_bug: true, production_bug_claim: false,

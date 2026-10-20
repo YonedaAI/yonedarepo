@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, Workspace};
+use yoneda_agents_core::{Error, Result, Workspace};
 
 pub(super) fn register<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let mut job = active(db, &c, now)?;
@@ -16,7 +16,7 @@ pub(super) fn register<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value>
     }
     let files: Workspace =
         serde_json::from_value(c["files"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_workspace(&files)?;
+    yoneda_agents_core::validate_workspace(&files)?;
     if !files.contains_key("index.html") {
         return Err(bad("Static output must contain index.html"));
     }

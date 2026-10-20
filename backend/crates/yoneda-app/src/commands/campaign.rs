@@ -3,7 +3,7 @@ use crate::storage::*;
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
 use sha2::Sha256;
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 
 pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) -> Result<()> {
     let Some(campaign) = c.get("campaign") else {
@@ -38,7 +38,7 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) 
     mac.update(
         format!(
             "yoneda:campaign-grant:v1\0{}",
-            yoneda_core::fingerprint(claims)?
+            yoneda_agents_core::fingerprint(claims)?
         )
         .as_bytes(),
     );
@@ -60,7 +60,7 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) 
         || claims["repo_id"] != repository["id"]
         || claims["run_id"] != run["id"]
         || claims["campaign"] != *campaign
-        || claims["request_digest"] != yoneda_core::fingerprint(&request)?
+        || claims["request_digest"] != yoneda_agents_core::fingerprint(&request)?
         || number(claims, "expires")? <= now
         || number(claims, "expires")? > now + 60_000
         || c.get("job_id").is_some()
@@ -88,7 +88,7 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) 
                 "Opus escalation must be one preapproved execution in the shared second repair round",
             ));
         }
-        let budget: yoneda_core::model_budget::ModelBudget =
+        let budget: yoneda_agents_core::model_budget::ModelBudget =
             serde_json::from_value(escalation["budget"].clone())
                 .map_err(|e| bad(&e.to_string()))?;
         budget.validate_configuration()?;
@@ -106,14 +106,14 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value, run: &mut Value, now: i64) 
             .push(json!(budget));
         run["repair_escalation"] = escalation.clone();
     }
-    let approved: Vec<yoneda_core::model_budget::ModelBudget> =
+    let approved: Vec<yoneda_agents_core::model_budget::ModelBudget> =
         serde_json::from_value(claims["model_budgets"].clone()).map_err(|e| bad(&e.to_string()))?;
     if json!(approved) != run["model_budgets"] {
         return Err(reject());
     }
     run["campaign"] = campaign.clone();
     // Retain public provenance, never the transient signature key or raw grant.
-    run["campaign_approval_digest"] = json!(yoneda_core::fingerprint(claims)?);
+    run["campaign_approval_digest"] = json!(yoneda_agents_core::fingerprint(claims)?);
     Ok(())
 }
 

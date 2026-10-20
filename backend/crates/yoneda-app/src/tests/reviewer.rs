@@ -1,6 +1,6 @@
 use crate::{execute_workspace, native::NativeStore};
 use serde_json::{Value, json};
-fn call(db: &NativeStore, mut c: Value) -> yoneda_core::Result<Value> {
+fn call(db: &NativeStore, mut c: Value) -> yoneda_agents_core::Result<Value> {
     if c.get("now").is_none() {
         c["now"] = json!(1000);
     }

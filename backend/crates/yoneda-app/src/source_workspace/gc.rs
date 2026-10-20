@@ -53,7 +53,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, _: &Value) -> Result<Value>
                 return Err(Error::new("NOT_DUE", "Upload ticket is not expired"));
             }
             if ticket["gc_token"].is_null() {
-                ticket["gc_token"] = json!(yoneda_core::fingerprint(
+                ticket["gc_token"] = json!(yoneda_agents_core::fingerprint(
                     &json!({"ticket":id,"request":c["request_id"],"purpose":"gc"})
                 )?);
             }

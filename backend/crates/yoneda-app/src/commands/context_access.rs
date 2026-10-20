@@ -2,7 +2,7 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use yoneda_core::{
+use yoneda_agents_core::{
     Error, Result,
     context_usage::{AccessStage, AccessTarget, MAX_ACCESS_TARGETS},
 };
@@ -95,7 +95,7 @@ pub(super) fn record<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     if c.get("response_digest").is_some() {
         data["response_digest"] = json!(hash(&c, "response_digest", &[64])?);
     }
-    let fingerprint = yoneda_core::fingerprint(&data)?;
+    let fingerprint = yoneda_agents_core::fingerprint(&data)?;
     let existing = db.query(
         "SELECT seq,fingerprint FROM context_access WHERE call_id=?",
         &[json!(call_id)],

@@ -15,7 +15,7 @@ it('sealed metadata retains unread dependency overlays and pages immutable rows 
     ...gitFile('src/unread.bin', 12, '9'.repeat(40)),
     content: {
       kind: 'git',
-      repository: 'yoneda-test/dependency',
+      repository: 'platform/dependency',
       commit: '8'.repeat(40),
       path: 'specialist/original.bin',
       blob: '9'.repeat(40),
@@ -24,8 +24,8 @@ it('sealed metadata retains unread dependency overlays and pages immutable rows 
   const f = await sourceFixture('unread-overlay', {
     baseline_overrides: [{ path: overlay.path, file: overlay }],
     inputs: [
-      { repository: 'yoneda-test/source-base', commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
-      { repository: 'yoneda-test/dependency', commit: '8'.repeat(40), tree: '7'.repeat(40) },
+      { repository: 'platform/source-base', commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
+      { repository: 'platform/dependency', commit: '8'.repeat(40), tree: '7'.repeat(40) },
     ],
   });
   await f.rpc({

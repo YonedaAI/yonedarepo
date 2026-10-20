@@ -63,7 +63,7 @@ pub(in crate::commands) fn current<S: SqlStore>(db: &S, run: &Value) -> Result<V
         .map(|j| json!({"job_id":j["id"],"kind":j["kind"],"epoch":j["epoch"],"error":j["error"]}))
         .collect::<Vec<_>>();
     Ok(
-        json!({"version":1,"run_id":rid,"approval_id":run["comparison"]["approval"]["id"],"round":run["comparison"]["round"],"intent":run["intent"],"criteria":run["criteria"],"policy":repo(db)?["policy"],"policy_digest":yoneda_core::fingerprint(&repo(db)?["policy"])? ,"base":run["base"],"branch":branch,"alternatives":alternatives,"candidates":metadata,"failures":failures}),
+        json!({"version":1,"run_id":rid,"approval_id":run["comparison"]["approval"]["id"],"round":run["comparison"]["round"],"intent":run["intent"],"criteria":run["criteria"],"policy":repo(db)?["policy"],"policy_digest":yoneda_agents_core::fingerprint(&repo(db)?["policy"])? ,"base":run["base"],"branch":branch,"alternatives":alternatives,"candidates":metadata,"failures":failures}),
     )
 }
 pub(in crate::commands) fn slot(run: &Value, e: &Value) -> Result<i64> {
@@ -85,7 +85,7 @@ pub(in crate::commands) fn slot(run: &Value, e: &Value) -> Result<i64> {
 }
 fn original_slot<S: SqlStore>(db: &S, run: &Value, e: &Value) -> Result<i64> {
     let mut execution = e.clone();
-    for _ in 0..=yoneda_core::agents::MAX_DELEGATION_DEPTH {
+    for _ in 0..=yoneda_agents_core::agents::MAX_DELEGATION_DEPTH {
         if execution["run_id"] != run["id"]
             || execution["base"] != run["base"]
             || execution["role"] != "coding"
@@ -96,7 +96,7 @@ fn original_slot<S: SqlStore>(db: &S, run: &Value, e: &Value) -> Result<i64> {
             ));
         }
         if let Some(parent_id) = execution["parent_execution"].as_str() {
-            let policy: yoneda_core::agents::DelegationPolicy =
+            let policy: yoneda_agents_core::agents::DelegationPolicy =
                 serde_json::from_value(run["delegation"].clone())
                     .map_err(|e| bad(&e.to_string()))?;
             policy.validate(run["agents"].as_array().map_or(0, Vec::len))?;
@@ -191,12 +191,12 @@ pub(in crate::commands) fn checked<S: SqlStore>(db: &S, run: &Value, c: &Value) 
             "Selection requires an eligible captured candidate",
         ));
     }
-    let evaluation: yoneda_core::Evaluation =
+    let evaluation: yoneda_agents_core::Evaluation =
         serde_json::from_value(get(db, "evaluations", &string(c, "evaluation")?)?)
             .map_err(|e| bad(&e.to_string()))?;
     let revision =
         serde_json::from_value(c["revision"].clone()).map_err(|e| bad(&e.to_string()))?;
     let policy =
         serde_json::from_value(repo(db)?["policy"].clone()).map_err(|e| bad(&e.to_string()))?;
-    yoneda_core::validate_evaluation(&evaluation, &string(c, "id")?, &revision, &policy)
+    yoneda_agents_core::validate_evaluation(&evaluation, &string(c, "id")?, &revision, &policy)
 }

@@ -1,7 +1,7 @@
 //! Agent completion freezes source transport before trusted capture.
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
     if super::super::comparison::complete_review(db, j, result, now)? {
         return Ok(());
@@ -39,29 +39,24 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         run["status"] = json!("exploring");
     } else {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
-        if j["payload"]["workspace_transport"] == "api-source-v1" {
-            payload = super::source::payload(db, j, result, now)?;
-        } else if j["payload"]["workspace_transport"] == "git-native-v1" {
-            if result["git_verified"] != true {
-                return Err(Error::new(
-                    "INVALID_CAPTURE",
-                    "Git completion needs an adapter-verified fork receipt",
-                ));
+        match j["payload"]["workspace_transport"].as_str() {
+            Some("api-source-v1") => payload = super::source::payload(db, j, result, now)?,
+            Some("platform-branch-v1") => {
+                // The bound submission, never a commit named by the contributor's finish.
+                payload["capture_subtype"] = json!("platform_commit");
+                payload["contribution"] = j["submitted_revision"].clone();
             }
-            hash(&result["fork_revision"], "commit", &[40, 64])?;
-            string(&result["fork_revision"], "repository")?;
-            payload["source_revision"] = result["fork_revision"].clone();
-            payload["workspace_transport"] = j["payload"]["workspace_transport"].clone();
-        } else {
-            payload["workspace"] = json!(hash(result, "workspace", &[64])?);
+            _ => payload["workspace"] = json!(hash(result, "workspace", &[64])?),
         }
         if let Some(resolver) = j["payload"].get("conflict_resolver") {
-            payload["conflict_resolver"] = resolver.clone();
-            if payload["capture_subtype"] == "source_changeset" {
-                payload["source_resolution"] = json!(true);
-            } else {
-                payload["capture_subtype"] = json!("resolve_conflict");
+            if payload["capture_subtype"] != "source_changeset" {
+                return Err(Error::new(
+                    "INVALID_CAPTURE",
+                    "Conflict resolution needs a sealed source workspace",
+                ));
             }
+            payload["conflict_resolver"] = resolver.clone();
+            payload["source_resolution"] = json!(true);
             payload["conflict_id"] = resolver["conflict_id"].clone();
             payload["candidate"] = resolver["candidate"].clone();
             payload["expected_head"] = resolver["expected_head"].clone();

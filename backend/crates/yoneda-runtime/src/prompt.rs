@@ -1,6 +1,6 @@
 use crate::field;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub(crate) fn prompt(payload: &Value) -> Result<String> {
     if payload["execution"]["team_role"] == "coordinator" {
         return crate::team_prompt::coordinator_prompt(payload);
@@ -66,7 +66,7 @@ pub(crate) fn prompt(payload: &Value) -> Result<String> {
 
 fn initial_context(run: &Value) -> Result<Value> {
     if let Some(config) = run.get("context_study") {
-        let study: yoneda_core::context_study::ContextStudy =
+        let study: yoneda_agents_core::context_study::ContextStudy =
             serde_json::from_value(config.clone()).map_err(crate::err)?;
         study.validate()?;
         return Ok(study.initial_context());

@@ -10,7 +10,7 @@ use crate::{
     source_git_tree::TreeEntry,
 };
 use std::{collections::BTreeMap, fs, path::Path};
-use yoneda_core::{
+use yoneda_agents_core::{
     Result,
     source_changeset::SourceChangeset,
     source_workspace::{ContentRef, FileMode, SourceBinding, SourceFile},

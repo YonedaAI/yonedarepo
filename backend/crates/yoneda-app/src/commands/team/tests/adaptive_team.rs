@@ -100,7 +100,7 @@ fn adaptive_planner_cannot_replace_the_job_frozen_pool_authority() {
     run["agents"][0]["version"] = json!(1);
     run["adaptive_seed_agents"] = run["agents"].clone();
     run["adaptive_team_digest"] = json!(
-        yoneda_core::fingerprint(
+        yoneda_agents_core::fingerprint(
             &json!({"pool":run["approved_model_pool"],"request":run["adaptive_team"]})
         )
         .unwrap()

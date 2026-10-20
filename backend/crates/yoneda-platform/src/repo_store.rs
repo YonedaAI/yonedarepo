@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
+mod branches;
 mod break_glass;
 mod change_records;
 mod checks;
@@ -49,7 +50,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let settings = rows::settings(db)?;
     let actor = auth::actor(db, c, &settings)?;
     match op.as_str() {
-        "repo_prepare_commit" | "repo_record_commit" => actor.require("write"),
+        "repo_prepare_commit" | "repo_record_commit" | "repo_branch_set" => actor.require("write"),
         "repo_check" => actor.require("check"),
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
@@ -146,6 +147,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_projected" => staging::projected(db, c),
         "repo_staged_objects" => staging::read(db, c),
         "repo_review" => record::review(db, c, principal),
+        "repo_branch_set" => branches::set(db, c, principal),
         "repo_land" => land::land(db, c, principal, &settings),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
         "repo_land_status" => land_queue::status(db, c),

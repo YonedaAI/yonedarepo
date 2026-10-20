@@ -6,7 +6,7 @@ fn research_and_one_coder_do_not_prove_a_complete_exploration() {
     assert!(check(&s, &[], &json!({"coverage":"recorded"})).is_err());
 }
 fn complete_fixture() -> (Value, Vec<Value>, Value) {
-    let policy = yoneda_core::Policy::default();
+    let policy = yoneda_agents_core::Policy::default();
     let mut s = json!({"repository":{"pending":null,"published_commit":"c".repeat(40),"policy":policy},"decisions":[{"id":"decision","run_id":"run","candidate":"candidate-minimal","status":"published","created_at":1}],"executions":[{"id":"research","run_id":"run","role":"research","harness":"claude","status":"completed"}],"candidates":[],"evaluations":[],"artifacts":[{"id":"shared","producer":"research"}]});
     let mut events = Vec::new();
     for (i, (strategy, harness)) in [

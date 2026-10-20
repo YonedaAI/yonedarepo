@@ -57,7 +57,7 @@ export function gitFile(path: string, size: number, blob = 'c'.repeat(40)): Json
     size,
     content: {
       kind: 'git',
-      repository: 'yoneda-test/source-base',
+      repository: 'platform/source-base',
       commit: 'a'.repeat(40),
       path,
       blob,
@@ -80,7 +80,7 @@ export async function sourceFixture(
 ) {
   const access = options.access ?? 'read_write';
   const base = options.base ?? {
-    repository: 'yoneda-test/source-base',
+    repository: 'platform/source-base',
     commit: 'a'.repeat(40),
     tree: 'b'.repeat(40),
   };

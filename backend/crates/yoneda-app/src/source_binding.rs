@@ -2,7 +2,7 @@
 use crate::source_workspace;
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, source_workspace::*};
+use yoneda_agents_core::{Error, Result, source_workspace::*};
 mod context;
 mod registration;
 mod resolution;
@@ -74,7 +74,7 @@ fn bind<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             SourceAccess::ReadWrite
         },
         view_digest: digest.clone(),
-        baseline_overrides_digest: yoneda_core::fingerprint(&json!(overrides))?,
+        baseline_overrides_digest: yoneda_agents_core::fingerprint(&json!(overrides))?,
         base: selected.clone(),
         parents: if selected == decode::<SourceRevision>(&context["base"])? {
             decode(&context["parents"])?

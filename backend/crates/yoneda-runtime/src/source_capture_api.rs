@@ -1,7 +1,7 @@
 //! Root-only, current-capture Source API client; no producer grant or source bytes in job JSON.
 use crate::source_capture_context::CaptureContext;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result};
+use yoneda_agents_core::{Error, Result};
 pub(crate) const PAGE_BYTES: usize = 1024 * 1024;
 pub(crate) struct CaptureApi {
     origin: String,
@@ -48,13 +48,18 @@ impl CaptureApi {
         })
     }
     pub async fn request(&self, op: &str, args: Value) -> Result<reqwest::Response> {
-        if !["context", "manifest", "tree", "blob", "verify"].contains(&op) {
+        if !["context", "manifest", "tree", "blob", "commit"].contains(&op) {
             return Err(failure("Unsupported root capture operation"));
         }
-        let response = self
+        let mut request = self
             .client
             .post(format!("{}/v1/capture/{op}", self.origin))
-            .json(&args)
+            .json(&args);
+        if op == "commit" {
+            // The platform builds and stores the commit; allow it more than a page read.
+            request = request.timeout(std::time::Duration::from_secs(180));
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| failure("Source capture request interrupted"))?;
@@ -96,7 +101,7 @@ impl CaptureApi {
                 )
                 .filter(|size| *size <= crate::source_capture_manifest::MANIFEST_METADATA_LIMIT)
                 .ok_or_else(|| failure("Sealed manifest exceeds bounded metadata assembly"))?;
-            if items.len() + rows.len() > yoneda_core::source_workspace::MAX_FILES {
+            if items.len() + rows.len() > yoneda_agents_core::source_workspace::MAX_FILES {
                 return Err(failure("Sealed manifest exceeds source row capability"));
             }
             items.extend(rows);

@@ -1,10 +1,10 @@
 //! Native SQLite source authority plus real local Git objects; no provider or workerd claims.
-use crate::source_git_http_tests::{Server, git, oid};
+use crate::source_git_fixture::{Server, git, oid};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use yoneda_agents_core::source_workspace::*;
 use yoneda_app::{execute_source_workspace, native::NativeStore};
-use yoneda_core::source_workspace::*;
 
 pub(crate) const TOKEN: &str = "local-capture-test-only";
 const KEY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -27,16 +27,16 @@ fn sign(claims: Value, domain: &str) -> Value {
     }
     inner.update(ipad);
     inner.update(domain.as_bytes());
-    inner.update(yoneda_core::fingerprint(&claims).unwrap().as_bytes());
+    inner.update(yoneda_agents_core::fingerprint(&claims).unwrap().as_bytes());
     outer.update(opad);
     outer.update(inner.finalize());
-    json!({"claims":claims,"signature":yoneda_core::hex(&outer.finalize())})
+    json!({"claims":claims,"signature":yoneda_agents_core::hex(&outer.finalize())})
 }
 impl Fixture {
-    pub fn call(&self, command: Value) -> yoneda_core::Result<Value> {
+    pub fn call(&self, command: Value) -> yoneda_agents_core::Result<Value> {
         self.call_as(command, "supervisor")
     }
-    pub fn call_as(&self, mut command: Value, purpose: &str) -> yoneda_core::Result<Value> {
+    pub fn call_as(&self, mut command: Value, purpose: &str) -> yoneda_agents_core::Result<Value> {
         let b = &self.binding;
         command["now"] = json!(1000);
         command["_source_signing_key"] = json!(KEY);
@@ -181,7 +181,7 @@ pub(crate) fn fixture(server: &Server) -> Fixture {
         &binding.view_digest,
     )
     .unwrap();
-    binding.baseline_overrides_digest = yoneda_core::fingerprint(&json!(overrides)).unwrap();
+    binding.baseline_overrides_digest = yoneda_agents_core::fingerprint(&json!(overrides)).unwrap();
     let mut f = Fixture {
         db: server.root.path().join("source.db"),
         binding,
@@ -195,7 +195,7 @@ pub(crate) fn fixture(server: &Server) -> Fixture {
     f.call(json!({"op":"source_chmod","request_id":"mode","path":"mode","mode":"100755","expected_workspace_version":1,"expected_file_version":0})).unwrap();
     f.call(json!({"op":"source_rename","request_id":"rename","overwrite":false,"from":"base","to":"renamed","expected_workspace_version":2,"expected_from_version":0,"expected_to_version":0})).unwrap();
     let bytes = (0..140000).map(|n| (n % 251) as u8).collect::<Vec<_>>();
-    let hash = yoneda_core::digest(&bytes);
+    let hash = yoneda_agents_core::digest(&bytes);
     let ticket=f.call(json!({"op":"source_upload_ticket","request_id":"upload","path":"wide/changed.bin","sha256":hash,"size":bytes.len(),"mode":"100644","expected_workspace_version":3,"expected_file_version":0})).unwrap();
     f.call(json!({"op":"source_verify_upload","request_id":"verify","ticket_id":ticket["ticket"]["id"],"sha256":hash,"size":bytes.len()})).unwrap();
     f.call(json!({"op":"source_create","request_id":"create","path":"wide/changed.bin","ticket_id":ticket["ticket"]["id"],"expected_workspace_version":3,"expected_file_version":0})).unwrap();

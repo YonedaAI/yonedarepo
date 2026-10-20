@@ -1,8 +1,8 @@
 use crate::err;
 use std::path::Path;
-use yoneda_core::{Result, Workspace};
+use yoneda_agents_core::{Result, Workspace};
 pub fn materialize(root: &Path, workspace: &Workspace) -> Result<()> {
-    yoneda_core::validate_workspace(workspace)?;
+    yoneda_agents_core::validate_workspace(workspace)?;
     materialize_unbounded(root, workspace)
 }
 
@@ -12,7 +12,7 @@ pub(crate) fn materialize_unbounded(root: &Path, workspace: &Workspace) -> Resul
     }
     let mut total = 0usize;
     for (path, file) in workspace {
-        yoneda_core::validate_path(path)?;
+        yoneda_agents_core::validate_path(path)?;
         total = total.saturating_add(file.bytes()?.len());
         if total > 100 * 1024 * 1024 {
             return Err(err("Workspace exceeds 100 MiB"));
@@ -69,20 +69,20 @@ pub(crate) fn export_with_baseline(root: &Path, baseline: &Workspace) -> Result<
             .to_str()
             .ok_or_else(|| err("Non-UTF8 path"))?
             .to_owned();
-        yoneda_core::validate_path(&path)?;
+        yoneda_agents_core::validate_path(&path)?;
         let file = crate::secure_fs::read_regular(root, &path)?;
         bytes = bytes.saturating_add(file.bytes()?.len());
-        if bytes > yoneda_core::MAX_WORKSPACE_BYTES {
+        if bytes > yoneda_agents_core::MAX_WORKSPACE_BYTES {
             return Err(err("Workspace exceeds 8 MiB"));
         }
         result.insert(path, file);
-        if result.len() > yoneda_core::MAX_FILES {
+        if result.len() > yoneda_agents_core::MAX_FILES {
             return Err(err("Too many workspace files"));
         }
     }
     if let Some(error) = filter_error {
         return Err(error);
     }
-    yoneda_core::validate_workspace(&result)?;
+    yoneda_agents_core::validate_workspace(&result)?;
     Ok(result)
 }

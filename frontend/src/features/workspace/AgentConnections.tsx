@@ -61,8 +61,8 @@ export function AgentConnections({ repo, onClose }: { repo: string; onClose: () 
           </details>
           <p>
             Ask your agent to read repo_context, search prior alternatives, then use attempt_begin
-            to build a follow-up. The tool returns a scoped Git URL. Push its default branch,
-            publish findings and call attempt_submit.
+            to build a follow-up. It reads source with attempt_read, commits files with
+            attempt_commit, publishes findings and calls attempt_submit.
           </p>
           <button type="button" onClick={() => setIssued(null)}>
             I saved the key

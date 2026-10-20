@@ -129,7 +129,7 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         }
     }
     execution["harness"] =
-        json!(yoneda_core::providers::provider(&string(&execution, "provider")?)?.harness);
+        json!(yoneda_agents_core::providers::provider(&string(&execution, "provider")?)?.harness);
     let latest_run = get(db, "runs", &string(run, "id")?)?;
     let run = &latest_run;
     if get(db, "executions", &id).is_ok() {
@@ -172,7 +172,7 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
     }
     if task["role"] == "integrator" {
         let manifest = inputs::manifest(db, run)?;
-        let digest = yoneda_core::fingerprint(&manifest)?;
+        let digest = yoneda_agents_core::fingerprint(&manifest)?;
         let manifest_id = format!("integration:{}:1:{digest}", string(run, "id")?);
         node(
             db,

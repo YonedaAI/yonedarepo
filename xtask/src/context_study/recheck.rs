@@ -43,7 +43,8 @@ pub(super) async fn execute(client: &Client, input: &Path, output: &Path) -> Res
             if captured["revision"] != candidate["revision"] {
                 return Err("Recheck source revision mismatch".into());
             }
-            let files: yoneda_core::Workspace = serde_json::from_value(captured["files"].clone())?;
+            let files: yoneda_agents_core::Workspace =
+                serde_json::from_value(captured["files"].clone())?;
             let temp = tempfile::tempdir()?;
             yoneda_runtime::materialize(temp.path(), &files)?;
             let outcome = oracle::check(

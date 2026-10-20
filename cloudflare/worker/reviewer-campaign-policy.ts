@@ -28,7 +28,6 @@ export function campaignTrialRequest(id: string, version: number, branch: Json) 
   const model = campaignModelBudgets[1];
   return {
     id,
-    workspace_transport: 'git-native-v1',
     mode: 'collaborate',
     working_branch_id: 'campaign-development',
     expected_working_commit: branch.working_commit,

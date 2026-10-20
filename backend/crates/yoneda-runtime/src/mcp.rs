@@ -1,7 +1,7 @@
 use crate::{broker::broker, err};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use yoneda_core::Result;
+use yoneda_agents_core::Result;
 pub const TOOLS: &str = include_str!("mcp_tools.json");
 const COMPARISON_TOOLS: &str = include_str!("comparison_tools.json");
 
@@ -61,7 +61,7 @@ async fn call(params: Value) -> Result<Value> {
         .is_some_and(|name| name.starts_with("source_"))
     {
         if std::env::var("YONEDA_SOURCE_API").as_deref() != Ok("1") {
-            return Err(yoneda_core::Error::new(
+            return Err(yoneda_agents_core::Error::new(
                 "FORBIDDEN",
                 "Source tooling is unavailable for this attempt",
             ));

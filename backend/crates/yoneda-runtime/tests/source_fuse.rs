@@ -243,8 +243,8 @@ fn actual_linux_api_create_uncached_path_is_invalidated_before_ack() {
 mod secure_fs;
 #[path = "../src/site.rs"]
 mod site;
-fn err(error: impl std::fmt::Display) -> yoneda_core::Error {
-    yoneda_core::Error::new("RUNTIME", error.to_string())
+fn err(error: impl std::fmt::Display) -> yoneda_agents_core::Error {
+    yoneda_agents_core::Error::new("RUNTIME", error.to_string())
 }
 #[path = "support/source_static_export.rs"]
 mod static_export;

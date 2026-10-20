@@ -31,7 +31,7 @@ const run = {
   model_requests: 0,
 };
 it('keeps old transport approvals unchanged and starts new source progress without granting review eligibility', () => {
-  expect(runSourceProgress(snapshot, { ...run, workspace_transport: 'git-native-v1' })).toBeNull();
+  expect(runSourceProgress(snapshot, { ...run, workspace_transport: 'json-v1' })).toBeNull();
   expect(runSourceProgress(snapshot, run)).toMatchObject({
     stage: 'preparing',
     title: 'Preparing source',

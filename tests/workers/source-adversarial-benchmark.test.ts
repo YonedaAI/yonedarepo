@@ -5,6 +5,7 @@ import { verifySourceView } from '../../cloudflare/worker/source-view-proof';
 import { sourceReadResponse } from '../../cloudflare/worker/source-storage';
 import { fixtureBytes } from '../../tools/source-benchmark/content.mjs';
 import { artifactsBenchmarkFixture } from '../../tools/source-benchmark/workerd-artifacts-fixture';
+import { syntheticPlatform } from './platform-fixture';
 import {
   bindings,
   sourceFixture,
@@ -16,7 +17,7 @@ afterEach(reset);
 it('separates cold indexing, full-view proof and Native authority initialization and five agent reads, sealing only one changed file', async () => {
   const artifacts = artifactsBenchmarkFixture();
   expect(artifacts.base.tree).toBe('b4ad5a8a767c8c00fa9e0e17cfa243535ef17071');
-  const local = { ...bindings, ARTIFACTS: artifacts.artifacts };
+  const local = await syntheticPlatform(bindings, { 'source-base': artifacts.repo });
   const coldStart = performance.now();
   let batches = 0;
   for (;;) {

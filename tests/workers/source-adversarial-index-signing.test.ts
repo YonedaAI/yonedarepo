@@ -10,13 +10,14 @@ import {
 } from '../../cloudflare/worker/source-index-journal';
 import { verifySourceView } from '../../cloudflare/worker/source-view-proof';
 import { bindings, sha256 } from '../../tools/source-benchmark/workerd-source-fixture';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 
 /** Only the external SDK is a fixture. Journal, immutable chunks and cache use real Workerd R2. */
 async function partialIndex() {
   const base = {
-    repository: 'yoneda-test/index-signing',
+    repository: 'platform/index-signing',
     commit: 'a'.repeat(40),
     tree: 'b'.repeat(40),
   };
@@ -44,15 +45,7 @@ async function partialIndex() {
       return new Blob([body]);
     },
   } as unknown as ArtifactsRepo;
-  const local = {
-    ...bindings,
-    ARTIFACTS: {
-      async get(name: string) {
-        if (name !== 'index-signing') throw new Error('Unapproved repository');
-        return repo;
-      },
-    } as unknown as Artifacts,
-  };
+  const local = await syntheticPlatform(bindings, { 'index-signing': repo });
   expect(await sourceIndexBounded(local, base)).toMatchObject({ state: 'preparing', files: 16 });
   const prefix = await indexPrefix(base);
   const stored = await bindings.OBJECTS.get(`${prefix}/journal`);
@@ -145,10 +138,7 @@ it('rejects a validly authenticated journal transplanted from a different reques
       return { hash: commit, treeHash: foreign.tree };
     },
   } as ArtifactsRepo;
-  await sourceIndexBounded(
-    { ...f.local, ARTIFACTS: { get: async () => foreignRepo } as unknown as Artifacts },
-    foreign,
-  );
+  await sourceIndexBounded(await syntheticPlatform(bindings, { 'index-signing': foreignRepo }), foreign);
   const foreignObject = await bindings.OBJECTS.get(`${await indexPrefix(foreign)}/journal`);
   if (!foreignObject) throw new Error('Missing authenticated foreign journal');
   await bindings.OBJECTS.put(`${f.prefix}/journal`, await foreignObject.text());
@@ -188,7 +178,7 @@ for (const field of ['repository', 'commit', 'tree', 'files', 'bytes', 'view_dig
   it(`rejects a rehashed manifest with altered ${field} rather than trusting immutable key spelling`, async () => {
     const f = await completedIndex();
     const altered = structuredClone(f.manifest);
-    if (field === 'repository') altered.revision.repository = 'yoneda-test/foreign';
+    if (field === 'repository') altered.revision.repository = 'platform/foreign';
     if (field === 'commit') altered.revision.commit = 'c'.repeat(40);
     if (field === 'tree') altered.revision.tree = 'd'.repeat(40);
     if (field === 'files') altered.files--;

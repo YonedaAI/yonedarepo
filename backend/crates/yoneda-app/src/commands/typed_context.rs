@@ -1,6 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
-use yoneda_core::{Error, Result, context::ContextInput};
+use yoneda_agents_core::{Error, Result, context::ContextInput};
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     // The Worker owns owner authentication. An attempt always derives its identity from its lease.
@@ -106,7 +106,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             let kind = c.get("kind").and_then(Value::as_str).unwrap_or("");
             if !kind.is_empty() {
-                serde_json::from_value::<yoneda_core::context::ContextKind>(json!(kind))
+                serde_json::from_value::<yoneda_agents_core::context::ContextKind>(json!(kind))
                     .map_err(|_| bad("Unknown context kind"))?;
             }
             let rows = db.query("SELECT id,payload FROM nodes WHERE id>? AND json_extract(payload,'$.kind') IN ('intent','requirement','constraint','assumption','finding','alternative','proposed_decision','question') AND instr(lower(json_extract(payload,'$.label')),lower(?))>0 AND (?='' OR json_extract(payload,'$.kind')=?) ORDER BY id LIMIT ?", &[json!(cursor),json!(query),json!(kind),json!(kind),json!(limit + 1)])?;

@@ -20,7 +20,6 @@ it('reads the real frozen capture payload projection by public id for its owner 
     remote: { namespace: 'yoneda-test', name: owner.repo },
     commit: 'a'.repeat(40),
     policy: reviewerPolicy,
-    workspace_transport: 'git-native-v1',
   });
   await ledger(bindings, owner.repo, {
     op: 'start_run',
@@ -34,10 +33,7 @@ it('reads the real frozen capture payload projection by public id for its owner 
   });
   await ledger(bindings, owner.repo, {
     op: 'finish', job_id: agent.id, epoch: agent.epoch,
-    result: {
-      git_verified: true,
-      fork_revision: { repository: 'yoneda-test/attempt-fork', commit: 'b'.repeat(40) },
-    },
+    result: { workspace: 'b'.repeat(64) },
   });
   const capture = await ledger(bindings, owner.repo, { op: 'claim', job_id: 'capture:job-status-run:agent-1' });
 
@@ -53,14 +49,13 @@ it('reads the real frozen capture payload projection by public id for its owner 
     kind: 'capture',
     status: 'running',
     epoch: capture.epoch,
-    workspace_transport: 'git-native-v1',
-    source_revision: { repository: 'yoneda-test/attempt-fork', commit: 'b'.repeat(40) },
     execution: {
       id: 'job-status-run:agent-1',
       base: { repository: `yoneda-test/${owner.repo}`, commit: 'a'.repeat(40) },
     },
   });
   expect(status).not.toHaveProperty('payload');
+  expect(status).not.toHaveProperty('source_revision');
   expect(status).not.toHaveProperty('model_budget');
 
   const missingId = await api(

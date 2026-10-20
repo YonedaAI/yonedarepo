@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
-import { gitRole } from '../../cloudflare/worker/git-policy';
 import type { Scope } from '../../cloudflare/worker/types';
 import { hostedMcp } from '../../cloudflare/worker/hosted-mcp';
 import { comparisonManifestFingerprint } from '../../cloudflare/worker/comparison-context';
@@ -31,13 +30,4 @@ it('rejects reviewer mutation tools before reading or writing any authority bind
     const result = await hostedMcp(env, scope, { name, arguments: {} });
     expect(result.status).toBe(403);
   }
-});
-
-it('never gives a review-only harness a writable fork or generic source Git capability', () => {
-  const scope = { fork: 'namespace/claimed-fork', job: { kind: 'agent', payload: {
-    workspace_transport: 'git-native-v1', review_only: true, comparison_review: true,
-    execution: { base: { repository: 'namespace/base' } },
-    team_inputs: [{ revision: { repository: 'namespace/other-builder' } }],
-  } } } as unknown as Scope;
-  for (const role of ['fork', 'canonical', 'team-0', 'target']) expect(gitRole(scope, role)).toBeNull();
 });
