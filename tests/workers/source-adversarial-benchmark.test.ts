@@ -14,6 +14,10 @@ import {
 
 afterEach(reset);
 
+// A hang guard, not a performance bound: the test asserts operation counts only. The cold
+// index of the fixture took 182 s on a 4-vCPU GitHub runner with four workerd pools.
+const HANG_GUARD_MS = 540_000;
+
 it('separates cold indexing, full-view proof and Native authority initialization and five agent reads, sealing only one changed file', async () => {
   const artifacts = artifactsBenchmarkFixture();
   expect(artifacts.base.tree).toBe('b4ad5a8a767c8c00fa9e0e17cfa243535ef17071');
@@ -159,4 +163,4 @@ it('separates cold indexing, full-view proof and Native authority initialization
       git_capture_measured: false,
     }),
   );
-}, 180000);
+}, HANG_GUARD_MS);
