@@ -1,9 +1,11 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
+import { durableJson } from './durable';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -11,7 +13,7 @@ export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string; human?: true } }
   | { _token: string }
-  | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' };
+  | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' | 'commits' };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
@@ -29,21 +31,30 @@ export type Call = ((command: Json) => Promise<Json>) & {
   sign(command: Json): Json;
 };
 export function caller(env: Env, repo: string, auth: Credentials): Call {
-  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
   const sign = (command: Json) => ({
     ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
     ...auth,
   });
-  const call = async (command: Json) => {
-    const value = await timed(`do.${command.op}`, async () => {
-      const result = await stub.fetch('https://source-repository/', {
-        method: 'POST',
-        body: JSON.stringify(sign(command)),
-      });
-      return result.json<Json>();
-    });
+  const once = async (command: Json) => {
+    const value = await timed(`do.${command.op}`, () =>
+      durableJson<Json>(stub, 'https://source-repository/', JSON.stringify(sign(command))),
+    );
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
+  };
+  // A commit the authority has not seen may live in its commit shard: adopt, then retry.
+  const call = async (command: Json) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await once(command);
+      } catch (e) {
+        const missing = unrecorded(e);
+        if (!missing || attempt >= 4) throw e;
+        // False also when a racing adoption took it first: retry once in case.
+        if (!(await timed('adopt', () => adoptCommit(env, repo, missing))) && attempt > 0) throw e;
+      }
+    }
   };
   return Object.assign(call, { sign });
 }
@@ -51,14 +62,10 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
 /** Signed commands (possibly of different callers) in one round trip to the authority,
  * each in its own transaction; a failed one answers `{error}` without stopping the rest. */
 export async function batch(env: Env, repo: string, commands: Json[]): Promise<Json[]> {
-  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  return timed(`do.${commands.map((c) => c.op).join('+')}`, async () => {
-    const result = await stub.fetch('https://source-repository/batch', {
-      method: 'POST',
-      body: JSON.stringify(commands),
-    });
-    return result.json<Json[]>();
-  });
+  const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  return timed(`do.${commands.map((c) => c.op).join('+')}`, () =>
+    durableJson<Json[]>(stub, 'https://source-repository/batch', JSON.stringify(commands)),
+  );
 }
 
 /** One repository, as seen by one authenticated caller. */

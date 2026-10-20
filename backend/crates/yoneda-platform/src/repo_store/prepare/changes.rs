@@ -12,17 +12,17 @@ use yoneda_core::{
 const MAX_CHANGES: usize = 10_000;
 const MAX_FILE_BYTES: usize = 32 * 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 100 * 1024 * 1024;
-pub(super) enum Content {
+pub(crate) enum Content {
     Bytes(Vec<u8>),
     /// A blob already in the object store (revert, cherry-pick): referenced, not re-sent.
     Known(ObjectId),
 }
 
-pub(super) struct Change {
-    pub(super) path: String,
-    pub(super) target: Option<(FileMode, Content)>,
+pub(crate) struct Change {
+    pub(crate) path: String,
+    pub(crate) target: Option<(FileMode, Content)>,
     /// Precondition on the parent: the path's current blob (`None`: absent).
-    pub(super) expect: Option<Option<ObjectId>>,
+    pub(crate) expect: Option<Option<ObjectId>>,
 }
 
 fn expectation(change: &Value) -> Result<Option<Option<ObjectId>>> {
@@ -43,7 +43,7 @@ fn file_mode(change: &Value) -> Result<FileMode> {
     })
 }
 
-pub(super) fn changes(c: &Value) -> Result<Vec<Change>> {
+pub(crate) fn changes(c: &Value) -> Result<Vec<Change>> {
     let list = c["changes"]
         .as_array()
         .filter(|l| l.len() <= MAX_CHANGES)
@@ -105,7 +105,7 @@ pub(super) fn changes(c: &Value) -> Result<Vec<Change>> {
 
 /// A referenced blob must already be in this repository's object store: it was written
 /// by a recorded commit (or removed by one, so it existed in that commit's parent).
-pub(super) fn known_blob<S: SqlStore>(db: &S, id: &ObjectId) -> Result<()> {
+pub(crate) fn known_blob<S: SqlStore>(db: &S, id: &ObjectId) -> Result<()> {
     let found = db.query(
         "SELECT 1 AS found FROM commit_paths WHERE new_blob=? OR old_blob=? LIMIT 1",
         &[json!(id.hex()), json!(id.hex())],

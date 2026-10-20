@@ -7,6 +7,7 @@
 import { compute } from './repo-compute';
 import { fromBase64, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
+import { shardCall } from './repo-shards';
 import { putRaw } from './repo-stores';
 import type { Env, Envelope } from './types';
 
@@ -14,12 +15,13 @@ export async function dispatchProjection(env: Env, repo: string) {
   await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_project', repo_id: repo, job_id: 'refs' });
 }
 
-export async function dispatchObjects(env: Env, repo: string) {
+/** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s. */
+export async function dispatchObjects(env: Env, repo: string, shard?: number) {
   await env.PLATFORM_QUEUE.send({
     v: 1,
     kind: 'platform_objects',
     repo_id: repo,
-    job_id: 'objects',
+    job_id: shard === undefined ? 'objects' : `shard:${shard}`,
   });
 }
 
@@ -43,15 +45,20 @@ async function projectCommit(objects: RepoObjects, entry: Json) {
  * commits whose every object write was confirmed. Idempotent under duplicate delivery;
  * throws (for queue retry) while a commit fails, and hands a long outbox to a fresh job.
  */
-export async function projectObjects(env: Env, repo: string) {
-  const call = caller(env, repo, { _system: 'projection' });
+export async function projectObjects(env: Env, repo: string, job = 'objects') {
+  const shard = /^shard:(\d+)$/.exec(job);
+  const authority = caller(env, repo, { _system: 'projection' });
+  const call = shard
+    ? (c: Json) =>
+        shardCall(env, repo, Number(shard[1]), { ...c, op: c.op.replace(/^repo_/, 'store_') })
+    : authority;
   let objects: RepoObjects | undefined;
   let projected = 0;
   for (let round = 0; round < OUTBOX_ROUNDS; round++) {
     const { commits } = await call({ op: 'repo_objects_pending' });
     if (commits.length === 0) return { projected, more: false };
     if (!objects) {
-      const status = await call({ op: 'repo_status' });
+      const status = await authority({ op: 'repo_status' });
       objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
     }
     const store = objects;
@@ -61,7 +68,7 @@ export async function projectObjects(env: Env, repo: string) {
     if (failed.length > 0) throw new Error(`${failed.length} staged commits are not in R2 yet`);
     projected += results.length;
   }
-  await dispatchObjects(env, repo);
+  await dispatchObjects(env, repo, shard ? Number(shard[1]) : undefined);
   return { projected, more: true };
 }
 
