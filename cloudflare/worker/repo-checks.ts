@@ -100,6 +100,8 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       exit_code: result.exit_code ?? null,
       timed_out: result.timed_out === true,
       duration_ms: result.duration_ms,
+      queued_ms: run.queued_ms,
+      start_ms: result.start_ms,
       output_bytes: result.output_bytes,
       output_sha256: result.output_sha256,
       log,

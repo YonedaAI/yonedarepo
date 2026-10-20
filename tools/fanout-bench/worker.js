@@ -66,6 +66,7 @@ export default {
             server: r.server,
             timing: r.timing,
             version: r.body?.version,
+            commit: r.body?.commit,
             error: r.body?.error?.code,
             message: r.body?.error?.message?.slice(0, 120),
           };

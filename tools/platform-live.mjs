@@ -54,9 +54,12 @@ const diff = await call(`/repos/${repo.id}/diff?head=${commit.commit}&patch=1`);
 assert.equal(diff.changes[0].patch, '@@ -0,0 +1 @@\n+a\n');
 const landed = await call(`/repos/${repo.id}/land`, { ref: 'main', commit: commit.commit });
 assert.equal(landed.version, 2);
-assert.equal((await call(`/repos/${repo.id}/blob?path=src/a.txt`)).content, 'a\n');
+// Read-your-writes: a reader passes the version its landing reported.
+assert.equal((await call(`/repos/${repo.id}/blob?path=src/a.txt&min_version=${landed.version}`)).content, 'a\n');
 
-// Any Git client sees the platform's ids: main is projected to the landed commit.
+// Any Git client sees the platform's ids: main is projected to the head the API reports
+// (the landed commit itself, or the Git commit built for its changeset).
+const head = (await call(`/repos/${repo.id}/refs`)).refs['refs/heads/main'];
 const access = await call(`/repos/${repo.id}/clone`, {});
 const gitEnv = {
   ...process.env,
@@ -70,19 +73,19 @@ const projectedAt = Date.now();
 let remoteMain = '';
 while (Date.now() - projectedAt < 120_000) {
   remoteMain = git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] ?? '';
-  if (remoteMain === commit.commit) break;
+  if (remoteMain === head) break;
   await new Promise((r) => setTimeout(r, 2000));
 }
-assert.equal(remoteMain, commit.commit, 'main was not projected to the landed commit');
+assert.equal(remoteMain, head, 'main was not projected to the landed head');
 const dir = mkdtempSync(join(tmpdir(), 'yoneda-live-'));
 try {
   const started = Date.now();
   git(['clone', '--quiet', access.remote, dir]);
   console.log(`git clone ${Date.now() - started}ms; projection visible after ${started - projectedAt}ms`);
-  assert.equal(git(['rev-parse', 'HEAD'], dir), commit.commit);
+  assert.equal(git(['rev-parse', 'HEAD'], dir), head);
   assert.equal(readFileSync(join(dir, 'src/a.txt'), 'utf8'), 'a\n');
   git(['fsck', '--strict'], dir);
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
-console.log(JSON.stringify({ ok: true, repo: repo.id, commit: commit.commit, cloned: true }));
+console.log(JSON.stringify({ ok: true, repo: repo.id, commit: commit.commit, head, cloned: true }));

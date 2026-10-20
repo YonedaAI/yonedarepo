@@ -29,6 +29,8 @@ export async function runCheckOnce(
 ): Promise<Record<string, unknown>> {
   const secret = crypto.randomUUID() + crypto.randomUUID();
   try {
+    // Every run starts a fresh instance: this is its cold start, reported with the result.
+    const starting = Date.now();
     await instance.startAndWaitForPorts({
       ports: [8080],
       startOptions: {
@@ -37,6 +39,7 @@ export async function runCheckOnce(
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });
+    const startMs = Date.now() - starting;
     // The check server enforces the job's timeout; a stalled connection must not outlive it.
     const result = await instance.containerFetch(
       new Request('http://check/check', {
@@ -51,7 +54,7 @@ export async function runCheckOnce(
       throw Object.assign(new Error(body.error?.message ?? 'Check executor failed'), {
         code: body.error?.code ?? 'CHECK_EXECUTOR',
       });
-    return body;
+    return { ...body, start_ms: startMs };
   } finally {
     await instance.destroy();
   }

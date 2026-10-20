@@ -282,3 +282,74 @@ fn batch_projection_is_deterministic() {
         steps[1]["commit"]
     );
 }
+
+#[test]
+fn a_projected_batch_carries_every_new_object_to_the_object_store() {
+    let (h, _) = open();
+    let a = h.shard_commit(AGENT, "a.txt", "a\n", json!([]));
+    let b = h.shard_commit(AGENT, "d/b.txt", "b\n", json!([]));
+    h.submit(vec![(OWNER, &a), (OWNER, &b)]);
+    h.project_all();
+    // What the ref projector pushes with main: every object Artifacts lacks, including the
+    // landed files' blobs (the landed commits are neither parents nor adopted).
+    let pushed = h.ok(
+        PROJECTOR,
+        json!({"op":"repo_projection_objects","refname":"refs/heads/main"}),
+    );
+    let ids: Vec<String> = pushed["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["objects"].as_array().unwrap().clone())
+        .map(|o| o["id"].as_str().unwrap().to_owned())
+        .collect();
+    let head = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}));
+    let mut needed = vec![head["commit"].as_str().unwrap().to_owned()];
+    // The head's tree, the new `d` tree and both blobs.
+    let blob = |t: &str| hash_object(ObjectKind::Blob, t.as_bytes()).hex();
+    needed.extend([
+        head["tree"].as_str().unwrap().to_owned(),
+        blob("a\n"),
+        blob("b\n"),
+    ]);
+    for id in needed {
+        assert!(
+            ids.contains(&id),
+            "{id} would be missing from the pushed main: {pushed}"
+        );
+    }
+}
+
+#[test]
+fn the_backfill_relists_blobs_of_batches_projected_without_them() {
+    use crate::storage::SqlStore;
+    let (h, _) = open();
+    let a = h.shard_commit(AGENT, "a.txt", "a\n", json!([]));
+    h.submit(vec![(OWNER, &a)]);
+    h.project_all();
+    let head = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}))["commit"].clone();
+    let commits = json!([head]);
+    // As a projection before the fix left it: pushed without the blob, marked held.
+    h.ok(
+        PROJECTOR,
+        json!({"op":"repo_projection_result","refname":"refs/heads/main","version":2,
+        "outcome":"ok","commit":head,"commits":commits}),
+    );
+    let listed = |h: &Harness| {
+        h.ok(
+            PROJECTOR,
+            json!({"op":"repo_projection_objects","refname":"refs/heads/main"}),
+        )["commits"]
+            .clone()
+    };
+    assert_eq!(listed(&h), json!([]));
+    let sql = include_str!("../../migrations/repo_store/0021_projected_blobs.sql");
+    for statement in sql.split(';').filter(|s| !s.trim().is_empty()) {
+        h.db.query(statement, &[]).unwrap();
+    }
+    let blob = hash_object(ObjectKind::Blob, b"a\n").hex();
+    assert_eq!(
+        listed(&h)[0]["objects"],
+        json!([{"id": blob, "kind": "blob"}])
+    );
+}

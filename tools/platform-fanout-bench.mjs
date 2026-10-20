@@ -157,6 +157,13 @@ function landRate(rows) {
   const last = Math.max(...done.map((r) => r.started_at + r.ms));
   return Number(((done.length * 1000) / Math.max(1, last - first)).toFixed(1));
 }
+/** Commits per commit shard (the platform writes a commit to shard id[0..2] % 64). */
+function shardLoad(rows) {
+  const counts = new Array(64).fill(0);
+  for (const r of rows.filter(ok)) if (r.commit) counts[Number.parseInt(r.commit.slice(0, 2), 16) % 64]++;
+  const sorted = [...counts].sort((a, b) => a - b);
+  return { shards: 64, min: sorted[0], median: sorted[32], max: sorted[63] };
+}
 const result = {
   repo,
   writers: WRITERS,
@@ -165,7 +172,7 @@ const result = {
   begin: values.begin ?? 'default',
   read_mode: values.read ?? 'default',
   elapsed_ms: Math.round(elapsed),
-  commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits) },
+  commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits), per_shard: shardLoad(commits) },
   land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands), peak_per_second: landPeak(lands) },
   projection,
   overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,

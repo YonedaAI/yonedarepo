@@ -7,6 +7,7 @@
 
 import { deferred } from './background';
 import { awaitProjection, type LandMode, landMode } from './repo-changesets';
+import { forgetHead } from './repo-head';
 import { pollLanding } from './repo-land-poll';
 import { moved } from './repo-merge';
 import { ApiError, batch, caller, type Json, RepoContext } from './repo-ops';
@@ -101,6 +102,7 @@ export async function landWithMerge(
     ...(fastForwardOnly ? {} : { enqueue: true }),
   };
   const landed = await timed('land.request', () => adoptAndLand(ctx, sha, land));
+  forgetHead(ctx.repo);
   if (!landed.queued) {
     if (!landed.already) await moved(ctx, ref);
     return landed;
@@ -136,8 +138,11 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, own: Js
     if (!out) continue;
     if (out.batch) record('land.batch', out.batch.ms, out.batch.size);
     if (out.queued_ms !== undefined) record('land.queued', out.queued_ms);
-    if (out.status === 'landed')
+    if (out.status === 'landed') {
+      // This isolate's next read sees its own landing (others pass min_version).
+      forgetHead(ctx.repo);
       return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
+    }
     // A commit on unlanded parents needs the merge path, which adopts its whole chain.
     if (out.status === 'need_chain') {
       item = { ...item, records: await shardChain(ctx.env, ctx.repo, sha) };
