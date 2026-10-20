@@ -4,7 +4,8 @@
 import { expect, it } from 'vitest';
 import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { projectRefs } from '../../cloudflare/worker/repo-projection';
+import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -82,7 +83,9 @@ it('imports first-parent history from a remote and lands it', async () => {
     await api(`/repos/${source.body.id}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, local);
     head = made.body.commit;
   }
+  // The remote must hold the landed history: objects into R2, then main into the R2 store.
   await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
   const remote = fakeRemote(`yr-${source.body.id}`, head);
   let started: any;
   const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };

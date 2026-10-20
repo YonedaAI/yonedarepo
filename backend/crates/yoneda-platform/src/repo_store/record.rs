@@ -57,7 +57,7 @@ pub fn record<S: SqlStore>(
         .as_array()
         .ok_or_else(|| rows::corrupt("touches"))?;
     db.query(
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         &[
             json!(id.hex()),
             prepared["tree"].clone(),
@@ -68,6 +68,10 @@ pub fn record<S: SqlStore>(
             prepared["message"].clone(),
             json!(prepared["read_set"].to_string()),
             json!(now),
+            // A pushed commit sits in Artifacts under its hidden ref; a staged one reaches it
+            // with the first protected ref that includes it.
+            json!(i64::from(!staged)),
+            json!((!staged).then_some(now)),
         ],
     )?;
     for touch in touches {

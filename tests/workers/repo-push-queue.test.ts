@@ -14,20 +14,20 @@ async function repo(owner: { cookie: string }) {
   return `/repos/${created.body.id}`;
 }
 
+// Commits too large to stage (bulk imports) are pushed before they are accepted.
+const bulk = (tag: string) => Array.from({ length: 300 }, (_, k) => file(`${tag}/${k}.txt`, `${tag} ${k}\n`));
+
 it('combines concurrent commits into fewer receive-packs, one hidden ref each', async () => {
   const owner = { cookie: await signup('pushqueue') };
   const path = await repo(owner);
   const before = receivePacks.requests;
   const made = await Promise.all(
-    Array.from({ length: 12 }, (_, i) =>
-      api(`${path}/commits`, owner, { body: { ref: 'main', changes: [file(`f/${i}.txt`, `${i}\n`)], message: `c${i}`, author } }),
+    Array.from({ length: 6 }, (_, i) =>
+      api(`${path}/commits`, owner, { body: { ref: 'main', changes: bulk(`f${i}`), message: `c${i}`, author } }),
     ),
   );
-  expect(made.map((m) => m.status)).toEqual(Array(12).fill(200));
-  // Small commits are staged; the projector pushes them together.
-  expect(receivePacks.requests).toBe(before);
-  await drainObjects();
-  expect(receivePacks.requests - before).toBeLessThan(12);
+  expect(made.map((m) => m.status)).toEqual(Array(6).fill(200));
+  expect(receivePacks.requests - before).toBeLessThan(6);
   for (const m of made) expect(pushes).toContain(`${'0'.repeat(40)} ${m.body.commit} refs/yoneda/c/${m.body.commit}`);
 });
 
@@ -36,9 +36,8 @@ it('waits out a busy object store instead of failing the commit', async () => {
   const path = await repo(owner);
   receivePacks.busy = 2;
   const before = receivePacks.requests;
-  const made = await api(`${path}/commits`, owner, { body: { ref: 'main', changes: [file('b.txt', 'b\n')], message: 'b', author } });
+  const made = await api(`${path}/commits`, owner, { body: { ref: 'main', changes: bulk('b'), message: 'b', author } });
   expect(made.status).toBe(200);
-  await drainObjects();
   expect(receivePacks.requests - before).toBe(3);
   expect(receivePacks.busy).toBe(0);
 });
