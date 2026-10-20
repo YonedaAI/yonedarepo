@@ -60,6 +60,24 @@ describe('superfan read endpoint', () => {
 });
 
 describe('superfan ledger schema', () => {
+  it('upgrades a ledger created at the preceding schema', async () => {
+    const stub = env.LEDGER.get(
+      env.LEDGER.idFromName('schema-upgrade'),
+    ) as DurableObjectStub<SuperfanLedger>;
+    await runInDurableObject(stub, (_instance, state) => {
+      const sql = state.storage.sql;
+      // Rebuild the version-1 shape inside a fresh object, with a finding in it.
+      for (const t of ['tail_samples', 'tail_minutes']) sql.exec(`DROP TABLE IF EXISTS ${t}`);
+      sql.exec('UPDATE schema_version SET version = 1');
+      sql.exec(
+        "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES ('a:b', 'a', 'anomaly', 'open', '[]', 's', 'pending', 1, 1)",
+      );
+      expect(migrate(sql)).toBe(MIGRATIONS.length);
+      expect(sql.exec('SELECT COUNT(*) AS n FROM tail_minutes').one().n).toBe(0);
+      expect(sql.exec('SELECT COUNT(*) AS n FROM findings').one().n).toBe(1);
+    });
+  });
+
   it('creates fresh and reapplies without change', async () => {
     const stub = env.LEDGER.get(
       env.LEDGER.idFromName('schema-test'),
