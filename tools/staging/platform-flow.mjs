@@ -44,17 +44,26 @@ export async function cloneMatchesApi(platform, metrics) {
   const access = await platform.post(`/repos/${repo.id}/clone`, {});
   const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}` };
   const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
+  // Batched landing projects main as its own Git commit (N11): the clone must hold the
+  // commit the API reports for main, whose tree contains the landed change.
   const projected = performance.now();
-  await until(() => git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] === made.commit, { timeoutMs: 180_000, intervalMs: 2000, what: 'main projected to Artifacts' });
+  const main = await until(
+    async () => {
+      const head = (await platform.get(`/repos/${repo.id}/refs`)).refs['refs/heads/main'];
+      return head && head !== repo.commit && git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] === head && head;
+    },
+    { timeoutMs: 180_000, intervalMs: 2000, what: 'main projected to Artifacts' },
+  );
   metrics.projection_s = ((performance.now() - projected) / 1000).toFixed(1);
   const dir = mkdtempSync(join(tmpdir(), 'yoneda-staging-clone-'));
   try {
     const started = performance.now();
     git(['clone', '--quiet', access.remote, dir]);
     metrics.clone_ms = Math.round(performance.now() - started);
-    assert.equal(git(['rev-parse', 'HEAD'], dir), made.commit, 'Clone HEAD differs from the landed commit');
+    assert.equal(git(['rev-parse', 'HEAD'], dir), main, 'Clone HEAD differs from the API main');
     git(['fsck', '--strict'], dir);
-    const expected = await apiTree(platform, repo.id, made.commit);
+    const expected = await apiTree(platform, repo.id, main);
+    assert.ok(expected.has('src/added.txt'), 'Projected main lacks the landed change');
     const cloned = git(['ls-files'], dir).split('\n').filter(Boolean).sort();
     assert.deepEqual(cloned, [...expected.keys()].sort(), 'Cloned file set differs from the API tree');
     for (const [path, file] of expected) {
