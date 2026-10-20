@@ -37,7 +37,8 @@ export default {
       writers.map(async (w) => {
         if (w.read) {
           const read = await timed(`${target}/api/v1/repos/${repo}/blob?path=${encodeURIComponent(w.path)}`, { headers: headers(w) });
-          return { read: { ...read, ok: read.status === 200 && read.body.content === w.content, body: undefined } };
+          const ok = read.status === 200 && read.body.content === w.content;
+          return { read: { ...read, ok, error: read.body?.error?.code, message: read.body?.error?.message?.slice(0, 120), body: undefined } };
         }
         const made = await timed(`${target}/api/v1/repos/${repo}/commits`, {
           method: 'POST',
