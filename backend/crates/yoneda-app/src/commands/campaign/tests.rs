@@ -1,5 +1,5 @@
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn budget(provider: &str, model: &str) -> Value {
     json!({"provider":provider,"model":model,"max_requests":8,"max_output_tokens":4096,
@@ -23,6 +23,9 @@ fn fixture() -> (NativeStore, Value) {
         "repair_escalation":{"version":1,"provider":"claude","model":"claude-opus-5-5","connection":"approved-opus",
         "max_executions":1,"repair_round":2,"after_cheaper_repair_failure":true,"budget":opus},
         "campaign":{"id":"fresh","version":1,"chain_id":"run","bucket":"routine","purpose":"routine"}});
+    // The Worker approves the source base before it signs the campaign grant.
+    let mut command = command;
+    crate::commands::source_kit::approve_start(&db, &mut command);
     (db, sign(command))
 }
 fn sign(mut command: Value) -> Value {

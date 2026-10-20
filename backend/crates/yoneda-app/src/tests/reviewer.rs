@@ -321,7 +321,7 @@ fn interrupted_pending_repair_expires_without_resetting_trial_budget() {
 #[test]
 fn peer_awareness_is_lease_bound_and_does_not_return_candidate_source() {
     let db = NativeStore::memory().unwrap();
-    let run = |c| crate::execute(&db, c);
+    let run = |c| crate::commands::source_kit::execute(&db, c);
     run(json!({"op":"init","now":1000,"id":"peer-repo","name":"Peer test","commit":"a".repeat(40),"remote":{"namespace":"test","name":"test"},"policy":{"version":"v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1","required_checks":["syntax"],"build":{"setup":[],"checks":[{"name":"syntax","argv":["node","--check","app.js"],"timeout_seconds":10}]}}})).unwrap();
     run(json!({"op":"start_run","now":1000,"id":"peers","intent":"Two independent alternatives","agents":[{"provider":"codex","model":"gpt-5.6-luna","strategy":"one"},{"provider":"claude","model":"claude-sonnet-4-6","strategy":"two"}]})).unwrap();
     let j = run(json!({"op":"claim","now":1000,"job_id":"job:peers:agent-1"})).unwrap();

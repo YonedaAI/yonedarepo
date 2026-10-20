@@ -2,11 +2,12 @@ import { reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { hostedMcp } from '../../cloudflare/worker/hosted-mcp';
 import { modelHandler } from '../../cloudflare/worker/models';
-import { object, sha } from '../../cloudflare/worker/storage';
+import { sha } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { reserveWorkspaceSpend, settleWorkspaceSpend, workspaceSpendForAttempt } from '../../cloudflare/worker/workspace-spend';
 import { bindings, call, checkedBuilder, initialCommit, newCompare, owner, repo, runId } from './comparison-review-fixture';
+import { finishSealed } from './source-kit';
 
 afterEach(reset);
 
@@ -53,8 +54,7 @@ it('keeps both new builders authorized through 33 settled requests, completion h
 it('denies every model transport for an actual comparison capture attempt without reserving funds', async () => {
   await newCompare();
   const builder = await call({ op: 'claim', job_id: `job:${runId}:agent-1` });
-  const source = await object(bindings, JSON.stringify({ files: { 'app.js': { content: 'export const captured = true;' } } }));
-  await call({ op: 'finish', job_id: builder.id, epoch: builder.epoch, result: { workspace: source.digest } });
+  await finishSealed(bindings, repo, builder);
   const capture = await call({ op: 'claim', job_id: `capture:${runId}:agent-1` });
   expect(capture.payload.run).toBeUndefined();
   expect(capture.payload.execution.comparison_approval_id).toBe(builder.payload.execution.comparison_approval_id);

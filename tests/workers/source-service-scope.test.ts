@@ -8,6 +8,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { bindings, sourceFixture } from '../../tools/source-benchmark/workerd-source-fixture';
 import { syntheticPlatform } from './platform-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 async function storedJob(repo: string, id: string) {
@@ -25,7 +26,7 @@ async function activeSource(count = 1) {
     readTree: vi.fn(async () => Array.from({ length: count }, (_, i) => ({ name: i === 0 ? 'app.js' : `source-${String(i).padStart(3, '0')}.bin`, hash: blob, mode: '100644', type: 'blob' }))),
     readBlob: vi.fn(async () => new Blob([body])), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
   const local = await syntheticPlatform(bindings, { [repoId]: artifacts }, 'source_owner');
-  await ledger(bindings, repoId, { op: 'start_run', id: 'source-scope-run', intent: 'Check scoped source transport',
+  await approvedLedger(bindings, repoId)({ op: 'start_run', id: 'source-scope-run', intent: 'Check scoped source transport',
     workspace_transport: 'api-source-v1',
     _source_transport_approved: true, _source_base: base,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic source scope' }] });

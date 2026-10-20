@@ -6,6 +6,7 @@ import { trackProviderUsage } from '../../cloudflare/worker/provider-usage';
 import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
@@ -89,7 +90,7 @@ it('retains unknown, partial, invalid and failed provider reservations', async (
 
 it('shares real DO reservations across roots and eviction and settles an upstream response once', async () => {
   const repo = 'budget-integration';
-  const call = (command: Json) => ledger(bindings, repo, command);
+  const call = approvedLedger(bindings, repo);
   await call({ op: 'init', id: repo, name: 'Budget fixture', commit: 'a'.repeat(40),
     remote: { namespace: 'test', name: repo }, policy: {
       version: 'budget-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',

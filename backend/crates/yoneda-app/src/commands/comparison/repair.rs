@@ -58,9 +58,7 @@ pub(in crate::commands) fn launch<S: SqlStore>(
         e.clone(),
     )?;
     let mut payload = json!({"execution":e,"run":run,"policy":run["comparison"]["approval"]["policy"],"comparison_repair":{"version":1,"approval_id":run["comparison"]["approval"]["id"],"round":round,"candidate_id":candidate["id"],"source_revision":candidate["revision"],"write_paths":paths,"instructions":review["repair_instructions"]}});
-    if run["workspace_transport"] == "api-source-v1" {
-        crate::path_lists::compact(db, &mut payload["comparison_repair"], "write_paths")?;
-    }
+    crate::path_lists::compact(db, &mut payload["comparison_repair"], "write_paths")?;
     job(db, &format!("job:{id}"), "agent", now, payload)?;
     event(
         db,

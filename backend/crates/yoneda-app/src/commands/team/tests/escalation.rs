@@ -1,7 +1,7 @@
 //! Native frozen-approval fixtures exercise dispatch only, without provider calls.
 use super::autonomous_tests::{conflict, fixture, request, resolver_request};
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn approve_escalation(db: &NativeStore) {
     let mut run = get(db, "runs", "run").unwrap();

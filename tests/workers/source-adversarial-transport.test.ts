@@ -9,6 +9,7 @@ import type { Env, Json } from '../../cloudflare/worker/types';
 import { artifactsBenchmarkFixture } from '../../tools/source-benchmark/workerd-artifacts-fixture';
 import { syntheticPlatform } from './platform-fixture';
 import { bindings, sourceFixture } from '../../tools/source-benchmark/workerd-source-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -33,7 +34,7 @@ async function containerFixture() {
     commit: 'a'.repeat(40),
     policy,
   });
-  await ledger(bindings, repo, {
+  await approvedLedger(bindings, repo)({
     op: 'start_run',
     id: 'source-fence',
     intent: 'Source boundary test',

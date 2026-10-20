@@ -8,6 +8,7 @@ import { sourceFingerprint } from '../../cloudflare/worker/source-crypto';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { providerRegistry } from '../../shared/provider-registry';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'guided-retry';
@@ -15,7 +16,7 @@ const owner = 'guided_retry_owner';
 const session = 'guide-session:retry';
 const base = 'a'.repeat(40);
 afterEach(reset);
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 const read = () => call({ op: 'guided_session', session_id: session, _workspace: owner });
 
 function prepared(): Json {

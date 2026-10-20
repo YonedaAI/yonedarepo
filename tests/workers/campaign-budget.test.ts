@@ -10,6 +10,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { api, bindings, containerBindings, readyReviewer } from './reviewer-fixture';
+import { approvedStart } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 const budget = { ...campaignModelBudgets[1], max_requests: 3, max_output_tokens: 256,
@@ -25,10 +26,11 @@ async function setup(extraBudgets: Json[] = []) {
   const campaign = { id: 'fresh', version: 1, chain_id: 'maintenance', bucket: 'routine', purpose: 'routine' };
   const binding = await workspace(bindings, f.owner, { op: 'campaign_bind_run', ...campaign,
     repo_id: f.repo, run_id: 'initial', model_budgets: [budget, ...extraBudgets] });
-  const request = { id: 'initial', intent: 'Synthetic metered campaign',
+  // The Worker approves the source base before it signs the campaign grant over the request.
+  const request = await approvedStart(bindings, f.repo, { op: 'start_run', id: 'initial', intent: 'Synthetic metered campaign',
     campaign, agents: [{ provider: 'codex', model: 'gpt-5.6-luna', connection: 'reviewer-codex', strategy: 'Synthetic' },
       ...extraBudgets.map(b => ({ provider: b.provider, model: b.model, strategy: 'Synthetic original participant' }))],
-    model_budgets: [budget, ...extraBudgets] };
+    model_budgets: [budget, ...extraBudgets] });
   const grant = await campaignGrant(bindings, f.owner, f.repo, request, binding);
   await ledger(bindings, f.repo, { ...request, op: 'start_run', _workspace: f.owner, _campaign_grant: grant });
   const job = await ledger(bindings, f.repo, { op: 'claim', job_id: 'job:initial:agent-1' });

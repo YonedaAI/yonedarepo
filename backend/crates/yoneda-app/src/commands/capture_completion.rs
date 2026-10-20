@@ -22,7 +22,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             "Contribution capture must rebuild the submission on its frozen base",
         ));
     }
-    let compact = platform_commit || j["payload"]["workspace_transport"] == "api-source-v1";
     hash(result, "tree", &[40, 64])?;
     let paths = result["paths"]
         .as_array()
@@ -51,9 +50,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         candidate["integration_manifest"] = manifest.clone();
         candidate["integration_digest"] = j["payload"]["integration_digest"].clone();
     }
-    if compact {
-        crate::path_lists::compact(db, &mut candidate, "paths")?;
-    }
+    crate::path_lists::compact(db, &mut candidate, "paths")?;
     create(db, "candidates", &cid, &candidate)?;
     node(
         db,
@@ -72,10 +69,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     // owner policy even if that policy changed before capture existed.
     let policy = repo(db)?["policy"].clone();
     let mut payload = json!({"candidate":candidate,"run_id":run_id,"policy":policy});
-    if compact {
-        payload["source_integrity"] =
-            crate::path_lists::integrity::fields(db, &candidate, &policy)?;
-    }
+    payload["source_integrity"] = crate::path_lists::integrity::fields(db, &candidate, &policy)?;
     job(db, &format!("evaluate:{cid}"), "evaluate", now, payload)?;
     Ok(())
 }

@@ -3,6 +3,7 @@ import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
@@ -15,7 +16,7 @@ it('refuses a previous image for a general agent run and preserves the configure
 });
 it('persists concurrent general attempts and immutable typed context through eviction', async () => {
   const id = 'portfolio';
-  const call = (command: Record<string, unknown>) => ledger(bindings, id, command);
+  const call = approvedLedger(bindings, id);
   await call({ op: 'init', id, name: 'Portfolio', remote: {namespace: 'yoneda-test', name: 'portfolio'}, commit: 'a'.repeat(40), policy: { version: 'site-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1', required_checks: ['html'], build: {setup: [], checks: [{name: 'html', argv: ['node', '--check', 'app.js'], timeout_seconds: 30}], static_dir: 'public'} } });
   await call({op: 'start_run', id: 'site', intent: 'Build a portfolio', criteria: ['Accessible'], agents: [{provider: 'mimo', model: 'mimo-v2-flash', strategy: 'simple'}, {provider: 'zai', model: 'glm-4.7-flash', strategy: 'editorial'}]});
   const s = await call({op: 'snapshot'});

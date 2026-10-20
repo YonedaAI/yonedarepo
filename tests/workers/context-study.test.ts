@@ -7,6 +7,7 @@ import { remoteTool } from '../../cloudflare/worker/remote-tools';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Principal } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'study-repo';
@@ -19,13 +20,13 @@ afterEach(reset);
 
 async function setup(arm: typeof arms[number]) {
   await ledger(bindings, repo, { op: 'init', id: repo, name: 'Isolated study', workspace: '_admin', remote: { namespace: 'yoneda-test', name: repo }, commit: 'a'.repeat(40), policy: sitePolicy });
-  await ledger(bindings, repo, { op: 'start_run', id: 'historical', intent: 'Earlier website', agents });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'historical', intent: 'Earlier website', agents });
   const note = await ledger(bindings, repo, { op: 'context_publish', record: { id: 'context:historical-note', kind: 'constraint', statement: canary, purpose: 'Preserve keyboard access', intent_id: 'intent:historical', links: [] } });
   await ledger(bindings, repo, { op: 'cancel_run', run_id: 'historical' });
   const config = { id: 'trial-study', case: 'website_update', arm, corpus: [note.id] };
   const study = await ledger(bindings, repo, { op: 'configure_context_study', _workspace: '_admin', context_study: config });
   expect(study.records).toEqual([note]);
-  await ledger(bindings, repo, { op: 'start_run', id: 'trial', intent: 'Improve registration', agents, context: [note.id] });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'trial', intent: 'Improve registration', agents, context: [note.id] });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:trial:agent-1' });
   return { note, config, job, scope: { repo_id: repo, job, supervisor: 'unused-test-supervisor', model_calls: 0, created_at: Date.now() } };
 }

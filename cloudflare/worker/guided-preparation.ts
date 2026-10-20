@@ -96,7 +96,12 @@ export async function prepareGuidedRuns(
       input.expected_working_commit = commit;
       input.expected_working_version = version;
     }
-    approvals.push(await approveOwnerRun(env, principal, repo, input));
+    // A concurrent retry restarts from the checked extend revision the ledger restores.
+    const checkpoint =
+      step === 'concurrent' && attempt > 1
+        ? (session.steps.find((entry) => entry.id === 'extend')?.revision ?? undefined)
+        : undefined;
+    approvals.push(await approveOwnerRun(env, principal, repo, input, checkpoint));
   }
   return approvals;
 }

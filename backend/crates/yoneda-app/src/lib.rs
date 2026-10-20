@@ -7,6 +7,8 @@ mod source_binding;
 mod source_workspace;
 mod storage;
 mod workspace;
+#[cfg(any(test, feature = "test-kit"))]
+pub use commands::source_kit;
 pub use source_workspace::{execute_source_workspace, migrate_source_workspace};
 pub use storage::{SqlStore, migrate};
 pub use workspace::execute_workspace;

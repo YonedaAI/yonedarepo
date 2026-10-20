@@ -51,9 +51,9 @@ pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     if job["kind"] == "evaluate" {
         return Ok(110_000);
     }
-    // Capture and publication do not run a model. Their execution metadata identifies
-    // source provenance, without carrying the coding attempt's model approval.
-    if job["kind"] == "capture" || job["kind"] == "publish" {
+    // Capture does not run a model. Its execution metadata identifies source provenance,
+    // without carrying the coding attempt's model approval.
+    if job["kind"] == "capture" {
         return Ok(570_000);
     }
     let Some(budget) = model_budget(job)? else {

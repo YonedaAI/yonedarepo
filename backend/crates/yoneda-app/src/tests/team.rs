@@ -33,7 +33,7 @@ fn claim(db: &NativeStore, jid: &str) -> Value {
 fn captured(db: &NativeStore, local: &str, paths: Value, digest: Option<Value>) -> Value {
     let eid = format!("team:task:{local}");
     let agent = claim(db, &format!("job:{eid}"));
-    call(db,json!({"op":"finish","job_id":agent["id"],"epoch":agent["epoch"],"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_agent(db, &agent, 1000);
     let revision = task(db, local)["revision"].as_i64().unwrap();
     let capture = claim(
         db,
@@ -47,6 +47,7 @@ fn captured(db: &NativeStore, local: &str, paths: Value, digest: Option<Value>) 
     if let Some(digest) = digest {
         result["integration_digest"] = digest;
     }
+    let result = source_kit::with_lineage(&registration, result);
     call(
         db,
         json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":result}),
@@ -85,16 +86,12 @@ fn tasks_wait_for_capture_and_only_integrator_creates_checked_candidate() {
     );
     assert_eq!(j["payload"]["team_inputs"][0]["task_id"], "rsvp");
     assert_eq!(snapshot(&db)["candidates"], json!([]));
-    call(
-        &db,
-        json!({"op":"finish","job_id":j["id"],"epoch":1,"result":{"workspace":"b".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = source_kit::finish_agent(&db, &j, 1000);
     let c = claim(&db, "capture:team:task:summary");
-    call(&db,json!({"op":"finish","job_id":c["id"],"epoch":1,"result":{"id":"summary-capture","revision":{"repository":"test/summary","commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":["public/search.js","public/rsvp.js","public/summary.js"],"summary":"Summary","diff":"summary"}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":c["id"],"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"summary-capture","revision":{"repository":"test/summary","commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":["public/search.js","public/rsvp.js","public/summary.js"],"summary":"Summary","diff":"summary"}))})).unwrap();
     assert_eq!(
-        task(&db, "summary")["output"]["paths"],
-        json!(["public/summary.js"])
+        crate::path_lists::load(&db, &task(&db, "summary")["output"], "paths").unwrap(),
+        vec!["public/summary.js".to_owned()]
     );
     let integration = crate::storage::get(&db, "jobs", "job:team:task:integrate").unwrap();
     assert_eq!(
@@ -188,18 +185,18 @@ fn capture_rejects_out_of_scope_paths_and_manifest_omission_atomically() {
     let db = team_repo();
     call(&db, request()).unwrap();
     claim(&db, "job:team:task:search");
-    call(&db,json!({"op":"finish","job_id":"job:team:task:search","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_job(&db, "job:team:task:search", 1000, json!({}));
     claim(&db, "capture:team:task:search");
-    assert_eq!(call(&db,json!({"op":"finish","job_id":"capture:team:task:search","epoch":1,"result":{"id":"malicious","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/rsvp.js"],"summary":"Wrong task","diff":"x"}})).unwrap_err().code,"WRITE_SCOPE");
+    assert_eq!(call(&db,json!({"op":"finish","job_id":"capture:team:task:search","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"malicious","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/rsvp.js"],"summary":"Wrong task","diff":"x"}))})).unwrap_err().code,"WRITE_SCOPE");
     assert_eq!(snapshot(&db)["candidates"], json!([]));
     assert_eq!(task(&db, "search")["status"], "capturing");
     let db = team_repo();
     call(&db, request()).unwrap();
     capture_workers(&db);
     claim(&db, "job:team:task:integrate");
-    call(&db,json!({"op":"finish","job_id":"job:team:task:integrate","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_job(&db, "job:team:task:integrate", 1000, json!({}));
     claim(&db, "capture:team:task:integrate");
-    assert_eq!(call(&db,json!({"op":"finish","job_id":"capture:team:task:integrate","epoch":1,"result":{"id":"missing-manifest","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.js"],"summary":"Integrated","diff":"x"}})).unwrap_err().code,"STALE_INTEGRATION");
+    assert_eq!(call(&db,json!({"op":"finish","job_id":"capture:team:task:integrate","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"missing-manifest","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.js"],"summary":"Integrated","diff":"x"}))})).unwrap_err().code,"STALE_INTEGRATION");
     assert_eq!(snapshot(&db)["candidates"], json!([]));
 }
 #[test]
@@ -218,7 +215,7 @@ fn retry_fences_late_output_and_keeps_shared_model_accounting() {
     let t = call(&db, retry.clone()).unwrap();
     assert_eq!(t["revision"], 2);
     assert_eq!(call(&db, retry).unwrap_err().code, "TASK_MOVED");
-    assert_eq!(call(&db,json!({"op":"finish","job_id":"job:team:task:search","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap_err().code,"FENCED");
+    assert_eq!(call(&db,json!({"op":"finish","job_id":"job:team:task:search","epoch":1,"result":{"source_verified":true}})).unwrap_err().code,"FENCED");
     let j = claim(&db, "job:team:task:search");
     assert_eq!(j["epoch"], 3);
     let n = call(
@@ -286,9 +283,9 @@ fn team_reads_and_citations_keep_source_inclusion_distinct_from_assertion_truth(
     call(&db, request()).unwrap();
     claim(&db, "job:team:task:search");
     let assertion=call(&db,json!({"op":"task_handoff","job_id":"job:team:task:search","epoch":1,"summary":"Search follows the agreed API","interface_contract":"filterEvents","references":["intent:team"]})).unwrap();
-    call(&db,json!({"op":"finish","job_id":"job:team:task:search","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_job(&db, "job:team:task:search", 1000, json!({}));
     claim(&db, "capture:team:task:search");
-    call(&db,json!({"op":"finish","job_id":"capture:team:task:search","epoch":1,"result":{"id":"search-output","revision":{"repository":"test/search","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/search.js"],"summary":"Search","diff":"x"}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"capture:team:task:search","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"search-output","revision":{"repository":"test/search","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/search.js"],"summary":"Search","diff":"x"}))})).unwrap();
     captured(&db, "rsvp", json!(["public/rsvp.js"]), None);
     captured(
         &db,
@@ -315,9 +312,10 @@ fn team_reads_and_citations_keep_source_inclusion_distinct_from_assertion_truth(
         .map(|h| json!({"id":h["id"]}))
         .collect();
     call(&db,json!({"op":"record_context_access","job_id":integrator["id"],"epoch":1,"call_id":"team-handoffs-read","tool":"team_context","stage":"opened","targets":targets})).unwrap();
-    call(&db,json!({"op":"finish","job_id":integrator["id"],"epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration =
+        source_kit::finish_job(&db, integrator["id"].as_str().unwrap(), 1000, json!({}));
     claim(&db, "capture:team:task:integrate");
-    call(&db,json!({"op":"finish","job_id":"capture:team:task:integrate","epoch":1,"result":{"id":"team-result","revision":{"repository":"test/integrate","commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":["public/search.js","public/rsvp.js","public/summary.js","public/index.js"],"summary":"Integrated","diff":"x","integration_digest":manifest["digest"]}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"capture:team:task:integrate","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"team-result","revision":{"repository":"test/integrate","commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":["public/search.js","public/rsvp.js","public/summary.js","public/index.js"],"summary":"Integrated","diff":"x","integration_digest":manifest["digest"]}))})).unwrap();
     claim(&db, "evaluate:team-result");
     call(&db,json!({"op":"verify_finish","job_id":"evaluate:team-result","epoch":1,"report":{"suite":"commands-v1","environment":"linux-node24-rust1.94-v1","setup":[],"commands":[{"name":"build","output":{"exit":0}}]},"evidence":"f".repeat(64)})).unwrap();
     let usage = call(&db, json!({"op":"context_usage","run_id":"team"})).unwrap();
