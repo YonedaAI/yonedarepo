@@ -23,9 +23,10 @@ export default defineConfig({
           ARTIFACTS_NAMESPACE: 'yoneda-test',
           CODEX_MODEL: 'gpt-5.6-luna',
           CLAUDE_MODEL: 'claude-sonnet-5-5',
+          PLATFORM_OBJECT_STORE: 'r2',
         },
       },
     }),
   ],
-  test: { include: ['tests/workers/**/*.test.ts'], exclude: ['tests/workers/apps-*.test.ts'], testTimeout: 20_000 },
+  test: { include: ['tests/workers/**/*.test.ts'], setupFiles: ['tests/workers/platform-listing.ts'], exclude: ['tests/workers/apps-*.test.ts'], testTimeout: 20_000 },
 });
