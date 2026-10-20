@@ -1,17 +1,21 @@
-# YonedaRepo — Agent-First Repository
+# YonedaRepo — Source Control for Agents
 
-An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.
+A Git-compatible source platform built for agents and other API clients. Clients never clone: they read, commit, merge and land through an HTTP API and MCP, and every write becomes a server-side commit with real Git object ids. It runs entirely on Cloudflare.
 
 [Try it at yonedarepo.com](https://yonedarepo.com/) · [Submission](docs/submission.md) · [Architecture](docs/current-state-architecture.md) · [Release evidence](docs/release-evidence.md)
 
 ![Reviewing an exact captured revision before publication](docs/images/selection-review.png)
 
-## What it does
+## What the platform does
 
-- **Fetch only what you need.** Each agent gets a frozen, bounded packet of prior context and either an isolated Git fork or a lazy, server-side source view that loads files on demand without a clone.
-- **Coordinate changes.** One transactional ledger per repository holds the task graph, durable peer messages and working branches that advance only when the expected version still matches. Stale or conflicting results wake a coordinator that reconciles them and gets fresh checks.
-- **Preserve context.** Intent, agent claims, independent checks and human decisions link to exact revisions in a typed graph. The next run inherits that history.
-- **Agent claims are not authority.** Trusted capture builds fresh Git objects, a clean evaluator checks that exact revision against a protected test bundle, and a human decides what ships. Git remains the canonical, compatible history.
+- **Git semantics on the server.** Commits, trees, branches, merge (three-way, matching `git merge-file` on a 300-case differential test), revert, cherry-pick, diff, log, blame and bisect. Objects live in Cloudflare Artifacts, so any Git client can clone the result.
+- **A transaction log, like a Delta Lake table.** Each repository's Durable Object keeps an append-only log with checkpoints. Reads take `at=` a version, time or commit; refs move by compare-and-swap.
+- **Concurrency without a merge lock.** Changes declare what they read (paths or symbols such as `src/lib.rs#Policy::backoff`). A stale read conflicts; edits to different parts of one file merge; landings on a busy branch are batched into one merge commit. Failed post-land checks propose a repair commit instead of rewriting history.
+- **Compute next to the data.** Code search that re-indexes only changed directories, blame and path history, symbols and symbol edits that reject stale handles, contracts derived from signatures and doc comments, an agent view (a symbol with its contract, callers and callees) and a human view (a generated subsystem overview), and a work planner that groups reference cycles and schedules only independent work in parallel.
+- **Review and checks.** Checks run in Containers on the exact commit. Comment-, docs- and formatting-only changes can be auto-approved; anything unparseable needs a human.
+- **Scoped access.** Tokens can be limited to directories, enforced on every read, search and cache path. A human-only break-glass path can land, revert or pause automation when checks or agents are down; it is never exposed over MCP.
+
+The agent features below (runs, teams, compare, guided demo) are a separate layer that uses the platform like any other client.
 
 ## Try it
 
@@ -20,7 +24,7 @@ An API-first, Git-like transactional model where agents fetch only what they nee
 - **Read-only CLI** (Node 24, starts no inference): `node tools/reviewer.mjs --checked`. It prompts for the key without echoing it.
 - Publication is always a separate human decision. Opening forms or sample briefs starts no work.
 
-## How a run works
+## The agent layer: how a run works
 
 - **Start a Run** with one **Auto** agent. The planner picks one to six approved agents when the work justifies a team, freezes their scopes and integrates one checked result.
 - **Compare two approaches** runs two independent builders, checks both, then a read-only reviewer recommends one. You can override it with a reason.
@@ -32,18 +36,17 @@ More: [build together](docs/build-together.md) · [website workflow](docs/websit
 
 ## Architecture
 
-Rust owns the domain, transactional ledger, native agent supervisor, MCP server, source capture and verifier. Cloudflare runs it:
+Rust owns the domain rules and durable state; TypeScript is a thin adapter for Cloudflare SDK features. On Cloudflare:
 
-- **Workers:** the platform Worker (auth, API, remote MCP, scoped Git and source APIs, queue consumers, credential brokers) plus isolated Sites and Apps Workers.
-- **Durable Objects** (Rust → Wasm, SQLite): Repository (the authority), Workspace, Source views and Live updates.
-- **Containers** run agent harnesses, capture, evaluation and publication with internet off; all egress goes through Worker brokers.
-- **Artifacts** for canonical Git and per-attempt forks · **Queues** fed by a transactional outbox · **R2** for evidence and blobs · **D1** as a rebuildable index.
-
-**Roadmap (not built):** a transactional layer over source in the spirit of the Delta Lake log: an append-only changeset log as the source of truth, optimistic concurrency with path-level conflicts, snapshot reads and Git exported for compatibility. See [the architecture](docs/current-state-architecture.md).
+- **Durable Objects** (Rust → Wasm, SQLite): `SourceRepository` is the platform's authority (transaction log, refs, approvals, grants). A per-repository push queue batches writes to Artifacts, which accepts one push per repository at a time.
+- **Artifacts** stores the Git objects. The server pushes small packs to hidden refs and reads each commit back before recording it; branch refs are projected afterwards with expected-old leases and drift detection.
+- **Workers** serve the API, MCP and web UI, and run stateless Rust compute (diff, merge, search, symbols) next to a tiered object cache: Cache API, then R2, then Artifacts.
+- **Containers** run platform checks; **Queues** and **Workflows** run derived-data jobs, ref projection and imports; **D1** is a rebuildable repository index.
+- The agent layer (Repository, Workspace and Source-view objects, harness Containers, provider brokers) is a separate set of crates and routes. A platform-only Worker (`cloudflare/wrangler.platform.jsonc`) runs without it.
 
 ## Run locally
 
-Requires the pinned Rust toolchain, Node 24, pnpm 11, Docker and `worker-build` 0.8.7.
+Requires the pinned Rust toolchain (1.99.1), Node 24.22+, pnpm 12, Docker and `worker-build` 0.8.7.
 
 ```sh
 cargo install worker-build --version 0.8.7 --locked
@@ -93,8 +96,10 @@ Details: [runbook](docs/runbook.md) · [public metadata and custom domains](docs
 ```text
 frontend/            Browser app (React 19, React Flow)
 backend/crates/
-  yoneda-core/       Contracts and pure validation
-  yoneda-app/        Transactional commands, graph and DO migrations
+  yoneda-core/       Contracts, Git object model, transaction log and pure validation
+  yoneda-store/      SQL store trait and the native SQLite store
+  yoneda-platform/   Source platform authority, migrations and stateless compute
+  yoneda-app/        Agent-layer commands, graph and DO migrations
   yoneda-cloudflare/ Rust binding interoperability
   yoneda-worker/     Rust Durable Objects
   yoneda-runtime/    Native supervisor, MCP, capture and evaluation
