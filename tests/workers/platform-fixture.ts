@@ -205,7 +205,7 @@ export async function syntheticPlatform(env: Env, repos: Record<string, Syntheti
           if (entries) objects.push({ id, kind, entries: entries.map((e) => ({ name: e.name, type: e.type, id: e.hash })) });
         } else {
           const blob = await repo.readBlob?.(id);
-          if (blob) objects.push({ id, kind, data_b64: base64(new Uint8Array(await blob.arrayBuffer())) });
+          if (blob) objects.push({ id, kind, data_b64: base64(new Uint8Array(await new Response(blob.stream()).arrayBuffer())) });
         }
       }
       return json({ objects, next: null });
@@ -234,3 +234,41 @@ export async function syntheticPlatform(env: Env, repos: Record<string, Syntheti
   };
   return { ...env, PLATFORM } as unknown as Env;
 }
+
+/**
+ * Bind an existing workspace project to a fresh real platform repository, seeded with
+ * `files` or left empty (`null`), as the owner's setup request would have.
+ */
+export async function bindNewPlatformRepo(env: Env, owner: string, project: string, files: FixtureFiles | null = websiteStarter) {
+  const created = await platformRequest(env, { forward: operator() }, 'POST', '/repos', {
+    name: project,
+    workspace: owner,
+    policy: PLATFORM_POLICY,
+    tokens: [{ name: 'yoneda-agents', scopes: AGENT_SCOPES }],
+    ...(files
+      ? { files: Object.entries(files).map(([path, content]) => ({ path, content_b64: base64(bytesOf(content)) })), message: 'Fixture seed', author }
+      : {}),
+  });
+  await bindProject(env, owner, project, created.id, created.tokens[0].token);
+  return { repo: created.id as string, commit: created.commit as string | undefined, tree: created.tree as string | undefined };
+}
+
+/**
+ * A PLATFORM binding that answers matching requests itself (`intercept` returns a Response)
+ * and forwards everything else to the real platform. `path` is the part after `/api/v1`.
+ */
+export function interceptPlatform(
+  env: Env,
+  intercept: (path: string, request: Request) => Promise<Response | undefined> | Response | undefined,
+) {
+  const PLATFORM = {
+    async fetch(input: RequestInfo, init?: RequestInit) {
+      const request = new Request(input, init);
+      const path = new URL(request.url).pathname.replace(/^\/api\/v1/, '');
+      return (await intercept(path, request.clone())) ?? env.SELF.fetch(request);
+    },
+  };
+  return { ...env, PLATFORM } as unknown as Env;
+}
+export const platformJson = (value: unknown, status = 200) =>
+  new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } });

@@ -2,15 +2,13 @@ import { reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { hex } from '../../cloudflare/worker/source-crypto';
 import { sourceRoute } from '../../cloudflare/worker/source-route';
-import { ledger } from '../../cloudflare/worker/storage';
-import type { Env } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
-import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 async function ownerSource(count = 3) {
   const repo = 'owner-source-legacy';
-  const revision = { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const revision = { repository: `platform/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
   const bytes = new Uint8Array([0, 255, 10]);
   const prefix = new TextEncoder().encode(`blob ${bytes.length}\0`);
   const joined = new Uint8Array(prefix.length + bytes.length); joined.set(prefix); joined.set(bytes, prefix.length);
@@ -18,9 +16,7 @@ async function ownerSource(count = 3) {
   const artifacts = { readCommit: vi.fn(async () => ({ hash: revision.commit, treeHash: revision.tree })),
     readTree: vi.fn(async () => Array.from({ length: count }, (_, index) => ({ name: `file-${String(index).padStart(3, '0')}.bin`,
       hash: blob, mode: '100644', type: 'blob' }))), readBlob: vi.fn(async () => new Blob([bytes])), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
-  const local = { ...bindings, ARTIFACTS: { get: vi.fn(async () => artifacts) } } as unknown as Env;
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Legacy immutable owner view', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: revision.commit, policy: reviewerPolicy });
+  const local = await syntheticPlatform(bindings, { [repo]: artifacts }, 'source_owner');
   const stub = bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
   // Synthetic immutable historical capture; no active producer, no grants or paid start.
   await runInDurableObject(stub, (_instance, state) => {

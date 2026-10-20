@@ -1,16 +1,17 @@
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { env } from 'cloudflare:workers';
 import { afterEach, expect, it, vi } from 'vitest';
+import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import { provisionCampaignProject } from '../../cloudflare/worker/campaign-provision';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import { ledger } from '../../cloudflare/worker/storage';
-import type { Env, Json } from '../../cloudflare/worker/types';
+import type { Env, Json, Principal } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { interceptPlatform, operator, platformJson, templateArtifacts } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 const admin = { role: 'admin' as const, workspace: '_admin' };
 const template = 'yoneda-booking-campaign-starter-20261012';
-const commit = 'a'.repeat(40);
 afterEach(reset);
 async function reviewer(owner = 'reviewer') {
   await workspace(bindings, owner, {
@@ -27,57 +28,50 @@ async function reviewer(owner = 'reviewer') {
     expires: Date.now() + 86_400_000,
   });
 }
-function artifacts() {
-  const repos = new Map<string, Json>();
+/** The operator-published starter (real Git ids); the platform repository is real. */
+async function artifacts() {
+  const templates = await templateArtifacts({
+    [template]: { 'README.md': '# Booking starter\n', 'public/index.html': '<!doctype html><title>Booking</title>\n' },
+  });
+  const snapshot = await templates.snapshot(template);
   const missing = () => Object.assign(new Error('Missing'), { code: 'NOT_FOUND' });
-  function remote(name: string, source: string | null = null, head = commit): Json {
-    return {
-      [Symbol.dispose]() {},
-      info: async () => ({ name, defaultBranch: 'main', source, readOnly: false }),
-      log: async () => (head ? [{ hash: head }] : []),
-      listTokens: async () => ({ tokens: [{ id: 'initial', state: 'active' }] }),
-      revokeToken: vi.fn(async () => true),
-      fork: vi.fn(async (target: string, options: Json) => {
-        if (repos.has(target)) throw Object.assign(new Error('Exists'), { code: 'ALREADY_EXISTS' });
-        expect(options).toMatchObject({ defaultBranchOnly: true, readOnly: false });
-        repos.set(target, remote(target, `artifacts:yoneda-test/${name}`, head));
-        return { name: target, token: 'local-fixture-capability' };
-      }),
-    };
-  }
-  const starter = remote(template);
-  repos.set(template, starter);
-  const get = vi.fn(async (name: string) => {
-    const repo = repos.get(name);
-    if (!repo) throw missing();
-    return repo;
+  const get = vi.fn(async (name: string): Promise<any> => {
+    if (name !== template) throw missing();
+    return templates.get(name);
   });
   const fake = { ...bindings, ARTIFACTS: { get } } as unknown as Env;
-  return { fake, repos, get, starter, remote };
+  return { fake, get, commit: snapshot.commit, tree: snapshot.root };
 }
+const provision = (env: Env, owner: string, body: Json, principal: Principal = admin) =>
+  provisionCampaignProject(env, operator(), principal, owner, body);
+const listed = async () =>
+  (await bindings.INDEX.prepare('SELECT COUNT(*) AS n FROM platform_repos').first<{ n: number }>())?.n;
 const input = (repo_id = 'fresh-campaign') => ({ repo_id, template, policy: sitePolicy });
 
-it('forks exact private starter names and durably lists seven fresh reviewer projects without starting runs', async () => {
+it('seeds exact private starters and durably lists seven fresh reviewer projects without starting runs', async () => {
   await reviewer();
-  const { fake, starter, repos } = artifacts();
+  const { fake, commit, tree } = await artifacts();
   for (let n = 0; n < 7; n++) {
     const repo = n ? `fresh-study-${n}` : 'fresh-campaign';
-    expect(await provisionCampaignProject(fake, admin, 'reviewer', input(repo))).toMatchObject({
+    expect(await provision(fake, 'reviewer', input(repo))).toMatchObject({
       username: 'reviewer',
       repo_id: repo,
       status: 'ready',
       commit,
     });
     const snapshot = await ledger(bindings, repo, { op: 'snapshot', _workspace: 'reviewer' });
+    const platform = await projectPlatform(bindings, 'reviewer', repo);
+    const head = (await platform.call('GET', '/refs')).refs['refs/heads/main'];
+    expect((await platform.call('GET', `/commits/${head}`)).tree).toBe(tree);
     expect(snapshot.repository).toMatchObject({
       workspace: 'reviewer',
-      head_commit: commit,
-      remote: { namespace: 'yoneda-test', name: repo, branch: 'main' },
+      head_commit: head,
+      platform_repo: platform.repo,
+      remote: { namespace: 'platform', name: repo, branch: 'main' },
     });
     expect(snapshot.runs).toEqual([]);
-    expect(repos.get(repo)?.revokeToken).toHaveBeenCalledWith('initial');
   }
-  expect(starter.fork).toHaveBeenCalledTimes(7);
+  expect(await listed()).toBe(7);
   expect((await workspace(bindings, 'reviewer', { op: 'projects' })).projects).toHaveLength(7);
   expect((await workspace(bindings, 'reviewer', { op: 'reviewer_status' })).repo_id).toBe(
     'old-reviewer',
@@ -85,9 +79,9 @@ it('forks exact private starter names and durably lists seven fresh reviewer pro
 });
 
 it('rejects a nonadministrator before all Artifacts reads and state writes', async () => {
-  const { fake, get } = artifacts();
+  const { fake, get } = await artifacts();
   await expect(
-    provisionCampaignProject(fake, { role: 'user', workspace: 'reviewer' }, 'reviewer', input()),
+    provision(fake, 'reviewer', input(), { role: 'user', workspace: 'reviewer' }),
   ).rejects.toMatchObject({ code: 'FORBIDDEN' });
   expect(get).not.toHaveBeenCalled();
 });
@@ -95,84 +89,91 @@ it('rejects a nonadministrator before all Artifacts reads and state writes', asy
 it('replays the same reservation but rejects policy, template and workspace substitution', async () => {
   await reviewer();
   await reviewer('other');
-  const { fake, starter } = artifacts();
-  const result = await provisionCampaignProject(fake, admin, 'reviewer', input());
-  expect(await provisionCampaignProject(fake, admin, 'reviewer', input())).toEqual(result);
-  expect(starter.fork).toHaveBeenCalledOnce();
+  const { fake } = await artifacts();
+  const result = await provision(fake, 'reviewer', input());
+  expect(await provision(fake, 'reviewer', input())).toEqual(result);
+  expect(await listed()).toBe(1);
   for (const [owner, body] of [
     ['reviewer', { ...input(), policy: { ...sitePolicy, version: 'changed' } }],
     ['reviewer', { ...input(), template: 'another-starter' }],
     ['other', input()],
   ] as const) {
-    await expect(provisionCampaignProject(fake, admin, owner, body)).rejects.toMatchObject({
+    await expect(provision(fake, owner, body)).rejects.toMatchObject({
       code: 'IDEMPOTENCY_CONFLICT',
     });
   }
-  expect(starter.fork).toHaveBeenCalledOnce();
+  expect(await listed()).toBe(1);
 });
 
-it('recovers a lost fork acknowledgment and survives authority eviction', async () => {
+it('recovers a lost platform acknowledgment and survives authority eviction', async () => {
   await reviewer();
-  const { fake, starter } = artifacts();
-  const create = starter.fork;
-  starter.fork = vi.fn(async (...args: unknown[]) => {
-    await create(...args);
-    throw new Error('Lost acknowledgment with fixture capability');
+  const { fake } = await artifacts();
+  let lost = false;
+  // The platform creates the repository but its response never arrives.
+  const local = interceptPlatform(fake, async (path, request) => {
+    if (path !== '/repos' || request.method !== 'POST' || lost) return undefined;
+    lost = true;
+    await bindings.SELF.fetch(request);
+    return platformJson({ error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Lost acknowledgment' } }, 502);
   });
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe('ready');
+  await expect(provision(local, 'reviewer', input())).rejects.toMatchObject({ code: 'SETUP_FAILED' });
+  expect((await provision(local, 'reviewer', input())).status).toBe('ready');
   await evictDurableObject(bindings.REPOSITORIES.getByName('fresh-campaign'));
   await evictDurableObject(bindings.WORKSPACES.getByName('account:reviewer'));
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe('ready');
-  expect(starter.fork).toHaveBeenCalledOnce();
+  expect((await provision(local, 'reviewer', input())).status).toBe('ready');
+  // The unacknowledged repository stays unbound; the project uses only the bound one.
+  expect(await listed()).toBe(2);
+  const bound = await workspace(bindings, 'reviewer', { op: 'project_get', id: 'fresh-campaign' });
+  expect((await ledger(bindings, 'fresh-campaign', { op: 'repository_status' })).platform_repo).toBe(bound.platform.repo);
 });
 
 it('fences concurrent provisioning to one target and one workspace project', async () => {
   await reviewer();
-  const { fake, repos } = artifacts();
-  const results = await Promise.all([
-    provisionCampaignProject(fake, admin, 'reviewer', input()),
-    provisionCampaignProject(fake, admin, 'reviewer', input()),
-  ]);
+  const { fake, commit } = await artifacts();
+  const results = await Promise.all([provision(fake, 'reviewer', input()), provision(fake, 'reviewer', input())]);
   expect(results.map((r) => r.commit)).toEqual([commit, commit]);
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe('ready');
-  expect(repos.size).toBe(2);
+  expect((await provision(fake, 'reviewer', input())).status).toBe('ready');
   expect((await workspace(bindings, 'reviewer', { op: 'projects' })).projects).toHaveLength(1);
+  // Concurrent seeds may both reach the platform; the first binding is the only one used.
+  const bound = await workspace(bindings, 'reviewer', { op: 'project_get', id: 'fresh-campaign' });
+  expect((await ledger(bindings, 'fresh-campaign', { op: 'repository_status' })).platform_repo).toBe(bound.platform.repo);
 });
 
-it('rejects foreign existing targets and invalid policies before any fork', async () => {
+it('rejects foreign existing repositories and invalid policies before any seed', async () => {
   await reviewer();
-  const { fake, repos, starter, remote } = artifacts();
-  repos.set('fresh-campaign', remote('fresh-campaign'));
-  await expect(provisionCampaignProject(fake, admin, 'reviewer', input())).rejects.toMatchObject({
+  const { fake } = await artifacts();
+  await ledger(bindings, 'fresh-campaign', { op: 'init', id: 'fresh-campaign', name: 'Foreign', workspace: 'reviewer',
+    remote: { namespace: 'platform', name: 'fresh-campaign', branch: 'main' }, commit: 'a'.repeat(40), policy: sitePolicy });
+  await expect(provision(fake, 'reviewer', input())).rejects.toMatchObject({
     code: 'IDEMPOTENCY_CONFLICT',
   });
   await expect(
-    provisionCampaignProject(fake, admin, 'reviewer', {
+    provision(fake, 'reviewer', {
       ...input('invalid-policy'),
       policy: { version: 'bad' },
     }),
   ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-  expect(starter.fork).not.toHaveBeenCalled();
+  expect(await listed()).toBe(0);
   expect((await workspace(bindings, 'reviewer', { op: 'projects' })).projects).toEqual([]);
 });
 
 it('rejects public imports and missing reviewer ownership without remote reads', async () => {
   await reviewer();
-  const { fake, get } = artifacts();
+  const { fake, get } = await artifacts();
   await expect(
-    provisionCampaignProject(fake, admin, 'reviewer', {
+    provision(fake, 'reviewer', {
       ...input(),
       source: 'https://example.com/project',
     }),
   ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   await expect(
-    provisionCampaignProject(fake, admin, 'reviewer', {
+    provision(fake, 'reviewer', {
       ...input(),
       template: 'https://example.com/project',
     }),
   ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
   await workspace(bindings, 'reviewer', { op: 'reviewer_revoke' });
-  await expect(provisionCampaignProject(fake, admin, 'reviewer', input())).rejects.toMatchObject({
+  await expect(provision(fake, 'reviewer', input())).rejects.toMatchObject({
     code: 'FORBIDDEN',
   });
   expect(get).not.toHaveBeenCalled();
@@ -180,13 +181,9 @@ it('rejects public imports and missing reviewer ownership without remote reads',
 
 it('does not expose opaque starter SDK errors containing capabilities', async () => {
   await reviewer();
-  const { fake } = artifacts();
-  const get = fake.ARTIFACTS.get.bind(fake.ARTIFACTS);
-  fake.ARTIFACTS.get = async (name: string) => {
-    if (name === template) throw new Error('local-fixture-capability');
-    return get(name);
-  };
-  const failure = await provisionCampaignProject(fake, admin, 'reviewer', input()).catch(
+  const { fake, get } = await artifacts();
+  get.mockRejectedValue(new Error('local-fixture-capability'));
+  const failure = await provision(fake, 'reviewer', input()).catch(
     (error) => error,
   );
   expect(failure).toMatchObject({ code: 'SETUP_FAILED' });
@@ -195,7 +192,7 @@ it('does not expose opaque starter SDK errors containing capabilities', async ()
 
 it('initializes frozen study and typed owner assertions without a run or model job', async () => {
   await reviewer();
-  const { fake } = artifacts();
+  const { fake } = await artifacts();
   const body = {
     ...input('study-seed'),
     context_study: {
@@ -219,7 +216,7 @@ it('initializes frozen study and typed owner assertions without a run or model j
       ],
     },
   };
-  await provisionCampaignProject(fake, admin, 'reviewer', body);
+  await provision(fake, 'reviewer', body);
   const snapshot = await ledger(bindings, body.repo_id, { op: 'snapshot', _workspace: 'reviewer' });
   expect(snapshot.repository.context_study).toMatchObject(body.context_study);
   expect(snapshot.nodes).toContainEqual(
@@ -231,7 +228,7 @@ it('initializes frozen study and typed owner assertions without a run or model j
   );
   expect(snapshot.runs).toEqual([]);
   await expect(
-    provisionCampaignProject(fake, admin, 'reviewer', {
+    provision(fake, 'reviewer', {
       ...body,
       context_study: { ...body.context_study, arm: 'plain_notes' },
     }),
@@ -241,36 +238,43 @@ it('initializes frozen study and typed owner assertions without a run or model j
     _workspace: 'reviewer',
     context_study: { ...body.context_study, arm: 'plain_notes' },
   });
-  await expect(provisionCampaignProject(fake, admin, 'reviewer', body)).rejects.toMatchObject({
+  await expect(provision(fake, 'reviewer', body)).rejects.toMatchObject({
     code: 'IDEMPOTENCY_CONFLICT',
   });
 });
 
-it('pins starter HEAD across provisioning and refuses a template moving during fork preparation', async () => {
+it('pins starter HEAD across provisioning and seeds the frozen commit when the template moves', async () => {
   await reviewer();
-  const { fake, starter } = artifacts();
+  const { fake, get, commit, tree } = await artifacts();
   let reads = 0;
-  starter.log = async () => [{ hash: ++reads === 1 ? commit : 'd'.repeat(40) }];
-  await expect(provisionCampaignProject(fake, admin, 'reviewer', input())).rejects.toMatchObject({
-    code: 'IDEMPOTENCY_CONFLICT',
+  const original = get.getMockImplementation()!;
+  get.mockImplementation(async (name: string) => {
+    const repo = await original(name);
+    return { ...repo, log: async () => [{ hash: ++reads === 1 ? commit : 'd'.repeat(40) }] };
   });
-  expect(starter.fork).not.toHaveBeenCalled();
-  expect((await workspace(bindings, 'reviewer', { op: 'projects' })).projects).toEqual([]);
-  starter.log = async () => [{ hash: commit }];
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe('ready');
+  expect(await provision(fake, 'reviewer', input())).toMatchObject({ status: 'ready', commit });
+  const platform = await projectPlatform(bindings, 'reviewer', 'fresh-campaign');
+  const head = (await platform.call('GET', '/refs')).refs['refs/heads/main'];
+  expect((await platform.call('GET', `/commits/${head}`)).tree).toBe(tree);
+  expect(await provision(fake, 'reviewer', input())).toMatchObject({ status: 'ready', commit });
 });
 
-it('reports a pending fork without publishing a workspace project and recovers on the same request', async () => {
+it('leaves only an unbound pending project when seeding fails and recovers on the same request', async () => {
   await reviewer();
-  const { fake, starter } = artifacts();
-  const create = starter.fork;
-  starter.fork = vi.fn(async () => {
-    throw Object.assign(new Error('Pending'), { code: 'FORK_IN_PROGRESS' });
-  });
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe(
-    'provisioning',
+  const { fake } = await artifacts();
+  let failing = true;
+  const local = interceptPlatform(fake, (path, request) =>
+    failing && path === '/repos' && request.method === 'POST'
+      ? platformJson({ error: { code: 'UPSTREAM_UNAVAILABLE', message: 'Synthetic outage' } }, 503)
+      : undefined,
   );
-  expect((await workspace(bindings, 'reviewer', { op: 'projects' })).projects).toEqual([]);
-  starter.fork = create;
-  expect((await provisionCampaignProject(fake, admin, 'reviewer', input())).status).toBe('ready');
+  await expect(provision(local, 'reviewer', input())).rejects.toMatchObject({ code: 'SETUP_FAILED' });
+  // The reservation precedes the seed (bindings attach to it), but it is neither ready nor bound.
+  const pending = await workspace(bindings, 'reviewer', { op: 'project_get', id: 'fresh-campaign' });
+  expect(pending).toMatchObject({ status: 'provisioning' });
+  expect(pending.platform).toBeUndefined();
+  await expect(ledger(bindings, 'fresh-campaign', { op: 'repository_status' })).rejects.toThrow();
+  failing = false;
+  expect((await provision(local, 'reviewer', input())).status).toBe('ready');
+  expect(await listed()).toBe(1);
 });

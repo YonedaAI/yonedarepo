@@ -11,6 +11,7 @@ import { streamProof } from '../../cloudflare/worker/source-stream';
 import { verifySourceView } from '../../cloudflare/worker/source-view-proof';
 import type { Env } from '../../cloudflare/worker/types';
 import { sourceFixture } from '../../tools/source-benchmark/workerd-source-fixture';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 
@@ -24,7 +25,7 @@ it('reads an immutable directory only once within each bounded preparation batch
 });
 const bindings = env as unknown as Env;
 const encoder = new TextEncoder();
-const revision: SourceRevision = { repository: 'yoneda-test/index-fixture', commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+const revision: SourceRevision = { repository: 'platform/index-fixture', commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
 const oid = async (bytes: Uint8Array) => {
   const prefix = encoder.encode(`blob ${bytes.length}\0`);
   const input = new Uint8Array(prefix.length + bytes.length);
@@ -42,7 +43,7 @@ async function fixture(count = 20) {
   const readBlob = vi.fn(async () => new StreamingBlob([bytes]));
   const repo = { readCommit: vi.fn(async () => ({ hash: revision.commit, treeHash: revision.tree })),
     readTree: vi.fn(async () => entries.map(entry => ({ ...entry }))), readBlob, [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
-  const local = { ...bindings, ARTIFACTS: { get: vi.fn(async () => repo) } } as unknown as Env;
+  const local = await syntheticPlatform(bindings, { 'index-fixture': repo });
   return { env: local, repo, entries, bytes, hash, readBlob };
 }
 

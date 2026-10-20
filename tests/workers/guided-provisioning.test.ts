@@ -2,7 +2,9 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
-import { assertGuidedFork } from '../../cloudflare/worker/guided-project';
+import { bindPlatform } from '../../cloudflare/worker/agents-platform';
+import { guidedProjectInput } from '../../cloudflare/worker/guided-project';
+import { ensureProjectPlatform, projectSeed } from '../../cloudflare/worker/project-platform';
 import { publishedGuidedProfile, type GuidedEnv } from '../../cloudflare/worker/guided-profile';
 import { canonicalBundle } from '../../cloudflare/worker/test-bundle';
 import { sha } from '../../cloudflare/worker/storage';
@@ -11,6 +13,14 @@ import { api, bindings, reviewerSignup, signup } from './reviewer-fixture';
 import { provisionProject } from '../../cloudflare/worker/project-provisioning';
 import { ledger } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { bindNewPlatformRepo, operator, templateArtifacts } from './platform-fixture';
+
+const guidedStarterFiles = {
+  'README.md': '# Task board\n',
+  '.yoneda-guided': 'task-board-v1\n',
+  'public/index.html': '<!doctype html><title>Task board</title>\n',
+  'fixtures/guided-task-board/oracle/run.mjs': '// Synthetic immutable oracle fixture\n',
+};
 
 afterEach(reset);
 async function fixture() {
@@ -19,22 +29,27 @@ async function fixture() {
   const encoded = canonicalBundle(files).encoded;
   const digest = await sha(encoded);
   await (env as unknown as GuidedEnv).OBJECTS.put(`sha256/${digest}`, encoded);
-  const actual: Json = { hash: 'a'.repeat(40), treeHash: 'b'.repeat(40), parents: [] };
-  const remote = { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter', defaultBranch: 'main' }),
-    log: async () => [{ hash: 'a'.repeat(40) }], readCommit: async () => actual };
+  // Operator-published starters with real Git ids; the starter commit's history is mutable.
+  const templates = await templateArtifacts({ 'guided-starter': guidedStarterFiles, 'guided-starter-v2': guidedStarterFiles });
+  const snapshot = await templates.snapshot('guided-starter');
+  const actual: Json = { hash: snapshot.commit, treeHash: snapshot.root, parents: [] };
+  const starter = async (name: string) => {
+    const repo = await templates.get(name);
+    return { ...repo, readCommit: async (hash: string) => (hash === actual.hash ? actual : null) };
+  };
   const get = vi.fn(async (name: string) => {
     if (name !== 'guided-starter') throw Object.assign(new Error('Absent fresh target'), { code: 'NOT_FOUND' });
-    return remote;
+    return starter(name);
   });
   const local = { ...bindings, GUIDED_TASK_BOARD_STARTER_REPO: 'guided-starter',
     GUIDED_TASK_BOARD_BUNDLE_DIGEST: digest, ARTIFACTS: { get }, AGENT_QUEUE: { send: vi.fn(async () => {}) } } as unknown as GuidedEnv;
-  return { local, digest, actual, get };
+  return { local, digest, actual, get, starter, templates };
 }
 
 it('loads the digest-addressed protected checks and a single-root starter with the canonical fixed policy', async () => {
   const f = await fixture();
   const profile = await publishedGuidedProfile(f.local);
-  expect(profile.starter).toEqual({ repository: 'yoneda-test/guided-starter', branch: 'main', commit: 'a'.repeat(40), tree: 'b'.repeat(40) });
+  expect(profile.starter).toEqual({ repository: 'yoneda-test/guided-starter', branch: 'main', commit: f.actual.hash, tree: f.actual.treeHash });
   expect(profile.policy).toMatchObject({ version: 'task-board-v1', required_checks: ['guided-task-board'],
     build: { static_dir: 'public', checks: [{ name: 'guided-task-board', argv: ['node', '/opt/yoneda/test-bundle/fixtures/guided-task-board/oracle/run.mjs'] }],
       test_bundle: { digest: f.digest, protected_paths: ['README.md', '.yoneda-guided', 'fixtures/guided-task-board/oracle'] } } });
@@ -60,19 +75,34 @@ it('fresh guide creation retains the private marker; retry does not refresh seed
   f.get.mockClear().mockRejectedValue(new Error('Rotated starter must not rebind old reservation'));
   const replay = await api(f.local, '/api/projects', cookie, body);
   expect(replay.status).toBe(202);
-  expect(await replay.json()).toEqual(project);
+  // The replay reports the first request's platform binding and never seeds another repository.
+  expect(await replay.json()).toEqual({ ...project, updated_at: expect.any(Number), platform: { repo: expect.stringMatching(/^r[0-9a-f]{20}$/) } });
   expect(f.get).not.toHaveBeenCalled();
 });
 
-it('fork readback rejects target adoption despite matching commit and tree', async () => {
+it('guided setup replays its first platform binding and cannot adopt another repository', async () => {
   const f = await fixture();
-  const profile = await publishedGuidedProfile(f.local);
-  const remote = { info: async () => ({ name: 'fresh', defaultBranch: 'main', readOnly: false, source: 'artifacts:foreign/starter' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual } as unknown as ArtifactsRepo;
-  await expect(assertGuidedFork(remote, { id: 'fresh', guided_project: profile })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+  await reviewerSignup('guided_binding');
+  const reserve = async (id: string) => workspace(bindings, 'guided_binding', { op: 'project_reserve', id, name: 'Bound guide',
+    ...(await guidedProjectInput(f.local, 'guided_binding', id, { name: 'Bound guide', guided_profile_id: 'task-board-v1' })) });
+  const project = await reserve('guided-binding');
+  const seed = await projectSeed(f.local, project);
+  expect(seed).toEqual({ template: 'guided-starter', commit: f.actual.hash, tree: f.actual.treeHash });
+  const repo = await ensureProjectPlatform(f.local, operator(), 'guided_binding', project, seed, true);
+  const bound = await workspace(bindings, 'guided_binding', { op: 'project_get', id: project.id });
+  expect(bound.platform).toEqual({ repo });
+  expect(await ensureProjectPlatform(f.local, operator(), 'guided_binding', bound, seed, true)).toBe(repo);
+  // A concurrent setup's second repository is never adopted.
+  const other = await bindNewPlatformRepo(bindings, 'guided_binding', `${project.id}-other`, null);
+  expect(await bindPlatform(bindings, 'guided_binding', project.id, other.repo, 'yrp_other_fixture')).toBe(repo);
+  // A starter whose tree moved since the profile was pinned is not this guide.
+  const moved = { ...f.local, ARTIFACTS: await templateArtifacts({ 'guided-starter': { ...guidedStarterFiles, 'README.md': 'Moved\n' } }) } as GuidedEnv;
+  const fresh = await reserve('guided-moved');
+  await expect(ensureProjectPlatform(moved, operator(), 'guided_binding', fresh, seed, true))
+    .rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
 
-it('a fresh guided fork is ready only after Native init retains the exact profile and policy', async () => {
+it('a fresh guided project is ready only after Native init retains the exact profile and policy', async () => {
   const f = await fixture();
   const cookie = await reviewerSignup('guided_fork_creation');
   const response = await api(f.local, '/api/projects', cookie, {
@@ -80,23 +110,12 @@ it('a fresh guided fork is ready only after Native init retains the exact profil
   });
   expect(response.status).toBe(202);
   const project = await response.json<Json>();
-  let forked = false;
-  const target = { [Symbol.dispose]() {}, info: async () => ({ name: project.id, defaultBranch: 'main', readOnly: false,
-    source: 'artifacts:yoneda-test/guided-starter' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
-    readTree: async () => [{ name: 'README.md', type: 'blob', hash: 'c'.repeat(40) }],
-    readBlob: async () => new Blob(['Synthetic fresh starter']),
-    listTokens: async () => ({ tokens: [] }), revokeToken: async () => true };
-  const starter = { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter', defaultBranch: 'main' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
-    fork: async () => { forked = true; return { token: 'synthetic-setup-only' }; } };
-  f.get.mockImplementation(async name => {
-    if (name === 'guided-starter') return starter;
-    if (!forked) throw Object.assign(new Error('Target absent before fork'), { code: 'NOT_FOUND' });
-    return target;
-  });
+  const bound = await workspace(bindings, 'guided_fork_creation', { op: 'project_get', id: project.id });
+  expect(bound.platform?.repo).toMatch(/^r[0-9a-f]{20}$/);
+  f.get.mockClear();
   const ready = await provisionProject(f.local, 'guided_fork_creation', project);
   expect(ready.status).toBe('ready');
+  expect(f.get).not.toHaveBeenCalled();
   const repository = await ledger(f.local, project.id, { op: 'repository_status', _workspace: 'guided_fork_creation' });
   expect(repository.guided_project).toEqual(project.guided_project);
   expect(repository.policy).toMatchObject({ version: 'task-board-v1', required_checks: ['guided-task-board'] });
@@ -148,8 +167,10 @@ it('alarm or queue recovery of an unmarked guided policy cannot fall back to the
   const project = await workspace(bindings, 'guided_old_pending', { op: 'project_reserve',
     id: 'unmarked-guided-project', name: 'Old guided reservation', source: null, policy: profile.policy });
   f.get.mockClear().mockRejectedValue(new Error('Ordinary starter fallback must not run'));
+  // Background setup cannot create a repository; the owner's retry refuses the ordinary seed.
   const result = await provisionProject(f.local, 'guided_old_pending', project);
-  expect(result).toMatchObject({ status: 'failed', error_code: 'LEDGER_UPDATING' });
+  expect(result).toMatchObject({ status: 'failed', error_code: 'PLATFORM_UNBOUND' });
+  await expect(projectSeed(f.local, project)).rejects.toMatchObject({ code: 'LEDGER_UPDATING' });
   expect(f.get).not.toHaveBeenCalled();
   await expect(ledger(bindings, project.id, { op: 'repository_status' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
 });
@@ -177,11 +198,9 @@ it('missing Workspace capability fails before reservation, index or starter read
 });
 
 /** Version 2 settings name a second single-root starter with its own protected digest. */
-function withVersionTwo(f: Awaited<ReturnType<typeof fixture>>, starter?: Json) {
-  const v2 = starter ?? { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter-v2', defaultBranch: 'main' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual };
+function withVersionTwo(f: Awaited<ReturnType<typeof fixture>>) {
   const original = f.get.getMockImplementation();
-  f.get.mockImplementation(async (name: string) => (name === 'guided-starter-v2' ? v2 : original?.(name)) as never);
+  f.get.mockImplementation(async (name: string) => (name === 'guided-starter-v2' ? f.starter(name) : original?.(name)) as never);
   return { ...f.local, GUIDED_TASK_BOARD_V2_STARTER_REPO: 'guided-starter-v2',
     GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST: f.digest } as GuidedEnv;
 }
@@ -205,32 +224,17 @@ it('a version 1 project stays pinned to version 1 after version 2 is configured'
   const project = await (await api(f.local, '/api/projects', cookie, body)).json<Json>();
   expect(project.guided_project.version).toBe(1);
   const replay = await api(withVersionTwo(f), '/api/projects', cookie, body);
-  expect(await replay.json()).toEqual(project);
+  expect(await replay.json()).toEqual({ ...project, updated_at: expect.any(Number), platform: { repo: expect.stringMatching(/^r[0-9a-f]{20}$/) } });
 });
 
 it('a version 2 project records version 2 in Native and in its guide session', async () => {
   const f = await fixture();
-  let copied = false;
-  const starter = { [Symbol.dispose]() {}, info: async () => ({ name: 'guided-starter-v2', defaultBranch: 'main' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
-    fork: async () => { copied = true; return { token: 'synthetic-setup-only' }; } };
-  const local = withVersionTwo(f, starter);
+  const local = withVersionTwo(f);
   const cookie = await reviewerSignup('guided_v2_project');
   const project = await (await api(local, '/api/projects', cookie, {
     request_id: 'guided-v2-project-request-0001', name: 'Version two board', guided_profile_id: 'task-board-v1',
   })).json<Json>();
   expect(project.guided_project).toMatchObject({ version: 2, starter: { repository: 'yoneda-test/guided-starter-v2' } });
-  const target = { [Symbol.dispose]() {}, info: async () => ({ name: project.id, defaultBranch: 'main', readOnly: false,
-    source: 'artifacts:yoneda-test/guided-starter-v2' }),
-    log: async () => [{ hash: f.actual.hash }], readCommit: async () => f.actual,
-    readTree: async () => [{ name: 'README.md', type: 'blob', hash: 'c'.repeat(40) }],
-    readBlob: async () => new Blob(['Synthetic version 2 starter']),
-    listTokens: async () => ({ tokens: [] }), revokeToken: async () => true };
-  f.get.mockImplementation(async (name: string) => {
-    if (name === 'guided-starter-v2') return starter;
-    if (!copied) throw Object.assign(new Error('Target absent before copy'), { code: 'NOT_FOUND' });
-    return target;
-  });
   expect((await provisionProject(local, 'guided_v2_project', project)).status).toBe('ready');
   const repository = await ledger(local, project.id, { op: 'repository_status', _workspace: 'guided_v2_project' });
   expect(repository.guided_project.version).toBe(2);

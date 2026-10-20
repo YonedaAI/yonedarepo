@@ -1,7 +1,6 @@
 import { reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { YonedaEntrypoint } from '../../cloudflare/worker/entrypoint';
-import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
 import type { SourceIndexEnvelope } from '../../cloudflare/worker/source-contract';
 import { hex } from '../../cloudflare/worker/source-crypto';
 import { sourceScope } from '../../cloudflare/worker/source-scope';
@@ -11,12 +10,13 @@ import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
 import { modernCompareApproval } from './comparison-review-fixture';
 import { readyReviewer } from './reviewer-fixture';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 
 it('defers a cold source launch transactionally, fences its epoch, and launches only once the approved input is complete', async () => {
   const repo = 'source-dispatch-cold';
-  const base = { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const base = { repository: `platform/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
   const bytes = new Uint8Array([1, 0, 255]);
   const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
   const object = new Uint8Array(header.length + bytes.length);
@@ -27,17 +27,16 @@ it('defers a cold source launch transactionally, fences its epoch, and launches 
     readCommit: async () => ({ hash: base.commit, treeHash: base.tree }),
     readTree: async () => Array.from({ length: 20 }, (_, index) => ({
       name: `file-${String(index).padStart(2, '0')}.bin`, hash: blob, mode: '100644', type: 'blob',
-    })), readBlob, [Symbol.dispose]() {},
-  } as unknown as ArtifactsRepo;
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Cold source dispatch', workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name: repo }, commit: base.commit, policy: reviewerPolicy });
+    })), readBlob,
+  };
+  const platform = await syntheticPlatform(bindings, { [repo]: artifact }, 'source_owner');
   await ledger(bindings, repo, { op: 'start_run', id: 'dispatch-run', intent: 'Synthetic cold preparation only',
     workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: base,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic source dispatch' }] });
   const jobId = 'job:dispatch-run:agent-1';
   const pending: SourceIndexEnvelope[] = [];
   const launched: Scope[] = [];
-  const local = { ...bindings, ARTIFACTS: { get: async () => artifact },
+  const local = { ...platform,
     AGENT_QUEUE: { send: async (value: SourceIndexEnvelope) => { pending.push(value); } },
   } as unknown as Env;
   const service = { env: local, launchExecution: async (_name: string, scope: Scope) => { launched.push(scope); } };
@@ -85,7 +84,7 @@ it('skips zero-result review and acknowledges stale failed-builder delivery with
   await workspace(f.scoped, f.owner, { op: 'workspace_spend_configure', expected_version: 0, limit_microusd: 50000000 });
   await ledger(f.scoped, f.repo, { ...modernCompareApproval(), op: 'start_run', id: 'review-cold',
     intent: 'Explain pre-model builder failures with no source captures', workspace_transport: 'api-source-v1',
-    _source_transport_approved: true, _source_base: { repository: `yoneda-test/${f.repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) } });
+    _source_transport_approved: true, _source_base: { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree } });
   for (const index of [1, 2]) {
     const job = await ledger(f.scoped, f.repo, { op: 'claim', job_id: `job:review-cold:agent-${index}` });
     await ledger(f.scoped, f.repo, { op: 'fail', job_id: job.id, epoch: job.epoch, retryable: false,
@@ -99,10 +98,10 @@ it('skips zero-result review and acknowledges stale failed-builder delivery with
   expect(detail.executions.some((execution: any) => execution.role === 'reviewer')).toBe(false);
   const spending = await workspace(f.scoped, f.owner, { op: 'workspace_spend_status' });
   const jobId = 'job:review-cold:agent-2';
-  const get = vi.fn(async () => { throw new Error('The failed original source must not be opened by the reviewer'); });
+  const get = vi.fn(async (): Promise<Response> => { throw new Error('The failed original source must not be opened by the reviewer'); });
   const send = vi.fn();
   const launches: Scope[] = [];
-  const env = { ...f.scoped, ARTIFACTS: { get }, AGENT_QUEUE: { send } } as unknown as Env;
+  const env = { ...f.scoped, PLATFORM: { fetch: get }, AGENT_QUEUE: { send } } as unknown as Env;
   const service = { env, launchExecution: async (_name: string, scope: Scope) => { launches.push(scope); } };
   const ack = vi.fn(); const retry = vi.fn();
   const objectGet = vi.spyOn(f.scoped.OBJECTS, 'get');

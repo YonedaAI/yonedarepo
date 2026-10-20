@@ -1,7 +1,7 @@
 import { assertGuidedReservation, guidedProjectInput } from './guided-project';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
-import { ensureProjectPlatform, projectSeed } from './project-platform';
+import { ensureProjectPlatform } from './project-platform';
 import { provisionAndScheduleProject, scheduleProject } from './project-provisioning';
 import { changeProjectVisibility } from './project-visibility';
 import { sitePolicy } from './site-policy';
@@ -61,13 +61,7 @@ export async function projectRoute(
     });
     await assertGuidedReservation(project, configuration);
     if (project.status === 'provisioning')
-      await ensureProjectPlatform(
-        env,
-        req,
-        principal.workspace,
-        project,
-        await projectSeed(env, project),
-      );
+      await ensureProjectPlatform(env, req, principal.workspace, project);
     await scheduleProject(env, principal.workspace, project);
     // Durable queue/alarm intent exists before the optional latency fast path.
     // Remote I/O stays in background; its existing lease/deadline is unchanged.
@@ -92,13 +86,7 @@ export async function projectRoute(
       return error('REPOSITORY_DELETED', 'This repository has been deleted', 410);
     if (parts[3] === 'retry') {
       if (project.status !== 'ready')
-        await ensureProjectPlatform(
-          env,
-          req,
-          principal.workspace,
-          project,
-          await projectSeed(env, project),
-        );
+        await ensureProjectPlatform(env, req, principal.workspace, project);
       const retry = await workspace(env, principal.workspace, {
         op: 'project_retry',
         id: project.id,

@@ -10,7 +10,7 @@ const intent = 'Local source approval boundary fixture; no model requests';
 const forged = {
   workspace_transport: 'api-source-v1',
   _source_transport_approved: true,
-  _source_base: { repository: 'yoneda-test/foreign', commit: 'f'.repeat(40), tree: 'e'.repeat(40) },
+  _source_base: { repository: 'platform/foreign', commit: 'f'.repeat(40), tree: 'e'.repeat(40) },
   source_mounts: [{ path: 'repo', workspace_id: 'foreign', access: 'read_write' }],
   _source_signing_key: '0'.repeat(64),
   _source_registered: { id: 'forged' },
@@ -37,8 +37,7 @@ async function snapshots(f: Awaited<ReturnType<typeof readyReviewer>>) {
 
 it('public source markers are replaced by canonical readback and cannot change an approval on replay', async () => {
   const f = await readyReviewer('source_public_forgery');
-  const readCommit = vi.fn(async () => ({ hash: 'a'.repeat(40), treeHash: 'b'.repeat(40) }));
-  const local = { ...f.scoped, ARTIFACTS: { get: async () => ({ readCommit, [Symbol.dispose]() {} }) } } as unknown as Env;
+  const local = f.scoped;
   const response = await api(local, `/api/repos/${f.repo}/start_run`, f.cookie, {
     ...start('forged-markers'),
     ...forged,
@@ -46,7 +45,7 @@ it('public source markers are replaced by canonical readback and cannot change a
   expect(response.status).toBe(200);
   const run = await response.json<Json>();
   expect(run.workspace_transport).toBe('api-source-v1');
-  expect(run.source_base).toEqual({ repository: `yoneda-test/${f.repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) });
+  expect(run.source_base).toEqual({ repository: `platform/${f.repo}`, commit: f.head, tree: f.tree });
   expect(run.source_mounts).toBeUndefined();
   const before = await snapshots(f);
   const replay = await api(local, `/api/repos/${f.repo}/start_run`, f.cookie, {
@@ -81,16 +80,17 @@ it('public owner RPCs cannot reach source binding, capture, registration or priv
 it('approval rejects a mismatched commit readback before funding, jobs or source authority are created', async () => {
   const f = await readyReviewer('source_wrong_readback');
   const before = await snapshots(f);
-  const readCommit = vi.fn(async () => ({ hash: 'f'.repeat(40), treeHash: 'b'.repeat(40) }));
-  const local = {
-    ...f.scoped,
-    ARTIFACTS: {
-      get: async () => ({
-        readCommit,
-        [Symbol.dispose]() {},
-      }),
-    },
-  } as unknown as Env;
+  // The platform answers the head read with a different commit than the one requested.
+  const requested: string[] = [];
+  const fetch = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const answer = await f.scoped.SELF.fetch(request.clone());
+    if (!new URL(request.url).pathname.endsWith('/objects')) return answer;
+    requested.push(...(await request.json<Json>()).objects.map((o: Json) => o.id));
+    const value = await answer.json<Json>();
+    return Response.json({ ...value, objects: value.objects.map((o: Json) => ({ ...o, id: 'f'.repeat(40) })) });
+  });
+  const local = { ...f.scoped, PLATFORM: { fetch } } as unknown as Env;
   const result = await api(local, `/api/repos/${f.repo}/start_run`, f.cookie, {
     ...start('must-not-start'),
     ...forged,
@@ -107,7 +107,7 @@ it('approval rejects a mismatched commit readback before funding, jobs or source
     }),
   ).toBe(409);
   expect(await result.json<Json>()).toMatchObject({ error: { code: 'INVALID_CAPTURE' } });
-  expect(readCommit).toHaveBeenCalledWith('a'.repeat(40));
+  expect(requested).toEqual([f.head]);
   expect(await snapshots(f)).toEqual(before);
 });
 
@@ -120,28 +120,14 @@ it('approval derives source only from canonical readback and keeps earlier runs 
   const cancelled = (await ledger(f.scoped, f.repo, { op: 'snapshot' })).runs.find(
     (run: Json) => run.id === earlier.id,
   );
-  const readCommit = vi.fn(async () => ({ hash: 'a'.repeat(40), treeHash: 'b'.repeat(40) }));
-  const local = {
-    ...f.scoped,
-    ARTIFACTS: {
-      get: async (name: string) => {
-        expect(name).toBe(f.repo);
-        return { readCommit, [Symbol.dispose]() {} };
-      },
-    },
-  } as unknown as Env;
-  const response = await api(local, `/api/repos/${f.repo}/start_run`, f.cookie, {
+  const response = await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, {
     ...start('api-new'),
     ...forged,
   });
   expect(response.status).toBe(200);
   expect(await response.json<Json>()).toMatchObject({
     workspace_transport: 'api-source-v1',
-    source_base: {
-      repository: `yoneda-test/${f.repo}`,
-      commit: 'a'.repeat(40),
-      tree: 'b'.repeat(40),
-    },
+    source_base: { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree },
   });
   expect(
     (await ledger(f.scoped, f.repo, { op: 'snapshot' })).runs.find(

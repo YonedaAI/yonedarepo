@@ -7,6 +7,7 @@ import { sourceContentKey, sourceReadResponse } from '../../cloudflare/worker/so
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { artifactsBenchmarkFixture } from '../../tools/source-benchmark/workerd-artifacts-fixture';
+import { syntheticPlatform } from './platform-fixture';
 import { bindings, sourceFixture } from '../../tools/source-benchmark/workerd-source-fixture';
 
 afterEach(reset);
@@ -28,7 +29,7 @@ async function containerFixture() {
     op: 'init',
     id: repo,
     name: 'Source fencing fixture',
-    remote: { namespace: 'yoneda-test', name: repo },
+    remote: { namespace: 'platform', name: repo, branch: 'main' },
     commit: 'a'.repeat(40),
     policy,
   });
@@ -113,7 +114,7 @@ it('warm digest cache cannot authorize a foreign origin path and public range re
   );
   const leaf = await artifacts.repo.readTree(entries[0].hash);
   const blob = leaf[0].hash;
-  const local = { ...bindings, ARTIFACTS: artifacts.artifacts };
+  const local = await syntheticPlatform(bindings, { 'source-base': artifacts.repo });
   await cacheSourceBlob(local, artifacts.repo, artifacts.base, blob);
   const content = {
     kind: 'git',
@@ -137,7 +138,7 @@ it('warm digest cache cannot authorize a foreign origin path and public range re
   });
   for (const forged of [
     { ...content, path: artifacts.requested[1] },
-    { ...content, repository: 'yoneda-test/foreign' },
+    { ...content, repository: 'platform/foreign' },
     { ...content, commit: 'f'.repeat(40) },
     { ...content, path: '../escape' },
   ])

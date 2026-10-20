@@ -14,8 +14,8 @@ it('lets the operator prepare an explicitly owned campaign without weakening rev
   expect((await request('snapshot', {}, f.owner, false)).status).toBe(403);
   expect((await request('start_run')).status).toBe(404);
   expect((await request('finish')).status).toBe(404);
-  const created = await request('create_working_branch', { id: 'working', expected_commit: 'a'.repeat(40), expected_version: 0, _workspace: 'foreign_owner', actor: 'forged', campaign: { id: 'forged' } });
+  const created = await request('create_working_branch', { id: 'working', expected_commit: f.head, expected_version: 0, _workspace: 'foreign_owner', actor: 'forged', campaign: { id: 'forged' } });
   expect(created.status).toBe(200);
-  expect(await created.json()).toMatchObject({ id: 'working', working_commit: 'a'.repeat(40) });
+  expect(await created.json()).toMatchObject({ id: 'working', working_commit: f.head });
   expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toEqual([]);
 });
