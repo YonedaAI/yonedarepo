@@ -173,8 +173,11 @@ async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
     .reverse()
     .find((c) => c.paths.some((p: Json) => p.path === path));
   if (!changed) return walk(objects, head.head.tree, path);
-  if (!changed.paths.find((p: Json) => p.path === path).blob)
-    throw new ApiError('NOT_FOUND', `${path} does not exist`);
+  const touch = changed.paths.find((p: Json) => p.path === path);
+  if (!touch.blob) throw new ApiError('NOT_FOUND', `${path} does not exist`);
+  // The log recorded the mode: the blob is read by id, no tree walk.
+  if (touch.mode)
+    return { name: path.split('/').pop() ?? path, type: touch.mode, id: touch.blob } as TreeEntry;
   return walk(objects, changed.tree, path);
 }
 

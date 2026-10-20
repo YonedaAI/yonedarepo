@@ -291,6 +291,27 @@ fn projection_is_deterministic_idempotent_and_replays() {
 }
 
 #[test]
+fn a_plan_never_holds_more_steps_than_a_record_takes() {
+    let (h, root) = seeded();
+    let first = h.landable(&root, 1, json!([file("first.txt", "1\n")]), json!([]));
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":first}));
+    for i in 0..70 {
+        let id = h.landable(
+            &root,
+            1,
+            json!([file(&format!("many/{i}.txt"), "x\n")]),
+            json!([]),
+        );
+        h.enqueue(&id);
+    }
+    land_changesets(&h);
+    let plan = h.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
+    assert_eq!(plan["items"].as_array().unwrap().len(), 64);
+    h.project_all();
+    assert_eq!(h.project_once(), None, "all 70 projected over two records");
+}
+
+#[test]
 fn vacuum_never_releases_unprojected_changesets() {
     let (h, root) = seeded();
     let first = h.landable(&root, 1, json!([file("first.txt", "1\n")]), json!([]));

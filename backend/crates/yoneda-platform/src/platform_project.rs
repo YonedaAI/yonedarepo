@@ -4,7 +4,7 @@
 //! changeset also its landed commit. The platform is the author and the landing time the
 //! timestamp; nothing else enters the commit, so the same steps always produce the same
 //! ids, wherever they are projected.
-use crate::platform_objects::{object_json, supplied_trees};
+use crate::platform_objects::{mode as file_mode, object_json, supplied_trees};
 use crate::repo_store::prepare::build::{Parent, Trees, build, existing, frontier};
 use crate::repo_store::prepare::changes::{Change, Content};
 use crate::storage::{bad, number, string};
@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use yoneda_core::{
     Error, Result,
-    git_object::{ObjectId, decode_tree},
+    git_object::{FileMode, ObjectId, decode_tree},
 };
 
 const AUTHOR: (&str, &str) = ("YonedaRepo", "commits@yonedarepo.invalid");
@@ -34,8 +34,16 @@ struct Step {
     at: i64,
     message: String,
     merge: Option<Parent>,
-    /// Changed paths: new blob (`None`: deleted) and the landed commit that wrote it.
-    changes: Vec<(String, Option<ObjectId>, Parent)>,
+    changes: Vec<Changed>,
+}
+
+/// A changed path: its new blob (`None`: deleted), the mode when the log recorded it, and
+/// the landed commit that wrote it (whose tree gives the mode otherwise).
+struct Changed {
+    path: String,
+    blob: Option<ObjectId>,
+    mode: Option<FileMode>,
+    source: Parent,
 }
 
 fn steps(c: &Value) -> Result<Vec<Step>> {
@@ -53,7 +61,16 @@ fn steps(c: &Value) -> Result<Vec<Step>> {
                         Some(_) => Some(ObjectId::parse(&string(ch, "blob")?)?),
                         None => None,
                     };
-                    Ok((string(ch, "path")?, blob, parent(&ch["source"])?))
+                    let mode = match ch["mode"].as_str() {
+                        Some(name) => Some(file_mode(name)?),
+                        None => None,
+                    };
+                    Ok(Changed {
+                        path: string(ch, "path")?,
+                        blob,
+                        mode,
+                        source: parent(&ch["source"])?,
+                    })
                 })
                 .collect::<Result<_>>()?;
             Ok(Step {
@@ -79,27 +96,35 @@ fn steps(c: &Value) -> Result<Vec<Step>> {
 fn changes(step: &Step, trees: &Trees) -> Result<Vec<Change>> {
     step.changes
         .iter()
-        .map(|(path, blob, source)| {
-            let target = match blob {
-                None => None,
-                Some(blob) => {
-                    let entry = existing(Some(source.tree), path, trees)
-                        .filter(|e| e.id == *blob && !e.mode.is_tree())
-                        .ok_or_else(|| {
-                            Error::new(
-                                "INVALID_INPUT",
-                                format!("{path} in {} is not blob {blob}", source.id),
-                            )
-                        })?;
-                    Some((entry.mode, Content::Known(*blob)))
-                }
-            };
-            Ok(Change {
-                path: path.clone(),
-                target,
-                expect: None,
-            })
-        })
+        .map(
+            |Changed {
+                 path,
+                 blob,
+                 mode,
+                 source,
+             }| {
+                let target = match (blob, mode) {
+                    (None, _) => None,
+                    (Some(blob), Some(mode)) => Some((*mode, Content::Known(*blob))),
+                    (Some(blob), None) => {
+                        let entry = existing(Some(source.tree), path, trees)
+                            .filter(|e| e.id == *blob && !e.mode.is_tree())
+                            .ok_or_else(|| {
+                                Error::new(
+                                    "INVALID_INPUT",
+                                    format!("{path} in {} is not blob {blob}", source.id),
+                                )
+                            })?;
+                        Some((entry.mode, Content::Known(*blob)))
+                    }
+                };
+                Ok(Change {
+                    path: path.clone(),
+                    target,
+                    expect: None,
+                })
+            },
+        )
         .collect()
 }
 
@@ -110,11 +135,14 @@ pub fn project_changesets(c: &Value) -> Result<Value> {
     // Every directory on a changed path, in the head and in each landed commit, up front.
     let all: Vec<&str> = steps
         .iter()
-        .flat_map(|s| s.changes.iter().map(|(p, _, _)| p.as_str()))
+        .flat_map(|s| s.changes.iter().map(|c| c.path.as_str()))
         .collect();
     let mut missing: BTreeSet<ObjectId> = frontier(Some(head.tree), &all, &trees);
-    for (path, _, source) in steps.iter().flat_map(|s| &s.changes) {
-        missing.extend(frontier(Some(source.tree), &[path.as_str()], &trees));
+    // A landed commit's tree is read only for a mode the log did not record.
+    for c in steps.iter().flat_map(|s| &s.changes) {
+        if c.blob.is_some() && c.mode.is_none() {
+            missing.extend(frontier(Some(c.source.tree), &[c.path.as_str()], &trees));
+        }
     }
     if !missing.is_empty() {
         return Ok(json!({ "need_trees": missing.iter().map(ObjectId::hex).collect::<Vec<_>>() }));

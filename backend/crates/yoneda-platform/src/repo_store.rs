@@ -201,7 +201,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_land_submitted" => submitted::land(db, c, &settings),
         "repo_changeset_plan" => projection_plan::plan(db, c),
         "repo_head" => head::head(db, c, &settings),
-        "repo_changeset_record" => version_projection::record(db, c),
+        "repo_changeset_record" => version_projection::record(db, c, &settings),
         "repo_record_imported" => history_import::record(db, c),
         "repo_break_glass" => break_glass::execute(db, c, principal, &settings),
         "repo_import" => {

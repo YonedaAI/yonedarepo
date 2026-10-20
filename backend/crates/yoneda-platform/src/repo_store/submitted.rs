@@ -10,7 +10,7 @@ use super::adopt::adopt_one;
 use super::changesets::{Route, route_writing};
 use super::land::{gates, write_entry_with};
 use super::merging::BatchWrites;
-use super::rows::{CommitRow, Settings, branch_ref, current_version};
+use super::rows::{self, CommitRow, Settings, branch_ref, current_version};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -159,8 +159,17 @@ fn land_one<S: SqlStore>(
             batch.accept(writes);
             Ok(json!({ "status": "landed", "version": entry.version }))
         }
-        // The merge path needs the full commit: adopt the chain, queue it for merges.
+        // The merge path needs the full commit: adopt the chain, queue it for merges. A
+        // lander that sent only its commit's record sends the chain when asked.
         Route::Merge => {
+            let first: Vec<String> =
+                serde_json::from_str(records[0]["commit"]["parents"].as_str().unwrap_or("[]"))
+                    .map_err(|_| bad("Record parents must be a list"))?;
+            for parent in &first {
+                if rows::commit_row(db, &ObjectId::parse(parent)?)?.is_none() {
+                    return Ok(json!({ "status": "need_chain" }));
+                }
+            }
             let now = number(c, "now")?;
             for record in records {
                 adopt_one(db, record, settings, now)?;

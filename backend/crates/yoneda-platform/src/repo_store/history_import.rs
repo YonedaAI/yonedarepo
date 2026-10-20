@@ -54,13 +54,13 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         yoneda_core::validate_path(&touch.path)?;
         let encoded = serde_json::to_value(touch).map_err(|e| bad(&e.to_string()))?;
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?)",
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?)",
             &[
                 json!(id.hex()),
                 encoded["path"].clone(),
                 encoded["op"].clone(),
                 encoded["old_blob"].clone(),
-                encoded["new_blob"].clone(),
+                encoded["new_blob"].clone(), encoded["mode"].clone(),
             ],
         )?;
     }

@@ -127,7 +127,7 @@ pub fn recorded<S: SqlStore>(db: &S, id: &ObjectId) -> Result<CommitRow> {
 
 pub fn touches<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Vec<PathTouch>> {
     db.query(
-        "SELECT path,op,old_blob,new_blob FROM commit_paths WHERE commit_id=? ORDER BY path",
+        "SELECT path,op,old_blob,new_blob,mode FROM commit_paths WHERE commit_id=? ORDER BY path",
         &[json!(id.hex())],
     )?
     .into_iter()

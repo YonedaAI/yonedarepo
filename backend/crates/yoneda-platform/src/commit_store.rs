@@ -13,8 +13,13 @@ use yoneda_core::{
     git_object::{Commit, ObjectId, ObjectKind, hash_object},
 };
 
-const MIGRATIONS: [(i64, &str); 1] =
-    [(1, include_str!("migrations/commit_store/0001_commits.sql"))];
+const MIGRATIONS: [(i64, &str); 2] = [
+    (1, include_str!("migrations/commit_store/0001_commits.sql")),
+    (
+        2,
+        include_str!("migrations/commit_store/0002_path_modes.sql"),
+    ),
+];
 
 pub fn migrate_commit_store<S: SqlStore>(db: &S) -> Result<()> {
     migrate_with(db, "commit_store_migrations", &MIGRATIONS)
@@ -103,13 +108,13 @@ fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )?;
     for touch in c["touches"].as_array().into_iter().flatten() {
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?)",
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?)",
             &[
                 json!(id.hex()),
                 touch["path"].clone(),
                 touch["op"].clone(),
                 touch["old_blob"].clone(),
-                touch["new_blob"].clone(),
+                touch["new_blob"].clone(), touch["mode"].clone(),
             ],
         )?;
     }
@@ -148,7 +153,7 @@ fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         .ok_or_else(|| Error::new("NOT_FOUND", format!("Commit {id} is not in this shard")))?;
     Ok(json!({
         "commit": row,
-        "paths": db.query("SELECT path,op,old_blob,new_blob FROM commit_paths WHERE commit_id=? ORDER BY path", &key)?,
+        "paths": db.query("SELECT path,op,old_blob,new_blob,mode FROM commit_paths WHERE commit_id=? ORDER BY path", &key)?,
         "classes": db.query("SELECT overall,files FROM commit_classes WHERE commit_id=?", &key)?.into_iter().next(),
         "symbols": db.query("SELECT path,symbols FROM commit_symbols WHERE commit_id=? ORDER BY path", &key)?,
         "objects": db.query("SELECT id,kind FROM commit_objects WHERE commit_id=? ORDER BY id", &key)?,

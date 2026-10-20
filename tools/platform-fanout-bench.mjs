@@ -6,7 +6,7 @@
 // platform's Server-Timing totals, with correctness counts. An explicit, separate command:
 // it creates a repository (and, with --principals tokens, one token per writer).
 // Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the bench client.
-// --mode picks the landing mode per request (poll|combiner|changeset|batch), --begin where
+// --mode picks the landing mode per request (changeset|batch), --begin where
 // commits begin (authority|head) and --read where main reads are served (authority|head),
 // where the target allows a per-request choice; changeset and batch runs also report how
 // long main's Git projection lagged each landing.
@@ -32,7 +32,7 @@ const { values } = parseArgs({
 });
 assert.ok(values.url && values.client, 'Pass --url (platform) and --client (bench client)');
 assert.ok(['session', 'tokens'].includes(values.principals), '--principals is session or tokens');
-assert.ok(!values.mode || ['poll', 'combiner', 'changeset', 'batch'].includes(values.mode), '--mode is poll, combiner, changeset or batch');
+assert.ok(!values.mode || ['changeset', 'batch'].includes(values.mode), '--mode is changeset or batch');
 const url = values.url.replace(/\/$/, '');
 const WRITERS = Number(values.writers);
 const root = fileURLToPath(new URL('../', import.meta.url));

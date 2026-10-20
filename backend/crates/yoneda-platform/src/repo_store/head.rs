@@ -28,7 +28,7 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
         let paths: Vec<Value> = entry
             .paths
             .iter()
-            .map(|t| json!({ "path": t.path, "blob": t.new_blob }))
+            .map(|t| json!({ "path": t.path, "blob": t.new_blob, "mode": t.mode }))
             .collect();
         // The landed commit's tree gives a read the file's mode as well as its blob.
         let tree = match pending["tree"].as_str() {

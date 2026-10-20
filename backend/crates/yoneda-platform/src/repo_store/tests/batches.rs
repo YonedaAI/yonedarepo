@@ -158,6 +158,26 @@ fn submitted_landings_land_from_shard_records_and_adopt_lazily() {
 }
 
 #[test]
+fn a_chained_commit_on_the_merge_path_asks_for_its_chain() {
+    let (h, _) = open();
+    let first = h.shard_commit(AGENT, "a.txt", "a\n", json!([]));
+    // `second` builds on `first`, which only its shard holds.
+    let second = {
+        let mut record = h.shard_commit(AGENT, "b.txt", "b\n", json!([]));
+        record["commit"]["parents"] = json!(json!([first["commit"]["id"]]).to_string());
+        record
+    };
+    let batch = h.submit(vec![(OWNER, &second)]);
+    assert_eq!(outcome(&batch, 0).0, "need_chain");
+    let items = vec![json!({"credentials": credentials(OWNER), "records": [first, second]})];
+    let batch = h.ok(
+        MERGER,
+        json!({"op":"repo_land_submitted","ref":"main","items":items}),
+    );
+    assert_eq!(outcome(&batch, 0).0, "queued", "{batch}");
+}
+
+#[test]
 fn landing_rechecks_scope_and_grants_after_a_cached_begin() {
     let (h, _) = open();
     const DOCS: &str = "token:docs";

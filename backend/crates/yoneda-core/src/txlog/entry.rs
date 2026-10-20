@@ -37,6 +37,10 @@ pub struct PathTouch {
     pub old_blob: Option<ObjectId>,
     #[schemars(with = "Option<String>")]
     pub new_blob: Option<ObjectId>,
+    /// The new file's mode (`blob`, `exec` or `symlink`), so the change applies without
+    /// reading its commit's tree. Absent on deletions and on entries written before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 impl PathTouch {
@@ -45,6 +49,10 @@ impl PathTouch {
             PathOp::Add => self.old_blob.is_none() && self.new_blob.is_some(),
             PathOp::Modify => self.old_blob.is_some() && self.new_blob.is_some(),
             PathOp::Delete => self.old_blob.is_some() && self.new_blob.is_none(),
+        } && match self.mode.as_deref() {
+            None => true,
+            Some("blob" | "exec" | "symlink") => self.new_blob.is_some(),
+            Some(_) => false,
         };
         if !consistent
             || self.path.is_empty()

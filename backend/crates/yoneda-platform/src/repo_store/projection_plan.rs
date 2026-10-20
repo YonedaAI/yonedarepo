@@ -14,6 +14,8 @@ use yoneda_core::{
 
 /// Changesets per plan; a batch holds at most 256, so a whole batch always fits.
 const PLAN_ROWS: u64 = 512;
+/// Steps per plan: what `repo_changeset_record` accepts in one call.
+pub(super) const PLAN_STEPS: usize = 64;
 
 fn brief<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Value> {
     let row = rows::recorded(db, id)?;
@@ -87,6 +89,8 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if rows.len() as u64 == PLAN_ROWS && groups.len() > 1 && !last["batch"].is_null() {
         groups.pop();
     }
+    // As many steps as one record takes.
+    groups.truncate(PLAN_STEPS);
     let mut steps = Vec::new();
     for group in groups {
         let versions: Vec<u64> = group.iter().filter_map(|r| r["version"].as_u64()).collect();
@@ -100,7 +104,7 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 .ok_or_else(|| rows::corrupt("changeset entry"))?;
             for touch in &entry.paths {
                 changes
-                    .push(json!({ "path": touch.path, "blob": touch.new_blob, "source": source }));
+                    .push(json!({ "path": touch.path, "blob": touch.new_blob, "mode": touch.mode, "source": source }));
             }
             ids.push(source["id"].as_str().unwrap_or_default().to_owned());
         }

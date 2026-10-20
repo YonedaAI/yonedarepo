@@ -102,13 +102,13 @@ pub(super) fn adopt_one<S: SqlStore>(
     )?;
     for path in record["paths"].as_array().into_iter().flatten() {
         db.query(
-            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob) VALUES(?,?,?,?,?)",
+            "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES(?,?,?,?,?,?)",
             &[
                 json!(id.hex()),
                 path["path"].clone(),
                 path["op"].clone(),
                 path["old_blob"].clone(),
-                path["new_blob"].clone(),
+                path["new_blob"].clone(), path["mode"].clone(),
             ],
         )?;
     }

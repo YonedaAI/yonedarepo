@@ -8,7 +8,6 @@ import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
-import type { LandMode } from '../../cloudflare/worker/repo-changesets';
 import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
@@ -141,8 +140,8 @@ function inProcess(name: string): InProcess {
 export const fakeCombiners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
-    wait: (repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) =>
-      inProcess(name).batcher.wait({ repo, ref }, ticket, timeoutMs, mode),
+    wait: (repo: string, ref: string, ticket: number, timeoutMs: number) =>
+      inProcess(name).batcher.wait({ repo, ref }, ticket, timeoutMs),
     submit: (repo: string, ref: string, item: Record<string, unknown>, timeoutMs: number) =>
       inProcess(name).batcher.submit({ repo, ref }, item, timeoutMs),
   }),

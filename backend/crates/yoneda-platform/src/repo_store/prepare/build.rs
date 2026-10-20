@@ -189,6 +189,7 @@ pub(crate) fn build(
             op,
             old_blob: old.map(|o| o.id),
             new_blob: new.map(|n| n.1),
+            mode: new.map(|(m, _)| crate::platform_objects::entry_type(m).to_owned()),
         });
         path_changes.push(PathChange {
             path: change.path.clone(),
