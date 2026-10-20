@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        10
+        11
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1362,3 +1362,5 @@ fn directory_grants_bound_writes_reviews_landings_and_reads() {
         "MERGE_REQUIRED"
     );
 }
+
+mod break_glass;
