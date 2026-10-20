@@ -2,6 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson } from './durable';
+import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
@@ -44,11 +45,16 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     return value;
   };
   // A commit the authority has not seen may live in its commit shard: adopt, then retry.
+  // A read at the latest version of a branch with unprojected changesets waits for them.
   const call = async (command: Json) => {
     for (let attempt = 0; ; attempt++) {
       try {
         return await once(command);
       } catch (e) {
+        if (e instanceof ApiError && e.code === 'PROJECTION_PENDING' && attempt < 4) {
+          await awaitProjection(env, repo);
+          continue;
+        }
         const missing = unrecorded(e);
         if (!missing || attempt >= 4) throw e;
         // False also when a racing adoption took it first: retry once in case.

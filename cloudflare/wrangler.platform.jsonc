@@ -35,7 +35,9 @@
     "run_worker_first": true
   },
   "vars": {
-    "ARTIFACTS_NAMESPACE": "yoneda-platform-dev"
+    "ARTIFACTS_NAMESPACE": "yoneda-platform-dev",
+    // Landing modes are benchmarked side by side on this deploy (x-yoneda-land-mode).
+    "LAND_MODE_OVERRIDE": "true"
   },
   "artifacts": [
     {

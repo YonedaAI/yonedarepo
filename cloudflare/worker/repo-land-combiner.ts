@@ -1,10 +1,14 @@
 // The land combiner: one per protected branch. Landers that need a merge enqueue with the
-// authority, then wait here instead of polling it; the combiner alone claims the queue,
-// builds each batch (stateless merges in this Worker), lands it with one compare-and-swap
-// and one log entry, and answers every waiter whose ticket it settled. Waiting is held in
-// memory: if the combiner is evicted its waiters fall back to polling, and the queue and
-// every landing stay in the authority, so nothing is lost.
+// authority, then wait here instead of polling it; the combiner alone drains the queue
+// (changesets first in changeset mode, then batch merges built by stateless compute in
+// this Worker, each landed with one compare-and-swap and one log entry) and answers every
+// waiter whose ticket it settled. Waiting is held in memory: if the combiner is evicted
+// its waiters fall back to polling, and the queue and every landing stay in the
+// authority, so nothing is lost. The same class, named `<repo>#projector`, is the
+// repository's changeset projector.
 import { DurableObject } from 'cloudflare:workers';
+import { type LandMode, landChangesets, projectChangesets } from './repo-changesets';
+import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
 import type { Env } from './types';
@@ -21,6 +25,7 @@ export class LandBatcher {
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
   target?: Target;
+  mode: LandMode = 'combiner';
 
   constructor(
     private readonly env: Env,
@@ -31,10 +36,11 @@ export class LandBatcher {
    * Resolves with `ticket`'s outcome once a batch settles it, or null after `timeoutMs`
    * (the caller checks the authority and waits again).
    */
-  async wait(target: Target, ticket: number, timeoutMs: number) {
+  async wait(target: Target, ticket: number, timeoutMs: number, mode: LandMode = 'combiner') {
     const done = this.#settled.get(ticket);
     if (done) return done;
     this.target = target;
+    this.mode = mode;
     const settled = new Promise<Settled | null>((resolve) => {
       const list = this.#waiters.get(ticket) ?? [];
       list.push(resolve);
@@ -59,7 +65,16 @@ export class LandBatcher {
       target.repo,
       caller(this.env, target.repo, { _system: 'merge' }),
     );
-    const claim = await merger.call({ op: 'repo_land_claim', ref: target.ref });
+    if (this.mode === 'changeset') {
+      // Path-disjoint work lands as changesets, a batch per step, before any merge.
+      const step = await landChangesets(merger, target.ref);
+      this.#settle(step.settled as Settled[]);
+      if (step.wait !== undefined || step.more) {
+        await this.schedule(Math.min(step.wait ?? 0, RETRY_MS));
+        return;
+      }
+    }
+    const claim = await merger.call(claimCommand(target.ref, this.mode));
     if (claim.wait) {
       // A polling lander (a fallback) holds the lease; look again shortly.
       await this.schedule(Math.min(claim.retry_after_ms ?? RETRY_MS, RETRY_MS));
@@ -110,19 +125,65 @@ export class LandBatcher {
   }
 }
 
+/** Projects one repository's changesets, one projection at a time; waiters share it. */
+export class ProjectionRunner {
+  #running: Promise<number> | null = null;
+  #again = false;
+
+  constructor(private readonly env: Env) {}
+
+  /** Resolves once every changeset landed before the call is projected. */
+  async catchUp(repo: string): Promise<number> {
+    // A projection already running may have planned before this caller's changesets.
+    if (this.#running) {
+      this.#again = true;
+      await this.#running.catch(() => 0);
+    }
+    this.#running ??= (async () => {
+      let projected = 0;
+      do {
+        this.#again = false;
+        projected += await projectChangesets(this.env, repo);
+      } while (this.#again);
+      return projected;
+    })().finally(() => {
+      this.#running = null;
+    });
+    return this.#running;
+  }
+}
+
 export class LandCombiner extends DurableObject<Env> {
   #batcher = new LandBatcher(this.env, async (ms) => {
     const at = Date.now() + ms;
     const current = await this.ctx.storage.getAlarm();
     if (current === null || current > at) await this.ctx.storage.setAlarm(at);
   });
+  #projection = new ProjectionRunner(this.env);
 
-  async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
+  async wait(repo: string, ref: string, ticket: number, timeoutMs: number, mode?: LandMode) {
     await this.ctx.storage.put('target', { repo, ref });
-    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs);
+    return this.#batcher.wait({ repo, ref }, ticket, timeoutMs, mode);
+  }
+
+  /** Projector role: waits until this repository's changesets are projected. */
+  async catchUp(repo: string) {
+    await this.ctx.storage.put('projector', repo);
+    return this.#projection.catchUp(repo);
+  }
+
+  /** Projector role: projects in the background (an alarm, so it survives the caller). */
+  async kick(repo: string) {
+    await this.ctx.storage.put('projector', repo);
+    if ((await this.ctx.storage.getAlarm()) === null) await this.ctx.storage.setAlarm(Date.now());
   }
 
   async alarm() {
+    const repo = await this.ctx.storage.get<string>('projector');
+    if (repo) {
+      await this.#projection.catchUp(repo);
+      return;
+    }
     this.#batcher.target ??= await this.ctx.storage.get<Target>('target');
     await this.#batcher.step();
   }

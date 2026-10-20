@@ -6,7 +6,9 @@
 // platform's Server-Timing totals, with correctness counts. An explicit, separate command:
 // it creates a repository (and, with --principals tokens, one token per writer).
 // Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the bench client.
-// Usage: node tools/platform-fanout-bench.mjs --url https://<platform> --client https://<bench-client> [--writers 1000] [--principals tokens|session]
+// --mode picks the landing mode per request (poll|combiner|changeset) where the target
+// allows it; changeset runs also report how long main's Git projection lagged each landing.
+// Usage: node tools/platform-fanout-bench.mjs --url https://<platform> --client https://<bench-client> [--writers 1000] [--principals tokens|session] [--mode changeset]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -21,10 +23,12 @@ const { values } = parseArgs({
     client: { type: 'string' },
     writers: { type: 'string', default: '1000' },
     principals: { type: 'string', default: 'tokens' },
+    mode: { type: 'string' },
   },
 });
 assert.ok(values.url && values.client, 'Pass --url (platform) and --client (bench client)');
 assert.ok(['session', 'tokens'].includes(values.principals), '--principals is session or tokens');
+assert.ok(!values.mode || ['poll', 'combiner', 'changeset'].includes(values.mode), '--mode is poll, combiner or changeset');
 const url = values.url.replace(/\/$/, '');
 const WRITERS = Number(values.writers);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -74,10 +78,29 @@ async function fanout(writers) {
 }
 
 const began = performance.now();
-const writes = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), path: `writers/${i}.txt`, content: `writer ${i}\n` })));
+const writes = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), mode: values.mode, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
 const elapsed = performance.now() - began;
+const projection = await projectionLag();
 const reads = await fanout(Array.from({ length: WRITERS }, (_, i) => ({ ...who(i), read: true, path: `writers/${i}.txt`, content: `writer ${i}\n` })));
 
+/** Waits (up to 5 min) until every changeset is projected; lag = projected - landed. */
+async function projectionLag() {
+  const started = Date.now();
+  for (;;) {
+    const entries = [];
+    for (let after = 0; ; after += 500) {
+      const response = await fetch(`${url}/api/v1/repos/${repo}/txlog?after=${after}&limit=500`, { headers: { cookie } });
+      const page = await response.json();
+      entries.push(...page.entries);
+      if (page.entries.length < 500) break;
+    }
+    const changes = entries.filter((e) => e.kind === 'changeset');
+    const pending = changes.filter((e) => !e.projected?.at).length;
+    if (!pending || Date.now() - started > 300_000)
+      return { changesets: changes.length, unprojected: pending, lag: latency(changes.filter((e) => e.projected?.at).map((e) => e.projected.at - e.committed_at_ms)) };
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
 const ok = (r) => r?.status === 200;
 const stat = (rows, key) => latency(rows.filter((r) => ok(r) && r[key] !== null).map((r) => r[key]));
 const commits = writes.map((w) => w.commit);
@@ -100,12 +123,23 @@ function phases(rows) {
     }
   return Object.fromEntries(Object.entries(all).map(([k, v]) => [k, latency(v)]));
 }
+/** Successful landings per second, from the first landing request to the last answer. */
+function landRate(rows) {
+  const done = rows.filter(ok);
+  if (!done.length) return 0;
+  const first = Math.min(...done.map((r) => r.started_at));
+  const last = Math.max(...done.map((r) => r.started_at + r.ms));
+  return Number(((done.length * 1000) / Math.max(1, last - first)).toFixed(1));
+}
 const result = {
   writers: WRITERS,
   principals: values.principals,
+  mode: values.mode ?? 'default',
   elapsed_ms: Math.round(elapsed),
   commit: { client: stat(commits, 'ms'), server: stat(commits, 'server'), ok: commits.filter(ok).length, errors: errors(commits), phases: phases(commits) },
-  land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands) },
+  land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },
+  projection,
+  overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,
   read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length },
 };
 const evidence = {

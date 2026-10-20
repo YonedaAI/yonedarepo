@@ -8,17 +8,18 @@ const json = (value, status = 200) => Response.json(value, { status });
 
 async function timed(url, init) {
   const started = Date.now();
+  const at = { started_at: started };
   let response;
   try {
     response = await fetch(url, init);
   } catch (e) {
     // Reported, not thrown: one failed request must not hide the batch's other results.
-    return { status: 0, ms: Date.now() - started, server: null, timing: '', body: { error: { code: 'CLIENT_FETCH', message: String(e?.message ?? e) } } };
+    return { ...at, status: 0, ms: Date.now() - started, server: null, timing: '', body: { error: { code: 'CLIENT_FETCH', message: String(e?.message ?? e) } } };
   }
   const body = await response.json().catch(() => ({}));
   const timing = response.headers.get('server-timing') ?? '';
   const server = Number(timing.match(/total;dur=([\d.]+)/)?.[1]);
-  return { status: response.status, ms: Date.now() - started, server: Number.isFinite(server) ? server : null, timing, body };
+  return { ...at, status: response.status, ms: Date.now() - started, server: Number.isFinite(server) ? server : null, timing, body };
 }
 
 export default {
@@ -45,10 +46,16 @@ export default {
         });
         const land =
           made.status === 200
-            ? await timed(`${target}/api/v1/repos/${repo}/land`, { method: 'POST', headers: headers(w), body: JSON.stringify({ ref: 'main', commit: made.body.commit }) })
+            ? await timed(`${target}/api/v1/repos/${repo}/land`, {
+                method: 'POST',
+                // The landing mode, honored only where the target allows a per-request choice.
+                headers: { ...headers(w), ...(w.mode ? { 'x-yoneda-land-mode': w.mode } : {}) },
+                body: JSON.stringify({ ref: 'main', commit: made.body.commit }),
+              })
             : null;
         const brief = (r) =>
           r && {
+            started_at: r.started_at,
             status: r.status,
             ms: r.ms,
             server: r.server,
