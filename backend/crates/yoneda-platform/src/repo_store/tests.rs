@@ -682,7 +682,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        16
+        17
     );
     assert_eq!(
         db.query("SELECT commit_id FROM refs", &[]).unwrap()[0]["commit_id"],
@@ -1096,11 +1096,12 @@ fn queued_landings_batch_under_a_fenced_lease() {
             json!([{"path":"a.txt","blob":blob("x\n"),"type":"blob"},{"path":"b.txt","blob":blob("x\n"),"type":"blob"}]),
             json!([]), json!({"merge_parents": [a, b]}))
         .unwrap();
-    let batch = |epoch: &Value| {
-        h.run(MERGER, json!({"op":"repo_land_batch","ref":"main","epoch":epoch,"merge":merge,"landed":[tickets[0], tickets[1]]}))
+    let batch = |head: &str| {
+        h.run(MERGER, json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],"head":head,"merge":merge,"landed":[tickets[0], tickets[1]]}))
     };
-    assert_eq!(code(batch(&json!(99))), "STALE_EPOCH");
-    let landed = batch(&claim["epoch"]).unwrap();
+    // Compare-and-swap: a batch built on any other head is refused and rebuilt.
+    assert_eq!(code(batch(&a)), "STALE_HEAD");
+    let landed = batch(claim["head"].as_str().unwrap()).unwrap();
     assert_eq!(landed["version"], 3);
     for (ticket, commit) in [(&tickets[0], &a), (&tickets[1], &b)] {
         assert_eq!(
@@ -1547,4 +1548,5 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 mod branches;
 mod break_glass;
 mod change_records;
+mod land_cas;
 mod staging;

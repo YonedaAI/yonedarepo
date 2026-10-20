@@ -84,7 +84,9 @@ it('bisects to the first bad commit through platform check runs', async () => {
 
 it('vacuums only hidden refs that are safe to release', async () => {
   const policy = { required_checks: [], approvals: 0 };
-  const { owner, repo, root } = await setup('vacuumer', policy, [file('a.txt', 'a\n')]);
+  // Too many objects to stage: pushed under its own hidden ref before it was accepted.
+  const many = Array.from({ length: 300 }, (_, i) => file(`bulk/${i}.txt`, `${i}\n`));
+  const { owner, repo, root } = await setup('vacuumer', policy, [file('a.txt', 'a\n'), ...many]);
   const unprojected = await api(`${repo}/vacuum`, owner, { body: {} });
   expect(unprojected.body).toMatchObject({ covered: 0, released: 0 });
   for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(scoped, message);

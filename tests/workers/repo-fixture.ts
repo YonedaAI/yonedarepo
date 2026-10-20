@@ -6,6 +6,8 @@ import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { compute } from '../../cloudflare/worker/repo-compute';
+import { toBase64 } from '../../cloudflare/worker/repo-objects';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
@@ -13,6 +15,9 @@ import type { Env } from '../../cloudflare/worker/types';
 export const bindings = env as unknown as Env;
 
 export const misses: string[] = [];
+/** What each fake Artifacts repository received, by name then object id. */
+export const artifacts = new Map<string, Map<string, any>>();
+const held = (name: string) => artifacts.get(name) ?? artifacts.set(name, new Map()).get(name)!;
 export const fakeArtifacts = {
   create: async (name: string) => ({ name }),
   get: async (name: string) => ({
@@ -20,31 +25,44 @@ export const fakeArtifacts = {
     info: async () => ({ remote: `https://artifacts.test/${name}` }),
     createToken: async () => ({ id: 'token-1', plaintext: 'artifact-write-token' }),
     revokeToken: async () => true,
-    // Stands in for "the store holds what was pushed": the pushed commit's cache copy.
     readCommit: async (id: string) => {
-      const object = await bindings.OBJECTS.get(`platform/v1/${name.slice(3)}/objects/${id}`);
-      if (!object) return null;
-      const commit = await object.json<{ tree: string; parents: string[] }>();
-      return { hash: id, treeHash: commit.tree, parents: commit.parents };
+      const commit = held(name).get(id);
+      return commit?.kind === 'commit' ? { hash: id, treeHash: commit.tree, parents: commit.parents } : null;
     },
     readTree: async (id: string) => {
+      const tree = held(name).get(id);
+      if (tree?.kind === 'tree') return tree.entries.map((e: any) => ({ name: e.name, type: e.type, hash: e.id }));
       misses.push(`tree:${id}`);
       return null;
     },
     readBlob: async (id: string) => {
+      const blob = held(name).get(id);
+      if (blob?.kind === 'blob') return new Blob([Uint8Array.from(atob(blob.data_b64), (c) => c.charCodeAt(0))]);
       misses.push(`blob:${id}`);
       return null;
     },
   }),
 };
+/** Unpacks a receive-pack body's objects (like the store) with platform compute. */
+function unpack(body: Uint8Array, first: string) {
+  const at = body.findIndex((_, i) => body[i] === 0x50 && new TextDecoder().decode(body.subarray(i, i + 4)) === 'PACK');
+  if (at < 0) return [];
+  const line = `${first}\0report-status\n`;
+  const head = new TextEncoder().encode(`${(line.length + 4).toString(16).padStart(4, '0')}${line}0000`);
+  const single = new Uint8Array(head.length + body.length - at);
+  single.set(head);
+  single.set(body.subarray(at), head.length);
+  return compute({ op: 'receive_pack', body_b64: toBase64(single) }).objects as any[];
+}
 // Platform jobs and check containers: the queue records messages; the executor stands in
 // for the Container by evaluating the shipped files (the real one is tested in Rust).
 export const queued: any[] = [];
 export const executed: any[] = [];
 /** Runs queued object projections (staged commits to the object store), like the consumer. */
 export async function drainObjects(target: Env = scoped) {
-  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_objects'))
-    await projectObjects(target, message.repo_id);
+  const jobs = queued.filter((m) => m.kind === 'platform_objects');
+  queued.splice(0, queued.length, ...queued.filter((m) => m.kind !== 'platform_objects'));
+  for (const message of jobs) await projectObjects(target, message.repo_id);
 }
 export const fakeQueue = {
   send: async (body: any) => void queued.push(body),
@@ -100,6 +118,7 @@ afterEach(() => {
 beforeEach(async () => {
   for (const statement of listing.split(';').filter((s) => s.trim())) await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
   misses.length = 0;
+  artifacts.clear();
   pushes.length = 0;
   refusals.clear();
   receivePacks.requests = 0;
@@ -120,8 +139,11 @@ beforeEach(async () => {
       receivePacks.busy--;
       return new Response(pkt('ERR artifacts_git_receive_pack_busy'), { headers });
     }
+    const name = url.slice('https://artifacts.test/'.length).split('/')[0];
+    const received = commands(body);
+    if (received[0]) for (const object of unpack(body, received[0])) held(name).set(object.id, object);
     let report = pkt('unpack ok\n');
-    for (const command of commands(body)) {
+    for (const command of received) {
       const ref = command.split(' ')[2];
       pushes.push(command);
       report += pkt(refusals.has(ref) ? `ng ${ref} stale info\n` : `ok ${ref}\n`);

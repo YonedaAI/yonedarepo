@@ -18,7 +18,14 @@ import { parseArgs } from 'node:util';
 import { latency } from './load-metrics.mjs';
 
 const { values } = parseArgs({
-  options: { url: { type: 'string' }, writers: { type: 'string', default: '100' }, large: { type: 'string', default: '10000' } },
+  options: {
+    url: { type: 'string' },
+    writers: { type: 'string', default: '100' },
+    large: { type: 'string', default: '10000' },
+    // `session`: every writer uses the owner's session; `tokens`: each writer is its own
+    // principal with a repository token (read, write, land), as separate agents would be.
+    principals: { type: 'string', default: 'session' },
+  },
 });
 assert.ok(values.url, 'Pass --url of the deployed platform');
 const url = values.url.replace(/\/$/, '');
@@ -34,11 +41,11 @@ const login = await fetch(`${url}/api/auth/login`, {
 assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
 const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
 
-async function call(path, body) {
+async function call(path, body, token) {
   const started = performance.now();
   const response = await fetch(`${url}/api/v1${path}`, {
     method: body ? 'POST' : 'GET',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : { cookie }) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json().catch(() => ({}));
@@ -82,10 +89,21 @@ async function repoWith(files) {
 const small = await repoWith(100);
 const repo = `/repos/${small.id}`;
 const began = performance.now();
+assert.ok(['session', 'tokens'].includes(values.principals), '--principals is session or tokens');
+const tokens = [];
+if (values.principals === 'tokens')
+  for (let i = 0; i < WRITERS; i += 20)
+    tokens.push(
+      ...(await Promise.all(
+        Array.from({ length: Math.min(20, WRITERS - i) }, async (_, k) =>
+          must(await call(`${repo}/tokens`, { name: `writer-${i + k}`, scopes: ['read', 'write', 'land'] }), 'token').token,
+        ),
+      )),
+    );
 const writes = await Promise.all(
   Array.from({ length: WRITERS }, async (_, i) => {
-    const made = await call(`${repo}/commits`, { ref: 'main', changes: [file(`writers/${i}.txt`, `writer ${i}\n`)], message: `writer ${i}`, author });
-    const landed = made.status === 200 ? await call(`${repo}/land`, { ref: 'main', commit: made.body.commit }) : made;
+    const made = await call(`${repo}/commits`, { ref: 'main', changes: [file(`writers/${i}.txt`, `writer ${i}\n`)], message: `writer ${i}`, author }, tokens[i]);
+    const landed = made.status === 200 ? await call(`${repo}/land`, { ref: 'main', commit: made.body.commit }, tokens[i]) : made;
     return { commit: made, land: landed };
   }),
 );
@@ -170,6 +188,7 @@ const baseline = await cloneBaseline(large.id);
 
 const result = {
   writers: WRITERS,
+  principals: values.principals,
   elapsed_ms: Math.round(elapsed),
   repo_create_ms: { small: Math.round(small.ms), large: Math.round(large.ms), large_files: LARGE },
   commits: latency(writes.filter((w) => w.commit.status === 200).map((w) => w.commit.ms)),
