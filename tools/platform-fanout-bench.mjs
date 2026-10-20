@@ -140,7 +140,7 @@ const result = {
   land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), phases: phases(lands), per_second: landRate(lands) },
   projection,
   overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,
-  read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length },
+  read: { client: stat(reads.map((r) => r.read), 'ms'), correct: reads.filter((r) => r.read.ok).length, errors: errors(reads.map((r) => r.read)) },
 };
 const evidence = {
   schema: 1,
