@@ -94,7 +94,7 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             db,
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
         )?;
-        if commit.parents.first() == Some(&head) {
+        if merging::on_head(db, &commit, &head)? {
             items.push(
                 json!({ "ticket": row["ticket"], "commit": commit.id, "fast_forward": true }),
             );
@@ -177,7 +177,7 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
                 let [only] = landed_commits.as_slice() else {
                     return Err(bad("Several commits land only through a merge commit"));
                 };
-                if only.parents.first() != Some(&head) {
+                if !merging::on_head(db, only, &head)? {
                     return Err(Error::new(
                         "STALE_PARENT",
                         "The branch moved during the batch",
