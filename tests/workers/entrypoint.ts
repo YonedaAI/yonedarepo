@@ -1,4 +1,4 @@
-export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceWorkspaceAuthority,SourceRepository } from '../../backend/crates/yoneda-worker/build/index.js';
+export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceWorkspaceAuthority,SourceRepository,CommitShard } from '../../backend/crates/yoneda-worker/build/index.js';
 import { YonedaEntrypoint } from '../../cloudflare/worker/entrypoint';
 export { ObjectPushQueue } from '../../cloudflare/worker/repo-push-queue';
 import type { Envelope, Scope } from '../../cloudflare/worker/types';

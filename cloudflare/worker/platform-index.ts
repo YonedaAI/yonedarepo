@@ -1,5 +1,6 @@
 // Module root of the platform-only Worker (cloudflare/wrangler.platform.jsonc).
 export {
+  CommitShard,
   SourceRepository,
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';

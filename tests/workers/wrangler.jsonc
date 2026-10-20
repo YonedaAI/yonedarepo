@@ -44,6 +44,10 @@
       {
         "name": "OBJECT_PUSHES",
         "class_name": "ObjectPushQueue"
+      },
+      {
+        "name": "COMMIT_SHARDS",
+        "class_name": "CommitShard"
       }
     ]
   },
@@ -77,6 +81,12 @@
       "tag": "v5",
       "new_sqlite_classes": [
         "ObjectPushQueue"
+      ]
+    },
+    {
+      "tag": "v6",
+      "new_sqlite_classes": [
+        "CommitShard"
       ]
     }
   ],

@@ -4,6 +4,7 @@
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import { parseStore, RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
+import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -11,7 +12,7 @@ export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string; human?: true } }
   | { _token: string }
-  | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' };
+  | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' | 'commits' };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
 export class ApiError extends Error {
@@ -34,7 +35,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
     ...auth,
   });
-  const call = async (command: Json) => {
+  const once = async (command: Json) => {
     const value = await timed(`do.${command.op}`, async () => {
       const result = await stub.fetch('https://source-repository/', {
         method: 'POST',
@@ -44,6 +45,18 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
+  };
+  // A commit the authority has not seen may live in its commit shard: adopt, then retry.
+  const call = async (command: Json) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await once(command);
+      } catch (e) {
+        const missing = unrecorded(e);
+        if (!missing || attempt >= 4) throw e;
+        if (!(await timed('adopt', () => adoptCommit(env, repo, missing)))) throw e;
+      }
+    }
   };
   return Object.assign(call, { sign });
 }

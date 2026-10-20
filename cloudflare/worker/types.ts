@@ -9,6 +9,8 @@ export interface Env {
   SOURCES?: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
   SOURCE_REPOS: DurableObjectNamespace;
+  /** Commit shards (platform write path); absent where not yet deployed. */
+  COMMIT_SHARDS?: DurableObjectNamespace;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
