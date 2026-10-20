@@ -10,70 +10,12 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+pub(crate) use super::env::Env;
+
 pub(crate) const SPEC_DIR: &str = "infra/envs";
 /// Generated configs live next to the hand-written ones, so relative paths stay identical.
 pub(crate) const CONFIG_DIR: &str = "cloudflare";
 const EPHEMERAL_RATE_LIMIT: &str = "2900";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum Env {
-    Dev,
-    Prod,
-    /// A throwaway full stack on workers.dev hostnames with its own resources.
-    Ephemeral(String),
-}
-
-impl Env {
-    pub(crate) fn parse(value: &str) -> Result<Self> {
-        match value {
-            "dev" => Ok(Self::Dev),
-            "prod" => Ok(Self::Prod),
-            other => match other.strip_prefix("ephemeral-") {
-                Some(id)
-                    if !id.is_empty()
-                        && id.len() <= 12
-                        && id
-                            .bytes()
-                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit()) =>
-                {
-                    Ok(Self::Ephemeral(id.into()))
-                }
-                _ => Err(format!(
-                    "Unknown environment {other:?}: use dev, prod or ephemeral-<id> (id: 1-12 lowercase letters or digits)"
-                )
-                .into()),
-            },
-        }
-    }
-    pub(crate) fn from_args(args: &[String]) -> Result<Self> {
-        let value = args
-            .windows(2)
-            .find(|v| v[0] == "--env")
-            .map(|v| v[1].as_str())
-            .ok_or("Missing --env dev|prod|ephemeral-<id>")?;
-        Self::parse(value)
-    }
-    pub(crate) fn name(&self) -> String {
-        match self {
-            Self::Dev => "dev".into(),
-            Self::Prod => "prod".into(),
-            Self::Ephemeral(id) => format!("ephemeral-{id}"),
-        }
-    }
-    pub(crate) fn is_prod(&self) -> bool {
-        *self == Self::Prod
-    }
-    /// Local state of an ephemeral env (lock, generated secrets); ignored by Git.
-    pub(crate) fn state_dir(&self) -> PathBuf {
-        PathBuf::from(".local/infra").join(self.name())
-    }
-    pub(crate) fn lock_path(&self) -> PathBuf {
-        match self {
-            Self::Ephemeral(_) => self.state_dir().join("lock.json"),
-            _ => PathBuf::from(SPEC_DIR).join(format!("{}.lock.json", self.name())),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Spec {
@@ -89,6 +31,10 @@ pub(crate) struct Spec {
     pub secrets_file: String,
     #[serde(default)]
     pub vars: BTreeMap<String, String>,
+    /// CheckContainer max_instances, and the max_concurrency of the queue consumer that feeds
+    /// it (PLATFORM_CHECKS): one number, so checks never queue behind idle capacity.
+    #[serde(default)]
+    pub check_instances: Option<u64>,
     pub workers: Vec<WorkerSpec>,
 }
 
@@ -182,6 +128,7 @@ impl Spec {
         );
         self.prefix = prefix;
         self.workers.retain(|w| w.ephemeral);
+        self.check_instances = self.check_instances.map(|_| 1);
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
             worker.notes = vec![format!(
@@ -233,6 +180,7 @@ impl Spec {
             json!("../node_modules/wrangler/config-schema.json"),
         );
         object.insert("account_id".into(), json!(self.account_id));
+        derive_checks(object, self.check_instances)?;
         if let Some(databases) = object.get_mut("d1_databases").and_then(Value::as_array_mut) {
             for database in databases {
                 let name = database["database_name"]
@@ -282,4 +230,52 @@ impl Spec {
             .map(|w| Ok((w.clone(), self.worker_config(w, lock)?)))
             .collect()
     }
+}
+
+const CHECK_CLASS: &str = "CheckContainer";
+const CHECK_QUEUE_BINDING: &str = "PLATFORM_CHECKS";
+
+/// Writes `check_instances` into the CheckContainer and its queue consumer.
+fn derive_checks(
+    config: &mut serde_json::Map<String, Value>,
+    instances: Option<u64>,
+) -> Result<()> {
+    let has_checks = config
+        .get("containers")
+        .and_then(Value::as_array)
+        .is_some_and(|list| list.iter().any(|c| c["class_name"] == CHECK_CLASS));
+    if !has_checks {
+        return Ok(());
+    }
+    let n = instances.ok_or("A Worker runs CheckContainer, so the spec needs check_instances")?;
+    for container in config
+        .get_mut("containers")
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if container["class_name"] == CHECK_CLASS {
+            container["max_instances"] = json!(n);
+        }
+    }
+    let queue = config["queues"]["producers"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|p| p["binding"] == CHECK_QUEUE_BINDING)
+        .and_then(|p| p["queue"].as_str())
+        .map(str::to_owned)
+        .ok_or("CheckContainer without a PLATFORM_CHECKS queue producer")?;
+    for consumer in config
+        .get_mut("queues")
+        .and_then(|q| q.get_mut("consumers"))
+        .and_then(Value::as_array_mut)
+        .into_iter()
+        .flatten()
+    {
+        if consumer["queue"] == queue.as_str() {
+            consumer["max_concurrency"] = json!(n);
+        }
+    }
+    Ok(())
 }

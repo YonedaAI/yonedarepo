@@ -48,12 +48,12 @@ fn dev_spec_regenerates_the_committed_staging_configs() {
     assert_eq!(
         files,
         [
+            "wrangler.staging-superfan.jsonc",
             "wrangler.staging-platform.jsonc",
             "wrangler.staging-agents.jsonc",
-            "wrangler.staging-sites.jsonc",
-            "wrangler.staging-superfan.jsonc"
+            "wrangler.staging-sites.jsonc"
         ],
-        "cutover order: platform, agents, sites, then the watcher"
+        "the platform's tail consumer first, then cutover order: platform, agents, sites"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(
@@ -160,14 +160,19 @@ fn ephemeral_env_shares_nothing_with_dev() {
 #[test]
 fn missing_lock_entries_and_unknown_templates_fail_closed() {
     let spec = Spec::parse(DEV).unwrap();
+    let platform = spec
+        .workers
+        .iter()
+        .position(|w| w.role == "platform")
+        .unwrap();
     let error = spec
-        .worker_config(&spec.workers[0], &Lock::default())
+        .worker_config(&spec.workers[platform], &Lock::default())
         .unwrap_err();
     assert!(error.to_string().contains("not in the lock"), "{error}");
     let mut bad = spec.clone();
-    bad.workers[0].config["vars"]["X"] = json!("{nope}");
+    bad.workers[platform].config["vars"]["X"] = json!("{nope}");
     let error = bad
-        .worker_config(&bad.workers[0], &lock(DEV_LOCK))
+        .worker_config(&bad.workers[platform], &lock(DEV_LOCK))
         .unwrap_err();
     assert!(
         error.to_string().contains("Unknown template {nope}"),
@@ -216,7 +221,8 @@ fn comments_are_stripped_outside_strings_only() {
 fn inventory_reads_resources_and_health_origins() {
     let spec = Spec::parse(DEV).unwrap();
     let workers = inventory::deployables(&spec, &lock(DEV_LOCK)).unwrap();
-    let platform = &workers[0];
+    let by_role = |role: &str| workers.iter().find(|w| w.role == role).unwrap();
+    let platform = by_role("platform");
     assert_eq!(
         platform.config_path,
         "cloudflare/wrangler.staging-platform.jsonc"
@@ -230,10 +236,10 @@ fn inventory_reads_resources_and_health_origins() {
     );
     assert!(platform.has_containers);
     assert_eq!(
-        workers[1].health.as_ref().unwrap().0,
+        by_role("agents").health.as_ref().unwrap().0,
         "https://dev.yonedarepo.com"
     );
-    assert_eq!(workers[2].health, None);
+    assert_eq!(by_role("sites").health, None);
     assert_eq!(
         inventory::d1(&platform.config),
         [(
@@ -306,6 +312,7 @@ mod plan_diff {
                         "observability": w.config["observability"],
                         "placement": w.config["placement"],
                         "limits": w.config["limits"],
+                        "tail_consumers": w.config["tail_consumers"],
                     }),
                     secrets: w.secrets.iter().cloned().collect::<BTreeSet<_>>(),
                     migration_tag: inventory::last_migration_tag(&w.config),
@@ -378,7 +385,7 @@ mod plan_diff {
         platform.settings["bindings"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"name": "LAND_MODE", "type": "plain_text", "text": "batch"}));
+            .push(json!({"name": "ROGUE_MODE", "type": "plain_text", "text": "batch"}));
         platform.migration_tag = Some("v3".into());
         let agents = live.workers.get_mut("yonedarepo-staging-agents").unwrap();
         for binding in agents.settings["bindings"].as_array_mut().unwrap() {
@@ -406,7 +413,7 @@ mod plan_diff {
         assert_eq!(platform.action, Action::Drift);
         for needle in [
             "compatibility_date",
-            "binding LAND_MODE (plain_text) not declared",
+            "binding ROGUE_MODE (plain_text) not declared",
             "DO migration tag: declared v4",
         ] {
             assert!(
@@ -513,4 +520,57 @@ mod plan_diff {
         down_allowed(&Env::Dev, true).unwrap();
         down_allowed(&Env::parse("ephemeral-x").unwrap(), true).unwrap();
     }
+}
+
+#[test]
+fn check_capacity_is_one_number_for_containers_and_their_consumer() {
+    let mut spec = Spec::parse(DEV).unwrap();
+    assert_eq!(spec.check_instances, Some(4));
+    spec.check_instances = Some(7);
+    let platform = spec
+        .workers
+        .iter()
+        .find(|w| w.role == "platform")
+        .unwrap()
+        .clone();
+    let config = spec.worker_config(&platform, &lock(DEV_LOCK)).unwrap();
+    let check = config["containers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["class_name"] == "CheckContainer")
+        .unwrap();
+    assert_eq!(check["max_instances"], json!(7));
+    let consumer = config["queues"]["consumers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["queue"] == "yonedarepo-staging-platform-checks")
+        .unwrap();
+    assert_eq!(consumer["max_concurrency"], json!(7));
+    let jobs = config["queues"]["consumers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["queue"] == "yonedarepo-staging-platform-jobs")
+        .unwrap();
+    assert_eq!(
+        jobs["max_concurrency"],
+        json!(20),
+        "other consumers keep their own setting"
+    );
+    spec.check_instances = None;
+    let error = spec
+        .worker_config(&platform, &lock(DEV_LOCK))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("needs check_instances"), "{error}");
+    let ephemeral = Spec::parse(DEV)
+        .unwrap()
+        .ephemeral(&Env::parse("ephemeral-c").unwrap());
+    assert_eq!(ephemeral.check_instances, Some(1));
+    assert!(
+        Spec::parse(PROD).unwrap().check_instances.is_none(),
+        "prod runs no CheckContainer today"
+    );
 }

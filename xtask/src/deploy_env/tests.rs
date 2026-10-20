@@ -101,31 +101,24 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             .any(|s| matches!(s, Step::Migrate { .. }))
     );
     let tail: Vec<Step> = plan[first_deploy..].to_vec();
+    let d = |worker| Step::Deploy {
+        worker,
+        dry_run: false,
+    };
     assert_eq!(
         tail,
         [
-            Step::Deploy {
-                worker: 0,
-                dry_run: false
-            },
+            d(0),
             Step::Secrets { worker: 0 },
-            Step::Health { worker: 0 },
-            Step::Deploy {
-                worker: 1,
-                dry_run: false
-            },
+            d(1),
             Step::Secrets { worker: 1 },
             Step::Health { worker: 1 },
-            Step::Deploy {
-                worker: 2,
-                dry_run: false
-            },
-            Step::Deploy {
-                worker: 3,
-                dry_run: false
-            },
-            Step::Secrets { worker: 3 },
-        ]
+            d(2),
+            Step::Secrets { worker: 2 },
+            Step::Health { worker: 2 },
+            d(3),
+        ],
+        "superfan (no /health), platform, agents, sites"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
