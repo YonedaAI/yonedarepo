@@ -6,6 +6,7 @@ import { brokerHandler } from '../../cloudflare/worker/broker';
 import { hostedMcp } from '../../cloudflare/worker/hosted-mcp';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'offline-auto-team';
@@ -25,7 +26,7 @@ async function setup() {
     policy: { version: 'auto-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
       required_checks: ['build'], build: { setup: [], checks: [{ name: 'build', argv: ['node', '--version'], timeout_seconds: 10 }] } },
   });
-  await ledger(bindings, repo, { op: 'start_run', id: 'auto', mode: 'collaborate', intent: 'A bilingual bike club with SQLite API',
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'auto', mode: 'collaborate', intent: 'A bilingual bike club with SQLite API',
     agents: [{ provider: 'mimo', model: 'mimo-v2.6-flash', strategy: 'Team participant' }, { provider: 'zai', model: 'glm-5.3-flash', strategy: 'Team participant' }],
   });
   return ledger(bindings, repo, { op: 'claim', job_id: 'job:auto:planner' });

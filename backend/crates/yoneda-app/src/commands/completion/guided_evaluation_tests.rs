@@ -1,5 +1,5 @@
 //! A partial guided check cannot be relabelled as final evidence at evaluator completion.
-use crate::{execute, native::NativeStore, storage::*};
+use crate::{commands::source_kit::execute, native::NativeStore, storage::*};
 use serde_json::{Value, json};
 
 fn fixture() -> NativeStore {

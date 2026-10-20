@@ -107,6 +107,18 @@ it('a retry attempt suffixes run ids exactly as the native ledger allocates them
   expect(first[0].id).toMatch(/^guide-[a-f0-9]{24}-concurrent-0$/);
 });
 
+it('a concurrent retry approves its source at the extend checkpoint the ledger restores', async () => {
+  normalApproval();
+  const extend = { repository: 'local/checked', commit: 'e'.repeat(40) };
+  const checkpointed = { ...session,
+    steps: [{ id: 'extend', revision: extend, evidence: [] }] } as unknown as GuidedSession;
+  await prepareGuidedRuns({} as Env, principal, 'fresh', checkpointed, 'concurrent', 'a'.repeat(40), 3);
+  expect(approve.mock.calls.map((call) => call[4])).toEqual([undefined, undefined]);
+  approve.mockClear();
+  await prepareGuidedRuns({} as Env, principal, 'fresh', checkpointed, 'concurrent', 'a'.repeat(40), 3, 2);
+  expect(approve.mock.calls.map((call) => call[4])).toEqual([extend, extend]);
+});
+
 it('v2 build supplies the fixed parallel plan: Codex specialists and a GLM integrator, no planner', async () => {
   normalApproval();
   const [run] = await prepareGuidedRuns({} as Env, principal, 'fresh', v2, 'build', 'a'.repeat(40), 0);

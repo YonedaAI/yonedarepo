@@ -222,7 +222,8 @@ fn one_roster_agent_reserves_one_task_until_trusted_capture_then_reuses_the_slot
     )
     .unwrap();
     assert_eq!(task_status("feature-1"), "blocked");
-    call(&db,json!({"op":"finish","job_id":retried["id"],"epoch":retried["epoch"],"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration =
+        source_kit::finish_job(&db, retried["id"].as_str().unwrap(), 1000, json!({}));
     assert_eq!(task_status("feature-0"), "capturing");
     assert_eq!(task_status("feature-1"), "blocked");
     let capture = call(
@@ -230,7 +231,7 @@ fn one_roster_agent_reserves_one_task_until_trusted_capture_then_reuses_the_slot
         json!({"op":"claim","job_id":"capture:auto:task:feature-0"}),
     )
     .unwrap();
-    call(&db,json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":{"id":"first-task-output","revision":{"repository":"test/feature0","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/feature-0.js"],"summary":"Captured first feature","diff":"x"}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":source_kit::with_lineage(&registration,json!({"id":"first-task-output","revision":{"repository":"test/feature0","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/feature-0.js"],"summary":"Captured first feature","diff":"x"}))})).unwrap();
     assert_eq!(task_status("feature-0"), "complete");
     assert_eq!(task_status("feature-1"), "queued");
     assert_eq!(
@@ -295,13 +296,13 @@ fn an_owner_retry_cannot_overlap_another_task_reserved_on_the_same_roster_index(
         "blocked",
         "failed source dependency still blocks integration"
     );
-    call(&db,json!({"op":"finish","job_id":"job:auto:task:feature-1","epoch":1,"result":{"workspace":"b".repeat(64)}})).unwrap();
+    let registration = source_kit::finish_job(&db, "job:auto:task:feature-1", 1000, json!({}));
     call(
         &db,
         json!({"op":"claim","job_id":"capture:auto:task:feature-1"}),
     )
     .unwrap();
-    call(&db,json!({"op":"finish","job_id":"capture:auto:task:feature-1","epoch":1,"result":{"id":"captured-parallel","revision":{"repository":"test/parallel","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/feature-1.js"],"summary":"Independent task captured","diff":"x"}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"capture:auto:task:feature-1","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"captured-parallel","revision":{"repository":"test/parallel","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/feature-1.js"],"summary":"Independent task captured","diff":"x"}))})).unwrap();
     let s = snapshot(&db);
     assert_eq!(
         s["team_tasks"]

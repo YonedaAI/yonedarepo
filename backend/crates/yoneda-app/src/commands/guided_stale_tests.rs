@@ -14,8 +14,9 @@ fn stale_capture() -> (NativeStore, Value, Value) {
     c["_guided_runs"] = json!([autonomous(), autonomous()]);
     let started = execute(&db, c).unwrap();
     let ids = started["steps"][2]["run_ids"].as_array().unwrap();
-    evidence_fixture::checked(&db, ids[0].as_str().unwrap(), "parallel", true);
+    // The second run registers its sealed source before the first one's check moves the branch.
     let cid = evidence_fixture::captured_with_context(&db, ids[1].as_str().unwrap(), true, None);
+    evidence_fixture::checked(&db, ids[0].as_str().unwrap(), "parallel", true);
     let run = get(&db, "runs", ids[1].as_str().unwrap()).unwrap();
     let mut candidate = get(&db, "candidates", &cid).unwrap();
     // Supply the independent checker outcome to the promotion boundary under test.

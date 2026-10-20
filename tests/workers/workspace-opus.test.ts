@@ -8,6 +8,7 @@ import { seal } from '../../cloudflare/worker/vault';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { workspaceSpendConfigure, workspaceSpendStatus } from '../../cloudflare/worker/workspace-spend';
 import { bindings, containerBindings, readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
 async function fixture(marked = true) {
@@ -18,7 +19,7 @@ async function fixture(marked = true) {
   await workspace(bindings, f.owner, { op: 'provider_put', provider: 'claude', model: budget.model,
     connection, sealed: await seal(f.scoped, f.owner, 'claude', 'synthetic-opus-key', connection) });
   if (marked) await workspaceSpendConfigure(bindings, f.owner, 0, 50000000);
-  await ledger(bindings, f.repo, { op: 'start_run', id: 'explicit-opus', _workspace: f.owner,
+  await approvedLedger(bindings, f.repo)({ op: 'start_run', id: 'explicit-opus', _workspace: f.owner,
     ...(marked ? { _workspace_spend: true } : {}), intent: 'Explicit owner-approved difficult task',
     agents: [{ provider: 'claude', model: budget.model, connection, strategy: 'Explicit choice' }], model_budgets: [budget] });
   const job = await ledger(bindings, f.repo, { op: 'claim', job_id: 'job:explicit-opus:agent-1' });
@@ -57,7 +58,7 @@ it('rejects an old unmarked Opus job despite forged provider-input approval and 
 });
 it('rejects a container scope with another run/model budget before consuming a request', async () => {
   const f = await fixture();
-  await ledger(bindings, f.repo, { op: 'start_run', id: 'other-run', _workspace_spend: true,
+  await approvedLedger(bindings, f.repo)({ op: 'start_run', id: 'other-run', _workspace_spend: true,
     intent: 'Different approved group', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', connection: 'reviewer-codex', strategy: 'Other' }],
     model_budgets: [campaignModelBudgets[1]] });
   const job = structuredClone(f.job); job.payload.execution.run_id = 'other-run';

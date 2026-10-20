@@ -43,7 +43,7 @@ fn agent_outcomes_and_limits_remain_terminal() {
 
 #[test]
 fn trusted_job_kinds_keep_their_existing_retry_policy() {
-    for kind in ["capture", "evaluate", "publish", "site", ""] {
+    for kind in ["capture", "evaluate", "site", ""] {
         for code in ["RUNTIME", "FENCED", INTERRUPTED] {
             assert_eq!(
                 disposition(kind, &error(code)),

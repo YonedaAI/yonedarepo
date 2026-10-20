@@ -28,7 +28,7 @@ for (const [repositories, concurrency] of [
           Array.from({ length: 4 }, (_, i) => ({ repo, run: `wave-${wave}-${i}` })),
         );
         await pool(tasks, concurrency, async ({ repo, run }) => {
-          const created = await measured.call(repo, start(run));
+          const created = await measured.call(repo, start(run, repo));
           expect(created?.id).toBe(run);
           const job = `job:${run}:agent-1`;
           const claim = await measured.call(repo, { op: 'claim', job_id: job });

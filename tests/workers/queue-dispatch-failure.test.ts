@@ -5,6 +5,7 @@ import { sourceIndexBounded } from '../../cloudflare/worker/source-index';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(reset);
@@ -12,7 +13,7 @@ afterEach(reset);
 it('does not fail a running job when launch succeeds but queue acknowledgment is lost', async () => {
   // The provisioned reviewer project's ledger names its platform repository and real head.
   const fixture = await readyReviewer('queue_launch_ack_loss');
-  await ledger(bindings, fixture.repo, {
+  await approvedLedger(bindings, fixture.repo)({
     op: 'start_run',
     id: 'ack-loss-run',
     intent: 'Preserve an active execution after queue acknowledgment loss',

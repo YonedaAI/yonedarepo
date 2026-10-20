@@ -5,6 +5,7 @@ import { ledger, object, sha } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import type { Env } from '../../cloudflare/worker/types';
+import { approvedLedger } from './source-kit';
 const bindings = env as unknown as Env;
 afterEach(reset);
 const repo = 'context-repo';
@@ -72,7 +73,7 @@ it('records successful reads under server identity, preserves stateless attribut
 
 it('records artifact access only after verified R2 content and never on failed lookup', async () => {
   const token = await setup();
-  await ledger(bindings, repo, { op: 'start_run', id: 'run-context', intent: 'Inspect context', agents });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'run-context', intent: 'Inspect context', agents });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:run-context:agent-1' });
   const stored = await object(bindings, 'Verified research');
   await ledger(bindings, repo, { op: 'publish_artifact', job_id: job.id, epoch: job.epoch, id: 'artifact:research', digest: stored.digest, label: 'Research', kind: 'research', metadata: { assumptions: [{ statement: 'Response stays bounded', metric: 'latency_ms', limit: 100, path: 'index.html' }] } });
@@ -89,7 +90,7 @@ it('records artifact access only after verified R2 content and never on failed l
 });
 it('derives hosted usage from the active job and fences stale attempts before delivery', async () => {
   await setup();
-  await ledger(bindings, repo, { op: 'start_run', id: 'run-hosted', intent: 'Inspect context', agents });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'run-hosted', intent: 'Inspect context', agents });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:run-hosted:agent-1' });
   const { hostedMcp } = await import('../../cloudflare/worker/hosted-mcp');
   const scope = { repo_id: repo, job, supervisor: 'unused-test-supervisor', model_calls: 0, created_at: Date.now() };

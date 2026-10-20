@@ -1,4 +1,8 @@
-use crate::{execute, native::NativeStore, storage::*};
+use crate::{
+    commands::source_kit::{self, execute},
+    native::NativeStore,
+    storage::*,
+};
 use serde_json::json;
 
 fn fixture(mode: &str) -> NativeStore {
@@ -60,14 +64,19 @@ fn fixed_manual_team_approved_effort_reaches_specialists_and_integrator() {
             json!({"op":"claim","job_id":job_id,"now":3+index as i64*4}),
         )
         .unwrap();
-        execute(&db,json!({"op":"finish","job_id":job_id,"epoch":1,"now":4+index as i64*4,"result":{"workspace":"b".repeat(64),"transcript":"c".repeat(64)}})).unwrap();
+        let registration = source_kit::finish_job(
+            &db,
+            &job_id,
+            4 + index as i64 * 4,
+            json!({"transcript":"c".repeat(64)}),
+        );
         let capture = format!("capture:run:task:{task}");
         execute(
             &db,
             json!({"op":"claim","job_id":capture,"now":5+index as i64*4}),
         )
         .unwrap();
-        execute(&db,json!({"op":"finish","job_id":capture,"epoch":1,"now":6+index as i64*4,"result":{"id":format!("candidate:{task}"),"revision":{"repository":format!("test/{task}"),"commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":[format!("src/{task}.rs")],"summary":"Native fixture capture"}})).unwrap();
+        execute(&db,json!({"op":"finish","job_id":capture,"epoch":1,"now":6+index as i64*4,"result":source_kit::with_lineage(&registration,json!({"id":format!("candidate:{task}"),"revision":{"repository":format!("test/{task}"),"commit":"d".repeat(40)},"tree":"e".repeat(40),"paths":[format!("src/{task}.rs")],"summary":"Native fixture capture"}))})).unwrap();
     }
     let job = get(&db, "jobs", "job:run:task:integrate").unwrap();
     assert_eq!(job["payload"]["execution"]["reasoning_effort"], "high");

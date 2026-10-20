@@ -13,6 +13,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Json, Scope } from '../../cloudflare/worker/types';
 import { bindings, sha256 } from '../../tools/source-benchmark/workerd-source-fixture';
 import { modernCompareApproval, policy } from './comparison-review-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 const repo = 'source-capture-epoch';
@@ -21,7 +22,7 @@ const producerId = `job:${runId}:agent-1`;
 const captureId = `capture:${runId}:agent-1`;
 const candidateId = 'epoch-candidate';
 const base = { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 const repository = () => bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
 const scope = (job: Json): Scope => ({
   repo_id: repo,

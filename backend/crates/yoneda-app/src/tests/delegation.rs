@@ -179,12 +179,8 @@ fn completed_parent_allows_issued_child_to_finish_and_status_is_scoped() {
     assert_eq!(status["children"].as_array().unwrap().len(), 1);
     assert_ne!(status["children"][0]["id"], outsider["execution"]["id"]);
     assert_eq!(status["context"][0]["id"], "finding:child");
-    call(&db,json!({"op":"finish","job_id":"job:scale:agent-1","epoch":1,"result":{"workspace":"e".repeat(64)}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":child_job,"epoch":1,"result":{"workspace":"e".repeat(64)}}),
-    )
-    .unwrap();
+    source_kit::finish_job(&db, "job:scale:agent-1", 1000, json!({}));
+    source_kit::finish_job(&db, child_job, 1000, json!({}));
     assert!(call(&db,json!({"op":"claim","job_id":format!("capture:{}",child["execution"]["id"].as_str().unwrap())})).is_ok());
 }
 
@@ -253,18 +249,14 @@ fn run_cancel_fences_child_capture_and_historical_eligible_candidates() {
     let child = delegate(&db, "job:scale:agent-1", 1, "first").unwrap();
     let child_job = child["job_id"].as_str().unwrap();
     claim(&db, child_job);
-    call(
-        &db,
-        json!({"op":"finish","job_id":child_job,"epoch":1,"result":{"workspace":"e".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = source_kit::finish_job(&db, child_job, 1000, json!({}));
     let capture = format!("capture:{}", child["execution"]["id"].as_str().unwrap());
     claim(&db, &capture);
     call(
         &db,
-        json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"child-candidate",
+        json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"child-candidate",
         "revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),
-        "paths":["index.html"],"summary":"Accessible site","diff":"html"}}),
+        "paths":["index.html"],"summary":"Accessible site","diff":"html"}))}),
     )
     .unwrap();
     claim(&db, "evaluate:child-candidate");
@@ -346,18 +338,14 @@ fn accepted_child_publication(queued: bool) {
     let child = delegate(&db, "job:scale:agent-1", 1, "publish").unwrap();
     let child_job = child["job_id"].as_str().unwrap();
     claim(&db, child_job);
-    call(
-        &db,
-        json!({"op":"finish","job_id":child_job,"epoch":1,"result":{"workspace":"e".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = source_kit::finish_job(&db, child_job, 1000, json!({}));
     let capture = format!("capture:{}", child["execution"]["id"].as_str().unwrap());
     claim(&db, &capture);
     call(
         &db,
-        json!({"op":"finish","job_id":capture,"epoch":1,"result":{"id":"publication-candidate",
+        json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"publication-candidate",
         "revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),
-        "paths":["index.html"],"summary":"Checked child website","diff":"html"}}),
+        "paths":["index.html"],"summary":"Checked child website","diff":"html"}))}),
     )
     .unwrap();
     claim(&db, "evaluate:publication-candidate");

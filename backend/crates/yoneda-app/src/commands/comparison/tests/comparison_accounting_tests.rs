@@ -1,19 +1,14 @@
 use super::*;
 
 fn finish_held_builder(db: &NativeStore, job: &Value) {
-    f::call(
-        db,
-        json!({"op":"finish","job_id":job["id"],"epoch":job["epoch"],
-        "result":{"workspace":"e".repeat(64)}}),
-    )
-    .unwrap();
+    let registration = crate::commands::source_kit::finish_agent(db, job, 1000);
     f::call(db, json!({"op":"claim","job_id":"capture:compare:agent-1"})).unwrap();
     let revision = json!({"repository":"test/fork","commit":"b".repeat(40)});
     f::call(
         db,
         json!({"op":"finish","job_id":"capture:compare:agent-1","epoch":1,
-        "result":{"id":"candidate-1","revision":revision,"tree":"f".repeat(40),
-            "paths":["src/booking.rs"],"summary":"Synthetic checked booking implementation"}}),
+        "result":crate::commands::source_kit::with_lineage(&registration,json!({"id":"candidate-1","revision":revision,"tree":"f".repeat(40),
+            "paths":["src/booking.rs"],"summary":"Synthetic checked booking implementation"}))}),
     )
     .unwrap();
     f::call(db, json!({"op":"claim","job_id":"evaluate:candidate-1"})).unwrap();

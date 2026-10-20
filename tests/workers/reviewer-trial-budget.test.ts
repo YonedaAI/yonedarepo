@@ -5,6 +5,7 @@ import { ledger } from '../../cloudflare/worker/storage';
 import { trialRequest } from '../../cloudflare/worker/reviewer-trial';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { api, readyReviewer } from './reviewer-fixture';
+import { approvedLedger } from './source-kit';
 
 afterEach(reset);
 
@@ -16,7 +17,7 @@ it('keeps a frozen 24-request approval while new reviewer trials allow 48 Codex 
   // Recreate the already approved budget from the previous trial revision.
   const previousApproval = trialRequest(oldId);
   previousApproval.model_budgets[0].max_requests = 24;
-  await ledger(fixture.scoped, fixture.repo, {
+  await approvedLedger(fixture.scoped, fixture.repo)({
     ...previousApproval,
     op: 'start_run',
     _workspace: fixture.owner,

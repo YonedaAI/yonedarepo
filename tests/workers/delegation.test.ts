@@ -3,6 +3,7 @@ import { evictDurableObject, reset, runInDurableObject } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { ledger, object, readObject } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
+import { approvedLedger, finishSealed, withLineage } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'delegation-test';
@@ -27,7 +28,7 @@ const agents = [
   { provider: 'mimo', connection: 'mimo-team', model: 'mimo-v2.6-flash', strategy: 'responsive' },
 ];
 const delegation = { enabled: true, max_depth: 2, max_executions: 12 };
-const call = (command: Json) => ledger(bindings, repo, command);
+const call = approvedLedger(bindings, repo);
 const rootJob = (n = 1) => `job:scale:agent-${n}`;
 const scoped = (job: Json) => ({ job_id: job.id, epoch: job.epoch });
 const executions = (snapshot: Json, run = 'scale'): Json[] =>
@@ -254,19 +255,16 @@ it('allows issued children to finish after their parent completes while retainin
   await start();
   const parent = await claim();
   const child = await claim((await delegate(parent)).job_id);
-  const workspace = await object(bindings, JSON.stringify({ files: { 'public/index.html': { content: '<!doctype html><title>Fixture</title>' } } }));
-  await call({ op: 'finish', ...scoped(parent), result: { workspace: workspace.digest } });
+  await finishSealed(bindings, repo, parent);
   await call({ op: 'check_attempt', ...scoped(child) });
-  await call({ op: 'finish', ...scoped(child), result: { workspace: workspace.digest } });
+  const registration = await finishSealed(bindings, repo, child);
   const capture = await claim(`capture:${child.payload.execution.id}`);
   expect(capture.kind).toBe('capture');
   await expect(delegate(capture, 'capture-cannot-delegate')).rejects.toMatchObject({ code: 'FORBIDDEN' });
-  const nextPolicy = { ...policy, version: 'delegation-v2' };
-  await call({ op: 'update_policy', expected_commit: commit, expected_version: 0, expected_policy: policy.version, policy: nextPolicy });
   // Synthetic capture fixture exercises authority transitions, not Git or build execution.
-  await call({ op: 'finish', ...scoped(capture), result: { id: 'child-candidate', revision: { repository: 'yoneda-test/fixture-fork', commit: 'c'.repeat(40) }, tree: 'd'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Child result' } });
+  await call({ op: 'finish', ...scoped(capture), result: withLineage(registration, { id: 'child-candidate', revision: { repository: 'yoneda-test/fixture-fork', commit: 'c'.repeat(40) }, tree: 'd'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Child result' }) });
   const evaluator = await claim('evaluate:child-candidate');
-  expect(evaluator.payload.policy.version).toBe('delegation-v2');
+  expect(evaluator.payload.policy.version).toBe(policy.version);
   await expect(delegate(evaluator, 'evaluator-cannot-delegate')).rejects.toMatchObject({ code: 'FORBIDDEN' });
   await expect(call({ op: 'accept', request_id: 'unverified-selection', candidate: 'child-candidate', expected_commit: commit, expected_version: 0, rationale: 'An agent claim is insufficient' })).rejects.toMatchObject({ code: 'MISSING_EVIDENCE' });
   expect((await state()).repository.published_commit).toBe(commit);
@@ -287,12 +285,11 @@ it('cannot select an already eligible descendant after its parent fails', async 
   const parent = await claim();
   const child = await claim((await delegate(parent)).job_id);
   const files = { 'index.html': { content: '<!doctype html><title>Eligible fixture</title>' } };
-  const workspace = await object(bindings, JSON.stringify({ files: { 'public/index.html': files['index.html'] } }));
-  await call({ op: 'finish', ...scoped(child), result: { workspace: workspace.digest } });
+  const registration = await finishSealed(bindings, repo, child);
   const capture = await claim(`capture:${child.payload.execution.id}`);
   // Independent capture/evaluation observations are synthetic fixtures, not paid executions.
   const revision = { repository: 'yoneda-test/fixture-fork', commit: 'c'.repeat(40) };
-  await call({ op: 'finish', ...scoped(capture), result: { id: 'eligible-child', revision, tree: 'd'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Eligible child fixture' } });
+  await call({ op: 'finish', ...scoped(capture), result: withLineage(registration, { id: 'eligible-child', revision, tree: 'd'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Eligible child fixture' }) });
   const evaluator = await claim('evaluate:eligible-child');
   const site = await object(bindings, JSON.stringify({ repo, revision, files }));
   await call({ op: 'register_site', ...scoped(evaluator), digest: site.digest, files });

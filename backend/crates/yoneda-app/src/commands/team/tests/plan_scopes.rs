@@ -1,6 +1,6 @@
 use super::autonomous_tests::fixture;
 use super::*;
-use crate::{execute, native::NativeStore};
+use crate::{commands::source_kit::execute, native::NativeStore};
 
 fn protected() -> NativeStore {
     let db = fixture();
