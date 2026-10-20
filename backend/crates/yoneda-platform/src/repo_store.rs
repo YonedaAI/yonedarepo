@@ -164,7 +164,14 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
-        "repo_land" => land::land(db, c, principal, &settings),
+        // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
+        "repo_land" => land::land(db, c, principal, &settings).or_else(|e| {
+            if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {
+                land_queue::enqueue(db, c, principal, &settings)
+            } else {
+                Err(e)
+            }
+        }),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
         "repo_land_status" => land_queue::status(db, c),
         "repo_land_claim" => land_queue::claim(db, c),
