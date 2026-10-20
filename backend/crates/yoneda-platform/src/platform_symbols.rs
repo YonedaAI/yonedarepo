@@ -178,7 +178,7 @@ fn script(path: &str, source: &str) -> Result<Vec<Symbol>, String> {
     let allocator = Allocator::default();
     let source_type = SourceType::from_path(path).map_err(|e| format!("{e:?}"))?;
     let parsed = Parser::new(&allocator, source, source_type).parse();
-    if parsed.panicked || parsed.diagnostics.has_errors() {
+    if parsed.fatal_error || parsed.diagnostics.has_errors() {
         return Err("Syntax error".into());
     }
     let mut out = Vec::new();
@@ -206,7 +206,7 @@ fn script(path: &str, source: &str) -> Result<Vec<Symbol>, String> {
                 out.push(symbol(source, class.clone(), "class", "", s, e));
                 for element in &c.body.body {
                     if let ClassElement::MethodDefinition(m) = element
-                        && let Some(name) = m.key.static_name()
+                        && let Some(name) = m.key.static_name().and_then(|name| name.into_cow_str())
                     {
                         let (ms, me) = span(m.span);
                         out.push(symbol(source, name.into_owned(), "method", &class, ms, me));
@@ -245,10 +245,8 @@ fn script(path: &str, source: &str) -> Result<Vec<Symbol>, String> {
     };
     for statement in &parsed.program.body {
         match statement {
-            Statement::ExportNamedDeclaration(export) => {
-                if let Some(decl) = &export.declaration {
-                    declaration(decl, Some(export.span), &mut out);
-                }
+            Statement::ExportDeclaration(export) => {
+                declaration(&export.declaration, Some(export.span), &mut out);
             }
             Statement::ExportDefaultDeclaration(export) => match &export.declaration {
                 ExportDefaultDeclarationKind::FunctionDeclaration(f) => {

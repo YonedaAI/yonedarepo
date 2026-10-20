@@ -11,13 +11,13 @@ yoneda-core.workspace = true
 yoneda-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-base64 = "0.22.1"
+base64 = "0.23.1"
 syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "visit"] }
 proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
-oxc_parser = "0.139.0"
-oxc_ast = "0.139.0"
-oxc_allocator = "0.139.0"
-oxc_span = "0.139.0"
+oxc_parser = "0.155.0"
+oxc_ast = "0.155.0"
+oxc_allocator = "0.155.0"
+oxc_span = "0.155.0"
 
 [dev-dependencies]
 yoneda-store = { workspace = true, features = ["native"] }

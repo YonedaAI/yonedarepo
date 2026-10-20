@@ -158,7 +158,7 @@ async fn download_with_first(
         .map_err(|_| failure("Capture spool flush failed"))?;
     drop(output);
     if let ContentRef::R2 { sha256, .. } = &file.content
-        && format!("{:x}", hash.finalize()) != *sha256
+        && yoneda_core::hex(&hash.finalize()) != *sha256
     {
         return Err(failure(
             "Received R2 bytes differ from immutable sealed digest",

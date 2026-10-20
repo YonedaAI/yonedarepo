@@ -162,7 +162,7 @@ pub async fn execute(root: &Path, command: &[String], timeout: Duration) -> Resu
             tail.drain(..excess);
         }
         (
-            format!("{:x}", hash.finalize()),
+            yoneda_core::hex(&hash.finalize()),
             total,
             tail.into_iter().collect::<Vec<u8>>(),
         )
