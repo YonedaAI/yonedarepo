@@ -1,17 +1,21 @@
-import { expect, it, vi } from 'vitest';
+import { env as workerEnv } from 'cloudflare:workers';
+import { reset } from 'cloudflare:test';
+import { afterEach, expect, it, vi } from 'vitest';
 import { freezeSourceApproval } from '../../cloudflare/worker/api-source-approval';
 import { ownerCommandInput } from '../../cloudflare/worker/repository-command';
 import type { Env } from '../../cloudflare/worker/types';
+import { syntheticPlatform } from './platform-fixture';
 
-const repository = { capabilities: { source_api: 1 }, remote: { namespace: 'test', name: 'repo-fresh' }, published_commit: 'a'.repeat(40) };
-const readable = () => vi.fn(async () => ({ readCommit: async () => ({ hash: 'a'.repeat(40), treeHash: 'b'.repeat(40) }), [Symbol.dispose]() {} }));
+afterEach(reset);
+const repository = { capabilities: { source_api: 1 }, remote: { namespace: 'platform', name: 'repo-fresh' }, published_commit: 'a'.repeat(40) };
+const readCommit = () => vi.fn(async (hash: string) => ({ hash, treeHash: 'b'.repeat(40) }));
 
 it.each([
   ['no source binding', {}, repository],
   ['a ledger without source capability', { SOURCES: {} }, { ...repository, capabilities: {} }],
 ])('refuses to start without lazy source (%s) and never opens source', async (_, bindings, repo) => {
   const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
-  const env = { ...bindings, ARTIFACTS_NAMESPACE: 'test', ARTIFACTS: { get } } as unknown as Env;
+  const env = { ...bindings, PLATFORM: { fetch: get } } as unknown as Env;
   const input = { workspace_transport: 'json-v1', _source_transport_approved: true, _source_base: { forged: true } };
   await expect(freezeSourceApproval(env, 'owner', 'repo-fresh', input, repo)).rejects.toMatchObject({ code: 'LEDGER_UPDATING' });
   expect(input).toEqual({});
@@ -19,18 +23,18 @@ it.each([
 });
 
 it('freezes only the SDK readback of the exact published source, replacing forged fields', async () => {
-  const get = readable();
-  const env = { SOURCES: {}, ARTIFACTS_NAMESPACE: 'test', ARTIFACTS: { get } } as unknown as Env;
+  const read = readCommit();
+  const env = await syntheticPlatform(workerEnv as unknown as Env, { 'repo-fresh': { readCommit: read } });
   const input = { workspace_transport: 'json-v1', _source_transport_approved: false, _source_base: { forged: true } };
   await freezeSourceApproval(env, 'owner', 'repo-fresh', input, repository);
   expect(input).toEqual({ workspace_transport: 'api-source-v1', _source_transport_approved: true,
-    _source_base: { repository: 'test/repo-fresh', commit: 'a'.repeat(40), tree: 'b'.repeat(40) } });
-  expect(get).toHaveBeenCalledWith('repo-fresh');
+    _source_base: { repository: 'platform/repo-fresh', commit: 'a'.repeat(40), tree: 'b'.repeat(40) } });
+  expect(read).toHaveBeenCalledWith('a'.repeat(40));
 });
 
 it('rejects a source identity outside this namespace before any read', async () => {
-  const get = readable();
-  const env = { SOURCES: {}, ARTIFACTS_NAMESPACE: 'test', ARTIFACTS: { get } } as unknown as Env;
+  const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
+  const env = { SOURCES: {}, PLATFORM: { fetch: get } } as unknown as Env;
   const foreign = { ...repository, remote: { namespace: 'other', name: 'repo-fresh' } };
   await expect(freezeSourceApproval(env, 'owner', 'repo-fresh', {}, foreign)).rejects.toMatchObject({ code: 'INVALID_CAPTURE' });
   expect(get).not.toHaveBeenCalled();

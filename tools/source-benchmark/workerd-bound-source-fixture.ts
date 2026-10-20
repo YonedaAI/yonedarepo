@@ -2,12 +2,13 @@ import { sourceIndexBounded } from '../../cloudflare/worker/source-index';
 import { sourceScope } from '../../cloudflare/worker/source-scope';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
-import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
+import { openSource } from '../../cloudflare/worker/source-objects';
+import { syntheticPlatform } from '../../tests/workers/platform-fixture';
 import { bindings } from './workerd-source-fixture';
 
 /** Synthetic external SDK and Container RPC; both source and repository ledgers are real DOs. */
 export async function boundSourceFixture(name: string) {
-  const base = { repository: `yoneda-test/${name}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const base = { repository: `platform/${name}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
   const bytes = new TextEncoder().encode('source fixture');
   const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
   const object = new Uint8Array(header.length + bytes.length);
@@ -30,17 +31,10 @@ export async function boundSourceFixture(name: string) {
       if (blob !== hash) throw new Error('Unapproved blob');
       return new Blob([bytes]);
     },
-  } as unknown as ArtifactsRepo;
+  };
   const call = (input: Json) => ledger(bindings, name, input);
-  await call({
-    op: 'init',
-    id: name,
-    name,
-    workspace: 'source_owner',
-    remote: { namespace: 'yoneda-test', name },
-    commit: base.commit,
-    policy: reviewerPolicy,
-  });
+  // The project's platform repository answers with the synthetic objects above.
+  const platform = await syntheticPlatform(bindings, { [name]: repo }, 'source_owner');
   await call({
     op: 'start_run',
     id: 'run-source',
@@ -60,13 +54,7 @@ export async function boundSourceFixture(name: string) {
   };
   const invalidations: Json[] = [];
   const local = {
-    ...bindings,
-    ARTIFACTS: {
-      get: async (repoName: string) => {
-        if (repoName !== name) throw new Error('Unapproved repository');
-        return repo;
-      },
-    },
+    ...platform,
     EXECUTIONS: {
       idFromString: (id: string) => id,
       get: () => ({
@@ -81,5 +69,5 @@ export async function boundSourceFixture(name: string) {
   if ((await sourceIndexBounded(local, base)).state !== 'prepared')
     throw new Error('Fixture source is not ready');
   const context = await sourceScope(local, scope, 'repo', true);
-  return { env: local, scope, context, call, invalidations };
+  return { env: local, scope, context, call, invalidations, repo: await openSource(local, base.repository) };
 }

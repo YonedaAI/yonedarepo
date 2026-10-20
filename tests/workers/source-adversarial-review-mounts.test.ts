@@ -21,7 +21,7 @@ it('independently checked alternatives enter read-only review with exactly their
     expected_version: 0,
     limit_microusd: 50000000,
   });
-  const base = { repository: `yoneda-test/${f.repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const base = { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree };
   await ledger(f.scoped, f.repo, {
     ...modernCompareApproval(),
     op: 'start_run',
@@ -54,7 +54,7 @@ it('independently checked alternatives enter read-only review with exactly their
     model_calls: 0,
     created_at: Date.now(),
   };
-  const { env, get, send } = reviewSourceEnv(f.scoped, [first, second]);
+  const { env, get, send } = reviewSourceEnv(f.scoped, [first, second], base.commit);
   for (const candidate of [first, second])
     await sourceIndexBounded(env, { ...candidate.revision, tree: candidate.tree });
   expect(await prepareSourceDispatch(env, scope)).toBe('ready');

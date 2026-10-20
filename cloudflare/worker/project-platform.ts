@@ -79,17 +79,19 @@ export async function templateFiles(env: Env, name: string, pinned?: string) {
 
 /**
  * Bind the project to a platform repository, creating it with `requester`'s own credential.
- * `onBehalf` is the operator provisioning for `owner`. Replays reuse the first binding.
+ * `onBehalf` is the operator provisioning for `owner`. Replays reuse the first binding
+ * without reading the seed again (default: the project's own `projectSeed`).
  */
 export async function ensureProjectPlatform(
   env: Env,
   requester: Request,
   owner: string,
   project: Json,
-  seed: ProjectSeed,
+  pinned?: ProjectSeed,
   onBehalf = false,
 ): Promise<string> {
   if (project.platform?.repo) return project.platform.repo;
+  const seed = pinned ?? (await projectSeed(env, project));
   const common = {
     // Platform names are identifiers; the display name stays on the workspace project.
     name: project.id,

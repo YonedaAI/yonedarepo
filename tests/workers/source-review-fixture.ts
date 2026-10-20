@@ -1,4 +1,5 @@
 import { expect, vi } from 'vitest';
+import { repositoryPlatform } from '../../cloudflare/worker/agents-platform';
 import { sourceAuthority } from '../../cloudflare/worker/source-authority';
 import { sourceCaptureContext } from '../../cloudflare/worker/source-capture-context';
 import { sourceAgentCompletion, sourceCaptureCompletion } from '../../cloudflare/worker/source-completion';
@@ -6,6 +7,7 @@ import { hex } from '../../cloudflare/worker/source-crypto';
 import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { sha256 } from '../../tools/source-benchmark/workerd-source-fixture';
+import { platformCommit } from './platform-fixture';
 
 /** Synthetic runner observations use real SourceWS, RepoDO, R2 and evaluator transactions. */
 export async function checkedSourceAlternative(env: Env, repo: string, runId: string, base: Json, index = 2) {
@@ -48,8 +50,12 @@ export async function checkedSourceAlternative(env: Env, repo: string, runId: st
   gitBytes.set(header); gitBytes.set(bytes, header.length);
   const blob = hex(await crypto.subtle.digest('SHA-1', gitBytes));
   const id = `checked-source-${index}`;
-  const revision = { repository: `yoneda-test/checked-source-${index}`, commit: String(index + 1).repeat(40) };
-  const tree = 'd'.repeat(40);
+  // The capture is an actual commit of the project's platform repository on its own branch.
+  const platform = await repositoryPlatform(env, repo);
+  const made = await platformCommit(platform, context.parents[0], { 'app.bin': bytes }, `Checked alternative ${index}`);
+  await platform.call('POST', '/branches', { ref: `agents/checked-source-${index}`, commit: made.commit, expected: null });
+  const revision = { repository: base.repository, commit: made.commit };
+  const tree = made.tree;
   const result = { id, revision, tree, parents: context.parents, paths: ['app.bin'],
     summary: 'Synthetic independently captured source', source_changeset_digest: registration.changeset_digest,
     source_manifest_digest: registration.changeset_digest,
@@ -76,15 +82,19 @@ export async function checkedSourceAlternative(env: Env, repo: string, runId: st
   return { id, revision, tree, blob, bytes };
 }
 
-/** Only the captured revisions can be opened; the failed original base is unreadable. */
-export function reviewSourceEnv(env: Env, candidates: Awaited<ReturnType<typeof checkedSourceAlternative>>[]) {
-  const get = vi.fn(async (name: string) => {
-    const candidate = candidates.find((value) => value.revision.repository === `yoneda-test/${name}`);
-    if (!candidate) throw new Error('Uncaptured or original source must not be opened by review');
-    return { readCommit: async () => ({ hash: candidate.revision.commit, treeHash: candidate.tree }),
-      readTree: async () => [{ name: 'app.bin', type: 'blob', mode: '100644', hash: candidate.blob }],
-      readBlob: async () => new Blob([candidate.bytes]), [Symbol.dispose]() {} } as unknown as ArtifactsRepo;
+/**
+ * Only the captured revisions can be opened; the failed original base is unreadable. Every
+ * platform request is recorded (`get`) and one naming the base commit is refused.
+ */
+export function reviewSourceEnv(env: Env, candidates: Awaited<ReturnType<typeof checkedSourceAlternative>>[], base?: string) {
+  const get = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const request = new Request(input, init);
+    const text = await request.clone().text();
+    if (base && (request.url.includes(base) || text.includes(base)))
+      throw new Error('Uncaptured or original source must not be opened by review');
+    if (!candidates.length) throw new Error('No captured source may be opened');
+    return env.SELF.fetch(request);
   });
   const send = vi.fn();
-  return { env: { ...env, ARTIFACTS: { get }, AGENT_QUEUE: { send } } as unknown as Env, get, send };
+  return { env: { ...env, PLATFORM: { fetch: get }, AGENT_QUEUE: { send } } as unknown as Env, get, send };
 }

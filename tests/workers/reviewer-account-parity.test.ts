@@ -5,15 +5,13 @@ import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
+import { platformProject } from './platform-fixture';
 import { api, bindings, readyReviewer, signup } from './reviewer-fixture';
 
 afterEach(reset);
 
 async function ordinaryProject(owner: string, id: string) {
-  const policy = sitePolicy;
-  await workspace(bindings, owner, { op: 'project_reserve', id, name: 'Normal owner project', policy });
-  await workspace(bindings, owner, { op: 'project_update', id, status: 'ready' });
-  await ledger(bindings, id, { op: 'init', id, name: 'Normal owner project', workspace: owner, remote: { namespace: 'yoneda-test', name: id }, commit: 'a'.repeat(40), policy });
+  await platformProject(bindings, owner, id, undefined, sitePolicy);
 }
 
 it('allows a reviewer to save provider settings and reserve a normal project without changing legacy approvals', async () => {
@@ -73,13 +71,13 @@ it('allows all ordinary owner commands on the legacy entry repository without ad
   }
   expect((await ledger(bindings, f.repo, { op: 'snapshot' })).seq).toBe(snapshot.seq);
   const oldApproval = await workspace(bindings, f.owner, { op: 'reviewer_status' });
-  const branch = await api(f.scoped, `/api/repos/${f.repo}/create_working_branch`, f.cookie, { id: 'owner-development', expected_commit: 'a'.repeat(40), expected_version: 0 });
+  const branch = await api(f.scoped, `/api/repos/${f.repo}/create_working_branch`, f.cookie, { id: 'owner-development', expected_commit: f.head, expected_version: 0 });
   expect(branch.status).toBe(200);
   const grant = await api(f.scoped, `/api/repos/${f.repo}/grants`, f.cookie, { label: 'Owner key on existing entry', scope: 'read', days: 1 });
   expect(grant.status).toBe(200);
   const started = await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, {
     id: 'normal-owner-entry-run', intent: 'Use normal coordination on my existing project',
-    working_branch_id: 'owner-development', expected_working_commit: 'a'.repeat(40), expected_working_version: 0,
+    working_branch_id: 'owner-development', expected_working_commit: f.head, expected_working_version: 0,
     adaptive_team: { version: 1, requested_agents: [{ connection: 'reviewer-codex', role: 'builder' }, { connection: 'reviewer-claude-sonnet-5-5', role: 'review' }] },
   });
   expect(started.status).toBe(200);

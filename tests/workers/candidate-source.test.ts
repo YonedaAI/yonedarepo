@@ -6,10 +6,11 @@ import { ledger, sha } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import type { Env } from '../../cloudflare/worker/types';
+import { platformCommit, platformProject } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 const repo = 'candidate-inspection';
-const revision = { repository: 'yoneda-test/captured-fork', commit: 'b'.repeat(40) };
+const html = '<!doctype html><title>Exact captured revision</title>';
 afterEach(reset);
 async function signup(username: string) {
   const response = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
@@ -21,38 +22,43 @@ async function signup(username: string) {
 }
 async function fixture() {
   const cookie = await signup('alice');
-  await ledger(bindings, repo, { op: 'init', id: repo, name: 'Private source', workspace: 'alice', remote: { namespace: 'yoneda-test', name: repo }, commit: 'a'.repeat(40), policy: sitePolicy });
+  const project = await platformProject(bindings, 'alice', repo, { 'public/index.html': 'starter' }, sitePolicy);
+  // The capture is an actual commit of the project's platform repository.
+  const made = await platformCommit(project.platform, project.base.commit, { 'public/index.html': html });
+  const revision = { repository: project.base.repository, commit: made.commit };
   await ledger(bindings, repo, { op: 'start_run', id: 'run-source', intent: 'Candidate fixture', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'minimal' }] });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:run-source:agent-1' });
   await ledger(bindings, repo, { op: 'finish', job_id: job.id, epoch: job.epoch, result: { workspace: 'c'.repeat(64) } });
   const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:run-source:agent-1' });
-  await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: 'captured-candidate', revision, tree: 'd'.repeat(40), paths: ['public/index.html'], diff: 'Synthetic captured source', summary: 'Synthetic capture fixture' } });
+  await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: { id: 'captured-candidate', revision, tree: made.tree, paths: ['public/index.html'], diff: 'Synthetic captured source', summary: 'Synthetic capture fixture' } });
+  // Every platform read is recorded: which repository, and which commits were requested.
   const reads: string[] = [];
-  const remote = {
-    [Symbol.dispose]() {},
-    readCommit: async (commit: string) => { reads.push(`commit:${commit}`); return { treeHash: 'd'.repeat(40) }; },
-    readTree: async (tree: string) => tree === 'd'.repeat(40)
-      ? [{ name: 'public', type: 'tree', hash: 'e'.repeat(40) }]
-      : [{ name: 'index.html', type: 'blob', hash: 'f'.repeat(40) }],
-    readBlob: async () => new Blob(['<!doctype html><title>Exact captured revision</title>']),
-  };
-  const scoped = { ...bindings, ARTIFACTS: { get: async (name: string) => { reads.push(`repo:${name}`); return remote; } } } as unknown as Env;
+  const scoped = { ...bindings, PLATFORM: { async fetch(input: RequestInfo, init?: RequestInit) {
+    const request = new Request(input, init);
+    const path = new URL(request.url).pathname;
+    reads.push(`repo:${path.split('/')[4]}`);
+    if (path.endsWith('/objects'))
+      for (const o of (await request.clone().json<any>()).objects) if (o.kind === 'commit') reads.push(`commit:${o.id}`);
+    return bindings.SELF.fetch(request);
+  } } } as unknown as Env;
   const request = (query: string, headers: Record<string, string> = { cookie }) => fetchRequest(new Request(`https://yoneda/api/repos/${repo}/candidate_source?${query}`, { headers }), scoped);
-  return { cookie, reads, request };
+  return { cookie, reads, request, revision, platformRepo: project.repo };
 }
 
 it('reads the attached candidate exact revision and ignores caller-supplied source identities', async () => {
-  const { reads, request } = await fixture();
-  const result = await request('id=captured-candidate&commit=' + '0'.repeat(40) + '&repository=yoneda-test%2Fother-private&revision=forged');
+  const { reads, request, revision, platformRepo } = await fixture();
+  const result = await request('id=captured-candidate&commit=' + '0'.repeat(40) + '&repository=platform%2Fother-private&revision=forged');
   expect(result.status).toBe(200);
   expect(result.headers.get('cache-control')).toBe('no-store');
   const value = await result.json<any>();
-  expect(value).toMatchObject({ candidate_id: 'captured-candidate', revision, files: { 'public/index.html': { content: '<!doctype html><title>Exact captured revision</title>', executable: false } } });
-  expect(reads).toEqual(['repo:captured-fork', `commit:${revision.commit}`]);
-  expect((await ledger(bindings, repo, { op: 'snapshot' })).repository.published_commit).toBe('a'.repeat(40));
+  expect(value).toMatchObject({ candidate_id: 'captured-candidate', revision, files: { 'public/index.html': { content: html, executable: false } } });
+  expect(new Set(reads.filter((read) => read.startsWith('repo:')))).toEqual(new Set([`repo:${platformRepo}`]));
+  expect(reads.filter((read) => read.startsWith('commit:'))).toEqual([`commit:${revision.commit}`]);
+  const repository = (await ledger(bindings, repo, { op: 'snapshot' })).repository;
+  expect(repository.published_commit).not.toBe(revision.commit);
 });
 
-it('rejects absent and foreign candidate IDs before reading any Artifacts source', async () => {
+it('rejects absent and foreign candidate IDs before reading any platform source', async () => {
   const { reads, request } = await fixture();
   for (const query of ['', 'id=unrecorded-candidate', 'id=other-repository-candidate']) {
     const result = await request(query);
@@ -67,8 +73,7 @@ it('enforces owner workspace and rejects anonymous or agent callers before sourc
   expect((await request('id=captured-candidate', { cookie: bob })).status).toBe(403);
   expect((await request('id=captured-candidate', {})).status).toBe(401);
   expect((await request('id=captured-candidate', { authorization: 'Bearer local-test-owner' })).status).toBe(403);
-  await workspace(bindings, 'alice', { op: 'project_reserve', id: repo, name: 'Private source', policy: sitePolicy });
-  await workspace(bindings, 'alice', { op: 'project_update', id: repo, status: 'ready' });
+  // The fixture project is already reserved and ready in alice's workspace.
   const secret = 'a'.repeat(64);
   await workspace(bindings, 'alice', { op: 'grant_issue', id: 'grant-source-12345678', repo, label: 'Agent source test', scope: 'read', expires: Date.now() + 60000, token_hash: await sha(secret) });
   expect((await request('id=captured-candidate', { authorization: `Bearer yoneda.alice.grant-source-12345678.${secret}` })).status).toBe(403);
