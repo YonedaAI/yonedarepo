@@ -259,12 +259,14 @@ export class RepoObjects {
     }
   }
 
-  /** Writes both tiers in bounded chunks: unbounded fan-out stalls on large imports. */
-  async cache(objects: CachedObject[]) {
+  /** Writes both tiers (or the edge alone) in bounded chunks: unbounded fan-out stalls on
+   * large imports. */
+  async cache(objects: CachedObject[], tiers: 'all' | 'edge' = 'all') {
     for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
       const chunk = objects.slice(i, i + CACHE_CHUNK);
       await Promise.all([
-        timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), chunk)),
+        tiers === 'all' &&
+          timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), chunk)),
         timed('cache.edge', () =>
           Promise.all(
             chunk.map((o) =>
@@ -306,11 +308,30 @@ export class RepoObjects {
       const commit = await this.store.readCommit(id);
       object = commit && { id, kind, ...commit };
     }
+    // Accepted but not yet projected: the authority still holds the staged copy.
+    object ??= await this.staged(id).then((o) => (o?.kind === kind ? o : null));
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
     await this.cache([object]);
     return object.kind === 'blob'
       ? fromBase64(object.data_b64)
       : new TextEncoder().encode(JSON.stringify(object));
+  }
+
+  /** The authority's staged copy of an accepted object (read as the platform: callers
+   * reach this tier only through the same authorization as the object store). */
+  private async staged(id: string): Promise<CachedObject | null> {
+    const stub = this.env.SOURCE_REPOS.get(this.env.SOURCE_REPOS.idFromName(this.repo));
+    const response = await stub.fetch('https://source-repository/', {
+      method: 'POST',
+      body: JSON.stringify({ op: 'repo_staged_objects', ids: [id], _system: 'projection' }),
+    });
+    const value = await response.json<{
+      objects?: CachedObject[];
+      error?: { code: string; message: string };
+    }>();
+    if (value.error)
+      throw Object.assign(new Error(value.error.message), { code: value.error.code });
+    return value.objects?.[0] ?? null;
   }
 
   async tree(id: string): Promise<TreeEntry[]> {

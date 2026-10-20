@@ -10,7 +10,7 @@ import { repoMcp } from './repo-mcp';
 import { newStore, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, commit, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
-import { withTimings } from './repo-timing';
+import { timed, withTimings } from './repo-timing';
 import { operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
@@ -243,7 +243,13 @@ async function route(req: Request, env: Env, url: URL, auth: Credentials): Promi
 }
 
 export async function repoApi(req: Request, env: Env): Promise<Response> {
-  const auth = await credentials(req, env);
+  const { value, header } = await withTimings(() => handle(req, env));
+  if (header) value.headers.set('server-timing', header);
+  return value;
+}
+
+async function handle(req: Request, env: Env): Promise<Response> {
+  const auth = await timed('auth', () => credentials(req, env));
   if (!auth) return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
   const url = new URL(req.url);
   const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);
@@ -255,10 +261,7 @@ export async function repoApi(req: Request, env: Env): Promise<Response> {
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   try {
-    const { value, header } = await withTimings(() => route(req, env, url, auth));
-    const result = response(value);
-    if (header) result.headers.set('server-timing', header);
-    return result;
+    return response(await route(req, env, url, auth));
   } catch (e: any) {
     const code = e instanceof ApiError ? e.code : (e?.code ?? 'INVALID_INPUT');
     const message = String(e?.message ?? e).slice(0, 500);

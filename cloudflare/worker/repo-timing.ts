@@ -29,7 +29,7 @@ export async function timed<T>(phase: string, run: () => Promise<T>): Promise<T>
 /** Runs `handle` with a fresh timing scope and renders what it recorded. */
 export async function withTimings<T>(handle: () => Promise<T>) {
   const phases = new Map<string, Phase>();
-  const value = await current.run(phases, handle);
+  const value = await current.run(phases, () => timed('total', handle));
   const header = [...phases]
     .map(([name, p]) => `${name};dur=${p.ms.toFixed(1)};desc="${p.n}"`)
     .join(', ');

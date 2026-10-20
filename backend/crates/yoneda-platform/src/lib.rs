@@ -21,7 +21,7 @@ mod platform_views;
 pub(crate) mod repo_store;
 
 pub use platform_compute::compute as platform_compute;
-pub use repo_store::{execute_repo_store, migrate_repo_store};
+pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 
 /// The store contract under the name the modules were written against.
 pub(crate) mod storage {

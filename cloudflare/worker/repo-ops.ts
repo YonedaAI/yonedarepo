@@ -2,7 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { dispatchRuns } from './repo-checks';
-import { classifyCommit, deriveSymbols } from './repo-code';
+import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
 import {
@@ -14,6 +14,7 @@ import {
   type TreeEntry,
   toBase64,
 } from './repo-objects';
+import { dispatchObjects } from './repo-projection';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -34,35 +35,51 @@ export class ApiError extends Error {
   }
 }
 
-export type Call = (command: Json) => Promise<Json>;
+export type Call = ((command: Json) => Promise<Json>) & {
+  /** The command as this caller sends it (credentials attached), for `batch`. */
+  sign(command: Json): Json;
+};
 export function caller(env: Env, repo: string, auth: Credentials): Call {
   const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  return async (command) => {
+  const sign = (command: Json) => ({
+    ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
+    ...auth,
+  });
+  const call = async (command: Json) => {
     const value = await timed(`do.${command.op}`, async () => {
       const result = await stub.fetch('https://source-repository/', {
         method: 'POST',
-        body: JSON.stringify({
-          ...Object.fromEntries(
-            Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k)),
-          ),
-          ...auth,
-        }),
+        body: JSON.stringify(sign(command)),
       });
       return result.json<Json>();
     });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
   };
+  return Object.assign(call, { sign });
+}
+
+/** Signed commands (possibly of different callers) in one round trip to the authority,
+ * each in its own transaction; a failed one answers `{error}` without stopping the rest. */
+export async function batch(env: Env, repo: string, commands: Json[]): Promise<Json[]> {
+  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  return timed(`do.${commands.map((c) => c.op).join('+')}`, async () => {
+    const result = await stub.fetch('https://source-repository/batch', {
+      method: 'POST',
+      body: JSON.stringify(commands),
+    });
+    return result.json<Json[]>();
+  });
 }
 
 /** One repository, as seen by one authenticated caller. */
 export class RepoContext {
-  private cached?: RepoObjects;
   private statusOnce?: Promise<Json>;
   constructor(
     readonly env: Env,
     readonly repo: string,
     readonly call: Call,
+    private cached?: RepoObjects,
   ) {}
   /** The caller's view of the repository (including its grant), read once per request. */
   status() {
@@ -72,8 +89,13 @@ export class RepoContext {
   async objects() {
     if (!this.cached) {
       const status = await this.status();
-      this.cached = new RepoObjects(this.env, this.repo, parseStore(this.env, status.object_store));
+      this.adopt(status.object_store);
     }
+    return this.cached as RepoObjects;
+  }
+  /** Uses the store an authorized answer named, sparing a status read. */
+  adopt(spec: string) {
+    this.cached ??= new RepoObjects(this.env, this.repo, parseStore(this.env, spec));
     return this.cached;
   }
 }
@@ -82,36 +104,41 @@ const SHA = /^[0-9a-f]{40}$/;
 const at = (value: unknown) =>
   value === undefined || value === null || value === '' ? {} : { at: Number(value) };
 
-/** A commit id, or a branch name resolved at version `at` (default: now). */
+/** A commit id, or a branch name resolved at version `at` (default: now): its commit,
+ * tree and parents (and the version, for a branch), in one authority call. */
 export async function target(ctx: RepoContext, spec: string | undefined, version?: unknown) {
-  if (spec && SHA.test(spec)) return ctx.call({ op: 'repo_commit', commit: spec });
-  const snapshot = await ctx.call({ op: 'repo_snapshot', ref: spec || 'main', ...at(version) });
-  return { ...snapshot, ...(await ctx.call({ op: 'repo_commit', commit: snapshot.commit })) };
+  if (spec && SHA.test(spec)) return ctx.call({ op: 'repo_commit', commit: spec, brief: true });
+  return ctx.call({ op: 'repo_snapshot', ref: spec || 'main', ...at(version) });
 }
 
 /** How a commit treats a lost queue: `best_effort` reports undispatched check runs instead
  * of failing (they stay queued in the authority and are re-dispatched on request). */
 export type Dispatch = 'required' | 'best_effort';
 
-/** Prepare (answering tree requests), push, read back from the store, record. */
+/**
+ * Prepare (answering tree requests), then accept. A small commit is staged: the authority
+ * holds its objects durably and records it at once; the projector pushes it to the object
+ * store afterwards. A larger one is pushed and read back from the store first. Review
+ * classes and symbol writes are computed beforehand and recorded in the same round trip.
+ */
 export async function commit(
   ctx: RepoContext,
-  objects: RepoObjects,
+  given: RepoObjects | null,
   body: Json,
   dispatch: Dispatch = 'required',
 ) {
-  let { parent, base_version } = body;
-  if (!parent && body.ref) {
-    const snapshot = await ctx.call({ op: 'repo_snapshot', ref: body.ref });
-    parent = snapshot.commit;
-    base_version = snapshot.version;
-  }
+  // A branch is resolved by the first prepare round, which pins its head for the rest.
+  let base: Json = body.parent
+    ? { parent: body.parent, base_version: body.base_version ?? 0 }
+    : body.ref
+      ? { ref: body.ref }
+      : { parent: null, base_version: body.base_version ?? 0 };
+  let objects = given;
   const trees: Record<string, TreeEntry[]> = {};
   for (let round = 0; round < 64; round++) {
     const prepared = await ctx.call({
       op: 'repo_prepare_commit',
-      parent: parent ?? null,
-      base_version: base_version ?? 0,
+      ...base,
       changes: body.changes,
       message: body.message,
       author: body.author,
@@ -119,29 +146,58 @@ export async function commit(
       ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
       ...(body.merge_parents ? { merge_parents: body.merge_parents } : {}),
       trees,
+      stage: true,
     });
+    objects ??= ctx.adopt(prepared.object_store);
+    const store = objects;
     if (prepared.need_trees) {
-      await timed('trees', async () => {
-        for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
-      });
+      base = { parent: prepared.parent, base_version: prepared.base_version };
+      await timed('trees', () =>
+        Promise.all(
+          (prepared.need_trees as string[]).map(async (id) => {
+            trees[id] = await store.tree(id);
+          }),
+        ),
+      );
       continue;
     }
-    // Immutable and keyed by id, so a small commit's cache write runs alongside its push. A
-    // large import writes through only its commit: thousands of tier writes cost minutes
-    // (Workers keep six connections open) and reads fill the tiers from the store anyway.
     const all = prepared.objects as CachedObject[];
-    const written =
-      all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
-    const cached = timed('cache', () => objects.cache(written));
-    const { report, readback } = await timed('push', () =>
-      objects.pushCommit(fromBase64(prepared.push_b64), prepared.commit, cached),
+    const derived = timed('derive', () =>
+      Promise.all([
+        // Review classes gate semantic auto-approval; a failure leaves the commit
+        // unclassified (a human must approve), never classified as safe.
+        reviewClasses(ctx, prepared.commit, prepared.touches, all).catch(() => null),
+        // Symbol writes narrow what this commit invalidates at landing; without them each
+        // changed file counts as written in full.
+        symbolWrites(ctx, prepared.commit, prepared.touches, all).catch(() => null),
+      ]),
     );
-    const recorded = await ctx.call({
-      op: 'repo_record_commit',
-      commit: prepared.commit,
-      push_report_b64: toBase64(report),
-      readback,
-    });
+    let record: Json;
+    if (prepared.staged) {
+      record = { op: 'repo_record_commit', commit: prepared.commit, staged: true };
+      // The edge copy spares the first reads a trip to the authority's staged copy.
+      await timed('cache', () => store.cache(all, 'edge'));
+    } else {
+      // Immutable and keyed by id, so the cache write runs alongside the push. A large
+      // import writes through only its commit: thousands of tier writes cost minutes
+      // (Workers keep six connections open) and reads fill the tiers from the store anyway.
+      const written =
+        all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
+      const cached = timed('cache', () => store.cache(written));
+      const { report, readback } = await timed('push', () =>
+        store.pushCommit(fromBase64(prepared.push_b64), prepared.commit, cached),
+      );
+      record = {
+        op: 'repo_record_commit',
+        commit: prepared.commit,
+        push_report_b64: toBase64(report),
+        readback,
+      };
+    }
+    const deriver = caller(ctx.env, ctx.repo, { _system: 'derive' });
+    const extra = (await derived).filter((c): c is Json => c !== null).map(deriver.sign);
+    const [recorded] = await batch(ctx.env, ctx.repo, [ctx.call.sign(record), ...extra]);
+    if (recorded.error) throw new ApiError(recorded.error.code, recorded.error.message);
     let undispatched = false;
     try {
       await timed('dispatch', () => dispatchRuns(ctx.env, ctx.repo, recorded.check_runs));
@@ -149,24 +205,24 @@ export async function commit(
       if (dispatch === 'required') throw e;
       undispatched = true;
     }
-    await timed('derive', () =>
-      Promise.all([
-        // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
-        // (a human must approve), never classified as safe.
-        classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {}),
-        // Symbol writes narrow what this commit invalidates at landing; without them each
-        // changed file counts as written in full.
-        deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {}),
-      ]),
-    );
+    // The commit is durable either way; a lost message leaves it pending (visible in
+    // status) until the next commit or ref projection drains the outbox.
+    const unprojected =
+      recorded.dispatch_objects &&
+      (await timed('dispatch', () => dispatchObjects(ctx.env, ctx.repo)).then(
+        () => false,
+        () => true,
+      ));
     return {
       commit: prepared.commit,
       tree: prepared.tree,
       parents: prepared.parents,
       touches: prepared.touches,
-      base_version: base_version ?? 0,
+      base_version: prepared.base_version,
       check_runs: recorded.check_runs ?? [],
       ...(undispatched ? { check_runs_undispatched: true } : {}),
+      ...(recorded.staged ? { staged: true } : {}),
+      ...(unprojected ? { projection_undispatched: true } : {}),
     };
   }
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');

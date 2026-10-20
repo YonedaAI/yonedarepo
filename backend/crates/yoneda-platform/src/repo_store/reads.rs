@@ -61,6 +61,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
         "policy_digest": settings.policy_digest,
         "refs": refs,
         "projections": super::projection::list(db)?,
+        "objects": super::staging::status(db)?,
         "automation": super::break_glass::state(db)?,
     }))
 }
@@ -80,7 +81,9 @@ pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         )
     })?;
     let row = rows::recorded(db, &commit)?;
-    Ok(json!({ "version": version, "ref": refname, "commit": commit, "tree": row.tree }))
+    Ok(
+        json!({ "version": version, "ref": refname, "commit": commit, "tree": row.tree, "parents": row.parents }),
+    )
 }
 
 /// First-parent history from a branch head, newest first.
@@ -128,6 +131,10 @@ pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let id = object_id(c, "commit")?;
     let row = rows::recorded(db, &id)?;
+    // What a read needs to walk the commit, without its reviews, checks and gates.
+    if c["brief"] == true {
+        return Ok(json!({ "commit": id, "tree": row.tree, "parents": row.parents }));
+    }
     let key = [json!(id.hex())];
     Ok(json!({
         "commit": id, "tree": row.tree, "parents": row.parents, "generation": row.generation,

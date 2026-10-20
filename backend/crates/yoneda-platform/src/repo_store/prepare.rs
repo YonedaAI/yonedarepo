@@ -1,7 +1,8 @@
 //! Builds a commit on the server. The adapter supplies existing trees by id; this module
 //! asks for exactly the directories on changed paths (one round per depth), verifies every
 //! supplied tree against its id, and returns the pack to push before the commit is recorded.
-use super::rows::{self, current_version, object_id};
+use super::rows::{self, branch_ref, current_version, object_id};
+use super::tree_cache;
 use crate::platform_objects;
 use crate::storage::{SqlStore, bad, number, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -178,8 +179,15 @@ fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEnt
     None
 }
 
-pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
-    let now = number(c, "now")?;
+/// The parent and base version: given, or a branch's head at the current version (saving
+/// the caller a snapshot round trip). Callers pin what the first round returns.
+fn base<S: SqlStore>(db: &S, c: &Value) -> Result<(Option<ObjectId>, u64)> {
+    if c.get("parent").is_none_or(Value::is_null) && c["ref"].is_string() {
+        let refname = branch_ref(c)?;
+        let head = rows::ref_value(db, &refname)?
+            .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
+        return Ok((Some(head), current_version(db)?));
+    }
     let base_version = c["base_version"]
         .as_u64()
         .ok_or_else(|| bad("Missing base_version"))?;
@@ -189,17 +197,35 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             "Base version is newer than the log",
         ));
     }
-    let parent = match c.get("parent").filter(|p| !p.is_null()) {
-        Some(_) => Some(rows::recorded(db, &object_id(c, "parent")?)?),
-        None => None,
-    };
+    match c.get("parent").filter(|p| !p.is_null()) {
+        Some(_) => Ok((Some(object_id(c, "parent")?), base_version)),
+        None => Ok((None, base_version)),
+    }
+}
+
+pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+    let now = number(c, "now")?;
+    let (parent, base_version) = base(db, c)?;
+    let parent = parent.map(|id| rows::recorded(db, &id)).transpose()?;
     let root = parent.as_ref().map(|p| p.tree);
     let changes = changes(c)?;
-    let trees = supplied_trees(c)?;
+    let mut trees = supplied_trees(c)?;
+    for (id, entries) in &trees.0 {
+        tree_cache::keep(db, id, &encode_tree(entries)?)?;
+    }
     let paths: Vec<&str> = changes.iter().map(|ch| ch.path.as_str()).collect();
-    let missing = frontier(root, &paths, &trees);
+    // Walk as deep as remembered trees reach; ask the adapter only for the rest.
+    let missing = loop {
+        let missing = frontier(root, &paths, &trees);
+        if missing.is_empty() || !tree_cache::fill(db, &mut trees.0, &missing)? {
+            break missing;
+        }
+    };
     if !missing.is_empty() {
-        return Ok(json!({ "need_trees": missing.iter().map(ObjectId::hex).collect::<Vec<_>>() }));
+        return Ok(json!({
+            "need_trees": missing.iter().map(ObjectId::hex).collect::<Vec<_>>(),
+            "parent": parent.as_ref().map(|p| p.id), "base_version": base_version,
+        }));
     }
     let message = string(c, "message")?;
     let author = Signature {
@@ -295,6 +321,10 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         ));
     }
     let rewrite = rewrite_tree(root, &path_changes, &trees)?;
+    for (id, bytes) in &rewrite.trees {
+        tree_cache::keep(db, id, bytes)?;
+    }
+    tree_cache::prune(db)?;
     // A merge commit's second parent is the merged work; its tree is `changes` applied to
     // the first parent, so the commit's changeset stays relative to the first parent.
     // `merge_parents` (octopus, used for group landings) or a single `merge_parent`.
@@ -329,7 +359,6 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             .map(|(t, bytes)| (*t, ObjectKind::Tree, bytes.as_slice())),
     );
     objects.extend(blobs.iter().map(|(b, data)| (*b, ObjectKind::Blob, *data)));
-    let pack = write_pack(&objects.iter().map(|(_, k, d)| (*k, *d)).collect::<Vec<_>>())?;
     let hidden = hidden_ref(&id);
     let generation = parent
         .iter()
@@ -346,16 +375,25 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
          ON CONFLICT(commit_id) DO UPDATE SET payload=excluded.payload,expires_at=excluded.expires_at WHERE principal=excluded.principal",
         &[json!(id.hex()), json!(principal), json!(prepared.to_string()), json!(now + PREPARED_TTL_MS)],
     )?;
+    super::staging::expire(db, now)?;
     db.query(
         "DELETE FROM prepared_commits WHERE expires_at<?",
         &[json!(now)],
     )?;
-    Ok(json!({
+    let mut result = json!({
         "commit": id, "tree": rewrite.root, "parents": parents, "touches": touches,
-        "hidden_ref": hidden,
-        "push_b64": STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?),
+        "hidden_ref": hidden, "base_version": base_version,
         // Structured copies for the adapter's write-through object cache (tier 2), so it
         // never parses Git formats itself.
         "objects": objects.iter().map(|(oid, kind, data)| platform_objects::object_json(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
-    }))
+    });
+    // A caller that can defer the push asks to stage; larger commits are still pushed.
+    if c["stage"] == true && super::staging::stage(db, &id, &objects)? {
+        result["staged"] = json!(true);
+    } else {
+        let pack = write_pack(&objects.iter().map(|(_, k, d)| (*k, *d)).collect::<Vec<_>>())?;
+        result["push_b64"] =
+            json!(STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?));
+    }
+    Ok(result)
 }
