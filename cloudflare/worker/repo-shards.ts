@@ -2,6 +2,7 @@
 // Durable Objects chosen by commit id, so concurrent writers spread out instead of
 // queueing on the repository authority. A commit id names its shard, so any Worker reads
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
+import { durableJson } from './durable';
 import type { CachedObject, RawObject } from './repo-stores';
 import type { Env } from './types';
 
@@ -20,23 +21,19 @@ function fail(error: { code: string; message: string }) {
 /** One command against shard `shard` of `repo`. */
 export async function shardCall(env: Env, repo: string, shard: number, command: Json) {
   const namespace = env.COMMIT_SHARDS as DurableObjectNamespace;
-  const stub = namespace.get(namespace.idFromName(`${repo}:${shard}`));
-  const response = await stub.fetch('https://commit-shard/', {
-    method: 'POST',
-    body: JSON.stringify({ ...command, ...SYSTEM }),
-  });
-  const value = await response.json<Json>();
+  const stub = () => namespace.get(namespace.idFromName(`${repo}:${shard}`));
+  const value = await durableJson(
+    stub,
+    'https://commit-shard/',
+    JSON.stringify({ ...command, ...SYSTEM }),
+  );
   if (value.error) throw fail(value.error);
   return value;
 }
 
 async function authority(env: Env, repo: string, command: Json) {
-  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  const response = await stub.fetch('https://source-repository/', {
-    method: 'POST',
-    body: JSON.stringify({ ...command, ...SYSTEM }),
-  });
-  return response.json<Json>();
+  const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  return durableJson(stub, 'https://source-repository/', JSON.stringify({ ...command, ...SYSTEM }));
 }
 
 /** A shard's record of `commit`, or null if no shard holds it. */
