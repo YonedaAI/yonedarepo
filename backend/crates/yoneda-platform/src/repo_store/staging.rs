@@ -228,6 +228,20 @@ pub fn projected<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 /// Accepted objects not yet in the object store, by id (the read tier behind the store):
 /// structured, or the raw Git content with `raw` (for packs).
 pub fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    // Or every staged object of one accepted commit (a batch merge prefetches its inputs).
+    if c.get("commit").is_some_and(|v| !v.is_null()) {
+        let commit = object_id(c, "commit")?;
+        let rows = db.query(
+            "SELECT id,kind,data_b64 FROM staged_objects WHERE commit_id=? \
+             AND commit_id IN (SELECT commit_id FROM object_projections)",
+            &[json!(commit.hex())],
+        )?;
+        let objects = rows
+            .iter()
+            .map(|row| decoded(row).and_then(|(id, kind, data)| object_json(id, kind, &data)))
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(json!({ "objects": objects }));
+    }
     let ids = c["ids"]
         .as_array()
         .filter(|ids| !ids.is_empty() && ids.len() <= READ_IDS)
@@ -263,6 +277,24 @@ pub fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         });
     }
     Ok(json!({ "objects": objects }))
+}
+
+/// A staged row's object, verified against its id.
+fn decoded(row: &Value) -> Result<(ObjectId, ObjectKind, Vec<u8>)> {
+    let id = ObjectId::parse(row["id"].as_str().unwrap_or_default())?;
+    let kind = match row["kind"].as_str() {
+        Some("commit") => ObjectKind::Commit,
+        Some("tree") => ObjectKind::Tree,
+        Some("blob") => ObjectKind::Blob,
+        _ => return Err(corrupt("staged object kind")),
+    };
+    let data = STANDARD
+        .decode(row["data_b64"].as_str().unwrap_or_default())
+        .map_err(|_| corrupt("staged object"))?;
+    if hash_object(kind, &data) != id {
+        return Err(corrupt("staged object"));
+    }
+    Ok((id, kind, data))
 }
 
 pub fn count<S: SqlStore>(db: &S) -> Result<u64> {
