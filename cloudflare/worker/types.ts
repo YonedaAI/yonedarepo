@@ -13,13 +13,9 @@ export interface Env {
   COMMIT_SHARDS?: DurableObjectNamespace;
   /** Land combiners, one per branch (platform write path); absent where not deployed. */
   LAND_COMBINERS?: DurableObjectNamespace;
-  /** Default landing mode: poll, combiner or changeset (see repo-changesets.ts). */
+  /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
-  /** Where commits begin (authority or published head) and main reads are served from. */
-  BEGIN_MODE?: string;
-  READ_MODE?: string;
-  /** "true" lets a request choose its write-path switches (x-yoneda-land-mode,
-   * x-yoneda-begin, x-yoneda-read), for benchmarks. */
+  /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
   LAND_MODE_OVERRIDE?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;

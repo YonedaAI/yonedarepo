@@ -5,6 +5,7 @@ import { durableJson } from './durable';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside, requirePath } from './repo-grants';
+import { readFromHead } from './repo-head';
 import {
   type CachedObject,
   parseStore,
@@ -181,22 +182,30 @@ async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
   return walk(objects, changed.tree, path);
 }
 
+/** A file at a commit, at a branch and version, or (by default) at main's published head,
+ * which a reader that landed something reads at least at its landing's `min_version`. */
 export async function readFile(ctx: RepoContext, args: Json) {
-  await requirePath(ctx, String(args.path ?? ''));
   const path = String(args.path ?? '');
-  const published =
-    ctx.published &&
+  const main =
     !args.commit &&
-    !args.at &&
-    [undefined, 'main', 'refs/heads/main'].includes(args.ref);
-  if (published) {
+    (args.at === undefined || args.at === null || args.at === '') &&
+    [undefined, null, '', 'main', 'refs/heads/main'].includes(args.ref);
+  if (main) {
+    const { head, access } = await readFromHead(ctx, Number(args.min_version ?? 0));
+    ctx.publish(head, access);
+  }
+  await requirePath(ctx, path);
+  if (main) {
     const objects = await ctx.objects();
     const entry = await publishedEntry(objects, ctx.published as Json, path);
     if (!['blob', 'exec'].includes(entry.type))
       throw new ApiError('NOT_FOUND', `${path} is not a file`);
     const bytes = await objects.blob(entry.id);
+    const head = ctx.published as Json;
     return {
-      version: ctx.published?.version,
+      version: head.version,
+      // The Git commit at that version, once it is projected (null while changesets wait).
+      commit: head.overlay.length ? null : head.head.id,
       path,
       id: entry.id,
       executable: entry.type === 'exec',

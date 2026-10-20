@@ -120,6 +120,19 @@ fn commit_facts<S: SqlStore>(
         .first()
     {
         out.insert("recorded_at_ms".into(), row["recorded_at"].clone());
+    } else if let Some(row) = db
+        .query(
+            "SELECT parents,writer,recorded_at FROM changesets WHERE commit_id=? AND parents IS NOT NULL",
+            &key,
+        )?
+        .first()
+    {
+        // Landed from its shard record, never adopted: the facts its changeset kept.
+        let parents: Value = serde_json::from_str(row["parents"].as_str().unwrap_or("[]"))
+            .map_err(|_| rows::corrupt("changeset parents"))?;
+        out.insert("parents".into(), parents);
+        out.insert("writer".into(), row["writer"].clone());
+        out.insert("recorded_at_ms".into(), row["recorded_at"].clone());
     }
     out.entry("paths_changed")
         .or_insert(json!(rows::touches(db, id)?.len()));

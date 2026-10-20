@@ -60,7 +60,7 @@ it('streams one schema-valid event per landed version, without contents', async 
     }
     for (const field of schema.fields.filter((f) => f.required)) expect(event[field.name], field.name).toBeDefined();
   }
-  expect(events[1]).toMatchObject({ event: 'land', repo: id, version: 2, ref: 'refs/heads/main', commit, kind: 'commit', paths_changed: 1, actor_kind: 'user', checks: [] });
+  expect(events[1]).toMatchObject({ event: 'land', repo: id, version: 2, ref: 'refs/heads/main', commit, kind: 'changeset', paths_changed: 1, actor_kind: 'user', checks: [] });
   expect(events[1].land_latency_ms).toBeGreaterThanOrEqual(0);
   const text = JSON.stringify(events);
   for (const leaked of ['confidential', 'private body', 'notes/a.txt', 'secret-plan', 'do not leak']) expect(text).not.toContain(leaked);

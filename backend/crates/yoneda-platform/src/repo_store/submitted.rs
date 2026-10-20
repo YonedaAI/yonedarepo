@@ -121,11 +121,18 @@ fn land_one<S: SqlStore>(
     {
         return Ok(json!({ "status": "landed", "version": row["version"], "already": true }));
     }
-    // Review classes travel with the record (semantic auto-approval reads them).
+    // Review classes and symbol writes travel with the record: semantic auto-approval and
+    // symbol-level validation (later work reading other symbols of these files) read them.
     if let Some(classes) = record.get("classes").filter(|v| !v.is_null()) {
         db.query(
             "INSERT INTO commit_classes(commit_id,overall,files,classified_at) VALUES(?,?,?,?) ON CONFLICT(commit_id) DO NOTHING",
             &[json!(commit.id.hex()), classes["overall"].clone(), classes["files"].clone(), c["now"].clone()],
+        )?;
+    }
+    for touch in record["symbols"].as_array().into_iter().flatten() {
+        db.query(
+            "INSERT INTO commit_symbols(commit_id,path,symbols,derived_at) VALUES(?,?,?,?) ON CONFLICT(commit_id,path) DO NOTHING",
+            &[json!(commit.id.hex()), touch["path"].clone(), touch["symbols"].clone(), c["now"].clone()],
         )?;
     }
     let gate = gates(db, &commit.id, settings)?;
@@ -152,9 +159,11 @@ fn land_one<S: SqlStore>(
                 &actor.principal,
             )?;
             db.query(
-                "INSERT INTO changesets(version,refname,commit_id,landed_at,batch,tree,generation) VALUES(?,?,?,?,?,?,?)",
+                "INSERT INTO changesets(version,refname,commit_id,landed_at,batch,tree,generation,parents,writer,recorded_at) \
+                 VALUES(?,?,?,?,?,?,?,?,?,?)",
                 &[json!(entry.version), json!(refname), json!(commit.id.hex()), json!(entry.committed_at_ms),
-                  json!(batch_id), json!(commit.tree.hex()), json!(commit.generation)],
+                  json!(batch_id), json!(commit.tree.hex()), json!(commit.generation),
+                  json!(json!(commit.parents).to_string()), json!(commit.principal), record["commit"]["recorded_at"].clone()],
             )?;
             batch.accept(writes);
             Ok(json!({ "status": "landed", "version": entry.version }))
