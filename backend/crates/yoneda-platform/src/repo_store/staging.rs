@@ -106,10 +106,17 @@ pub fn accept<S: SqlStore>(db: &S, commit: &ObjectId, now: i64) -> Result<bool> 
     let accepted = db.query(
         "INSERT INTO object_projections(commit_id,recorded_at,updated_at) SELECT ?1,?2,?2 \
          WHERE EXISTS (SELECT 1 FROM staged_objects WHERE commit_id=?1 AND id=?1 AND kind='commit') \
-         RETURNING commit_id",
+         ON CONFLICT(commit_id) DO NOTHING RETURNING commit_id",
         &[json!(commit.hex()), json!(now)],
     )?;
-    if accepted.is_empty() {
+    // A retried accept of a commit still awaiting projection is already accepted.
+    let pending = || {
+        db.query(
+            "SELECT 1 FROM object_projections WHERE commit_id=?",
+            &[json!(commit.hex())],
+        )
+    };
+    if accepted.is_empty() && pending()?.is_empty() {
         return Err(Error::new(
             "NOT_FOUND",
             "This commit's objects were not staged; push them instead",
