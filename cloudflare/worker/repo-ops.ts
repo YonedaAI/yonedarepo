@@ -14,6 +14,7 @@ import {
   type TreeEntry,
   toBase64,
 } from './repo-objects';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 export type Json = Record<string, any>;
@@ -37,16 +38,18 @@ export type Call = (command: Json) => Promise<Json>;
 export function caller(env: Env, repo: string, auth: Credentials): Call {
   const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
   return async (command) => {
-    const result = await stub.fetch('https://source-repository/', {
-      method: 'POST',
-      body: JSON.stringify({
-        ...Object.fromEntries(
-          Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k)),
-        ),
-        ...auth,
-      }),
+    const value = await timed(`do.${command.op}`, async () => {
+      const result = await stub.fetch('https://source-repository/', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...Object.fromEntries(
+            Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k)),
+          ),
+          ...auth,
+        }),
+      });
+      return result.json<Json>();
     });
-    const value = await result.json<Json>();
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
   };
@@ -118,7 +121,9 @@ export async function commit(
       trees,
     });
     if (prepared.need_trees) {
-      for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
+      await timed('trees', async () => {
+        for (const id of prepared.need_trees as string[]) trees[id] = await objects.tree(id);
+      });
       continue;
     }
     // Immutable and keyed by id, so a small commit's cache write runs alongside its push. A
@@ -127,11 +132,9 @@ export async function commit(
     const all = prepared.objects as CachedObject[];
     const written =
       all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
-    const cached = objects.cache(written);
-    const { report, readback } = await objects.pushCommit(
-      fromBase64(prepared.push_b64),
-      prepared.commit,
-      cached,
+    const cached = timed('cache', () => objects.cache(written));
+    const { report, readback } = await timed('push', () =>
+      objects.pushCommit(fromBase64(prepared.push_b64), prepared.commit, cached),
     );
     const recorded = await ctx.call({
       op: 'repo_record_commit',
@@ -141,19 +144,21 @@ export async function commit(
     });
     let undispatched = false;
     try {
-      await dispatchRuns(ctx.env, ctx.repo, recorded.check_runs);
+      await timed('dispatch', () => dispatchRuns(ctx.env, ctx.repo, recorded.check_runs));
     } catch (e) {
       if (dispatch === 'required') throw e;
       undispatched = true;
     }
-    await Promise.all([
-      // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
-      // (a human must approve), never classified as safe.
-      classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {}),
-      // Symbol writes narrow what this commit invalidates at landing; without them each
-      // changed file counts as written in full.
-      deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {}),
-    ]);
+    await timed('derive', () =>
+      Promise.all([
+        // Review classes gate semantic auto-approval; a failure leaves the commit unclassified
+        // (a human must approve), never classified as safe.
+        classifyCommit(ctx, prepared.commit, prepared.touches).catch(() => {}),
+        // Symbol writes narrow what this commit invalidates at landing; without them each
+        // changed file counts as written in full.
+        deriveSymbols(ctx, prepared.commit, prepared.touches).catch(() => {}),
+      ]),
+    );
     return {
       commit: prepared.commit,
       tree: prepared.tree,

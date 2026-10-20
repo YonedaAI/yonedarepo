@@ -4,6 +4,7 @@
 // Objects are immutable, so a cache entry keyed by id never needs invalidation; keys are
 // per repository so access follows repository auth.
 import { compute } from './repo-compute';
+import { record, timed } from './repo-timing';
 import type { Env } from './types';
 
 export type TreeEntry = {
@@ -85,9 +86,13 @@ class ArtifactsStore implements ObjectStore {
   async push(body: Uint8Array) {
     const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
     for (let attempt = 0; ; attempt++) {
-      const { remote, token } = await this.credentials(attempt > 0);
+      const { remote, token } = await timed('push.token', () => this.credentials(attempt > 0));
       try {
-        return await queue.push(remote, token, body);
+        const pushed = await queue.push(remote, token, body);
+        record('push.wait', pushed.waited_ms);
+        record('push.send', pushed.sent_ms);
+        record('push.batch', pushed.batch);
+        return pushed.report;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         if (attempt === 0 && /returned 40[13]/.test(message)) continue;
@@ -259,12 +264,16 @@ export class RepoObjects {
     for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
       const chunk = objects.slice(i, i + CACHE_CHUNK);
       await Promise.all([
-        putObjects(this.env, (id) => this.key(id), chunk),
-        ...chunk.map((o) =>
-          this.edgePut(
-            o.id,
-            o.kind,
-            o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+        timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), chunk)),
+        timed('cache.edge', () =>
+          Promise.all(
+            chunk.map((o) =>
+              this.edgePut(
+                o.id,
+                o.kind,
+                o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
+              ),
+            ),
           ),
         ),
       ]);
@@ -336,7 +345,7 @@ export class RepoObjects {
     let reason = 'not readable';
     for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
       if (attempt) await sleep(100 * 2 ** attempt + Math.random() * 100 * 2 ** attempt);
-      const report = await this.store.push(body);
+      const report = await timed('push.store', () => this.store.push(body));
       const outcome = pushOutcome(report, refname);
       if (!outcome.accepted) {
         reason = `refused: ${outcome.refused}`;
@@ -344,7 +353,7 @@ export class RepoObjects {
       }
       await ready;
       for (let read = 0; read < 3; read++) {
-        const readback = await this.store.readCommit(commit);
+        const readback = await timed('push.readback', () => this.store.readCommit(commit));
         // A retried push may be refused because an earlier attempt already created the ref.
         if (readback) return { report: outcome.accepted ? report : accepted(refname), readback };
         if (!outcome.accepted) break;
