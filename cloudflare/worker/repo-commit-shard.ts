@@ -92,7 +92,10 @@ export async function commitInShard(
   const bytes = raw.reduce((n, o) => n + (o.data_b64.length * 3) / 4, 0);
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
   const all = built.objects as CachedObject[];
-  const edge = timed('cache', () => store.cache(all, 'edge'));
+  // Edge copies spare this colo's first reads a trip down the tiers; they are written after
+  // the answer when the request allows it (they share its six connection slots).
+  const cacheEdge = () => timed('cache', () => store.cache(all, 'edge'));
+  const edge = deferred(cacheEdge) ? Promise.resolve() : cacheEdge();
   const [classes, symbols] = await timed('derive', () =>
     Promise.all([
       // Review classes gate semantic auto-approval; a failure leaves the commit
