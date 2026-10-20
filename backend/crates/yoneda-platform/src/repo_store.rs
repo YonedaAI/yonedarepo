@@ -189,7 +189,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_land_claim" => land_queue::claim(db, c),
         "repo_land_batch" => land_queue::land_batch(db, c, principal),
         "repo_land_release" => land_queue::release(db, c),
-        "repo_land_changesets" => changesets::land(db, c, principal),
+        "repo_land_changesets" => changesets::land(db, c),
         "repo_changeset_plan" => version_projection::plan(db, c),
         "repo_changeset_record" => version_projection::record(db, c),
         "repo_record_imported" => history_import::record(db, c),
