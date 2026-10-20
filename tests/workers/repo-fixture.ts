@@ -151,6 +151,7 @@ export const fakeCombiners = {
 async function quiesceCombiners() {
   for (const c of combiners.values()) for (const timer of c.timers) clearTimeout(timer);
   await Promise.all([...combiners.values()].map((c) => c.running));
+  await Promise.all([...combiners.values()].map((c) => c.batcher.idle()));
   combiners.clear();
 }
 export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;

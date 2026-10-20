@@ -10,12 +10,7 @@
 // a resubmitted landing answers with its version). The same class, named `<repo>#projector`
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
 import { DurableObject } from 'cloudflare:workers';
-import {
-  kickProjection,
-  type LandMode,
-  landChangesets,
-  projectChangesets,
-} from './repo-changesets';
+import { kickProjection, type LandMode, landChangesets, ProjectionRunner } from './repo-changesets';
 import { HeadHolder, refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
@@ -36,6 +31,8 @@ export class LandBatcher {
   #waiters = new Map<number, ((settled: Settled | null) => void)[]>();
   #settled = new Map<number, Settled>();
   #submissions: Submission[] = [];
+  /** Notifications sent without holding up landing, until they finish. */
+  #background = new Set<Promise<unknown>>();
   target?: Target;
   mode: LandMode = 'combiner';
 
@@ -86,6 +83,11 @@ export class LandBatcher {
     return outcome;
   }
 
+  /** Resolves when the notifications already sent have finished. */
+  async idle() {
+    await Promise.all(this.#background);
+  }
+
   /** One authority call for every waiting submission; deferred ones ride the next. */
   async #landSubmitted(merger: RepoContext, ref: string) {
     const batch = this.#submissions.splice(0, SUBMIT_BATCH);
@@ -106,13 +108,16 @@ export class LandBatcher {
         submission.resolve({ ...out.items[i], batch: timing, queued_ms: started - submission.at });
     }
     this.#submissions.unshift(...again);
-    if (out.items.some((r: Json) => r.status === 'landed'))
-      await Promise.all([
+    // The projector and the head holder hear about it without holding up the next batch.
+    if (out.items.some((r: Json) => r.status === 'landed')) {
+      const notified = Promise.all([
         kickProjection(merger.env, merger.repo).catch((e) =>
           console.warn(`projection kick failed: ${e?.message ?? e}`),
         ),
         refreshHead(merger.env, merger.repo),
-      ]);
+      ]).finally(() => this.#background.delete(notified));
+      this.#background.add(notified);
+    }
   }
 
   /** Builds one batch (each step has its own subrequest budget), then asks for the next. */
@@ -195,34 +200,6 @@ export class LandBatcher {
       if (this.#settled.size <= SETTLED_KEPT) break;
       this.#settled.delete(old);
     }
-  }
-}
-
-/** Projects one repository's changesets, one projection at a time; waiters share it. */
-export class ProjectionRunner {
-  #running: Promise<number> | null = null;
-  #again = false;
-
-  constructor(private readonly env: Env) {}
-
-  /** Resolves once every changeset landed before the call is projected. */
-  async catchUp(repo: string): Promise<number> {
-    // A projection already running may have planned before this caller's changesets.
-    if (this.#running) {
-      this.#again = true;
-      await this.#running.catch(() => 0);
-    }
-    this.#running ??= (async () => {
-      let projected = 0;
-      do {
-        this.#again = false;
-        projected += await projectChangesets(this.env, repo);
-      } while (this.#again);
-      return projected;
-    })().finally(() => {
-      this.#running = null;
-    });
-    return this.#running;
   }
 }
 

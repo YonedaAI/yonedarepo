@@ -108,6 +108,34 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
   return projected;
 }
 
+/** Projects one repository's changesets, one projection at a time; waiters share it. */
+export class ProjectionRunner {
+  #running: Promise<number> | null = null;
+  #again = false;
+
+  constructor(private readonly env: Env) {}
+
+  /** Resolves once every changeset landed before the call is projected. */
+  async catchUp(repo: string): Promise<number> {
+    // A projection already running may have planned before this caller's changesets.
+    if (this.#running) {
+      this.#again = true;
+      await this.#running.catch(() => 0);
+    }
+    this.#running ??= (async () => {
+      let projected = 0;
+      do {
+        this.#again = false;
+        projected += await projectChangesets(this.env, repo);
+      } while (this.#again);
+      return projected;
+    })().finally(() => {
+      this.#running = null;
+    });
+    return this.#running;
+  }
+}
+
 type Projector = {
   catchUp(repo: string): Promise<number>;
   kick(repo: string): Promise<void>;
