@@ -2,82 +2,21 @@
 //! asks for exactly the directories on changed paths (one round per depth), verifies every
 //! supplied tree against its id, and returns the pack to push before the commit is recorded
 //! (or stages the objects here when the caller can defer the push).
-mod changes;
-use super::rows::{self, branch_ref, current_version, object_id};
+pub(crate) mod build;
+pub(crate) mod changes;
+use super::rows::{self, CommitRow, branch_ref, current_version, object_id};
 use super::tree_cache;
-use crate::platform_objects;
-use crate::storage::{SqlStore, bad, number, string};
+use crate::storage::{SqlStore, bad, number};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use changes::{Content, changes, known_blob};
+use build::{Parent, build, frontier, objects_json, supplied_trees};
+use changes::{changes, known_blob};
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap};
 use yoneda_core::{
     Error, Result,
-    git_object::*,
-    txlog::{PathOp, PathTouch},
+    git_object::{ObjectId, encode_tree, hidden_ref, receive_pack_request, write_pack},
 };
 
 const PREPARED_TTL_MS: i64 = 60 * 60 * 1000;
-const COMMITTER: (&str, &str) = ("YonedaRepo", "commits@yonedarepo.invalid");
-
-struct Trees(HashMap<ObjectId, Vec<TreeEntry>>);
-impl TreeSource for Trees {
-    fn tree(&self, id: &ObjectId) -> Result<Vec<TreeEntry>> {
-        self.0
-            .get(id)
-            .cloned()
-            .ok_or_else(|| Error::new("TREE_MISSING", format!("Tree {id} was not supplied")))
-    }
-}
-
-/// Supplied trees are untrusted: each must hash to the id it is filed under.
-fn supplied_trees(c: &Value) -> Result<Trees> {
-    platform_objects::supplied_trees(c).map(Trees)
-}
-
-/// Directories on changed paths that are not yet supplied (the next walk frontier).
-fn frontier(root: Option<ObjectId>, paths: &[&str], trees: &Trees) -> BTreeSet<ObjectId> {
-    let mut missing = BTreeSet::new();
-    // A merge commit may change nothing (every path conflicted); it still rewrites the root.
-    if paths.is_empty()
-        && let Some(id) = root
-        && !trees.0.contains_key(&id)
-    {
-        missing.insert(id);
-    }
-    for path in paths {
-        let parts: Vec<&str> = path.split('/').collect();
-        let mut dir = root;
-        for (depth, part) in parts.iter().enumerate() {
-            let Some(id) = dir else { break };
-            let Some(entries) = trees.0.get(&id) else {
-                missing.insert(id);
-                break;
-            };
-            if depth + 1 == parts.len() {
-                break;
-            }
-            dir = entries
-                .iter()
-                .find(|e| e.name == *part && e.mode.is_tree())
-                .map(|e| e.id);
-        }
-    }
-    missing
-}
-
-fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Option<TreeEntry> {
-    let mut dir = root?;
-    let parts: Vec<&str> = path.split('/').collect();
-    for (depth, part) in parts.iter().enumerate() {
-        let entry = trees.0.get(&dir)?.iter().find(|e| e.name == *part)?.clone();
-        if depth + 1 == parts.len() {
-            return Some(entry);
-        }
-        dir = entry.id;
-    }
-    None
-}
 
 /// The parent and base version: given, or a branch's head at the current version (saving
 /// the caller a snapshot round trip). Callers pin what the first round returns.
@@ -130,144 +69,33 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             "parent": parent.as_ref().map(|p| p.id), "base_version": base_version,
         }));
     }
-    let message = string(c, "message")?;
-    let author = Signature {
-        name: string(&c["author"], "name")?,
-        email: string(&c["author"], "email")?,
-        seconds: now / 1000,
-        offset: "+0000".into(),
-    };
-    let committer = Signature {
-        name: COMMITTER.0.into(),
-        email: COMMITTER.1.into(),
-        ..author.clone()
-    };
-    let read_set: Vec<String> =
-        serde_json::from_value(c.get("read_set").cloned().unwrap_or(json!([])))
-            .map_err(|_| bad("read_set must be a list of paths or path#symbol entries"))?;
-    if read_set.len() > 1000
-        || read_set
-            .iter()
-            .any(|p| p.is_empty() || p.starts_with('/') || p.contains(".."))
-    {
-        return Err(bad(
-            "read_set entries must be relative paths, dir/ prefixes or path#symbol",
-        ));
-    }
-
-    let mut blobs: Vec<(ObjectId, &[u8])> = Vec::new();
-    let mut path_changes = Vec::new();
-    let mut touches = Vec::new();
-    let mut conflicts = Vec::new();
-    for change in &changes {
-        let old = existing(root, &change.path, &trees).filter(|e| !e.mode.is_tree());
-        if let Some(expected) = change.expect
-            && old.as_ref().map(|o| o.id) != expected
-        {
-            conflicts.push(change.path.clone());
-            continue;
-        }
-        let new = match &change.target {
-            None => None,
-            Some((m, Content::Bytes(data))) => Some((*m, hash_object(ObjectKind::Blob, data))),
-            Some((m, Content::Known(id))) => {
-                known_blob(db, id)?;
-                Some((*m, *id))
-            }
-        };
-        if matches!((&old, new), (Some(o), Some((m, id))) if o.mode == m && o.id == id) {
-            continue;
-        }
-        if let Some((_, Content::Bytes(data))) = &change.target
-            && let Some((_, id)) = new
-            && !blobs.iter().any(|(b, _)| *b == id)
-        {
-            blobs.push((id, data));
-        }
-        let op = match (&old, new) {
-            (None, Some(_)) => PathOp::Add,
-            (Some(_), Some(_)) => PathOp::Modify,
-            (Some(_), None) => PathOp::Delete,
-            (None, None) => {
-                return Err(Error::new(
-                    "NOT_FOUND",
-                    format!("Cannot delete missing {}", change.path),
-                ));
-            }
-        };
-        touches.push(PathTouch {
-            path: change.path.clone(),
-            op,
-            old_blob: old.map(|o| o.id),
-            new_blob: new.map(|n| n.1),
-        });
-        path_changes.push(PathChange {
-            path: change.path.clone(),
-            target: new,
-        });
-    }
-    if !conflicts.is_empty() {
-        return Err(Error::new(
-            "CONFLICT",
-            format!(
-                "The parent changed on {}; these paths need a three-way merge",
-                conflicts.join(", ")
-            ),
-        ));
-    }
-    let merging = c.get("merge_parent").is_some_and(|p| !p.is_null())
-        || c["merge_parents"].as_array().is_some_and(|p| !p.is_empty());
-    if touches.is_empty() && !merging {
-        return Err(Error::new(
-            "NO_CHANGES",
-            "Every change matches the parent commit",
-        ));
-    }
-    let rewrite = rewrite_tree(root, &path_changes, &trees)?;
-    tree_cache::keep(db, &rewrite.trees)?;
-    // A merge commit's second parent is the merged work; its tree is `changes` applied to
-    // the first parent, so the commit's changeset stays relative to the first parent.
-    // `merge_parents` (octopus, used for group landings) or a single `merge_parent`.
-    let mut merge_parent = Vec::new();
+    let mut merges = Vec::new();
     if let Some(one) = c.get("merge_parent").filter(|p| !p.is_null()) {
-        merge_parent.push(ObjectId::parse(one.as_str().unwrap_or_default())?);
+        merges.push(ObjectId::parse(one.as_str().unwrap_or_default())?);
     }
     for extra in c["merge_parents"].as_array().into_iter().flatten() {
-        merge_parent.push(ObjectId::parse(extra.as_str().unwrap_or_default())?);
+        merges.push(ObjectId::parse(extra.as_str().unwrap_or_default())?);
     }
-    if !merge_parent.is_empty() && parent.is_none() {
-        return Err(bad("A merge needs a first parent"));
-    }
-    if merge_parent.len() > 64 {
-        return Err(bad("A merge has at most 64 merged parents"));
-    }
-    let merge_parent = merge_parent
+    let merges = merges
         .iter()
-        .map(|id| rows::recorded(db, id))
+        .map(|id| rows::recorded(db, id).map(|r| as_parent(&r)))
         .collect::<Result<Vec<_>>>()?;
-    let parents: Vec<ObjectId> = parent.iter().chain(&merge_parent).map(|p| p.id).collect();
-    let commit = Commit::new(rewrite.root, &parents, &author, &committer, &message)?;
-    let commit_bytes = commit.encode();
-    let id = commit.id();
-
-    let mut objects: Vec<(ObjectId, ObjectKind, &[u8])> =
-        vec![(id, ObjectKind::Commit, &commit_bytes)];
-    objects.extend(
-        rewrite
-            .trees
-            .iter()
-            .map(|(t, bytes)| (*t, ObjectKind::Tree, bytes.as_slice())),
-    );
-    objects.extend(blobs.iter().map(|(b, data)| (*b, ObjectKind::Blob, *data)));
+    let parent = parent.as_ref().map(as_parent);
+    let built = build(c, parent.as_ref(), &merges, &changes, &trees, now, &|id| {
+        known_blob(db, id)
+    })?;
+    tree_cache::keep(db, &built.trees)?;
+    let id = built.id;
     let hidden = hidden_ref(&id);
-    let generation = parent
-        .iter()
-        .chain(&merge_parent)
-        .map(|p| p.generation + 1)
-        .max()
-        .unwrap_or(1);
+    let (parents, generation, touches, read_set, message) = (
+        &built.parents,
+        built.generation,
+        &built.touches,
+        &built.read_set,
+        &built.message,
+    );
     let prepared = json!({
-        "tree": rewrite.root, "parents": parents, "generation": generation,
+        "tree": built.root, "parents": parents, "generation": generation,
         "base_version": base_version, "touches": touches, "read_set": read_set, "message": message,
     });
     db.query(
@@ -277,12 +105,13 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     )?;
     super::staging::expire(db, now)?;
     let mut result = json!({
-        "commit": id, "tree": rewrite.root, "parents": parents, "touches": touches,
+        "commit": id, "tree": built.root, "parents": parents, "touches": touches,
         "hidden_ref": hidden, "base_version": base_version,
         // Structured copies for the adapter's write-through object cache (tier 2), so it
         // never parses Git formats itself.
-        "objects": objects.iter().map(|(oid, kind, data)| platform_objects::object_json(*oid, *kind, data)).collect::<Result<Vec<_>>>()?,
+        "objects": objects_json(&built)?,
     });
+    let objects = built.object_refs();
     // A caller that can defer the push asks to stage; larger commits are still pushed.
     if c["stage"] == true && super::staging::stage(db, &id, &objects)? {
         result["staged"] = json!(true);
@@ -292,4 +121,12 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
             json!(STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?));
     }
     Ok(result)
+}
+
+fn as_parent(row: &CommitRow) -> Parent {
+    Parent {
+        id: row.id,
+        tree: row.tree,
+        generation: row.generation,
+    }
 }

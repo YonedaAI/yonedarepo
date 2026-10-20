@@ -5,6 +5,7 @@
 use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod adopt;
 mod auth;
 mod bisect;
 mod branches;
@@ -19,13 +20,13 @@ mod history_import;
 mod land;
 mod land_queue;
 mod merging;
-mod migration;
-mod prepare;
+pub(crate) mod migration;
+pub(crate) mod prepare;
 mod projection;
 mod reads;
 mod record;
 mod rows;
-mod staging;
+pub(crate) mod staging;
 mod store_lineage;
 mod symbols;
 mod tree_cache;
@@ -51,7 +52,13 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let settings = rows::settings(db)?;
     let actor = auth::actor(db, c, &settings)?;
     match op.as_str() {
-        "repo_prepare_commit" | "repo_record_commit" | "repo_branch_set" => actor.require("write"),
+        "repo_prepare_commit" | "repo_record_commit" | "repo_branch_set" | "repo_begin_commit" => {
+            actor.require("write")
+        }
+        // Only the platform copies commit shard records in.
+        "repo_adopt_commit" if !actor.can("system") => {
+            Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
+        }
         "repo_check" => actor.require("check"),
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
@@ -139,6 +146,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             prepared
         }),
         "repo_record_commit" => record::record(db, c, principal, &settings),
+        "repo_begin_commit" => adopt::begin(db, c, principal, &settings),
+        "repo_adopt_commit" => adopt::adopt(db, c, &settings),
         "repo_check" => record::check(db, c, principal, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_check_claim" => checks::claim(db, c),
@@ -155,7 +164,14 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
-        "repo_land" => land::land(db, c, principal, &settings),
+        // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
+        "repo_land" => land::land(db, c, principal, &settings).or_else(|e| {
+            if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {
+                land_queue::enqueue(db, c, principal, &settings)
+            } else {
+                Err(e)
+            }
+        }),
         "repo_land_enqueue" => land_queue::enqueue(db, c, principal, &settings),
         "repo_land_status" => land_queue::status(db, c),
         "repo_land_claim" => land_queue::claim(db, c),

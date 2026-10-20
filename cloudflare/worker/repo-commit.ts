@@ -3,6 +3,7 @@
 // them. Reads and the authority caller live in repo-ops.
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
+import { commitInShard, shardable } from './repo-commit-shard';
 import {
   type CachedObject,
   fromBase64,
@@ -31,6 +32,10 @@ export async function commit(
   body: Json,
   dispatch: Dispatch = 'required',
 ) {
+  if (shardable(ctx.env, body)) {
+    const sharded = await commitInShard(ctx, given, body, dispatch);
+    if (sharded) return sharded;
+  }
   // A branch is resolved by the first prepare round, which pins its head for the rest.
   let base: Json = body.parent
     ? { parent: body.parent, base_version: body.base_version ?? 0 }

@@ -10,6 +10,7 @@ import {
   artifacts,
   author,
   bindings,
+  drainObjects,
   file,
   misses,
   pushes,
@@ -26,7 +27,7 @@ const EDGE = 'https://objects.yoneda.internal';
 async function repo(name: string) {
   const owner = { cookie: await signup(name) };
   const created = await api('/repos', owner, { body: { name, policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
-  await projectObjects(scoped, created.body.id);
+  await drainObjects();
   for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(scoped, message);
   return { owner, id: created.body.id as string, path: `/repos/${created.body.id}` };
 }
@@ -53,17 +54,18 @@ it('keeps an accepted commit readable and pending through store outages', async 
   const made = await api(`${path}/commits`, owner, { body: { ref: 'main', changes: [file('dir/b.txt', 'b\n')], message: 'b', author } });
   expect(made.status).toBe(200);
   expect(made.body.staged).toBe(true);
-  expect(queued.filter((m) => m.kind === 'platform_objects')).toHaveLength(1);
+  const jobs = queued.filter((m) => m.kind === 'platform_objects');
+  expect(jobs).toHaveLength(1);
 
   // R2 refuses the writes: the outbox stays pending with the reason.
   const r2 = flakyR2();
-  await expect(projectObjects(r2.env, id)).rejects.toThrow(/not in R2/);
+  await expect(projectObjects(r2.env, id, jobs[0].job_id)).rejects.toThrow(/not in R2/);
   const status = (await api(path, owner)).body;
   expect(status.objects.pending).toBe(1);
   expect(status.objects.oldest).toMatchObject({ commit_id: made.body.commit, attempts: 1 });
   expect(status.objects.oldest.detail).toContain('R2 unavailable');
 
-  // Without cached copies, reads fall through R2 to the staged copy (before Artifacts).
+  // Without cached copies, reads fall through R2 and Artifacts to the shard's staged copy.
   const tree = (await api(`${path}/commits/${made.body.commit}`, owner)).body.tree;
   const listed = (await api(`${path}/tree?commit=${made.body.commit}&path=dir`, owner)).body;
   for (const object of [tree, ...listed.entries.map((e: any) => e.id)]) {
@@ -73,7 +75,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   misses.length = 0;
   const read = await api(`${path}/blob?commit=${made.body.commit}&path=dir/b.txt`, owner);
   expect(read.body.content).toBe('b\n');
-  expect(misses).toEqual([]); // never asked Artifacts
+  expect(misses.length).toBeGreaterThan(0); // Artifacts did not have them
 
   // Artifacts is down too: main lands, its projection fails and retries; never drift.
   receivePacks.down = true;
@@ -89,7 +91,7 @@ it('keeps an accepted commit readable and pending through store outages', async 
   expect(artifacts.get(`yr-${id}`)?.get(made.body.commit)?.kind).toBe('commit');
   // Then R2: the outbox drains into the store of record.
   r2.state.down = false;
-  await projectObjects(r2.env, id);
+  await projectObjects(r2.env, id, jobs[0].job_id);
   const settled = (await api(path, owner)).body;
   expect(settled.objects.pending).toBe(0);
   expect(settled.projections[0]).toMatchObject({ status: 'ok', projected_commit: made.body.commit });
@@ -105,8 +107,10 @@ it('settles duplicate and concurrent projections exactly once', async () => {
   );
   expect(made.every((m) => m.body.staged)).toBe(true);
   // Redelivered messages run side by side; every commit still ends in R2, settled once.
-  await Promise.all([projectObjects(scoped, id), projectObjects(scoped, id), projectObjects(scoped, id)]);
-  await projectObjects(scoped, id);
+  const jobs = queued.splice(0).filter((m) => m.kind === 'platform_objects');
+  for (const job of jobs)
+    await Promise.all([1, 2, 3].map(() => projectObjects(scoped, id, job.job_id)));
+  for (const job of jobs) await projectObjects(scoped, id, job.job_id);
   for (const m of made) expect(await bindings.OBJECTS.head(`platform/v1/${id}/git/${m.body.commit}`)).not.toBeNull();
   expect((await api(path, owner)).body.objects.pending).toBe(0);
 });

@@ -69,15 +69,27 @@ const MIGRATIONS: [(i64, &str); 17] = [
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.
 pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {
+    migrate_with(db, "repo_schema_migrations", &MIGRATIONS)
+}
+
+/// Applies `migrations` in order, recording each version and digest in `table`; refuses a
+/// store migrated by a newer binary or one whose applied migrations differ.
+pub(crate) fn migrate_with<S: SqlStore>(
+    db: &S,
+    table: &'static str,
+    migrations: &'static [(i64, &'static str)],
+) -> Result<()> {
     db.query(
-        "CREATE TABLE IF NOT EXISTS repo_schema_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
+        &format!(
+            "CREATE TABLE IF NOT EXISTS {table}(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)"
+        ),
         &[],
     )?;
     let owned = db.clone();
     db.transaction(Box::new(move || {
-        let latest = MIGRATIONS.len() as i64;
+        let latest = migrations.len() as i64;
         let applied = owned.query(
-            "SELECT version,digest FROM repo_schema_migrations ORDER BY version",
+            &format!("SELECT version,digest FROM {table} ORDER BY version"),
             &[],
         )?;
         if applied
@@ -89,9 +101,9 @@ pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {
                 "Repository schema requires a newer binary",
             ));
         }
-        for (version, sql) in MIGRATIONS {
+        for (version, sql) in migrations {
             let digest = yoneda_core::digest(sql.as_bytes());
-            if let Some(row) = applied.iter().find(|r| r["version"] == version) {
+            if let Some(row) = applied.iter().find(|r| r["version"] == *version) {
                 if row["digest"] != digest {
                     return Err(Error::new(
                         "MIGRATION_DRIFT",
@@ -104,7 +116,7 @@ pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {
                 owned.query(statement, &[])?;
             }
             owned.query(
-                "INSERT INTO repo_schema_migrations(version,digest) VALUES(?,?)",
+                &format!("INSERT INTO {table}(version,digest) VALUES(?,?)"),
                 &[json!(version), json!(digest)],
             )?;
         }

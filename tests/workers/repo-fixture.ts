@@ -62,7 +62,7 @@ export const executed: any[] = [];
 export async function drainObjects(target: Env = scoped) {
   const jobs = queued.filter((m) => m.kind === 'platform_objects');
   queued.splice(0, queued.length, ...queued.filter((m) => m.kind !== 'platform_objects'));
-  for (const message of jobs) await projectObjects(target, message.repo_id);
+  for (const message of jobs) await projectObjects(target, message.repo_id, message.job_id);
 }
 export const fakeQueue = {
   send: async (body: any) => void queued.push(body),

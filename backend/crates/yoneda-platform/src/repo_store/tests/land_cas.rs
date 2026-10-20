@@ -47,12 +47,14 @@ fn a_late_builder_loses_the_swap_and_a_vanished_one_never_blocks() {
         json!({"op":"repo_land_batch","ref":"main","epoch":fast["epoch"],
         "head":fast["head"],"merge":merge,"landed":[ta]}),
     );
-    // b queues behind; the slow builder returns with a batch built on the old head.
-    let tb = h.ok(
+    // b queues behind (a landing that needs a merge joins the queue in the same call); the
+    // slow builder returns with a batch built on the old head.
+    let queued = h.ok(
         OWNER,
-        json!({"op":"repo_land_enqueue","ref":"main","commit":b}),
-    )["ticket"]
-        .clone();
+        json!({"op":"repo_land","ref":"main","commit":b,"enqueue":true}),
+    );
+    assert_eq!(queued["queued"], true);
+    let tb = queued["ticket"].clone();
     let late = h.run(
         MERGER,
         json!({"op":"repo_land_batch","ref":"main","epoch":slow["epoch"],

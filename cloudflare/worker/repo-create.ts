@@ -5,6 +5,7 @@ import { commit } from './repo-commit';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
+import { shardOutboxes } from './repo-shards';
 import type { Env } from './types';
 
 /**
@@ -56,6 +57,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     object_store: store.spec,
     policy: body.policy ?? { required_checks: [], approvals: 1 },
   });
+  // Commit shards start (migrate) now rather than on the first commits' path.
+  await shardOutboxes(env, id);
   // Listing projection, written after the authority accepted the repository.
   await env.INDEX.prepare(
     'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',

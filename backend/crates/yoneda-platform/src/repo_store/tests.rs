@@ -50,6 +50,7 @@ impl Harness {
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
+            None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "token:public" => {
                 c["_token"] = json!("public-secret-0123456789abcdef0123456789")
             }
@@ -1549,4 +1550,5 @@ mod branches;
 mod break_glass;
 mod change_records;
 mod land_cas;
+mod shards;
 mod staging;

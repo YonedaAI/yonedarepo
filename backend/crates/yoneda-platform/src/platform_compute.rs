@@ -48,6 +48,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "staged_push" => crate::platform_push::staged_push(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
+        "build_commit" => crate::platform_build::build_commit(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }

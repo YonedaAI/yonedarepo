@@ -9,12 +9,14 @@
     "bindings": [
       { "name": "SOURCE_REPOS", "class_name": "SourceRepository" },
       { "name": "WORKSPACES", "class_name": "WorkspaceAuthority" },
-      { "name": "OBJECT_PUSHES", "class_name": "ObjectPushQueue" }
+      { "name": "OBJECT_PUSHES", "class_name": "ObjectPushQueue" },
+      { "name": "COMMIT_SHARDS", "class_name": "CommitShard" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority"] },
-    { "tag": "v2", "new_sqlite_classes": ["ObjectPushQueue"] }
+    { "tag": "v2", "new_sqlite_classes": ["ObjectPushQueue"] },
+    { "tag": "v3", "new_sqlite_classes": ["CommitShard"] }
   ],
   "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yoneda-platform-test" }],
   "d1_databases": [{ "binding": "INDEX", "database_name": "yoneda-platform-index", "database_id": "00000000-0000-0000-0000-000000000001" }]

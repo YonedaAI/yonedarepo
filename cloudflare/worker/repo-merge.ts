@@ -9,6 +9,8 @@ import { keepAllowed, outside } from './repo-grants';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
+import { adoptCommit } from './repo-shards';
+import { timed } from './repo-timing';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const SHA = /^[0-9a-f]{40}$/;
@@ -79,12 +81,21 @@ async function landBatch(merger: RepoContext, claim: Json) {
     await moved(merger, claim.ref);
     return landed;
   }
-  for (const item of claim.items as Json[]) {
-    const merged = await mergeTrees(objects, {
-      base: item.base_tree,
-      ours: claim.head_tree,
-      theirs: item.commit_tree,
-    });
+  // Every item merges against the head on its own (stateless compute, side by side); the
+  // batch then takes them in queue order while their merged paths stay disjoint.
+  const merges = await timed('merge', () =>
+    Promise.all(
+      (claim.items as Json[]).map((item) =>
+        mergeTrees(objects, {
+          base: item.base_tree,
+          ours: claim.head_tree,
+          theirs: item.commit_tree,
+        }),
+      ),
+    ),
+  );
+  for (const [index, item] of (claim.items as Json[]).entries()) {
+    const merged = merges[index];
     if (merged.conflicts.length > 0) {
       const error = conflictError(merged.conflicts);
       failed.push({
@@ -157,20 +168,21 @@ export async function landWithMerge(
   sha: string,
   fastForwardOnly = false,
 ) {
-  try {
-    const landed = await ctx.call({
-      op: 'repo_land',
-      ref,
-      commit: sha,
-      fast_forward_only: fastForwardOnly,
-    });
+  // A commit still in its shard is adopted first, sparing a refused landing round trip.
+  await timed('adopt', () => adoptCommit(ctx.env, ctx.repo, sha));
+  // Lands directly, or joins the branch's queue in the same call (never fast-forward-only).
+  const landed = await ctx.call({
+    op: 'repo_land',
+    ref,
+    commit: sha,
+    fast_forward_only: fastForwardOnly,
+    ...(fastForwardOnly ? {} : { enqueue: true }),
+  });
+  if (!landed.queued) {
     if (!landed.already) await moved(ctx, ref);
     return landed;
-  } catch (e: any) {
-    // A fast-forward-only landing never joins the merge queue.
-    if (e?.code !== 'MERGE_REQUIRED' || fastForwardOnly) throw e;
   }
-  const { ticket } = await ctx.call({ op: 'repo_land_enqueue', ref, commit: sha });
+  const { ticket } = landed;
   const merger = new RepoContext(
     ctx.env,
     ctx.repo,
