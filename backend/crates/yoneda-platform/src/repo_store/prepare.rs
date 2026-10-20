@@ -210,9 +210,12 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
     let root = parent.as_ref().map(|p| p.tree);
     let changes = changes(c)?;
     let mut trees = supplied_trees(c)?;
-    for (id, entries) in &trees.0 {
-        tree_cache::keep(db, id, &encode_tree(entries)?)?;
-    }
+    let supplied = trees
+        .0
+        .iter()
+        .map(|(id, entries)| Ok((*id, encode_tree(entries)?)))
+        .collect::<Result<Vec<_>>>()?;
+    tree_cache::keep(db, &supplied)?;
     let paths: Vec<&str> = changes.iter().map(|ch| ch.path.as_str()).collect();
     // Walk as deep as remembered trees reach; ask the adapter only for the rest.
     let missing = loop {
@@ -321,10 +324,7 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         ));
     }
     let rewrite = rewrite_tree(root, &path_changes, &trees)?;
-    for (id, bytes) in &rewrite.trees {
-        tree_cache::keep(db, id, bytes)?;
-    }
-    tree_cache::prune(db)?;
+    tree_cache::keep(db, &rewrite.trees)?;
     // A merge commit's second parent is the merged work; its tree is `changes` applied to
     // the first parent, so the commit's changeset stays relative to the first parent.
     // `merge_parents` (octopus, used for group landings) or a single `merge_parent`.
@@ -376,10 +376,6 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         &[json!(id.hex()), json!(principal), json!(prepared.to_string()), json!(now + PREPARED_TTL_MS)],
     )?;
     super::staging::expire(db, now)?;
-    db.query(
-        "DELETE FROM prepared_commits WHERE expires_at<?",
-        &[json!(now)],
-    )?;
     let mut result = json!({
         "commit": id, "tree": rewrite.root, "parents": parents, "touches": touches,
         "hidden_ref": hidden, "base_version": base_version,
