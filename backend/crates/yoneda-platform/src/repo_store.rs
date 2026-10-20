@@ -8,6 +8,7 @@ use yoneda_core::{Error, Result};
 mod auth;
 mod bisect;
 mod break_glass;
+mod change_records;
 mod checks;
 mod classes;
 mod contracts;
@@ -52,6 +53,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "FORBIDDEN",
             "Only the platform classifier records derived classes",
         )),
+        // Change records feed analytics; only the platform's derive job streams them.
+        "repo_change_records" if !actor.can("classify") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reads change records",
+        )),
         "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
         ),
@@ -89,6 +95,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_snapshot" => reads::snapshot(db, c),
         "repo_log" => reads::log(db, c),
         "repo_txlog" => reads::txlog(db, c),
+        "repo_change_records" => change_records::records(db, c),
         "repo_commit" => reads::commit(db, c, &settings),
         "repo_merge_base" => reads::merge_base(db, c),
         "repo_merge_plan" => merging::plan(db, c),
