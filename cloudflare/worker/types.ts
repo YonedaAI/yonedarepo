@@ -51,6 +51,8 @@ export interface Env {
   VAULT_KEY?: string;
   AUTH_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
+  /** `secrets-store` enables owner-bound managed Z.ai/MiMo connections (staging only). */
+  MANAGED_PROVIDER_KEYS?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;

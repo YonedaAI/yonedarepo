@@ -1,0 +1,448 @@
+{
+  "env": "dev",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "zone": "yonedarepo.com",
+  "workers_subdomain": "mlong-f01",
+  "prefix": "yonedarepo-staging",
+  "ref": "dev",
+  "secrets_file": "~/.config/yonedarepo/staging.env",
+  "vars": {
+    "origin": "https://dev.yonedarepo.com",
+    "ratelimit": "2001"
+  },
+  "workers": [
+    {
+      "role": "platform",
+      "file": "wrangler.staging-platform.jsonc",
+      "notes": [
+        "Staging platform Worker (dev.yonedarepo.com stack): the same source platform as",
+        "wrangler.platform.jsonc, with its own Durable Object namespaces, Artifacts namespace, R2,",
+        "D1, queues, workflow, check containers and secrets, so it shares nothing with production",
+        "(yonedarepo-dev) or platform-dev. Browsers reach it through the staging agent Worker's",
+        "/api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.",
+        "Keep this file in step with wrangler.platform.jsonc. Secrets, set from stdin:",
+        "OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)",
+        "VAULT_KEY    64 hex characters, shared with yonedarepo-staging-agents",
+        "Run next to the data: a commit makes about ten round trips to its repository's",
+        "Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo",
+        "otherwise. New repository objects are created near the placed Worker.",
+        "Check runs take minutes (container start, the check): one per invocation, up to",
+        "the container limit (4) at once, apart from the derive and projection jobs above."
+      ],
+      "secrets": [
+        "OWNER_TOKEN",
+        "VAULT_KEY"
+      ],
+      "health": "yonedarepo-platform",
+      "config": {
+        "name": "{prefix}-platform",
+        "main": "worker/platform-index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        },
+        "assets": {
+          "directory": "../frontend/dist",
+          "binding": "ASSETS",
+          "not_found_handling": "single-page-application",
+          "run_worker_first": true
+        },
+        "vars": {
+          "ARTIFACTS_NAMESPACE": "{prefix}"
+        },
+        "artifacts": [
+          {
+            "binding": "ARTIFACTS",
+            "namespace": "{prefix}",
+            "remote": true
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority"
+            },
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository"
+            },
+            {
+              "name": "CHECK_RUNNERS",
+              "class_name": "CheckContainer"
+            },
+            {
+              "name": "OBJECT_PUSHES",
+              "class_name": "ObjectPushQueue"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "SourceRepository",
+              "WorkspaceAuthority",
+              "CheckContainer"
+            ]
+          },
+          {
+            "tag": "v2",
+            "new_sqlite_classes": [
+              "ObjectPushQueue"
+            ]
+          },
+          {
+            "tag": "v3",
+            "new_sqlite_classes": [
+              "CommitShard"
+            ]
+          },
+          {
+            "tag": "v4",
+            "new_sqlite_classes": [
+              "LandCombiner"
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "class_name": "CheckContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
+            "max_instances": 4,
+            "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ]
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index",
+            "migrations_dir": "migrations"
+          }
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "PLATFORM_QUEUE",
+              "queue": "{prefix}-platform-jobs"
+            },
+            {
+              "binding": "PLATFORM_CHECKS",
+              "queue": "{prefix}-platform-checks"
+            }
+          ],
+          "consumers": [
+            {
+              "queue": "{prefix}-platform-jobs",
+              "max_batch_size": 10,
+              "max_batch_timeout": 1,
+              "max_concurrency": 20,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-platform-dead-letter"
+            },
+            {
+              "queue": "{prefix}-platform-checks",
+              "max_batch_size": 1,
+              "max_concurrency": 4,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-platform-dead-letter"
+            }
+          ]
+        },
+        "workflows": [
+          {
+            "name": "{prefix}-platform-import",
+            "binding": "PLATFORM_IMPORT",
+            "class_name": "PlatformImportWorkflow"
+          }
+        ],
+        "ratelimits": [
+          {
+            "name": "AUTH_LIMITER",
+            "namespace_id": "{ratelimit}",
+            "simple": {
+              "limit": 30,
+              "period": 60
+            }
+          }
+        ],
+        "services": [
+          {
+            "binding": "SELF",
+            "service": "{prefix}-platform"
+          }
+        ]
+      }
+    },
+    {
+      "role": "agents",
+      "file": "wrangler.staging-agents.jsonc",
+      "notes": [
+        "Staging agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,",
+        "remote MCP). Same code as wrangler.agents.jsonc; it reaches only the staging platform, through",
+        "the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the",
+        "WORKSPACES script binding. Its stores, containers and secrets are its own. App previews are",
+        "off: the apps Worker is bound to production, so APPS and APP_ORIGIN are unset here.",
+        "Only the cheap providers have keys (ZAI glm-5.3-flash at low effort, MiMo mimo-v2.6-flash);",
+        "Codex and Claude have no binding and fail closed with PROVIDER_MISSING. MANAGED_PROVIDER_KEYS",
+        "lets the owner bind those two store keys to a named account as managed connections",
+        "(POST /api/admin/providers/managed); no other config sets it, so production stays off.",
+        "Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy",
+        "(POST /api/admin/workspace/allowance); it is a total, not a daily reset.",
+        "Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:",
+        "OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)",
+        "VAULT_KEY    64 hex characters, shared with yonedarepo-staging-platform",
+        "The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a",
+        "route takes precedence over a Custom Domain, and the most specific route pattern wins. The",
+        "exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same",
+        "pattern production uses for www)."
+      ],
+      "secrets": [
+        "OWNER_TOKEN",
+        "VAULT_KEY"
+      ],
+      "health": "yonedarepo",
+      "config": {
+        "name": "{prefix}-agents",
+        "main": "worker/agents-index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "limits": {
+          "subrequests": 50000
+        },
+        "workers_dev": true,
+        "preview_urls": false,
+        "routes": [
+          {
+            "pattern": "dev.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://dev.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
+          }
+        ],
+        "observability": {
+          "enabled": true
+        },
+        "assets": {
+          "directory": "../frontend/dist",
+          "binding": "ASSETS",
+          "not_found_handling": "single-page-application",
+          "run_worker_first": true
+        },
+        "vars": {
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "ARTIFACTS_NAMESPACE": "{prefix}",
+          "CODEX_MODEL": "gpt-5.6-luna",
+          "CLAUDE_MODEL": "claude-sonnet-5-5",
+          "MIMO_MODEL": "mimo-v2.6-flash",
+          "ZAI_MODEL": "glm-5.3-flash",
+          "STARTER_REPO": "yoneda-website-starter",
+          "SITE_ORIGIN": "https://{prefix}-sites.{subdomain}.workers.dev",
+          "MANAGED_PROVIDER_KEYS": "secrets-store"
+        },
+        "services": [
+          {
+            "binding": "SELF",
+            "service": "{prefix}-agents"
+          },
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-platform"
+          }
+        ],
+        "secrets_store_secrets": [
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "artifacts": [
+          {
+            "binding": "ARTIFACTS",
+            "namespace": "{prefix}",
+            "remote": true
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "REPOSITORIES",
+              "class_name": "RepositoryAuthority"
+            },
+            {
+              "name": "LIVE",
+              "class_name": "LiveRoom"
+            },
+            {
+              "name": "EXECUTIONS",
+              "class_name": "ExecutionContainer"
+            },
+            {
+              "name": "SOURCES",
+              "class_name": "SourceWorkspaceAuthority"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "RepositoryAuthority",
+              "LiveRoom",
+              "ExecutionContainer",
+              "SourceWorkspaceAuthority"
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "class_name": "ExecutionContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
+            "max_instances": 6,
+            "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ]
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-agents-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-agents-index",
+            "migrations_dir": "migrations"
+          }
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "AGENT_QUEUE",
+              "queue": "{prefix}-agents-agent"
+            },
+            {
+              "binding": "CAPTURE_QUEUE",
+              "queue": "{prefix}-agents-capture"
+            },
+            {
+              "binding": "EVALUATE_QUEUE",
+              "queue": "{prefix}-agents-evaluate"
+            }
+          ],
+          "consumers": [
+            {
+              "queue": "{prefix}-agents-agent",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
+            },
+            {
+              "queue": "{prefix}-agents-capture",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
+            },
+            {
+              "queue": "{prefix}-agents-evaluate",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
+            }
+          ]
+        },
+        "ratelimits": [
+          {
+            "name": "AUTH_LIMITER",
+            "namespace_id": "{ratelimit}",
+            "simple": {
+              "limit": 30,
+              "period": 60
+            }
+          }
+        ]
+      }
+    },
+    {
+      "role": "sites",
+      "file": "wrangler.staging-sites.jsonc",
+      "notes": [
+        "Staging website previews for the dev.yonedarepo.com stack: wrangler.sites.jsonc bound to the",
+        "staging agent Worker and its bucket instead of production. workers.dev only; the agent",
+        "Worker's SITE_ORIGIN points here."
+      ],
+      "secrets": [],
+      "config": {
+        "name": "{prefix}-sites",
+        "main": "sites/index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-agents-objects"
+          }
+        ],
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-agents"
+          }
+        ],
+        "observability": {
+          "enabled": true
+        }
+      }
+    }
+  ]
+}

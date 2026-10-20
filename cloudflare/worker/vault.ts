@@ -1,6 +1,7 @@
 //! Provider keys are encrypted in the workspace DO and decrypted only at scoped egress.
 
 import { providerDefinition } from '../../shared/providers';
+import { resolveProviderKey } from './managed-provider';
 import { mimoRouting, validateMiMoKey } from './mimo-routing';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -72,9 +73,20 @@ export async function providerKey(
 /** Rebind only in Worker memory: no plaintext credential leaves this adapter. */
 export async function resealModelAlias(env: Env, owner: string, source: Json, aliasId: string) {
   const route = mimoRouting(source.provider, source.routing);
-  const key = await open(env, owner, source.provider, source.sealed, source.id ?? source.provider);
-  validateMiMoKey(source.provider, key, route);
-  return seal(env, owner, source.provider, key, aliasId);
+  const value = await open(
+    env,
+    owner,
+    source.provider,
+    source.sealed,
+    source.id ?? source.provider,
+  );
+  // A managed reference is rebound as a reference; only its validation reads the store key.
+  validateMiMoKey(
+    source.provider,
+    await resolveProviderKey(env, owner, source.provider, value),
+    route,
+  );
+  return seal(env, owner, source.provider, value, aliasId);
 }
 
 export async function providerCredentials(
@@ -121,7 +133,12 @@ export async function providerCredentials(
   const savedRoute = mimoRouting(provider, value.routing);
   if (model && JSON.stringify(savedRoute) !== JSON.stringify(mimoRouting(provider, routing)))
     throw new Error('Provider routing changed after run approval; start a new run');
-  const key = await open(env, owner, provider, value.sealed, connection);
+  const key = await resolveProviderKey(
+    env,
+    owner,
+    provider,
+    await open(env, owner, provider, value.sealed, connection),
+  );
   validateMiMoKey(provider, key, savedRoute);
   return { key, routing: savedRoute };
 }

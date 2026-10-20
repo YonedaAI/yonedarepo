@@ -15,6 +15,7 @@ import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
 import { failureCode, writeLog } from './logging';
+import { managedProviderRoute } from './managed-provider';
 import { approveOwnerRun } from './owner-run-approval';
 import { projectRoute } from './projects';
 import { settingsRoute } from './provider-settings';
@@ -70,6 +71,8 @@ export async function fetchRequest(
     if (campaignReviewer) return campaignReviewer;
     const reviewer = await reviewerRoute(req, env, principal);
     if (reviewer) return reviewer;
+    const managed = await managedProviderRoute(req, env, principal);
+    if (managed) return managed;
     const settings = await settingsRoute(req, env, principal);
     if (settings) return settings;
     const allowance = await workspaceAllowanceRoute(req, env, principal);
