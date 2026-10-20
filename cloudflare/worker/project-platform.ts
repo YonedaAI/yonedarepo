@@ -4,6 +4,7 @@
 // the project's agent token, which is sealed in the owner's workspace and never returned.
 import {
   AGENT_SCOPES,
+  AGENT_TOKEN,
   bindPlatform,
   PLATFORM_POLICY,
   platformRequest,
@@ -96,7 +97,7 @@ export async function ensureProjectPlatform(
     // Platform names are identifiers; the display name stays on the workspace project.
     name: project.id,
     policy: PLATFORM_POLICY,
-    tokens: [{ name: 'yoneda-agents', scopes: AGENT_SCOPES }],
+    tokens: [{ name: AGENT_TOKEN, scopes: AGENT_SCOPES }],
     ...(onBehalf ? { workspace: owner } : {}),
   };
   const auth = { forward: requester };

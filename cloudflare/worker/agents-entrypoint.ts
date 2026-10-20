@@ -1,6 +1,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { authorizeAppPreview, publishedApp } from './apps';
 import { refreshCandidate } from './candidate-refresh';
+import { captureContribution } from './contribution-capture';
 import { now } from './http';
 import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
@@ -117,9 +118,15 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             created_at: now(),
           };
           await attemptLog(this.env, scope, 'execution.started');
-          // A refresh is a platform merge: no container, no model.
-          if (job.kind === 'capture' && job.payload?.capture_subtype === 'refresh_candidate') {
-            await ledger(this.env, envelope.repo_id, await refreshCandidate(this.env, scope));
+          // Refreshes and contribution captures are platform commits: no container, no model.
+          const platformCapture =
+            job.kind === 'capture'
+              ? { refresh_candidate: refreshCandidate, platform_commit: captureContribution }[
+                  String(job.payload?.capture_subtype)
+                ]
+              : undefined;
+          if (platformCapture) {
+            await ledger(this.env, envelope.repo_id, await platformCapture(this.env, scope));
             message.ack();
             return;
           }

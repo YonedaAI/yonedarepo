@@ -11,6 +11,18 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     let run_id = string(execution, "run_id")?;
     hash(&result["revision"], "commit", &[40, 64])?;
     string(&result["revision"], "repository")?;
+    let platform_commit = j["payload"]["capture_subtype"] == "platform_commit";
+    // A contribution capture is a fresh commit on the frozen base, in the project's own repository.
+    if platform_commit
+        && (result["revision"]["repository"] != j["payload"]["base"]["repository"]
+            || result["parents"] != json!([j["payload"]["base"]["commit"]]))
+    {
+        return Err(yoneda_agents_core::Error::new(
+            "INVALID_CAPTURE",
+            "Contribution capture must rebuild the submission on its frozen base",
+        ));
+    }
+    let compact = platform_commit || j["payload"]["workspace_transport"] == "api-source-v1";
     hash(result, "tree", &[40, 64])?;
     let paths = result["paths"]
         .as_array()
@@ -39,7 +51,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         candidate["integration_manifest"] = manifest.clone();
         candidate["integration_digest"] = j["payload"]["integration_digest"].clone();
     }
-    if j["payload"]["workspace_transport"] == "api-source-v1" {
+    if compact {
         crate::path_lists::compact(db, &mut candidate, "paths")?;
     }
     create(db, "candidates", &cid, &candidate)?;
@@ -60,7 +72,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     // owner policy even if that policy changed before capture existed.
     let policy = repo(db)?["policy"].clone();
     let mut payload = json!({"candidate":candidate,"run_id":run_id,"policy":policy});
-    if j["payload"]["workspace_transport"] == "api-source-v1" {
+    if compact {
         payload["source_integrity"] =
             crate::path_lists::integrity::fields(db, &candidate, &policy)?;
     }

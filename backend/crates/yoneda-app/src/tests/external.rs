@@ -1,13 +1,17 @@
 use super::*;
 fn begin() -> Value {
-    json!({"op":"external_begin","id":"external-one","_grant":"grant-one","fork":"test/external-fork","intent":"Improve the website","context":[],"criteria":["Accessible navigation"]})
+    json!({"op":"external_begin","id":"external-one","_grant":"grant-one","branch":"contributions/external-one","intent":"Improve the website","context":[],"criteria":["Accessible navigation"]})
 }
+const CANONICAL: &str = "yoneda-dev/retry";
+
 #[test]
 fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeline() {
     let db = repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap());
     let attempt = call(&db, begin()).unwrap();
     assert_eq!(attempt["external_grant"], "grant-one");
-    assert_eq!(attempt["workspace_transport"], "json-v1");
+    assert_eq!(attempt["workspace_transport"], "platform-branch-v1");
+    assert_eq!(attempt["external_branch"], "contributions/external-one");
+    assert_eq!(attempt["external_fork"], CANONICAL);
     assert_eq!(call(&db, begin()).unwrap(), attempt);
     let context = json!({"op":"context_publish","_grant":"grant-one","job_id":"job:external-one","epoch":1,"record":{"id":"context:external","kind":"finding","statement":"Navigation needs focus styles","purpose":"Guide the change","intent_id":"intent:run:external-one","author":"owner"}});
     let node = call(&db, context.clone()).unwrap();
@@ -36,7 +40,10 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
         )
         .is_err()
     );
-    let bind = json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":{"repository":"test/external-fork","commit":"b".repeat(40)}});
+    // Only a commit in the project's own repository can be bound, and only once.
+    let foreign = json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":{"repository":"attacker/other","commit":"b".repeat(40)}});
+    assert_eq!(call(&db, foreign).unwrap_err().code, "FENCED");
+    let bind = json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":{"repository":CANONICAL,"commit":"b".repeat(40)}});
     call(&db, bind.clone()).unwrap();
     assert!(
         call(&db, {
@@ -46,48 +53,64 @@ fn external_attempts_derive_authorship_fence_submission_and_share_capture_pipeli
         })
         .is_err()
     );
-    let submit = json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"d".repeat(64)});
+    let submit = json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one"});
     call(&db, submit.clone()).unwrap();
     call(&db, submit).unwrap();
     let captured = call(&db, json!({"op":"claim","job_id":"capture:external-one"})).unwrap();
     assert_eq!(captured["payload"]["base"]["commit"], "a".repeat(40));
-    assert_eq!(captured["payload"]["workspace"], "d".repeat(64));
+    assert_eq!(captured["payload"]["capture_subtype"], "platform_commit");
+    assert_eq!(
+        captured["payload"]["contribution"],
+        json!({"repository":CANONICAL,"commit":"b".repeat(40)})
+    );
+    assert!(captured["payload"].get("workspace").is_none());
 }
 
 #[test]
-fn contributions_ignore_stored_repository_transport_and_forged_git_receipts() {
+fn contribution_capture_must_rebuild_the_submission_on_its_frozen_base() {
     let db = repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap());
-    let mut repository = crate::storage::get(&db, "repository", "repo").unwrap();
-    repository["workspace_transport"] = json!("api-source-v1");
-    crate::storage::save(&db, "repository", "repo", &repository).unwrap();
-
-    let attempt = call(&db, begin()).unwrap();
-    assert_eq!(attempt["workspace_transport"], "json-v1");
-    assert_eq!(attempt["payload"]["run"]["workspace_transport"], "json-v1");
+    call(&db, begin()).unwrap();
     call(
         &db,
         json!({"op":"external_freeze","attempt_id":"external-one","_grant":"grant-one"}),
     )
     .unwrap();
-    let revision = json!({"repository":"test/external-fork","commit":"b".repeat(40)});
-    call(
-        &db,
-        json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":revision}),
-    )
-    .unwrap();
-    call(
-        &db,
-        json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64),"fork_revision":{"repository":"attacker/other","commit":"c".repeat(40)},"git_verified":true}),
-    )
-    .unwrap();
+    let revision = json!({"repository":CANONICAL,"commit":"b".repeat(40)});
+    call(&db,json!({"op":"external_bind","attempt_id":"external-one","_grant":"grant-one","revision":revision})).unwrap();
+    // Forged receipts in the submission are ignored: the bound revision is the only input.
+    call(&db,json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64),"git_verified":true})).unwrap();
     let completed = crate::storage::get(&db, "jobs", "job:external-one").unwrap();
     assert!(completed["result"].get("git_verified").is_none());
-    assert!(completed["result"].get("fork_revision").is_none());
-    let capture = crate::storage::get(&db, "jobs", "capture:external-one").unwrap();
-    assert_eq!(capture["payload"]["workspace"], "f".repeat(64));
-    assert!(capture["payload"].get("source_revision").is_none());
-    let replay = json!({"op":"external_submit","attempt_id":"external-one","_grant":"grant-one","workspace":"f".repeat(64)});
-    assert_eq!(call(&db, replay).unwrap()["workspace"], "f".repeat(64));
+    assert!(completed["result"].get("workspace").is_none());
+    let capture = call(&db, json!({"op":"claim","job_id":"capture:external-one"})).unwrap();
+    let finish = |revision: Value, parents: Value| {
+        call(
+            &db,
+            json!({"op":"finish","job_id":"capture:external-one","epoch":capture["epoch"],
+            "result":{"id":"external-candidate","revision":revision,"parents":parents,"tree":"d".repeat(40),
+            "paths":["index.html"],"summary":"Contribution","diff_digest":"e".repeat(64)}}),
+        )
+    };
+    let fresh = json!({"repository":CANONICAL,"commit":"c".repeat(40)});
+    for (revision, parents) in [
+        (
+            json!({"repository":"attacker/other","commit":"c".repeat(40)}),
+            json!(["a".repeat(40)]),
+        ),
+        (fresh.clone(), json!(["b".repeat(40)])),
+        (fresh.clone(), json!(["a".repeat(40), "b".repeat(40)])),
+    ] {
+        assert_eq!(
+            finish(revision, parents).unwrap_err().code,
+            "INVALID_CAPTURE"
+        );
+    }
+    finish(fresh.clone(), json!(["a".repeat(40)])).unwrap();
+    let candidate = crate::storage::get(&db, "candidates", "external-candidate").unwrap();
+    assert_eq!(candidate["revision"], fresh);
+    let evaluator = crate::storage::get(&db, "jobs", "evaluate:external-candidate").unwrap();
+    assert_eq!(evaluator["payload"]["workspace_transport"], "api-source-v1");
+    assert!(evaluator["payload"]["source_integrity"].is_object());
 }
 #[test]
 fn expired_external_attempts_never_schedule_a_paid_harness() {

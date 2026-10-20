@@ -10,7 +10,6 @@ export async function remoteTool(
   repo: string,
   name: string,
   args: Json,
-  origin: string,
   sessionId?: string,
 ): Promise<Json> {
   const identity: Json = {
@@ -41,7 +40,6 @@ export async function remoteTool(
           ].includes(n.kind),
         )
         .slice(-50),
-      git_url: `${origin}/git/${repo}/source`,
     });
   }
   if (name === 'context_usage')
@@ -69,8 +67,16 @@ export async function remoteTool(
         path: args.path,
       }),
     );
-  if (['attempt_begin', 'attempt_status', 'attempt_submit'].includes(name))
-    return finish(await contribution(env, principal, repo, name, args, origin, sessionId));
+  if (
+    [
+      'attempt_begin',
+      'attempt_status',
+      'attempt_read',
+      'attempt_commit',
+      'attempt_submit',
+    ].includes(name)
+  )
+    return finish(await contribution(env, principal, repo, name, args, sessionId));
   if (name === 'context_publish') {
     if (principal.grant?.scope !== 'contribute')
       throw new Error('A contribution grant is required');

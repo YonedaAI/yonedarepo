@@ -1,3 +1,4 @@
+import { AGENT_TOKEN, platformRequest } from './agents-platform';
 import { readJson, response } from './http';
 import { writeLog } from './logging';
 import { ledger } from './storage';
@@ -17,7 +18,7 @@ export async function deleteRepository(req: Request, env: Env, principal: Princi
       id,
       confirm_name,
       _workspace: principal.workspace,
-      ...(project ? { project, namespace: env.ARTIFACTS_NAMESPACE } : {}),
+      ...(project ? { project } : {}),
     });
   } catch (cause) {
     // Worker and DO code propagate independently; never report a missing product action.
@@ -32,6 +33,7 @@ export async function deleteRepository(req: Request, env: Env, principal: Princi
   }
   // The Repo DO outbox also retries this projection if the request loses its acknowledgment.
   if (principal.role === 'user') {
+    if (project?.platform?.repo) await revokeAgentToken(env, req, id, project.platform.repo);
     try {
       await workspace(env, principal.workspace, { op: 'project_delete', id });
     } catch {
@@ -42,9 +44,21 @@ export async function deleteRepository(req: Request, env: Env, principal: Princi
   return response(result);
 }
 
-/** Re-arm an existing cleanup entry when an in-flight fork/import finishes after deletion. */
-export async function cleanupLateRemote(env: Env, repo: string, name: string) {
-  await ledger(env, repo, { op: 'retry_deletion_cleanup', name });
+/**
+ * The deleted project's agent token stops working, revoked with the owner's own credential.
+ * The platform repository itself stays with its owner, who manages it on the platform.
+ */
+async function revokeAgentToken(env: Env, owner: Request, id: string, repo: string) {
+  try {
+    await platformRequest(
+      env,
+      { forward: owner },
+      'DELETE',
+      `/repos/${repo}/tokens/${AGENT_TOKEN}`,
+    );
+  } catch {
+    writeLog('repository.token_revocation_deferred', { repo_id: id });
+  }
 }
 
 export async function deliverDeletion(env: Env, repo: string, entry: Json) {
@@ -52,6 +66,7 @@ export async function deliverDeletion(env: Env, repo: string, entry: Json) {
     if (entry.payload.repo_id !== repo) throw new Error('Deletion identity mismatch');
     await workspace(env, entry.payload.workspace, { op: 'project_delete', id: repo });
   } else {
+    // Drains Artifacts cleanup recorded before projects moved to the platform.
     await env.ARTIFACTS.delete(entry.payload.name);
   }
 }

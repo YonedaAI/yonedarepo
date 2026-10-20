@@ -277,7 +277,7 @@ it('denies research and external contribution attempts the hosted delegation cap
   await call({ op: 'start_run', id: 'research', intent: 'Research a retry policy' });
   const research = await claim('job:research:research');
   await expect(delegate(research)).rejects.toMatchObject({ code: 'FORBIDDEN' });
-  const external = await call({ op: 'external_begin', id: 'external-test', _grant: 'grant-test', intent: 'Contribute locally', fork: 'yoneda-test/external-fork' });
+  const external = await call({ op: 'external_begin', id: 'external-test', _grant: 'grant-test', intent: 'Contribute locally', branch: 'contributions/external-test' });
   await expect(delegate(external)).rejects.toMatchObject({ code: 'FORBIDDEN' });
 });
 

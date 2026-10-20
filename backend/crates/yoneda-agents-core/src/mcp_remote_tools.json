@@ -1,7 +1,7 @@
 [
   {
     "name": "repo_context",
-    "description": "Read the repository, current source, previous runs, human decisions and context. Canonical Git access is read only.",
+    "description": "Read the repository, previous runs, human decisions and context. Source is read through an attempt (attempt_read).",
     "inputSchema": {
       "type": "object",
       "properties": {},
@@ -224,7 +224,7 @@
   },
   {
     "name": "attempt_begin",
-    "description": "Start a one-hour external contribution from the current published base. Clone git_url, check out base.commit and build locally. No hosted inference is started.",
+    "description": "Start a one-hour external contribution from the current published base. Read its source with attempt_read and commit files with attempt_commit; nothing runs hosted inference.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -271,8 +271,71 @@
     }
   },
   {
+    "name": "attempt_read",
+    "description": "List a directory (path omitted or a directory) or read a file of this attempt's current source: its latest commit, or the frozen base before the first commit.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attempt_id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "attempt_commit",
+    "description": "Commit regular-file changes onto this attempt's own branch (at most 500 files, 1 MiB each, 4 MiB per call). Each call builds on the attempt's previous commit; only attempt_submit makes it a candidate.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "changes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content_b64": {
+                "type": "string"
+              },
+              "executable": {
+                "type": "boolean"
+              },
+              "delete": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "attempt_id",
+        "changes"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "attempt_submit",
-    "description": "Fence contribution writes and submit the observed default-branch HEAD for independent fresh Git capture and evaluation. Human selection is still required.",
+    "description": "Fence contribution writes and submit the attempt's latest committed state. The platform rebuilds it as a fresh commit on the frozen base for independent evaluation; human selection is still required.",
     "inputSchema": {
       "type": "object",
       "properties": {

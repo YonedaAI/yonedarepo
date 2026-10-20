@@ -9,7 +9,6 @@ import {
 } from './candidate-source';
 import { comparisonOwnerRoute } from './comparison-owner-route';
 import { evidence } from './evidence';
-import { externalGit } from './external-git';
 import { grantRoute } from './grants';
 import { guidedRoute } from './guided-route';
 import { historyDetail } from './history-archive';
@@ -50,8 +49,6 @@ export async function fetchRequest(
       models: { codex: env.CODEX_MODEL, claude: env.CLAUDE_MODEL },
     });
   if (url.pathname.startsWith('/mcp/')) return remoteMcp(req, env, url.pathname.split('/')[2]);
-  if (url.pathname.startsWith('/git/'))
-    return externalGit(req, env, url.pathname.split('/').filter(Boolean));
   if (!url.pathname.startsWith('/api/')) return websiteAssets(req, env);
   // The platform's public API is another Worker's surface; the agent layer only proxies it.
   if (url.pathname.startsWith('/api/v1/'))

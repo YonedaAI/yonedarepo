@@ -16,6 +16,8 @@ export type PlatformAuth = { token: string } | { forward: Request };
  */
 export const PLATFORM_NAMESPACE = 'platform';
 export const AGENT_SCOPES = ['read', 'write', 'check'];
+/** The name of the project's agent token on its platform repository. */
+export const AGENT_TOKEN = 'yoneda-agents';
 /** The project's repository policy: agent checks must pass and the owner must approve. */
 export const PLATFORM_POLICY = { required_checks: ['yoneda-checks'], approvals: 1 };
 
