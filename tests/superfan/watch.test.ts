@@ -234,6 +234,25 @@ describe('superfan watch pass', () => {
     );
   });
 
+  it('explains a rejected token by shape, never by value', async () => {
+    const pasted = `token for superfan ${ANALYTICS_TOKEN} created today`;
+    fakeUpstreams(() =>
+      Response.json(
+        { data: null, errors: [{ message: 'Authentication failed (status: 400)' }] },
+        { status: 400 },
+      ),
+    );
+    const e = testEnv({ CF_ANALYTICS_TOKEN: pasted });
+    const d = deps(e, { now: start });
+    await feed(d.ledger, hour(recent(start)), start);
+    await runWatch(e, d);
+    const [finding] = await d.ledger.findings('open', 1);
+    expect(finding.summary).toBe(
+      `GraphQL HTTP 400: Authentication failed (status: 400) (user token: HTTP 400; account token: HTTP 400; length ${pasted.length}, contains whitespace; piece lengths 5/3/8/${ANALYTICS_TOKEN.length}/7/5)`,
+    );
+    expect(JSON.stringify(finding)).not.toContain(ANALYTICS_TOKEN);
+  });
+
   it('refuses to watch production', async () => {
     const calls = fakeUpstreams(analytics());
     const e = testEnv({
