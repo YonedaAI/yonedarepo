@@ -1,17 +1,19 @@
 //! `cargo xtask deploy|rollback|status --env dev|prod|ephemeral-<id>`: one command per
 //! environment, driven by `infra/envs/<env>.json` (Workers in cutover order).
 use crate::deploy_guard::{self as guard, Facts, Options, short};
+use crate::deploy_prebuilt::prebuilt;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::{self, table};
 use crate::process::Result;
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     BuildWasm,
     BuildFrontend,
+    InstallPrebuilt,
+    PushImage,
     Migrate { database: String, config: String },
     ActiveGate { worker: usize },
     Deploy { worker: usize, dry_run: bool },
@@ -23,19 +25,28 @@ impl Step {
     /// Whether the step changes anything remote (dry runs must contain none).
     pub(crate) fn mutates_remote(&self) -> bool {
         match self {
-            Self::Migrate { .. } | Self::Secrets { .. } => true,
+            Self::Migrate { .. } | Self::Secrets { .. } | Self::PushImage => true,
             Self::Deploy { dry_run, .. } => !dry_run,
             Self::BuildWasm
             | Self::BuildFrontend
+            | Self::InstallPrebuilt
             | Self::ActiveGate { .. }
             | Self::Health { .. } => false,
         }
     }
 }
 
-/// The ordered plan: build, migrate, then per Worker deploy -> secrets -> health.
-pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool) -> Vec<Step> {
-    let mut steps = vec![Step::BuildWasm, Step::BuildFrontend];
+/// The ordered plan: build (with --prebuilt: install CI's outputs locally, then push its
+/// runtime image), migrate, then per Worker deploy -> secrets -> health.
+pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool, prebuilt: bool) -> Vec<Step> {
+    let mut steps = if prebuilt {
+        vec![Step::InstallPrebuilt]
+    } else {
+        vec![Step::BuildWasm, Step::BuildFrontend]
+    };
+    if prebuilt && !dry_run && workers.iter().any(|w| w.has_containers) {
+        steps.push(Step::PushImage);
+    }
     if !dry_run {
         let mut seen = BTreeSet::new();
         for worker in workers {
@@ -78,7 +89,7 @@ pub(crate) const LEGACY_ENV: &str = "prod-legacy";
 
 pub(crate) fn mode(args: &[String]) -> Result<Mode> {
     match args.windows(2).find(|v| v[0] == "--env").map(|v| v[1].as_str()) {
-        None => Err("Usage: cargo xtask deploy --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]\n       cargo xtask deploy --env prod-legacy --confirm  (old single-Worker production deploy)\nRefusing: name an environment.".into()),
+        None => Err("Usage: cargo xtask deploy --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active] [--prebuilt <dir>]\n       cargo xtask deploy --env prod-legacy --confirm  (old single-Worker production deploy)\nRefusing: name an environment.".into()),
         Some(LEGACY_ENV) => Ok(Mode::Legacy),
         Some(_) => Ok(Mode::Spec),
     }
@@ -86,9 +97,9 @@ pub(crate) fn mode(args: &[String]) -> Result<Mode> {
 
 /// The legacy production deploy passes the same guards as `--env prod`.
 pub(crate) async fn legacy_preflight(args: &[String]) -> Result<()> {
-    let options = Options::from_args(args);
-    if options.dry_run {
-        return Err("The legacy deploy has no dry run.".into());
+    let options = Options::from_args(args)?;
+    if options.dry_run || options.prebuilt.is_some() {
+        return Err("The legacy deploy has no dry run and no --prebuilt.".into());
     }
     let spec = Spec::load(&Env::Prod)?;
     let mut facts = guard::git_facts(&spec)?;
@@ -100,7 +111,7 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;
     let lock = Lock::load(&env)?;
-    run(&env, &spec, &lock, &Options::from_args(args)).await
+    run(&env, &spec, &lock, &Options::from_args(args)?).await
 }
 
 /// Deploys `spec` with the given D1 identities (`infra up` passes the lock it just built).
@@ -112,7 +123,11 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
     }
     guard::preflight(env, spec, &facts, options)?;
     let head = facts.head.clone();
-    let plan = steps(env, &workers, options.dry_run);
+    let prebuilt = match &options.prebuilt {
+        Some(dir) => Some(crate::deploy_prebuilt::check(dir, &head)?),
+        None => None,
+    };
+    let plan = steps(env, &workers, options.dry_run, prebuilt.is_some());
     if options.dry_run && plan.iter().any(Step::mutates_remote) {
         return Err("Internal error: the dry-run plan contains a remote change".into());
     }
@@ -123,6 +138,7 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
         workers: &workers,
         options,
         head: &head,
+        prebuilt: prebuilt.as_ref(),
     };
     let versions = |dry_run: bool| {
         (!dry_run)
@@ -182,6 +198,7 @@ struct Run<'a> {
     workers: &'a [Deployable],
     options: &'a Options,
     head: &'a str,
+    prebuilt: Option<&'a crate::deploy_prebuilt::Prebuilt>,
 }
 
 impl Run<'_> {
@@ -197,6 +214,8 @@ impl Run<'_> {
             match step {
                 Step::BuildWasm => crate::commands::build_wasm()?,
                 Step::BuildFrontend => frontend_build()?,
+                Step::InstallPrebuilt => prebuilt(self.prebuilt)?.install(spec)?,
+                Step::PushImage => prebuilt(self.prebuilt)?.push(spec)?,
                 Step::Migrate { database, config } => wrangler::run(
                     &spec.account_id,
                     &[
@@ -219,7 +238,10 @@ impl Run<'_> {
                 Step::Deploy { worker, dry_run } => {
                     let w = &workers[worker];
                     let revision = format!("BUILD_REVISION:{head}");
-                    let mut deploy = vec!["deploy", "--config", &w.config_path, "--var", &revision];
+                    // With --prebuilt, containers deploy the pushed image from a config copy.
+                    let copy = crate::deploy_prebuilt::ConfigCopy::write(self.prebuilt, w, spec)?;
+                    let config = copy.as_ref().map_or(w.config_path.as_str(), |c| c.path());
+                    let mut deploy = vec!["deploy", "--config", config, "--var", &revision];
                     if dry_run {
                         deploy.push("--dry-run");
                     }
@@ -227,7 +249,7 @@ impl Run<'_> {
                     let state = if dry_run { "dry run" } else { "deployed" };
                     summary.insert(worker, row(w, state, "-"));
                 }
-                Step::Secrets { worker } => ensure_secrets(spec, &workers[worker])?,
+                Step::Secrets { worker } => crate::deploy_secrets::ensure(spec, &workers[worker])?,
                 Step::Health { worker } => {
                     let w = &workers[worker];
                     let live = crate::deploy_live::wait_for_revision(w, head).await;
@@ -281,51 +303,6 @@ pub(crate) fn frontend_build() -> Result<()> {
         }
     }
     Ok(())
-}
-
-/// Uploads only the declared secrets the Worker lacks; existing values are never rotated.
-fn ensure_secrets(spec: &Spec, worker: &Deployable) -> Result<()> {
-    let listing = wrangler::output(
-        &spec.account_id,
-        &[
-            "secret",
-            "list",
-            "--format",
-            "json",
-            "--config",
-            &worker.config_path,
-        ],
-    )?;
-    let present: BTreeSet<String> = serde_json::from_slice::<Value>(&listing)?
-        .as_array()
-        .ok_or("Unexpected secret inventory; refusing changes")?
-        .iter()
-        .filter_map(|s| s["name"].as_str().map(str::to_owned))
-        .collect();
-    let missing: Vec<&String> = worker
-        .secrets
-        .iter()
-        .filter(|s| !present.contains(*s))
-        .collect();
-    if missing.is_empty() {
-        return Ok(());
-    }
-    let values = crate::infra::secrets::read(&spec.secrets_path())?;
-    let mut upload = serde_json::Map::new();
-    for name in missing {
-        let value = values.get(name).ok_or_else(|| {
-            format!(
-                "{name} is missing on {} and in {}",
-                worker.name, spec.secrets_file
-            )
-        })?;
-        upload.insert(name.clone(), Value::String(value.clone()));
-    }
-    wrangler::run_with_stdin(
-        &spec.account_id,
-        &["secret", "bulk", "--config", &worker.config_path],
-        &serde_json::to_vec(&upload)?,
-    )
 }
 
 #[cfg(test)]

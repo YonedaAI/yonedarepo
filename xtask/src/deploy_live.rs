@@ -88,7 +88,7 @@ pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> 
 
 pub(crate) async fn rollback(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
-    let options = Options::from_args(args);
+    let options = Options::from_args(args)?;
     if env.is_prod() && !options.confirm {
         return Err("Refusing to roll back prod without --confirm.".into());
     }
