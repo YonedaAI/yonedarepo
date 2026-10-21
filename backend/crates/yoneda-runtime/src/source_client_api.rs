@@ -12,7 +12,13 @@ use crate::source_client::{
 };
 use http::{SourceHttp, WireRequest};
 use serde_json::{Value, json};
-use std::sync::Arc;
+use std::{
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
+/// How long a validated status may serve reads. Each status is a container-to-Worker round trip
+/// (about 1 s from a far colo); this agent's own writes clear it, other writers invalidate mounts.
+const STATUS_TTL: Duration = Duration::from_secs(2);
 pub fn source_operation(alias: &str, operation: &str, arguments: Value) -> Result<Value> {
     tools::source_operation(alias, operation, arguments)
 }
@@ -23,8 +29,24 @@ pub struct ApiSourceClient {
     expected_workspace: String,
     expected_view: String,
     read_only: bool,
+    recent_status: Mutex<Option<(Instant, Value)>>,
 }
 impl ApiSourceClient {
+    /// A status validated within STATUS_TTL, for reads; writes and seals use `status`.
+    fn recent_status(&self) -> Result<Value> {
+        if let Ok(cached) = self.recent_status.lock()
+            && let Some((at, status)) = cached.as_ref()
+            && at.elapsed() < STATUS_TTL
+        {
+            return Ok(status.clone());
+        }
+        self.status()
+    }
+    fn forget_status(&self) {
+        if let Ok(mut cached) = self.recent_status.lock() {
+            cached.take();
+        }
+    }
     pub fn status(&self) -> Result<Value> {
         let status = self.http.command("source_status", json!({}))?;
         if status["version"] != 1
@@ -51,6 +73,9 @@ impl ApiSourceClient {
             ));
         }
         integer(&status, "workspace_version")?;
+        if let Ok(mut cached) = self.recent_status.lock() {
+            *cached = Some((Instant::now(), status.clone()));
+        }
         Ok(status)
     }
     fn stat_value(&self, path: &str, version: Option<u64>) -> Result<Value> {
@@ -114,7 +139,7 @@ impl SourceBackend for ApiSourceClient {
         if path.is_empty() {
             return Ok(SourceNode {
                 path: "".into(),
-                version: integer(&self.status()?, "workspace_version")?,
+                version: integer(&self.recent_status()?, "workspace_version")?,
                 mode: 0o040755,
                 size: 0,
             });
@@ -122,7 +147,8 @@ impl SourceBackend for ApiSourceClient {
         node(&self.stat_value(path, None)?)
     }
     fn list(&self, path: &str) -> Result<Vec<SourceNode>> {
-        let version = integer(&self.status()?, "workspace_version")?;
+        // The first page names the version; later pages must match it (no status round trip).
+        let mut version: Option<Value> = None;
         // source_list is a textual prefix query, while SourceBackend lists directory children.
         // Include the delimiter so the directory itself and similarly named siblings stay out.
         // Callers may already pass a slash-terminated directory; never send a doubled delimiter.
@@ -135,13 +161,15 @@ impl SourceBackend for ApiSourceClient {
         let mut cursor = Value::Null;
         let mut entries = Vec::new();
         loop {
-            let page = self.http.command(
-                "source_list",
-                json!({"prefix":prefix,"recursive":false,
-                "cursor":cursor,"limit":200,"expected_workspace_version":version}),
-            )?;
+            let mut args = json!({"prefix":prefix,"recursive":false,"cursor":cursor,"limit":200});
+            if let Some(version) = &version {
+                args["expected_workspace_version"] = version.clone();
+            }
+            let page = self.http.command("source_list", args)?;
+            let current = version.get_or_insert_with(|| page["workspace_version"].clone());
             if page["workspace_id"] != self.expected_workspace
-                || page["workspace_version"] != version
+                || page["workspace_version"] != *current
+                || !page["workspace_version"].is_u64()
             {
                 return Err(failure("SOURCE_FENCED", "Source list identity changed"));
             }
@@ -194,7 +222,9 @@ impl SourceBackend for ApiSourceClient {
         if self.read_only {
             return Err(failure("SOURCE_READ_ONLY", "Source view is read-only"));
         }
-        mutations::apply(self, request_id, change)
+        let applied = mutations::apply(self, request_id, change);
+        self.forget_status();
+        applied
     }
 }
 fn node(value: &Value) -> Result<SourceNode> {
@@ -237,3 +267,6 @@ fn integer(value: &Value, key: &str) -> Result<u64> {
         .filter(|value| *value <= 9_007_199_254_740_991)
         .ok_or_else(|| failure("SOURCE_FENCED", "Invalid source integer metadata"))
 }
+#[cfg(test)]
+#[path = "tests/source_client_api.rs"]
+mod tests;
