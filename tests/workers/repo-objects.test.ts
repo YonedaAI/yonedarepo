@@ -37,7 +37,8 @@ it('serves objects by id from the cache tiers and resumes across the response bu
     body: { objects: [{ id: 'f'.repeat(40), kind: 'blob' }, { id: blobs[0].id, kind: 'tree' }] },
   });
   expect(odd.body.missing).toEqual(['f'.repeat(40), blobs[0].id]);
-  expect(misses).toEqual([`blob:${'f'.repeat(40)}`, `tree:${blobs[0].id}`]);
+  // Lookups run concurrently, so the store records misses in completion order.
+  expect([...misses].sort()).toEqual([`blob:${'f'.repeat(40)}`, `tree:${blobs[0].id}`].sort());
   expect((await api(`${repo}/objects`, owner, { body: { objects: [{ id: 'nope', kind: 'blob' }] } })).status).toBe(400);
   expect((await api(`${repo}/objects`, {}, { body: { objects: blobs } })).status).toBe(401);
 });
