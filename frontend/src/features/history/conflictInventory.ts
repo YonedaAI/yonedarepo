@@ -20,6 +20,8 @@ export interface ConflictInventoryItem {
   path_sets: Record<ConflictPathSection, ConflictPathSet>;
   evidence?: Record<string, unknown>;
   status?: string;
+  /** Server reason a refresh would be refused (published or cancelled run). */
+  refresh_blocked?: string;
 }
 export interface ConflictOverlapItem {
   key: string;
@@ -79,6 +81,7 @@ export function normalizeConflictInventory(raw: unknown): ConflictInventoryView 
       path_sets: sets,
       ...(isRecord(row.evidence) ? { evidence: row.evidence } : {}),
       ...(typeof row.status === 'string' ? { status: row.status } : {}),
+      ...(typeof row.refresh_blocked === 'string' ? { refresh_blocked: row.refresh_blocked } : {}),
     };
     normalized.set(item.key, item);
   }
