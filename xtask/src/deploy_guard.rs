@@ -30,7 +30,8 @@ impl Options {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Facts {
     pub head: String,
-    pub clean: bool,
+    /// `git status --porcelain` lines; empty means a clean tree.
+    pub dirty: Vec<String>,
     /// Tips of the spec's branch (local and origin) when the spec names one.
     pub ref_tips: Vec<String>,
     /// Prod only: each dev Worker's live `/health` revision (`None` when unreachable).
@@ -41,8 +42,13 @@ pub(crate) struct Facts {
 
 /// Everything checked before the first build step.
 pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options) -> Result<()> {
-    if !facts.clean {
-        return Err("Refusing to deploy: the working tree has uncommitted changes. Commit or stash them first.".into());
+    if !facts.dirty.is_empty() {
+        let shown: Vec<&str> = facts.dirty.iter().take(5).map(String::as_str).collect();
+        return Err(format!(
+            "Refusing to deploy: the working tree has uncommitted changes ({}). Commit or stash them first.",
+            shown.join(", ")
+        )
+        .into());
     }
     if let Some(branch) = &spec.git_ref
         && !facts.ref_tips.contains(&facts.head)
@@ -164,7 +170,10 @@ pub(crate) fn git_facts(spec: &Spec) -> Result<Facts> {
     }
     Ok(Facts {
         head: head()?,
-        clean: git(&["status", "--porcelain"])?.is_empty(),
+        dirty: git(&["status", "--porcelain"])?
+            .lines()
+            .map(str::to_owned)
+            .collect(),
         ref_tips: tips,
         ..Facts::default()
     })
