@@ -149,6 +149,8 @@ fn original_slot<S: SqlStore>(db: &S, run: &Value, e: &Value) -> Result<i64> {
 pub(in crate::commands) fn ancestry<S: SqlStore>(db: &S, run: &Value, c: &Value) -> Result<()> {
     let mut candidate = c.clone();
     for _ in 0..3 {
+        // A refresh moves only the base; lineage, slot and approval are its origin's.
+        candidate = super::refresh::origin(db, run, &candidate)?;
         let e = get(db, "executions", &string(&candidate, "execution")?)?;
         if e["comparison_role"] == "repair" {
             slot(run, &e)?;

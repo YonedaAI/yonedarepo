@@ -31,6 +31,10 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             record["evaluation_status"] = candidate["status"].clone();
             if candidate["status"] != "eligible" {
                 record["status"] = candidate["status"].clone();
+                // A failed check of the refreshed result names its reason, so callers stop waiting.
+                if record["error"].is_null() && !candidate["error"].is_null() {
+                    record["error"] = candidate["error"].clone();
+                }
             }
         }
     }
