@@ -10,6 +10,9 @@ import { bindings, sha256, sourceFixture, verifiedTicket } from '../../tools/sou
 
 afterEach(reset);
 const bytes = new Uint8Array([0, 255, 128, 192, 10]);
+// A grant that expires soon, so the test can wait for its ticket to lapse. It must outlive
+// signing plus the ticket request: 500 ms did not on a loaded CI runner (FENCED 409).
+const SHORT_GRANT_MS = 3_000;
 const waiting = (at: number) => new Promise(resolve => setTimeout(resolve, Math.max(0, at - Date.now() + 10)));
 async function contexts(name: string) {
   const f = await sourceFixture(name);
@@ -56,7 +59,7 @@ it('wrong checksum cannot become a verified/writable pointer and does not refund
 
 it('cleanup ignores payload key, fences registration natively, and recovers a lost completion acknowledgement', async () => {
   const f = await sourceFixture('adapter-cleanup');
-  const ticket = await verifiedTicket(f, 'src/raw.bin', bytes, 0, 0, await f.actor(Date.now() + 300));
+  const ticket = await verifiedTicket(f, 'src/raw.bin', bytes, 0, 0, await f.actor(Date.now() + SHORT_GRANT_MS));
   await waiting(ticket.expires_at);
   const due = await f.rpc({ op: 'source_gc_due' }) as SourceGcDue;
   expect(due.tickets.some(value => value.id === ticket.id)).toBe(true);
