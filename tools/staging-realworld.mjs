@@ -11,6 +11,7 @@
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <id>]
+//        node tools/staging-realworld.mjs --fund <username>
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -19,7 +20,7 @@ import { parseArgs, promisify } from 'node:util';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
-import { bindManagedProviders, compareRun, createProject, deleteProject, ensureAllowance, publish, refreshOther, spend } from './staging/project-flow.mjs';
+import { bindManagedProviders, compareRun, createProject, fundAccount, deleteProject, ensureAllowance, publish, refreshOther, spend } from './staging/project-flow.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -28,6 +29,8 @@ const { values } = parseArgs({
     client: { type: 'string', default: 'https://yonedarepo-staging-bench.mlong-f01.workers.dev' },
     only: { type: 'string' },
     // Resume items 3-4 on an existing project and finished compare run (ids from evidence).
+    // Fund a person's own staging account (managed models + $5) and exit; no kit items run.
+    fund: { type: 'string' },
     project: { type: 'string' },
     run: { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
@@ -38,6 +41,11 @@ const only = values.only ? new Set(values.only.split(',')) : null;
 const wanted = (id) => (!only || only.has(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 const { OWNER_TOKEN } = readEnvFile('staging.env');
+if (values.fund) {
+  const funded = await fundAccount(new Session(values.origin, { bearer: OWNER_TOKEN }), values.fund);
+  console.log(`Funded ${values.fund}: managed-zai + managed-mimo, ${funded.already_funded ? 'allowance already set' : `$${funded.limit_microusd / 1e6} allowance`}`);
+  process.exit(0);
+}
 const kit = kitCredentials();
 const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const owner = new Session(values.origin, { bearer: OWNER_TOKEN });
