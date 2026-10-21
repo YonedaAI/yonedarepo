@@ -261,7 +261,7 @@ pub(super) fn errno(error: Error) -> Errno {
         _ => {
             // Unclassified failures surface to processes as EIO; keep the cause for operators.
             tracing::warn!(event = "source.fs_failed", error_code = %error.code,
-                error_message = %crate::attempt_failure::detail(&error));
+                error_message = %crate::source_client::failure_detail(&error));
             Errno::EIO
         }
     }

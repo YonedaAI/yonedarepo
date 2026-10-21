@@ -119,6 +119,17 @@ pub fn validate_path(path: &str, root: bool) -> Result<()> {
 pub fn failure(code: &str, message: &str) -> Error {
     Error::new(code, message)
 }
+/// A failure's message for operator logs: one line, at most 300 characters. Messages are
+/// built by the runtime or returned by the Worker broker; neither carries payloads or keys.
+/// Lives here because the FUSE layer and its standalone test crate include this module.
+pub fn failure_detail(error: &Error) -> String {
+    error
+        .message
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(300)
+        .collect()
+}
 /// A local filesystem failure with its OS cause (for example a FUSE operation's EIO).
 pub fn io_failure(context: &str, error: &std::io::Error) -> Error {
     Error::new("SOURCE_IO", format!("{context}: {error}"))
