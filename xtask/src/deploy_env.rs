@@ -124,13 +124,56 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
         options,
         head: &head,
     };
+    let versions = |dry_run: bool| {
+        (!dry_run)
+            .then(|| crate::deploy_live::container_versions(&spec.account_id).ok())
+            .flatten()
+    };
+    let before = versions(options.dry_run);
     let outcome = run.execute(plan, &mut summary).await;
-    println!("\n{} at {}:", env.name(), short(&head));
+    let after = versions(options.dry_run);
+    for (index, row) in summary.iter_mut() {
+        row.push(rollouts(&workers[*index], before.as_ref(), after.as_ref()));
+    }
     table(
-        &["Worker", "Config", "Result", "/health revision"],
+        &format!("deploy {} at {}", env.name(), short(&head)),
+        &[
+            "Worker",
+            "Config",
+            "Result",
+            "/health revision",
+            "Containers",
+        ],
         &summary.into_values().collect::<Vec<_>>(),
     );
     outcome
+}
+
+/// Each container application with its version before and after the deploy (a new version
+/// means a rollout; versions unknown in a dry run or when the listing failed).
+fn rollouts(
+    worker: &Deployable,
+    before: Option<&BTreeMap<String, u64>>,
+    after: Option<&BTreeMap<String, u64>>,
+) -> String {
+    let apps: Vec<String> = inventory::containers(&worker.config)
+        .into_keys()
+        .map(|app| {
+            let version = |map: Option<&BTreeMap<String, u64>>| {
+                map.and_then(|m| m.get(&app))
+                    .map_or("?".to_owned(), |v| format!("v{v}"))
+            };
+            match (version(before), version(after)) {
+                (b, a) if b == a => format!("{app} {a} (no rollout)"),
+                (b, a) => format!("{app} {b} -> {a} (rolled out)"),
+            }
+        })
+        .collect();
+    if apps.is_empty() {
+        "-".into()
+    } else {
+        apps.join("; ")
+    }
 }
 
 struct Run<'a> {

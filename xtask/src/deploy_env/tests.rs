@@ -1,8 +1,9 @@
-use super::{Mode, Step, mode, steps};
+use super::{Mode, Step, mode, rollouts, steps};
 use crate::deploy_guard::{self as guard, Facts, Options};
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use serde_json::json;
+use std::collections::BTreeMap;
 
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 const OTHER: &str = "fedcba9876543210fedcba9876543210fedcba98";
@@ -357,4 +358,27 @@ fn deploy_without_an_env_is_refused_and_legacy_is_explicit() {
         mode(&args(&["deploy", "--env", "dev"])).unwrap(),
         Mode::Spec
     );
+}
+
+#[test]
+fn the_summary_shows_which_container_apps_rolled_out() {
+    let workers = dev_workers();
+    let platform = workers.iter().find(|w| w.role == "platform").unwrap();
+    let app = "yonedarepo-staging-platform-checkcontainer".to_string();
+    let before = BTreeMap::from([(app.clone(), 1)]);
+    let after = BTreeMap::from([(app.clone(), 2)]);
+    assert_eq!(
+        rollouts(platform, Some(&before), Some(&after)),
+        format!("{app} v1 -> v2 (rolled out)")
+    );
+    assert_eq!(
+        rollouts(platform, Some(&before), Some(&before)),
+        format!("{app} v1 (no rollout)")
+    );
+    assert_eq!(
+        rollouts(platform, None, None),
+        format!("{app} ? (no rollout)")
+    );
+    let sites = workers.iter().find(|w| w.role == "sites").unwrap();
+    assert_eq!(rollouts(sites, Some(&before), Some(&after)), "-");
 }
