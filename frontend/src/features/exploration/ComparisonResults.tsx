@@ -16,6 +16,7 @@ import {
   latestBuilderCandidates,
 } from './comparisonView';
 import { LegacyReviewApproval } from './LegacyReviewApproval';
+import { refreshedSelection } from './refreshedSelection';
 import { selectionBlocker } from './runReviewState';
 import { runWorkingBranch } from './workingBranchView';
 
@@ -82,6 +83,8 @@ export function ComparisonResults({
   const selected = snapshot.candidates.find(
     (candidate) => candidate.run_id === run.id && candidate.id === selectedId,
   );
+  // Once the selection is refreshed onto a newer main, the refresh is what gets published.
+  const refreshed = comparison ? refreshedSelection(snapshot, run) : undefined;
   const choosing = candidates.find((candidate) => candidate.id === choice);
   const locked = busy || acting || comparisonBusy(snapshot, run);
   const reviewController = controllers.current.get('approve_comparison_review');
@@ -129,7 +132,12 @@ export function ComparisonResults({
       </div>
     );
   }
-  function card(candidate: Record<string, any>, index: number, primary: boolean) {
+  function card(
+    candidate: Record<string, any>,
+    index: number,
+    primary: boolean,
+    superseded = false,
+  ) {
     const execution = snapshot.executions.find((item) => item.id === candidate.execution);
     const evaluation = snapshot.evaluations.find((item) => item.id === candidate.evaluation);
     const blocker = selectionBlocker(snapshot, run, candidate);
@@ -139,7 +147,15 @@ export function ComparisonResults({
         snapshot={snapshot}
         run={run}
         strategy={
-          primary ? (comparison ? 'Selected output' : 'Checked result') : `Alternative ${index + 1}`
+          superseded
+            ? 'Superseded selection (older main)'
+            : primary && candidate.id === refreshed?.id
+              ? 'Selected output, refreshed onto current main'
+              : primary
+                ? comparison
+                  ? 'Selected output'
+                  : 'Checked result'
+                : `Alternative ${index + 1}`
         }
         execution={execution}
         candidate={candidate}
@@ -195,8 +211,9 @@ export function ComparisonResults({
           must pass fresh checks before another review.
         </p>
       )}
-      {selected && card(selected, candidates.indexOf(selected), true)}
-      {selected && !comparison?.approval && choose(selected)}
+      {refreshed && card(refreshed, 0, true)}
+      {selected && card(selected, candidates.indexOf(selected), !refreshed, !!refreshed)}
+      {selected && !refreshed && !comparison?.approval && choose(selected)}
       {!selected && <ComparisonAssessment comparison={comparison} />}
       {!comparison?.approval && reviewCompatible && (
         <button
@@ -213,7 +230,7 @@ export function ComparisonResults({
       )}
       <div className="comparison-alternatives">
         {candidates
-          .filter((candidate) => candidate.id !== selected?.id)
+          .filter((candidate) => candidate.id !== selected?.id && candidate.id !== refreshed?.id)
           .map((candidate) => (
             <section key={candidate.id}>
               {card(candidate, candidates.indexOf(candidate), false)}
