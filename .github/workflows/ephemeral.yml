@@ -10,6 +10,10 @@ permissions:
 concurrency:
   group: ephemeral
   cancel-in-progress: false
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
 jobs:
   ephemeral:
     runs-on: ubuntu-latest
