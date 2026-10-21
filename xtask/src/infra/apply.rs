@@ -118,7 +118,7 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
         &env,
         &spec,
         &lock,
-        &crate::deploy_guard::Options::from_args(args),
+        &crate::deploy_guard::Options::from_args(args)?,
     )
     .await?;
     if !dry_run {

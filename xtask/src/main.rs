@@ -6,6 +6,8 @@ mod context_study;
 mod deploy_env;
 mod deploy_guard;
 mod deploy_live;
+mod deploy_prebuilt;
+mod deploy_secrets;
 mod dev;
 mod infra;
 mod layout;
