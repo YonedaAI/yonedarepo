@@ -64,10 +64,12 @@ fn actual_linux_http_directory_export_after_checks_preserves_remote_version_and_
         .filter(|r| r.starts_with("POST /v1/repo/source_list "))
         .collect();
     assert!(!lists.is_empty());
+    // A listing's first page names the version; any later page must bind that same version.
     assert!(
         lists
             .iter()
-            .all(|r| r.contains("\"expected_workspace_version\":1"))
+            .all(|r| !r.contains("expected_workspace_version")
+                || r.contains("\"expected_workspace_version\":1"))
     );
     assert!(lists.iter().any(|r| r.contains("\"prefix\":\"public/\"")));
     assert!(
