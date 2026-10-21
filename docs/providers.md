@@ -32,7 +32,7 @@ before claiming general ZAI API-key support.
 | Codex | `gpt-5.6-luna` | OpenAI Responses |
 | Claude | `claude-sonnet-5-5` | Anthropic Messages |
 | MiMo | `mimo-v2.6-flash` | Anthropic compatibility |
-| Gemini | `gemini-3.8-flash` | Native Gemini GenerateContent through Gemini CLI 0.63.0 |
+| Gemini | `gemini-3.8-flash` | Native Gemini GenerateContent through Gemini CLI 0.65.0 |
 | ZAI | `glm-5.3-flash` | Anthropic compatibility through the Coding Plan endpoint |
 
 The MiMo Flash default follows the current [MiMo pricing and model availability](https://mimo.mi.com/docs/pricing).

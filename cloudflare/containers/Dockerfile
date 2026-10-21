@@ -20,7 +20,7 @@ FROM rust:1.99.1-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf98067211
 COPY --from=node /usr/local/bin/ /usr/local/bin/
 COPY --from=node /usr/local/lib/node_modules/ /usr/local/lib/node_modules/
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates python3 fuse3 && rm -rf /var/lib/apt/lists/* \
-    && npm install -g pnpm@12.14.0 @openai/codex@0.163.0 @anthropic-ai/claude-code@2.1.304 @google/gemini-cli@0.64.0 \
+    && npm install -g pnpm@12.14.0 @openai/codex@0.163.0 @anthropic-ai/claude-code@2.1.305 @google/gemini-cli@0.65.0 \
     && useradd --uid 1000 --create-home agent && mkdir -p /work /home/agent/.cargo && chmod 700 /root
 COPY --from=build /yoneda-runtime /usr/local/bin/yoneda-runtime
 COPY --from=build /opt/yoneda/node_modules /opt/yoneda/node_modules

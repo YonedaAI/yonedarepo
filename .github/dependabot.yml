@@ -13,6 +13,6 @@ updates:
     schedule:
       interval: monthly
   - package-ecosystem: docker
-    directory: /containers
+    directory: /cloudflare/containers
     schedule:
       interval: weekly
