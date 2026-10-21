@@ -14,16 +14,19 @@ pub(crate) struct Options {
     pub dry_run: bool,
     pub confirm: bool,
     pub allow_active: bool,
+    /// `--prebuilt <dir>`: deploy CI's tested outputs instead of building (deploy_prebuilt).
+    pub prebuilt: Option<std::path::PathBuf>,
 }
 
 impl Options {
-    pub(crate) fn from_args(args: &[String]) -> Self {
+    pub(crate) fn from_args(args: &[String]) -> Result<Self> {
         let flag = |name: &str| args.iter().any(|a| a == name);
-        Self {
+        Ok(Self {
             dry_run: flag("--dry-run"),
             confirm: flag("--confirm"),
             allow_active: flag("--allow-active"),
-        }
+            prebuilt: crate::deploy_prebuilt::dir_arg(args)?,
+        })
     }
 }
 
