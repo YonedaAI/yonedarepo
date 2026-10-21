@@ -13,6 +13,8 @@ pub(super) mod fixtures;
 mod no_result_tests;
 #[path = "tests/provenance_tests.rs"]
 mod provenance_tests;
+#[path = "tests/refresh_merge_tests.rs"]
+mod refresh_merge_tests;
 #[path = "tests/retrieval_tests.rs"]
 mod retrieval_tests;
 #[path = "tests/selection_tests.rs"]

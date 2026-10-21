@@ -7,6 +7,7 @@ mod budgets;
 mod lifecycle;
 mod manifest;
 mod provenance;
+mod refresh;
 mod repair;
 mod retrieval;
 mod selection;
@@ -14,7 +15,7 @@ mod submission;
 pub(super) use approval::{freeze, validate};
 pub(super) use budgets::put as put_budget;
 pub(super) use budgets::{authorize_execution, budget_values, record_request};
-pub(super) use lifecycle::{complete_review, wake};
+pub(super) use lifecycle::{complete_review, wake, wake_after_attempt};
 pub(super) use repair::validate_capture;
 pub(super) use retrieval::{guard as guard_tools, read as read_context};
 fn view(run: &Value) -> Value {
