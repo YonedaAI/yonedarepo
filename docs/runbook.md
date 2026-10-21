@@ -115,6 +115,19 @@ For a deliberate development cutover after active runs have stopped, `pnpm exec 
 
 For Cloudflare Access, protect the host with an Access policy and configure `ACCESS_TEAM_DOMAIN` (host only) and `ACCESS_AUD`. The Worker verifies JWT issuer, signature and audience. An unverified `cf-access-jwt-assertion` is never sufficient. The browser can then use the Access session and Live DO WebSocket; owner connections use an expiring, signed HttpOnly session cookie. Both support Live DO WebSockets and periodic authoritative snapshot resync.
 
+## Environments, deploys and infrastructure as code
+
+Each environment is one spec in `infra/envs/` (`dev.json` = dev.yonedarepo.com, `prod.json` = today's production) plus a lock of resource identities. The wrangler configs in `cloudflare/` are generated from the spec: change the spec, then `cargo xtask infra gen --env dev` (`--check` compares only; the golden tests in `cargo test -p xtask` fail on drift).
+
+- `cargo xtask deploy --env dev|prod [--dry-run] [--confirm] [--allow-active]` builds Wasm and the frontend, applies D1 migrations, deploys each Worker in cutover order with `BUILD_REVISION` = HEAD, uploads only missing secrets from the spec's secrets file and stops on the first `/health` mismatch. dev deploys only the tip of `dev`; prod only the tip of `main`, with `--confirm`, every dev Worker already at that commit, passing real-world kit evidence for it and no busy container instance (rollouts kill runs). `deploy` without `--env` refuses; `--env prod-legacy --confirm` is the old single-Worker deploy behind the same guards.
+- `cargo xtask status|rollback --env X` shows live revisions and routes, or rolls every Worker back one deployment.
+- `cargo xtask infra plan --env X` compares live Cloudflare state with the spec (create / unchanged / drift / extra / unverified) using a read-only API token (`CLOUDFLARE_API_TOKEN` or `--token-file`). `infra up` creates missing D1/R2/queues, records their ids, regenerates the configs and deploys; `infra down --confirm [--purge]` tears down dev or an `ephemeral-<id>` stack and is refused for prod; `infra smoke` checks the frontend, revisions and owner APIs.
+- CI (`.github/workflows/ci.yml`) runs the `cargo xtask check` parts as parallel jobs and, on pushes to `dev`, deploys dev and runs the smoke. Kit, deploy-prod and the nightly ephemeral stack are dispatch/schedule workflows, which GitHub runs only from the default branch (`main`).
+
+Production cutover notes (not applied to `prod.json` until the owner promotes):
+- Pin ExecutionContainer and CheckContainer with `constraints.regions: ["ENAM"]` and give the agents Worker `placement: {mode: "targeted", region: "aws:us-east-1"}`, as dev has: unpinned dev agent containers ran in HKG/TXL with about 1 s round trips to the Durable Objects, against about 330 ms elsewhere.
+- Set `check_instances` (CheckContainer max_instances = checks consumer max_concurrency).
+
 ## Legacy retry fixture workflow
 
 Create the retry fixture as an ordinary console project from `fixtures/retry-client` (its source lives in the project's platform repository, created in your own request); there is no separate seed command or Git push. Pass its id to `demo`, `verify-live` and `upgrade-policy` with `--repo ID`.

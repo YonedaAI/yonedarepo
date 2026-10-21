@@ -115,6 +115,13 @@
       "image_build_context": "..",
       "max_instances": 4,
       "instance_type": "standard-1",
+      // Next to the Durable Objects (ENAM): unpinned, agent containers ran in HKG/TXL with
+      // ~1 s round trips to them.
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
       "rollout_step_percentage": [
         100
       ]
