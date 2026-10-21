@@ -10,6 +10,9 @@ import {
 
 afterEach(reset);
 const bytes = new TextEncoder().encode('orphan-or-committed-source');
+// A grant that expires soon, so the test can wait for its ticket to lapse. It must outlive
+// signing plus the ticket request: 500 ms did not on a loaded CI runner (FENCED 409).
+const SHORT_GRANT_MS = 3_000;
 const waitUntil = (time: number) =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, time - Date.now() + 5)));
 
@@ -73,7 +76,7 @@ it('checks actual hash and size before a ticket can become writable and keeps di
 
 it('an expired verified upload racing GC cannot register, and lost GC acknowledgments replay safely', async () => {
   const f = await sourceFixture('gc-race');
-  const actor = await f.actor(Date.now() + 500);
+  const actor = await f.actor(Date.now() + SHORT_GRANT_MS);
   const ticket = await verifiedTicket(f, 'src/read.bin', bytes, 0, 0, actor);
   await waitUntil(ticket.expires_at);
   const grant = await f.gc();
@@ -126,7 +129,7 @@ it('committed checkpoint content is never reclaimable and actor authority cannot
     bytes,
     0,
     0,
-    await f.actor(Date.now() + 500),
+    await f.actor(Date.now() + SHORT_GRANT_MS),
   );
   await f.rpc({
     op: 'source_write',
