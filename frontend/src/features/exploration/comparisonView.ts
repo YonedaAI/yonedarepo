@@ -128,9 +128,12 @@ export function latestBuilderCandidates(snapshot: Snapshot, run: Record<string, 
           e.agent_index === (execution.agent_index ?? index),
       );
       const ids = new Set([execution.id, ...repairs.map((e) => e.id)]);
-      return [...snapshot.candidates]
-        .reverse()
-        .find((c) => c.run_id === run.id && ids.has(c.execution));
+      return (
+        [...snapshot.candidates]
+          .reverse()
+          // A refresh reuses its parent's producer; it is a later form of a result, not builder output.
+          .find((c) => c.run_id === run.id && ids.has(c.execution) && !c.refresh_of)
+      );
     })
     .filter((candidate): candidate is Record<string, any> => !!candidate);
 }
