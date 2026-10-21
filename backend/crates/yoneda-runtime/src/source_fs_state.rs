@@ -258,6 +258,11 @@ pub(super) fn errno(error: Error) -> Errno {
         "ALREADY_EXISTS" => Errno::EEXIST,
         "INVALID_SOURCE" | "PATH" | "INVALID_INPUT" => Errno::EINVAL,
         "SOURCE_LIMIT" | "RESOURCE_LIMIT" => Errno::EFBIG,
-        _ => Errno::EIO,
+        _ => {
+            // Unclassified failures surface to processes as EIO; keep the cause for operators.
+            tracing::warn!(event = "source.fs_failed", error_code = %error.code,
+                error_message = %crate::attempt_failure::detail(&error));
+            Errno::EIO
+        }
     }
 }

@@ -33,6 +33,17 @@ pub(crate) fn disposition(kind: &str, error: &Error) -> Disposition {
     }
 }
 
+/// A failure's message for operator logs: one line, at most 300 characters. Messages are
+/// built by the runtime or returned by the Worker broker; neither carries payloads or keys.
+pub(crate) fn detail(error: &Error) -> String {
+    error
+        .message
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(300)
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "tests/attempt_failure.rs"]
 mod tests;
