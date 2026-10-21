@@ -31,7 +31,7 @@ impl EvaluationSource {
         let scratch = tempfile::Builder::new()
             .prefix("yoneda-evaluation-cow-")
             .tempdir()
-            .map_err(|_| failure("SOURCE_IO", "Evaluation scratch unavailable"))?;
+            .map_err(|e| crate::source_client::io_failure("Evaluation scratch unavailable", &e))?;
         Ok(Arc::new(Self {
             base,
             scratch,
@@ -99,14 +99,17 @@ impl EvaluationSource {
             .get(&node.path)
             .and_then(|value| value.as_ref());
         if let Some(path) = entry.and_then(|entry| entry.file.as_ref()) {
-            let mut file = fs::File::open(path.as_ref())
-                .map_err(|_| failure("SOURCE_IO", "Evaluation scratch read failed"))?;
-            file.seek(SeekFrom::Start(offset))
-                .map_err(|_| failure("SOURCE_IO", "Evaluation scratch seek failed"))?;
+            let mut file = fs::File::open(path.as_ref()).map_err(|e| {
+                crate::source_client::io_failure("Evaluation scratch read failed", &e)
+            })?;
+            file.seek(SeekFrom::Start(offset)).map_err(|e| {
+                crate::source_client::io_failure("Evaluation scratch seek failed", &e)
+            })?;
             let length = length.min(node.size.saturating_sub(offset) as usize);
             let mut bytes = vec![0; length];
-            file.read_exact(&mut bytes)
-                .map_err(|_| failure("SOURCE_IO", "Evaluation scratch range failed"))?;
+            file.read_exact(&mut bytes).map_err(|e| {
+                crate::source_client::io_failure("Evaluation scratch range failed", &e)
+            })?;
             return Ok(SourceSlice {
                 version: node.version,
                 offset,
@@ -164,10 +167,12 @@ impl EvaluationSource {
         }
         use std::io::Write;
         let mut temp = tempfile::NamedTempFile::new_in(self.scratch.path())
-            .map_err(|_| failure("SOURCE_IO", "Evaluation scratch unavailable"))?;
+            .map_err(|e| crate::source_client::io_failure("Evaluation scratch unavailable", &e))?;
         temp.write_all(bytes)
             .and_then(|_| temp.as_file().sync_all())
-            .map_err(|_| failure("SOURCE_IO", "Evaluation scratch commit failed"))?;
+            .map_err(|e| {
+                crate::source_client::io_failure("Evaluation scratch commit failed", &e)
+            })?;
         // Shared only during metadata moves; the final reference removes obsolete bytes.
         let path_on_disk = Arc::new(temp.into_temp_path());
         let node = SourceNode {

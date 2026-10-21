@@ -35,7 +35,7 @@ impl GeneratedScratch {
         let root = tempfile::Builder::new()
             .prefix("yoneda-source-generated-")
             .tempdir()
-            .map_err(|_| failure("SOURCE_IO", "Generated scratch unavailable"))?;
+            .map_err(|e| crate::source_client::io_failure("Generated scratch unavailable", &e))?;
         let mut instance = Self {
             root,
             mounts: Vec::new(),
@@ -56,13 +56,16 @@ impl GeneratedScratch {
                     "Generated prefix collides with source",
                 ));
             }
-            fs::create_dir(&target)
-                .map_err(|_| failure("SOURCE_IO", "Generated directory metadata unavailable"))?;
+            fs::create_dir(&target).map_err(|e| {
+                crate::source_client::io_failure("Generated directory metadata unavailable", &e)
+            })?;
             let physical = instance.root.path().join(prefix);
-            fs::create_dir(&physical)
-                .map_err(|_| failure("SOURCE_IO", "Generated scratch unavailable"))?;
-            fs::set_permissions(&physical, fs::Permissions::from_mode(0o755))
-                .map_err(|_| failure("SOURCE_IO", "Generated scratch mode unavailable"))?;
+            fs::create_dir(&physical).map_err(|e| {
+                crate::source_client::io_failure("Generated scratch unavailable", &e)
+            })?;
+            fs::set_permissions(&physical, fs::Permissions::from_mode(0o755)).map_err(|e| {
+                crate::source_client::io_failure("Generated scratch mode unavailable", &e)
+            })?;
             let physical_c = cstring(&physical)?;
             let target_c = cstring(&target)?;
             // SAFETY: trusted, NUL-terminated paths; this is the root mount supervisor only.

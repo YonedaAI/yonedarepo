@@ -53,3 +53,32 @@ fn trusted_job_kinds_keep_their_existing_retry_policy() {
         }
     }
 }
+
+#[test]
+fn failure_detail_is_bounded_single_line_and_keeps_the_broker_code() {
+    let broker = Error::new(
+        "RUNTIME",
+        format!(
+            "{{\"error\":{{\"code\":\"FENCED\",\"message\":\"Attempt lease expired\"}}}}\n{}",
+            "x".repeat(1000)
+        ),
+    );
+    let text = detail(&broker);
+    assert!(text.contains("FENCED") && text.contains("Attempt lease expired"));
+    assert!(text.chars().count() <= 300 && !text.contains('\n'));
+}
+
+#[test]
+fn source_io_failures_keep_the_os_cause() {
+    let error = crate::source_client::io_failure(
+        "Generated directory metadata unavailable",
+        &std::io::Error::from_raw_os_error(5),
+    );
+    assert_eq!(error.code, "SOURCE_IO");
+    assert!(
+        error
+            .message
+            .starts_with("Generated directory metadata unavailable: ")
+    );
+    assert!(error.message.contains("os error 5"), "{}", error.message);
+}
