@@ -5,7 +5,8 @@ pub(in crate::commands) fn decision<S: SqlStore>(db: &S, run: &Value, d: &mut Va
     if !comparison.is_object() {
         return Ok(());
     }
-    if comparison["status"] != "selected" || comparison["selected_candidate_id"] != d["candidate"] {
+    let candidate = get(db, "candidates", &string(d, "candidate")?)?;
+    if comparison["status"] != "selected" || !super::refresh::is_selection(db, run, &candidate)? {
         return Err(Error::new("FENCED", "Publication selection changed"));
     }
     let branch = match run["working_branch_id"].as_str() {
@@ -13,6 +14,9 @@ pub(in crate::commands) fn decision<S: SqlStore>(db: &S, run: &Value, d: &mut Va
         None => Value::Null,
     };
     let mut snapshot = json!({"version":1,"selected_candidate_id":comparison["selected_candidate_id"],"selection_version":comparison["selection_version"],"selection_request_id":comparison["selection_request_id"],"selected_by":comparison["selected_by"],"selection_reason":comparison["selection_reason"],"working_branch_id":run["working_branch_id"],"working_branch_version":branch["version"],"working_revision":d["target"],"selection_policy_version":repo(db)?["policy"]["version"],"latest_review_id":comparison["latest_review_id"],"approval_id":comparison["approval"]["id"]});
+    if comparison["selected_candidate_id"] != d["candidate"] {
+        snapshot["refreshed_candidate_id"] = d["candidate"].clone();
+    }
     if let Some(id) = comparison["latest_review_id"].as_str() {
         let review = get(db, "nodes", id)?;
         if review["kind"] != "proposed_decision"
