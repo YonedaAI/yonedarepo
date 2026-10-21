@@ -60,10 +60,10 @@ jobs:
           flags="--confirm"
           if [ "${{ inputs.dry_run }}" = "true" ]; then flags="$flags --dry-run"; fi
           if [ "${{ inputs.allow_active }}" = "true" ]; then flags="$flags --allow-active"; fi
-          cargo xtask deploy --env prod $flags | tee deploy.txt
+          cargo xtask deploy --env prod $flags | tee "$RUNNER_TEMP/deploy.txt"
       - name: Status
         if: always()
         run: |
           set +e  # report whatever exists; a missing file is not a failure
-          cargo xtask status --env prod | tee status.txt || true
-          { echo '### Deploy prod'; echo '```'; tail -n 12 deploy.txt 2>/dev/null; cat status.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cargo xtask status --env prod | tee "$RUNNER_TEMP/status.txt"
+          { echo '### Deploy prod'; echo '```'; tail -n 12 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; cat "$RUNNER_TEMP/status.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
