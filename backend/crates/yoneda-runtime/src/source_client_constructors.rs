@@ -16,6 +16,7 @@ impl ApiSourceClient {
             expected_workspace: workspace.into(),
             expected_view: view_digest.into(),
             read_only,
+            recent_status: Default::default(),
         });
         client.status()?;
         Ok(client)
@@ -38,6 +39,7 @@ impl ApiSourceClient {
             expected_workspace: workspace.into(),
             expected_view: view_digest.into(),
             read_only,
+            recent_status: Default::default(),
         });
         client.status()?;
         Ok(client)
@@ -55,6 +57,7 @@ impl ApiSourceClient {
             expected_workspace: workspace.into(),
             expected_view: view.into(),
             read_only,
+            recent_status: Default::default(),
         });
         client.status()?;
         Ok(client)
@@ -73,6 +76,7 @@ impl ApiSourceClient {
             expected_workspace: workspace.into(),
             expected_view: view.into(),
             read_only,
+            recent_status: Default::default(),
         });
         client.status()?;
         Ok(client)
