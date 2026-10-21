@@ -1,6 +1,7 @@
 name: CI
 # The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image,
-# then (pushes to dev only) the dev deploy + smoke. Keep the job list in step with the `check`
+# then (pushes to dev only) the dev deploy + smoke. The deploy reuses the Wasm, frontend and
+# image these jobs built and tested (`deploy --prebuilt`, each artifact stamped with REVISION). Keep the job list in step with the `check`
 # arm in xtask/src/commands.rs. The deploy lives here because workflow_run, schedule and
 # workflow_dispatch triggers fire only for workflow files on the default branch (main).
 on:
@@ -57,6 +58,9 @@ jobs:
       - name: worker-build --release
         working-directory: backend/crates/yoneda-worker
         run: worker-build --release
+      # `deploy --prebuilt` refuses an output whose REVISION is not the deployed commit.
+      - name: Stamp the build with its commit
+        run: echo "$GITHUB_SHA" > backend/crates/yoneda-worker/build/REVISION
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: worker-wasm
@@ -64,11 +68,17 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The workerd suite split by file across four runners (vitest --shard), each with the
+  # config's own worker cap; deploy-dev needs every shard. workers-total adds up the counts.
   workers:
-    name: Workers suite (workerd)
+    name: Workers suite (workerd ${{ matrix.shard }}/4)
     needs: wasm
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/node
@@ -76,7 +86,55 @@ jobs:
         with:
           name: worker-wasm
           path: backend/crates/yoneda-worker/build
-      - run: pnpm test
+      # Naming reporters replaces the CI defaults, so default and github-actions are listed.
+      - run: >-
+          pnpm test --shard=${{ matrix.shard }}/4
+          --reporter=default --reporter=github-actions --reporter=json
+          --outputFile.json="$RUNNER_TEMP/workers-${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: workers-results-${{ matrix.shard }}
+          path: ${{ runner.temp }}/workers-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 1
+
+  workers-total:
+    name: Workers suite total
+    needs: workers
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: workers-results-*
+          path: results
+          merge-multiple: true
+      - name: Add up the shards in the job summary
+        run: |
+          shopt -s nullglob
+          files=(results/workers-*.json)
+          counts='{files: (.testResults | length), tests: .numTotalTests, passed: .numPassedTests,
+            failed: .numFailedTests, skipped: (.numPendingTests + .numTodoTests)}'
+          row='"| \(.files) | \(.tests) | \(.passed) | \(.failed) | \(.skipped) |"'
+          {
+            echo "### Workers suite (workerd): ${#files[@]} of 4 shards reported"
+            echo
+            echo '| Shard | Files | Tests | Passed | Failed | Skipped |'
+            echo '| --- | --- | --- | --- | --- | --- |'
+            for f in "${files[@]}"; do
+              shard=${f##*workers-}; shard=${shard%.json}
+              echo "| $shard/4 $(jq -r "$counts | $row" "$f")"
+            done
+            if [ "${#files[@]}" -gt 0 ]; then
+              echo "| **total** $(jq -rs "map($counts) | reduce .[] as \$x ({}; reduce (\$x | keys[]) as \$k (.; .[\$k] += \$x[\$k])) | $row" "${files[@]}")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${#files[@]}" -ne 4 ]; then
+            echo "::error::Only ${#files[@]} of 4 workerd shards reported results."
+            exit 1
+          fi
 
   suites:
     name: Types, lint, other suites, frontend build
@@ -99,17 +157,60 @@ jobs:
       - run: pnpm test:runtime
       - run: pnpm test:frontend
       - run: pnpm --dir frontend build
+      - name: Stamp the frontend build with its commit
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        run: echo "$GITHUB_SHA" > frontend/dist/REVISION
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 1
 
+  # Layers are cached in the GitHub Actions cache, so unchanged layers rebuild instantly and
+  # come out byte-identical (the registry push then skips them). On pushes to dev the tested
+  # image is saved for deploy-dev, which pushes it instead of letting wrangler rebuild it.
   image:
     name: Runtime image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build native execution image
-        run: docker build --platform linux/amd64 -f cloudflare/containers/Dockerfile -t yonedarepo-runtime:ci .
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: cloudflare/containers/Dockerfile
+          platforms: linux/amd64
+          # The same flags wrangler builds with.
+          provenance: false
+          load: true
+          tags: yonedarepo-runtime:ci
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,scope=runtime,mode=max,ignore-error=true
       - name: Verify Gemini CLI and Rust MCP without inference
         run: docker run --rm --network none -i --entrypoint python3 yonedarepo-runtime:ci - < tests/container/gemini_smoke.py
+      - name: Save the tested image for the dev deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        run: |
+          out="$RUNNER_TEMP/runtime-image"
+          mkdir -p "$out"
+          echo "$GITHUB_SHA" > "$out/REVISION"
+          docker image inspect --format '{{.Id}}' yonedarepo-runtime:ci > "$out/IMAGE_ID"
+          docker save yonedarepo-runtime:ci | zstd -q -T0 -3 -o "$out/image.tar.zst"
+          ls -lh "$out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}/runtime-image
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
   deploy-dev:
     name: Deploy dev + smoke
@@ -148,9 +249,25 @@ jobs:
           install -d -m 700 ~/.config/yonedarepo
           umask 077
           printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
+      # The tested outputs; xtask refuses any whose REVISION is not HEAD (fail closed).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.tip.outputs.current == 'true'
+        with:
+          name: worker-wasm
+          path: ${{ runner.temp }}/prebuilt/worker-wasm
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.tip.outputs.current == 'true'
+        with:
+          name: frontend-dist
+          path: ${{ runner.temp }}/prebuilt/frontend-dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.tip.outputs.current == 'true'
+        with:
+          name: runtime-image
+          path: ${{ runner.temp }}/prebuilt/runtime-image
       - name: Deploy dev
         if: steps.tip.outputs.current == 'true'
-        run: cargo xtask deploy --env dev | tee "$RUNNER_TEMP/deploy.txt"
+        run: cargo xtask deploy --env dev --prebuilt "$RUNNER_TEMP/prebuilt" | tee "$RUNNER_TEMP/deploy.txt"
       - name: Smoke
         if: steps.tip.outputs.current == 'true'
         run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
