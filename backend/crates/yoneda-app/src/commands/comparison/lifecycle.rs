@@ -11,7 +11,11 @@ pub(in crate::commands) fn wake<S: SqlStore>(db: &S, rid: &str, now: i64) -> Res
     }
     validate(&run)?;
     if pending(db, rid, None)? {
-        if run["comparison"]["status"] != "reviewing" && run["comparison"]["status"] != "repairing"
+        // A selection is a recorded decision: work that follows it (such as refreshing the
+        // selected result onto a newer main and checking it again) never reopens the review.
+        if !["reviewing", "repairing", "selected"]
+            .iter()
+            .any(|s| run["comparison"]["status"] == *s)
         {
             run["comparison"]["status"] =
                 json!(if run_jobs(db, rid)?.iter().any(|j| j["kind"] == "evaluate"
@@ -142,6 +146,32 @@ pub(in crate::commands) fn wake<S: SqlStore>(db: &S, rid: &str, now: i64) -> Res
         json!({"run_id":rid,"execution_id":id,"round":round,"manifest_digest":digest}),
     )?;
     Ok(())
+}
+/// Advances the comparison after a job transition that must commit regardless (failure,
+/// deferral, lease recovery). A lifecycle that cannot advance is recorded on the run with its
+/// reason instead of rolling back the job's terminal state, which would leave it running forever.
+pub(in crate::commands) fn wake_after_attempt<S: SqlStore>(
+    db: &S,
+    rid: &str,
+    now: i64,
+) -> Result<()> {
+    let Err(error) = wake(db, rid, now) else {
+        return Ok(());
+    };
+    let mut run = get(db, "runs", rid)?;
+    let reason = json!({"code":error.code,"authority":"platform","message":error.message});
+    run["comparison"]["status"] = json!("needs_attention");
+    run["comparison"]["terminal_reason"] = reason.clone();
+    if !["accepted", "cancelled"].contains(&run["status"].as_str().unwrap_or_default()) {
+        run["status"] = json!("ready");
+    }
+    persist(db, &run, now)?;
+    event(
+        db,
+        "comparison.attention_required",
+        now,
+        json!({"run_id":rid,"reason":reason}),
+    )
 }
 pub(in crate::commands) fn complete_review<S: SqlStore>(
     db: &S,

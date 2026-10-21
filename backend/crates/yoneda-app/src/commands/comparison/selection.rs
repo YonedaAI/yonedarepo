@@ -30,6 +30,10 @@ pub(in crate::commands) fn guards<S: SqlStore>(db: &S, c: &Value, run: &Value) -
     Ok(())
 }
 fn head<S: SqlStore>(db: &S, run: &Value) -> Result<Option<Value>> {
+    head_at(db, run, None)
+}
+/// The selectable head; a refreshed selection is current on its refresh target, not the run base.
+fn head_at<S: SqlStore>(db: &S, run: &Value, refreshed: Option<&Value>) -> Result<Option<Value>> {
     let r = repo(db)?;
     if r["status"] != "ready"
         || !r["pending"].is_null()
@@ -66,6 +70,11 @@ fn head<S: SqlStore>(db: &S, run: &Value) -> Result<Option<Value>> {
                 ));
             }
             manifest::ancestry(db, run, &current)?;
+        }
+    } else if let Some(c) = refreshed {
+        if r["head_commit"] != c["base"]["commit"] || r["version"] != c["refresh_expected_version"]
+        {
+            return Err(Error::new("HEAD_MOVED", "Refreshed result's base is stale"));
         }
     } else if r["head_commit"] != run["base"]["commit"] || r["version"] != run["base_version"] {
         return Err(Error::new("HEAD_MOVED", "Comparison base is stale"));
@@ -220,8 +229,10 @@ pub(in crate::commands) fn validate_publish<S: SqlStore>(
     {
         return Ok(());
     }
+    // The selection stands for its validated refreshes: refreshing only merges the selected
+    // change onto a newer main, and the refreshed revision is checked again before this point.
     if run["comparison"]["status"] != "selected"
-        || run["comparison"]["selected_candidate_id"] != c["id"]
+        || !super::refresh::is_selection(db, run, c)?
         || pending(db, &string(run, "id")?, None)?
     {
         return Err(Error::new(
@@ -229,7 +240,8 @@ pub(in crate::commands) fn validate_publish<S: SqlStore>(
             "Select the checked comparison result before publication",
         ));
     }
-    head(db, run)?;
+    let refreshed = run["comparison"]["selected_candidate_id"] != c["id"];
+    head_at(db, run, refreshed.then_some(c))?;
     manifest::checked(db, run, c)?;
     if let Some(id) = run["working_branch_id"].as_str() {
         let b = get(db, "working_branches", id)?;

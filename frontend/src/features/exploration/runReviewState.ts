@@ -2,6 +2,7 @@ import type { Snapshot } from '../../lib/types';
 import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
 import { runCandidates } from '../team/teamView';
 import { activeDecision, rejectionOf } from './agentsPick';
+import { refreshedSelection, refreshesSelection } from './refreshedSelection';
 import { runHasActiveAttempts } from './runControlState';
 import { branchPublishable } from './workingBranchView';
 
@@ -34,8 +35,11 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
       return 'Wait for automatic review and repairs to finish before publishing.';
     if (run.comparison.status === 'stale')
       return 'The comparison proposal is stale. Refresh current source and checks.';
-    if (run.comparison.selected_candidate_id !== candidate.id)
+    if (!refreshesSelection(snapshot, run, candidate))
       return 'Choose this checked result before publishing it.';
+    const refreshed = refreshedSelection(snapshot, run);
+    if (refreshed && refreshed.id !== candidate.id)
+      return 'Superseded: this selection was built on an older main and has been refreshed onto the current one. Publish the refreshed result instead.';
   }
   const guideBlocker = guidedPublicationBlocker(snapshot, run, candidate);
   if (guideBlocker) return guideBlocker;
