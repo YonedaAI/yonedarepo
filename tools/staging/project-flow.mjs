@@ -56,15 +56,26 @@ export async function compareRun(account, repo, metrics) {
   });
   const run = await until(
     async () => {
-      const { run } = await account.get(`/api/repos/${repo}/runs/${id}`);
-      assert.ok(!['failed', 'cancelled'].includes(run.status), `Run ${run.status}: ${run.error ?? ''}`);
+      const detail = await account.get(`/api/repos/${repo}/runs/${id}`);
+      const { run } = detail;
+      metrics.spend_usd = spend(run).toFixed(4);
+      if (['failed', 'cancelled'].includes(run.status)) throw new Error(`Run ${run.status}: ${runFailure(detail)}`);
       return TERMINAL.includes(run.comparison?.status) && run;
     },
     { timeoutMs: 40 * 60_000, intervalMs: 10_000, what: 'compare run review' },
   );
+  metrics.run = run.id;
   metrics.comparison = run.comparison.status;
   metrics.spend_usd = spend(run).toFixed(4);
   return run;
+}
+
+/** Why a run failed: its own error, else each failed execution's and job's error. */
+function runFailure({ run, executions = [] }) {
+  const parts = [run.error, run.comparison?.status && `comparison ${run.comparison.status}`];
+  for (const e of executions.filter((e) => ['failed', 'cancelled'].includes(e.status)))
+    parts.push(`${e.id} ${e.role ?? ''} ${e.provider ?? ''}/${e.model ?? ''}: ${e.error ?? e.failure ?? e.status}`);
+  return parts.filter(Boolean).join('; ').slice(0, 600);
 }
 
 /** Charged model spend of a run, in USD, from its frozen per-model budgets. */
