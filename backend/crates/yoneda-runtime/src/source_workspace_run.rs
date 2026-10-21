@@ -7,6 +7,16 @@ use crate::source_workspace_session::SourceSession;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 use yoneda_agents_core::Result;
+/// Runs blocking source work (FUSE mounts and syscalls, the source transport thread) on the
+/// blocking pool. A standard-1 container has one async worker; blocking it there stops the
+/// 20 s heartbeat and the supervisor server, so the attempt's lease expires mid-preparation.
+pub(crate) async fn off_runtime<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|_| failure("SOURCE_IO", "Source preparation worker stopped"))?
+}
 pub(crate) struct SourceRun {
     #[cfg(target_os = "linux")]
     registration: Option<SourceRegistration>,
@@ -129,3 +139,6 @@ fn physical_directories() -> Result<()> {
     }
     Ok(())
 }
+#[cfg(test)]
+#[path = "tests/source_workspace_run.rs"]
+mod tests;
