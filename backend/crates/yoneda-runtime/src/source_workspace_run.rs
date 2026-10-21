@@ -115,8 +115,9 @@ fn physical_directories() -> Result<()> {
         "/home/agent/.codex",
     ] {
         let path = Path::new(path);
-        std::fs::create_dir_all(path)
-            .map_err(|_| failure("SOURCE_IO", "Physical agent scratch unavailable"))?;
+        std::fs::create_dir_all(path).map_err(|e| {
+            crate::source_client::io_failure("Physical agent scratch unavailable", &e)
+        })?;
         let path = CString::new(path.as_os_str().as_bytes())
             .map_err(|_| failure("SOURCE_IO", "Invalid physical scratch path"))?;
         if unsafe { libc::chown(path.as_ptr(), 1000, 1000) } != 0 {

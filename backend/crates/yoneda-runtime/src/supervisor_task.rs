@@ -63,6 +63,7 @@ async fn run(job: Value) {
         }
         Ok(Err(error)) => {
             tracing::error!(event = "attempt.failed", error_code = %error.code,
+                error_message = %attempt_failure::detail(&error),
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0);
             let retryable =
                 attempt_failure::disposition(job["kind"].as_str().unwrap_or_default(), &error)
@@ -85,7 +86,8 @@ async fn run(job: Value) {
     };
     heartbeat.abort();
     if let Err(error) = report {
-        tracing::error!(event = "attempt.callback_failed", error_code = %error.code);
+        tracing::error!(event = "attempt.callback_failed", error_code = %error.code,
+            error_message = %attempt_failure::detail(&error));
     }
 }
 
@@ -111,7 +113,8 @@ where
         match result {
             Ok(Ok(_)) => transcript.mark_recorded()?,
             Ok(Err(error)) => {
-                tracing::error!(event = "attempt.partial_evidence_failed", error_code = %error.code)
+                tracing::error!(event = "attempt.partial_evidence_failed", error_code = %error.code,
+                    error_message = %attempt_failure::detail(&error))
             }
             Err(_) => tracing::error!(event = "attempt.partial_evidence_timeout"),
         }
