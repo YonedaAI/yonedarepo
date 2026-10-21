@@ -72,7 +72,7 @@ export async function compareRun(account, repo, metrics) {
 
 /** Why a run failed: its own error, else each failed execution's and job's error. */
 function runFailure({ run, executions = [] }) {
-  const parts = [run.error, run.comparison?.status && `comparison ${run.comparison.status}`];
+  const parts = [run.error?.message ?? run.error, run.comparison?.status && `comparison ${run.comparison.status}`];
   for (const e of executions.filter((e) => ['failed', 'cancelled'].includes(e.status)))
     parts.push(`${e.id} ${e.role ?? ''} ${e.provider ?? ''}/${e.model ?? ''}: ${e.error ?? e.failure ?? e.status}`);
   return parts.filter(Boolean).join('; ').slice(0, 600);
