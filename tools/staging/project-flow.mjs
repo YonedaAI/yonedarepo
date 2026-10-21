@@ -1,6 +1,7 @@
-// Agent-layer items of the staging kit, as the browser does them: create a project, run a
-// two-builder compare with cheap real models, publish the selected result fast-forward only
-// with readback, refresh the other result onto the new main, and delete a project.
+// Agent-layer items of the staging kit, as the browser does them: create a project, run
+// two-builder compares with cheap real models, publish a selected result fast-forward only
+// with readback, refresh another run's pick onto the new main and publish it, and delete a
+// project.
 import assert from 'node:assert/strict';
 import { requestId, until } from './client.mjs';
 
@@ -14,6 +15,15 @@ const TERMINAL = ['selected', 'needs_attention', 'stale'];
 /** Binds the deployment's Secrets Store keys to the kit account as managed connections. */
 export async function bindManagedProviders(owner, username) {
   for (const { provider, model } of CHEAP) await owner.post('/api/admin/providers/managed', { username, provider, model });
+}
+
+/** Funds a person's staging account (owner only): managed cheap models and a $5 allowance. */
+export async function fundAccount(owner, username) {
+  await bindManagedProviders(owner, username);
+  const set = await owner.raw('POST', '/api/admin/workspace/allowance', { username, expected_version: 0, limit_microusd: 5_000_000 });
+  // A first configuration expects version 0; an already funded account keeps its allowance.
+  if (!set.ok && set.body?.error?.code !== 'STALE_VERSION') throw new Error(`Allowance: ${set.body?.error?.code} ${set.body?.error?.message ?? ''}`);
+  return set.ok ? set.body : { already_funded: true };
 }
 
 /** Gives the kit account the staging allowance ($5 total) if it has none yet. */
@@ -42,18 +52,28 @@ export async function createProject(account, name, metrics) {
 
 const snapshot = (account, repo) => account.get(`/api/repos/${repo}/snapshot`);
 
-/** Starts a compare run and waits for the agents' pick (or needs-attention). */
-export async function compareRun(account, repo, metrics) {
+/** Two briefs on different files, so B's result refreshes onto A's published main cleanly. */
+export const BRIEFS = {
+  a: { intent: 'Add a footer to the home page that reads "Staged on dev.yonedarepo.com".', criteria: ['The footer text is visible on the home page', 'Existing content is unchanged'] },
+  b: { intent: 'Create docs/about.md with two sentences describing this website. Do not modify any other file.', criteria: ['docs/about.md exists with two sentences', 'No other file changes'] },
+};
+
+/** Starts a compare run with the cheap managed builders; returns its id. */
+export async function startCompare(account, repo, brief = BRIEFS.a) {
   const id = `run-${crypto.randomUUID()}`;
   await account.post(`/api/repos/${repo}/start_run`, {
     id,
     mode: 'compare',
-    intent: 'Add a footer to the home page that reads "Staged on dev.yonedarepo.com".',
-    criteria: ['The footer text is visible on the home page', 'Existing content is unchanged'],
+    ...brief,
     context: [],
     adaptive_team: { version: 1, requested_agents: CHEAP.map((c) => ({ connection: `managed-${c.provider}`, role: 'auto' })) },
     comparison: { version: 1 },
   });
+  return id;
+}
+
+/** Waits for a compare run's agents' pick; spend and outcome land in `metrics`. */
+export async function waitCompare(account, repo, id, metrics) {
   const run = await until(
     async () => {
       const detail = await account.get(`/api/repos/${repo}/runs/${id}`);
@@ -101,8 +121,8 @@ async function selectedCandidate(account, repo, run) {
 }
 
 /** Owner accept → approve → fast-forward land → readback; verifies main on the platform. */
-export async function publish(account, repo, run, metrics) {
-  const candidate = await selectedCandidate(account, repo, run);
+export async function publish(account, repo, run, metrics, chosen) {
+  const candidate = chosen ?? (await selectedCandidate(account, repo, run));
   const snap = await snapshot(account, repo);
   const decision = await account.post(`/api/repos/${repo}/accept`, {
     request_id: requestId('accept'),
@@ -127,15 +147,20 @@ export async function publish(account, repo, run, metrics) {
   return { candidate, commit, platform_repo };
 }
 
-/** Refreshes the unpublished result onto the new main (platform merge, no model). */
-export async function refreshOther(account, repo, run, published, metrics) {
+/**
+ * N8 step 12: refresh run B's pick (built on the old main) onto the main A just published,
+ * then publish the refreshed result. A compare run publishes only its selected result, so the
+ * owner first selects the refreshed one when the ledger asks for it.
+ */
+export async function refreshMerge(account, repo, runB, metrics) {
+  const { run } = await account.get(`/api/repos/${repo}/runs/${runB.id}`);
+  const picked = run.comparison?.selected_candidate_id;
+  assert.ok(picked, `Run B has no selected result (comparison ${run.comparison?.status})`);
   const snap = await snapshot(account, repo);
-  const other = snap.candidates.find((c) => c.run_id === run.id && c.id !== published.candidate && ['eligible', 'rejected'].includes(c.status));
-  if (!other) return { skip: 'No second checked result to refresh' };
   const started = performance.now();
   const refresh = await account.post(`/api/repos/${repo}/refresh_candidate`, {
     request_id: requestId('refresh'),
-    candidate_id: other.id,
+    candidate_id: picked,
     expected_commit: snap.repository.head_commit,
     expected_version: snap.repository.version,
   });
@@ -152,6 +177,28 @@ export async function refreshOther(account, repo, run, published, metrics) {
   metrics.refresh_s = ((performance.now() - started) / 1000).toFixed(1);
   const why = settled.error ?? settled.detail ?? settled.reason ?? settled.evaluation_status ?? '';
   assert.ok(['clean', 'done'].includes(settled.status), `Refresh ended ${settled.status} ${JSON.stringify(why).slice(0, 300)}`);
+  const refreshed = settled.refreshed_candidate_id;
+  assert.ok(refreshed, 'Clean refresh named no refreshed result');
+  let published;
+  try {
+    published = await publish(account, repo, run, metrics, refreshed);
+  } catch (error) {
+    if (error.code !== 'COMPARISON_NOT_SELECTED') throw error;
+    const now = await snapshot(account, repo);
+    await account.post(`/api/repos/${repo}/select_comparison_candidate`, {
+      run_id: run.id,
+      request_id: requestId('select'),
+      candidate_id: refreshed,
+      reason: 'Staging kit: refreshed pick on the new main',
+      expected_commit: now.repository.head_commit,
+      expected_version: now.repository.version,
+      expected_policy_version: now.repository.policy?.version,
+      expected_selection_version: run.comparison.selection_version ?? 0,
+    });
+    metrics.reselected = true;
+    published = await publish(account, repo, run, metrics, refreshed);
+  }
+  metrics.published_b = published.commit.slice(0, 12);
 }
 
 /** Deletes a project and checks its platform agent token is revoked. */
