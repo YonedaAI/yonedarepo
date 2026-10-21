@@ -57,7 +57,7 @@ fn refused(env: &Env, spec: &Spec, facts: &Facts, options: &Options, needle: &st
 #[test]
 fn dry_runs_change_nothing_remote() {
     for (env, list) in [(Env::Dev, dev_workers()), (Env::Prod, prod_workers())] {
-        let plan = steps(&env, &list, true);
+        let plan = steps(&env, &list, true, false);
         assert!(
             plan.iter().all(|s| !s.mutates_remote()),
             "{env:?}: {plan:?}"
@@ -75,8 +75,34 @@ fn dry_runs_change_nothing_remote() {
 }
 
 #[test]
+fn prebuilt_runs_install_and_push_instead_of_building() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, true);
+    assert_eq!(plan[..2], [Step::InstallPrebuilt, Step::PushImage]);
+    assert!(
+        !plan
+            .iter()
+            .any(|s| matches!(s, Step::BuildWasm | Step::BuildFrontend))
+    );
+    let built = steps(&Env::Dev, &dev_workers(), false, false);
+    assert_eq!(plan[2..], built[2..], "the rest of the plan is unchanged");
+
+    let dry = steps(&Env::Dev, &dev_workers(), true, true);
+    assert_eq!(dry[0], Step::InstallPrebuilt);
+    assert!(dry.iter().all(|s| !s.mutates_remote()), "{dry:?}");
+}
+
+#[test]
+fn prebuilt_runs_without_containers_push_nothing() {
+    let sites: Vec<Deployable> = dev_workers()
+        .into_iter()
+        .filter(|w| !w.has_containers)
+        .collect();
+    assert!(!steps(&Env::Dev, &sites, false, true).contains(&Step::PushImage));
+}
+
+#[test]
 fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
-    let plan = steps(&Env::Dev, &dev_workers(), false);
+    let plan = steps(&Env::Dev, &dev_workers(), false, false);
     assert_eq!(plan[..2], [Step::BuildWasm, Step::BuildFrontend]);
     let migrations: Vec<&str> = plan
         .iter()
@@ -129,7 +155,7 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
 
 #[test]
 fn prod_checks_active_runs_right_before_each_container_rollout() {
-    let plan = steps(&Env::Prod, &prod_workers(), false);
+    let plan = steps(&Env::Prod, &prod_workers(), false, false);
     let gate = plan
         .iter()
         .position(|s| *s == Step::ActiveGate { worker: 0 })
@@ -322,7 +348,7 @@ fn options_come_from_flags() {
     let args: Vec<String> = ["deploy", "--env", "prod", "--dry-run", "--confirm"]
         .map(String::from)
         .to_vec();
-    let options = Options::from_args(&args);
+    let options = Options::from_args(&args).unwrap();
     assert!(options.dry_run && options.confirm && !options.allow_active);
 }
 

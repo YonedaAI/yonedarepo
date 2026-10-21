@@ -135,7 +135,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }
