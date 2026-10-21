@@ -40,8 +40,9 @@ fn directory_second_page_changed_remote_version_remains_fenced() {
     current["workspace_version"] = json!(7);
     let first = json!({"workspace_id":"ws","workspace_version":7,"items":[{"path":"public/a","kind":"file","exists":true,"file_version":0,"mode":"100644","size":1}],"next_cursor":"next"});
     let changed = json!({"workspace_id":"ws","workspace_version":8,"items":[],"next_cursor":null});
+    // Listing costs no status round trip: the first page names the version (7) and every
+    // later page must carry and return it, so a remote change between pages still fences.
     let server = Server::new(vec![
-        Response::json(current.clone()),
         Response::json(current),
         Response::json(first),
         Response::json(changed),
@@ -49,12 +50,14 @@ fn directory_second_page_changed_remote_version_remains_fenced() {
     let client = ApiSourceClient::test_at(&server.origin, "repo", "ws", "view", false).unwrap();
     assert_eq!(client.list("public").unwrap_err().code, "SOURCE_FENCED");
     let requests = server.requests.lock().unwrap();
-    assert_eq!(requests.len(), 4);
-    assert!(
-        requests
-            .iter()
-            .filter(|r| r.starts_with("POST /v1/repo/source_list "))
-            .all(|r| r.contains("\"expected_workspace_version\":7")
-                && r.contains("\"prefix\":\"public/\""))
-    );
+    assert_eq!(requests.len(), 3);
+    assert!(requests[0].starts_with("POST /v1/repo/source_status "));
+    let lists: Vec<_> = requests
+        .iter()
+        .filter(|r| r.starts_with("POST /v1/repo/source_list "))
+        .collect();
+    assert_eq!(lists.len(), 2);
+    assert!(lists.iter().all(|r| r.contains("\"prefix\":\"public/\"")));
+    assert!(!lists[0].contains("expected_workspace_version"));
+    assert!(lists[1].contains("\"expected_workspace_version\":7"));
 }
