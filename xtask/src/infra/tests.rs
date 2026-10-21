@@ -575,3 +575,16 @@ fn check_capacity_is_one_number_for_containers_and_their_consumer() {
         "prod runs no CheckContainer today"
     );
 }
+
+#[test]
+fn job_summary_tables_are_markdown_with_escaped_cells() {
+    let md = super::wrangler::markdown(
+        "deploy dev at abc",
+        &["Worker", "Detail"],
+        &[vec!["w".into(), "a | b\nc".into()]],
+    );
+    assert_eq!(
+        md,
+        "### deploy dev at abc\n\n| Worker | Detail |\n| --- | --- |\n| w | a \\| b c |\n\n"
+    );
+}
