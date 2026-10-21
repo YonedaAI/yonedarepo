@@ -26,6 +26,11 @@
   },
   "workers_dev": true,
   "preview_urls": false,
+  // Run next to the platform (also aws:us-east-1): the agent layer calls it on every step.
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
   // The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
   // route takes precedence over a Custom Domain, and the most specific route pattern wins. The
   // exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same
@@ -132,6 +137,13 @@
       "image_build_context": "..",
       "max_instances": 6,
       "instance_type": "standard-1",
+      // Next to the Durable Objects (ENAM): unpinned, agent containers ran in HKG/TXL with
+      // ~1 s round trips to them.
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
       "rollout_step_percentage": [
         100
       ]

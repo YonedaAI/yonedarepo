@@ -34,7 +34,7 @@ fn evidence(revision: &str, status: &str) -> serde_json::Value {
 fn good_prod() -> Facts {
     Facts {
         head: HEAD.into(),
-        clean: true,
+        dirty: vec![],
         ref_tips: vec![HEAD.into()],
         dev_revisions: vec![("yonedarepo-staging-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
@@ -151,7 +151,7 @@ fn dirty_tree_and_wrong_ref_are_refused() {
     let dev = dev();
     let facts = Facts {
         head: HEAD.into(),
-        clean: false,
+        dirty: vec!["?? deploy.txt".into()],
         ref_tips: vec![HEAD.into()],
         ..Facts::default()
     };
@@ -160,10 +160,10 @@ fn dirty_tree_and_wrong_ref_are_refused() {
         &dev,
         &facts,
         &Options::default(),
-        "uncommitted changes",
+        "uncommitted changes (?? deploy.txt)",
     );
     let facts = Facts {
-        clean: true,
+        dirty: vec![],
         ref_tips: vec![OTHER.into()],
         ..facts
     };
@@ -263,7 +263,7 @@ fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
         "is skip, not pass",
     );
     let dirty = Facts {
-        clean: false,
+        dirty: vec!["?? deploy.txt".into()],
         ..good_prod()
     };
     refused(

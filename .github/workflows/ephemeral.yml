@@ -27,14 +27,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup
       - name: Up
-        run: cargo xtask infra up --env "$STACK" | tee up.txt
+        run: cargo xtask infra up --env "$STACK" | tee "$RUNNER_TEMP/up.txt"
       - name: Smoke
-        run: cargo xtask infra smoke --env "$STACK" | tee smoke.txt
+        run: cargo xtask infra smoke --env "$STACK" | tee "$RUNNER_TEMP/smoke.txt"
       - name: Down (purge)
         if: always()
-        run: cargo xtask infra down --env "$STACK" --confirm --purge | tee down.txt
+        run: cargo xtask infra down --env "$STACK" --confirm --purge | tee "$RUNNER_TEMP/down.txt"
       - name: Summary
         if: always()
         run: |
           set +e  # report whatever exists; a missing file is not a failure
-          { echo "### $STACK"; echo '```'; tail -n 8 up.txt 2>/dev/null; cat smoke.txt 2>/dev/null; tail -n 4 down.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### $STACK"; echo '```'; tail -n 8 "$RUNNER_TEMP/up.txt" 2>/dev/null; cat "$RUNNER_TEMP/smoke.txt" 2>/dev/null; tail -n 4 "$RUNNER_TEMP/down.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
