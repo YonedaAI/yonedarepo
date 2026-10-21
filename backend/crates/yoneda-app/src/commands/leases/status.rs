@@ -92,12 +92,13 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
                 let reviewable = db.query("SELECT id FROM candidates WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('eligible','evaluating') LIMIT 1", &[json!(rid)])?;
                 if active.is_empty() && reviewable.is_empty() {
                     run["status"] = json!("failed");
+                    run["error"] = failure_summary(db, &rid)?;
                     save(db, "runs", &rid, &run)?;
                     event(
                         db,
                         "run.failed",
                         now,
-                        json!({"run_id":rid,"reason":"No active or independently eligible approach remains"}),
+                        json!({"run_id":rid,"reason":"No active or independently eligible approach remains","error":run["error"]}),
                     )?;
                 }
             }
@@ -110,4 +111,50 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
         super::super::comparison::wake(db, rid, now)?;
     }
     Ok(())
+}
+
+/// Why no approach of a run remains: each failed execution's agent, model and error, and
+/// each rejected or failed candidate. `code` is the first failure's leading error code.
+fn failure_summary<S: SqlStore>(db: &S, rid: &str) -> Result<Value> {
+    let rows = |table: &str| {
+        db.query(
+            &format!("SELECT payload FROM {table} WHERE json_extract(payload,'$.run_id')=? AND json_extract(payload,'$.status') IN ('failed','rejected','cancelled') ORDER BY id"),
+            &[json!(rid)],
+        )
+    };
+    let parse = |row: &Value| {
+        serde_json::from_str::<Value>(row["payload"].as_str().unwrap_or("{}")).unwrap_or_default()
+    };
+    let text = |v: &Value| {
+        v.as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| v.to_string())
+    };
+    let mut executions = Vec::new();
+    let mut lines = Vec::new();
+    for e in rows("executions")?.iter().map(parse) {
+        let error = text(&e["error"]).chars().take(300).collect::<String>();
+        let agent = format!("{}/{}", text(&e["provider"]), text(&e["model"]));
+        lines.push(format!(
+            "{} {} {agent}: {error}",
+            text(&e["id"]),
+            text(&e["role"])
+        ));
+        executions.push(json!({"id":e["id"],"role":e["role"],"provider":e["provider"],"model":e["model"],"stage":e["failure_stage"],"error":error}));
+    }
+    for c in rows("candidates")?.iter().map(parse) {
+        let error = text(&c["error"]).chars().take(300).collect::<String>();
+        lines.push(format!(
+            "candidate {} {}: {error}",
+            text(&c["execution"]),
+            text(&c["status"])
+        ));
+    }
+    let code = executions
+        .first()
+        .and_then(|e| e["error"].as_str())
+        .and_then(|e| e.split(':').next())
+        .filter(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_uppercase() || b == b'_'))
+        .unwrap_or("NO_ELIGIBLE_APPROACH");
+    Ok(json!({"code":code,"message":lines.join("; "),"executions":executions}))
 }
