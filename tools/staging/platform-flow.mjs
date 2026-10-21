@@ -112,7 +112,10 @@ async function bench(client, key, target, jobs) {
   const replies = await Promise.all(
     jobs.map(async ({ repo, writers }) => {
       const response = await fetch(client, { method: 'POST', headers: { 'content-type': 'application/json', 'x-bench-key': key }, body: JSON.stringify({ target, repo, writers }) });
-      if (response.status !== 200) return writers.map(() => ({ commit: { status: 0 }, land: null, read: { ok: false } }));
+      if (response.status !== 200) {
+        const failed = { status: 0, error: `BENCH_CLIENT_${response.status}` };
+        return writers.map(() => ({ commit: failed, land: null, read: { ...failed, ok: false } }));
+      }
       return (await response.json()).results;
     }),
   );
@@ -128,30 +131,47 @@ export async function manyRepoBurst(platform, { client, key, target, repos = 20,
       return { id: repo.id, token };
     }),
   );
-  const jobs = (read) =>
+  // `versions` maps repo/path to the version its landing returned: each reader passes it as
+  // min_version (read-your-writes). An unpinned read of main is served from a published head
+  // that may lag a landing by a few seconds (see git_cat_file in platform_tools.json).
+  const jobs = (versions) =>
     made.flatMap(({ id, token }) =>
       [0, 5].filter((k) => k < writers).map((k) => ({
         repo: id,
-        writers: Array.from({ length: Math.min(5, writers - k) }, (_, i) => ({ token, path: `w/${k + i}.txt`, content: `writer ${k + i}\n`, ...(read ? { read: true } : {}) })),
+        writers: Array.from({ length: Math.min(5, writers - k) }, (_, i) => {
+          const path = `w/${k + i}.txt`;
+          const writer = { token, path, content: `writer ${k + i}\n` };
+          return versions ? { ...writer, read: true, version: versions.get(`${id}/${path}`) } : writer;
+        }),
       })),
     );
+  const order = (list) => list.flatMap(({ repo, writers: ws }) => ws.map((w) => `${repo}/${w.path}`));
   assert.ok(writers <= 10, 'The burst sends at most ten writers per repository');
   const started = performance.now();
-  const writes = await bench(client, key, target, jobs(false));
+  const writeJobs = jobs(null);
+  const writes = await bench(client, key, target, writeJobs);
   const elapsed = performance.now() - started;
-  const reads = await bench(client, key, target, jobs(true));
+  const versions = new Map(order(writeJobs).map((at, i) => [at, writes[i]?.land?.version]));
+  const readJobs = jobs(versions);
+  const reads = await bench(client, key, target, readJobs);
   const ok = (r) => r?.status === 200;
   const lands = writes.map((w) => w.land).filter(ok);
+  // Each failed read with what the platform answered (status, error code, message).
+  const readFailures = order(readJobs)
+    .map((at, i) => ({ at, read: reads[i]?.read }))
+    .filter(({ read }) => !read?.ok)
+    .map(({ at, read }) => `${at}@${versions.get(at) ?? '?'}: ${read?.status ?? 0} ${read?.error ?? (read?.status === 200 ? 'WRONG_CONTENT' : '')} ${read?.message ?? ''}`.trim());
   Object.assign(metrics, {
     writers: repos * writers,
     commits_ok: writes.filter((w) => ok(w.commit)).length,
     lands_ok: lands.length,
     reads_ok: reads.filter((r) => r.read?.ok).length,
+    read_failures: readFailures,
     elapsed_s: (elapsed / 1000).toFixed(1),
     lands_per_s: (lands.length / (elapsed / 1000)).toFixed(1),
     land_p95_ms: latency(lands.map((l) => l.ms)).p95_ms,
     commit_p95_ms: latency(writes.filter((w) => ok(w.commit)).map((w) => w.commit.ms)).p95_ms,
   });
   assert.equal(metrics.lands_ok, repos * writers, 'Not every writer landed');
-  assert.equal(metrics.reads_ok, repos * writers, 'Not every file read back');
+  assert.equal(metrics.reads_ok, repos * writers, `Not every file read back: ${readFailures.slice(0, 5).join('; ')}`);
 }

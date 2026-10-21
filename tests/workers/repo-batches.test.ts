@@ -76,6 +76,19 @@ it('runs inside the LandCombiner Durable Object, with its head holder and projec
     expect((await api(`${repo}/blob?path=d/${i}.txt&min_version=${l.body.version}`, owner, {}, target)).body.content).toBe(`${i}\n`);
 });
 
+it('reads main at a landing version as the contract says: at once, or STALE_READ before main reaches it', async () => {
+  const target = { ...batched, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const { owner, repo } = await repoWith('minversion', [file('a.txt', '0\n')], target);
+  const token = (await api(`${repo}/tokens`, owner, { body: { name: 'rw', scopes: ['read', 'write', 'land'] } }, target)).body.token;
+  const made = await commitOn(repo, { token }, [file('m.txt', 'm\n')], target);
+  const landed = await landOn(repo, { token }, made.body.commit, target);
+  expect(landed.status).toBe(200);
+  const at = (v: number) => api(`${repo}/blob?path=m.txt&min_version=${v}`, owner, {}, target);
+  expect((await at(landed.body.version)).body).toMatchObject({ content: 'm\n', version: landed.body.version });
+  const ahead = await at(landed.body.version + 5);
+  expect([ahead.status, ahead.body.error?.code]).toEqual([400, 'STALE_READ']);
+});
+
 it('falls back to the queued path when the combiner cannot be reached', async () => {
   const broken = {
     idFromName: (n: string) => n,
