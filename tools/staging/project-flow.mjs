@@ -16,6 +16,15 @@ export async function bindManagedProviders(owner, username) {
   for (const { provider, model } of CHEAP) await owner.post('/api/admin/providers/managed', { username, provider, model });
 }
 
+/** Funds a person's staging account (owner only): managed cheap models and a $5 allowance. */
+export async function fundAccount(owner, username) {
+  await bindManagedProviders(owner, username);
+  const set = await owner.raw('POST', '/api/admin/workspace/allowance', { username, expected_version: 0, limit_microusd: 5_000_000 });
+  // A first configuration expects version 0; an already funded account keeps its allowance.
+  if (!set.ok && set.body?.error?.code !== 'STALE_VERSION') throw new Error(`Allowance: ${set.body?.error?.code} ${set.body?.error?.message ?? ''}`);
+  return set.ok ? set.body : { already_funded: true };
+}
+
 /** Gives the kit account the staging allowance ($5 total) if it has none yet. */
 export async function ensureAllowance(account, owner, username, limit = 5_000_000) {
   const current = await account.get('/api/workspace/allowance');
