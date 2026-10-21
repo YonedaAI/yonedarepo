@@ -166,9 +166,11 @@ export function ConflictStatusPanel({
               )}
               <ConflictPathEvidence repo={repository.id} record={conflict} />
               <div className="conflict-actions">
-                {conflict.kind === 'stale_candidate' ||
-                (conflict.kind === 'refresh_record' &&
-                  ['failed', 'stale'].includes(conflict.status ?? '')) ? (
+                {conflict.refresh_blocked ? (
+                  <p className="empty-note">{conflict.refresh_blocked}</p>
+                ) : conflict.kind === 'stale_candidate' ||
+                  (conflict.kind === 'refresh_record' &&
+                    ['failed', 'stale'].includes(conflict.status ?? '')) ? (
                   <button
                     type="button"
                     className="quiet"

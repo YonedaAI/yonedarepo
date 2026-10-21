@@ -330,3 +330,57 @@ fn publication_pending_prevents_refresh_and_exhausted_capture_is_terminal() {
 }
 #[path = "conflict_source_limits.rs"]
 mod source_limits;
+
+#[test]
+fn published_or_cancelled_run_candidates_are_refused_before_any_refresh_is_queued() {
+    for status in ["accepted", "cancelled"] {
+        let db = setup();
+        let mut run = get(&db, "runs", "run").unwrap();
+        run["status"] = json!(status);
+        save(&db, "runs", "run", &run).unwrap();
+        let mut command = request();
+        command["now"] = json!(2);
+        let refused = execute(&db, command).unwrap_err();
+        assert_eq!(refused.code, "INVALID_STATE", "{status}");
+        assert!(
+            refused.message.contains("start a new run"),
+            "{}",
+            refused.message
+        );
+        assert!(
+            all(&db, "conflicts").unwrap().is_empty(),
+            "{status}: conflict recorded"
+        );
+        assert!(
+            all(&db, "jobs")
+                .unwrap()
+                .iter()
+                .all(|j| j["kind"] != "capture"),
+            "{status}: refresh job queued"
+        );
+    }
+}
+
+#[test]
+fn inventory_marks_candidates_of_published_runs_as_not_refreshable() {
+    let db = setup();
+    let open = status(&db, &json!({"op":"conflict_status"})).unwrap();
+    assert!(
+        open["conflicts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["refresh_blocked"].is_null())
+    );
+    let mut run = get(&db, "runs", "run").unwrap();
+    run["status"] = json!("accepted");
+    save(&db, "runs", "run", &run).unwrap();
+    let published = status(&db, &json!({"op":"conflict_status"})).unwrap();
+    let stale = published["conflicts"].as_array().unwrap();
+    assert!(!stale.is_empty());
+    assert!(stale.iter().all(|c| {
+        c["refresh_blocked"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("start a new run"))
+    }));
+}

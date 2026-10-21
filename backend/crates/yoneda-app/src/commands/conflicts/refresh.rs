@@ -1,6 +1,14 @@
 use super::support::*;
 use super::*;
 use yoneda_agents_core::conflict::TrustedPathEvidence;
+/// Why candidates of this run cannot be refreshed: published and cancelled runs are final.
+pub(super) fn blocked(run: &Value) -> Option<&'static str> {
+    ["accepted", "cancelled"]
+        .contains(&run["status"].as_str().unwrap_or_default())
+        .then_some(
+            "This run is already published or cancelled; start a new run from the current main",
+        )
+}
 pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let agent = c.get("job_id").is_some();
     let candidate_id = string(c, "candidate_id")?;
@@ -16,6 +24,10 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             "NOT_SUPPORTED",
             "Only lazy-source runs can refresh candidates",
         ));
+    }
+    // The refresh job fences these runs (source_refresh::context); refuse before queueing it.
+    if let Some(reason) = blocked(&run) {
+        return Err(Error::new("INVALID_STATE", reason));
     }
     let request_id = string(c, "request_id")?;
     if let Some(old) = by_request(db, &request_id)? {
