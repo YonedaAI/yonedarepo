@@ -62,8 +62,49 @@ pub(crate) fn run_with_stdin(account_id: &str, args: &[&str], input: &[u8]) -> R
     Ok(())
 }
 
-/// Prints a fixed-width table.
-pub(crate) fn table(headers: &[&str], rows: &[Vec<String>]) {
+/// Prints `title` and a fixed-width table; in GitHub Actions also appends it to the job
+/// summary as Markdown, so a run is readable without the raw log.
+pub(crate) fn table(title: &str, headers: &[&str], rows: &[Vec<String>]) {
+    println!("{title}");
+    print_table(headers, rows);
+    if let Some(path) = std::env::var_os("GITHUB_STEP_SUMMARY")
+        && let Err(error) = append_markdown(std::path::Path::new(&path), title, headers, rows)
+    {
+        eprintln!("Could not write the job summary: {error}");
+    }
+}
+
+pub(crate) fn markdown(title: &str, headers: &[&str], rows: &[Vec<String>]) -> String {
+    let cell = |c: &str| c.replace('|', "\\|").replace('\n', " ");
+    let mut out = format!(
+        "### {}\n\n| {} |\n|{}\n",
+        cell(title),
+        headers.join(" | "),
+        " --- |".repeat(headers.len())
+    );
+    for row in rows {
+        let cells: Vec<String> = row.iter().map(|c| cell(c)).collect();
+        out.push_str(&format!("| {} |\n", cells.join(" | ")));
+    }
+    out.push('\n');
+    out
+}
+
+fn append_markdown(
+    path: &std::path::Path,
+    title: &str,
+    headers: &[&str],
+    rows: &[Vec<String>],
+) -> Result<()> {
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)?;
+    file.write_all(markdown(title, headers, rows).as_bytes())?;
+    Ok(())
+}
+
+fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     let mut widths: Vec<usize> = headers.iter().map(|h| h.len()).collect();
     for row in rows {
         for (index, cell) in row.iter().enumerate() {

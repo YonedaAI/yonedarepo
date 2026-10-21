@@ -175,8 +175,11 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
             );
         }
     }
-    println!("{} smoke at {}:", env.name(), short(&head));
-    table(&["Check", "Result", "Detail"], &check.rows);
+    table(
+        &format!("{} smoke at {}", env.name(), short(&head)),
+        &["Check", "Result", "Detail"],
+        &check.rows,
+    );
     if check.failed > 0 {
         return Err(format!("{} smoke check(s) failed", check.failed).into());
     }

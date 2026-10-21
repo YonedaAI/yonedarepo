@@ -42,6 +42,22 @@ pub(crate) async fn wait_for_revision(worker: &Deployable, head: &str) -> Option
     live
 }
 
+/// Container application name -> its current version (a rollout bumps it).
+pub(crate) fn container_versions(
+    account_id: &str,
+) -> Result<std::collections::BTreeMap<String, u64>> {
+    let apps: Value = serde_json::from_slice(&wrangler::output(
+        account_id,
+        &["containers", "list", "--json", "--per-page", "100"],
+    )?)?;
+    Ok(apps
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|a| Some((a["name"].as_str()?.to_owned(), a["version"].as_u64()?)))
+        .collect())
+}
+
 /// Busy instances (active, assigned, starting or scheduling) of the Worker's containers.
 pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> {
     let declared = inventory::containers(config);
@@ -151,7 +167,10 @@ async fn status_table(env: &Env, workers: &[Deployable]) -> Result<()> {
             },
         ]);
     }
-    println!("{} vs local HEAD {}:", env.name(), short(&head));
-    table(&["Worker", "Live revision", "= HEAD", "Routes"], &rows);
+    table(
+        &format!("{} vs local HEAD {}", env.name(), short(&head)),
+        &["Worker", "Live revision", "= HEAD", "Routes"],
+        &rows,
+    );
     Ok(())
 }

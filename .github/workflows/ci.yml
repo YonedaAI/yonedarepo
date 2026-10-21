@@ -154,9 +154,13 @@ jobs:
       - name: Smoke
         if: steps.tip.outputs.current == 'true'
         run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
-      - name: Summary
-        if: always()
+      # The deploy and smoke tables reach the job summary from xtask itself; on a failure
+      # before them, the last log lines do.
+      - name: Log tail on failure
+        if: failure()
         run: |
           set +e  # report whatever exists; a missing file is not a failure
-          { echo '### Deploy dev'; echo '```'; tail -n 12 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; tail -n 12 "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          rm -f ~/.config/yonedarepo/staging.env
+          { echo '### Deploy dev: log tail'; echo '```'; tail -n 20 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; tail -n 20 "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the secrets file
+        if: always()
+        run: rm -f ~/.config/yonedarepo/staging.env
