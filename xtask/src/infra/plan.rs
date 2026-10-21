@@ -250,7 +250,11 @@ pub(crate) fn print(env: &Env, rows: &[Row], live: &Live) -> usize {
             ]
         })
         .collect();
-    table(&["Kind", "Name", "Action", "Detail"], &cells);
+    table(
+        &format!("infra plan {}", env.name()),
+        &["Kind", "Name", "Action", "Detail"],
+        &cells,
+    );
     let count = |a: Action| rows.iter().filter(|r| r.action == a).count();
     println!(
         "\n{}: {} create, {} unchanged, {} drift, {} extra, {} unverified",
