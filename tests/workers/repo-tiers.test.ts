@@ -9,7 +9,9 @@ import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture
 
 usePlatformFixture();
 const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
-const FILES = 120;
+// Two read batches of 16; the assertions are relative to FILES. 120 files spent most of the
+// file's time on simulated storage I/O (720 ops per cold read), ~10x slower on CI runners.
+const FILES = 32;
 
 async function repoWith(name: string, env: Env, policy: unknown = { required_checks: [], approvals: 0 }) {
   const owner = { cookie: await signup(name) };
