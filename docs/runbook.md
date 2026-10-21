@@ -124,7 +124,10 @@ Each environment is one spec in `infra/envs/` (`dev.json` = dev.yonedarepo.com, 
 - `cargo xtask infra plan --env X` compares live Cloudflare state with the spec (create / unchanged / drift / extra / unverified) using a read-only API token (`CLOUDFLARE_API_TOKEN` or `--token-file`). `infra up` creates missing D1/R2/queues, records their ids, regenerates the configs and deploys; `infra down --confirm [--purge]` tears down dev or an `ephemeral-<id>` stack and is refused for prod; `infra smoke` checks the frontend, revisions and owner APIs.
 - CI (`.github/workflows/ci.yml`) runs the `cargo xtask check` parts as parallel jobs and, on pushes to `dev`, deploys dev and runs the smoke. Kit, deploy-prod and the nightly ephemeral stack are dispatch/schedule workflows, which GitHub runs only from the default branch (`main`).
 
+CI deploy tokens live in the GitHub Environments `dev` and `production` (one token each, never shared): account Workers Scripts Write, D1 Write, Workers R2 Storage Write, Queues Write, **Secrets Store Write** (deploying a Worker with `secrets_store_secrets` bindings fails with code 10021 on Read alone), Artifacts Write, Workers Containers Write, Account Settings Read; zone Workers Routes Write, Zone Read, DNS Write. `infra plan` needs only the Read variants plus Workers Containers Read.
+
 Production cutover notes (not applied to `prod.json` until the owner promotes):
+- Give the production CI token (`yonedarepo-ci-prod`) Secrets Store Write before the first `deploy --env prod`.
 - Pin ExecutionContainer and CheckContainer with `constraints.regions: ["ENAM"]` and give the agents Worker `placement: {mode: "targeted", region: "aws:us-east-1"}`, as dev has: unpinned dev agent containers ran in HKG/TXL with about 1 s round trips to the Durable Objects, against about 330 ms elsewhere.
 - Set `check_instances` (CheckContainer max_instances = checks consumer max_concurrency).
 
