@@ -127,7 +127,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Fetch the tip of dev for the deploy guard
-        run: git fetch --no-tags --depth=1 origin dev:refs/remotes/origin/dev
+        run: git fetch --no-tags --depth=1 origin +dev:refs/remotes/origin/dev
       # A newer push has its own CI run and deploy; skip quietly instead of failing the guard.
       - name: Skip unless this commit is still the tip of dev
         id: tip
@@ -157,5 +157,6 @@ jobs:
       - name: Summary
         if: always()
         run: |
+          set +e  # report whatever exists; a missing file is not a failure
           { echo '### Deploy dev'; echo '```'; tail -n 12 deploy.txt 2>/dev/null; tail -n 12 smoke.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           rm -f ~/.config/yonedarepo/staging.env
