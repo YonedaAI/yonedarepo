@@ -10,7 +10,7 @@
 // Model keys stay in the Secrets Store: the owner route binds them to the kit account as
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
-// Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts]
+// Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <id>]
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -27,6 +27,9 @@ const { values } = parseArgs({
     platform: { type: 'string', default: 'https://yonedarepo-staging-platform.mlong-f01.workers.dev' },
     client: { type: 'string', default: 'https://yonedarepo-staging-bench.mlong-f01.workers.dev' },
     only: { type: 'string' },
+    // Resume items 3-4 on an existing project and finished compare run (ids from evidence).
+    project: { type: 'string' },
+    run: { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
   },
 });
@@ -42,6 +45,8 @@ const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PA
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
 const rec = new Recorder();
 const state = {};
+if (values.project) state.project = await account.get(`/api/projects/${values.project}`);
+if (values.project && values.run) state.run = (await account.get(`/api/repos/${values.project}/runs/${values.run}`)).run;
 const step = (id, title, run) => (wanted(id) ? rec.step(id, title, run) : null);
 
 await step('0', 'Live revisions (/health)', async (m) => {
@@ -102,7 +107,8 @@ await step('11', 'Delete test project, token revoked', async (m) => {
   await deleteProject(account, state.project, m);
 });
 
-const modelSpend = state.spend ?? (state.run ? spend(state.run) : 0);
+// A failed run still spent money: its last observed spend is in item 2's metrics.
+const modelSpend = state.spend ?? (state.run ? spend(state.run) : Number(rec.items.find((i) => i.id === '2')?.metrics.spend_usd ?? 0));
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 const file = resolve(root, `.local/staging/realworld-${Date.now()}.json`);
