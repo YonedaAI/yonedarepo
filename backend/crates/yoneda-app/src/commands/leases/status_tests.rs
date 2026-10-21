@@ -81,3 +81,27 @@ fn hashed_capture_lifecycle_events_identify_the_saved_execution() {
         assert_eq!(record["data"]["kind"], "capture", "{kind}");
     }
 }
+
+#[test]
+fn failed_compare_run_names_the_failing_agent_model_and_code() {
+    let db = fixture::fixture();
+    let mut run = get(&db, "runs", "run").unwrap();
+    run["mode"] = json!("compare");
+    save(&db, "runs", "run", &run).unwrap();
+    let claimed = fixture::call(&db, json!({"op":"claim","job_id":"job:execution"}), 1000).unwrap();
+    fixture::call(
+        &db,
+        json!({"op":"fail","job_id":"job:execution","epoch":claimed["epoch"],
+            "retryable":false,"error":"EXECUTION_TIMEOUT: Execution deadline exceeded"}),
+        1000,
+    )
+    .unwrap();
+    let run = get(&db, "runs", "run").unwrap();
+    assert_eq!(run["status"], "failed");
+    assert_eq!(run["error"]["code"], "EXECUTION_TIMEOUT");
+    let message = run["error"]["message"].as_str().unwrap();
+    for part in ["execution", "codex/gpt-5.6-luna", "EXECUTION_TIMEOUT"] {
+        assert!(message.contains(part), "{message} lacks {part}");
+    }
+    assert_eq!(run["error"]["executions"][0]["id"], "execution");
+}
