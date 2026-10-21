@@ -18,14 +18,18 @@ pub(crate) async fn execute(job: &Value, root: &Path) -> Result<Value> {
             "Evaluators read the captured revision through lazy source",
         ));
     }
-    let session = crate::source_workspace_run::SourceRun::prepare(
-        job,
+    let (owned, parent) = (
+        job.clone(),
         root.parent()
-            .ok_or_else(|| err("Evaluation source parent missing"))?,
-        true,
-    )?;
+            .ok_or_else(|| err("Evaluation source parent missing"))?
+            .to_path_buf(),
+    );
+    let session = crate::source_workspace_run::off_runtime(move || {
+        crate::source_workspace_run::SourceRun::prepare(&owned, &parent, true)
+    })
+    .await?;
     let result = run_evaluation(job, session.root()).await;
-    session.close_evaluation()?;
+    crate::source_workspace_run::off_runtime(move || session.close_evaluation()).await?;
     result
 }
 async fn run_evaluation(job: &Value, root: &Path) -> Result<Value> {

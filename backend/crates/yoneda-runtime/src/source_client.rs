@@ -119,3 +119,7 @@ pub fn validate_path(path: &str, root: bool) -> Result<()> {
 pub fn failure(code: &str, message: &str) -> Error {
     Error::new(code, message)
 }
+/// A local filesystem failure with its OS cause (for example a FUSE operation's EIO).
+pub fn io_failure(context: &str, error: &std::io::Error) -> Error {
+    Error::new("SOURCE_IO", format!("{context}: {error}"))
+}
