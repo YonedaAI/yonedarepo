@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",
-    "jose": "^6.2.12"
+    "jose": "^6.2.13"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
