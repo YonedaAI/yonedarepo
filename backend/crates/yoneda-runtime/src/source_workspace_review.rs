@@ -39,7 +39,11 @@ pub(crate) async fn execute(
         }
         mapping.push(json!({"candidate_id":alternative["candidate_id"],"directory":alias}));
     }
-    let session = SourceRun::prepare(job, root, false)?;
+    let (owned, parent) = (job.clone(), root.to_path_buf());
+    let session = crate::source_workspace_run::off_runtime(move || {
+        SourceRun::prepare(&owned, &parent, false)
+    })
+    .await?;
     use std::io::Write;
     let mut index = fs::OpenOptions::new()
         .create_new(true)
@@ -73,7 +77,8 @@ pub(crate) async fn execute(
         Some(budget),
     )
     .await?;
-    let workspace = session.finish(&format!("source-review-{}", crate::field(job, "id")?))?;
+    let id = format!("source-review-{}", crate::field(job, "id")?);
+    let workspace = crate::source_workspace_run::off_runtime(move || session.finish(&id)).await?;
     let receipt = broker("/comparison-result", json!({}), true).await?;
     if receipt["manifest_digest"] != frozen["manifest_digest"] || !receipt["review_id"].is_string()
     {
