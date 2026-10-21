@@ -11,6 +11,10 @@ const neutral = new Set([
   './http',
   './types',
   './check-container',
+  // waitUntil plumbing (AsyncLocalStorage), no agent-layer knowledge.
+  './background',
+  // Durable Object call with one retry on a reset instance; imports nothing.
+  './durable',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
   '../../backend/crates/yoneda-core/src/platform_tools.json',
 ]);
