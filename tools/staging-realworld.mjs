@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Real-world test kit for the staging stack (dev.yonedarepo.com). An explicit, separate
 // command that spends real (cheap) model money and creates projects and repositories:
-// project creation, a compare run, owner publish + readback, refresh, an external MCP
+// project creation, two compare runs, owner publish + readback, refresh merge, an external MCP
 // agent, an Artifacts clone checked byte for byte, a container check, 100/1000-writer and
 // many-repo bursts, and project deletion. Prints a pass/fail table and writes evidence to
 // .local/staging/. Credentials come only from 0600 files in ~/.config/yonedarepo/:
@@ -10,7 +10,7 @@
 // Model keys stay in the Secrets Store: the owner route binds them to the kit account as
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
-// Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <id>]
+// Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <a> --run-b <b>]
 //        node tools/staging-realworld.mjs --fund <username>
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -20,7 +20,7 @@ import { parseArgs, promisify } from 'node:util';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
-import { bindManagedProviders, compareRun, createProject, fundAccount, deleteProject, ensureAllowance, publish, refreshOther, spend } from './staging/project-flow.mjs';
+import { BRIEFS, bindManagedProviders, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -33,6 +33,7 @@ const { values } = parseArgs({
     fund: { type: 'string' },
     project: { type: 'string' },
     run: { type: 'string' },
+    'run-b': { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
   },
 });
@@ -54,7 +55,9 @@ const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account
 const rec = new Recorder();
 const state = {};
 if (values.project) state.project = await account.get(`/api/projects/${values.project}`);
-if (values.project && values.run) state.run = (await account.get(`/api/repos/${values.project}/runs/${values.run}`)).run;
+const runOf = async (id) => (await account.get(`/api/repos/${values.project}/runs/${id}`)).run;
+if (values.project && values.run) state.run = await runOf(values.run);
+if (values.project && values['run-b']) state.runB = await runOf(values['run-b']);
 const step = (id, title, run) => (wanted(id) ? rec.step(id, title, run) : null);
 
 await step('0', 'Live revisions (/health)', async (m) => {
@@ -65,19 +68,23 @@ await step('1', 'Create project (browser flow, API)', async (m) => {
   state.project = await createProject(account, `kit-${Date.now()}`, m);
   m.project = state.project.id;
 });
-await step('2', 'Compare run, cheap real models', async (m) => {
+await step('2', 'Two compare runs (A, B), cheap real models', async (m) => {
   if (!state.project) return { skip: 'No project (item 1)' };
   await bindManagedProviders(owner, kit.KIT_USERNAME);
   await ensureAllowance(account, owner, kit.KIT_USERNAME);
-  state.run = await compareRun(account, state.project.id, m);
+  // Both start on the same main, so B's pick is stale once A is published (item 4).
+  const [a, b] = [await startCompare(account, state.project.id, BRIEFS.a), await startCompare(account, state.project.id, BRIEFS.b)];
+  const [ma, mb] = [{}, {}];
+  [state.run, state.runB] = await Promise.all([waitCompare(account, state.project.id, a, ma), waitCompare(account, state.project.id, b, mb)]);
+  Object.assign(m, { run_a: ma.run, a: ma.comparison, run_b: mb.run, b: mb.comparison, spend_usd: (Number(ma.spend_usd) + Number(mb.spend_usd)).toFixed(4) });
 });
 await step('3', 'Owner publish ff-only + readback', async (m) => {
   if (!state.run) return { skip: 'No compare run (item 2)' };
   state.published = await publish(account, state.project.id, state.run, m);
 });
-await step('4', 'Refresh other result onto new main', async (m) => {
-  if (!state.published) return { skip: 'Nothing published (item 3)' };
-  return refreshOther(account, state.project.id, state.run, state.published, m);
+await step('4', "Refresh B's pick onto the new main, publish B (N8 step 12)", async (m) => {
+  if (!state.published || !state.runB) return { skip: 'Needs A published and run B (items 2-3)' };
+  await refreshMerge(account, state.project.id, state.runB, m);
 });
 await step('5', 'External agent via remote MCP', async (m) => {
   if (!state.project) return { skip: 'No project (item 1)' };
@@ -111,12 +118,13 @@ await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
 await step('11', 'Delete test project, token revoked', async (m) => {
   if (!state.project) return { skip: 'No project (item 1)' };
   // Read the run's settled spend first: a deleted project's history is gone (410).
-  if (state.run) state.spend = spend((await account.get(`/api/repos/${state.project.id}/runs/${state.run.id}`)).run);
+  const runSpend = async (run) => (run ? spend((await account.get(`/api/repos/${state.project.id}/runs/${run.id}`)).run) : 0);
+  if (state.run) state.spend = (await runSpend(state.run)) + (await runSpend(state.runB));
   await deleteProject(account, state.project, m);
 });
 
 // A failed run still spent money: its last observed spend is in item 2's metrics.
-const modelSpend = state.spend ?? (state.run ? spend(state.run) : Number(rec.items.find((i) => i.id === '2')?.metrics.spend_usd ?? 0));
+const modelSpend = state.spend ?? Number(rec.items.find((i) => i.id === '2')?.metrics.spend_usd ?? 0);
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 const file = resolve(root, `.local/staging/realworld-${Date.now()}.json`);
