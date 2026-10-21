@@ -16,6 +16,13 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         })
         .collect::<Result<_>>()?;
     for record in &mut conflicts {
+        if let Ok(candidate) = get(
+            db,
+            "candidates",
+            record["candidate_id"].as_str().unwrap_or_default(),
+        ) {
+            record["refresh_blocked"] = refresh_blocked(db, &candidate)?;
+        }
         if record["status"] == "clean"
             && let Some(id) = record["refreshed_candidate_id"].as_str()
         {
@@ -39,7 +46,7 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         if candidate["base"]["commit"] != repository["head_commit"]
             && !existing.contains(candidate["id"].as_str().unwrap_or_default())
         {
-            stale_candidates.push(json!({"candidate_id":candidate["id"],"candidate_base":candidate["base"]["commit"],"captured_paths":candidate["paths"],"captured_paths_ref":candidate["paths_ref"],"captured_paths_count":candidate["paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed"}));
+            stale_candidates.push(json!({"candidate_id":candidate["id"],"candidate_base":candidate["base"]["commit"],"captured_paths":candidate["paths"],"captured_paths_ref":candidate["paths_ref"],"captured_paths_count":candidate["paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed","refresh_blocked":refresh_blocked(db, &candidate)?}));
         }
     }
     // The inventory is useful before refresh only if stale candidates are visible
@@ -47,7 +54,7 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     // until a trusted Git refresh computes it.
     let mut inventory = conflicts.clone();
     inventory.extend(stale_candidates.iter().map(|candidate| {
-        json!({"kind":"stale_candidate","candidate_id":candidate["candidate_id"],"candidate_base":candidate["candidate_base"],"captured_paths":candidate["captured_paths"],"captured_paths_ref":candidate["captured_paths_ref"],"captured_paths_count":candidate["captured_paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed"})
+        json!({"kind":"stale_candidate","candidate_id":candidate["candidate_id"],"candidate_base":candidate["candidate_base"],"captured_paths":candidate["captured_paths"],"captured_paths_ref":candidate["captured_paths_ref"],"captured_paths_count":candidate["captured_paths_count"],"status":candidate["status"],"overlap_status":"not_analyzed","refresh_blocked":candidate["refresh_blocked"]})
     }));
     let mut overlaps: Vec<Value> = conflicts.iter().filter(|v| v.get("evidence").is_some()).map(|v| json!({"conflict_id":v["id"],"candidate_id":v["candidate_id"],"paths":v["evidence"]["overlapping_paths"],"paths_ref":v["evidence"]["overlapping_paths_ref"],"paths_count":v["evidence"]["overlapping_paths_count"],"status":v["status"]})).collect();
     overlaps.extend(stale_candidates.iter().map(|candidate| {
@@ -56,4 +63,12 @@ pub(super) fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     Ok(
         json!({"conflicts":inventory,"overlaps":overlaps,"head_commit":repository["head_commit"],"version":repository["version"]}),
     )
+}
+
+/// Why a refresh of this candidate would be refused, so the inventory never offers a doomed action.
+fn refresh_blocked<S: SqlStore>(db: &S, candidate: &Value) -> Result<Value> {
+    let Some(id) = candidate["run_id"].as_str() else {
+        return Ok(Value::Null);
+    };
+    Ok(super::refresh::blocked(&get(db, "runs", id)?).map_or(Value::Null, |reason| json!(reason)))
 }

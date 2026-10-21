@@ -305,3 +305,27 @@ describe('backend conflict inventory normalization and repair actions', () => {
     clearInterval.mockRestore();
   });
 });
+
+describe('published or cancelled runs', () => {
+  it('shows why a stale candidate cannot be refreshed instead of offering the button', async () => {
+    const reason =
+      'This run is already published or cancelled; start a new run from the current main';
+    apiMock.mockResolvedValueOnce({
+      conflicts: [
+        {
+          kind: 'stale_candidate',
+          candidate_id: 'alternative',
+          status: 'eligible',
+          refresh_blocked: reason,
+        },
+      ],
+      overlaps: [],
+    });
+    render();
+    for (const effect of hooks.effects.splice(0)) effect();
+    await vi.waitFor(() => expect(hooks.states[0]).toBeTruthy());
+    const tree = render();
+    expect(find(tree, 'button', 'Refresh candidate')).toBeUndefined();
+    expect(renderToStaticMarkup(tree)).toContain(reason);
+  });
+});
