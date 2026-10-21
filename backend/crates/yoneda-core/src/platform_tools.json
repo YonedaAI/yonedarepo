@@ -140,7 +140,7 @@
   },
   {
     "name": "git_cat_file",
-    "description": "Read one file at a commit, branch or past version. UTF-8 text is returned as text, other bytes as base64.",
+    "description": "Read one file at a commit, branch or past version. UTF-8 text is returned as text, other bytes as base64. On main without commit or at, it reads main's published head, which can trail a landing by a few seconds; to read your own landing, pass the version git_land returned as min_version (STALE_READ while main has not reached it: retry).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -159,6 +159,11 @@
           "type": "integer",
           "minimum": 0,
           "description": "Read as of this transaction-log version (time travel)"
+        },
+        "min_version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Read main at this transaction-log version or later (read-your-writes after git_land)"
         }
       },
       "required": [
@@ -1124,7 +1129,7 @@
   },
   {
     "name": "git_land",
-    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged.",
+    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged. Returns the landing's transaction-log version: reads of main that pass it as min_version see the landing at once, while main's Git commit is projected shortly after (git_commit is null until then).",
     "inputSchema": {
       "type": "object",
       "properties": {
