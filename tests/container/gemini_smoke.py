@@ -56,5 +56,5 @@ assert result.returncode == 0, result.stderr[-3000:]
 assert 'SMOKE_COMPLETE' in result.stdout, result.stdout[-3000:]
 assert any(call.get('name') == 'context_publish' for call in calls), {'mcp_calls': calls, 'tools': tools, 'stderr': result.stderr[-2000:]}
 assert calls[0]['arguments']['intent_id'] == 'intent:smoke'
-print(json.dumps({'offline_fixture': True, 'cli': '0.63.0', 'real_rust_mcp_roundtrip': True, 'context_publish_calls': len(calls), 'paid_inference': False}))
+print(json.dumps({'offline_fixture': True, 'cli': '0.65.0', 'real_rust_mcp_roundtrip': True, 'context_publish_calls': len(calls), 'paid_inference': False}))
 server.shutdown()
