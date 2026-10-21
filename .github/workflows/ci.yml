@@ -1,6 +1,8 @@
 name: CI
-# The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image.
-# Keep the job list in step with the `check` arm in xtask/src/commands.rs.
+# The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image,
+# then (pushes to dev only) the dev deploy + smoke. Keep the job list in step with the `check`
+# arm in xtask/src/commands.rs. The deploy lives here because workflow_run, schedule and
+# workflow_dispatch triggers fire only for workflow files on the default branch (main).
 on:
   push:
     branches: [dev, main]
@@ -12,6 +14,10 @@ permissions:
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
 jobs:
   rust:
     name: Rust fmt, clippy, tests
@@ -104,3 +110,52 @@ jobs:
         run: docker build --platform linux/amd64 -f cloudflare/containers/Dockerfile -t yonedarepo-runtime:ci .
       - name: Verify Gemini CLI and Rust MCP without inference
         run: docker run --rm --network none -i --entrypoint python3 yonedarepo-runtime:ci - < tests/container/gemini_smoke.py
+
+  deploy-dev:
+    name: Deploy dev + smoke
+    needs: [rust, wasm, workers, suites, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: dev
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch the tip of dev for the deploy guard
+        run: git fetch --no-tags --depth=1 origin dev:refs/remotes/origin/dev
+      # A newer push has its own CI run and deploy; skip quietly instead of failing the guard.
+      - name: Skip unless this commit is still the tip of dev
+        id: tip
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/dev)" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$(git rev-parse --short HEAD) is no longer the tip of dev; its successor deploys."
+          fi
+      - uses: ./.github/actions/setup
+        if: steps.tip.outputs.current == 'true'
+      - name: Write the dev secrets file (0600, outside the tree)
+        if: steps.tip.outputs.current == 'true'
+        env:
+          OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
+          VAULT_KEY: ${{ secrets.VAULT_KEY }}
+        run: |
+          install -d -m 700 ~/.config/yonedarepo
+          umask 077
+          printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
+      - name: Deploy dev
+        if: steps.tip.outputs.current == 'true'
+        run: cargo xtask deploy --env dev | tee deploy.txt
+      - name: Smoke
+        if: steps.tip.outputs.current == 'true'
+        run: cargo xtask infra smoke --env dev | tee smoke.txt
+      - name: Summary
+        if: always()
+        run: |
+          { echo '### Deploy dev'; echo '```'; tail -n 12 deploy.txt 2>/dev/null; tail -n 12 smoke.txt 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          rm -f ~/.config/yonedarepo/staging.env
