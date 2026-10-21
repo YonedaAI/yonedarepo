@@ -34,7 +34,9 @@ export default defineConfig({
     include: ['tests/workers/**/*.test.ts'],
     setupFiles: ['tests/workers/platform-listing.ts'],
     exclude: ['tests/workers/apps-*.test.ts'],
-    testTimeout: 20_000,
+    // GitHub runners (4 vCPU, four workerd pools) run this suite about 8x slower than a
+    // workstation; repo-tiers needed over 20 s there. The limit is a hang guard only.
+    testTimeout: process.env.CI ? 60_000 : 20_000,
     // One workerd per worker: cap it so parallel builders don't saturate the machine.
     maxWorkers: 4,
   },

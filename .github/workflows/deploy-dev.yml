@@ -13,6 +13,10 @@ permissions:
 concurrency:
   group: deploy-dev
   cancel-in-progress: false
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
 jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
@@ -28,8 +32,19 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - name: Fetch the tip of dev for the deploy guard
         run: git fetch --no-tags --depth=1 origin dev:refs/remotes/origin/dev
+      # A newer push has its own CI run and deploy; skip quietly instead of failing the guard.
+      - name: Skip unless this commit is still the tip of dev
+        id: tip
+        run: |
+          if [ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/dev)" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::$(git rev-parse --short HEAD) is no longer the tip of dev; its successor deploys."
+          fi
       - uses: ./.github/actions/setup
+        if: steps.tip.outputs.current == 'true'
       - name: Write the dev secrets file (0600, outside the tree)
+        if: steps.tip.outputs.current == 'true'
         env:
           OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
           VAULT_KEY: ${{ secrets.VAULT_KEY }}
@@ -38,8 +53,10 @@ jobs:
           umask 077
           printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
       - name: Deploy dev
+        if: steps.tip.outputs.current == 'true'
         run: cargo xtask deploy --env dev | tee deploy.txt
       - name: Smoke
+        if: steps.tip.outputs.current == 'true'
         run: cargo xtask infra smoke --env dev | tee smoke.txt
       - name: Summary
         if: always()
