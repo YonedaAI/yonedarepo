@@ -59,9 +59,19 @@ export function parseActivity(line: string): Activity[] {
   const content = Array.isArray(message.content) ? message.content : [];
   switch (event.type) {
     case 'system':
-      return event.subtype === 'init'
-        ? [{ kind: 'init', text: clip(`Agent started (${text(event.model) || 'model'})`) }]
-        : [];
+      if (event.subtype === 'init')
+        return [{ kind: 'init', text: clip(`Agent started (${text(event.model) || 'model'})`) }];
+      // A failing model endpoint shows as retries long before the final result.
+      if (event.subtype === 'api_retry')
+        return [
+          {
+            kind: 'error',
+            text: clip(
+              `Model request retry ${event.attempt ?? '?'}/${event.max_retries ?? '?'}${typeof event.error_status === 'number' ? ` (HTTP ${event.error_status})` : ''}: ${text(event.error) || 'error'}`,
+            ),
+          },
+        ];
+      return [];
     case 'assistant':
       return content.flatMap((part): Activity[] => {
         const block = record(part);

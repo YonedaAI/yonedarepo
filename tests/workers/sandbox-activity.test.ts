@@ -68,6 +68,19 @@ describe('stream-json activity', () => {
 
   it('keeps unknown events out, plain text bounded and secrets redacted', () => {
     expect(parseActivity(j({ type: 'stream_event', event: {} }))).toEqual([]);
+    // As Claude Code 2.1.306 printed it with its endpoint unreachable.
+    const retry = j({
+      type: 'system',
+      subtype: 'api_retry',
+      attempt: 1,
+      max_retries: 10,
+      retry_delay_ms: 559,
+      error_status: 401,
+      error: 'unknown',
+    });
+    expect(parseActivity(retry)).toEqual([
+      { kind: 'error', text: 'Model request retry 1/10 (HTTP 401): unknown' },
+    ]);
     expect(parseActivity('')).toEqual([]);
     const noisy = parseActivity(`not json ${'x'.repeat(1000)}`);
     expect(noisy[0].kind).toBe('error');
