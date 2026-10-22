@@ -9,6 +9,8 @@ WORKDIR /source
 COPY Cargo.toml Cargo.lock ./
 COPY backend ./backend
 COPY xtask ./xtask
+# `yoneda setup` embeds the agent plugin files.
+COPY plugins ./plugins
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/source/target \
     cargo build --locked --release -p yoneda-cli \
     && cp target/release/yoneda target/release/git-remote-yoneda /usr/local/bin/
