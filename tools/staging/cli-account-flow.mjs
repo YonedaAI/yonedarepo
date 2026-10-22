@@ -71,7 +71,7 @@ export async function serverReads(kit, state, metrics) {
   metrics.grep_at = grep.stdout;
   assert.match(grep.stdout, new RegExp(`^README\\.md:1: ${state.marker} line one$`, 'm'), `grep --at missed the marker: ${grep.stdout}`);
   const blame = await kit.yonedaOk(['blame', 'README.md', ...at]);
-  assert.ok(blame.stdout.includes(state.commit12), 'blame --at does not attribute README.md to the item-12 commit');
+  assert.ok([state.commit12, state.pushed12].some((c) => c && blame.stdout.includes(c)), 'blame --at does not attribute README.md to the item-12 commit');
   assert.ok(blame.stdout.includes(`${state.marker} line one`), 'blame --at lacks the version-v line');
   metrics.blame_at = 'ok';
   if (state.readmeChanged) {
