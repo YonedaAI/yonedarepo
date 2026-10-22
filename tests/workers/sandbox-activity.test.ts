@@ -52,12 +52,13 @@ describe('stream-json activity', () => {
       is_error: false,
       num_turns: 4,
       total_cost_usd: 0.0021,
+      usage: { input_tokens: 900, cache_read_input_tokens: 100, output_tokens: 250 },
       result: 'Added add(a,b)',
     });
     expect(parseActivity(done)).toEqual([
       {
         kind: 'result',
-        text: 'Agent finished (4 turns, CLI cost estimate $0.0021): Added add(a,b)',
+        text: 'Agent finished (4 turns, 1000 input / 250 output tokens): Added add(a,b)',
       },
     ]);
     expect(resultOutcome(done)).toEqual({ ok: true, result: 'Added add(a,b)' });
