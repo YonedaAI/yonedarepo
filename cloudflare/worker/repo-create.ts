@@ -5,15 +5,26 @@ import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { requirePatScope } from './repo-pat';
 import { dispatchProjection } from './repo-projection';
 import { shardOutboxes } from './repo-shards';
 import type { Env } from './types';
 
 /**
- * Who owns a new repository: the signed-in workspace, or, for the operator (admin bearer)
+ * Who owns a new repository: the signed-in workspace, its personal token with repo:admin
+ * (acting as the account, never as a person), or, for the operator (admin bearer)
  * provisioning on someone's behalf, the named `workspace`. Never a repository token.
  */
 function owning(auth: Credentials, body: Json): Credentials & { _session: Json } {
+  if ('_pat' in auth) {
+    requirePatScope(auth, 'repo:admin');
+    if (body.workspace !== undefined)
+      throw new ApiError(
+        'FORBIDDEN',
+        'Only the operator creates repositories for another workspace',
+      );
+    return { _session: { workspace: auth._pat.workspace, principal: auth._pat.principal } };
+  }
   if (!('_session' in auth))
     throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
   if (body.workspace === undefined) return auth;

@@ -60,6 +60,9 @@ export interface Env {
   ZAI_MODEL?: string;
   STARTER_REPO?: string;
   SITE_ORIGIN?: string;
+  /** The website people sign in at (device approval page `/device`); the platform falls
+   * back to the request origin. Not SITE_ORIGIN, which names the website-preview Worker. */
+  WEB_ORIGIN?: string;
   APP_ORIGIN?: string;
   APPS?: Fetcher;
   /** The source platform Worker (agents-only deployment); its public API is all we call. */

@@ -70,7 +70,9 @@ async function headOf(env: Env, repo: string, wanted: number): Promise<Json> {
     // Recent enough to serve while a fresh copy loads (a begin validates its base when it
     // lands; a reader that needs its own landing passes min_version and waits).
     if (age < STALE_MS) {
-      void fetchInto(env, repo, 0).catch(() => {});
+      void fetchInto(env, repo, 0).catch((e) => {
+        if (e?.code === 'GONE') heads.delete(repo);
+      });
       return cached.head;
     }
   }
@@ -243,7 +245,11 @@ export class HeadHolder {
       // A load already running may have started before the version this caller needs.
       this.#loading ??= (async () => {
         this.#stale = false;
-        const head = await fetchHead(this.env, repo);
+        const head = await fetchHead(this.env, repo).catch((e) => {
+          // A deleted repository's head is never served again.
+          if (e?.code === 'GONE') this.#head = null;
+          throw e;
+        });
         this.#head = head;
         return head;
       })().finally(() => {

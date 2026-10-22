@@ -12,17 +12,32 @@ import {
   type TreeEntry,
   toBase64,
 } from './repo-objects';
+import type { PatGrant } from './repo-pat';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
+
+export type { PatGrant, PatScope } from './repo-pat';
 
 export type Json = Record<string, any>;
 export type Credentials =
   | { _session: { workspace: string; principal: string; human?: true } }
   | { _token: string }
-  | { _system: 'checks' | 'projection' | 'import' | 'merge' | 'repair' | 'derive' | 'commits' };
+  /** A personal access token the adapter verified (repo-pat.ts). */
+  | { _pat: PatGrant }
+  | {
+      _system:
+        | 'checks'
+        | 'projection'
+        | 'import'
+        | 'merge'
+        | 'repair'
+        | 'derive'
+        | 'commits'
+        | 'purge';
+    };
 // Identity fields come only from the authenticating adapter, never from arguments.
-const CREDENTIAL_KEYS = ['_session', '_token', '_system'];
+const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_system'];
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -39,10 +54,16 @@ export type Call = ((command: Json) => Promise<Json>) & {
 };
 export function caller(env: Env, repo: string, auth: Credentials): Call {
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  const sign = (command: Json) => ({
-    ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
-    ...auth,
-  });
+  const sign = (command: Json) => {
+    // A personal token's repository allowlist holds on every path that signs a command:
+    // REST, MCP, batches and decisions from the published head.
+    if ('_pat' in auth && auth._pat.repos !== null && !auth._pat.repos.includes(repo))
+      throw new ApiError('FORBIDDEN', 'This token is not allowed on this repository');
+    return {
+      ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
+      ...auth,
+    };
+  };
   const once = async (command: Json) => {
     const value = await timed(`do.${command.op}`, () =>
       durableJson<Json>(stub, 'https://source-repository/', JSON.stringify(sign(command))),
