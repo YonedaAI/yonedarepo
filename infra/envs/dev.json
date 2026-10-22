@@ -107,7 +107,8 @@
         "Batched landing, with commits beginning from and main reads served by the published",
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
-        "the container limit (4) at once, apart from the derive and projection jobs above."
+        "the container limit (4) at once, apart from the derive and projection jobs above.",
+        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device)."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -143,7 +144,8 @@
         },
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
-          "LAND_MODE": "batch"
+          "LAND_MODE": "batch",
+          "WEB_ORIGIN": "{origin}"
         },
         "artifacts": [
           {
@@ -286,6 +288,16 @@
           {
             "binding": "SELF",
             "service": "{prefix}-platform"
+          }
+        ],
+        "routes": [
+          {
+            "pattern": "api.dev.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://api.dev.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
           }
         ]
       }

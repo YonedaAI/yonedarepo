@@ -4,6 +4,7 @@
 // class and the api-source-v1 transport vars. cloudflare/wrangler.jsonc is the next, unreleased
 // version of this Worker; the N8 cutover replaces this whole spec with the platform/agents/sites
 // layout of infra/envs/dev.json.
+// api.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -172,6 +173,14 @@
     {
       "pattern": "https://www.yonedarepo.com/*",
       "zone_name": "yonedarepo.com"
+    },
+    {
+      "custom_domain": true,
+      "pattern": "api.yonedarepo.com"
+    },
+    {
+      "pattern": "https://api.yonedarepo.com/*",
+      "zone_name": "yonedarepo.com"
     }
   ],
   "secrets_store_secrets": [
@@ -222,6 +231,7 @@
     "SOURCE_TRANSPORT": "api-source-v1",
     "SOURCE_TRANSPORT_REPOS": "repo-a3539621c7688c6daa032a6dbe215624,repo-360b2d50b40360240a27de47010ff5a6,repo-b456284f131158a49db378989ba3edc9,repo-1996880d7eb888f611a21ee79a26a346",
     "STARTER_REPO": "yoneda-website-starter",
+    "WEB_ORIGIN": "https://yonedarepo.com",
     "ZAI_MODEL": "glm-5.3-flash"
   },
   "workers_dev": true
