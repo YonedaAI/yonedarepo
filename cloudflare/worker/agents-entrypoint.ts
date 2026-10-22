@@ -9,6 +9,7 @@ import { enqueueProjects, provisionMessage } from './project-provisioning';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
 import { beginSandbox } from './sandbox-attempt';
+import { beginCheck } from './sandbox-check';
 import { authorizePreview } from './sites';
 import type { SourceGcDue, SourceIndexEnvelope } from './source-contract';
 import { prepareSourceDispatch } from './source-dispatch';
@@ -123,6 +124,12 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
           // refused start fails the job below (begin is idempotent, so a lost reply is safe).
           if (job.sandbox === true) {
             await beginSandbox(this.env, envelope.repo_id, job);
+            message.ack();
+            return;
+          }
+          // A sandbox run's candidate is checked in a fresh check sandbox, not the evaluator.
+          if (job.sandbox_check === true) {
+            await beginCheck(this.env, envelope.repo_id, job);
             message.ack();
             return;
           }

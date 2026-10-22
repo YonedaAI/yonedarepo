@@ -63,6 +63,38 @@ pub(super) fn claimed(job: &mut Value, now: i64) {
     job["attempt_deadline"] = json!(now + LEASE_MS);
 }
 
+/// A sandbox run's candidate is checked in a fresh check sandbox (same image, its own
+/// instance, read-only repository access) on a real disk, not the evaluator container. The
+/// Durable Object records a failure at this overall cap; the lease outlives it.
+const CHECK_CAP_MS: i64 = 15 * 60_000;
+const CHECK_LEASE_MS: i64 = CHECK_CAP_MS + 5 * 60_000;
+
+/// Marks a claimed evaluation of a sandbox run's candidate as one check-sandbox attempt,
+/// never re-dispatched: the report still arrives through `verify_finish` with the same
+/// validation. Checks the sandbox does not run (guided steps, immutable test bundles and app
+/// bundles) stay with the evaluator container.
+pub(super) fn claimed_check<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Result<()> {
+    let payload = &job["payload"];
+    let build = &payload["policy"]["build"];
+    let checkable = job["kind"] == "evaluate"
+        && payload["guided"].is_null()
+        && build.is_object()
+        && build["app"].is_null()
+        && build["test_bundle"].is_null();
+    let Some(run_id) = payload["run_id"].as_str().filter(|_| checkable) else {
+        return Ok(());
+    };
+    if get(db, "runs", run_id)?["runtime"] != TRANSPORT {
+        return Ok(());
+    }
+    job["sandbox_check"] = json!(true);
+    job["attempt"] = json!(2);
+    job["lease_until"] = json!(now + CHECK_LEASE_MS);
+    job["attempt_deadline"] = json!(now + CHECK_LEASE_MS);
+    job["attempt_ceiling_at"] = json!(now + CHECK_LEASE_MS);
+    Ok(())
+}
+
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     let mut j = active(db, &c, now)?;
     if j["sandbox"] != true {

@@ -174,3 +174,131 @@ fn ordinary_attempts_cannot_use_sandbox_operations() {
     );
     assert_eq!(refused.unwrap_err().code, "FORBIDDEN");
 }
+
+/// A recorded sandbox candidate and its claimed evaluation job.
+fn checked(db: &NativeStore) -> Value {
+    let job = claimed(db);
+    call(
+        db,
+        json!({"op":"sandbox_finish","job_id":job["id"],"epoch":job["epoch"],
+        "result":{"id":"sandbox-candidate","revision":{"repository":BASE,"commit":"c".repeat(40)},
+        "parents":["a".repeat(40)],"tree":"d".repeat(40),"paths":["src/math.js"],
+        "summary":"Added add(a,b)","diff_digest":"e".repeat(64)}}),
+    )
+    .unwrap();
+    call(
+        db,
+        json!({"op":"claim","job_id":"evaluate:sandbox-candidate"}),
+    )
+    .unwrap()
+}
+
+/// What the check sandbox reports: the evaluator container's report format, field for field.
+fn check_report(exit: Value) -> Value {
+    json!({"setup":[],"commands":[{"name":"build","output":{"exit":exit,"signal":null,
+        "stdout":"","stderr":"","stdout_truncated":false,"stderr_truncated":false}}],
+        "environment":"linux-node24-rust1.94-v1","suite":"commands-v1",
+        "test_bundle_digest":null,"protected_changes":[],"test_bundle_policy_digest":null})
+}
+
+fn verify(db: &NativeStore, job: &Value, report: Value) -> Result<Value> {
+    call(
+        db,
+        json!({"op":"verify_finish","job_id":job["id"],"epoch":job["epoch"],
+        "report":report,"evidence":"f".repeat(64)}),
+    )
+}
+
+#[test]
+fn a_sandbox_candidate_is_checked_by_one_fresh_sandbox_attempt() {
+    let db = repository();
+    let job = checked(&db);
+    assert_eq!(job["sandbox_check"], true);
+    assert_eq!(job["lease_until"], 1000 + CHECK_LEASE_MS);
+    assert_eq!(job["attempt_deadline"], 1000 + CHECK_LEASE_MS);
+    // Lease expiry fails the check; recovery never starts a second check sandbox.
+    call(&db, json!({"op":"recover","now":1001 + CHECK_LEASE_MS})).unwrap();
+    let job = get(&db, "jobs", "evaluate:sandbox-candidate").unwrap();
+    assert_eq!(job["status"], "failed");
+    // A static site policy too: the check sandbox captures its output directory.
+    let mut policy = repo(&db).unwrap()["policy"].clone();
+    policy["build"]["static_dir"] = json!("public");
+    let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":policy}});
+    claimed_check(&db, &mut evaluator, 1000).unwrap();
+    assert_eq!(evaluator["sandbox_check"], true);
+}
+
+#[test]
+fn the_check_sandbox_report_makes_the_candidate_eligible() {
+    let db = repository();
+    let job = checked(&db);
+    verify(&db, &job, check_report(json!(0))).unwrap();
+    let candidate = get(&db, "candidates", "sandbox-candidate").unwrap();
+    assert_eq!(candidate["status"], "eligible");
+    let evaluation = get(
+        &db,
+        "evaluations",
+        candidate["evaluation"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(evaluation["revision"]["commit"], "c".repeat(40));
+    assert_eq!(evaluation["checks"][0]["status"], "pass");
+}
+
+#[test]
+fn a_failing_or_timed_out_check_rejects_the_candidate() {
+    for exit in [json!(1), Value::Null] {
+        let db = repository();
+        let job = checked(&db);
+        verify(&db, &job, check_report(exit)).unwrap();
+        let candidate = get(&db, "candidates", "sandbox-candidate").unwrap();
+        assert_eq!(candidate["status"], "rejected");
+    }
+}
+
+#[test]
+fn an_invalid_check_report_is_refused() {
+    let db = repository();
+    let job = checked(&db);
+    let mut wrong = check_report(json!(0));
+    wrong["environment"] = json!("sandbox-node24");
+    assert_eq!(
+        verify(&db, &job, wrong).unwrap_err().code,
+        "ENVIRONMENT_MISMATCH"
+    );
+    let mut stale = job.clone();
+    stale["epoch"] = json!(0);
+    assert_eq!(
+        verify(&db, &stale, check_report(json!(0)))
+            .unwrap_err()
+            .code,
+        "FENCED"
+    );
+    // A report without the required check is no pass.
+    let mut missing = check_report(json!(0));
+    missing["commands"] = json!([]);
+    verify(&db, &job, missing).unwrap();
+    let candidate = get(&db, "candidates", "sandbox-candidate").unwrap();
+    assert_eq!(candidate["status"], "rejected");
+}
+
+#[test]
+fn checks_the_sandbox_cannot_run_stay_with_the_evaluator_container() {
+    // An immutable test bundle is installed only in the evaluator container.
+    let db = NativeStore::memory().unwrap();
+    let policy = json!({"version":"sandbox-bundle","suite":"commands-v1",
+        "environment":"linux-node24-rust1.94-v1","required_checks":["build"],
+        "build":{"checks":[{"name":"build","argv":["node","/opt/yoneda/test-bundle/run.mjs"],"timeout_seconds":30}],
+        "test_bundle":{"digest":"a".repeat(64),"protected_paths":["tests"]}}});
+    call(&db, json!({"op":"init","id":"sandbox","name":"Sandbox","remote":{"namespace":"yoneda-dev","name":"sandbox"},"commit":"a".repeat(40),"policy":policy})).unwrap();
+    let job = checked(&db);
+    assert!(job.get("sandbox_check").is_none());
+    // Ordinary runs keep the evaluator container.
+    let db = repository();
+    let mut c = start(glm(), json!({}));
+    c["workspace_transport"] = json!("api-source-v1");
+    call(&db, c).unwrap();
+    let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
+    claimed_check(&db, &mut evaluator, 1000).unwrap();
+    assert!(evaluator.get("sandbox_check").is_none());
+}

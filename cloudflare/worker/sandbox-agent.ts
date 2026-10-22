@@ -5,9 +5,13 @@
 // alarm checks the task until it ends (which also keeps the container running). Differences:
 // the clone is `yoneda::` from the platform, the result is a pushed commit instead of a diff,
 // and the alarm streams the CLI's stream-json into a bounded activity log.
+// The same class, under its own name and with the `check` role, is the fresh check sandbox
+// that runs a candidate's policy checks (sandbox-check.ts); one object never holds both.
 import { DurableObject } from 'cloudflare:workers';
 import { type Activity, completeLines } from './sandbox-activity';
-import { recordSandboxCandidate, type SandboxAttempt } from './sandbox-attempt';
+import { agentEgress, recordSandboxCandidate, type SandboxAttempt } from './sandbox-attempt';
+import { checkAlarm, type SandboxHost, startCheck } from './sandbox-check';
+import type { CheckAttempt } from './sandbox-check-driver';
 import { agentCli } from './sandbox-cli';
 import {
   type CommandResult,
@@ -61,7 +65,7 @@ export class AgentSandbox extends DurableObject<Env> {
     return this.ctx.blockConcurrencyWhile(async () => {
       const current = this.ctx.storage.kv.get<SandboxAttempt>('attempt');
       if (current?.job_id === attempt.job_id && current.epoch === attempt.epoch) return 'running';
-      if (current)
+      if (current || this.ctx.storage.kv.get('check'))
         throw Object.assign(new Error('Sandbox holds another attempt'), { code: 'FENCED' });
       this.ctx.storage.kv.put('attempt', attempt);
       this.ctx.storage.kv.put('state', initialState(Date.now()));
@@ -70,7 +74,18 @@ export class AgentSandbox extends DurableObject<Env> {
     });
   }
 
+  /** Starts a check attempt once, in a fresh object; a repeated delivery changes nothing. */
+  async beginCheck(check: CheckAttempt): Promise<'started' | 'running'> {
+    return startCheck(this.ctx, check);
+  }
+
   async alarm(): Promise<void> {
+    const host: SandboxHost = {
+      ensure: (props, start) => this.ensureSandbox(props, start),
+      run: (command, cwd, env) => this.run(command, cwd, env),
+      destroy: () => this.destroyContainer(),
+    };
+    if (await checkAlarm(this.ctx, this.env, host)) return;
     const attempt = this.ctx.storage.kv.get<SandboxAttempt>('attempt');
     const state = this.ctx.storage.kv.get<DriverState>('state');
     if (!attempt || !state) return;
@@ -108,9 +123,9 @@ export class AgentSandbox extends DurableObject<Env> {
         const job = await ledger(this.env, attempt.repo, { op: 'job_status', id: attempt.job_id });
         return job.status === 'running' && Number(job.epoch) === attempt.epoch;
       },
-      prepare: () => this.ensureSandbox(attempt, true),
+      prepare: () => this.ensureSandbox(agentEgress(attempt), true),
       clone: async () => {
-        await this.ensureSandbox(attempt, false);
+        await this.ensureSandbox(agentEgress(attempt), false);
         return this.run(
           [
             '/bin/sh',
@@ -127,7 +142,7 @@ export class AgentSandbox extends DurableObject<Env> {
         );
       },
       startAgent: async () => {
-        await this.ensureSandbox(attempt, false);
+        await this.ensureSandbox(agentEgress(attempt), false);
         await this.run(['mkdir', '-p', taskDirectory], '/', {});
         const cli = agentCli(attempt);
         await this.container.exec(
@@ -180,19 +195,21 @@ export class AgentSandbox extends DurableObject<Env> {
         await call({ op: 'sandbox_progress', activity });
       },
       appendActivity: async (at, entries) => this.append(at, entries),
-      destroy: async () => {
-        if (this.container.running) await this.container.destroy();
-        this.setup = undefined;
-      },
+      destroy: () => this.destroyContainer(),
     };
   }
 
+  private async destroyContainer(): Promise<void> {
+    if (this.container.running) await this.container.destroy();
+    this.setup = undefined;
+  }
+
   /** Starts the container (only when `start`) and registers its interception once per object. */
-  private async ensureSandbox(attempt: SandboxAttempt, start: boolean): Promise<void> {
+  private async ensureSandbox(props: OutboundProps, start: boolean): Promise<void> {
     if (!this.container.running && !start)
       throw Object.assign(new Error('The sandbox container stopped'), { code: 'SANDBOX_LOST' });
     if (this.setup === undefined || !this.container.running) {
-      this.setup = this.setUpSandbox(attempt).catch((error) => {
+      this.setup = this.setUpSandbox(props).catch((error) => {
         this.setup = undefined;
         throw error;
       });
@@ -200,25 +217,13 @@ export class AgentSandbox extends DurableObject<Env> {
     await this.setup;
   }
 
-  private async setUpSandbox(attempt: SandboxAttempt): Promise<void> {
+  private async setUpSandbox(props: OutboundProps): Promise<void> {
     if (!this.container.running)
       this.container.start({
         image: this.container.images.agent,
         instance: 'standard-1',
         enableInternet: false,
       });
-    const props: OutboundProps = {
-      project: attempt.repo,
-      owner: attempt.owner,
-      platformRepo: attempt.platform_repo,
-      platformOrigin: attempt.platform_origin,
-      refPrefix: `refs/heads/${attempt.branch.replace(/[^/]+$/, '')}`,
-      provider: attempt.provider,
-      connection: attempt.connection,
-      model: attempt.model,
-      routing: attempt.routing,
-      modelBase: attempt.model_base,
-    };
     const outbound = (this.ctx.exports as any).SandboxOutbound({ props }) as Fetcher;
     try {
       await this.container.interceptAllOutboundHttp(outbound);
@@ -232,7 +237,7 @@ export class AgentSandbox extends DurableObject<Env> {
 
   private async task(attempt: SandboxAttempt): Promise<TaskState> {
     if (!this.container.running) return { state: 'lost' };
-    await this.ensureSandbox(attempt, false);
+    await this.ensureSandbox(agentEgress(attempt), false);
     const exitCode = await this.readText(exitCodePath);
     if (exitCode !== undefined) return { state: 'exited', exitCode: Number.parseInt(exitCode, 10) };
     if ((await this.readText(pidPath)) === undefined) return { state: 'running' };
