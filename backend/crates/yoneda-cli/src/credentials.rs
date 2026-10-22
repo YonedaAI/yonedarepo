@@ -27,6 +27,8 @@ impl std::fmt::Debug for Token {
 pub enum Header {
     Authorization(String),
     Cookie(String),
+    /// No credential (the device flow, before a token exists).
+    None,
 }
 
 impl Token {
@@ -50,6 +52,7 @@ impl Token {
                 !name.is_empty()
                     && !self.0.starts_with("yoneda.")
                     && !self.0.starts_with("yrp_")
+                    && !self.0.starts_with("ypat_")
                     && secret.len() == 64
                     && secret.bytes().all(|b| b.is_ascii_hexdigit())
             });
@@ -141,6 +144,21 @@ pub fn load(path: &Path, origin: &str, env: Option<String>) -> Result<Token> {
     Token::new(&stored.token)
 }
 
+/// Deletes the stored token when it belongs to `origin` (any origin when `None`);
+/// returns whether one was removed.
+pub fn remove(path: &Path, origin: Option<&str>) -> Result<bool> {
+    let Some(stored) = stored_origin(path) else {
+        return Ok(false);
+    };
+    if let Some(origin) = origin
+        && normalize_origin(&stored)? != origin
+    {
+        return Ok(false);
+    }
+    std::fs::remove_file(path).context(format!("removing {}", path.display()))?;
+    Ok(true)
+}
+
 /// The stored origin, for `clone` without `--origin`.
 pub fn stored_origin(path: &Path) -> Option<String> {
     let raw = std::fs::read(path).ok()?;
@@ -187,6 +205,24 @@ mod tests {
             token.header(),
             Header::Cookie(format!("yoneda_account=alice.{secret}"))
         );
+        // A personal access token is a bearer, whatever its shape.
+        let pat = Token::new(&format!("ypat_alice.{secret}"))?;
+        assert_eq!(
+            pat.header(),
+            Header::Authorization(format!("Bearer ypat_alice.{secret}"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn logout_removes_only_the_named_origins_token() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let path = dir.path().join("credentials");
+        store(&path, "https://a.example", &Token::new("ypat_x")?)?;
+        assert!(!remove(&path, Some("https://b.example"))?);
+        assert!(path.exists());
+        assert!(remove(&path, None)?);
+        assert!(!path.exists() && !remove(&path, None)?);
         Ok(())
     }
 

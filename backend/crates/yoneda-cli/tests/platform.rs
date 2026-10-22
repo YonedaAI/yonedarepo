@@ -2,6 +2,7 @@
 //! scenario (each on its own repository) because starting workerd dominates the runtime.
 //! Run with `cargo test -p yoneda-cli -- --include-ignored`; it needs the workspace's
 //! node modules (wrangler) and the Rust Wasm worker build, but no provider keys.
+#[allow(dead_code)] // shared with the remote-helper tests
 mod support;
 
 use serde_json::Value;

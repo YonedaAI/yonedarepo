@@ -43,32 +43,47 @@ impl Plan {
     }
 }
 
-/// The platform commit standing for local commit `local` (the base or a mapped one).
-fn platform_of(state: &State, local: &str) -> Result<String> {
-    if local == state.local_base {
-        return Ok(state.base_commit.clone());
+/// Which platform commit stands for a local commit (an offline checkout's state, or the
+/// remote helper's commit map).
+pub trait Mapping {
+    fn platform_of(&self, local: &str) -> Option<String>;
+}
+
+impl Mapping for State {
+    fn platform_of(&self, local: &str) -> Option<String> {
+        if local == self.local_base {
+            return Some(self.base_commit.clone());
+        }
+        self.platform.get(local).cloned()
     }
-    state.platform.get(local).cloned().ok_or_else(|| {
+}
+
+fn platform_of(mapping: &dyn Mapping, local: &str) -> Result<String> {
+    mapping.platform_of(local).ok_or_else(|| {
         Error::new(format!(
             "local commit {local} has no platform commit; its descendants cannot sync"
         ))
     })
 }
 
-/// Plans every commit after the last mapped one in `commits` (oldest first).
-pub fn plan(git: &Git, state: &State, commits: &[String], limits: &Limits) -> Result<Plan> {
-    let first = commits.iter().position(|c| !state.platform.contains_key(c));
+/// Plans every commit after the last mapped one in `commits` (oldest first, all after
+/// a mapped commit).
+pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limits) -> Result<Plan> {
+    let first = commits
+        .iter()
+        .position(|c| mapping.platform_of(c).is_none());
     let Some(first) = first else {
+        // No commits: no steps, and nothing builds on `start`.
         let start = match commits.last() {
-            Some(last) => platform_of(state, last)?,
-            None => state.base_commit.clone(),
+            Some(last) => platform_of(mapping, last)?,
+            None => String::new(),
         };
         return Ok(Plan {
             start,
             steps: Vec::new(),
         });
     };
-    let start = platform_of(state, &git.first_parent(&commits[first])?)?;
+    let start = platform_of(mapping, &git.first_parent(&commits[first])?)?;
     let mut steps = Vec::new();
     for local in &commits[first..] {
         let parent = git.first_parent(local)?;
