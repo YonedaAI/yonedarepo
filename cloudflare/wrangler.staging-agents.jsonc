@@ -228,7 +228,7 @@
     "MIMO_MODEL": "mimo-v2.6-flash",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "SANDBOX_AI_GATEWAY": "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-staging",
-    "SANDBOX_PLATFORM_ORIGIN": "https://api.dev.yonedarepo.com",
+    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo-staging-platform.mlong-f01.workers.dev",
     "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev",
     "STARTER_REPO": "yoneda-website-starter",
     "ZAI_MODEL": "glm-5.3-flash"

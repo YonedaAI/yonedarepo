@@ -154,6 +154,16 @@ pub(crate) fn containers(config: &Value) -> BTreeMap<String, Value> {
         .collect()
 }
 
+/// The container applications that run the shared runtime image. A Durable Object-managed
+/// container with its own named `images` (the sandbox agent) is built by wrangler from its
+/// own Dockerfile and never takes the runtime image.
+pub(crate) fn runtime_containers(config: &Value) -> BTreeMap<String, Value> {
+    containers(config)
+        .into_iter()
+        .filter(|(_, c)| c.get("images").is_none())
+        .collect()
+}
+
 pub(crate) fn last_migration_tag(config: &Value) -> Option<String> {
     items(config, "/migrations")
         .last()
