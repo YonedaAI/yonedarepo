@@ -43,6 +43,7 @@ mod resources;
 mod restarts;
 mod run_visibility;
 mod runs;
+mod sandbox;
 mod scheduling;
 mod sites;
 mod source_capture_retry;
@@ -176,6 +177,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "outbox" | "outbox_sent" | "outbox_prune" | "events" => events::handle(db, c, now),
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
+        "sandbox_progress" | "sandbox_finish" => sandbox::handle(db, c, now),
         "accept" => acceptance::handle(db, c, now),
         "reject_candidate" | "publication_readback" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
