@@ -221,6 +221,41 @@ fn a_timed_out_task_retries_from_its_staged_checkpoint() {
 }
 
 #[test]
+fn a_task_that_timed_out_before_this_change_still_resumes_on_retry() {
+    // The laundry task failed under the old wall clock: no checkpoint was recorded, but the
+    // failed job still holds its epoch's source binding until the next claim.
+    let db = team(None);
+    let job = started(&db, 1000);
+    bind_source(
+        &db,
+        "source-workspace:laundry",
+        job["epoch"].as_i64().unwrap(),
+    );
+    at(
+        &db,
+        json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
+        "error":"EXECUTION_TIMEOUT: Execution deadline exceeded"}),
+        50_000,
+    )
+    .unwrap();
+    db.query(
+        "UPDATE jobs SET payload=json_remove(payload,'$.resume_from') WHERE id=?",
+        &[json!(JOB)],
+    )
+    .unwrap();
+    let failed = task(&db, "site");
+    at(
+        &db,
+        json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
+        "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
+        60_000,
+    )
+    .unwrap();
+    let next = at(&db, json!({"op":"claim","job_id":JOB}), 70_000).unwrap();
+    assert_eq!(next["resume"]["workspace_id"], "source-workspace:laundry");
+}
+
+#[test]
 fn a_failure_on_its_merits_is_never_replayed_into_the_retry() {
     let db = team(None);
     let job = started(&db, 1000);
