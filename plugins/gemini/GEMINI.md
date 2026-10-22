@@ -1,26 +1,27 @@
 # Working in a YonedaRepo repository
 
-YonedaRepo is a Git server built for many agents at once. Locally it is plain Git. The difference is on the server: when you push to `main`, it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
+YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to `main`, it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
 
 ```sh
-git remote -v        # yoneda::https://api.dev.yonedarepo.com/r… means this skill applies
-yoneda status        # base version, pending commits, what main has that you don't
+git remote -v            # yoneda::https://api.dev.yonedarepo.com/r… means this skill applies
+yoneda status --brief    # one line, no network: repository, branch, commits not on the platform yet
 ```
 
 ## The loop
 
 1. **Commit small and often.** One logical change per commit. Small commits merge cleanly on the server; large ones conflict.
 2. **Land with `git push origin main`.** You do not need to pull first:
-   - other agents' changes to *different files or lines* are merged on the server, and your push succeeds. The helper prints the landed version and "server merged, run git pull".
-   - run `git pull` after a server merge, so your next commit starts from the merged main.
+   - the helper prints `landed <commit> on main at version <n>`.
+   - other agents' changes to *different files or lines* are merged on the server, and your push succeeds with `server merged concurrent changes; run git pull`.
+   - main may get a platform commit on top of yours (a merge, or the record of your landing). Run `git pull` so your next commit starts from main; it fast-forwards.
 3. **If the push reports a conflict** (the same lines changed on main):
-   1. `git pull` (or `yoneda conflicts` to see base/ours/theirs for each path)
-   2. resolve the files and commit
+   1. `yoneda conflicts` lists the paths of the refused landing
+   2. `git pull`, resolve the files and commit
    3. `git push origin main` again
 4. **Never force-push `main`** (`git push --force`, `+main`). Main only moves forward through landing.
 5. **Use a feature branch when the work needs review:**
    1. `git switch -c feature/x`, commit, then `git push origin feature/x`
-   2. `yoneda review approve|reject` (a reviewer) and `yoneda check run|status` (the checks the repository's policy requires)
+   2. a reviewer runs `yoneda review approve <sha>` (or `yoneda review reject <sha> -m <reason>`); `yoneda check run <name>` and `yoneda check status` handle the checks the repository's policy requires
    3. `yoneda land --branch feature/x` lands it once its checks and approvals pass
 6. `git push --atomic origin a b` moves several branches in one transaction: all or none.
 
@@ -30,20 +31,21 @@ The server answers these from its index, with no checkout. Prefer them to readin
 
 | Need | Command |
 |---|---|
-| Where a name or string is used | `yoneda grep <pattern>` |
-| Definitions in a file or the repo | `yoneda symbols [path]` |
-| Who changed a line and in which landed version | `yoneda blame <path>` |
-| History of a path | `yoneda log [path]` |
-| The repository as of an earlier landed version | add `--at <version>` to `log`, `grep`, `blame`, `symbols` or `diff` |
-| What changed between two commits | `yoneda diff <a> <b>` |
+| Where a name or string is used | `yoneda grep <query> [--path <p>] [-i]` |
+| Definitions in a file | `yoneda symbols <path>` |
+| Who changed each line, and in which commit | `yoneda blame <path> [--ref <b>]` |
+| History of the repository or a path | `yoneda log [path] [--ref <b>] [--limit <n>]` |
+| What changed between two commits | `yoneda diff <base> <head> [--path <p>]` |
+| Any of these as of an earlier landed version | add `--at <version>`, e.g. `yoneda grep <query> --at <version>` |
 
-`yoneda help` lists the exact flags.
+`yoneda help` lists every command and flag.
 
 ## Landing gates and other commands
 
-- `yoneda land` lands the current branch's tip. The repository's policy decides whether it needs approvals or checks. A refusal names what is missing (`NOT_READY`, failing checks, approvals).
-- `yoneda repo create|list|delete`: repositories created from the CLI land solo (no approvals). `delete` asks for the repository name.
+- `yoneda land --branch <b>` lands a pushed branch's head on main (inside a clone, `yoneda land` uses the current branch). The repository's policy decides whether it needs approvals or checks. A refusal names what is missing (`NOT_READY`, failing checks, approvals).
+- `yoneda repo create <name>`, `yoneda repo list`, `yoneda repo delete <id> --confirm <name>`: repositories created from the CLI land solo (no approvals).
 - `yoneda login` signs in through the browser and stores a token. `YONEDA_TOKEN` overrides the stored token.
+- Outside a clone, add `--repo <id>` (and `--origin <url>`) to repository commands.
 
 ## Without a checkout: the MCP tools
 

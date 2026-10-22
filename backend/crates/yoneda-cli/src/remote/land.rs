@@ -1,13 +1,15 @@
 //! A push to main lands the uploaded tip: the platform fast-forwards it, or merges it
 //! with concurrent changes to other lines and files, or refuses an overlap as CONFLICT.
-use super::convert::Converter;
+//! A landing may give main a commit of its own on top of the pushed one (a merge with
+//! concurrent work, or the commit recording a landed changeset); its id is the platform's
+//! and the next `git pull` fast-forwards to it.
 use super::upload::Uploaded;
 use super::{Session, say};
 use crate::api::Failure;
 use crate::error::Context;
 use serde_json::{Value, json};
 
-/// Lands `done.tip` (made from local commit `local`) on main and maps main's new head.
+/// Lands `done.tip` (made from local commit `local`) on main.
 pub async fn land(session: &mut Session, local: &str, done: &Uploaded) -> Result<(), String> {
     let landed = match session.api.land("main", &done.tip).await {
         Ok(landed) => landed,
@@ -25,27 +27,25 @@ pub async fn land(session: &mut Session, local: &str, done: &Uploaded) -> Result
         "landed {} on main at version {version}",
         &local[..local.len().min(12)]
     ));
-    // The uploaded commits are ours before main's head is converted.
-    let entries: Vec<(String, String, u64)> = done
-        .made
-        .iter()
-        .map(|(server, local)| (server.clone(), local.clone(), 0))
-        .collect();
-    session.map.record(&entries).map_err(|e| e.message)?;
+    if let Err(e) = session.heads.record(&head, latest) {
+        say(&e.message);
+    }
+    if head == done.tip {
+        return Ok(());
+    }
     let tree = session.git.tree_of(local).map_err(|e| e.message)?;
-    let mut convert = Converter::new(&session.api, &session.git, &mut session.map);
-    let head_tree = convert.info(&head).await.map_err(|e| e.message)?.tree;
-    if head == done.tip || head_tree == tree {
-        // Main holds exactly this tree: it is the pushed commit, as far as Git is concerned.
-        session
-            .map
-            .record(&[(head, local.to_owned(), latest)])
-            .map_err(|e| e.message)?;
+    let head_tree = session
+        .api
+        .commit(&head)
+        .await
+        .map(|c| c.tree)
+        .map_err(|f| format!("landed, but reading main's head failed ({f}); run git pull"))?;
+    if head_tree == tree {
+        say(&format!(
+            "main is at {}, the platform's landing commit for yours; git pull fast-forwards to it",
+            &head[..head.len().min(12)]
+        ));
     } else {
-        convert
-            .convert_landing(&head, local, latest)
-            .await
-            .map_err(|e| e.message)?;
         say("server merged concurrent changes; run git pull");
     }
     Ok(())

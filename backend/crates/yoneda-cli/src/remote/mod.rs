@@ -1,10 +1,15 @@
 //! `git-remote-yoneda`: the Git remote helper (gitremote-helpers(7)) with the `fetch`,
 //! `push` and `option` capabilities. `git clone yoneda::https://<platform>/<repo-id>`,
-//! then plain `git fetch`, `pull` and `push`:
-//! - list/fetch convert the platform's branches into local commits (see `convert`);
-//! - a push uploads every new commit first, then makes one compare-and-swap (or one
-//!   batch for `--atomic`, or one landing for main), so nothing is visible before it.
+//! then plain `git fetch`, `pull` and `push`. Commit ids are the platform's:
+//! - list/fetch write the platform's commits byte for byte (see `fetch`);
+//! - a push uploads every new commit first, each rebuilt by the platform as the same
+//!   object (see `crate::replay`), then makes one compare-and-swap (or one batch for
+//!   `--atomic`, or one landing for main), so nothing is visible before it.
+//!
+//! The commit map (`map`) keeps only the cases where ids cannot match.
 pub mod convert;
+mod fetch;
+pub mod heads;
 mod land;
 mod list;
 pub mod map;
@@ -19,6 +24,7 @@ use crate::api::Api;
 use crate::credentials;
 use crate::error::{Error, Result};
 use crate::git::Git;
+use heads::MainHeads;
 use map::CommitMap;
 use std::path::PathBuf;
 use url::RemoteUrl;
@@ -31,13 +37,15 @@ pub struct Options {
     pub dry_run: bool,
 }
 
-/// One helper process: the repository, its platform remote and the commit map.
+/// One helper process: the repository, its platform remote, the commit map and main's
+/// heads seen.
 pub struct Session {
     pub url: RemoteUrl,
     pub api: Api,
     pub git: Git,
     pub git_dir: PathBuf,
     pub map: CommitMap,
+    pub heads: MainHeads,
     pub options: Options,
 }
 
@@ -73,10 +81,19 @@ impl Session {
             api: Api::new(&url.origin, &url.repo, &token)?,
             git: Git::with_git_dir(&cwd, &git_dir),
             map: CommitMap::open(&git_dir, &url.repo)?,
+            heads: MainHeads::open(&git_dir, &url.repo)?,
             url,
             git_dir,
             options: Options::default(),
         })
+    }
+
+    /// The local commit standing for platform commit `server`, when this clone holds
+    /// it: `server` itself, or its stand-in from the commit map.
+    pub fn held(&self, server: &str) -> Option<String> {
+        let id = self.map.local(server).unwrap_or(server).to_owned();
+        let missing = self.git.missing(std::slice::from_ref(&id)).ok()?;
+        missing.is_empty().then_some(id)
     }
 
     /// Where a refused landing's conflicting paths are kept for `yoneda conflicts`.

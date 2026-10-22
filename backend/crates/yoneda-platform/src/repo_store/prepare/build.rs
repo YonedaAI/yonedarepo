@@ -106,7 +106,34 @@ pub(crate) fn existing(root: Option<ObjectId>, path: &str, trees: &Trees) -> Opt
     None
 }
 
-/// Builds the commit `c` describes (`message`, `author`, `read_set`) on `parent` (plus
+/// A signature from `{name, email, time?, tz?}`; `time` (Unix seconds) and `tz` (`+hhmm`)
+/// default to `seconds` and `offset`. A client replaying a local Git commit passes all
+/// four (and the committer's), so the platform's object, and its id, equal the local one.
+fn signature(v: &Value, seconds: i64, offset: &str) -> Result<Signature> {
+    let seconds = match v.get("time").filter(|t| !t.is_null()) {
+        None => seconds,
+        Some(t) => t
+            .as_i64()
+            .filter(|t| *t >= 0)
+            .ok_or_else(|| bad("Signature time must be Unix seconds, at least 0"))?,
+    };
+    let offset = match v.get("tz").filter(|t| !t.is_null()) {
+        None => offset.to_owned(),
+        Some(t) => t
+            .as_str()
+            .ok_or_else(|| bad("Signature tz must look like +hhmm"))?
+            .to_owned(),
+    };
+    Ok(Signature {
+        name: string(v, "name")?,
+        email: string(v, "email")?,
+        seconds,
+        offset,
+    })
+}
+
+/// Builds the commit `c` describes (`message`, `author`, optional `committer`, `read_set`)
+/// on `parent` (plus
 /// merged parents), applying `changes` through `trees`. `known` vouches for blobs referenced
 /// by id instead of sent.
 pub(crate) fn build(
@@ -120,16 +147,15 @@ pub(crate) fn build(
 ) -> Result<Built> {
     let root = parent.map(|p| p.tree);
     let message = string(c, "message")?;
-    let author = Signature {
-        name: string(&c["author"], "name")?,
-        email: string(&c["author"], "email")?,
-        seconds: now / 1000,
-        offset: "+0000".into(),
-    };
-    let committer = Signature {
-        name: COMMITTER.0.into(),
-        email: COMMITTER.1.into(),
-        ..author.clone()
+    let author = signature(&c["author"], now / 1000, "+0000")?;
+    // The platform commits unless the caller replays a commit made elsewhere.
+    let committer = match c.get("committer").filter(|v| !v.is_null()) {
+        Some(given) => signature(given, author.seconds, &author.offset)?,
+        None => Signature {
+            name: COMMITTER.0.into(),
+            email: COMMITTER.1.into(),
+            ..author.clone()
+        },
     };
     let read_set: Vec<String> =
         serde_json::from_value(c.get("read_set").cloned().unwrap_or(json!([])))
@@ -267,3 +293,7 @@ pub(crate) fn objects_json(built: &Built) -> Result<Value> {
             .collect::<Result<Vec<_>>>()?
     ))
 }
+
+#[cfg(test)]
+#[path = "build_tests.rs"]
+mod tests;

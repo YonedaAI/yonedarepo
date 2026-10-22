@@ -22,8 +22,10 @@ This page has two parts:
    cd demo && git commit -am "change" && git push origin main
    ```
 
-   `git push origin main` lands. Disjoint concurrent changes from other clones merge on the server, and the push succeeds; then `git pull`. A same-line conflict is reported with its paths: pull, resolve, commit, push again.
-4. Read on the server instead of opening files: `yoneda grep|blame|symbols|log|diff`, each with `--at <version>` for an earlier landed version.
+   `git push origin main` lands. Disjoint concurrent changes from other clones merge on the server, and the push succeeds; then `git pull`. A same-line conflict is reported with its paths (`yoneda conflicts` lists them again): pull, resolve, commit, push again.
+
+   The clone holds the platform's commits byte for byte, so commit ids are the same as in `yoneda log`, `GET /refs` and the Artifacts clone. A push replays each local commit with its own author, committer and message, so the platform's commit has the local id. Main may get a platform commit on top of a pushed one (a merge, or the record of a landed changeset); `git pull` fast-forwards to it. Only commits the platform cannot rebuild exactly (split into parts, empty, or carrying a signature or `encoding` header) get a platform id of their own, recorded in `.git/yoneda/<repo-id>.map`.
+4. Read on the server instead of opening files: `yoneda grep <query>`, `yoneda blame <path>`, `yoneda symbols <path>`, `yoneda log [path]` and `yoneda diff <base> <head>`, each with `--at <version>` for an earlier landed version. `yoneda status --brief` prints one line from local data only (no network call): the repository, the branch and how many of its commits are not on the platform yet.
 
 Each repository's **Connect** tab in `/source` shows these commands with that repository's id and the configured API origin.
 
@@ -58,9 +60,11 @@ The platform tools dispatch through the same operation table as REST and the per
 
 | Client | Install |
 |---|---|
-| Claude Code | `/plugin marketplace add YonedaAI/yonedarepo`, then `/plugin install yoneda@yoneda` |
-| Codex | `yoneda setup codex` (copies `plugins/codex/`) |
-| Gemini CLI | `yoneda setup gemini` (copies `plugins/gemini/` to `~/.gemini/extensions/yoneda/`) |
+| Claude Code | `/plugin marketplace add YonedaAI/yonedarepo`, then `/plugin install yoneda@yoneda`. `yoneda setup claude` prints these two commands and writes the project's `.mcp.json`. |
+| Codex | `yoneda setup codex`: the skill (`plugins/codex/skills/yoneda/SKILL.md`) into `~/.agents/skills/yoneda/`, and `[mcp_servers.yoneda]` in `~/.codex/config.toml` (`$CODEX_HOME` moves the config) |
+| Gemini CLI | `yoneda setup gemini`: `plugins/gemini/` into `~/.gemini/extensions/yoneda/` with its MCP URL set to `--origin`, and the server in `~/.gemini/settings.json` |
+
+Each `setup` takes `--origin <url>` (default: `$YONEDA_ORIGIN`, else the signed-in origin) and writes no token: the agents read `YONEDA_TOKEN` when they connect. The skill files are compiled into the CLI, so they match the installed version.
 
 The Claude Code plugin (`plugins/yoneda/`) adds:
 
@@ -155,7 +159,7 @@ Each `attempt_commit` carries at most 500 regular files of 1 MiB each within a 4
 
 ```sh
 cargo install --path backend/crates/yoneda-cli
-yoneda login --origin https://YOUR-PLATFORM      # reads the token from stdin; ~/.config/yoneda/credentials, mode 0600
+yoneda login --origin https://YOUR-PLATFORM --with-token   # reads the token from stdin; ~/.config/yoneda/credentials, mode 0600
 yoneda clone rXXXXXXXXXXXXXXXXXXXX work          # git clone for a person reading the whole repo, else an API snapshot
 cd work && git commit -am "offline work"         # plain Git, no network
 yoneda status                                    # base version, pending commits, platform and projection lag

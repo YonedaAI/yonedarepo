@@ -120,6 +120,9 @@ pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value>
         let pack = write_pack(&objects.iter().map(|(_, k, d)| (*k, *d)).collect::<Vec<_>>())?;
         result["push_b64"] =
             json!(STANDARD.encode(receive_pack_request(&hidden, None, id, &pack)?));
+        // The commit's raw bytes for the store of record (R2), which serves clients the
+        // exact object; the store behind the push may keep only its tree and parents.
+        result["commit_b64"] = json!(STANDARD.encode(objects[0].2));
     }
     Ok(result)
 }
