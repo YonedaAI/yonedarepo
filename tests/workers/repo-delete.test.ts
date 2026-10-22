@@ -24,8 +24,14 @@ it('deletes a repository into a tombstone and purges its objects', async () => {
   expect((await api(repo, agent, {}, local)).status).toBe(200);
   await drainObjects(local);
   expect((await keys(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
-  const reader = (await api('/tokens', { cookie }, { body: { name: 'r', scopes: ['repo:read', 'repo:write'] } })).body.token;
-  const admin = (await api('/tokens', { cookie }, { body: { name: 'a', scopes: ['repo:admin'] } })).body.token;
+  // Personal tokens (not repository tokens): issuance must succeed, or later refusals are 401s.
+  const issue = async (name: string, scopes: string[]) => {
+    const issued = await api('/tokens', { cookie }, { body: { name, scopes } });
+    expect([issued.status, issued.body.token]).toEqual([200, expect.stringMatching(/^ypat_/)]);
+    return issued.body.token as string;
+  };
+  const reader = await issue('r', ['repo:read', 'repo:write']);
+  const admin = await issue('a', ['repo:admin']);
 
   for (const query of ['', '?confirm=', '?confirm=other']) {
     const wrong = await api(`${repo}${query}`, { cookie }, { method: 'DELETE' }, local);
