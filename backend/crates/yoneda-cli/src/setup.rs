@@ -1,12 +1,22 @@
-//! `yoneda setup claude|codex|gemini`: points a coding agent at the platform's account
+//! `yoneda setup claude|codex|gemini`: installs a coding agent's YonedaRepo files (the
+//! skill or extension compiled in from `plugins/`) and points it at the platform's account
 //! MCP endpoint (`<origin>/api/v1/mcp`). The bearer is always read from `YONEDA_TOKEN`
-//! when the agent runs; no token is ever written into a config file.
+//! when the agent runs; no token is ever written into a file.
 use crate::command::Agent;
 use crate::error::{Context, Error, Result};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
 pub const TOKEN_ENV: &str = "YONEDA_TOKEN";
+
+/// The skill Codex reads from `~/.agents/skills/yoneda/`.
+pub const CODEX_SKILL: &str = include_str!("../../../../plugins/codex/skills/yoneda/SKILL.md");
+/// The Gemini CLI extension (`~/.gemini/extensions/yoneda/`): its manifest and context.
+pub const GEMINI_MANIFEST: &str = include_str!("../../../../plugins/gemini/gemini-extension.json");
+pub const GEMINI_CONTEXT: &str = include_str!("../../../../plugins/gemini/GEMINI.md");
+/// Where Claude Code installs the plugin from (this repository's marketplace).
+pub const CLAUDE_MARKETPLACE: &str = "YonedaAI/yonedarepo";
+pub const CLAUDE_PLUGIN: &str = "yoneda@yoneda";
 
 pub fn mcp_url(origin: &str) -> String {
     format!("{origin}/api/v1/mcp")
@@ -74,12 +84,6 @@ pub fn with_server(existing: &str, server: Value) -> Result<String> {
         .context("encoding the config")
 }
 
-fn home() -> Result<PathBuf> {
-    std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| Error::new("HOME is not set"))
-}
-
 fn rewrite(path: &Path, change: impl FnOnce(&str) -> Result<String>) -> Result<()> {
     let existing = match std::fs::read_to_string(path) {
         Ok(text) => text,
@@ -95,46 +99,82 @@ fn rewrite(path: &Path, change: impl FnOnce(&str) -> Result<String>) -> Result<(
     std::fs::rename(&staging, path).context(format!("replacing {}", path.display()))
 }
 
-/// Writes the agent's MCP configuration; returns the file written.
-pub fn setup(agent: Agent, origin: &str, cwd: &Path) -> Result<PathBuf> {
-    let url = mcp_url(origin);
-    let path = match agent {
-        Agent::Codex => {
-            let base = std::env::var_os("CODEX_HOME")
+/// Writes `text` to `path` whatever was there (an installed copy of a plugin file).
+fn install(path: &Path, text: &str) -> Result<()> {
+    rewrite(path, |_| Ok(text.to_owned()))
+}
+
+/// Where `setup` writes: the person's home, Codex's home (`$CODEX_HOME`, default
+/// `~/.codex`) and the directory a project-scoped file goes in.
+pub struct Places {
+    pub home: PathBuf,
+    pub codex_home: Option<PathBuf>,
+    pub cwd: PathBuf,
+}
+
+impl Places {
+    fn from_env() -> Result<Self> {
+        Ok(Self {
+            home: std::env::var_os("HOME")
                 .map(PathBuf::from)
-                .map_or_else(|| home().map(|h| h.join(".codex")), Ok)?;
-            let path = base.join("config.toml");
-            rewrite(&path, |text| Ok(codex_config(text, &url)))?;
-            path
+                .ok_or_else(|| Error::new("HOME is not set"))?,
+            codex_home: std::env::var_os("CODEX_HOME").map(PathBuf::from),
+            cwd: std::env::current_dir().context("current directory")?,
+        })
+    }
+}
+
+/// Installs the agent's files and MCP configuration; returns the files written.
+pub fn setup(agent: Agent, origin: &str, at: &Places) -> Result<Vec<PathBuf>> {
+    let url = mcp_url(origin);
+    let mut written = Vec::new();
+    match agent {
+        Agent::Codex => {
+            let base = at
+                .codex_home
+                .clone()
+                .unwrap_or_else(|| at.home.join(".codex"));
+            let config = base.join("config.toml");
+            rewrite(&config, |text| Ok(codex_config(text, &url)))?;
+            let skill = at.home.join(".agents/skills/yoneda/SKILL.md");
+            install(&skill, CODEX_SKILL)?;
+            written.extend([config, skill]);
         }
-        // Project scope: `.mcp.json` next to the code, the file Claude Code shares
-        // with a team (`claude mcp add --scope user` is the per-person alternative).
+        // Project scope: `.mcp.json` next to the code, the file Claude Code shares with a
+        // team. The skill and hook come with the plugin (installed inside Claude Code).
         Agent::Claude => {
-            let path = cwd.join(".mcp.json");
+            let path = at.cwd.join(".mcp.json");
             rewrite(&path, |text| with_server(text, claude_server(&url)))?;
-            path
+            written.push(path);
         }
         Agent::Gemini => {
-            let path = home()?.join(".gemini").join("settings.json");
-            rewrite(&path, |text| with_server(text, gemini_server(&url)))?;
-            path
+            let extension = at.home.join(".gemini/extensions/yoneda");
+            let manifest = extension.join("gemini-extension.json");
+            rewrite(&manifest, |_| {
+                with_server(GEMINI_MANIFEST, gemini_server(&url))
+            })?;
+            let context = extension.join("GEMINI.md");
+            install(&context, GEMINI_CONTEXT)?;
+            let settings = at.home.join(".gemini/settings.json");
+            rewrite(&settings, |text| with_server(text, gemini_server(&url)))?;
+            written.extend([manifest, context, settings]);
         }
-    };
-    Ok(path)
+    }
+    Ok(written)
 }
 
 pub fn run(agent: Agent, origin: &str) -> Result<()> {
-    let cwd = std::env::current_dir().context("current directory")?;
-    let path = setup(agent, origin, &cwd)?;
-    println!(
-        "Wrote the yoneda MCP server ({}) to {}",
-        mcp_url(origin),
-        path.display()
-    );
+    for path in setup(agent, origin, &Places::from_env()?)? {
+        println!("Wrote {}", path.display());
+    }
+    println!("MCP server: {}", mcp_url(origin));
     println!("The agent reads the token from ${TOKEN_ENV} (`yoneda login`, then export it).");
     if agent == Agent::Claude {
+        println!("Install the skill and session hook inside Claude Code:");
+        println!("  /plugin marketplace add {CLAUDE_MARKETPLACE}");
+        println!("  /plugin install {CLAUDE_PLUGIN}");
         println!(
-            "Per-person instead: claude mcp add --transport http --scope user yoneda {} --header \"Authorization: Bearer ${{{TOKEN_ENV}}}\"",
+            "Per-person MCP instead of .mcp.json: claude mcp add --transport http --scope user yoneda {} --header \"Authorization: Bearer ${{{TOKEN_ENV}}}\"",
             mcp_url(origin)
         );
     }
@@ -145,7 +185,20 @@ pub fn run(agent: Agent, origin: &str) -> Result<()> {
 mod tests {
     use super::*;
 
+    const ORIGIN: &str = "https://api.example.test";
     const URL: &str = "https://api.dev.yonedarepo.com/api/v1/mcp";
+
+    fn places(dir: &Path) -> Places {
+        Places {
+            home: dir.join("home"),
+            codex_home: None,
+            cwd: dir.join("project"),
+        }
+    }
+
+    fn read(path: &Path) -> Result<String> {
+        std::fs::read_to_string(path).context(format!("reading {}", path.display()))
+    }
 
     #[test]
     fn replaces_only_the_yoneda_table_in_codex_config() {
@@ -179,11 +232,81 @@ mod tests {
     }
 
     #[test]
-    fn writes_the_claude_project_file() -> Result<()> {
+    fn codex_gets_its_skill_and_config() -> Result<()> {
         let dir = tempfile::tempdir().context("tempdir")?;
-        let path = setup(Agent::Claude, "https://api.dev.yonedarepo.com", dir.path())?;
-        let text = std::fs::read_to_string(path).context("read")?;
-        assert!(text.contains(URL) && !text.contains("ypat_"));
+        let at = places(dir.path());
+        let written = setup(Agent::Codex, ORIGIN, &at)?;
+        let skill = at.home.join(".agents/skills/yoneda/SKILL.md");
+        assert_eq!(read(&skill)?, CODEX_SKILL);
+        let config = read(&at.home.join(".codex/config.toml"))?;
+        assert!(config.contains(&format!("url = \"{ORIGIN}/api/v1/mcp\"")));
+        assert_eq!(written.len(), 2);
+        // `$CODEX_HOME` moves the config, not the skill.
+        let moved = Places {
+            codex_home: Some(dir.path().join("codex")),
+            ..places(dir.path())
+        };
+        setup(Agent::Codex, ORIGIN, &moved)?;
+        assert!(dir.path().join("codex/config.toml").exists());
+        Ok(())
+    }
+
+    #[test]
+    fn gemini_gets_the_extension_pointed_at_the_origin() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let at = places(dir.path());
+        setup(Agent::Gemini, ORIGIN, &at)?;
+        let extension = at.home.join(".gemini/extensions/yoneda");
+        assert_eq!(read(&extension.join("GEMINI.md"))?, GEMINI_CONTEXT);
+        let manifest: Value =
+            serde_json::from_str(&read(&extension.join("gemini-extension.json"))?)
+                .context("manifest")?;
+        assert_eq!(manifest["name"], "yoneda");
+        assert_eq!(manifest["contextFileName"], "GEMINI.md");
+        assert_eq!(
+            manifest["mcpServers"]["yoneda"]["httpUrl"],
+            format!("{ORIGIN}/api/v1/mcp")
+        );
+        let settings = read(&at.home.join(".gemini/settings.json"))?;
+        assert!(settings.contains(&format!("{ORIGIN}/api/v1/mcp")));
+        Ok(())
+    }
+
+    #[test]
+    fn claude_gets_the_project_file() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let at = places(dir.path());
+        let written = setup(Agent::Claude, ORIGIN, &at)?;
+        assert_eq!(written, [at.cwd.join(".mcp.json")]);
+        assert!(read(&written[0])?.contains(&format!("{ORIGIN}/api/v1/mcp")));
+        Ok(())
+    }
+
+    /// Whether `text` holds something shaped like a token (a prefix and its secret; the
+    /// bare prefix may appear in prose).
+    fn holds_token(text: &str) -> bool {
+        ["ypat_", "yrp_"].iter().any(|prefix| {
+            text.match_indices(prefix).any(|(i, _)| {
+                text[i + prefix.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_alphanumeric())
+            })
+        })
+    }
+
+    #[test]
+    fn no_installed_file_holds_a_token() -> Result<()> {
+        assert!(holds_token("Bearer ypat_abc") && !holds_token("A ypat_ token"));
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let at = places(dir.path());
+        for agent in [Agent::Codex, Agent::Gemini, Agent::Claude] {
+            for path in setup(agent, ORIGIN, &at)? {
+                let text = read(&path)?;
+                assert!(!holds_token(&text), "{}", path.display());
+                assert!(!text.contains("Bearer ") || text.contains("Bearer ${YONEDA_TOKEN}"));
+            }
+        }
         Ok(())
     }
 }
