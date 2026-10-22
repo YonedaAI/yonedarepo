@@ -120,6 +120,44 @@ export async function timeline(account, repo, detail, startedAt, { verbose }) {
   return lines.join('\n');
 }
 
+const outputTail = (text, max = 1200) => {
+  const s = String(text ?? '').trim();
+  return s.length > max ? `...${s.slice(-max)}` : s;
+};
+
+/**
+ * Each failing check's exit code and output, read from the evaluator's stored report (the
+ * evaluation's `evidence` digest, served by GET /api/repos/{repo}/evidence).
+ */
+export async function failedCheckOutput(account, repo, detail) {
+  const lines = [];
+  for (const evaluation of detail?.evaluations ?? []) {
+    const failed = (evaluation.checks ?? []).filter((c) => c.status !== 'pass');
+    if (!failed.length) continue;
+    let report = null;
+    try {
+      const object = await account.get(`/api/repos/${repo}/evidence?digest=${encodeURIComponent(evaluation.evidence ?? '')}`);
+      report = JSON.parse(object.content);
+    } catch (e) {
+      lines.push(`evaluation ${evaluation.id}: report unavailable (${e.message})`);
+    }
+    for (const check of failed) {
+      const output = [...(report?.setup ?? []), ...(report?.commands ?? [])].find((c) => c.name === check.name)?.output;
+      lines.push(`failing check ${check.name}: ${check.detail ?? ''}`);
+      if (!output) {
+        if (report) lines.push('  no command output recorded for this check');
+        continue;
+      }
+      lines.push(`  exit ${output.exit ?? 'none'}${output.timeout ? ' (timed out)' : ''}`);
+      for (const stream of ['stdout', 'stderr']) {
+        const text = outputTail(output[stream]);
+        if (text) lines.push(`  ${stream}:`, ...text.split('\n').map((l) => `    ${l}`));
+      }
+    }
+  }
+  return lines.join('\n');
+}
+
 /**
  * The smoke: fresh project, managed connections and allowance, one single-agent run, wait for a
  * checked candidate, report, delete. `metrics` gets wall time, requests and spend either way.
@@ -158,6 +196,8 @@ export async function agentSmoke({ account, owner, username, provider = 'zai', t
         console.error(`Agent smoke FAILED (run ${runId}, status ${detail.run.status}): ${error.message}`);
         if (detail.run.error) console.error(`Run error: ${JSON.stringify(detail.run.error).slice(0, 600)}`);
         console.error(await timeline(account, project.id, detail, startedAt, { verbose: true }));
+        const checks = await failedCheckOutput(account, project.id, detail);
+        if (checks) console.error(checks);
       }
       // Stop spending before the project goes: a timed-out run may still be working.
       await account.post(`/api/repos/${project.id}/cancel_run`, { run_id: runId }).catch(() => {});

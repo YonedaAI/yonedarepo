@@ -5,7 +5,7 @@
 // tokens the CLI reported and their cost at the registry's conservative rates, and always
 // deletes the project.
 import { readFileSync } from 'node:fs';
-import { SMOKE_POLICY, SMOKE_TARGET_USD, startSingle, timeline } from './agent-smoke.mjs';
+import { SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
 import { sleep } from './client.mjs';
 import { CHEAP, bindManagedProviders, createProject, deleteProject, ensureAllowance, runFailure } from './project-flow.mjs';
 
@@ -103,7 +103,11 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
       metrics.wall_s ??= seconds(Date.now() - startedAt);
       const detail = await account.get(`/api/repos/${project.id}/runs/${runId}`).catch(() => null);
       console.error(`Sandbox smoke FAILED (run ${runId}${detail ? `, status ${detail.run.status}` : ''}): ${error.message}`);
-      if (detail) console.error(await report(detail));
+      if (detail) {
+        console.error(await report(detail));
+        const checks = await failedCheckOutput(account, project.id, detail);
+        if (checks) console.error(checks);
+      }
       // Stop the sandbox before the project goes: a timed-out run may still be working.
       await account.post(`/api/repos/${project.id}/cancel_run`, { run_id: runId }).catch(() => {});
     }
