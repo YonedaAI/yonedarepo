@@ -15,6 +15,8 @@ const neutral = new Set([
   './background',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
+  // The account authority's command call (accounts, personal tokens); imports only types.
+  './workspace',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
   '../../backend/crates/yoneda-core/src/platform_tools.json',
 ]);

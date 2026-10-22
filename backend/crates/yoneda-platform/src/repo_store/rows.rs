@@ -16,6 +16,8 @@ pub struct Settings {
     pub object_store: String,
     pub policy: Policy,
     pub policy_digest: String,
+    /// When the repository was deleted (a tombstone); `None` while it is live.
+    pub deleted_at: Option<i64>,
 }
 
 pub struct CommitRow {
@@ -82,6 +84,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         object_store: text("object_store")?,
         policy: serde_json::from_str(&text("policy")?).map_err(|_| corrupt("policy"))?,
         policy_digest: text("policy_digest")?,
+        deleted_at: row["deleted_at"].as_i64(),
     })
 }
 

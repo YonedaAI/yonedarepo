@@ -5,6 +5,7 @@ import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
+import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
@@ -155,7 +156,7 @@ async function quiesceCombiners() {
 }
 export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 
-/** Registers per-test reset, the D1 listing schema and the Artifacts push endpoint. */
+/** Registers per-test reset, the D1 schema and the Artifacts push endpoint. */
 export function usePlatformFixture() {
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -164,7 +165,10 @@ afterEach(async () => {
   return reset();
 });
 beforeEach(async () => {
-  for (const statement of listing.split(';').filter((s) => s.trim())) await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
+  // Every config running these tests gets the D1 schema (listing and personal-token lookup).
+  for (const migration of [listing, tokens])
+    for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
+      await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
   misses.length = 0;
   artifacts.clear();
   pushes.length = 0;

@@ -1,0 +1,2 @@
+CREATE TABLE account_tokens(id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,scopes TEXT NOT NULL,repos TEXT,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,last_used_at INTEGER,revoked_at INTEGER);
+CREATE TABLE device_codes(user_code TEXT PRIMARY KEY,secret_hash TEXT NOT NULL,client_name TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL,interval_ms INTEGER NOT NULL,last_poll_at INTEGER,status TEXT NOT NULL,account TEXT,grant_json TEXT);
