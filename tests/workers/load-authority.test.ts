@@ -1,4 +1,4 @@
-import { evictDurableObject, reset } from 'cloudflare:test';
+import { evictDurableObject, reset, runDurableObjectAlarm } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { ledger } from '../../cloudflare/worker/storage';
 import { audit, bindings, initialize, meter, pool, start, stub } from './load-fixture';
@@ -65,7 +65,15 @@ for (const [repositories, concurrency] of [
     }
     const began = performance.now();
     for (const repo of repos) {
+      // Every command arms the authority's alarm 15 s out, and its first run each UTC day
+      // records `history.archive_due_scheduled`. A workload slower than 15 s (CI runners)
+      // let that alarm land between the audit's snapshot and its storage read. Run it now:
+      // the next alarm is then 15 s away and adds no event the same day.
+      expect(await runDurableObjectAlarm(stub(repo))).toBe(true);
       const before = await audit(repo, 16);
+      expect(
+        before.stored.events.filter((row) => row.kind === 'history.archive_due_scheduled'),
+      ).toHaveLength(1);
       await evictDurableObject(stub(repo));
       expect(await audit(repo, 16)).toEqual(before);
     }
@@ -77,6 +85,7 @@ for (const [repositories, concurrency] of [
         elapsed_ms: performance.now() - began,
         invariants: [
           'exact run/execution/job counts',
+          'daily archive maintenance scheduled once',
           'terminal cancellation',
           'execution graph parity',
           'contiguous events',
