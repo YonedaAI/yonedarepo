@@ -3,6 +3,7 @@
 // the repository's SourceRepository Durable Object, which owns every decision. Callers
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
+import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { breakGlass } from './repo-break-glass';
@@ -70,7 +71,7 @@ async function credentials(req: Request, env: Env): Promise<Credentials | null> 
   return { _session: { workspace: principal.workspace, principal: name, ...human } };
 }
 
-async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
@@ -228,6 +229,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       ? { _session: { workspace: auth._session.workspace, principal: auth._session.principal } }
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
+  if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
   try {
     return response(await route(req, env, url, auth));
   } catch (e: any) {
