@@ -7,18 +7,24 @@
 // - this project's own platform repository, with the project's agent token, limited to reads,
 //   object/commit upload and moving branches under the attempt's own `attempts/<run>/` prefix.
 // Everything else gets a 403, so the agent cannot install packages or reach other services.
+// A check sandbox (role `check`) gets less: GET requests to the project repository only, so it
+// can clone the candidate but never push, upload or move a ref, and it has no model endpoint.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { providerDefinition } from '../../shared/providers';
 import { projectToken } from './agents-platform';
 import type { Env, Json } from './types';
 import { providerCredentials } from './vault';
 
-export type OutboundProps = {
+type PlatformAccess = {
   project: string;
   owner: string;
   platformRepo: string;
   /** The origin the sandbox clones from (`yoneda::<origin>/<repo>`). */
   platformOrigin: string;
+};
+/** An agent sandbox (no role: attempts started before roles existed are agents). */
+export type AgentEgress = PlatformAccess & {
+  role?: 'agent';
   /** `refs/heads/attempts/<run>/`: the only refs the sandbox may create or move. */
   refPrefix: string;
   provider: string;
@@ -28,6 +34,9 @@ export type OutboundProps = {
   /** `https://host/path` the CLI uses as ANTHROPIC_BASE_URL. */
   modelBase: string;
 };
+/** A check sandbox: reads its project repository, nothing else. */
+export type CheckEgress = PlatformAccess & { role: 'check' };
+export type OutboundProps = AgentEgress | CheckEgress;
 
 export type OutboundDecision =
   | { route: 'model' }
@@ -39,19 +48,23 @@ const PLATFORM_POSTS = new Set(['/objects', '/commits', '/branches', '/refs/batc
 /** Where one request may go; pure, so the policy is tested without a sandbox. */
 export function outboundDecision(url: URL, method: string, props: OutboundProps): OutboundDecision {
   if (url.protocol !== 'https:') return { deny: `${url.hostname} is reachable only over HTTPS` };
-  const model = new URL(props.modelBase);
-  const modelPath = model.pathname.replace(/\/$/, '');
-  if (
-    url.host === model.host &&
-    (url.pathname === modelPath || url.pathname.startsWith(`${modelPath}/`))
-  )
-    return method === 'POST' ? { route: 'model' } : { deny: 'Model requests are POSTs' };
+  if (props.role !== 'check') {
+    const model = new URL(props.modelBase);
+    const modelPath = model.pathname.replace(/\/$/, '');
+    if (
+      url.host === model.host &&
+      (url.pathname === modelPath || url.pathname.startsWith(`${modelPath}/`))
+    )
+      return method === 'POST' ? { route: 'model' } : { deny: 'Model requests are POSTs' };
+  }
   if (url.origin === new URL(props.platformOrigin).origin) {
     const root = `/api/v1/repos/${props.platformRepo}`;
     if (url.pathname !== root && !url.pathname.startsWith(`${root}/`))
       return { deny: 'Only this project repository is reachable' };
     const rest = url.pathname.slice(root.length) || '/';
     if (method === 'GET') return { route: 'platform', refs: false };
+    if (props.role === 'check')
+      return { deny: `Checks read the repository only (${method} ${rest})` };
     if (method === 'POST' && PLATFORM_POSTS.has(rest))
       return { route: 'platform', refs: rest === '/branches' || rest === '/refs/batch' };
     return { deny: `${method} ${rest} is not available to agents` };
@@ -89,7 +102,11 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
     headers.delete('authorization');
     headers.delete('x-api-key');
     headers.delete('cookie');
-    if (decision.route === 'model') {
+    if (props.role === 'check') {
+      // Defense in depth: outboundDecision already gives a check sandbox platform reads only.
+      if (decision.route !== 'platform' || request.method !== 'GET')
+        return forbidden('Checks read the repository only');
+    } else if (decision.route === 'model') {
       const definition = providerDefinition(props.provider);
       const { key } = await providerCredentials(
         this.env,
@@ -101,8 +118,7 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
       );
       headers.set(definition.auth_header, `${definition.auth_prefix}${key}`);
       return fetch(new Request(request, { headers }));
-    }
-    if (decision.refs) {
+    } else if (decision.refs) {
       const body = await request
         .clone()
         .json()
