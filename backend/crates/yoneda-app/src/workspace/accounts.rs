@@ -75,6 +75,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
                     &[],
                 )?;
+                super::tokens::revoke_all(db, now)?;
                 audit(db, "account.recovered", now, json!({}))?;
             } else {
                 session(db, c, now)?;

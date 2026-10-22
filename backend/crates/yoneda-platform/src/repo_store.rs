@@ -16,6 +16,7 @@ mod checkpoints;
 mod checks;
 mod classes;
 mod contracts;
+mod deletion;
 pub(crate) mod grants;
 mod head;
 mod history;
@@ -58,11 +59,18 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return rows::init(db, c);
     }
     let settings = rows::settings(db)?;
+    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(&op) {
+        return Err(deletion::gone());
+    }
     let actor = auth::actor(db, c, &settings)?;
     match op.as_str() {
-        "repo_prepare_commit" | "repo_record_commit" | "repo_branch_set" | "repo_begin_commit" => {
-            actor.require("write")
-        }
+        "repo_prepare_commit"
+        | "repo_record_commit"
+        | "repo_branch_set"
+        | "repo_branch_batch"
+        | "repo_begin_commit" => actor.require("write"),
+        // Owner (or repo:admin) checks and the purger's check happen in `deletion`.
+        "repo_delete" | "repo_purge_target" => Ok(()),
         // Only the platform copies commit shard records in.
         "repo_adopt_commit" if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
@@ -184,6 +192,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
+        "repo_branch_batch" => branches::batch(db, c, principal),
+        "repo_delete" => deletion::delete(db, c, &actor, &settings),
+        "repo_purge_target" => deletion::purge_target(&actor, &settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         "repo_land" => land::land(db, c, principal, &settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

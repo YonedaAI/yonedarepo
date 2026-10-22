@@ -8,6 +8,7 @@ mod campaign;
 mod campaign_budget;
 mod campaign_runs;
 mod campaign_trial;
+mod device;
 mod grants;
 mod project_dispatch;
 mod project_platform;
@@ -21,6 +22,7 @@ mod spend;
 #[cfg(test)]
 #[path = "spend/tests.rs"]
 mod spend_tests;
+mod tokens;
 pub(super) const TABLE: &str = "workspace_records";
 
 /// Apply the workspace schema and execute a command in one synchronous transaction.
@@ -71,6 +73,12 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "budget_status" | "budget_reserve" | "budget_settle" => {
                 budget::handle(&db, &command, now)
             }
+            "pat_create" | "pat_list" | "pat_check" | "pat_revoke" => {
+                tokens::handle(&db, &command, now)
+            }
+            "device_create" | "device_approve" | "device_poll" => {
+                device::handle(&db, &command, now)
+            }
             "grants" | "grant_issue" | "grant_check" | "grant_revoke" => {
                 grants::handle(&db, &command, now)
             }
@@ -92,8 +100,15 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
         }
     }))
 }
+/// Digest-pinned, forward-only workspace migrations (version, SQL), applied in order.
+const MIGRATIONS: [(i64, &str); 2] = [
+    (1, include_str!("../migrations/workspace/0001_accounts.sql")),
+    (
+        2,
+        include_str!("../migrations/workspace/0002_account_tokens.sql"),
+    ),
+];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
-    const SQL: &str = include_str!("../migrations/workspace/0001_accounts.sql");
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;
     let db = store.clone();
     store.transaction(Box::new(move || {
@@ -101,23 +116,33 @@ fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             "SELECT version,digest FROM workspace_migrations ORDER BY version",
             &[],
         )?;
-        let digest = yoneda_agents_core::digest(SQL.as_bytes());
+        let latest = MIGRATIONS.len() as i64;
         if applied
             .iter()
-            .any(|r| r["version"] != 1 || r["digest"] != digest)
+            .any(|r| r["version"].as_i64().is_none_or(|v| v > latest))
         {
             return Err(Error::new(
-                "MIGRATION_DRIFT",
-                "Workspace schema version or digest mismatch",
+                "SCHEMA_TOO_NEW",
+                "Workspace schema requires a newer binary",
             ));
         }
-        if applied.is_empty() {
-            for sql in SQL.split(';').filter(|s| !s.trim().is_empty()) {
-                db.query(sql, &[])?;
+        for (version, sql) in MIGRATIONS {
+            let digest = yoneda_agents_core::digest(sql.as_bytes());
+            if let Some(row) = applied.iter().find(|r| r["version"] == version) {
+                if row["digest"] != digest {
+                    return Err(Error::new(
+                        "MIGRATION_DRIFT",
+                        "Workspace schema version or digest mismatch",
+                    ));
+                }
+                continue;
+            }
+            for statement in sql.split(';').filter(|s| !s.trim().is_empty()) {
+                db.query(statement, &[])?;
             }
             db.query(
-                "INSERT INTO workspace_migrations(version,digest) VALUES(1,?)",
-                &[json!(digest)],
+                "INSERT INTO workspace_migrations(version,digest) VALUES(?,?)",
+                &[json!(version), json!(digest)],
             )?;
         }
         Ok(Value::Null)
