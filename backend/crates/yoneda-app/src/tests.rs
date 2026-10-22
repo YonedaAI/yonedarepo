@@ -2,6 +2,8 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
+#[path = "tests/attempt_progress.rs"]
+mod attempt_progress;
 #[path = "tests/autonomous_migration.rs"]
 mod autonomous_migration;
 #[path = "tests/comparison_branch_gate.rs"]

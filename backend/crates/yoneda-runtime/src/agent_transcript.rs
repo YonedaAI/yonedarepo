@@ -15,6 +15,8 @@ struct Streams {
     stdout_truncated: bool,
     stderr_truncated: bool,
     recorded: bool,
+    /// Every byte the harness emitted, including bytes past the retained limit (progress).
+    observed: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -34,8 +36,10 @@ impl Transcript {
             stderr,
             stdout_truncated,
             stderr_truncated,
+            observed,
             ..
         } = &mut *streams;
+        *observed = observed.saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
         let (output, truncated) = match channel {
             Channel::Stdout => (stdout, stdout_truncated),
             Channel::Stderr => (stderr, stderr_truncated),
@@ -63,6 +67,11 @@ impl Transcript {
         output["timeout"] = json!(true);
         output["error_code"] = json!("EXECUTION_TIMEOUT");
         crate::report::bounded(output)
+    }
+
+    /// Monotonic count of harness output bytes; a change means the agent made progress.
+    pub(crate) fn activity(&self) -> u64 {
+        self.0.lock().map_or(0, |streams| streams.observed)
     }
 
     pub(crate) fn mark_recorded(&self) -> Result<()> {

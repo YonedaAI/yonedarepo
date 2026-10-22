@@ -25,25 +25,21 @@ async fn run(job: Value) {
     let started = Instant::now();
     let transcript = Transcript::default();
     tracing::info!(event = "attempt.started");
-    let heartbeat = tokio::spawn(
-        async {
-            loop {
-                tokio::time::sleep(Duration::from_secs(20)).await;
-                if broker("/heartbeat", json!({}), true).await.is_err() {
-                    tracing::error!(event = "attempt.heartbeat_failed");
-                    std::process::exit(2);
-                }
-            }
+    let progress = {
+        let transcript = transcript.clone();
+        move || {
+            transcript
+                .activity()
+                .wrapping_add(crate::attempt_watchdog::signals())
         }
-        .in_current_span(),
-    );
-    let result = match crate::execution_limits::timeout_ms(&job) {
-        Ok(timeout) => {
-            tokio::time::timeout(
-                Duration::from_millis(timeout),
-                execute_job(&job, &transcript),
-            )
-            .await
+    };
+    let heartbeat = tokio::spawn(heartbeat(progress.clone()).in_current_span());
+    let result = match crate::execution_limits::limits(&job) {
+        Ok(limits) => {
+            tokio::select! {
+                result = execute_job(&job, &transcript) => Ok(result),
+                expiry = crate::attempt_watchdog::expired(limits, Duration::from_secs(1), progress) => Err(expiry),
+            }
         }
         Err(error) => Ok(Err(error)),
     };
@@ -75,13 +71,23 @@ async fn run(job: Value) {
             )
             .await
         }
-        Err(_) => {
+        Err(expiry) => {
             tracing::error!(
                 event = "attempt.deadline",
                 error_code = "EXECUTION_TIMEOUT",
+                reason = if matches!(expiry, crate::attempt_watchdog::Expiry::Idle(_)) {
+                    "idle"
+                } else {
+                    "ceiling"
+                },
                 duration_ms = started.elapsed().as_secs_f64() * 1000.0
             );
-            report_deadline((job["kind"] == "agent").then_some(&transcript), broker).await
+            report_deadline(
+                (job["kind"] == "agent").then_some(&transcript),
+                expiry,
+                broker,
+            )
+            .await
         }
     };
     heartbeat.abort();
@@ -91,10 +97,35 @@ async fn run(job: Value) {
     }
 }
 
+/// Every 20 s: tell the ledger whether this supervisor saw progress, and treat ledger-observed
+/// model activity (including a request still waiting on the provider) as progress here.
+async fn heartbeat(progress: impl Fn() -> u64) {
+    let mut seen = progress();
+    loop {
+        tokio::time::sleep(Duration::from_secs(20)).await;
+        let current = progress();
+        let active = current != seen;
+        seen = current;
+        match broker("/heartbeat", json!({"active":active}), true).await {
+            Ok(lease) => {
+                if lease["model_active"] == true {
+                    crate::attempt_watchdog::note();
+                    seen = progress();
+                }
+            }
+            Err(_) => {
+                tracing::error!(event = "attempt.heartbeat_failed");
+                std::process::exit(2);
+            }
+        }
+    }
+}
+
 /// Timeout has already dropped the harness and its process guards. Evidence must be attached
 /// while the original attempt is still active, before failure makes it terminal.
 pub(crate) async fn report_deadline<F, Fut>(
     transcript: Option<&Transcript>,
+    expiry: crate::attempt_watchdog::Expiry,
     mut report: F,
 ) -> yoneda_agents_core::Result<Value>
 where
@@ -121,7 +152,7 @@ where
     }
     report(
         "/failed",
-        json!({"error":"EXECUTION_TIMEOUT: Execution deadline exceeded","retryable":false}),
+        json!({"error":expiry.message(),"retryable":expiry.retryable()}),
         true,
     )
     .await

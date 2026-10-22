@@ -7,6 +7,13 @@ mod http;
 mod mutations;
 #[path = "source_client_tools.rs"]
 mod tools;
+
+/// Source requests served for the agent in this process; the idle watchdog reads it as progress.
+static SOURCE_REQUESTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn source_requests() -> u64 {
+    SOURCE_REQUESTS.load(std::sync::atomic::Ordering::Relaxed)
+}
 use crate::source_client::{
     SOURCE_READ_MAX, SourceBackend, SourceChange, SourceNode, SourceSlice, failure,
 };

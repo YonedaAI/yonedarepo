@@ -9,6 +9,7 @@ mod migration;
 mod mutations;
 mod reads;
 mod rows;
+mod staged;
 mod state;
 mod tickets;
 pub(crate) use auth::{sign_actor, sign_capture, sign_read_actor, verify_seal};
@@ -61,6 +62,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             return Ok(result);
         }
         "source_stat" | "source_list" | "source_read" => return reads::handle(db, c, &state),
+        "source_staged_changes" => return staged::changes(db, c, &state, &actor),
         "source_events" => return reads::events(db, c),
         _ => {}
     }

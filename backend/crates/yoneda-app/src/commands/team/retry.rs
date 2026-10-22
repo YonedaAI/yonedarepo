@@ -64,7 +64,9 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let revision = number(&task, "revision")?
         .checked_add(1)
         .ok_or_else(|| bad("Task revision overflow"))?;
-    if revision > 3 {
+    // A timeout or interruption is the platform stopping valid work; its retry resumes from the
+    // staged files and is bounded by the approved model allowance, not by the retry cap.
+    if revision > 3 && !super::super::leases::resume::interrupted_error(&task["error"]) {
         return Err(Error::new(
             "ATTEMPTS_EXHAUSTED",
             "Team task owner retry budget exhausted",
@@ -111,14 +113,12 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let dispatch = now
         .checked_add(1_200_000)
         .ok_or_else(|| bad("Dispatch deadline overflow"))?;
-    let duration =
-        super::super::model_budgets::for_job(db, &job)?.map_or(600_000, |b| b.max_execution_ms);
-    job["deadline"] = json!(
-        dispatch
-            .checked_add(duration)
-            .and_then(|n| n.checked_add(120_000))
-            .ok_or_else(|| bad("Retry deadline overflow"))?
-    );
+    let budget = super::super::model_budgets::for_job(db, &job)?;
+    job["deadline"] = json!(super::super::leases::timing::job_deadline(
+        dispatch,
+        &job,
+        budget.as_ref()
+    )?);
     job["dispatch_deadline"] = json!(dispatch);
     job["attempt_deadline"] = Value::Null;
     job["runtime_started_at"] = Value::Null;

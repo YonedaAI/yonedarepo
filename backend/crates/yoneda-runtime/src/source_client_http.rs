@@ -106,6 +106,8 @@ impl SourceHttp {
         Ok(Arc::new(Self { sender }))
     }
     pub fn send(&self, request: WireRequest) -> Result<HttpReply> {
+        // Every source read or write the agent makes is progress for the idle watchdog.
+        super::SOURCE_REQUESTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let (reply, result) = mpsc::sync_channel(1);
         self.sender
             .try_send(Pending { request, reply })

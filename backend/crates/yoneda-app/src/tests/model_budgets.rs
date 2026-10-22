@@ -31,13 +31,15 @@ fn priced(command: &mut Value, limit: i64) {
 }
 
 #[test]
-fn model_budgets_long_execution_survives_queue_delay_and_fences_at_approved_deadline() {
+fn model_budgets_progressing_execution_survives_queue_delay_and_fences_at_the_attempt_ceiling() {
     let (db, mut command) = configured();
     command["model_budgets"][0]["max_execution_ms"] = json!(1_800_000);
     call(&db, command).unwrap();
     let root = "job:budgeted:agent-1";
     let claimed = claim(&db, root, 601_000);
-    assert_eq!(claimed["attempt_deadline"], 2_521_000);
+    // Boot, then the five-minute no-progress window plus grace; the ceiling is the safety net.
+    assert_eq!(claimed["attempt_deadline"], 1_081_000);
+    assert_eq!(claimed["attempt_ceiling_at"], 2_521_000);
     call(
         &db,
         json!({"op":"progress","job_id":root,"epoch":1,"now":602_000,
@@ -47,7 +49,7 @@ fn model_budgets_long_execution_survives_queue_delay_and_fences_at_approved_dead
     for now in (650_000..2_402_000).step_by(50_000) {
         call(
             &db,
-            json!({"op":"heartbeat","job_id":root,"epoch":1,"now":now}),
+            json!({"op":"heartbeat","job_id":root,"epoch":1,"now":now,"active":true}),
         )
         .unwrap();
     }
@@ -316,11 +318,12 @@ fn model_budgets_invalid_usage_never_refunds_and_integer_rounding_is_conservativ
 }
 
 #[test]
-fn model_budgets_claims_and_heartbeats_honor_approved_duration_without_extending_it() {
+fn model_budgets_heartbeats_without_progress_never_extend_the_attempt() {
     let (db, command) = configured();
     call(&db, command).unwrap();
     let root = "job:budgeted:agent-1";
-    assert_eq!(claim(&db, root, 1000)["attempt_deadline"], 181000);
+    // The legacy one-minute time field no longer kills a progressing attempt.
+    assert_eq!(claim(&db, root, 1000)["attempt_deadline"], 481_000);
     call(&db,json!({"op":"progress","job_id":root,"epoch":1,"now":1500,"progress":{"stage":"container_ready"}})).unwrap();
     assert_eq!(
         call(
@@ -328,20 +331,19 @@ fn model_budgets_claims_and_heartbeats_honor_approved_duration_without_extending
             json!({"op":"check_attempt","job_id":root,"epoch":1,"now":50000})
         )
         .unwrap()["deadline"],
-        61500
+        361_500
     );
+    let idle = call(
+        &db,
+        json!({"op":"heartbeat","job_id":root,"epoch":1,"now":50000,"active":false}),
+    )
+    .unwrap();
+    assert_eq!(idle["lease_until"], 110_000);
+    assert_eq!(idle["attempt_deadline"], 361_500);
     assert_eq!(
         call(
             &db,
-            json!({"op":"heartbeat","job_id":root,"epoch":1,"now":50000})
-        )
-        .unwrap()["lease_until"],
-        61500
-    );
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":61500})
+            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":110_000})
         )
         .unwrap_err()
         .code,

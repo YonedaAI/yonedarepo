@@ -31,3 +31,33 @@ export function requestUsage(body: Json, harness: string) {
     output_tokens: output ?? 0,
   };
 }
+
+/**
+ * The ledger may grant a smaller response than requested so the request fits the real remaining
+ * allowance instead of being refused. Lower the provider-enforced output cap to that grant; never
+ * raise it. Claude manual thinking must stay strictly below max_tokens.
+ */
+export function grantOutputAllowance(
+  body: Json,
+  harness: 'codex' | 'claude' | 'gemini',
+  granted: number,
+): Json {
+  if (!Number.isSafeInteger(granted) || granted < 1) return body;
+  if (harness === 'codex') {
+    if (body.max_output_tokens === undefined || body.max_output_tokens > granted)
+      body.max_output_tokens = granted;
+  } else if (harness === 'gemini') {
+    body.generationConfig = body.generationConfig ?? {};
+    const current = body.generationConfig.maxOutputTokens;
+    if (current === undefined || current > granted) body.generationConfig.maxOutputTokens = granted;
+  } else {
+    if (body.max_tokens === undefined || body.max_tokens > granted) body.max_tokens = granted;
+    const thinking = body.thinking;
+    if (thinking?.type === 'enabled' && thinking.budget_tokens >= body.max_tokens)
+      body.thinking =
+        body.max_tokens > 1024
+          ? { ...thinking, budget_tokens: body.max_tokens - 1 }
+          : { type: 'disabled' };
+  }
+  return body;
+}
