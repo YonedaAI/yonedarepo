@@ -25,6 +25,7 @@ import { deleteRepository } from './repository-deletion';
 import { publicationReadback, recordPublicationChecks, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
+import { sandboxActivity } from './sandbox-attempt';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
@@ -183,6 +184,15 @@ export async function fetchRequest(
     if (action === 'site_preview' && req.method === 'GET') return await siteRoute(env, repo, req);
     if (action === 'evidence' && req.method === 'GET')
       return await evidence(env, repo, url.searchParams.get('digest') ?? '');
+    if (action === 'sandbox_activity' && req.method === 'GET')
+      return response(
+        await sandboxActivity(
+          env,
+          repo,
+          url.searchParams.get('execution_id') ?? '',
+          Number(url.searchParams.get('after') ?? 0),
+        ),
+      );
     if (action === 'candidate' && req.method === 'GET')
       return await candidateDetail(env, repo, url.searchParams.get('id') ?? '');
     if (action === 'candidate_source' && req.method === 'GET')

@@ -11,6 +11,7 @@
     "CODEX_MODEL": "gpt-5.6-luna",
     "CLAUDE_MODEL": "claude-sonnet-5-5",
     "PLATFORM_OBJECT_STORE": "r2",
+    "SANDBOX_PLATFORM_ORIGIN": "https://platform.test",
     "VAULT_KEY": "1111111111111111111111111111111111111111111111111111111111111111"
   },
   "services": [
@@ -52,6 +53,10 @@
       {
         "name": "LAND_COMBINERS",
         "class_name": "LandCombiner"
+      },
+      {
+        "name": "AGENT_SANDBOX",
+        "class_name": "FakeAgentSandbox"
       }
     ]
   },
@@ -97,6 +102,12 @@
       "tag": "v7",
       "new_sqlite_classes": [
         "LandCombiner"
+      ]
+    },
+    {
+      "tag": "v8",
+      "new_sqlite_classes": [
+        "FakeAgentSandbox"
       ]
     }
   ],

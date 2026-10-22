@@ -58,3 +58,14 @@
 .execution-log-list .log-error code {
   color: #a33e36;
 }
+/* Sandbox attempts: what the coding CLI last did, and a marker when it has gone quiet. */
+.sandbox-last-activity {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sandbox-idle {
+  color: #8a5a00;
+  font-weight: 600;
+}
