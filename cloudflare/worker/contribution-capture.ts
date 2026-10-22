@@ -2,10 +2,10 @@
 // platform commit on the frozen base, from the platform's own diff of the two trees, and set
 // on the attempt's candidate branch. The contributor's history never becomes a candidate.
 // Like refresh, this runs in the Worker: no container and no model.
-import { platformRevision, repositoryPlatform } from './agents-platform';
+import { type ProjectPlatform, platformRevision, repositoryPlatform } from './agents-platform';
 import { CANDIDATE_DIFF_LIMIT } from './evidence';
 import { captureFileProvenance } from './provenance';
-import { platformSource } from './source-objects';
+import { platformSource, type SourceCommit } from './source-objects';
 import { object, sha } from './storage';
 import type { Env, Json, Scope } from './types';
 
@@ -63,28 +63,43 @@ export async function captureContribution(env: Env, scope: Scope): Promise<Json>
     if (!captured) return fail('The rebuilt contribution differs from the submitted tree');
     await platform.call('POST', '/branches', { ref: branch, commit: made.commit, expected: null });
   }
-  const commit = captured.hash;
-  const fileProvenance = await captureFileProvenance(source, base.commit, commit);
-  const paths = [
-    ...new Set(fileProvenance.flatMap((f: Json) => [f.path, f.old_path]).filter(Boolean)),
-  ].sort();
-  const patch = await platform.call('GET', `/diff?base=${base.commit}&head=${commit}&patch=1`);
-  const text = patch.changes
-    .map((c: Json) => c.patch ?? `Binary or large file ${c.path} changed\n`)
-    .join('');
+  const facts = await commitFacts(env, platform, base.commit, captured);
   return {
     op: 'finish',
     job_id: job.id,
     epoch: job.epoch,
     result: {
-      id: `contribution-${(await sha(`${scope.repo_id}:${commit}`)).slice(0, 32)}`,
-      revision: { repository, commit },
-      parents: captured.parents,
-      tree: captured.treeHash,
-      paths,
-      file_provenance: fileProvenance,
+      id: `contribution-${(await sha(`${scope.repo_id}:${captured.hash}`)).slice(0, 32)}`,
+      revision: { repository, commit: captured.hash },
+      ...facts,
       summary: 'External contribution',
-      diff_digest: (await object(env, text, CANDIDATE_DIFF_LIMIT)).digest,
     },
+  };
+}
+
+/**
+ * What a candidate records about one platform commit on `base`, read from the platform itself:
+ * its parents and tree, the changed paths with provenance, and the stored diff's digest.
+ */
+export async function commitFacts(
+  env: Env,
+  platform: ProjectPlatform,
+  base: string,
+  commit: SourceCommit,
+) {
+  const fileProvenance = await captureFileProvenance(platformSource(platform), base, commit.hash);
+  const paths = [
+    ...new Set(fileProvenance.flatMap((f: Json) => [f.path, f.old_path]).filter(Boolean)),
+  ].sort();
+  const patch = await platform.call('GET', `/diff?base=${base}&head=${commit.hash}&patch=1`);
+  const text = patch.changes
+    .map((c: Json) => c.patch ?? `Binary or large file ${c.path} changed\n`)
+    .join('');
+  return {
+    parents: commit.parents,
+    tree: commit.treeHash,
+    paths,
+    file_provenance: fileProvenance,
+    diff_digest: (await object(env, text, CANDIDATE_DIFF_LIMIT)).digest,
   };
 }

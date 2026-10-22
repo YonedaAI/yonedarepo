@@ -117,10 +117,12 @@ fn finish<S: SqlStore>(db: &S, j: &mut Value, result: &Value, now: i64) -> Resul
     let eid = string(&j["payload"]["execution"], "id")?;
     let mut e = get(db, "executions", &eid)?;
     let run_id = string(&e, "run_id")?;
-    e["status"] = json!("completed");
+    // The trusted capture step, done inline: the same candidate and provenance checks run on
+    // this attempt's own identity, and the execution moves on to evaluation.
+    e["status"] = json!("capturing");
     e["finished_at"] = json!(now);
     save_execution(db, &e, now)?;
-    let capture = json!({"id":id,"epoch":j["epoch"],"payload":{"execution":e,"run_id":run_id,"base":e["base"],"capture_subtype":"platform_commit"}});
+    let capture = json!({"id":id,"kind":"capture","epoch":j["epoch"],"payload":{"execution":e,"run_id":run_id,"base":e["base"],"capture_subtype":"platform_commit"}});
     super::capture_completion::complete(db, &capture, result, now)?;
     j["status"] = json!("done");
     j["result"] = result.clone();

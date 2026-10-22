@@ -31,6 +31,12 @@ export interface Env {
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;
   EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
+  /** One Cloudflare Sandbox per sandbox-cli-v1 attempt; absent where not deployed. */
+  AGENT_SANDBOX?: DurableObjectNamespace<import('./sandbox-agent').AgentSandbox>;
+  /** `<account id>/<gateway id>`: sandbox model requests go through this AI Gateway. */
+  SANDBOX_AI_GATEWAY?: string;
+  /** The platform origin a sandbox clones from (`yoneda::<origin>/<repo>`). */
+  SANDBOX_PLATFORM_ORIGIN?: string;
   SELF: Service<AgentsEntrypoint>;
   OBJECTS: R2Bucket;
   INDEX: D1Database;

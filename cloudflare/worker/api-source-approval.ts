@@ -1,3 +1,4 @@
+import { approvedTransport } from './sandbox-attempt';
 import { openSource, type SourceCommit } from './source-objects';
 import { ledger } from './storage';
 import type { Env, Json } from './types';
@@ -19,11 +20,15 @@ export async function freezeSourceApproval(
   repository: Json,
   checkpoint?: { repository: string; commit: string },
 ): Promise<void> {
+  const transport = approvedTransport(env, input.runtime);
+  delete input.runtime;
   delete input._source_base;
   delete input._source_transport_approved;
   delete input.workspace_transport;
   if (!env.SOURCES || repository.capabilities?.source_api !== 1)
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
+  if (transport !== 'api-source-v1' && repository.capabilities?.sandbox_cli !== 1)
+    fail('LEDGER_UPDATING', 'Sandbox runs are updating; refresh before starting.');
   let revision = {
     repository: `${repository.remote.namespace}/${repository.remote.name}`,
     commit: repository.published_commit,
@@ -53,7 +58,7 @@ export async function freezeSourceApproval(
     fail('INVALID_CAPTURE', 'Approved source revision is unavailable.');
     return;
   }
-  input.workspace_transport = 'api-source-v1';
+  input.workspace_transport = transport;
   input._source_transport_approved = true;
   input._source_base = { ...revision, tree: commit.treeHash };
 }
