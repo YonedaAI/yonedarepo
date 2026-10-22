@@ -135,6 +135,11 @@ jobs:
             echo "::error::Only ${#files[@]} of 4 workerd shards reported results."
             exit 1
           fi
+          # The summary must never look green while a shard failed.
+          if [ "${{ needs.workers.result }}" != success ]; then
+            echo "::error::A workerd shard failed (${{ needs.workers.result }})."
+            exit 1
+          fi
 
   suites:
     name: Types, lint, other suites, frontend build
