@@ -1,13 +1,15 @@
 //! The Git view of changeset landings. The projector builds one Git commit per step (a
 //! landed batch, or a changeset landed on its own) by stateless compute from the previous
 //! head and the steps' changes (`projection_plan`), so the same versions always yield the
-//! same ids, and every version of a step maps to its commit. Recording checks the chain
-//! (contiguous versions, parents, paths), stages the new objects in one write (the object
-//! projector moves them to R2) and is idempotent, so projectors may race or crash and
-//! retry.
+//! same ids, and every version of a step maps to its commit: the landed commit itself for
+//! a fast-forward, otherwise a merge of the previous head and the landed commits
+//! (`platform_project`). Recording adopts the landed commits only their shards held (main's
+//! history names them), checks the chain (contiguous versions, parents, paths), stages a
+//! merge's new objects in one write (the object projector moves them to R2) and is
+//! idempotent, so projectors may race or crash and retry.
 use super::merging::MERGE_PRINCIPAL;
 use super::projection_plan::written;
-use super::rows::{self, Settings, branch_ref, object_id};
+use super::rows::{self, CommitRow, Settings, branch_ref, object_id};
 use crate::storage::{SqlStore, bad, number};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -76,13 +78,23 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
             format!("{refname} was projected past {from}; plan again"),
         ));
     }
+    // Landed commits only their shards held, adopted (parents first) before main names them.
+    let mut check_runs = Vec::new();
+    for record in c["records"].as_array().into_iter().flatten() {
+        let adopted = super::adopt::adopt_one(db, record, settings, now)?;
+        check_runs.extend(
+            adopted["check_runs"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default(),
+        );
+    }
     let expected = db.query(
         "SELECT version,commit_id,batch FROM changesets WHERE refname=? AND projected IS NULL ORDER BY version LIMIT ?",
         &[json!(refname), json!(prior.len())],
     )?;
     let mut rows_left = expected.iter();
     let (mut head, mut version, mut dispatch) = (from, 0, false);
-    let mut check_runs = Vec::new();
     for step in steps {
         let group: Vec<&Value> = versions(step)?
             .iter()
@@ -122,8 +134,19 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
     }))
 }
 
-/// Records one step's commit: a batch's commit has the previous head as its only parent,
-/// a lone changeset's also the landed commit; it changes exactly the step's paths.
+/// The landed commits of a step that this store holds, in landing order: the ones main's
+/// history may name.
+fn held<S: SqlStore>(db: &S, group: &[&Value]) -> Result<Vec<CommitRow>> {
+    let mut held = Vec::new();
+    for row in group {
+        held.extend(rows::commit_row(db, &object_id(row, "commit_id")?)?);
+    }
+    Ok(held)
+}
+
+/// Records one step's commit, which changes exactly the step's paths: the landed commit
+/// itself when the step is one changeset on the previous head (a fast-forward), otherwise
+/// a merge of the previous head and the held landed commits.
 fn record_step<S: SqlStore>(
     db: &S,
     refname: &str,
@@ -134,19 +157,38 @@ fn record_step<S: SqlStore>(
 ) -> Result<(ObjectId, bool)> {
     let id = object_id(step, "commit")?;
     let batch = &group[0]["batch"];
-    let parents = if batch.is_null() {
-        if group.len() != 1 {
-            return Err(bad("Changesets landed on their own project one by one"));
-        }
-        vec![previous, object_id(group[0], "commit_id")?]
-    } else {
-        if group.iter().any(|r| r["batch"] != *batch) {
-            return Err(bad("A projected step is exactly one landed batch"));
-        }
-        vec![previous]
+    if batch.is_null() && group.len() != 1 {
+        return Err(bad("Changesets landed on their own project one by one"));
+    }
+    if group.iter().any(|r| r["batch"] != *batch) {
+        return Err(bad("A projected step lies within one landed batch"));
+    }
+    let held = held(db, group)?;
+    let forward = match held.as_slice() {
+        [only] if group.len() == 1 && only.id == id && only.parents == [previous] => Some(only),
+        _ => None,
     };
-    if ids(&step["parents"])? != parents {
+    let parents: Vec<ObjectId> = match forward {
+        Some(_) => vec![previous],
+        None => std::iter::once(previous)
+            .chain(held.iter().map(|c| c.id))
+            .collect(),
+    };
+    let given = ids(&step["parents"])?;
+    if given.first() != Some(&previous) {
         return Err(bad("A projected commit must build on the previous head"));
+    }
+    if given != parents {
+        // Planned before a landed commit was adopted elsewhere: plan again.
+        return Err(Error::new(
+            "STALE_HEAD",
+            "A projected commit must name the held landed commits; plan again",
+        ));
+    }
+    if let Some(only) = forward
+        && object_id(step, "tree")? != only.tree
+    {
+        return Err(bad("A fast-forward keeps the landed commit's tree"));
     }
     let first = group[0]["version"].as_u64().unwrap_or_default();
     let last = group[group.len() - 1]["version"]
@@ -167,6 +209,17 @@ fn record_step<S: SqlStore>(
         return Err(bad(
             "A projected commit must change exactly the landed paths",
         ));
+    }
+    let mark = || {
+        db.query(
+            "UPDATE changesets SET projected=?,projected_at=? WHERE refname=? AND version>=? AND version<=?",
+            &[json!(id.hex()), json!(now), json!(refname), json!(first), json!(last)],
+        )
+    };
+    // A fast-forward's commit, paths and objects were recorded when it was adopted.
+    if forward.is_some() {
+        mark()?;
+        return Ok((id, false));
     }
     db.query(
         "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at) \
@@ -189,18 +242,15 @@ fn record_step<S: SqlStore>(
         )?;
     }
     let dispatch = stage(db, &id, &step["raw"], now)?;
-    // The landed files' blobs travel with it too: a batch's landed commits are neither its
-    // parents nor adopted, so nothing else would bring them to the object store.
+    // The landed files' blobs travel with it too: a landed commit the projector could not
+    // adopt is not among its parents, so nothing else would bring them to the object store.
     for blob in touches.iter().filter_map(|t| t["new_blob"].as_str()) {
         db.query(
             "INSERT INTO commit_objects(commit_id,id,kind) VALUES(?,?,'blob') ON CONFLICT DO NOTHING",
             &[json!(id.hex()), json!(ObjectId::parse(blob)?.hex())],
         )?;
     }
-    db.query(
-        "UPDATE changesets SET projected=?,projected_at=? WHERE refname=? AND version>=? AND version<=?",
-        &[json!(id.hex()), json!(now), json!(refname), json!(first), json!(last)],
-    )?;
+    mark()?;
     Ok((id, dispatch))
 }
 

@@ -188,9 +188,14 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
     let landed = push(&c, &dir, &["origin", "main"])?;
     check(
         landed.status.success()
-            && text(&landed).contains("landed")
+            && text(&landed).contains(&format!("landed as {}", &pushed[..12]))
             && text(&landed).contains("version"),
         &format!("push main: {}", text(&landed)),
+    )?;
+    // A plain push on top of main lands as exactly the pushed commit: no wrapper commit.
+    check(
+        w.refs(&repo)?["refs/heads/main"] == pushed.as_str(),
+        &format!("main is the pushed commit {pushed}: {}", w.refs(&repo)?),
     )?;
     check(
         w.main_tree(&repo)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
@@ -201,9 +206,12 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         text(&again).contains("Everything up-to-date"),
         &text(&again),
     )?;
-    // Main's head is the platform's commit for the landing (this platform records each
-    // landed changeset as its own commit on top of the pushed one): a pull fast-forwards.
-    c.git(&dir, &["fetch", "-q", "origin"])?;
+    // A fetch is a plain update (never forced) and a pull is a no-op fast-forward.
+    let fetched = c.git_output(&dir, &["fetch", "origin"])?;
+    check(
+        fetched.status.success() && !text(&fetched).contains("forced update"),
+        &format!("fetch: {}", text(&fetched)),
+    )?;
     let main = w.refs(&repo)?["refs/heads/main"]
         .as_str()
         .unwrap_or_default()
@@ -211,12 +219,6 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
     check(
         c.git(&dir, &["rev-parse", "origin/main"])? == main,
         "origin/main is the platform's main",
-    )?;
-    check(
-        c.git_output(&dir, &["merge-base", "--is-ancestor", &pushed, &main])?
-            .status
-            .success(),
-        "the pushed commit is in main's history, by its own id",
     )?;
     c.git(&dir, &["pull", "-q", "--ff-only", "origin", "main"])?;
     check(
@@ -256,29 +258,112 @@ fn disjoint_pushes_to_main_both_land(w: &World) -> TestResult {
     let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
     let (c1, c2) = (w.client("d1", &token)?, w.client("d2", &token)?);
     let (d1, d2) = (w.clone(&c1, &repo, "w")?, w.clone(&c2, &repo, "w")?);
-    commit(&c1, &d1, "x", &[("x.txt", "x\n")])?;
-    commit(&c2, &d2, "y", &[("y.txt", "y\n")])?;
+    let x = commit(&c1, &d1, "x", &[("x.txt", "x\n")])?;
+    let y = commit(&c2, &d2, "y", &[("y.txt", "y\n")])?;
     let first = push(&c1, &d1, &["origin", "main"])?;
     check(first.status.success(), &text(&first))?;
     let second = push(&c2, &d2, &["origin", "main"])?;
     check(
         second.status.success()
-            && text(&second).contains("server merged concurrent changes; run git pull"),
+            && text(&second).contains("server merged concurrent changes")
+            && text(&second).contains("git pull fast-forwards"),
         &format!("second push: {}", text(&second)),
     )?;
     check(
         w.blob(&repo, "x.txt") == "x\n" && w.blob(&repo, "y.txt") == "y\n",
         "both landed",
     )?;
-    for (c, d) in [(&c2, &d2), (&c1, &d1)] {
+    both_pull_fast_forward(w, &repo, [(&c1, &d1, &x), (&c2, &d2, &y)])?;
+
+    // Pushed at the same moment: whatever batches they land in, both pullers fast-forward.
+    let p = commit(&c1, &d1, "p", &[("p.txt", "p\n")])?;
+    let q = commit(&c2, &d2, "q", &[("q.txt", "q\n")])?;
+    let (one, two) = std::thread::scope(|s| {
+        let one = s.spawn(|| push(&c1, &d1, &["origin", "main"]));
+        let two = s.spawn(|| push(&c2, &d2, &["origin", "main"]));
+        (one.join(), two.join())
+    });
+    for out in [one, two] {
+        let out = out.map_err(|_| "a push thread panicked".to_owned())??;
+        check(
+            out.status.success(),
+            &format!("concurrent push: {}", text(&out)),
+        )?;
+    }
+    both_pull_fast_forward(w, &repo, [(&c1, &d1, &p), (&c2, &d2, &q)])
+}
+
+/// Every pusher's fetch is a plain update and its `git pull --ff-only` succeeds; main's
+/// history holds each pushed commit by its own id.
+fn both_pull_fast_forward(
+    w: &World,
+    repo: &str,
+    pushers: [(&Client, &PathBuf, &str); 2],
+) -> TestResult {
+    let main = w.refs(repo)?["refs/heads/main"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    for (c, d, pushed) in pushers {
+        let fetched = c.git_output(d, &["fetch", "origin"])?;
+        check(
+            fetched.status.success() && !text(&fetched).contains("forced update"),
+            &format!("fetch: {}", text(&fetched)),
+        )?;
         let pulled = c.git_output(d, &["pull", "-q", "--ff-only", "origin", "main"])?;
         check(pulled.status.success(), &format!("pull: {}", text(&pulled)))?;
+        check(c.git(d, &["rev-parse", "HEAD"])? == main, "pulled to main")?;
         check(
-            c.git(d, &["rev-parse", "HEAD^{tree}"])? == w.main_tree(&repo)?,
-            "pulled tree",
+            c.git_output(d, &["merge-base", "--is-ancestor", pushed, &main])?
+                .status
+                .success(),
+            &format!("{pushed} is in main's history"),
         )?;
     }
     Ok(())
+}
+
+fn first_push_into_an_empty_repository(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[])?;
+    check(w.refs(&repo)? == json!({}), "the repository starts empty")?;
+    let c = w.client("empty", &token)?;
+    let cloned = c.git_output(&c.home, &["clone", &w.url(&repo), "w"])?;
+    check(
+        cloned.status.success() && text(&cloned).contains("cloned an empty repository"),
+        &format!("clone of an empty repository: {}", text(&cloned)),
+    )?;
+    let dir = c.home.join("w");
+    c.git(&dir, &["checkout", "-q", "-b", "main"])?;
+    let root = commit(&c, &dir, "root", &[("a.txt", "a\n")])?;
+    let tip = commit(&c, &dir, "second", &[("b.txt", "b\n")])?;
+    let pushed = push(&c, &dir, &["origin", "main"])?;
+    check(
+        pushed.status.success() && text(&pushed).contains(&format!("landed as {}", &tip[..12])),
+        &format!("first push: {}", text(&pushed)),
+    )?;
+    check(
+        w.refs(&repo)?["refs/heads/main"] == tip.as_str(),
+        "main is the pushed commit",
+    )?;
+    check(
+        w.platform
+            .owner_call("GET", &format!("/repos/{repo}/commits/{tip}"), None)?["parents"]
+            == json!([root]),
+        "the pushed history keeps its ids",
+    )?;
+    // Plain Git from here on: a second clone, a push on top, a pull.
+    let other = w.clone(&c, &repo, "again")?;
+    check(c.git(&other, &["rev-parse", "HEAD"])? == tip, "fresh clone")?;
+    let next = commit(&c, &other, "third", &[("c.txt", "c\n")])?;
+    check(
+        push(&c, &other, &["origin", "main"])?.status.success(),
+        "push on top",
+    )?;
+    c.git(&dir, &["pull", "-q", "--ff-only", "origin", "main"])?;
+    check(
+        c.git(&dir, &["rev-parse", "HEAD"])? == next,
+        "pull fast-forwards",
+    )
 }
 
 fn same_line_overlap_conflicts_then_resolves(w: &World) -> TestResult {
@@ -744,6 +829,7 @@ fn git_works_through_the_remote_helper() -> TestResult {
     let w = World { platform, proxy };
     clone_push_branch_and_land(&w).map_err(|e| format!("basics: {e}"))?;
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
+    first_push_into_an_empty_repository(&w).map_err(|e| format!("empty: {e}"))?;
     same_line_overlap_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     #[cfg(unix)]

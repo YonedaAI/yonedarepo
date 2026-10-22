@@ -1,8 +1,8 @@
-//! A push to main lands the uploaded tip: the platform fast-forwards it, or merges it
-//! with concurrent changes to other lines and files, or refuses an overlap as CONFLICT.
-//! A landing may give main a commit of its own on top of the pushed one (a merge with
-//! concurrent work, or the commit recording a landed changeset); its id is the platform's
-//! and the next `git pull` fast-forwards to it.
+//! A push to main lands the uploaded tip: main becomes the pushed commit itself (a
+//! fast-forward, or the first push into an empty repository), or the platform merges it
+//! with concurrent changes to other lines and files (a merge commit whose parents include
+//! the pushed commit, so the next `git pull` fast-forwards), or refuses an overlap as
+//! CONFLICT.
 use super::upload::Uploaded;
 use super::{Session, say};
 use crate::api::Failure;
@@ -23,32 +23,23 @@ pub async fn land(session: &mut Session, local: &str, done: &Uploaded) -> Result
         .map_err(|f| format!("landed, but reading main back failed ({f}); run git pull"))?;
     let version = landed["version"].as_u64().unwrap_or(latest);
     let _ = std::fs::remove_file(session.conflict_path());
-    say(&format!(
-        "landed {} on main at version {version}",
-        &local[..local.len().min(12)]
-    ));
     if let Err(e) = session.heads.record(&head, latest) {
         say(&e.message);
     }
     if head == done.tip {
-        return Ok(());
-    }
-    let tree = session.git.tree_of(local).map_err(|e| e.message)?;
-    let head_tree = session
-        .api
-        .commit(&head)
-        .await
-        .map(|c| c.tree)
-        .map_err(|f| format!("landed, but reading main's head failed ({f}); run git pull"))?;
-    if head_tree == tree {
-        say(&format!(
-            "main is at {}, the platform's landing commit for yours; git pull fast-forwards to it",
-            &head[..head.len().min(12)]
-        ));
+        say(&format!("landed as {} at version {version}", short(local)));
     } else {
-        say("server merged concurrent changes; run git pull");
+        say(&format!(
+            "landed {} at version {version}; server merged concurrent changes (main is at {}); git pull fast-forwards",
+            short(local),
+            short(&head)
+        ));
     }
     Ok(())
+}
+
+fn short(id: &str) -> &str {
+    &id[..id.len().min(12)]
 }
 
 /// Reports a refused landing: the paths on stderr and in the conflict file.

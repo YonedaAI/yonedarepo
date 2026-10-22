@@ -152,7 +152,8 @@ async fn publish(
 ) {
     let mut uploaded = Vec::new();
     for item in ready {
-        let result = match upload::plan_for(session, &item.local).await {
+        let creates = item.current.is_none();
+        let result = match upload::plan_for(session, &item.local, creates).await {
             Ok(plan) => upload::upload(session, plan).await,
             Err(e) => Err(e),
         };

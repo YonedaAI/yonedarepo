@@ -41,7 +41,7 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_commit" => read(&owned, c),
             "store_objects_pending" => staging::pending(&owned),
             "store_objects_projected" => staging::projected(&owned, c),
-            "store_staged_objects" => staging::read(&owned, c),
+            "store_staged_objects" => staged(&owned, c),
             "store_status" => staging::status(&owned),
             "store_vacuum_scan" => vacuum_scan(&owned, c),
             "store_vacuum_delete" => vacuum_delete(&owned, c),
@@ -158,6 +158,20 @@ fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "symbols": db.query("SELECT path,symbols FROM commit_symbols WHERE commit_id=? ORDER BY path", &key)?,
         "objects": db.query("SELECT id,kind FROM commit_objects WHERE commit_id=? ORDER BY id", &key)?,
     }))
+}
+
+/// Staged objects; with `with_record`, also the commit's record (null when this shard does
+/// not hold it): the projector reads a landed commit's objects and record in one call.
+fn staged<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let mut out = staging::read(db, c)?;
+    if c["with_record"] == true {
+        out["record"] = match read(db, c) {
+            Ok(record) => record,
+            Err(e) if e.code == "NOT_FOUND" => Value::Null,
+            Err(e) => return Err(e),
+        };
+    }
+    Ok(out)
 }
 
 const VACUUM_ROWS: i64 = 5000;

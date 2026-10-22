@@ -1,7 +1,8 @@
 //! What the projector builds next: the oldest unprojected changesets of a branch, as
-//! steps of one Git commit each. A batch landing's changesets form one step (linear: its
-//! commit's only parent is the previous head); a changeset landed on its own forms a step
-//! whose commit also names the landed commit as its second parent.
+//! steps of one Git commit each. A batch landing's changesets form one step (up to
+//! [`MERGED_PARENTS`] of them; a larger batch is cut into consecutive steps), and a
+//! changeset landed on its own forms a step of its own. Each step names its landed
+//! commits, which `platform_project` makes the projected commit's history.
 use super::rows::{self, branch_ref};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
@@ -16,19 +17,40 @@ use yoneda_core::{
 const PLAN_ROWS: u64 = 512;
 /// Steps per plan: what `repo_changeset_record` accepts in one call.
 pub(super) const PLAN_STEPS: usize = 64;
+/// Landed commits per step: a projected merge names each as a parent, and a commit built
+/// here has at most 128 merged parents.
+const MERGED_PARENTS: usize = 128;
 
 fn brief<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Value> {
     let row = rows::recorded(db, id)?;
     Ok(json!({ "id": id, "tree": row.tree, "generation": row.generation }))
 }
 
-/// A changeset's landed commit (its tree from the changeset row when it was never adopted).
+/// A changeset's landed commit: tree, generation, parents and whether this store holds it
+/// (`recorded`). One landed from its commit shard's record and never adopted is described
+/// by its changeset row; the projector adopts it before naming it in main's history.
 fn landed<S: SqlStore>(db: &S, row: &Value) -> Result<Value> {
     let id = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
-    match row["tree"].as_str() {
-        Some(tree) => Ok(json!({ "id": id, "tree": tree, "generation": row["generation"] })),
-        None => brief(db, &id),
+    if let Some(commit) = rows::commit_row(db, &id)? {
+        return Ok(json!({
+            "id": id, "tree": commit.tree, "generation": commit.generation,
+            "parents": commit.parents, "recorded": true,
+        }));
     }
+    let parents: Vec<String> = serde_json::from_str(row["parents"].as_str().unwrap_or("[]"))
+        .map_err(|_| rows::corrupt("changeset parents"))?;
+    match (row["tree"].as_str(), row["generation"].as_u64()) {
+        (Some(tree), Some(generation)) => Ok(json!({
+            "id": id, "tree": tree, "generation": generation, "parents": parents,
+            "recorded": false,
+        })),
+        _ => Err(rows::corrupt("changeset commit")),
+    }
+}
+
+/// What a change's mode lookup reads of its landed commit.
+fn source(landed: &Value) -> Value {
+    json!({ "id": landed["id"], "tree": landed["tree"], "generation": landed["generation"] })
 }
 
 /// The paths each changeset version wrote, from the log.
@@ -63,7 +85,7 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         },
     };
     let rows = db.query(
-        "SELECT version,commit_id,landed_at,batch,tree,generation FROM changesets \
+        "SELECT version,commit_id,landed_at,batch,tree,generation,parents FROM changesets \
          WHERE refname=? AND projected IS NULL ORDER BY version LIMIT ?",
         &[json!(refname), json!(PLAN_ROWS)],
     )?;
@@ -79,7 +101,11 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let mut groups: Vec<Vec<&Value>> = Vec::new();
     for row in &rows {
         match groups.last_mut() {
-            Some(group) if !row["batch"].is_null() && group[0]["batch"] == row["batch"] => {
+            Some(group)
+                if !row["batch"].is_null()
+                    && group[0]["batch"] == row["batch"]
+                    && group.len() < MERGED_PARENTS =>
+            {
                 group.push(row)
             }
             _ => groups.push(vec![row]),
@@ -95,34 +121,34 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     for group in groups {
         let versions: Vec<u64> = group.iter().filter_map(|r| r["version"].as_u64()).collect();
         let mut changes = Vec::new();
-        let mut ids = Vec::new();
+        let mut commits = Vec::new();
         for row in &group {
-            let source = landed(db, row)?;
+            let landed = landed(db, row)?;
             let version = row["version"].as_u64().unwrap_or_default();
             let entry = entries
                 .get(&version)
                 .ok_or_else(|| rows::corrupt("changeset entry"))?;
             for touch in &entry.paths {
-                changes
-                    .push(json!({ "path": touch.path, "blob": touch.new_blob, "mode": touch.mode, "source": source }));
+                changes.push(json!({ "path": touch.path, "blob": touch.new_blob,
+                    "mode": touch.mode, "source": source(&landed) }));
             }
-            ids.push(source["id"].as_str().unwrap_or_default().to_owned());
+            commits.push(landed);
         }
         let (first, last) = (versions[0], versions[versions.len() - 1]);
-        let batched = !group[0]["batch"].is_null();
-        let message = if batched {
+        let ids: Vec<&str> = commits.iter().filter_map(|c| c["id"].as_str()).collect();
+        // The message of a projected merge (a fast-forward keeps the landed commit's own).
+        let message = if group[0]["batch"].is_null() {
+            format!("Merge {} at version {first}", ids[0])
+        } else {
             format!(
-                "Land {} changesets at versions {first}..{last}\n\n{}",
+                "Merge {} changesets at versions {first}..{last}\n\n{}",
                 ids.len(),
                 ids.join("\n")
             )
-        } else {
-            format!("Land {} at version {first}", ids[0])
         };
         steps.push(json!({
             "versions": versions, "at": group[group.len() - 1]["landed_at"], "message": message,
-            "merge": if batched { Value::Null } else { landed(db, group[0])? },
-            "changes": changes,
+            "landed": commits, "changes": changes,
         }));
     }
     let head =
