@@ -1,9 +1,15 @@
-//! Projecting changesets to Git (stateless compute). Each step's commit is the previous
+//! Projecting changesets to Git (stateless compute). Each step's tree is the previous
 //! head with the step's changed paths applied (file modes and blobs read from the landed
-//! commits' own trees): a landed batch has the previous head as its only parent, a lone
-//! changeset also its landed commit. The platform is the author and the landing time the
-//! timestamp; nothing else enters the commit, so the same steps always produce the same
-//! ids, wherever they are projected.
+//! commits' own trees), and its history keeps every pushed commit, so each lander's next
+//! `git pull` fast-forwards:
+//! - a step of one changeset whose commit sits on the previous head is a fast-forward:
+//!   main's commit is the landed commit itself;
+//! - anything else is a merge whose parents are the previous head, then each landed
+//!   commit in landing order.
+//!
+//! A merge has the platform as author and the landing time as timestamp; nothing else
+//! enters it, so the same steps always produce the same ids, wherever they are projected.
+//! Only landed commits the authority holds (`recorded`) are named as parents.
 use crate::platform_objects::{mode as file_mode, object_json, supplied_trees};
 use crate::repo_store::prepare::build::{Parent, Trees, build, existing, frontier};
 use crate::repo_store::prepare::changes::{Change, Content};
@@ -13,7 +19,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use yoneda_core::{
     Error, Result,
-    git_object::{FileMode, ObjectId, decode_tree},
+    git_object::{FileMode, ObjectId, ObjectKind, decode_tree},
 };
 
 const AUTHOR: (&str, &str) = ("YonedaRepo", "commits@yonedarepo.invalid");
@@ -28,13 +34,46 @@ fn parent(v: &Value) -> Result<Parent> {
     })
 }
 
-/// One projected commit: a landed batch, or a changeset landed on its own (`merge`).
+/// A step's landed commit, its own parents, and whether the authority holds it.
+struct Landed {
+    commit: Parent,
+    parents: Vec<ObjectId>,
+    recorded: bool,
+}
+
+impl Landed {
+    fn parse(v: &Value) -> Result<Self> {
+        Ok(Self {
+            commit: parent(v)?,
+            parents: v["parents"]
+                .as_array()
+                .ok_or_else(|| bad("Missing landed parents"))?
+                .iter()
+                .map(|p| ObjectId::parse(p.as_str().unwrap_or_default()))
+                .collect::<Result<_>>()?,
+            recorded: v["recorded"] == true,
+        })
+    }
+}
+
+/// One projected commit: a landed batch (or part of one), or a changeset landed alone.
 struct Step {
     versions: Value,
     at: i64,
     message: String,
-    merge: Option<Parent>,
+    landed: Vec<Landed>,
     changes: Vec<Changed>,
+}
+
+impl Step {
+    /// The landed commit main fast-forwards to: a step of one changeset on `head`.
+    fn fast_forward(&self, head: &Parent) -> Option<&Landed> {
+        let one = self.versions.as_array().is_some_and(|v| v.len() == 1);
+        match self.landed.as_slice() {
+            [only] if one && only.recorded && only.parents == [head.id] => Some(only),
+            _ => None,
+        }
+    }
 }
 
 /// A changed path: its new blob (`None`: deleted), the mode when the log recorded it, and
@@ -80,11 +119,13 @@ fn steps(c: &Value) -> Result<Vec<Step>> {
                     .as_str()
                     .ok_or_else(|| bad("Missing message"))?
                     .to_owned(),
-                merge: step
-                    .get("merge")
-                    .filter(|m| !m.is_null())
-                    .map(parent)
-                    .transpose()?,
+                landed: step["landed"]
+                    .as_array()
+                    .filter(|l| !l.is_empty())
+                    .ok_or_else(|| bad("A step names its landed commits"))?
+                    .iter()
+                    .map(Landed::parse)
+                    .collect::<Result<_>>()?,
                 changes,
             })
         })
@@ -153,32 +194,59 @@ pub fn project_changesets(c: &Value) -> Result<Value> {
         let describe = json!({
             "message": step.message, "author": { "name": AUTHOR.0, "email": AUTHOR.1 },
         });
-        let built = build(
-            &describe,
-            Some(&head),
-            step.merge.as_slice(),
-            &changes,
-            &trees,
-            step.at,
-            &|_| Ok(()),
-        )?;
+        let merged: Vec<Parent> = step
+            .landed
+            .iter()
+            .filter(|l| l.recorded)
+            .map(|l| l.commit)
+            .collect();
+        let build_on = |merges: &[Parent]| {
+            build(
+                &describe,
+                Some(&head),
+                merges,
+                &changes,
+                &trees,
+                step.at,
+                &|_| Ok(()),
+            )
+        };
+        // A fast-forward's tree is the landed commit's own (checked, never assumed).
+        let ahead = step.fast_forward(&head);
+        let mut built = build_on(if ahead.is_some() { &[] } else { &merged })?;
+        let forward = ahead.filter(|l| built.root == l.commit.tree);
+        if ahead.is_some() && forward.is_none() {
+            built = build_on(&merged)?;
+        }
         for (id, bytes) in &built.trees {
             trees.0.insert(*id, decode_tree(bytes)?);
         }
+        // A fast-forward brings no commit of its own; its trees are the landed commit's.
         let mut raw = Vec::new();
         for (id, kind, data) in &built.objects {
+            if forward.is_some() && *kind == ObjectKind::Commit {
+                continue;
+            }
             raw.push(json!({ "id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data) }));
             cached.push(object_json(*id, *kind, data)?);
         }
+        let (commit, parents, generation) = match forward {
+            Some(landed) => (
+                landed.commit.id,
+                landed.parents.clone(),
+                landed.commit.generation,
+            ),
+            None => (built.id, built.parents.clone(), built.generation),
+        };
         projected.push(json!({
-            "versions": step.versions, "commit": built.id, "tree": built.root,
-            "parents": built.parents, "generation": built.generation,
+            "versions": step.versions, "commit": commit, "tree": built.root,
+            "parents": parents, "generation": generation, "fast_forward": forward.is_some(),
             "touches": built.touches, "message": built.message, "raw": raw,
         }));
         head = Parent {
-            id: built.id,
+            id: commit,
             tree: built.root,
-            generation: built.generation,
+            generation,
         };
     }
     Ok(json!({ "projected": projected, "objects": cached }))

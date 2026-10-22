@@ -147,6 +147,12 @@ impl Git {
         self.run(&["rev-parse", &format!("{commit}^1")])
     }
 
+    /// `commit`'s first parent, or `None` for a root commit.
+    pub fn first_parent_of(&self, commit: &str) -> Result<Option<String>> {
+        let line = self.run(&["rev-list", "--parents", "-n", "1", commit])?;
+        Ok(line.split_whitespace().nth(1).map(str::to_owned))
+    }
+
     pub fn authored(&self, commit: &str) -> Result<Authored> {
         let raw = self.output(
             &["log", "-1", "--format=%an%x00%ae%x00%B", commit],
