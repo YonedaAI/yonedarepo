@@ -380,7 +380,7 @@
           "STARTER_REPO": "yoneda-website-starter",
           "SITE_ORIGIN": "https://{prefix}-sites.{subdomain}.workers.dev",
           "MANAGED_PROVIDER_KEYS": "secrets-store",
-          "SANDBOX_PLATFORM_ORIGIN": "https://api.dev.yonedarepo.com",
+          "SANDBOX_PLATFORM_ORIGIN": "https://{prefix}-platform.{subdomain}.workers.dev",
           "SANDBOX_AI_GATEWAY": "{account_id}/{prefix}"
         },
         "services": [
