@@ -33,10 +33,10 @@ export async function ensureAllowance(account, owner, username, limit = 5_000_00
   return owner.post('/api/admin/workspace/allowance', { username, expected_version: current.version, limit_microusd: limit });
 }
 
-/** Creates a project like the "New project" form and waits until it is ready. */
-export async function createProject(account, name, metrics) {
+/** Creates a project like the "New project" form (optionally with its own check policy) and waits until it is ready. */
+export async function createProject(account, name, metrics, policy) {
   const started = performance.now();
-  const created = await account.post('/api/projects', { request_id: requestId('kit'), name });
+  const created = await account.post('/api/projects', { request_id: requestId('kit'), name, ...(policy ? { policy } : {}) });
   const project = await until(
     async () => {
       const p = await account.get(`/api/projects/${created.id}`);
@@ -91,7 +91,7 @@ export async function waitCompare(account, repo, id, metrics) {
 }
 
 /** Why a run failed: its own error, else each failed execution's and job's error. */
-function runFailure({ run, executions = [] }) {
+export function runFailure({ run, executions = [] }) {
   const parts = [run.error?.message ?? run.error, run.comparison?.status && `comparison ${run.comparison.status}`];
   for (const e of executions.filter((e) => ['failed', 'cancelled'].includes(e.status)))
     parts.push(`${e.id} ${e.role ?? ''} ${e.provider ?? ''}/${e.model ?? ''}: ${e.error ?? e.failure ?? e.status}`);
