@@ -19,52 +19,26 @@ import {
   type TaskState,
 } from './sandbox-driver';
 import type { OutboundProps } from './sandbox-outbound';
+import {
+  cloneScript,
+  eventsPath,
+  exitCodePath,
+  pidPath,
+  pushScript,
+  repositoryDirectory,
+  stderrPath,
+  stopScript,
+  taskDirectory,
+  taskRunningScript,
+  taskScript,
+  trustEnv,
+} from './sandbox-shell';
 import { ledger } from './storage';
 import type { Env } from './types';
 
-const repositoryDirectory = '/workspace/repo';
-const taskDirectory = '/workspace/task';
-const eventsPath = `${taskDirectory}/stdout.log`;
-const stderrPath = `${taskDirectory}/stderr.log`;
-const exitCodePath = `${taskDirectory}/exit-code`;
-const pidPath = `${taskDirectory}/pid`;
 const inactivityTimeout = 30 * 60 * 1000;
 const readChunk = 256 * 1024;
 const activityRows = 2000;
-
-const caPath = '/etc/cloudflare/certs/cloudflare-containers-ca.crt';
-// The CA alone replaces the system trust store; SandboxOutbound intercepts every request.
-const trustEnv = {
-  NODE_EXTRA_CA_CERTS: caPath,
-  GIT_SSL_CAINFO: caPath,
-  CURL_CA_BUNDLE: caPath,
-  SSL_CERT_FILE: caPath,
-};
-
-// Runs the command in its own process group; records its process ID and then its exit code.
-const taskScript = `dir=$1; shift
-setsid sh -c 'echo "$$ $(cat /proc/sys/kernel/random/boot_id)" >"$0/pid"; exec "$@"' \\
-	"$dir" "$@" >"$dir/stdout.log" 2>"$dir/stderr.log"
-echo "$?" >"$dir/exit-code.tmp" && mv "$dir/exit-code.tmp" "$dir/exit-code"`;
-// Succeeds while the process in the file runs and started in this instance.
-const taskRunningScript = `read -r pid boot <"$1" &&
-	[ "$boot" = "$(cat /proc/sys/kernel/random/boot_id)" ] &&
-	kill -0 "$pid"`;
-// The safety cap: the whole process group gets SIGTERM, then SIGKILL.
-const stopScript = `read -r pid boot <"$1" || exit 0
-kill -TERM -"$pid" 2>/dev/null; sleep 5; kill -KILL -"$pid" 2>/dev/null; exit 0`;
-const cloneScript = `set -e
-git clone --quiet "yoneda::$1/$2" "$4"
-git -C "$4" checkout --quiet --detach "$3"`;
-// One commit on the frozen base, whatever the agent committed itself; hooks never run.
-const pushScript = `set -e
-cd "$1"
-git reset --quiet --soft "$2"
-git add -A
-if git diff --cached --quiet "$2"; then echo unchanged; exit 0; fi
-git -c core.hooksPath=/dev/null -c user.name="YonedaRepo agent" -c user.email=agent@yonedarepo.invalid commit --quiet --no-verify -m "$3"
-git -c core.hooksPath=/dev/null push --quiet --no-verify --force origin "HEAD:refs/heads/$4"
-echo pushed`;
 
 export class AgentSandbox extends DurableObject<Env> {
   private readonly container: Container;
