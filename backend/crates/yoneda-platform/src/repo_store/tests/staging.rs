@@ -239,6 +239,15 @@ fn large_commits_are_pushed_and_outbox_ops_are_platform_only() {
     }));
     assert!(prepared.get("staged").is_none());
     assert!(prepared["push_b64"].is_string());
+    // Its raw commit travels too, for the store of record: exactly the object pushed.
+    let raw = STANDARD
+        .decode(prepared["commit_b64"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        yoneda_core::git_object::hash_object(yoneda_core::git_object::ObjectKind::Commit, &raw)
+            .hex(),
+        prepared["commit"].as_str().unwrap()
+    );
     // So are commits of many objects (imports), however small.
     let many: Vec<Value> = (0..super::super::staging::STAGE_OBJECTS)
         .map(|i| file(&format!("many/{i}.txt"), &format!("{i}\n")))

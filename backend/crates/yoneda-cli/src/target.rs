@@ -48,6 +48,8 @@ pub struct Clone {
     pub git: Git,
     pub git_dir: PathBuf,
     pub remote: Option<RemoteUrl>,
+    /// The Git remote with the `yoneda::` URL (none for an offline checkout).
+    pub remote_name: Option<String>,
 }
 
 /// The repository containing the current directory and its yoneda remote (preferring
@@ -59,16 +61,22 @@ pub fn current_clone() -> Option<Clone> {
     let urls = probe
         .run(&["config", "--get-regexp", r"^remote\..*\.url$"])
         .unwrap_or_default();
-    let mut remotes: Vec<(bool, RemoteUrl)> = urls
+    let mut remotes: Vec<(bool, String, RemoteUrl)> = urls
         .lines()
         .filter_map(|line| {
             let (key, value) = line.split_once(' ')?;
             value.starts_with("yoneda:").then_some(())?;
-            Some((key != "remote.origin.url", url::parse(value).ok()?))
+            let name = key
+                .strip_prefix("remote.")?
+                .strip_suffix(".url")?
+                .to_owned();
+            Some((name != "origin", name, url::parse(value).ok()?))
         })
         .collect();
-    remotes.sort_by_key(|(not_origin, _)| *not_origin);
-    let remote = remotes.into_iter().next().map(|(_, r)| r).or_else(|| {
+    remotes.sort_by_key(|(not_origin, _, _)| *not_origin);
+    let first = remotes.into_iter().next();
+    let remote_name = first.as_ref().map(|(_, name, _)| name.clone());
+    let remote = first.map(|(_, _, r)| r).or_else(|| {
         let root = Git::toplevel(&cwd).ok()?;
         let state = State::load(&root).ok()?;
         Some(RemoteUrl {
@@ -80,6 +88,7 @@ pub fn current_clone() -> Option<Clone> {
         git: Git::with_git_dir(&cwd, &git_dir),
         git_dir,
         remote,
+        remote_name,
     })
 }
 

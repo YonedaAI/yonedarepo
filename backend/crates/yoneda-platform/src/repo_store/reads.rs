@@ -13,7 +13,7 @@ use yoneda_core::{
     txlog::replay_projected,
 };
 
-fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
+pub(super) fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
     let current = current_version(db)?;
     match c.get("at").filter(|v| !v.is_null()) {
         None => Ok(current),
@@ -28,7 +28,11 @@ fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
 
 /// Refs as of `version`. Current reads use the refs table (O(refs)); time travel replays the hash-chained log from the nearest checkpoint, so time travel also
 /// verifies the history it crosses without re-reading the whole log.
-fn refs_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<BTreeMap<String, ObjectId>> {
+pub(super) fn refs_at<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    version: u64,
+) -> Result<BTreeMap<String, ObjectId>> {
     // Reads without `at` take the fast path; an explicit `at` always verifies.
     if c.get("at").is_none_or(Value::is_null) {
         if super::changesets::any_unprojected(db)? {

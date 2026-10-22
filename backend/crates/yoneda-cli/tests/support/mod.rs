@@ -244,6 +244,7 @@ impl Client {
         command
             .current_dir(dir)
             .env("HOME", &self.home)
+            .env_remove("CODEX_HOME")
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")

@@ -42,11 +42,17 @@ it('searches with partition reuse, blames lines and detects renames', async () =
   expect((await api(`${repo}/search?query=retry_with&at=1`, owner)).body.partitions_built).toBe(0);
   expect((await api(`${repo}/search?query=README`, owner)).body.results.map((r: any) => r.path)).toEqual(['README.md']);
 
+  const beforeFix = (await api(`${repo}/refs`, owner)).body.version;
   const fix = await land([file('src/retry.rs', 'fn retry_with_backoff() {}\nfn jitter() {}\n')], 'jitter');
   const blame = await api(`${repo}/blame?path=src/retry.rs`, owner);
   expect(blame.body.lines.map((l: any) => l.commit)).toEqual([root, fix]);
   const history = await api(`${repo}/log?ref=main&path=docs/`, owner);
   expect(history.body.commits.map((c: any) => c.commit)).toEqual([docs, root]);
+  // Time travel: blame and path history as of an earlier version, like the other reads.
+  const then = await api(`${repo}/blame?path=src/retry.rs&at=${beforeFix}`, owner);
+  expect(then.body.lines.map((l: any) => l.commit)).toEqual([root]);
+  const past = await api(`${repo}/log?ref=main&path=docs/&at=1`, owner);
+  expect(past.body.commits.map((c: any) => c.commit)).toEqual([root]);
 
   const renamed = await land([{ path: 'README.md', delete: true }, file('README.txt', 'top level\n')], 'rename');
   const diff = await api(`${repo}/diff?head=${renamed}`, owner);

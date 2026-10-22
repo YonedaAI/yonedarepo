@@ -19,20 +19,14 @@ fn print(value: &Value) {
 }
 
 /// The platform commit for `spec` (a local or platform commit; default: HEAD in a
-/// clone, else main's head).
+/// clone, else main's head). A clone's commits have the platform's ids, except the few
+/// the commit map translates.
 pub async fn platform_commit(t: &Resolved, spec: Option<&str>) -> Result<String> {
     if let Some(clone) = &t.clone {
         let local = clone.git.commit_of(spec.unwrap_or("HEAD")).ok();
         if let Some(local) = local {
             let map = CommitMap::open(&clone.git_dir, &t.repo)?;
-            if let Some(server) = map.server(&local) {
-                return Ok(server.to_owned());
-            }
-            if spec.is_none() {
-                return Err(Error::new(format!(
-                    "HEAD ({local}) is not on the platform yet: git push it first"
-                )));
-            }
+            return Ok(map.server(&local).unwrap_or(&local).to_owned());
         }
     }
     match spec {

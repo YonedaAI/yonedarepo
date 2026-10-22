@@ -11,6 +11,9 @@ import { writeSeed } from './repo-seed';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
+/** `{ at }` when the caller asked for an earlier log version (time travel). */
+const asOf = (args: Json) =>
+  args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
 
 /** Runs a Rust compute op that walks trees and reads blobs, supplying both on request. */
 export async function withObjects(ctx: RepoContext, input: Json, known: CachedObject[] = []) {
@@ -118,6 +121,7 @@ export async function blame(ctx: RepoContext, args: Json) {
     ref,
     path,
     limit: Number(args.limit ?? 200),
+    ...asOf(args),
   });
   const versions = (history.commits as Json[])
     .filter((c) => c.path === path && c.new_blob)
@@ -134,6 +138,7 @@ export function pathHistory(ctx: RepoContext, args: Json) {
     ref: args.ref ?? 'main',
     path: args.path,
     limit: args.limit,
+    ...asOf(args),
   });
 }
 
