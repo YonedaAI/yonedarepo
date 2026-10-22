@@ -63,6 +63,8 @@ export function outboundDecision(url: URL, method: string, props: OutboundProps)
       return { deny: 'Only this project repository is reachable' };
     const rest = url.pathname.slice(root.length) || '/';
     if (method === 'GET') return { route: 'platform', refs: false };
+    // `POST /objects` is the platform's batch object read; git fetch through yoneda:: needs it.
+    if (method === 'POST' && rest === '/objects') return { route: 'platform', refs: false };
     if (props.role === 'check')
       return { deny: `Checks read the repository only (${method} ${rest})` };
     if (method === 'POST' && PLATFORM_POSTS.has(rest))
@@ -104,8 +106,9 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
     headers.delete('cookie');
     if (props.role === 'check') {
       // Defense in depth: outboundDecision already gives a check sandbox platform reads only.
-      if (decision.route !== 'platform' || request.method !== 'GET')
-        return forbidden('Checks read the repository only');
+      const read =
+        request.method === 'GET' || (request.method === 'POST' && url.pathname.endsWith('/objects'));
+      if (decision.route !== 'platform' || !read) return forbidden('Checks read the repository only');
     } else if (decision.route === 'model') {
       const definition = providerDefinition(props.provider);
       const { key } = await providerCredentials(
