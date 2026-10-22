@@ -1,6 +1,6 @@
 //! A local source platform under workerd (`wrangler dev` with the platform-only test
-//! Worker, the R2 object store and changeset landing; no provider keys), an owner client
-//! acting as the other writer, and a runner for the `yoneda` binary.
+//! Worker, the R2 object store and batched landing, as deployed; no provider keys), an
+//! owner client acting as the other writer, and a runner for the `yoneda` binary.
 pub mod proxy;
 
 use base64::Engine;
@@ -82,7 +82,7 @@ impl Platform {
                 "--var",
                 "PLATFORM_OBJECT_STORE:r2",
                 "--var",
-                "LAND_MODE:changeset",
+                "LAND_MODE:batch",
             ])
             .args(["--var", &format!("OWNER_TOKEN:{owner}")])
             .stdin(Stdio::null())
@@ -139,15 +139,17 @@ impl Platform {
         })
     }
 
-    /// A repository seeded with `files`, and a token that may read, write and land.
+    /// A repository seeded with `files` (none: an empty repository, as `yoneda repo
+    /// create` makes), and a token that may read, write and land.
     pub fn repo(&self, files: &[(&str, &str)]) -> TestResult<(String, String)> {
         let files: Vec<Value> = files.iter().map(|(p, t)| file(p, t)).collect();
-        let created = self.owner_call(
-            "POST",
-            "/repos",
-            Some(json!({ "name": "cli", "policy": { "required_checks": [], "approvals": 0 }, "files": files,
-                         "author": { "name": "Seed", "email": "seed@example.com" } })),
-        )?;
+        let mut body =
+            json!({ "name": "cli", "policy": { "required_checks": [], "approvals": 0 } });
+        if !files.is_empty() {
+            body["files"] = json!(files);
+            body["author"] = json!({ "name": "Seed", "email": "seed@example.com" });
+        }
+        let created = self.owner_call("POST", "/repos", Some(body))?;
         let id = created["id"].as_str().ok_or("no repo id")?.to_owned();
         let minted = self.owner_call(
             "POST",

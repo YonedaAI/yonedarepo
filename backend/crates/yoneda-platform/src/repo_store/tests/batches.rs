@@ -1,14 +1,14 @@
 //! Batched landing: the authority sees one call per land batch. Commits begin from a
 //! published head (no authority call), land from their commit shard's record (no
 //! adoption) with scope and grants re-checked at landing, and main's Git view gets one
-//! commit per batch.
+//! commit per batch (shapes: `land_shapes`).
 use super::*;
 
 const MERGER: &str = "platform:merge";
 const PROJECTOR: &str = "platform:projection";
 
 /// Credentials as the adapter attaches them for `principal`.
-fn credentials(principal: &str) -> Value {
+pub(super) fn credentials(principal: &str) -> Value {
     match principal.strip_prefix("token:") {
         Some(name) => json!({"_token": format!("{name}-secret-0123456789abcdef0123456789")}),
         None => json!({"_session": {"workspace": "ws-1", "principal": principal}}),
@@ -25,8 +25,24 @@ impl Harness {
             "credentials":credentials(principal),"paths":paths}))
     }
     /// A commit built statelessly and recorded only in its commit shard: its record.
-    fn shard_commit(&self, principal: &str, path: &str, text: &str, read: Value) -> Value {
+    pub(super) fn shard_commit(
+        &self,
+        principal: &str,
+        path: &str,
+        text: &str,
+        read: Value,
+    ) -> Value {
         let begun = self.begin_cached(principal, json!([path])).unwrap();
+        self.shard_commit_from(&begun, path, text, read)
+    }
+    /// A shard commit on what `begun` names (a parent, or none for a root commit).
+    pub(super) fn shard_commit_from(
+        &self,
+        begun: &Value,
+        path: &str,
+        text: &str,
+        read: Value,
+    ) -> Value {
         let mut trees = serde_json::Map::new();
         let built = loop {
             let step =
@@ -66,15 +82,19 @@ impl Harness {
                 .borrow_mut()
                 .insert(object["id"].as_str().unwrap().into(), (kind, data));
         }
-        json!({
+        let record = json!({
             "commit": {"id": built["commit"], "tree": built["tree"], "parents": built["parents"].to_string(),
                 "generation": built["generation"], "base_version": begun["base_version"], "principal": begun["principal"],
                 "message": path, "read_set": built["read_set"].to_string(), "recorded_at": *self.now.borrow()},
             "paths": built["touches"],
             "objects": built["raw"].as_array().unwrap().iter().map(|o| json!({"id": o["id"], "kind": o["kind"]})).collect::<Vec<_>>(),
-        })
+        });
+        self.shard
+            .borrow_mut()
+            .insert(built["commit"].as_str().unwrap().into(), record.clone());
+        record
     }
-    fn submit(&self, items: Vec<(&str, &Value)>) -> Value {
+    pub(super) fn submit(&self, items: Vec<(&str, &Value)>) -> Value {
         let items: Vec<Value> = items
             .into_iter()
             .map(|(principal, record)| json!({"credentials": credentials(principal), "records": [record]}))
@@ -88,7 +108,7 @@ impl Harness {
 
 /// A seeded repository whose policy lets any approved-by-nobody commit land (gates are
 /// covered elsewhere; these tests are about access, routing and projection).
-fn open() -> (Harness, String) {
+pub(super) fn open() -> (Harness, String) {
     let (h, root) = seeded();
     h.ok(
         OWNER,
@@ -97,7 +117,7 @@ fn open() -> (Harness, String) {
     (h, root)
 }
 
-fn outcome(batch: &Value, index: usize) -> (String, Value) {
+pub(super) fn outcome(batch: &Value, index: usize) -> (String, Value) {
     let item = &batch["items"][index];
     (item["status"].as_str().unwrap().to_owned(), item.clone())
 }
@@ -144,11 +164,11 @@ fn submitted_landings_land_from_shard_records_and_adopt_lazily() {
             head["commit"]
         );
     }
+    // A merge of the old main and both landed commits: each lander's pull fast-forwards.
     let tip = h.ok(OWNER, json!({"op":"repo_commit","commit":head["commit"]}));
     assert_eq!(
-        tip["parents"].as_array().unwrap().len(),
-        1,
-        "linear: one parent"
+        tip["parents"].as_array().unwrap()[1..],
+        [a["commit"]["id"].clone(), b["commit"]["id"].clone()]
     );
     assert_eq!(
         h.file_at(head["commit"].as_str().unwrap(), "b.txt")
@@ -268,13 +288,18 @@ fn batch_projection_is_deterministic() {
         h
     };
     let (one, two) = (run(), run());
-    let plan = one.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
+    let mut plan = one.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
+    one.shard_records(&mut plan);
     let built = one.project_compute(&plan);
     let steps = built["projected"].as_array().unwrap();
     assert_eq!(steps.len(), 2, "one Git commit per batch");
     assert_eq!(steps[0]["versions"], json!([2, 3]));
-    assert_eq!(steps[1]["parents"], json!([steps[0]["commit"]]));
-    let other = two.project_compute(&two.ok(PROJECTOR, json!({"op":"repo_changeset_plan"})));
+    // `c` was built on the seed, before the first batch: a merge with it.
+    let c = plan["items"][1]["landed"][0]["id"].clone();
+    assert_eq!(steps[1]["parents"], json!([steps[0]["commit"], c]));
+    let mut again = two.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
+    two.shard_records(&mut again);
+    let other = two.project_compute(&again);
     assert_eq!(other["projected"], built["projected"]);
     one.project_all();
     assert_eq!(

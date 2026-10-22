@@ -20,6 +20,8 @@ struct Harness {
     objects: RefCell<HashMap<String, (ObjectKind, Vec<u8>)>>,
     /// The adapter's write-through cache copies returned by prepare.
     cached: RefCell<HashMap<String, Value>>,
+    /// Plays the commit shards: records of commits built outside the authority, by id.
+    shard: RefCell<HashMap<String, Value>>,
     now: RefCell<i64>,
 }
 
@@ -29,6 +31,7 @@ impl Harness {
             db: NativeStore::memory().unwrap(),
             objects: RefCell::default(),
             cached: RefCell::default(),
+            shard: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
         };
         h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1}})).unwrap();
@@ -1574,5 +1577,6 @@ mod break_glass;
 mod change_records;
 mod changesets;
 mod land_cas;
+mod land_shapes;
 mod shards;
 mod staging;

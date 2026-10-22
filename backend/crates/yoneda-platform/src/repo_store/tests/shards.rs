@@ -179,4 +179,18 @@ fn shards_verify_what_they_record_and_only_the_platform_reaches_them() {
         ids
     };
     assert_eq!(ids(&all["objects"]), ids(&built["objects"]));
+    // The projector reads a landed commit's objects and record in one call.
+    let landed = on(
+        &s,
+        json!({"op": "store_staged_objects", "commit": built["commit"], "with_record": true}),
+    )
+    .unwrap();
+    assert_eq!(ids(&landed["objects"]), ids(&built["objects"]));
+    assert_eq!(landed["record"], record);
+    let elsewhere = on(
+        &other,
+        json!({"op": "store_staged_objects", "commit": built["commit"], "with_record": true}),
+    )
+    .unwrap();
+    assert_eq!(elsewhere["record"], Value::Null);
 }

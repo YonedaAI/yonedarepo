@@ -17,10 +17,11 @@ impl Harness {
     /// One projector round as the adapter runs it: plan, compute (supplying trees), store
     /// the new objects, record. Returns what was recorded (None when nothing was pending).
     pub(super) fn project_once(&self) -> Option<Value> {
-        let plan = self.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
+        let mut plan = self.ok(PROJECTOR, json!({"op":"repo_changeset_plan"}));
         if plan["items"].as_array().is_none_or(Vec::is_empty) {
             return None;
         }
+        let records = self.shard_records(&mut plan);
         let built = self.project_compute(&plan);
         for object in built["projected"]
             .as_array()
@@ -47,8 +48,26 @@ impl Harness {
         }
         Some(self.ok(
             PROJECTOR,
-            json!({"op":"repo_changeset_record","ref":plan["ref"],"from":plan["head"]["id"],"items":built["projected"]}),
+            json!({"op":"repo_changeset_record","ref":plan["ref"],"from":plan["head"]["id"],
+                "items":built["projected"],"records":records}),
         ))
+    }
+    /// As the adapter does: the shard records of the plan's unrecorded landed commits
+    /// (those found are marked recorded, since the record call adopts them first).
+    pub(super) fn shard_records(&self, plan: &mut Value) -> Vec<Value> {
+        let mut records = Vec::new();
+        for step in plan["items"].as_array_mut().into_iter().flatten() {
+            for landed in step["landed"].as_array_mut().into_iter().flatten() {
+                if landed["recorded"] == true {
+                    continue;
+                }
+                if let Some(record) = self.shard.borrow().get(landed["id"].as_str().unwrap()) {
+                    records.push(record.clone());
+                    landed["recorded"] = json!(true);
+                }
+            }
+        }
+        records
     }
     pub(super) fn project_compute(&self, plan: &Value) -> Value {
         let mut trees = serde_json::Map::new();

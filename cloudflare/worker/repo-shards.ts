@@ -168,12 +168,28 @@ export async function shardStagedOf(
   repo: string,
   commit: string,
 ): Promise<CachedObject[]> {
-  if (!env.COMMIT_SHARDS) return [];
+  return (await shardLanded(env, repo, commit, false)).objects;
+}
+
+/**
+ * `commit`'s staged objects and, with `withRecord`, its shard record (null when no shard
+ * holds it), in one call per shard: a commit's record and objects live in the same shard.
+ */
+export async function shardLanded(
+  env: Env,
+  repo: string,
+  commit: string,
+  withRecord: boolean,
+): Promise<{ objects: CachedObject[]; record: Json | null }> {
+  if (!env.COMMIT_SHARDS) return { objects: [], record: null };
   for (const shard of shardsOf(commit)) {
-    const found = await shardCall(env, repo, shard, { op: 'store_staged_objects', commit }).catch(
-      () => ({ objects: [] }),
-    );
-    if (found.objects.length) return found.objects as CachedObject[];
+    const found: Json = await shardCall(env, repo, shard, {
+      op: 'store_staged_objects',
+      commit,
+      ...(withRecord ? { with_record: true } : {}),
+    }).catch(() => ({ objects: [] }));
+    if (found.objects.length || found.record)
+      return { objects: found.objects as CachedObject[], record: found.record ?? null };
   }
-  return [];
+  return { objects: [], record: null };
 }

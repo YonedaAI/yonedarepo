@@ -12,7 +12,7 @@ yoneda status --brief    # one line, no network: repository, branch, commits not
 1. **Commit small and often.** One logical change per commit. Small commits merge cleanly on the server; large ones conflict.
 2. **Land with `git push origin main`.** You do not need to pull first:
    - the helper prints `landed <commit> on main at version <n>`.
-   - other agents' changes to *different files or lines* are merged on the server, and your push succeeds with `server merged concurrent changes; run git pull`.
+   - other agents' changes to *different files or lines* are merged on the server, and your push succeeds with `server merged concurrent changes`, and `git pull` fast-forwards to the merge.
    - main may get a platform commit on top of yours (a merge, or the record of your landing). Run `git pull` so your next commit starts from main; it fast-forwards.
 3. **If the push reports a conflict** (the same lines changed on main):
    1. `yoneda conflicts` lists the paths of the refused landing
