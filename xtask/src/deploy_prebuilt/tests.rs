@@ -134,7 +134,7 @@ fn containers_deploy_the_image_instead_of_a_dockerfile() {
 #[test]
 fn a_sandbox_with_its_own_images_keeps_its_dockerfile() {
     let sandbox = json!({"class_name": "AgentSandbox", "scheduling_policy": "durable_object",
-        "images": {"agent": {"dockerfile": "./containers/sandbox.Dockerfile", "build_context": ".."}}});
+        "images": {"agent": {"dockerfile": "./sandbox/Dockerfile", "build_context": ".."}}});
     let config = json!({"name": "w", "containers": [
         {"class_name": "ExecutionContainer", "image": "./containers/Dockerfile"}, sandbox.clone()]});
     let swapped = with_image(config.clone(), "registry.cloudflare.com/acct/r:t");
