@@ -20,12 +20,12 @@ const neutral = new Set([
 ]);
 
 test('platform adapter modules import only platform and neutral modules', async () => {
-  const files = (await readdir(worker)).filter((f) => /^(repo-.*|check-container|platform-.*)\.ts$/.test(f));
+  const files = (await readdir(worker)).filter((f) => /^(repo-.*|check-container|platform-.*|account-mcp)\.ts$/.test(f));
   assert.ok(files.length >= 10, files.join());
   for (const file of files) {
     const source = await readFile(`${worker}/${file}`, 'utf8');
     for (const [, target] of source.matchAll(/from '(\.[^']+)'/g)) {
-      const allowed = neutral.has(target) || /^\.\/(repo|platform)-[a-z-]+$/.test(target);
+      const allowed = neutral.has(target) || /^\.\/((repo|platform)-[a-z-]+|account-mcp)$/.test(target);
       assert.ok(allowed, `${file} imports ${target}`);
     }
   }
