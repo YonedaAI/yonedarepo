@@ -1,0 +1,17 @@
+{
+  "description": "Show the yoneda status at session start, only in a repository with a yoneda:: remote.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-status.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

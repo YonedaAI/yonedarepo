@@ -1,0 +1,16 @@
+{
+  "name": "yoneda",
+  "description": "Plugins for working in YonedaRepo repositories from Claude Code.",
+  "owner": {
+    "name": "YonedaAI",
+    "url": "https://yonedarepo.com"
+  },
+  "plugins": [
+    {
+      "name": "yoneda",
+      "source": "./plugins/yoneda",
+      "description": "The yoneda:: git workflow skill, the account MCP server and a session-start status check.",
+      "category": "development"
+    }
+  ]
+}

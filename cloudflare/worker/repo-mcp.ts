@@ -1,6 +1,7 @@
-// MCP for the source platform (`/api/v1/repos/:id/mcp`): stateless Streamable HTTP
-// with JSON responses. Authentication is the same repository token or session as the
-// REST API, and every tool dispatches to the same operation table.
+// MCP for the source platform: stateless Streamable HTTP with JSON responses. The
+// per-repository server (`/api/v1/repos/:id/mcp`) and the account server (`/api/v1/mcp`,
+// account-mcp.ts) share this JSON-RPC handling. Authentication is the same credential as
+// the REST API, and every platform tool dispatches to the same operation table.
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { error, readJson, response } from './http';
 import type { Json, RepoContext } from './repo-ops';
@@ -8,7 +9,16 @@ import { operations } from './repo-tools';
 
 const versions = ['2025-06-18', '2025-03-26'];
 
-export async function repoMcp(req: Request, ctx: RepoContext): Promise<Response> {
+/** One MCP server: its identity, its tools and how a tool call is answered. */
+export type McpServer = {
+  name: string;
+  instructions: string;
+  tools: Json[];
+  /** Runs a tool with object arguments; a thrown error becomes an `isError` result. */
+  call: (name: string, args: Json) => Promise<Json>;
+};
+
+export async function serveMcp(req: Request, server: McpServer): Promise<Response> {
   if (req.headers.has('origin') && req.headers.get('origin') !== new URL(req.url).origin)
     return error('FORBIDDEN', 'Unexpected MCP origin', 403);
   const protocol = req.headers.get('MCP-Protocol-Version');
@@ -41,21 +51,18 @@ export async function repoMcp(req: Request, ctx: RepoContext): Promise<Response>
         ? body.params.protocolVersion
         : versions[0],
       capabilities: { tools: {} },
-      serverInfo: { name: 'yonedarepo-source', version: '1.0.0' },
-      instructions:
-        'Git semantics over an API: read with git_log/git_ls_tree/git_cat_file/git_diff, write with git_commit (server-side, nothing to push), then checks, review and git_land.',
+      serverInfo: { name: server.name, version: '1.0.0' },
+      instructions: server.instructions,
     });
   if (body.method === 'ping') return reply({});
-  if (body.method === 'tools/list') return reply({ tools });
+  if (body.method === 'tools/list') return reply({ tools: server.tools });
   if (body.method === 'tools/call') {
     const name = String(body.params?.name ?? '');
     const args = body.params?.arguments ?? {};
-    const operation = Object.hasOwn(operations, name) ? operations[name] : undefined;
     try {
-      if (!operation) throw new Error(`Unknown tool ${name}`);
       if (!args || typeof args !== 'object' || Array.isArray(args))
         throw new Error('Tool arguments must be an object');
-      const value = await operation(ctx, args);
+      const value = await server.call(name, args);
       return reply({
         content: [{ type: 'text', text: JSON.stringify(value) }],
         structuredContent: value,
@@ -73,5 +80,22 @@ export async function repoMcp(req: Request, ctx: RepoContext): Promise<Response>
     jsonrpc: '2.0',
     id: body.id,
     error: { code: -32601, message: 'Unknown MCP method' },
+  });
+}
+
+/** The platform operation named `name` (own keys only, so `constructor` is unknown). */
+export function operation(name: string) {
+  const found = Object.hasOwn(operations, name) ? operations[name] : undefined;
+  if (!found) throw new Error(`Unknown tool ${name}`);
+  return found;
+}
+
+export function repoMcp(req: Request, ctx: RepoContext): Promise<Response> {
+  return serveMcp(req, {
+    name: 'yonedarepo-source',
+    instructions:
+      'Git semantics over an API: read with git_log/git_ls_tree/git_cat_file/git_diff, write with git_commit (server-side, nothing to push), then checks, review and git_land.',
+    tools,
+    call: (name, args) => operation(name)(ctx, args),
   });
 }

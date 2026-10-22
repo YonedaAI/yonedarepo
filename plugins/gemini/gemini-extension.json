@@ -1,0 +1,22 @@
+{
+  "name": "yoneda",
+  "version": "0.1.0",
+  "description": "Work in YonedaRepo repositories: the yoneda:: git workflow and the account MCP server.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "yoneda": {
+      "httpUrl": "https://api.dev.yonedarepo.com/api/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${YONEDA_TOKEN}"
+      }
+    }
+  },
+  "settings": [
+    {
+      "name": "YonedaRepo token",
+      "description": "A ypat_ personal access token from `yoneda login` or the Tokens page in /source.",
+      "envVar": "YONEDA_TOKEN",
+      "sensitive": true
+    }
+  ]
+}
