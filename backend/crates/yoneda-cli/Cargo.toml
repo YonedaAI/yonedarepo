@@ -3,11 +3,19 @@ name = "yoneda-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Offline client for the YonedaRepo source platform: clone, commit with plain Git, sync later."
+description = "Command line and Git remote helper for the YonedaRepo source platform."
+
+[lib]
+path = "src/lib.rs"
 
 [[bin]]
 name = "yoneda"
 path = "src/main.rs"
+
+# The Git remote helper: `git clone yoneda::https://<platform>/<repo-id>`.
+[[bin]]
+name = "git-remote-yoneda"
+path = "src/bin/git-remote-yoneda.rs"
 
 # An external API client: it shares only the Git object model, never platform or
 # agent-layer internals.
@@ -17,8 +25,10 @@ serde.workspace = true
 serde_json.workspace = true
 base64 = "0.23.1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "macros", "time"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 tempfile = "3"
+# The integration tests' HTTP proxy in front of the local platform.
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time", "sync"] }

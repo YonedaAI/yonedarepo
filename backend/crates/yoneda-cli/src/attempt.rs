@@ -32,6 +32,7 @@ impl Mcp {
         request = match &self.header {
             Header::Authorization(value) => request.header("authorization", value),
             Header::Cookie(value) => request.header("cookie", value),
+            Header::None => request,
         };
         let response = request
             .send()
