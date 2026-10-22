@@ -2,6 +2,7 @@
 //! Git configuration and hooks never change what is synced.
 use crate::error::{Context, Error, Result};
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -16,6 +17,8 @@ const SNAPSHOT_IDENTITY: [(&str, &str); 4] = [
 
 pub struct Git {
     dir: PathBuf,
+    /// An explicit repository (the remote helper gets `GIT_DIR`, maybe bare).
+    git_dir: Option<PathBuf>,
 }
 
 /// A local commit's author and message.
@@ -27,7 +30,28 @@ pub struct Authored {
 
 impl Git {
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into() }
+        Self {
+            dir: dir.into(),
+            git_dir: None,
+        }
+    }
+
+    /// The repository at `git_dir` (absolute), run from `dir`.
+    pub fn with_git_dir(dir: impl Into<PathBuf>, git_dir: impl Into<PathBuf>) -> Self {
+        Self {
+            dir: dir.into(),
+            git_dir: Some(git_dir.into()),
+        }
+    }
+
+    /// Whether `ancestor` is reachable from (or equal to) `commit`.
+    pub fn is_ancestor(&self, ancestor: &str, commit: &str) -> bool {
+        self.succeeds(&["merge-base", "--is-ancestor", ancestor, commit])
+    }
+
+    /// The commit `spec` names.
+    pub fn commit_of(&self, spec: &str) -> Result<String> {
+        self.run(&["rev-parse", "--verify", "-q", &format!("{spec}^{{commit}}")])
     }
 
     /// The work tree containing `cwd`.
@@ -41,6 +65,11 @@ impl Git {
         command
             .arg("-C")
             .arg(&self.dir)
+            .args(
+                self.git_dir
+                    .iter()
+                    .flat_map(|d| [OsStr::new("--git-dir"), d.as_os_str()]),
+            )
             .env("GIT_TERMINAL_PROMPT", "0")
             .envs(envs.iter().copied());
         command
@@ -208,9 +237,10 @@ impl Git {
             .collect())
     }
 
-    /// Adds a pack's objects to the local object database.
+    /// Adds a pack to the local object database (`git index-pack` verifies every
+    /// object and writes the pack with its index).
     pub fn unpack(&self, pack: &[u8]) -> Result<()> {
-        self.output(&["unpack-objects", "-q"], Some(pack), &[])
+        self.output(&["index-pack", "--stdin"], Some(pack), &[])
             .map(|_| ())
     }
 

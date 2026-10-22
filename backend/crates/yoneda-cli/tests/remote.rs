@@ -1,0 +1,542 @@
+//! Plain Git against the local platform through `git-remote-yoneda`, plus the account
+//! commands. One platform (and one recording proxy in front of it) serves every scenario,
+//! each on its own repository. Run with `cargo test -p yoneda-cli -- --include-ignored`;
+//! it needs the workspace's node modules (wrangler) and the Rust Wasm worker build.
+#[allow(dead_code)] // shared with the offline-checkout tests
+mod support;
+
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+use std::process::Output;
+use std::time::{Duration, Instant};
+use support::proxy::{Interpose, Proxy};
+use support::{Client, Platform, TestResult};
+
+const LINES: &str = "l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\n";
+
+fn check(condition: bool, what: &str) -> TestResult {
+    if condition {
+        Ok(())
+    } else {
+        Err(what.to_owned())
+    }
+}
+
+fn text(out: &Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    )
+}
+
+fn write(dir: &Path, path: &str, body: &str) -> TestResult {
+    let full = dir.join(path);
+    if let Some(parent) = full.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(full, body).map_err(|e| e.to_string())
+}
+
+/// The repository id a command printed as `(<id>)`.
+fn repo_id(out: &str) -> TestResult<&str> {
+    out.find("(r")
+        .and_then(|i| out.get(i + 1..i + 22))
+        .ok_or(format!("no repository id in {out}"))
+}
+
+fn read(dir: &Path, path: &str) -> String {
+    std::fs::read_to_string(dir.join(path)).unwrap_or_default()
+}
+
+struct World {
+    platform: Platform,
+    proxy: Proxy,
+}
+
+impl World {
+    fn client(&self, name: &str, token: &str) -> TestResult<Client> {
+        let home = self.platform.scratch.path().join(format!("home-{name}"));
+        std::fs::create_dir_all(&home).map_err(|e| e.to_string())?;
+        Ok(Client {
+            home,
+            token: token.to_owned(),
+        })
+    }
+
+    fn url(&self, repo: &str) -> String {
+        format!("yoneda::{}/{repo}", self.proxy.origin)
+    }
+
+    /// `git clone` of `repo` into the client's home as `dir`.
+    fn clone(&self, client: &Client, repo: &str, dir: &str) -> TestResult<PathBuf> {
+        let out = client.git_output(&client.home, &["clone", &self.url(repo), dir])?;
+        check(out.status.success(), &format!("clone: {}", text(&out)))?;
+        Ok(client.home.join(dir))
+    }
+
+    fn main_tree(&self, repo: &str) -> TestResult<String> {
+        Ok(self.platform.main(repo)?.2)
+    }
+
+    fn tree_of(&self, repo: &str, commit: &str) -> TestResult<String> {
+        let shown =
+            self.platform
+                .owner_call("GET", &format!("/repos/{repo}/commits/{commit}"), None)?;
+        Ok(shown["tree"].as_str().unwrap_or_default().to_owned())
+    }
+
+    fn refs(&self, repo: &str) -> TestResult<Value> {
+        Ok(self
+            .platform
+            .owner_call("GET", &format!("/repos/{repo}/refs"), None)?["refs"]
+            .clone())
+    }
+
+    fn blob(&self, repo: &str, path: &str) -> String {
+        self.platform
+            .blob(repo, path)
+            .map(|b| b["content"].as_str().unwrap_or_default().to_owned())
+            .unwrap_or_default()
+    }
+}
+
+fn commit(
+    client: &Client,
+    dir: &Path,
+    message: &str,
+    files: &[(&str, &str)],
+) -> TestResult<String> {
+    client.commit(dir, message, files)
+}
+
+fn push(client: &Client, dir: &Path, args: &[&str]) -> TestResult<Output> {
+    let mut all = vec!["push"];
+    all.extend(args);
+    client.git_output(dir, &all)
+}
+
+fn clone_push_branch_and_land(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n"), ("f.txt", LINES)])?;
+    let c = w.client("basics", &token)?;
+    let dir = w.clone(&c, &repo, "work")?;
+    check(read(&dir, "a.txt") == "a\n", "cloned files")?;
+    check(
+        c.git(&dir, &["rev-parse", "HEAD^{tree}"])? == w.main_tree(&repo)?,
+        "clone tree",
+    )?;
+
+    c.git(&dir, &["checkout", "-q", "-b", "feature"])?;
+    let local = commit(&c, &dir, "add b", &[("b.txt", "b\n")])?;
+    let out = push(&c, &dir, &["origin", "feature"])?;
+    check(
+        out.status.success(),
+        &format!("push branch: {}", text(&out)),
+    )?;
+    let feature = w.refs(&repo)?["refs/heads/feature"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    check(
+        w.tree_of(&repo, &feature)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
+        "branch tree",
+    )?;
+    let again = push(&c, &dir, &["origin", "feature"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+    check(
+        c.git(&dir, &["rev-parse", "origin/feature"])? == local,
+        "tracking ref is the local commit",
+    )?;
+
+    c.git(&dir, &["reset", "-q", "--hard", "HEAD~1"])?;
+    commit(&c, &dir, "add c", &[("c.txt", "c\n")])?;
+    let refused = push(&c, &dir, &["origin", "feature"])?;
+    check(
+        !refused.status.success() && text(&refused).contains("rejected"),
+        &text(&refused),
+    )?;
+    check(
+        w.refs(&repo)?["refs/heads/feature"] == feature.as_str(),
+        "refused push moved nothing",
+    )?;
+    let forced = push(&c, &dir, &["--force", "origin", "feature"])?;
+    check(
+        forced.status.success(),
+        &format!("force: {}", text(&forced)),
+    )?;
+
+    c.git(&dir, &["checkout", "-q", "main"])?;
+    commit(&c, &dir, "add d", &[("d.txt", "dee\n")])?;
+    let landed = push(&c, &dir, &["origin", "main"])?;
+    check(
+        landed.status.success()
+            && text(&landed).contains("landed")
+            && text(&landed).contains("version"),
+        &format!("push main: {}", text(&landed)),
+    )?;
+    check(
+        w.main_tree(&repo)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
+        "main tree",
+    )?;
+    c.git(&dir, &["fetch", "-q", "origin"])?;
+    check(
+        c.git(&dir, &["rev-parse", "origin/main"])? == c.git(&dir, &["rev-parse", "HEAD"])?,
+        "after a fast-forward landing, origin/main is the pushed commit",
+    )?;
+    let brief = c.ok(&dir, &["status", "--brief"])?;
+    check(
+        brief.contains("main: 0 commit(s) not on the platform"),
+        &brief,
+    )?;
+    let log = c.ok(&dir, &["log"])?;
+    check(log.contains("add d"), &log)?;
+    let hits = c.ok(&dir, &["grep", "dee"])?;
+    check(hits.contains("d.txt"), &hits)
+}
+
+fn disjoint_pushes_to_main_both_land(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let (c1, c2) = (w.client("d1", &token)?, w.client("d2", &token)?);
+    let (d1, d2) = (w.clone(&c1, &repo, "w")?, w.clone(&c2, &repo, "w")?);
+    commit(&c1, &d1, "x", &[("x.txt", "x\n")])?;
+    commit(&c2, &d2, "y", &[("y.txt", "y\n")])?;
+    let first = push(&c1, &d1, &["origin", "main"])?;
+    check(first.status.success(), &text(&first))?;
+    let second = push(&c2, &d2, &["origin", "main"])?;
+    check(
+        second.status.success()
+            && text(&second).contains("server merged concurrent changes; run git pull"),
+        &format!("second push: {}", text(&second)),
+    )?;
+    check(
+        w.blob(&repo, "x.txt") == "x\n" && w.blob(&repo, "y.txt") == "y\n",
+        "both landed",
+    )?;
+    for (c, d) in [(&c2, &d2), (&c1, &d1)] {
+        let pulled = c.git_output(d, &["pull", "-q", "--ff-only", "origin", "main"])?;
+        check(pulled.status.success(), &format!("pull: {}", text(&pulled)))?;
+        check(
+            c.git(d, &["rev-parse", "HEAD^{tree}"])? == w.main_tree(&repo)?,
+            "pulled tree",
+        )?;
+    }
+    Ok(())
+}
+
+fn same_line_overlap_conflicts_then_resolves(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("f.txt", LINES)])?;
+    let (c1, c2) = (w.client("o1", &token)?, w.client("o2", &token)?);
+    let (d1, d2) = (w.clone(&c1, &repo, "w")?, w.clone(&c2, &repo, "w")?);
+    commit(&c1, &d1, "ours", &[("f.txt", &LINES.replace("l4", "one"))])?;
+    commit(
+        &c2,
+        &d2,
+        "theirs",
+        &[("f.txt", &LINES.replace("l4", "two"))],
+    )?;
+    check(
+        push(&c1, &d1, &["origin", "main"])?.status.success(),
+        "first lands",
+    )?;
+    let refused = push(&c2, &d2, &["origin", "main"])?;
+    let said = text(&refused);
+    check(
+        !refused.status.success() && said.contains("conflict") && said.contains("f.txt"),
+        &said,
+    )?;
+    check(
+        w.blob(&repo, "f.txt") == LINES.replace("l4", "one"),
+        "main kept the first",
+    )?;
+    let listed = c2.ok(&d2, &["conflicts"])?;
+    check(listed.contains("f.txt"), &listed)?;
+    // Resolve the Git way: pull (merge), fix, commit, push.
+    let _ = c2.git_output(&d2, &["pull", "-q", "--no-rebase", "origin", "main"])?;
+    write(&d2, "f.txt", &LINES.replace("l4", "both"))?;
+    c2.git(&d2, &["commit", "-q", "-am", "resolve"])?;
+    let resolved = push(&c2, &d2, &["origin", "main"])?;
+    check(
+        resolved.status.success(),
+        &format!("resolved push: {}", text(&resolved)),
+    )?;
+    check(
+        w.blob(&repo, "f.txt") == LINES.replace("l4", "both"),
+        "resolution landed",
+    )
+}
+
+fn atomic_push_with_a_stale_ref_moves_nothing(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("atomic", &token)?;
+    let dir = w.clone(&c, &repo, "w")?;
+    commit(&c, &dir, "start", &[("s.txt", "s\n")])?;
+    let made = push(
+        &c,
+        &dir,
+        &["origin", "HEAD:refs/heads/b1", "HEAD:refs/heads/b2"],
+    )?;
+    check(made.status.success(), &text(&made))?;
+    let before = w.refs(&repo)?;
+    let other = w.platform.owner_call(
+        "POST",
+        &format!("/repos/{repo}/commits"),
+        Some(json!({ "ref": "main", "message": "elsewhere", "author": { "name": "O", "email": "o@example.com" },
+                     "changes": [support::file("o.txt", "o\n")] })),
+    )?;
+    let moved = other["commit"].as_str().unwrap_or_default().to_owned();
+    w.proxy.with(|s| {
+        s.before_batch = Some(Interpose {
+            path: format!("/api/v1/repos/{repo}/branches"),
+            body: json!({ "ref": "refs/heads/b1", "commit": moved, "expected": before["refs/heads/b1"] }),
+            bearer: w.platform.owner.clone(),
+        })
+    });
+    commit(&c, &dir, "next", &[("n.txt", "n\n")])?;
+    let out = push(
+        &c,
+        &dir,
+        &[
+            "--atomic",
+            "origin",
+            "HEAD:refs/heads/b1",
+            "HEAD:refs/heads/b2",
+        ],
+    )?;
+    check(
+        !out.status.success(),
+        &format!("atomic push must fail: {}", text(&out)),
+    )?;
+    let after = w.refs(&repo)?;
+    check(
+        after["refs/heads/b2"] == before["refs/heads/b2"],
+        "b2 unchanged",
+    )?;
+    check(
+        after["refs/heads/b1"] == moved.as_str(),
+        "b1 moved only by the other writer",
+    )?;
+    check(
+        w.proxy.count("POST", "/refs/batch") == 1,
+        "one batch request",
+    )
+}
+
+#[cfg(unix)]
+fn kill_while_hung(w: &World, c: &Client, dir: &Path, args: &[&str], hang: &str) -> TestResult {
+    let commits_before = w.proxy.count("POST", "/commits");
+    let hung_before = w.proxy.count("POST", hang);
+    w.proxy.with(|s| s.hang = vec![hang.to_owned()]);
+    let mut child = c.git_spawn(dir, args)?;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while w.proxy.count("POST", hang) == hung_before {
+        check(
+            Instant::now() < deadline,
+            "the push never reached its final step",
+        )?;
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    check(
+        w.proxy.count("POST", "/commits") > commits_before,
+        "commits were uploaded first",
+    )?;
+    let group = format!("-{}", child.id());
+    std::process::Command::new("kill")
+        .args(["-KILL", &group])
+        .status()
+        .map_err(|e| e.to_string())?;
+    let _ = child.wait();
+    w.proxy.with(|s| s.hang.clear());
+    Ok(())
+}
+
+#[cfg(unix)]
+fn killed_push_leaves_refs_unchanged(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("killed", &token)?;
+    let dir = w.clone(&c, &repo, "w")?;
+    commit(&c, &dir, "k", &[("k.txt", "k\n")])?;
+    let before = w.platform.main(&repo)?;
+    kill_while_hung(
+        w,
+        &c,
+        &dir,
+        &["push", "origin", "HEAD:refs/heads/k"],
+        "/branches",
+    )?;
+    kill_while_hung(w, &c, &dir, &["push", "origin", "main"], "/land")?;
+    check(w.refs(&repo)?.get("refs/heads/k").is_none(), "no branch k")?;
+    check(
+        w.platform.main(&repo)? == before,
+        "main and the log version unchanged",
+    )?;
+    let retried = push(&c, &dir, &["origin", "main"])?;
+    check(
+        retried.status.success(),
+        &format!("retry: {}", text(&retried)),
+    )?;
+    check(w.blob(&repo, "k.txt") == "k\n", "the retried push landed")
+}
+
+fn fresh_clone_is_byte_identical(w: &World) -> TestResult {
+    let (repo, token) = w
+        .platform
+        .repo(&[("a.txt", "a\n"), ("bin/x.bin", "\u{1}\u{2}")])?;
+    let c = w.client("fresh", &token)?;
+    let dir = w.clone(&c, &repo, "w")?;
+    for i in 0..3 {
+        commit(
+            &c,
+            &dir,
+            &format!("c{i}"),
+            &[(&format!("dir/ünï {i}.txt"), "u\n")],
+        )?;
+        check(
+            push(&c, &dir, &["origin", "main"])?.status.success(),
+            "push",
+        )?;
+    }
+    let other = w.client("fresh2", &token)?;
+    let copy = w.clone(&other, &repo, "copy")?;
+    check(
+        other.git(&copy, &["rev-parse", "HEAD^{tree}"])? == w.main_tree(&repo)?,
+        "fresh clone tree",
+    )?;
+    let fsck = other.git_output(&copy, &["fsck", "--strict"])?;
+    check(fsck.status.success(), &format!("fsck: {}", text(&fsck)))?;
+    let count = other.git(&copy, &["rev-list", "--count", "HEAD"])?;
+    check(
+        count.parse::<u32>().unwrap_or(0) >= 4,
+        &format!("history converted: {count}"),
+    )
+}
+
+fn device_login_then_clone_with_the_stored_token(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    w.proxy.with(|s| {
+        s.device_pending = 2;
+        s.device_token = Some(token.clone());
+    });
+    let c = w.client("login", "")?;
+    let out = c.ok(
+        &c.home,
+        &["login", "--origin", &w.proxy.origin, "--no-browser"],
+    )?;
+    check(out.contains("ABCD-EFGH") && out.contains("Logged in"), &out)?;
+    let stored = c.home.join(".config/yoneda/credentials");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&stored)
+            .map_err(|e| e.to_string())?
+            .permissions()
+            .mode();
+        check(mode & 0o777 == 0o600, "credentials are 0600")?;
+    }
+    check(
+        w.proxy.count("POST", "/device/token") == 3,
+        "polled until approved",
+    )?;
+    w.clone(&c, &repo, "w")?;
+    c.ok(&c.home, &["logout"])?;
+    check(!stored.exists(), "logout removed the token")
+}
+
+fn import_in_batches(w: &World) -> TestResult {
+    let c = w.client("import", &w.platform.owner)?;
+    let src = c.home.join("src");
+    std::fs::create_dir_all(&src).map_err(|e| e.to_string())?;
+    c.git(&src, &["init", "-q", "-b", "main"])?;
+    let files: Vec<(String, String)> = (0..7)
+        .map(|i| (format!("d{}/f{i}.txt", i % 2), format!("{i}\n")))
+        .collect();
+    let refs: Vec<(&str, &str)> = files
+        .iter()
+        .map(|(p, t)| (p.as_str(), t.as_str()))
+        .collect();
+    commit(&c, &src, "seed", &refs)?;
+    let (repos_before, commits_before) = (
+        w.proxy.count("POST", "/api/v1/repos"),
+        w.proxy.count("POST", "/commits"),
+    );
+    let out = c.ok(
+        &c.home,
+        &[
+            "repo",
+            "import",
+            "src",
+            "--name",
+            "imp",
+            "--batch-files",
+            "3",
+            "--origin",
+            &w.proxy.origin,
+        ],
+    )?;
+    let id = repo_id(&out)?;
+    check(
+        w.proxy.count("POST", "/api/v1/repos") == repos_before + 1,
+        "one create",
+    )?;
+    check(
+        w.proxy.count("POST", "/commits") == commits_before + 2,
+        "two follow-up commits",
+    )?;
+    check(
+        w.main_tree(id)? == c.git(&src, &["rev-parse", "HEAD^{tree}"])?,
+        "imported tree",
+    )
+}
+
+fn account_and_repository_commands(w: &World) -> TestResult {
+    let c = w.client("account", &w.platform.owner)?;
+    let origin = &w.proxy.origin;
+    let made = c.ok(&c.home, &["repo", "create", "demo", "--origin", origin])?;
+    let id = repo_id(&made)?;
+    check(
+        made.contains(&format!("git clone yoneda::{origin}/{id}")),
+        &made,
+    )?;
+    let listed = c.ok(&c.home, &["repo", "list", "--origin", origin])?;
+    check(listed.contains(id), &listed)?;
+    let policy = c.ok(
+        &c.home,
+        &["policy", "show", "--repo", id, "--origin", origin],
+    )?;
+    check(policy.contains("\"approvals\": 0"), &policy)?;
+    let minted = c.ok(
+        &c.home,
+        &["token", "create", "ci", "--repo", id, "--origin", origin],
+    )?;
+    check(minted.trim().starts_with("yrp_"), &minted)?;
+    let tokens = c.ok(
+        &c.home,
+        &["token", "list", "--repo", id, "--origin", origin],
+    )?;
+    check(tokens.contains("\"ci\""), &tokens)?;
+    c.ok(
+        &c.home,
+        &["token", "revoke", "ci", "--repo", id, "--origin", origin],
+    )
+    .map(|_| ())
+}
+
+#[test]
+#[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli -- --include-ignored"]
+fn git_works_through_the_remote_helper() -> TestResult {
+    let platform = Platform::start()?;
+    let proxy = Proxy::start(&platform.origin)?;
+    let w = World { platform, proxy };
+    clone_push_branch_and_land(&w).map_err(|e| format!("basics: {e}"))?;
+    disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
+    same_line_overlap_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
+    atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
+    #[cfg(unix)]
+    killed_push_leaves_refs_unchanged(&w).map_err(|e| format!("killed: {e}"))?;
+    fresh_clone_is_byte_identical(&w).map_err(|e| format!("fresh clone: {e}"))?;
+    device_login_then_clone_with_the_stored_token(&w).map_err(|e| format!("login: {e}"))?;
+    import_in_batches(&w).map_err(|e| format!("import: {e}"))?;
+    account_and_repository_commands(&w).map_err(|e| format!("account: {e}"))
+}

@@ -129,8 +129,15 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
 
 /// Fetches every object under `root` that the local repository lacks.
 pub async fn fetch_tree(api: &Api, git: &Git, root: &str) -> Result<()> {
-    let mut seen: HashSet<String> = HashSet::from([root.to_owned()]);
-    let mut wanted = missing(git, vec![(root.to_owned(), ObjectKind::Tree)])?;
+    fetch_trees(api, git, &[root.to_owned()]).await
+}
+
+/// Fetches every object under any of `roots` that the local repository lacks, as one
+/// walk (shared subtrees are fetched once) written as one pack per 64 MiB.
+pub async fn fetch_trees(api: &Api, git: &Git, roots: &[String]) -> Result<()> {
+    let mut seen: HashSet<String> = roots.iter().cloned().collect();
+    let first = seen.iter().map(|r| (r.clone(), ObjectKind::Tree)).collect();
+    let mut wanted = missing(git, first)?;
     let mut pending: Vec<(ObjectKind, Vec<u8>)> = Vec::new();
     let mut pending_bytes = 0usize;
     while !wanted.is_empty() {
@@ -148,6 +155,45 @@ pub async fn fetch_tree(api: &Api, git: &Git, root: &str) -> Result<()> {
         wanted = missing(git, next)?;
     }
     write(git, &mut pending)
+}
+
+/// A platform commit's tree and parents (what `/objects` serves for a commit).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitShape {
+    pub id: String,
+    pub tree: String,
+    pub parents: Vec<String>,
+}
+
+/// The tree and parents of each of `ids`, through `/objects` (works for imported
+/// history too, which has no platform commit record).
+pub async fn commit_shapes(api: &Api, ids: &[String]) -> Result<Vec<CommitShape>> {
+    let wanted: Vec<(String, ObjectKind)> = ids
+        .iter()
+        .map(|id| (id.clone(), ObjectKind::Commit))
+        .collect();
+    fetch(api, &wanted)
+        .await?
+        .iter()
+        .map(|object| {
+            let parents = object["parents"]
+                .as_array()
+                .ok_or_else(|| Error::new("a commit object has no parents"))?
+                .iter()
+                .map(|p| Ok(text_id(p)?.hex()))
+                .collect::<Result<Vec<_>>>()?;
+            Ok(CommitShape {
+                id: object_id(object, "id")?.hex(),
+                tree: object_id(object, "tree")?.hex(),
+                parents,
+            })
+        })
+        .collect()
+}
+
+fn text_id(value: &Value) -> Result<ObjectId> {
+    let hex = value.as_str().unwrap_or_default();
+    ObjectId::parse(hex).map_err(|e| Error::new(format!("bad object id {hex:?}: {}", e.message)))
 }
 
 fn missing(git: &Git, candidates: Vec<(String, ObjectKind)>) -> Result<Vec<(String, ObjectKind)>> {

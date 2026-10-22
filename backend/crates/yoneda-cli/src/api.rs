@@ -81,21 +81,35 @@ fn commit_info(value: &Value) -> std::result::Result<CommitInfo, Failure> {
     })
 }
 
+fn client() -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .user_agent(concat!("yoneda-cli/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| Error::new(format!("building the HTTP client: {e}")))
+}
+
 impl Api {
+    /// One repository's API (`<origin>/api/v1/repos/<repo>`).
     pub fn new(origin: &str, repo: &str, token: &Token) -> Result<Self> {
         if !valid_repo_id(repo) {
             return Err(Error::usage(format!(
                 "{repo:?} is not a repository id (r + 20 hex)"
             )));
         }
-        let http = reqwest::Client::builder()
-            .user_agent(concat!("yoneda-cli/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|e| Error::new(format!("building the HTTP client: {e}")))?;
         Ok(Self {
-            http,
+            http: client()?,
             base: format!("{origin}/api/v1/repos/{repo}"),
             header: token.header(),
+        })
+    }
+
+    /// The account-level API (`<origin>/api/v1`): repositories and device login.
+    /// `token` is `None` only for the device flow, which runs before there is one.
+    pub fn account(origin: &str, token: Option<&Token>) -> Result<Self> {
+        Ok(Self {
+            http: client()?,
+            base: format!("{origin}/api/v1"),
+            header: token.map_or(Header::None, Token::header),
         })
     }
 
@@ -109,6 +123,7 @@ impl Api {
         request = match &self.header {
             Header::Authorization(value) => request.header("authorization", value),
             Header::Cookie(value) => request.header("cookie", value),
+            Header::None => request,
         };
         if let Some(body) = body {
             request = request.json(body);
@@ -147,6 +162,14 @@ impl Api {
         self.send(reqwest::Method::POST, path, Some(body)).await
     }
 
+    pub async fn put(&self, path: &str, body: &Value) -> std::result::Result<Value, Failure> {
+        self.send(reqwest::Method::PUT, path, Some(body)).await
+    }
+
+    pub async fn delete(&self, path: &str) -> std::result::Result<Value, Failure> {
+        self.send(reqwest::Method::DELETE, path, None).await
+    }
+
     /// The current log version and the branch's Git commit at it (the platform waits
     /// for landed changesets to be projected before answering).
     pub async fn branch_at_latest(
@@ -164,7 +187,32 @@ impl Api {
     }
 
     pub async fn commit(&self, id: &str) -> std::result::Result<CommitInfo, Failure> {
-        commit_info(&self.get(&format!("/commits/{id}")).await?)
+        commit_info(&self.commit_record(id).await?)
+    }
+
+    /// A recorded commit with its message, principal and landings.
+    pub async fn commit_record(&self, id: &str) -> std::result::Result<Value, Failure> {
+        self.get(&format!("/commits/{id}")).await
+    }
+
+    /// Records a commit on `parent` with extra merge parents (a local merge commit).
+    pub async fn create_merge_commit(
+        &self,
+        parent: &str,
+        base_version: u64,
+        changes: Vec<Value>,
+        message: &str,
+        author: &Value,
+        merge_parents: &[String],
+    ) -> std::result::Result<CommitInfo, Failure> {
+        let mut body = json!({
+            "parent": parent, "base_version": base_version, "changes": changes,
+            "message": message, "author": author,
+        });
+        if !merge_parents.is_empty() {
+            body["merge_parents"] = json!(merge_parents);
+        }
+        commit_info(&self.post("/commits", &body).await?)
     }
 
     /// Repository status: log version, refs table and projections (no projection wait).
@@ -193,11 +241,8 @@ impl Api {
         message: &str,
         author: &Value,
     ) -> std::result::Result<CommitInfo, Failure> {
-        let body = json!({
-            "parent": parent, "base_version": base_version, "changes": changes,
-            "message": message, "author": author,
-        });
-        commit_info(&self.post("/commits", &body).await?)
+        self.create_merge_commit(parent, base_version, changes, message, author, &[])
+            .await
     }
 
     /// Moves a working branch by compare-and-swap on its expected old head.
