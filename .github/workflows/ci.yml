@@ -251,8 +251,15 @@ jobs:
           fi
       - uses: ./.github/actions/setup
         if: steps.tip.outputs.current == 'true'
-      - name: Write the dev secrets file (0600, outside the tree)
+      # dev fixes are usually deployed from the owner's Mac (`cargo xtask deploy --env dev`)
+      # before the push; when both Workers' /health already shows this commit, skip the rest
+      # with a summary line instead of redeploying (and rolling out) the same commit.
+      - name: Skip when dev already runs this commit
+        id: live
         if: steps.tip.outputs.current == 'true'
+        run: cargo xtask live-check --env dev
+      - name: Write the dev secrets file (0600, outside the tree)
+        if: steps.live.outputs.deploy == 'true'
         env:
           OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
           VAULT_KEY: ${{ secrets.VAULT_KEY }}
@@ -262,25 +269,25 @@ jobs:
           printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
       # The tested outputs; xtask refuses any whose REVISION is not HEAD (fail closed).
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.tip.outputs.current == 'true'
+        if: steps.live.outputs.deploy == 'true'
         with:
           name: worker-wasm
           path: ${{ runner.temp }}/prebuilt/worker-wasm
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.tip.outputs.current == 'true'
+        if: steps.live.outputs.deploy == 'true'
         with:
           name: frontend-dist
           path: ${{ runner.temp }}/prebuilt/frontend-dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.tip.outputs.current == 'true'
+        if: steps.live.outputs.deploy == 'true'
         with:
           name: runtime-image
           path: ${{ runner.temp }}/prebuilt/runtime-image
       - name: Deploy dev
-        if: steps.tip.outputs.current == 'true'
+        if: steps.live.outputs.deploy == 'true'
         run: cargo xtask deploy --env dev --prebuilt "$RUNNER_TEMP/prebuilt" | tee "$RUNNER_TEMP/deploy.txt"
       - name: Smoke
-        if: steps.tip.outputs.current == 'true'
+        if: steps.live.outputs.deploy == 'true'
         run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
       # The deploy and smoke tables reach the job summary from xtask itself; on a failure
       # before them, the last log lines do.

@@ -1,51 +1,95 @@
 //! `cargo xtask deploy|rollback|status --env dev|prod|ephemeral-<id>`: one command per
 //! environment, driven by `infra/envs/<env>.json` (Workers in cutover order).
+//!
+//! Where the runtime image comes from ([`Source`]): `--prebuilt` deploys CI's tested image;
+//! `--env dev` without it is the workstation deploy (deploy_image: reuse the deployed image
+//! when the runtime's inputs are unchanged, else build it for linux/amd64 and push it);
+//! other envs let wrangler build the Dockerfile.
+use crate::deploy_exec::{Run, Timings};
 use crate::deploy_guard::{self as guard, Facts, Options, short};
-use crate::deploy_prebuilt::prebuilt;
+use crate::deploy_image::ImagePlan;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
-use crate::infra::wrangler::{self, table};
+use crate::infra::wrangler::table;
 use crate::process::Result;
 use std::collections::{BTreeMap, BTreeSet};
+use std::time::Instant;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     BuildWasm,
     BuildFrontend,
     InstallPrebuilt,
+    BuildImage,
     PushImage,
+    RecordImage,
     Migrate { database: String, config: String },
     ActiveGate { worker: usize },
+    RolloutGate,
     Deploy { worker: usize, dry_run: bool },
     Secrets { worker: usize },
     Health { worker: usize },
+    Smoke,
 }
 
 impl Step {
     /// Whether the step changes anything remote (dry runs must contain none).
     pub(crate) fn mutates_remote(&self) -> bool {
         match self {
-            Self::Migrate { .. } | Self::Secrets { .. } | Self::PushImage => true,
+            Self::Migrate { .. } | Self::Secrets { .. } | Self::PushImage | Self::RecordImage => {
+                true
+            }
             Self::Deploy { dry_run, .. } => !dry_run,
             Self::BuildWasm
             | Self::BuildFrontend
             | Self::InstallPrebuilt
+            | Self::BuildImage
             | Self::ActiveGate { .. }
-            | Self::Health { .. } => false,
+            | Self::RolloutGate
+            | Self::Health { .. }
+            | Self::Smoke => false,
         }
     }
 }
 
-/// The ordered plan: build (with --prebuilt: install CI's outputs locally, then push its
-/// runtime image), migrate, then per Worker deploy -> secrets -> health.
-pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool, prebuilt: bool) -> Vec<Step> {
-    let mut steps = if prebuilt {
-        vec![Step::InstallPrebuilt]
-    } else {
-        vec![Step::BuildWasm, Step::BuildFrontend]
+/// Where the container apps' runtime image comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Source {
+    /// wrangler builds cloudflare/containers/Dockerfile (prod and ephemeral without --prebuilt).
+    Dockerfile,
+    /// `--prebuilt`: CI's tested image, pushed and recorded.
+    Prebuilt,
+    /// The workstation deploy of dev.
+    Local(ImagePlan),
+}
+
+/// The ordered plan: build (with --prebuilt: install CI's outputs; then push and record the
+/// image when there is one to push), migrate, then per Worker deploy -> secrets -> health.
+/// A workstation deploy builds its image only when it cannot reuse one, checks busy
+/// containers right before the first rollout (and before a slow build), and ends with the
+/// smoke.
+pub(crate) fn steps(
+    env: &Env,
+    workers: &[Deployable],
+    dry_run: bool,
+    source: &Source,
+) -> Vec<Step> {
+    let containers = workers.iter().any(|w| w.has_containers);
+    let mut steps = match source {
+        Source::Prebuilt => vec![Step::InstallPrebuilt],
+        Source::Dockerfile | Source::Local(_) => vec![Step::BuildWasm, Step::BuildFrontend],
     };
-    if prebuilt && !dry_run && workers.iter().any(|w| w.has_containers) {
-        steps.push(Step::PushImage);
+    if containers && !dry_run {
+        match source {
+            Source::Prebuilt => steps.extend([Step::PushImage, Step::RecordImage]),
+            Source::Local(ImagePlan::Build { .. }) => steps.extend([
+                Step::RolloutGate,
+                Step::BuildImage,
+                Step::PushImage,
+                Step::RecordImage,
+            ]),
+            Source::Local(ImagePlan::Reuse { .. }) | Source::Dockerfile => {}
+        }
     }
     if !dry_run {
         let mut seen = BTreeSet::new();
@@ -60,9 +104,14 @@ pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool, prebuilt: 
             }
         }
     }
+    let mut rollout_pending = matches!(source, Source::Local(plan) if !plan.rollouts().is_empty());
     for (index, worker) in workers.iter().enumerate() {
         if env.is_prod() && worker.has_containers {
             steps.push(Step::ActiveGate { worker: index });
+        }
+        if rollout_pending && worker.has_containers {
+            steps.push(Step::RolloutGate);
+            rollout_pending = false;
         }
         steps.push(Step::Deploy {
             worker: index,
@@ -74,6 +123,9 @@ pub(crate) fn steps(env: &Env, workers: &[Deployable], dry_run: bool, prebuilt: 
         if !dry_run && worker.health.is_some() {
             steps.push(Step::Health { worker: index });
         }
+    }
+    if !dry_run && matches!(source, Source::Local(_)) {
+        steps.push(Step::Smoke);
     }
     steps
 }
@@ -143,28 +195,45 @@ fn agent_smoke() -> Result<()> {
 /// Deploys `spec` with the given D1 identities (`infra up` passes the lock it just built).
 pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) -> Result<()> {
     let workers = inventory::deployables(spec, lock)?;
+    let mut timings = Timings::default();
+    let started = Instant::now();
     let mut facts = guard::git_facts(spec)?;
     if env.is_prod() {
         prod_facts(&mut facts).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
+    timings.record("preflight: clean tree, branch tip", started, true);
     let head = facts.head.clone();
     let prebuilt = match &options.prebuilt {
         Some(dir) => Some(crate::deploy_prebuilt::check(dir, &head)?),
         None => None,
     };
-    let plan = steps(env, &workers, options.dry_run, prebuilt.is_some());
+    let (source, image, inputs) = match (&prebuilt, env) {
+        (Some(p), _) => (Source::Prebuilt, Some(p.image_ref(spec)), None),
+        (None, Env::Dev) => {
+            let started = Instant::now();
+            let local = crate::deploy_image::local_image(env, spec, &workers, &head);
+            timings.record("image decision", started, local.is_ok());
+            let (plan, image, inputs) = local.inspect_err(|_| timings.print())?;
+            (Source::Local(plan), image, Some(inputs))
+        }
+        (None, _) => (Source::Dockerfile, None, None),
+    };
+    let plan = steps(env, &workers, options.dry_run, &source);
     if options.dry_run && plan.iter().any(Step::mutates_remote) {
         return Err("Internal error: the dry-run plan contains a remote change".into());
     }
     let mut summary: BTreeMap<usize, Vec<String>> = BTreeMap::new();
-    let run = Run {
+    let mut run = Run {
         env,
         spec,
         workers: &workers,
         options,
         head: &head,
         prebuilt: prebuilt.as_ref(),
+        image,
+        inputs,
+        timings,
     };
     let versions = |dry_run: bool| {
         (!dry_run)
@@ -188,12 +257,13 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
         ],
         &summary.into_values().collect::<Vec<_>>(),
     );
+    run.timings.print();
     outcome
 }
 
 /// Each container application with its version before and after the deploy (a new version
 /// means a rollout; versions unknown in a dry run or when the listing failed).
-fn rollouts(
+pub(crate) fn rollouts(
     worker: &Deployable,
     before: Option<&BTreeMap<String, u64>>,
     after: Option<&BTreeMap<String, u64>>,
@@ -218,87 +288,6 @@ fn rollouts(
     }
 }
 
-struct Run<'a> {
-    env: &'a Env,
-    spec: &'a Spec,
-    workers: &'a [Deployable],
-    options: &'a Options,
-    head: &'a str,
-    prebuilt: Option<&'a crate::deploy_prebuilt::Prebuilt>,
-}
-
-impl Run<'_> {
-    /// Executes the plan in order; the first failure stops it. `summary` keeps what ran.
-    async fn execute(
-        &self,
-        plan: Vec<Step>,
-        summary: &mut BTreeMap<usize, Vec<String>>,
-    ) -> Result<()> {
-        let (env, spec, workers, options, head) =
-            (self.env, self.spec, self.workers, self.options, self.head);
-        for step in plan {
-            match step {
-                Step::BuildWasm => crate::commands::build_wasm()?,
-                Step::BuildFrontend => frontend_build()?,
-                Step::InstallPrebuilt => prebuilt(self.prebuilt)?.install(spec)?,
-                Step::PushImage => prebuilt(self.prebuilt)?.push(spec)?,
-                Step::Migrate { database, config } => wrangler::run(
-                    &spec.account_id,
-                    &[
-                        "d1",
-                        "migrations",
-                        "apply",
-                        &database,
-                        "--remote",
-                        "--config",
-                        &config,
-                    ],
-                )?,
-                Step::ActiveGate { worker } => {
-                    let active = crate::deploy_live::active_instances(
-                        &spec.account_id,
-                        &workers[worker].config,
-                    )?;
-                    guard::active_gate(env, &workers[worker].name, active, options)?;
-                }
-                Step::Deploy { worker, dry_run } => {
-                    let w = &workers[worker];
-                    let revision = format!("BUILD_REVISION:{head}");
-                    // With --prebuilt, containers deploy the pushed image from a config copy.
-                    let copy = crate::deploy_prebuilt::ConfigCopy::write(self.prebuilt, w, spec)?;
-                    let config = copy.as_ref().map_or(w.config_path.as_str(), |c| c.path());
-                    let mut deploy = vec!["deploy", "--config", config, "--var", &revision];
-                    if dry_run {
-                        deploy.push("--dry-run");
-                    }
-                    wrangler::run(&spec.account_id, &deploy)?;
-                    let state = if dry_run { "dry run" } else { "deployed" };
-                    summary.insert(worker, row(w, state, "-"));
-                }
-                Step::Secrets { worker } => crate::deploy_secrets::ensure(spec, &workers[worker])?,
-                Step::Health { worker } => {
-                    let w = &workers[worker];
-                    let live = crate::deploy_live::wait_for_revision(w, head).await;
-                    if let Some(row) = summary.get_mut(&worker) {
-                        row[3] = live.clone().unwrap_or_else(|| "unreachable".into());
-                    }
-                    guard::revision_gate(&w.name, head, live.as_deref())?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-fn row(w: &Deployable, state: &str, revision: &str) -> Vec<String> {
-    vec![
-        w.name.clone(),
-        w.config_path.clone(),
-        state.into(),
-        revision.into(),
-    ]
-}
-
 async fn prod_facts(facts: &mut Facts) -> Result<()> {
     let dev = Spec::load(&Env::Dev)?;
     for worker in inventory::deployables(&dev, &Lock::load(&Env::Dev)?)? {
@@ -310,24 +299,6 @@ async fn prod_facts(facts: &mut Facts) -> Result<()> {
         }
     }
     facts.evidence = guard::newest_evidence(std::path::Path::new(guard::EVIDENCE_DIR))?;
-    Ok(())
-}
-
-/// Builds the frontend without pnpm (worktrees symlink node_modules).
-pub(crate) fn frontend_build() -> Result<()> {
-    for (program, args) in [
-        ("node_modules/.bin/tsc", vec!["-b"]),
-        ("node_modules/.bin/vite", vec!["build"]),
-    ] {
-        let status = std::process::Command::new(program)
-            .args(&args)
-            .current_dir(crate::layout::FRONTEND)
-            .status()
-            .map_err(|error| format!("Cannot start frontend {program}: {error}"))?;
-        if !status.success() {
-            return Err(format!("Frontend {program} failed ({status})").into());
-        }
-    }
     Ok(())
 }
 
