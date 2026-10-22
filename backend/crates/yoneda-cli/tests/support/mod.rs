@@ -1,6 +1,8 @@
 //! A local source platform under workerd (`wrangler dev` with the platform-only test
 //! Worker, the R2 object store and changeset landing; no provider keys), an owner client
 //! acting as the other writer, and a runner for the `yoneda` binary.
+pub mod proxy;
+
 use base64::Engine;
 use serde_json::{Value, json};
 use std::net::TcpListener;
@@ -25,7 +27,7 @@ fn free_port() -> TestResult<u16> {
 pub struct Platform {
     child: Child,
     pub origin: String,
-    owner: String,
+    pub owner: String,
     http: reqwest::Client,
     pub rt: tokio::runtime::Runtime,
     pub scratch: tempfile::TempDir,
@@ -213,6 +215,16 @@ pub fn file(path: &str, text: &str) -> Value {
     json!({ "path": path, "content_b64": base64::engine::general_purpose::STANDARD.encode(text) })
 }
 
+/// `PATH` with the built `git-remote-yoneda` first, as an installed helper would be.
+fn helper_path() -> std::ffi::OsString {
+    let helper = Path::new(env!("CARGO_BIN_EXE_git-remote-yoneda"));
+    let mut dirs: Vec<PathBuf> = helper.parent().map(Path::to_path_buf).into_iter().collect();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    std::env::join_paths(dirs).unwrap_or_default()
+}
+
 /// Runs `yoneda` (or `git` when `program` is "git") in `dir` with an isolated config.
 pub struct Client {
     pub home: PathBuf,
@@ -236,8 +248,31 @@ impl Client {
             .env("GIT_CONFIG_GLOBAL", self.home.join(".gitconfig"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("YONEDA_TOKEN", &self.token)
-            .envs(IDENTITY);
+            .envs(IDENTITY)
+            .env("PATH", helper_path());
         command
+    }
+
+    /// Runs `git`, whatever its exit code.
+    pub fn git_output(&self, dir: &Path, args: &[&str]) -> TestResult<Output> {
+        self.command("git", dir)
+            .args(args)
+            .output()
+            .map_err(|e| e.to_string())
+    }
+
+    /// `git` as a child of its own process group (so a test can kill git and the
+    /// helper it started together).
+    #[cfg(unix)]
+    pub fn git_spawn(&self, dir: &Path, args: &[&str]) -> TestResult<Child> {
+        use std::os::unix::process::CommandExt;
+        self.command("git", dir)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .map_err(|e| e.to_string())
     }
 
     pub fn yoneda(&self, dir: &Path, args: &[&str]) -> TestResult<Output> {
