@@ -103,6 +103,32 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
   });
 });
 
+it('fails the attempt with the reason when its sandbox cannot start', async () => {
+  const fixture = await readyReviewer('sandbox_codex');
+  const repo = fixture.repo;
+  await ledger(bindings, repo, {
+    op: 'start_run',
+    id: 'codex-run',
+    intent: 'Add add(a,b)',
+    workspace_transport: 'sandbox-cli-v1',
+    _source_transport_approved: true,
+    _source_base: { repository: `platform/${repo}`, commit: fixture.head, tree: fixture.tree },
+    // Codex speaks another protocol; the sandbox runs Claude Code only.
+    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Unsupported CLI' }],
+  });
+  const queue = bindings.SELF as unknown as Queue;
+  const jobId = 'job:codex-run:agent-1';
+  expect(
+    await queue.dispatchOneForTest({ v: 1, kind: 'agent', repo_id: repo, job_id: jobId }, false),
+  ).toMatchObject({ acked: true, retries: [] });
+  expect(await ledger(bindings, repo, { op: 'job_status', id: jobId })).toMatchObject({
+    status: 'failed',
+  });
+  const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
+  const execution = snapshot.executions.find((e: any) => e.id === 'codex-run:agent-1');
+  expect(execution).toMatchObject({ status: 'failed', error: 'Queue dispatch failed (SANDBOX_HARNESS)' });
+});
+
 it('refuses a pushed commit that is not one commit on the frozen base', async () => {
   const owner = 'sandbox_stacked';
   const fixture = await readyReviewer(owner);
