@@ -278,13 +278,15 @@ describe('check sandbox egress', () => {
   it('reads this repository only', () => {
     expect(decide(`${repo}/refs`)).toEqual({ route: 'platform', refs: false });
     expect(decide(`${repo}/commits/${COMMIT}`)).toEqual({ route: 'platform', refs: false });
+    // git fetch through yoneda:: reads objects with the batch POST, which writes nothing.
+    expect(decide(`${repo}/objects`, 'POST')).toEqual({ route: 'platform', refs: false });
     expect(
       decide('https://dev.yonedarepo.com/api/v1/repos/r9999999999999999999/refs'),
     ).toHaveProperty('deny');
   });
 
   it('refuses every push, upload and ref move', () => {
-    for (const path of ['/objects', '/commits', '/branches', '/refs/batch', '/land'])
+    for (const path of ['/commits', '/branches', '/refs/batch', '/land'])
       expect(decide(`${repo}${path}`, 'POST')).toHaveProperty('deny');
     expect(decide(`${repo}/branches/main`, 'DELETE')).toHaveProperty('deny');
     expect(decide(`${repo}/policy`, 'PUT')).toHaveProperty('deny');
