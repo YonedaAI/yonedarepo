@@ -1,26 +1,53 @@
 //! Uploading a push: the local commits after the newest one the platform already has
-//! become platform commits (chained by parent, none moving a ref). A local merge keeps
-//! its other parents when the platform has them, so landing it later sees the merge.
+//! become platform commits (chained by parent, none moving a ref). Each is replayed with
+//! its own author, committer and message, so the platform's commit is the local commit
+//! (same id); the rest are mapped. A local merge keeps its other parents when the
+//! platform has them, so landing it later sees the merge.
 use super::Session;
 use super::map::CommitMap;
 use crate::chunk;
 use crate::error::{Error, Result};
 use crate::plan::{self, Mapping, Plan, Step};
+use crate::snapshot;
+use std::collections::HashSet;
 
 /// First-parent commits walked back looking for one the platform has.
 const WALK_LIMIT: &str = "100000";
+/// Commits asked about in the first presence check; each later one asks eight times more.
+const FIRST_CHECK: usize = 16;
 
-struct Mapped<'a>(&'a CommitMap);
+/// The platform commit standing for a local one: the map's entry, or the commit itself
+/// when the platform has it.
+struct Known<'a> {
+    map: &'a CommitMap,
+    platform: HashSet<String>,
+}
 
-impl Mapping for Mapped<'_> {
+impl Mapping for Known<'_> {
     fn platform_of(&self, local: &str) -> Option<String> {
-        self.0.server(local).map(str::to_owned)
+        match self.map.server(local) {
+            Some(server) => Some(server.to_owned()),
+            None => self.platform.contains(local).then(|| local.to_owned()),
+        }
     }
 }
 
+/// Which of `commits` the platform has, by the commit map or by asking it.
+async fn known<'a>(session: &'a Session, commits: &[String]) -> Result<Known<'a>> {
+    let unmapped: Vec<String> = commits
+        .iter()
+        .filter(|c| session.map.server(c).is_none())
+        .cloned()
+        .collect();
+    Ok(Known {
+        map: &session.map,
+        platform: snapshot::present(&session.api, &unmapped).await?,
+    })
+}
+
 /// The plan for pushing local commit `local`: the commits after its newest first-parent
-/// ancestor the platform has.
-pub fn plan_for(session: &Session, local: &str) -> Result<Plan> {
+/// ancestor the platform has (asked in growing batches: a short push costs one request).
+pub async fn plan_for(session: &Session, local: &str) -> Result<Plan> {
     let listed = session.git.run(&[
         "rev-list",
         "--first-parent",
@@ -28,16 +55,24 @@ pub fn plan_for(session: &Session, local: &str) -> Result<Plan> {
         WALK_LIMIT,
         local,
     ])?;
-    let mut pending = Vec::new();
-    for commit in listed.lines() {
-        if session.map.server(commit).is_some() {
-            pending.reverse();
+    let commits: Vec<String> = listed.lines().map(str::to_owned).collect();
+    let (mut start, mut size) = (0, FIRST_CHECK);
+    while start < commits.len() {
+        let end = (start + size).min(commits.len());
+        let known = known(session, &commits[start..end]).await?;
+        if let Some(found) = commits[start..end]
+            .iter()
+            .position(|c| known.platform_of(c).is_some())
+        {
+            let found = start + found;
+            let mut pending: Vec<String> = commits[..found].iter().rev().cloned().collect();
             if pending.is_empty() {
-                pending.push(commit.to_owned());
+                pending.push(commits[found].clone());
             }
-            return plan::plan(&session.git, &Mapped(&session.map), &pending, &chunk::API);
+            return plan::plan(&session.git, &known, &pending, &chunk::API);
         }
-        pending.push(commit.to_owned());
+        start = end;
+        size *= 8;
     }
     Err(Error::new(format!(
         "{local} shares no commit with {}: clone it and commit on top (or use `yoneda repo import`)",
@@ -45,7 +80,8 @@ pub fn plan_for(session: &Session, local: &str) -> Result<Plan> {
     )))
 }
 
-/// A finished upload: the platform commit to publish, and the local commits it made.
+/// A finished upload: the platform commit to publish, and the (platform, local) pairs of
+/// the commits it made (equal ids unless the platform could not rebuild a commit).
 pub struct Uploaded {
     pub tip: String,
     pub made: Vec<(String, String)>,
@@ -53,34 +89,43 @@ pub struct Uploaded {
 
 /// Uploads `plan` (nothing moves a ref); returns the tip and (server, local) pairs.
 pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
-    let base_version = session.map.version(&plan.start);
+    let base_version = session.heads.version(&plan.start);
     let mut parent = plan.start.clone();
     let mut made = Vec::new();
     for step in plan.steps {
-        let (local, part, parts, changes, tree, message, author) = match step {
-            Step::Empty { local } => {
+        let Step::Commit {
+            local,
+            part,
+            parts,
+            changes,
+            tree,
+            message,
+            author,
+            committer,
+        } = step
+        else {
+            if let Step::Empty { local } = step {
                 made.push((parent.clone(), local));
-                continue;
             }
-            Step::Commit {
-                local,
-                part,
-                parts,
-                changes,
-                tree,
-                message,
-                author,
-            } => (local, part, parts, changes, tree, message, author),
+            continue;
         };
         let merges = if part == parts {
-            merge_parents(session, &local)?
+            merge_parents(session, &local).await?
         } else {
             Vec::new()
         };
         let body = changes.iter().map(|c| c.api_json()).collect();
         let created = session
             .api
-            .create_merge_commit(&parent, base_version, body, &message, &author, &merges)
+            .create_merge_commit(
+                &parent,
+                base_version,
+                body,
+                &message,
+                &author,
+                committer.as_ref(),
+                &merges,
+            )
             .await
             .map_err(|f| Error::new(format!("uploading {local} (part {part} of {parts}): {f}")))?;
         if created.tree != tree {
@@ -98,13 +143,11 @@ pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
 }
 
 /// The platform commits for a local merge's other parents (those the platform has).
-fn merge_parents(session: &Session, local: &str) -> Result<Vec<String>> {
+async fn merge_parents(session: &Session, local: &str) -> Result<Vec<String>> {
     let line = session
         .git
         .run(&["rev-list", "--parents", "-n", "1", local])?;
-    Ok(line
-        .split_whitespace()
-        .skip(2)
-        .filter_map(|p| session.map.server(p).map(str::to_owned))
-        .collect())
+    let others: Vec<String> = line.split_whitespace().skip(2).map(str::to_owned).collect();
+    let known = known(session, &others).await?;
+    Ok(others.iter().filter_map(|p| known.platform_of(p)).collect())
 }

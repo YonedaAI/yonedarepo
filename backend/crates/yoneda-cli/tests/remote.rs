@@ -93,6 +93,17 @@ impl World {
             .clone())
     }
 
+    fn blob_at(&self, repo: &str, branch: &str, path: &str) -> String {
+        self.platform
+            .owner_call(
+                "GET",
+                &format!("/repos/{repo}/blob?ref={branch}&path={path}"),
+                None,
+            )
+            .map(|b| b["content"].as_str().unwrap_or_default().to_owned())
+            .unwrap_or_default()
+    }
+
     fn blob(&self, repo: &str, path: &str) -> String {
         self.platform
             .blob(repo, path)
@@ -138,8 +149,8 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         .unwrap_or_default()
         .to_owned();
     check(
-        w.tree_of(&repo, &feature)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
-        "branch tree",
+        feature == local,
+        &format!("the platform's branch head {feature} is the pushed commit {local}"),
     )?;
     let again = push(&c, &dir, &["origin", "feature"])?;
     check(
@@ -167,9 +178,13 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         forced.status.success(),
         &format!("force: {}", text(&forced)),
     )?;
+    check(
+        w.refs(&repo)?["refs/heads/feature"] == c.git(&dir, &["rev-parse", "HEAD"])?.as_str(),
+        "after a forced push, the platform's head is the local commit",
+    )?;
 
     c.git(&dir, &["checkout", "-q", "main"])?;
-    commit(&c, &dir, "add d", &[("d.txt", "dee\n")])?;
+    let pushed = commit(&c, &dir, "add d", &[("d.txt", "dee\n")])?;
     let landed = push(&c, &dir, &["origin", "main"])?;
     check(
         landed.status.success()
@@ -181,10 +196,32 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         w.main_tree(&repo)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
         "main tree",
     )?;
-    c.git(&dir, &["fetch", "-q", "origin"])?;
+    let again = push(&c, &dir, &["origin", "main"])?;
     check(
-        c.git(&dir, &["rev-parse", "origin/main"])? == c.git(&dir, &["rev-parse", "HEAD"])?,
-        "after a fast-forward landing, origin/main is the pushed commit",
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+    // Main's head is the platform's commit for the landing (this platform records each
+    // landed changeset as its own commit on top of the pushed one): a pull fast-forwards.
+    c.git(&dir, &["fetch", "-q", "origin"])?;
+    let main = w.refs(&repo)?["refs/heads/main"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    check(
+        c.git(&dir, &["rev-parse", "origin/main"])? == main,
+        "origin/main is the platform's main",
+    )?;
+    check(
+        c.git_output(&dir, &["merge-base", "--is-ancestor", &pushed, &main])?
+            .status
+            .success(),
+        "the pushed commit is in main's history, by its own id",
+    )?;
+    c.git(&dir, &["pull", "-q", "--ff-only", "origin", "main"])?;
+    check(
+        c.git(&dir, &["rev-parse", "HEAD"])? == main,
+        "after a pull, HEAD is the platform's main",
     )?;
     let brief = c.ok(&dir, &["status", "--brief"])?;
     check(
@@ -192,7 +229,17 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         &brief,
     )?;
     let log = c.ok(&dir, &["log"])?;
-    check(log.contains("add d"), &log)?;
+    check(log.contains("add d") || log.contains(&pushed), &log)?;
+    check(
+        log.starts_with(&main),
+        &format!("log starts at main: {log}"),
+    )?;
+    let fsck = c.git_output(&dir, &["fsck", "--strict"])?;
+    check(fsck.status.success(), &format!("fsck: {}", text(&fsck)))?;
+    check(
+        !dir.join(format!(".git/yoneda/{repo}.map")).exists(),
+        "no commit needed a mapped id",
+    )?;
     let hits = c.ok(&dir, &["grep", "dee"])?;
     check(hits.contains("d.txt"), &hits)
 }
@@ -324,8 +371,17 @@ fn atomic_push_with_a_stale_ref_moves_nothing(w: &World) -> TestResult {
     )
 }
 
+/// Kills a push hung at its final request `hang`. `uploads`: whether it had to upload
+/// commits first (it does not when the platform already has them by their ids).
 #[cfg(unix)]
-fn kill_while_hung(w: &World, c: &Client, dir: &Path, args: &[&str], hang: &str) -> TestResult {
+fn kill_while_hung(
+    w: &World,
+    c: &Client,
+    dir: &Path,
+    args: &[&str],
+    hang: &str,
+    uploads: bool,
+) -> TestResult {
     let commits_before = w.proxy.count("POST", "/commits");
     let hung_before = w.proxy.count("POST", hang);
     w.proxy.with(|s| s.hang = vec![hang.to_owned()]);
@@ -339,8 +395,12 @@ fn kill_while_hung(w: &World, c: &Client, dir: &Path, args: &[&str], hang: &str)
         std::thread::sleep(Duration::from_millis(50));
     }
     check(
-        w.proxy.count("POST", "/commits") > commits_before,
-        "commits were uploaded first",
+        (w.proxy.count("POST", "/commits") > commits_before) == uploads,
+        if uploads {
+            "commits were uploaded first"
+        } else {
+            "commits the platform has by id are not uploaded again"
+        },
     )?;
     let group = format!("-{}", child.id());
     std::process::Command::new("kill")
@@ -365,8 +425,10 @@ fn killed_push_leaves_refs_unchanged(w: &World) -> TestResult {
         &dir,
         &["push", "origin", "HEAD:refs/heads/k"],
         "/branches",
+        true,
     )?;
-    kill_while_hung(w, &c, &dir, &["push", "origin", "main"], "/land")?;
+    // The killed push left k on the platform (unreferenced): pushing main reuses it.
+    kill_while_hung(w, &c, &dir, &["push", "origin", "main"], "/land", false)?;
     check(w.refs(&repo)?.get("refs/heads/k").is_none(), "no branch k")?;
     check(
         w.platform.main(&repo)? == before,
@@ -409,7 +471,106 @@ fn fresh_clone_is_byte_identical(w: &World) -> TestResult {
     let count = other.git(&copy, &["rev-list", "--count", "HEAD"])?;
     check(
         count.parse::<u32>().unwrap_or(0) >= 4,
-        &format!("history converted: {count}"),
+        &format!("history fetched: {count}"),
+    )?;
+    // The clone holds the platform's commits themselves: the same ids as refs and log.
+    let main = w.refs(&repo)?["refs/heads/main"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    check(
+        other.git(&copy, &["rev-parse", "HEAD"])? == main,
+        "the fresh clone's HEAD is the platform's main",
+    )?;
+    let log =
+        w.platform
+            .owner_call("GET", &format!("/repos/{repo}/log?ref=main&limit=50"), None)?;
+    let logged: Vec<&str> = log["commits"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c["commit"].as_str())
+        .collect();
+    let listed = other.git(&copy, &["rev-list", "--first-parent", "HEAD"])?;
+    let listed: Vec<&str> = listed.lines().take(logged.len()).collect();
+    check(
+        !logged.is_empty() && listed == logged,
+        &format!("first-parent history {listed:?} is the platform's log {logged:?}"),
+    )?;
+    // Every pushed commit is in the platform's history under its local id.
+    for pushed in c
+        .git(&dir, &["rev-list", "--first-parent", "-3", "HEAD"])?
+        .lines()
+    {
+        check(
+            other
+                .git_output(&copy, &["merge-base", "--is-ancestor", pushed, "HEAD"])?
+                .status
+                .success(),
+            &format!("pushed commit {pushed} is in the fresh clone"),
+        )?;
+    }
+    check(
+        !copy.join(format!(".git/yoneda/{repo}.map")).exists()
+            && !dir.join(format!(".git/yoneda/{repo}.map")).exists(),
+        "no commit needed a mapped id",
+    )
+}
+
+/// A commit the platform cannot rebuild exactly (here: an `encoding` header) still pushes;
+/// its platform id is recorded in the commit map, the one case where ids differ.
+fn unrebuildable_commit_is_mapped(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("mapped", &token)?;
+    let dir = w.clone(&c, &repo, "w")?;
+    write(&dir, "e.txt", "e\n")?;
+    c.git(&dir, &["add", "-A"])?;
+    c.git(
+        &dir,
+        &[
+            "-c",
+            "i18n.commitEncoding=ISO-8859-1",
+            "commit",
+            "-q",
+            "-m",
+            "latin",
+        ],
+    )?;
+    let local = c.git(&dir, &["rev-parse", "HEAD"])?;
+    let out = push(&c, &dir, &["origin", "HEAD:refs/heads/enc"])?;
+    check(out.status.success(), &format!("push: {}", text(&out)))?;
+    let server = w.refs(&repo)?["refs/heads/enc"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    check(server != local, "the platform built its own commit")?;
+    check(
+        w.tree_of(&repo, &server)? == c.git(&dir, &["rev-parse", "HEAD^{tree}"])?,
+        "with the local tree",
+    )?;
+    let map = read(&dir, &format!(".git/yoneda/{repo}.map"));
+    check(
+        map == format!("{server} {local}\n"),
+        &format!("map: {map:?}"),
+    )?;
+    let again = push(&c, &dir, &["origin", "HEAD:refs/heads/enc"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+    // Work on top of it builds on the mapped platform commit (and is mapped too: its
+    // parent's id differs, so its own does).
+    let next = commit(&c, &dir, "after", &[("f.txt", "f\n")])?;
+    let out = push(&c, &dir, &["origin", "HEAD:refs/heads/enc"])?;
+    check(out.status.success(), &format!("push: {}", text(&out)))?;
+    let head = w.refs(&repo)?["refs/heads/enc"].clone();
+    check(
+        head != next.as_str() && read(&dir, &format!(".git/yoneda/{repo}.map")).contains(&next),
+        "the descendant is mapped",
+    )?;
+    check(
+        w.blob_at(&repo, "enc", "f.txt") == "f\n",
+        "its content landed",
     )
 }
 
@@ -536,6 +697,7 @@ fn git_works_through_the_remote_helper() -> TestResult {
     #[cfg(unix)]
     killed_push_leaves_refs_unchanged(&w).map_err(|e| format!("killed: {e}"))?;
     fresh_clone_is_byte_identical(&w).map_err(|e| format!("fresh clone: {e}"))?;
+    unrebuildable_commit_is_mapped(&w).map_err(|e| format!("mapped: {e}"))?;
     device_login_then_clone_with_the_stored_token(&w).map_err(|e| format!("login: {e}"))?;
     import_in_batches(&w).map_err(|e| format!("import: {e}"))?;
     account_and_repository_commands(&w).map_err(|e| format!("account: {e}"))

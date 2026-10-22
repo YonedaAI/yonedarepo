@@ -100,7 +100,24 @@ fn verified(object: &Value) -> Result<Verified> {
 
 /// Fetches `wanted` objects (paging through the platform's response budget).
 async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>> {
+    let (fetched, missing) = request(api, wanted, false).await?;
+    if !missing.is_empty() {
+        return Err(Error::new(format!(
+            "the platform is missing objects: {missing:?}"
+        )));
+    }
+    Ok(fetched)
+}
+
+/// The served objects among `wanted` and the ids the platform does not have. `raw` asks
+/// for commits as their exact Git content.
+async fn request(
+    api: &Api,
+    wanted: &[(String, ObjectKind)],
+    raw: bool,
+) -> Result<(Vec<Value>, Vec<String>)> {
     let mut fetched = Vec::with_capacity(wanted.len());
+    let mut absent = Vec::new();
     for batch in wanted.chunks(REQUEST_OBJECTS) {
         let ids: Vec<Value> = batch
             .iter()
@@ -109,13 +126,18 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
         let mut after = 0u64;
         loop {
             let page = api
-                .post("/objects", &json!({ "objects": ids, "after": after }))
+                .post(
+                    "/objects",
+                    &json!({ "objects": ids, "after": after, "raw": raw }),
+                )
                 .await?;
-            if let Some(missing) = page["missing"].as_array().filter(|m| !m.is_empty()) {
-                return Err(Error::new(format!(
-                    "the platform is missing objects: {missing:?}"
-                )));
-            }
+            absent.extend(
+                page["missing"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|m| m.as_str().map(str::to_owned)),
+            );
             fetched.extend(page["objects"].as_array().cloned().unwrap_or_default());
             match page["next"].as_u64() {
                 Some(next) if next > after => after = next,
@@ -124,7 +146,68 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
             }
         }
     }
-    Ok(fetched)
+    Ok((fetched, absent))
+}
+
+/// A platform commit as served with `raw`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Served {
+    /// The exact Git content (verified against its id).
+    Exact(Vec<u8>),
+    /// Tree and parents only: history the platform holds in its object store alone.
+    Shape(CommitShape),
+}
+
+/// Each of `ids` (all of which the platform must have) as exact commits where it can.
+pub async fn commits(api: &Api, ids: &[String]) -> Result<Vec<(String, Served)>> {
+    let wanted: Vec<(String, ObjectKind)> = ids
+        .iter()
+        .map(|id| (id.clone(), ObjectKind::Commit))
+        .collect();
+    let (served, missing) = request(api, &wanted, true).await?;
+    if !missing.is_empty() {
+        return Err(Error::new(format!(
+            "the platform is missing commits: {missing:?}"
+        )));
+    }
+    served
+        .iter()
+        .map(|object| {
+            let id = object_id(object, "id")?;
+            let Some(b64) = object["data_b64"].as_str() else {
+                return Ok((id.hex(), Served::Shape(shape(object)?)));
+            };
+            let data = base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|_| Error::new(format!("commit {id} is not base64")))?;
+            if hash_object(ObjectKind::Commit, &data) != id {
+                return Err(Error::new(format!(
+                    "the platform sent {id} with different content"
+                )));
+            }
+            Ok((id.hex(), Served::Exact(data)))
+        })
+        .collect()
+}
+
+/// The commits among `ids` that the platform has.
+pub async fn present(api: &Api, ids: &[String]) -> Result<HashSet<String>> {
+    let wanted: Vec<(String, ObjectKind)> = ids
+        .iter()
+        .map(|id| (id.clone(), ObjectKind::Commit))
+        .collect();
+    let (_, missing) = request(api, &wanted, false).await?;
+    let missing: HashSet<String> = missing.into_iter().collect();
+    Ok(ids
+        .iter()
+        .filter(|id| !missing.contains(*id))
+        .cloned()
+        .collect())
+}
+
+/// Adds `objects` to the local repository as one pack (all or nothing).
+pub fn write_objects(git: &Git, objects: Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
+    write(git, &mut { objects })
 }
 
 /// Fetches every object under `root` that the local repository lacks.
@@ -172,23 +255,21 @@ pub async fn commit_shapes(api: &Api, ids: &[String]) -> Result<Vec<CommitShape>
         .iter()
         .map(|id| (id.clone(), ObjectKind::Commit))
         .collect();
-    fetch(api, &wanted)
-        .await?
+    fetch(api, &wanted).await?.iter().map(shape).collect()
+}
+
+fn shape(object: &Value) -> Result<CommitShape> {
+    let parents = object["parents"]
+        .as_array()
+        .ok_or_else(|| Error::new("a commit object has no parents"))?
         .iter()
-        .map(|object| {
-            let parents = object["parents"]
-                .as_array()
-                .ok_or_else(|| Error::new("a commit object has no parents"))?
-                .iter()
-                .map(|p| Ok(text_id(p)?.hex()))
-                .collect::<Result<Vec<_>>>()?;
-            Ok(CommitShape {
-                id: object_id(object, "id")?.hex(),
-                tree: object_id(object, "tree")?.hex(),
-                parents,
-            })
-        })
-        .collect()
+        .map(|p| Ok(text_id(p)?.hex()))
+        .collect::<Result<Vec<_>>>()?;
+    Ok(CommitShape {
+        id: object_id(object, "id")?.hex(),
+        tree: object_id(object, "tree")?.hex(),
+        parents,
+    })
 }
 
 fn text_id(value: &Value) -> Result<ObjectId> {

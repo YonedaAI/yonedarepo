@@ -1,8 +1,9 @@
-//! Platform commits as local commits. `/objects` serves a commit as its tree and parents
-//! only, so the helper builds the local commit itself: the platform's exact tree (every
-//! tree and blob is fetched by id and verified), local parents for the platform parents,
-//! the platform's message, and a fixed identity dated at the landing. The same platform
-//! history always becomes the same local commits.
+//! The fallback for history the platform cannot serve exactly (`fetch`): imported
+//! history it holds as tree and parents only, and whatever is built on it. The helper
+//! builds a local stand-in itself: the platform's exact tree (every tree and blob is
+//! fetched by id and verified), local parents for the platform parents, the platform's
+//! message, and a fixed identity dated at the landing, recorded in the commit map. The
+//! same platform history always becomes the same local commits.
 use super::map::CommitMap;
 use crate::api::Api;
 use crate::error::{Error, Result};
@@ -136,20 +137,20 @@ impl<'a> Converter<'a> {
         Ok(info)
     }
 
-    /// The local commit for platform commit `head`, converting its unmapped ancestry.
-    /// `branch` names a branch at `head` (for a faster history read); `version` > 0
-    /// records `head` as main's head at that version.
-    pub async fn convert(
-        &mut self,
-        head: &str,
-        branch: Option<&str>,
-        version: u64,
-    ) -> Result<String> {
-        if let Some(local) = self.map.local(head).map(str::to_owned) {
-            if version > self.map.version(head) {
-                self.map
-                    .record(&[(head.to_owned(), local.clone(), version)])?;
-            }
+    /// The local commit standing for `id`: its converted stand-in, or `id` itself when
+    /// the local repository holds it (fetched exactly, or pushed).
+    fn known(&self, id: &str) -> Result<Option<String>> {
+        if let Some(local) = self.map.local(id) {
+            return Ok(Some(local.to_owned()));
+        }
+        let held = self.git.missing(&[id.to_owned()])?.is_empty();
+        Ok(held.then(|| id.to_owned()))
+    }
+
+    /// The local commit for platform commit `head`, converting its unknown ancestry.
+    /// `branch` names a branch at `head` (for a faster history read).
+    pub async fn convert(&mut self, head: &str, branch: Option<&str>) -> Result<String> {
+        if let Some(local) = self.known(head)? {
             return Ok(local);
         }
         if let Some(branch) = branch {
@@ -161,33 +162,27 @@ impl<'a> Converter<'a> {
         let mut built: HashMap<String, String> = HashMap::new();
         let mut objects = Vec::new();
         for (id, info) in &order {
-            let parents: Vec<String> = info
-                .parents
-                .iter()
-                .filter_map(|p| {
-                    built
-                        .get(p)
-                        .cloned()
-                        .or_else(|| self.map.local(p).map(str::to_owned))
-                })
-                .collect();
+            let mut parents = Vec::new();
+            for parent in &info.parents {
+                match built.get(parent) {
+                    Some(local) => parents.push(local.clone()),
+                    None => parents.extend(self.known(parent)?),
+                }
+            }
             let commit = local_commit(id, info, &parents)?;
             built.insert(id.clone(), commit.id().hex());
             objects.push(commit.encode());
         }
         self.write(&objects)?;
-        let entries: Vec<(String, String, u64)> = order
+        let entries: Vec<(String, String)> = order
             .iter()
-            .map(|(id, _)| {
-                let v = if id == head { version } else { 0 };
-                (id.clone(), built[id].clone(), v)
-            })
+            .map(|(id, _)| (id.clone(), built[id].clone()))
             .collect();
         self.map.record(&entries)?;
         Ok(built[head].clone())
     }
 
-    /// Unmapped commits reachable from `head`, parents before children, cut at
+    /// Unknown commits reachable from `head`, parents before children, cut at
     /// [`HISTORY_LIMIT`] commits.
     async fn ancestry(&mut self, head: &str) -> Result<Vec<(String, Info)>> {
         let mut order = Vec::new();
@@ -202,46 +197,23 @@ impl<'a> Converter<'a> {
             let mut info = self.info(&id).await?;
             expanded += 1;
             if expanded >= HISTORY_LIMIT {
-                info.parents.retain(|p| self.map.local(p).is_some());
+                let mut kept = Vec::new();
+                for parent in info.parents {
+                    if self.known(&parent)?.is_some() {
+                        kept.push(parent);
+                    }
+                }
+                info.parents = kept;
             }
             let parents = info.parents.clone();
             stack.push((id, Some(info)));
             for parent in parents.iter().rev() {
-                if self.map.local(parent).is_none() && seen.insert(parent.clone()) {
+                if self.known(parent)?.is_none() && seen.insert(parent.clone()) {
                     stack.push((parent.clone(), None));
                 }
             }
         }
         Ok(order)
-    }
-
-    /// Records platform commit `head` (a landing that merged `ours` with concurrent
-    /// work) as a local merge of its converted parents and `ours`, so the local branch
-    /// fast-forwards to it on the next pull.
-    pub async fn convert_landing(
-        &mut self,
-        head: &str,
-        ours: &str,
-        version: u64,
-    ) -> Result<String> {
-        let info = self.info(head).await?;
-        let mut parents = Vec::new();
-        for parent in &info.parents {
-            let local = Box::pin(self.convert(parent, None, 0)).await?;
-            if !parents.contains(&local) {
-                parents.push(local);
-            }
-        }
-        if !parents.iter().any(|p| p == ours) {
-            parents.push(ours.to_owned());
-        }
-        snapshot::fetch_tree(self.api, self.git, &info.tree).await?;
-        let commit = local_commit(head, &info, &parents)?;
-        self.write(&[commit.encode()])?;
-        let local = commit.id().hex();
-        self.map
-            .record(&[(head.to_owned(), local.clone(), version)])?;
-        Ok(local)
     }
 
     fn write(&self, commits: &[Vec<u8>]) -> Result<()> {

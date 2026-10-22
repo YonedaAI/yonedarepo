@@ -222,18 +222,31 @@ export async function getObjects(ctx: RepoContext, args: Json) {
   const objects = await ctx.objects();
   const grant = await decide(ctx, []);
   if (grant.restricted) await authorizeObjects(ctx, wanted, args.commit);
+  // `raw`: commits as their exact Git content (`data_b64`) from the store of record, so a
+  // client writes the platform's commit byte for byte. A commit only the object store
+  // holds (imported history) keeps the tree-and-parents form. Path-restricted callers get
+  // that form too: a message may name paths outside their grant.
+  const raw = args.raw === true && !grant.restricted;
   const served: Json[] = [];
   const missing: string[] = [];
   let bytes = 0;
   let index = start;
   while (index < wanted.length) {
     const batch = wanted.slice(index, index + 16);
+    const commits = raw ? batch.filter((o: Json) => o.kind === 'commit') : [];
+    const exact = new Map(
+      (commits.length ? await objects.raw(commits) : [])
+        .filter((o) => o.kind === 'commit')
+        .map((o) => [o.id, o]),
+    );
     const read = await Promise.all(
       batch.map((o: Json) =>
-        objects.object(o.id, o.kind).catch((e) => {
-          if (e?.code === 'NOT_FOUND') return null;
-          throw e;
-        }),
+        o.kind === 'commit' && exact.has(o.id)
+          ? exact.get(o.id)
+          : objects.object(o.id, o.kind).catch((e) => {
+              if (e?.code === 'NOT_FOUND') return null;
+              throw e;
+            }),
       ),
     );
     let stop = false;

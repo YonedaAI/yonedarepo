@@ -11,8 +11,16 @@ pub fn path_history<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let refname = branch_ref(c)?;
     let path = string(c, "path")?;
     let limit = c["limit"].as_u64().unwrap_or(100).clamp(1, 1000) as usize;
-    let mut next = rows::ref_value(db, &refname)?
-        .ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
+    // From the branch head now, or as of version `at` (time travel, as `log` reads it).
+    let head = match c.get("at").filter(|v| !v.is_null()) {
+        None => rows::ref_value(db, &refname)?,
+        Some(_) => {
+            let version = super::reads::at(db, c)?;
+            super::reads::refs_at(db, c, version)?.remove(&refname)
+        }
+    };
+    let mut next =
+        head.ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
     let mut commits = Vec::new();
     for _ in 0..MAX_SCAN {
         let row = rows::recorded(db, &next)?;
