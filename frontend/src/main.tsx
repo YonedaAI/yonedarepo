@@ -18,8 +18,11 @@ window.addEventListener('vite:preloadError', (event) => {
 const SourceApp = lazy(() =>
   import('./features/source-platform/SourceApp').then((m) => ({ default: m.SourceApp })),
 );
+// `/device` (approving `yoneda login`) belongs to the source platform too.
 const source =
-  window.location.pathname === '/source' || window.location.pathname.startsWith('/source/');
+  window.location.pathname === '/source' ||
+  window.location.pathname.startsWith('/source/') ||
+  window.location.pathname === '/device';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Application root is missing');

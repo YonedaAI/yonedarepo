@@ -4,6 +4,7 @@
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
 
+import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { error, readJson, response } from './http';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
@@ -269,6 +270,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       ? { _session: { workspace: auth._session.workspace, principal: auth._session.principal } }
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
+  if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
   return answer(() => route(req, env, url, auth));
 }
 

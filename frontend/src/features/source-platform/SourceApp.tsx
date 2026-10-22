@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { CommitView } from './CommitView';
+import { ConnectPanel } from './ConnectPanel';
+import { currentApiOrigin } from './connect';
+import { DevicePage } from './DevicePage';
 import { RepoFiles } from './RepoFiles';
 import { RepoHistory } from './RepoHistory';
 import { RepoList } from './RepoList';
@@ -8,6 +11,7 @@ import { RepoSearch } from './RepoSearch';
 import { RepoTransactions } from './RepoTransactions';
 import { Failure } from './SourceStatus';
 import { formatSourceRoute, parseSourceRoute, type SourceRoute } from './sourceRoute';
+import { TokensPage } from './TokensPage';
 import { useSource } from './useSource';
 
 const current = () => parseSourceRoute(window.location.pathname, window.location.search);
@@ -25,7 +29,9 @@ export function SourceApp() {
     setRoute(next);
     window.scrollTo({ top: 0 });
   }, []);
-  const repo = route.view === 'repos' ? undefined : route.repo;
+  // A deleted repository leaves the list: remounting it reads the list again.
+  const [listing, setListing] = useState(0);
+  const repo = 'repo' in route ? route.repo : undefined;
   const status = useSource<{
     name: string;
     version: number;
@@ -33,7 +39,7 @@ export function SourceApp() {
     projections?: { refname: string; status: string; detail?: string }[];
   }>(repo ? `/repos/${repo}` : null);
   const drift = status.data?.projections?.filter((p) => p.status === 'drift') ?? [];
-  type Tab = 'files' | 'overview' | 'history' | 'transactions' | 'search';
+  type Tab = 'files' | 'overview' | 'history' | 'transactions' | 'search' | 'connect';
   const entry = (view: Tab, repo: string): SourceRoute =>
     view === 'files' || view === 'overview'
       ? { view, repo, path: '', ref: 'main' }
@@ -68,10 +74,22 @@ export function SourceApp() {
         >
           <strong>YonedaRepo</strong> source
         </a>
-        <a href="/">Workspace</a>
+        <span className="source-header-links">
+          <a
+            href="/source/tokens"
+            aria-current={route.view === 'tokens' ? 'page' : undefined}
+            onClick={(e) => {
+              e.preventDefault();
+              navigate({ view: 'tokens' });
+            }}
+          >
+            Tokens
+          </a>
+          <a href="/">Workspace</a>
+        </span>
       </header>
       <div className="source-body">
-        <RepoList selected={repo} onNavigate={navigate} />
+        <RepoList key={listing} selected={repo} onNavigate={navigate} />
         <main className="source-main" id="source-main">
           {route.view === 'repos' && (
             <div className="source-welcome">
@@ -113,8 +131,22 @@ export function SourceApp() {
                 {tab('history', 'History')}
                 {tab('transactions', 'Transactions')}
                 {tab('search', 'Search')}
+                {tab('connect', 'Connect')}
               </nav>
             </>
+          )}
+          {route.view === 'tokens' && <TokensPage />}
+          {route.view === 'device' && <DevicePage code={route.code} />}
+          {route.view === 'connect' && (
+            <ConnectPanel
+              repo={route.repo}
+              name={status.data?.name}
+              origin={currentApiOrigin()}
+              onDeleted={() => {
+                setListing((n) => n + 1);
+                navigate({ view: 'repos' });
+              }}
+            />
           )}
           {route.view === 'files' && <RepoFiles route={route} onNavigate={navigate} />}
           {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
