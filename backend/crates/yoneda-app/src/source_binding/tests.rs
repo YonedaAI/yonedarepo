@@ -489,3 +489,5 @@ fn failed_comparison_roots_expose_only_actual_captured_review_inputs() {
         );
     }
 }
+#[path = "resume_tests.rs"]
+mod resume_tests;

@@ -6,6 +6,7 @@ use yoneda_agents_core::{Error, Result, source_workspace::*};
 mod context;
 mod registration;
 mod resolution;
+mod resume;
 #[cfg(test)]
 mod tests;
 /// Called only by the trusted Worker dispatcher; all fields prefixed `_source` are stripped at public routes.
@@ -16,6 +17,7 @@ pub(crate) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         "source_register_changeset" => registration::register(db, c, now),
         "source_capture_context" => registration::capture(db, c, now),
         "source_registered" => registration::registered(db, c),
+        "source_resume_grant" => resume::grant(db, c, now),
         _ => Err(bad("Unknown private source operation")),
     }
 }

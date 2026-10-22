@@ -209,12 +209,10 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
         let dispatch = now
             .checked_add(1_200_000)
             .ok_or_else(|| bad("Dispatch deadline overflow"))?;
-        let duration = super::super::model_budgets::for_job(db, &json!({"payload":payload}))?
-            .map_or(600_000, |b| b.max_execution_ms);
-        let deadline = dispatch
-            .checked_add(duration)
-            .and_then(|value| value.checked_add(120_000))
-            .ok_or_else(|| bad("Attempt deadline overflow"))?;
+        let probe = json!({"kind":"agent","payload":payload});
+        let budget = super::super::model_budgets::for_job(db, &probe)?;
+        let deadline =
+            super::super::leases::timing::job_deadline(dispatch, &probe, budget.as_ref())?;
         existing["status"] = json!("queued");
         existing["attempt"] = json!(0);
         existing["epoch"] = json!(epoch);
