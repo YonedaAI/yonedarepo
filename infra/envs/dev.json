@@ -325,7 +325,7 @@
         "exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same",
         "pattern production uses for www).",
         "Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts",
-        "containers/sandbox.Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound",
+        "sandbox/Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound",
         "adds the provider key and the project token. Model requests go through the AI Gateway named",
         "in SANDBOX_AI_GATEWAY (custom providers custom-zai and custom-mimo; one-time setup in",
         "docs/runbook.md). The sandbox clones from SANDBOX_PLATFORM_ORIGIN."
@@ -479,7 +479,7 @@
             "scheduling_policy": "durable_object",
             "images": {
               "agent": {
-                "dockerfile": "./containers/sandbox.Dockerfile",
+                "dockerfile": "./sandbox/Dockerfile",
                 "build_context": ".."
               }
             }
