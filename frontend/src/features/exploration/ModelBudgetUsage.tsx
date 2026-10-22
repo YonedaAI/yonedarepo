@@ -1,5 +1,5 @@
 import { providerNames } from '../workspace/providerModels';
-import { formatBudgetUsd, type ModelBudget } from './modelBudgets';
+import { agentTimeRule, formatBudgetUsd, type ModelBudget } from './modelBudgets';
 
 function recordedBudget(value: unknown): value is ModelBudget {
   if (typeof value !== 'object' || value === null) return false;
@@ -59,12 +59,8 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
                 </dd>
               </div>
               <div>
-                <dt>Time per execution</dt>
-                <dd>
-                  {typeof budget.max_execution_ms === 'number'
-                    ? `${(budget.max_execution_ms / 60_000).toLocaleString(undefined, { maximumFractionDigits: 3 })} min`
-                    : '—'}
-                </dd>
+                <dt>Time per attempt</dt>
+                <dd>{agentTimeRule(budget.idle_timeout_ms)}</dd>
               </div>
               <div>
                 <dt>Output per response</dt>

@@ -134,7 +134,7 @@ it('lowers but never raises the provider output cap to the ledger grant, keeping
 
 it('extends a progressing attempt in the real ledger and shrinks a request to the remaining spend', async () => {
   const repo = 'progress-integration';
-  const call = (command: Json) => ledger(bindings, repo, command);
+  const call = approvedLedger(bindings, repo);
   await call({ op: 'init', id: repo, name: 'Progress fixture', commit: 'a'.repeat(40),
     remote: { namespace: 'test', name: repo }, policy: {
       version: 'budget-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
