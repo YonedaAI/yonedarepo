@@ -5,6 +5,7 @@ import { providerDefinition } from '../../shared/providers';
 import { repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
+import type { AgentEgress } from './sandbox-outbound';
 import { platformSource } from './source-objects';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
@@ -44,6 +45,20 @@ export function approvedTransport(env: Env, runtime: unknown): string {
   if (!env.AGENT_SANDBOX) return fail('SANDBOX_UNAVAILABLE', 'Sandbox runs are not deployed here');
   return SANDBOX_TRANSPORT;
 }
+
+/** The agent sandbox's egress: its model endpoint and pushes under its own attempt prefix. */
+export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
+  project: attempt.repo,
+  owner: attempt.owner,
+  platformRepo: attempt.platform_repo,
+  platformOrigin: attempt.platform_origin,
+  refPrefix: `refs/heads/${attempt.branch.replace(/[^/]+$/, '')}`,
+  provider: attempt.provider,
+  connection: attempt.connection,
+  model: attempt.model,
+  routing: attempt.routing,
+  modelBase: attempt.model_base,
+});
 
 /** One sandbox per execution; the name also finds its activity log later. */
 export const sandboxName = (repo: string, execution: string) => `${repo}/${execution}`;

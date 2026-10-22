@@ -77,6 +77,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             }
             timing::claimed(&mut j, budget.as_ref(), now)?;
             super::sandbox::claimed(&mut j, now);
+            super::sandbox::claimed_check(db, &mut j, now)?;
             save(db, "jobs", &id, &j)?;
             if j["kind"] == "agent" {
                 let eid = string(&j["payload"]["execution"], "id")?;
