@@ -3,7 +3,11 @@
 // command that spends real (cheap) model money and creates projects and repositories:
 // project creation, two compare runs, owner publish + readback, refresh merge, an external MCP
 // agent, an Artifacts clone checked byte for byte, a container check, 100/1000-writer and
-// many-repo bursts, and project deletion. Prints a pass/fail table and writes evidence to
+// many-repo bursts, and project deletion. Items 12-17 use the git platform without the agents
+// website (zero model spend): `yoneda login` by device flow, `yoneda repo`, plain git through
+// git-remote-yoneda (concurrent pushes, conflicts, atomic and killed pushes), the account MCP
+// with a PAT, `--at` reads and cleanup. They need `cargo build -p yoneda-cli --release`
+// (`--cli-bin` names another directory). Prints a pass/fail table and writes evidence to
 // .local/staging/. Credentials come only from 0600 files in ~/.config/yonedarepo/:
 //   staging.env       OWNER_TOKEN (staging-only owner credential)
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
@@ -11,12 +15,17 @@
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <a> --run-b <b>]
+//        node tools/staging-realworld.mjs --only 12,13,14,15,16,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --fund <username>
+//        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
+import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
+import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
+import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
@@ -27,6 +36,10 @@ const { values } = parseArgs({
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
     platform: { type: 'string', default: 'https://yonedarepo-staging-platform.mlong-f01.workers.dev' },
     client: { type: 'string', default: 'https://yonedarepo-staging-bench.mlong-f01.workers.dev' },
+    // The platform API's own host, for the CLI items (yoneda::<api>/<repo> remotes, account MCP).
+    api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
+    'cli-bin': { type: 'string' },
+    'cleanup-repos': { type: 'string' },
     only: { type: 'string' },
     // Resume items 3-4 on an existing project and finished compare run (ids from evidence).
     // Fund a person's own staging account (managed models + $5) and exit; no kit items run.
@@ -52,6 +65,11 @@ const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const owner = new Session(values.origin, { bearer: OWNER_TOKEN });
 const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PASSWORD);
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
+if (values['cleanup-repos']) {
+  const cleaned = await cleanupRepos(platformAccount, values['cleanup-repos']);
+  console.log(`Deleted ${cleaned.deleted} repositories named ${cleaned.prefix}*${cleaned.failed.length ? `; ${cleaned.failed.length} failed: ${JSON.stringify(cleaned.failed)}` : ''}`);
+  process.exit(cleaned.failed.length ? 1 : 0);
+}
 const rec = new Recorder();
 const state = {};
 if (values.project) state.project = await account.get(`/api/projects/${values.project}`);
@@ -122,6 +140,24 @@ await step('11', 'Delete test project, token revoked', async (m) => {
   if (state.run) state.spend = (await runSpend(state.run)) + (await runSpend(state.runB));
   await deleteProject(account, state.project, m);
 });
+
+if (['12', '13', '14', '15', '16', '17'].some(wanted)) {
+  const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
+  const repo = {};
+  try {
+    await step('12', 'CLI: device login, repo create, clone, push, exact ids', (m) => cliLoginRepo(cli, repo, m));
+    await step('13', 'CLI: concurrent pushes (server merge, same-line conflict)', (m) => cliConcurrency(cli, repo, m));
+    await step('14', 'CLI: atomic push with a stale branch, killed push', (m) => cliTransactional(cli, repo, m));
+    await step('15', 'Account MCP with a PAT (round trip, allowlist)', (m) => accountMcp(cli, repo, m));
+    await step('16', 'Server-side reads at a version (log, grep, blame --at)', (m) => serverReads(cli, repo, m));
+    await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
+  } finally {
+    // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
+    await revokePat(cli).catch((e) => console.error(`Revoking the kit PAT failed: ${e.message}`));
+    if (cli.repos.length) console.error(`Left repositories: ${cli.repos.map((r) => r.name).join(', ')}`);
+    cli.dispose();
+  }
+}
 
 // A failed run still spent money: its last observed spend is in item 2's metrics.
 const modelSpend = state.spend ?? Number(rec.items.find((i) => i.id === '2')?.metrics.spend_usd ?? 0);
