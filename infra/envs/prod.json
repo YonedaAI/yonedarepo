@@ -16,7 +16,8 @@
         "the private .local/deploy/production/platform.json: a prebuilt runtime image, one container",
         "class and the api-source-v1 transport vars. cloudflare/wrangler.jsonc is the next, unreleased",
         "version of this Worker; the N8 cutover replaces this whole spec with the platform/agents/sites",
-        "layout of infra/envs/dev.json."
+        "layout of infra/envs/dev.json.",
+        "api.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device)."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -42,6 +43,14 @@
           },
           {
             "pattern": "https://www.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
+          },
+          {
+            "pattern": "api.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://api.yonedarepo.com/*",
             "zone_name": "yonedarepo.com"
           }
         ],
@@ -71,7 +80,8 @@
           "SOURCE_TRANSPORT_REPOS": "repo-a3539621c7688c6daa032a6dbe215624,repo-360b2d50b40360240a27de47010ff5a6,repo-b456284f131158a49db378989ba3edc9,repo-1996880d7eb888f611a21ee79a26a346",
           "SOURCE_GUIDED_ENABLED": "false",
           "GUIDED_TASK_BOARD_V2_STARTER_REPO": "yoneda-guided-task-board-v1-20261014",
-          "GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST": "08917410fcce7555dfc6274788203c36c9acbaf917ec7eb283dafd7ac38eecbe"
+          "GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST": "08917410fcce7555dfc6274788203c36c9acbaf917ec7eb283dafd7ac38eecbe",
+          "WEB_ORIGIN": "https://yonedarepo.com"
         },
         "services": [
           {

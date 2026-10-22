@@ -3,6 +3,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
 import { platformFetch } from './platform-routes';
+import { purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
 import { projectObjects, projectRefs } from './repo-projection';
@@ -23,6 +24,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await deriveAfterLanding(env, envelope);
+    message.ack();
+  } else if (envelope.kind === 'platform_purge') {
+    await purgeRepository(env, envelope.repo_id);
     message.ack();
   } else message.ack(); // not a platform job
 }

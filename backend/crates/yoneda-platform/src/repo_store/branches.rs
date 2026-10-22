@@ -20,14 +20,7 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         ));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
-    let expected = match c.get("expected").filter(|v| !v.is_null()) {
-        None => None,
-        Some(value) => Some(ObjectId::parse(
-            value
-                .as_str()
-                .ok_or_else(|| bad("expected must be a commit id"))?,
-        )?),
-    };
+    let expected = expected_of(c)?;
     let current = rows::ref_value(db, &refname)?;
     if current == Some(commit.id) {
         return Ok(json!({ "ref": refname, "commit": commit.id, "already": true }));
@@ -86,4 +79,60 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     super::projection::target(db, &refname, &commit.id, version, entry.committed_at_ms)?;
     rows::maybe_checkpoint(db, version, &entry.chain)?;
     Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+}
+
+/// Most ref updates one batch carries.
+const BATCH_LIMIT: usize = 100;
+
+/// An atomic multi-ref push: several working-branch moves in this one transaction. Every
+/// update is validated first (protected refs, recorded commits, no ref twice); if any
+/// expected old value is stale, nothing moves and the answer names the stale refs
+/// (`{stale}`, an answer rather than an error, so the adapter can report them). Otherwise
+/// each moves like `set`, in order.
+pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+    let updates = c["updates"]
+        .as_array()
+        .filter(|u| !u.is_empty() && u.len() <= BATCH_LIMIT)
+        .ok_or_else(|| bad("updates must be 1-100 {ref, commit, expected}"))?;
+    let mut seen = std::collections::BTreeSet::new();
+    let mut stale = Vec::new();
+    for update in updates {
+        let refname = branch_ref(update)?;
+        if rows::protected(&refname) {
+            return Err(Error::new(
+                "FORBIDDEN",
+                "Protected branches move only by landing an approved, checked commit",
+            ));
+        }
+        if !seen.insert(refname.clone()) {
+            return Err(bad(&format!("{refname} appears twice in the batch")));
+        }
+        let commit = rows::recorded(db, &object_id(update, "commit")?)?;
+        let expected = expected_of(update)?;
+        let current = rows::ref_value(db, &refname)?;
+        if current != Some(commit.id) && current != expected {
+            stale.push(refname);
+        }
+    }
+    if !stale.is_empty() {
+        return Ok(json!({ "stale": stale }));
+    }
+    let mut refs = Vec::with_capacity(updates.len());
+    for update in updates {
+        let mut command = update.clone();
+        command["now"] = c["now"].clone();
+        refs.push(set(db, &command, principal)?);
+    }
+    Ok(json!({ "version": current_version(db)?, "refs": refs }))
+}
+
+fn expected_of(c: &Value) -> Result<Option<ObjectId>> {
+    match c.get("expected").filter(|v| !v.is_null()) {
+        None => Ok(None),
+        Some(value) => Ok(Some(ObjectId::parse(
+            value
+                .as_str()
+                .ok_or_else(|| bad("expected must be a commit id"))?,
+        )?)),
+    }
 }
