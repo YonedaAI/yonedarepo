@@ -1,16 +1,27 @@
 // The account-level MCP (`POST /api/v1/mcp`) in workerd: repository management plus every
 // platform tool with a `repo` argument, dispatched through the shared operation table with
 // the caller's own credentials (see repo-fixture.ts).
-import { expect, it } from 'vitest';
+import { beforeEach, expect, it } from 'vitest';
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
 // The platform-auth layer (PATs, repo delete) may not be merged yet: those cases run once it is.
 const auth = import.meta.glob('../../cloudflare/worker/repo-admin.ts');
 const hasPlatformAuth = Object.keys(auth).length > 0;
+// Personal tokens are looked up in D1, like after the deployed migrations.
+const tokenTables = import.meta.glob<string>('../../cloudflare/migrations/0004_platform_tokens.sql', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+beforeEach(async () => {
+  for (const migration of Object.values(tokenTables))
+    for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
+      await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
+});
 
 async function mcp(
   credentials: { cookie?: string; token?: string },
@@ -138,7 +149,7 @@ it("refuses repositories outside the caller's scope", async () => {
 
 it.skipIf(!hasPlatformAuth)('works with a personal access token and its repo allowlist', async () => {
   const owner = { cookie: await signup('acctpat') };
-  const allowed = (await call(owner, 'repo_create', { name: 'allowed', files: [file('a.txt', 'a\n')], author }))
+  const allowed = (await call(owner, 'repo_create', { name: 'allowed', files: [file('a.txt', 'a\n')], author, policy: { approvals: 0, required_checks: [] } }))
     .structuredContent.id;
   const denied = (await call(owner, 'repo_create', { name: 'denied', files: [file('a.txt', 'a\n')], author }))
     .structuredContent.id;
