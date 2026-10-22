@@ -130,6 +130,66 @@ pub(crate) fn active_gate(env: &Env, worker: &str, active: u64, options: &Option
     .into())
 }
 
+/// A workstation deploy of dev that changes a container app's image restarts its instances
+/// and kills the runs on them: stop unless none is busy or `--allow-active` is given. A dry
+/// run only reports.
+pub(crate) fn rollout_gate(busy: &[(String, u64)], options: &Options) -> Result<()> {
+    let busy: Vec<String> = busy
+        .iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(app, count)| format!("{app}: {count}"))
+        .collect();
+    if busy.is_empty() {
+        println!("Rollout gate: no busy container instance.");
+        return Ok(());
+    }
+    let list = busy.join(", ");
+    if options.dry_run || options.allow_active {
+        println!(
+            "WARNING: the container rollout will stop running agents ({list} busy instance(s))."
+        );
+        return Ok(());
+    }
+    Err(format!(
+        "Stopping before the container rollout: busy instances ({list}) would be killed. Retry when idle, or pass --allow-active."
+    )
+    .into())
+}
+
+/// CI's dev deploy after a push: skip it when every Worker with `/health` already runs the
+/// commit (deployed from the owner's Mac); otherwise deploy, saying why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum LiveCheck {
+    Skip(String),
+    Deploy(String),
+}
+
+pub(crate) fn live_check(head: &str, revisions: &[(String, Option<String>)]) -> LiveCheck {
+    if revisions.is_empty() {
+        return LiveCheck::Deploy("no Worker reports a /health revision".into());
+    }
+    let behind: Vec<String> = revisions
+        .iter()
+        .filter(|(_, live)| live.as_deref() != Some(head))
+        .map(|(worker, live)| {
+            format!(
+                "{worker} runs {}",
+                live.as_deref().map_or("nothing reachable", short)
+            )
+        })
+        .collect();
+    if behind.is_empty() {
+        let workers: Vec<&str> = revisions.iter().map(|(w, _)| w.as_str()).collect();
+        LiveCheck::Skip(format!(
+            "Deploy skipped: {} already run {} (deployed before this run).",
+            workers.join(" and "),
+            short(head)
+        ))
+    } else {
+        LiveCheck::Deploy(format!("Deploying {}: {}.", short(head), behind.join("; ")))
+    }
+}
+
 pub(crate) fn revision_gate(worker: &str, head: &str, live: Option<&str>) -> Result<()> {
     if live == Some(head) {
         return Ok(());

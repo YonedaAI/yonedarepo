@@ -1,5 +1,6 @@
 //! Wrangler subprocesses for one account. Wrangler authenticates itself (OAuth login or
-//! `CLOUDFLARE_API_TOKEN`); this module never sees or stores a credential. The binary is
+//! `CLOUDFLARE_API_TOKEN`); a token a workstation deploy read from its file
+//! (deploy_credentials) is passed through the child's environment only. The binary is
 //! called directly rather than through pnpm, so it also works in worktrees whose
 //! node_modules is a symlink.
 use crate::process::Result;
@@ -11,6 +12,7 @@ const WRANGLER: &str = "node_modules/.bin/wrangler";
 fn command(account_id: &str, args: &[&str]) -> Command {
     let mut command = Command::new(WRANGLER);
     command.args(args).env("CLOUDFLARE_ACCOUNT_ID", account_id);
+    crate::deploy_credentials::apply(&mut command);
     command
 }
 

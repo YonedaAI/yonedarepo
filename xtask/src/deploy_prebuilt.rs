@@ -11,6 +11,8 @@
 //! deploy before the first remote change. Containers then deploy from the pushed registry
 //! image (a copy of each Worker config with `image` swapped), so wrangler builds nothing.
 //! The tag is the image id, so an unchanged image keeps its reference and rolls nothing out.
+//! The push also records the image's runtime inputs (deploy_image), so a later workstation
+//! deploy can reuse it.
 use crate::infra::{inventory::Deployable, jsonc, spec::Spec};
 use crate::process::{Result, run};
 use serde_json::Value;
@@ -23,7 +25,7 @@ pub(crate) const FRONTEND: &str = "frontend-dist";
 pub(crate) const IMAGE: &str = "runtime-image";
 pub(crate) const IMAGE_ARCHIVE: &str = "image.tar.zst";
 pub(crate) const IMAGE_ID: &str = "IMAGE_ID";
-const REGISTRY: &str = "registry.cloudflare.com";
+pub(crate) const REGISTRY: &str = "registry.cloudflare.com";
 /// A file each output must contain, so an empty or wrong artifact is refused.
 const WASM_ENTRY: &str = "worker/shim.mjs";
 const FRONTEND_ENTRY: &str = "index.html";
@@ -91,16 +93,27 @@ fn image_digest(id: &str) -> Option<&str> {
         .filter(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
+/// The local name an image is pushed under: `<prefix>-runtime:<first 16 hex of its id>`.
+pub(crate) fn runtime_tag(prefix: &str, image_id: &str) -> Result<String> {
+    let hex =
+        image_digest(image_id).ok_or_else(|| format!("{image_id} is not a sha256 image id"))?;
+    Ok(format!("{prefix}-runtime:{}", &hex[..16]))
+}
+
+/// Where `wrangler containers push <local tag>` puts an image.
+pub(crate) fn registry_ref(spec: &Spec, local_tag: &str) -> String {
+    format!("{REGISTRY}/{}/{local_tag}", spec.account_id)
+}
+
 impl Prebuilt {
-    /// The local name pushed as-is: `<prefix>-runtime:<first 16 hex of the image id>`.
+    /// The local name pushed as-is ([`runtime_tag`]; `check` validated the id).
     pub(crate) fn local_tag(&self, spec: &Spec) -> String {
-        let hex = image_digest(&self.image_id).unwrap_or_default();
-        format!("{}-runtime:{}", spec.prefix, hex.get(..16).unwrap_or(hex))
+        runtime_tag(&spec.prefix, &self.image_id).unwrap_or_default()
     }
 
     /// Where `wrangler containers push` puts [`Self::local_tag`].
     pub(crate) fn image_ref(&self, spec: &Spec) -> String {
-        format!("{REGISTRY}/{}/{}", spec.account_id, self.local_tag(spec))
+        registry_ref(spec, &self.local_tag(spec))
     }
 
     /// Installs the Wasm and frontend where wrangler bundles them from, loads the image and
@@ -195,18 +208,15 @@ pub(crate) fn config_copy_path(config_path: &str) -> String {
 pub(crate) struct ConfigCopy(String);
 
 impl ConfigCopy {
-    /// `None` without `--prebuilt` or for a Worker without containers.
-    pub(crate) fn write(
-        prebuilt: Option<&Prebuilt>,
-        worker: &Deployable,
-        spec: &Spec,
-    ) -> Result<Option<Self>> {
-        let Some(prebuilt) = prebuilt.filter(|_| worker.has_containers) else {
+    /// `None` without a registry image (wrangler builds the Dockerfile) or for a Worker
+    /// without containers.
+    pub(crate) fn write(image: Option<&str>, worker: &Deployable) -> Result<Option<Self>> {
+        let Some(image) = image.filter(|_| worker.has_containers) else {
             return Ok(None);
         };
         let config = jsonc::read(Path::new(&worker.config_path))?;
         let copy = Self(config_copy_path(&worker.config_path));
-        let swapped = with_image(config, &prebuilt.image_ref(spec));
+        let swapped = with_image(config, image);
         std::fs::write(&copy.0, serde_json::to_string_pretty(&swapped)?)?;
         Ok(Some(copy))
     }
