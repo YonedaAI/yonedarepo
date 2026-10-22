@@ -73,9 +73,9 @@ export const fakeQueue = {
 /** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
 export const pushes: string[] = [];
 export const refusals = new Set<string>();
-/** Receive-pack requests the fake saw, how many more it answers "busy" like Artifacts, and
- * whether it is down (answers 503). */
-export const receivePacks = { requests: 0, busy: 0, down: false };
+/** Receive-pack requests the fake saw, how many more it answers "busy" like Artifacts,
+ * whether it is down (answers 503), and a gate that holds each answer until it settles. */
+export const receivePacks = { requests: 0, busy: 0, down: false, hold: null as Promise<void> | null };
 const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
 /** The ref-update commands of a receive-pack body, up to its flush packet. */
 function commands(body: Uint8Array) {
@@ -176,6 +176,7 @@ beforeEach(async () => {
   receivePacks.requests = 0;
   receivePacks.busy = 0;
   receivePacks.down = false;
+  receivePacks.hold = null;
   queued.length = 0;
   executed.length = 0;
   const original = globalThis.fetch;
@@ -185,6 +186,7 @@ beforeEach(async () => {
     expect(url).toMatch(/\/git-receive-pack$/);
     const body = new Uint8Array(init?.body as ArrayBuffer);
     receivePacks.requests++;
+    if (receivePacks.hold) await receivePacks.hold;
     if (receivePacks.down) return new Response('unavailable', { status: 503 });
     const headers = { 'content-type': 'application/x-git-receive-pack-result' };
     if (receivePacks.busy > 0) {
