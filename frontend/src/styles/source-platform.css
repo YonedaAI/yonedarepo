@@ -328,3 +328,85 @@ button.danger {
   min-height: 56px;
   margin-bottom: 8px;
 }
+/* Tokens, device approval and the Connect panel. */
+.source-header-links {
+  display: flex;
+  gap: 16px;
+}
+.source-header-links a[aria-current="page"] {
+  font-weight: 600;
+}
+.source-tokens section,
+.source-connect section,
+.source-device form {
+  margin: 0 0 28px;
+  max-width: 760px;
+}
+.source-tokens h2,
+.source-connect h2 {
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+.source-token-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.source-field {
+  display: grid;
+  gap: 4px;
+  max-width: 320px;
+}
+.source-checks {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 0;
+}
+.source-checks label {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.source-copy {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  margin: 8px 0;
+  background: var(--surface);
+}
+.source-copy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 4px 4px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+.source-copy pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  font:
+    13px / 1.5 "IBM Plex Mono",
+    monospace;
+}
+.source-shown-once {
+  border: 1px solid var(--success);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 12px 0;
+  display: grid;
+  gap: 8px;
+  max-width: 760px;
+}
+.source-danger {
+  border: 1px solid #b4232c;
+  border-radius: 6px;
+  padding: 12px 16px;
+}
+.source-danger h2 {
+  color: #b4232c;
+}
