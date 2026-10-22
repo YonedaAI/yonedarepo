@@ -1,0 +1,7 @@
+# YonedaRepo account MCP for Codex: append to ~/.codex/config.toml.
+# The token comes from the YONEDA_TOKEN environment variable (a ypat_ personal access token
+# from `yoneda login` or the Tokens page in /source); it is never written here.
+# For production, use https://api.yonedarepo.com/api/v1/mcp.
+[mcp_servers.yoneda]
+url = "https://api.dev.yonedarepo.com/api/v1/mcp"
+bearer_token_env_var = "YONEDA_TOKEN"
