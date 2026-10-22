@@ -14,6 +14,7 @@ import {
 } from './repo-objects';
 import { ApiError, batch, caller, type Json, type RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
+import { putRaw } from './repo-stores';
 import { timed } from './repo-timing';
 
 /** How a commit treats a lost queue: `best_effort` reports undispatched check runs instead
@@ -51,6 +52,7 @@ export async function commit(
       changes: body.changes,
       message: body.message,
       author: body.author,
+      ...(body.committer ? { committer: body.committer } : {}),
       read_set: body.read_set ?? [],
       ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
       ...(body.merge_parents ? { merge_parents: body.merge_parents } : {}),
@@ -94,7 +96,12 @@ export async function commit(
       // (Workers keep six connections open) and reads fill the tiers from the store anyway.
       const written =
         all.length > OVERLAP_CACHE_OBJECTS ? all.filter((o) => o.id === prepared.commit) : all;
-      const cached = timed('cache', () => store.cache(written));
+      // The raw commit goes to the store of record too: clients fetch the exact object
+      // from there (the store behind the push may keep only its tree and parents).
+      const raw = { id: prepared.commit, kind: 'commit' as const, data_b64: prepared.commit_b64 };
+      const cached = timed('cache', () =>
+        Promise.all([store.cache(written), putRaw(ctx.env, (id) => store.rawKey(id), [raw])]),
+      );
       const { report, readback } = await timed('push', () =>
         store.pushCommit(fromBase64(prepared.push_b64), prepared.commit, cached),
       );

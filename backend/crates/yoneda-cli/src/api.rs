@@ -196,6 +196,9 @@ impl Api {
     }
 
     /// Records a commit on `parent` with extra merge parents (a local merge commit).
+    /// `author` may carry `time` and `tz`; with a `committer` too, the platform rebuilds
+    /// the local commit exactly.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_merge_commit(
         &self,
         parent: &str,
@@ -203,12 +206,16 @@ impl Api {
         changes: Vec<Value>,
         message: &str,
         author: &Value,
+        committer: Option<&Value>,
         merge_parents: &[String],
     ) -> std::result::Result<CommitInfo, Failure> {
         let mut body = json!({
             "parent": parent, "base_version": base_version, "changes": changes,
             "message": message, "author": author,
         });
+        if let Some(committer) = committer {
+            body["committer"] = committer.clone();
+        }
         if !merge_parents.is_empty() {
             body["merge_parents"] = json!(merge_parents);
         }
@@ -240,9 +247,18 @@ impl Api {
         changes: Vec<Value>,
         message: &str,
         author: &Value,
+        committer: Option<&Value>,
     ) -> std::result::Result<CommitInfo, Failure> {
-        self.create_merge_commit(parent, base_version, changes, message, author, &[])
-            .await
+        self.create_merge_commit(
+            parent,
+            base_version,
+            changes,
+            message,
+            author,
+            committer,
+            &[],
+        )
+        .await
     }
 
     /// Moves a working branch by compare-and-swap on its expected old head.

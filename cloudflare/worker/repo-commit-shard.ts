@@ -75,6 +75,7 @@ export async function commitInShard(
       changes: body.changes,
       message: body.message,
       author: body.author,
+      ...(body.committer ? { committer: body.committer } : {}),
       read_set: body.read_set ?? [],
       trees,
     });

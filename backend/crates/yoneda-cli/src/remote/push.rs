@@ -55,8 +55,8 @@ fn refusal(session: &Session, spec: &Spec, local: &str, current: Option<&str>) -
     if spec.force {
         return None;
     }
-    match session.map.local(current) {
-        Some(known) if session.git.is_ancestor(known, local) => None,
+    match session.held(current) {
+        Some(known) if session.git.is_ancestor(&known, local) => None,
         _ => Some("non-fast-forward".into()),
     }
 }
@@ -103,7 +103,7 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         };
         let up_to_date = current
             .as_deref()
-            .and_then(|c| session.map.local(c))
+            .and_then(|c| session.held(c))
             .is_some_and(|known| known == local);
         if outcome.is_ok() && !up_to_date {
             ready.push(Ready {
@@ -152,7 +152,7 @@ async fn publish(
 ) {
     let mut uploaded = Vec::new();
     for item in ready {
-        let result = match upload::plan_for(session, &item.local) {
+        let result = match upload::plan_for(session, &item.local).await {
             Ok(plan) => upload::upload(session, plan).await,
             Err(e) => Err(e),
         };
@@ -191,13 +191,9 @@ async fn publish(
     }
 }
 
+/// Maps the published commits whose platform id differs from the local one (most match).
 fn remember(session: &mut Session, done: &Uploaded) {
-    let entries: Vec<(String, String, u64)> = done
-        .made
-        .iter()
-        .map(|(server, local)| (server.clone(), local.clone(), 0))
-        .collect();
-    if let Err(e) = session.map.record(&entries) {
+    if let Err(e) = session.map.record(&done.made) {
         say(&format!(
             "published, but recording the commit map failed: {e}"
         ));

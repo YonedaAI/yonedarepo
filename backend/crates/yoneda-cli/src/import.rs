@@ -206,7 +206,7 @@ pub async fn import(
             let changes = part.iter().map(File::json).collect();
             let message = format!("Import {name} (part {} of {count})", index + 2);
             parent = repo
-                .create_commit(&parent, version, changes, &message, &who)
+                .create_commit(&parent, version, changes, &message, &who, None)
                 .await
                 .map_err(|f| Error::new(format!("importing part {}: {f}", index + 2)))?
                 .commit;

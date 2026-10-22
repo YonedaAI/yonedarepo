@@ -1164,6 +1164,18 @@ fn path_history_bisect_and_vacuum_follow_the_log() {
     );
     assert_eq!(history["commits"].as_array().unwrap().len(), 8);
     assert_eq!(history["commits"][0]["commit"], json!(chain[8]));
+    // As of an earlier version (time travel, like log): main's head then, and its past.
+    let landed = |id: &str| {
+        h.ok(CI, json!({"op":"repo_commit","commit":id}))["landings"][0]["version"]
+            .as_u64()
+            .unwrap()
+    };
+    let then = h.ok(
+        CI,
+        json!({"op":"repo_path_history","ref":"main","path":"n.txt","at":landed(&chain[3])}),
+    );
+    assert_eq!(then["commits"].as_array().unwrap().len(), 3);
+    assert_eq!(then["commits"][0]["commit"], json!(chain[3]));
 
     let mut step = h.ok(CI, json!({"op":"repo_bisect_start","ref":"main","check":"unit","good":chain[0],"bad":chain[8]}));
     let id = step["id"].as_str().unwrap().to_owned();

@@ -22,6 +22,7 @@ mod pull;
 mod reads;
 mod reconcile;
 pub mod remote;
+mod replay;
 mod repo_ops;
 mod run;
 pub mod setup;

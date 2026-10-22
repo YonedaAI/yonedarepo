@@ -58,6 +58,7 @@ pub async fn push(co: &mut Checkout) -> Result<usize> {
             tree,
             message,
             author,
+            committer,
         } = step
         else {
             if let Step::Empty { local } = step {
@@ -72,7 +73,14 @@ pub async fn push(co: &mut Checkout) -> Result<usize> {
                 let body = changes.iter().map(|c| c.api_json()).collect();
                 let created = co
                     .api
-                    .create_commit(&parent, co.state.base_version, body, &message, &author)
+                    .create_commit(
+                        &parent,
+                        co.state.base_version,
+                        body,
+                        &message,
+                        &author,
+                        committer.as_ref(),
+                    )
                     .await
                     .map_err(|f| {
                         Error::new(format!("committing {local} (part {part} of {parts}): {f}"))

@@ -4,6 +4,7 @@ use crate::changes::{self, Change};
 use crate::chunk::{self, Limits};
 use crate::error::{Error, Result};
 use crate::git::Git;
+use crate::replay::replay;
 use crate::state::State;
 use serde_json::{Value, json};
 
@@ -20,6 +21,8 @@ pub enum Step {
         tree: String,
         message: String,
         author: Value,
+        /// The local committer, when the platform can rebuild `local` exactly.
+        committer: Option<Value>,
     },
 }
 
@@ -94,17 +97,31 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
             });
             continue;
         }
+        let parts = chunks.len();
+        // One request rebuilds the local commit exactly (same id) when it can; a commit
+        // split into parts, or one the platform cannot rebuild, gets new platform ids.
+        let exact = match parts {
+            1 => replay(git, local)?,
+            _ => None,
+        };
         let authored = git.authored(local)?;
         let author = json!({ "name": authored.name, "email": authored.email });
-        let parts = chunks.len();
         let mut tree = parent.clone();
         for (index, changes) in chunks.into_iter().enumerate() {
             let info: Vec<u8> = changes.iter().flat_map(Change::index_info).collect();
             tree = git.tree_with(&tree, &info)?;
-            let message = if parts == 1 {
-                authored.message.clone()
-            } else {
-                format!("{}\n\n(part {} of {parts})", authored.message, index + 1)
+            let (message, author, committer) = match &exact {
+                Some(r) => (
+                    r.message.clone(),
+                    r.author.clone(),
+                    Some(r.committer.clone()),
+                ),
+                None if parts == 1 => (authored.message.clone(), author.clone(), None),
+                None => (
+                    format!("{}\n\n(part {} of {parts})", authored.message, index + 1),
+                    author.clone(),
+                    None,
+                ),
             };
             steps.push(Step::Commit {
                 local: local.clone(),
@@ -113,7 +130,8 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
                 changes,
                 tree: tree.clone(),
                 message,
-                author: author.clone(),
+                author,
+                committer,
             });
         }
         if tree != git.tree_of(local)? {
