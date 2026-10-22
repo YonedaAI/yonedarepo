@@ -1,5 +1,6 @@
-use super::{Mode, Step, mode, rollouts, steps};
+use super::{Mode, Source, Step, mode, rollouts, steps};
 use crate::deploy_guard::{self as guard, Facts, Options};
+use crate::deploy_image::ImagePlan;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use serde_json::json;
@@ -47,6 +48,20 @@ fn confirmed() -> Options {
         ..Options::default()
     }
 }
+const CHECK: &str = "yonedarepo-staging-platform-checkcontainer";
+const EXECUTION: &str = "yonedarepo-staging-agents-executioncontainer";
+fn reuse(rollouts: &[&str]) -> Source {
+    Source::Local(ImagePlan::Reuse {
+        image: "registry.cloudflare.com/acct/yonedarepo-staging-runtime:ef9d08f6e761484c".into(),
+        rollouts: rollouts.iter().map(|a| (*a).to_owned()).collect(),
+    })
+}
+fn build() -> Source {
+    Source::Local(ImagePlan::Build {
+        reason: "runtime inputs changed".into(),
+        rollouts: vec![EXECUTION.into(), CHECK.into()],
+    })
+}
 fn refused(env: &Env, spec: &Spec, facts: &Facts, options: &Options, needle: &str) {
     let error = guard::preflight(env, spec, facts, options)
         .unwrap_err()
@@ -56,8 +71,17 @@ fn refused(env: &Env, spec: &Spec, facts: &Facts, options: &Options, needle: &st
 
 #[test]
 fn dry_runs_change_nothing_remote() {
-    for (env, list) in [(Env::Dev, dev_workers()), (Env::Prod, prod_workers())] {
-        let plan = steps(&env, &list, true, false);
+    let cases = [
+        (Env::Dev, dev_workers(), Source::Dockerfile),
+        (Env::Dev, dev_workers(), Source::Prebuilt),
+        (Env::Dev, dev_workers(), reuse(&[])),
+        (Env::Dev, dev_workers(), reuse(&[CHECK])),
+        (Env::Dev, dev_workers(), build()),
+        (Env::Prod, prod_workers(), Source::Dockerfile),
+        (Env::Prod, prod_workers(), Source::Prebuilt),
+    ];
+    for (env, list, source) in cases {
+        let plan = steps(&env, &list, true, &source);
         assert!(
             plan.iter().all(|s| !s.mutates_remote()),
             "{env:?}: {plan:?}"
@@ -75,18 +99,21 @@ fn dry_runs_change_nothing_remote() {
 }
 
 #[test]
-fn prebuilt_runs_install_and_push_instead_of_building() {
-    let plan = steps(&Env::Dev, &dev_workers(), false, true);
-    assert_eq!(plan[..2], [Step::InstallPrebuilt, Step::PushImage]);
+fn prebuilt_runs_install_push_and_record_instead_of_building() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, &Source::Prebuilt);
+    assert_eq!(
+        plan[..3],
+        [Step::InstallPrebuilt, Step::PushImage, Step::RecordImage]
+    );
     assert!(
         !plan
             .iter()
             .any(|s| matches!(s, Step::BuildWasm | Step::BuildFrontend))
     );
-    let built = steps(&Env::Dev, &dev_workers(), false, false);
-    assert_eq!(plan[2..], built[2..], "the rest of the plan is unchanged");
+    let built = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
+    assert_eq!(plan[3..], built[2..], "the rest of the plan is unchanged");
 
-    let dry = steps(&Env::Dev, &dev_workers(), true, true);
+    let dry = steps(&Env::Dev, &dev_workers(), true, &Source::Prebuilt);
     assert_eq!(dry[0], Step::InstallPrebuilt);
     assert!(dry.iter().all(|s| !s.mutates_remote()), "{dry:?}");
 }
@@ -97,12 +124,13 @@ fn prebuilt_runs_without_containers_push_nothing() {
         .into_iter()
         .filter(|w| !w.has_containers)
         .collect();
-    assert!(!steps(&Env::Dev, &sites, false, true).contains(&Step::PushImage));
+    let plan = steps(&Env::Dev, &sites, false, &Source::Prebuilt);
+    assert!(!plan.contains(&Step::PushImage) && !plan.contains(&Step::RecordImage));
 }
 
 #[test]
 fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
-    let plan = steps(&Env::Dev, &dev_workers(), false, false);
+    let plan = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
     assert_eq!(plan[..2], [Step::BuildWasm, Step::BuildFrontend]);
     let migrations: Vec<&str> = plan
         .iter()
@@ -154,8 +182,61 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
 }
 
 #[test]
+fn a_workstation_deploy_reusing_the_image_builds_no_image_and_ends_with_the_smoke() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, &reuse(&[]));
+    let mut expected = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
+    expected.push(Step::Smoke);
+    assert_eq!(
+        plan, expected,
+        "no image build, push, record or rollout gate"
+    );
+}
+
+#[test]
+fn a_workstation_rollout_is_gated_right_before_the_first_container_worker() {
+    let d = |worker| Step::Deploy {
+        worker,
+        dry_run: false,
+    };
+    for source in [reuse(&[CHECK]), build()] {
+        let plan = steps(&Env::Dev, &dev_workers(), false, &source);
+        let first_container = plan.iter().position(|s| *s == d(1)).unwrap();
+        assert_eq!(plan[first_container - 1], Step::RolloutGate, "{plan:?}");
+        assert!(plan.iter().position(|s| *s == d(0)).unwrap() < first_container);
+        assert_eq!(plan.last(), Some(&Step::Smoke));
+    }
+}
+
+#[test]
+fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, &build());
+    assert_eq!(
+        plan[..6],
+        [
+            Step::BuildWasm,
+            Step::BuildFrontend,
+            Step::RolloutGate,
+            Step::BuildImage,
+            Step::PushImage,
+            Step::RecordImage
+        ]
+    );
+    assert!(matches!(plan[6], Step::Migrate { .. }));
+    let dry = steps(&Env::Dev, &dev_workers(), true, &build());
+    assert!(
+        !dry.iter()
+            .any(|s| matches!(s, Step::BuildImage | Step::PushImage | Step::Smoke)),
+        "a dry run builds and pushes no image: {dry:?}"
+    );
+    assert!(
+        dry.contains(&Step::RolloutGate),
+        "a dry run reports busy containers"
+    );
+}
+
+#[test]
 fn prod_checks_active_runs_right_before_each_container_rollout() {
-    let plan = steps(&Env::Prod, &prod_workers(), false, false);
+    let plan = steps(&Env::Prod, &prod_workers(), false, &Source::Dockerfile);
     let gate = plan
         .iter()
         .position(|s| *s == Step::ActiveGate { worker: 0 })
@@ -299,6 +380,73 @@ fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
         &dirty,
         &confirmed(),
         "uncommitted changes",
+    );
+}
+
+#[test]
+fn busy_containers_stop_a_workstation_rollout_unless_allowed() {
+    let busy = vec![(EXECUTION.to_owned(), 2), (CHECK.to_owned(), 0)];
+    let error = guard::rollout_gate(&busy, &Options::default())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains(&format!("{EXECUTION}: 2")), "{error}");
+    assert!(!error.contains(CHECK), "idle apps are not listed: {error}");
+    let allowed = Options {
+        allow_active: true,
+        ..Options::default()
+    };
+    guard::rollout_gate(&busy, &allowed).unwrap();
+    let dry = Options {
+        dry_run: true,
+        ..Options::default()
+    };
+    guard::rollout_gate(&busy, &dry).unwrap();
+    guard::rollout_gate(&[(CHECK.to_owned(), 0)], &Options::default()).unwrap();
+}
+
+#[test]
+fn ci_skips_its_deploy_only_when_every_worker_already_runs_the_commit() {
+    let live = |platform: Option<&str>, agents: Option<&str>| {
+        vec![
+            (
+                "yonedarepo-staging-platform".to_owned(),
+                platform.map(str::to_owned),
+            ),
+            (
+                "yonedarepo-staging-agents".to_owned(),
+                agents.map(str::to_owned),
+            ),
+        ]
+    };
+    match guard::live_check(HEAD, &live(Some(HEAD), Some(HEAD))) {
+        guard::LiveCheck::Skip(line) => {
+            assert!(
+                line.contains("Deploy skipped") && line.contains(&HEAD[..12]),
+                "{line}"
+            )
+        }
+        other => panic!("expected a skip, got {other:?}"),
+    }
+    for revisions in [
+        live(Some(HEAD), Some(OTHER)),
+        live(None, Some(HEAD)),
+        live(Some(OTHER), Some(OTHER)),
+        vec![],
+    ] {
+        assert!(
+            matches!(
+                guard::live_check(HEAD, &revisions),
+                guard::LiveCheck::Deploy(_)
+            ),
+            "{revisions:?}"
+        );
+    }
+    let guard::LiveCheck::Deploy(line) = guard::live_check(HEAD, &live(None, Some(OTHER))) else {
+        panic!("expected a deploy");
+    };
+    assert!(
+        line.contains("nothing reachable") && line.contains(&OTHER[..12]),
+        "{line}"
     );
 }
 

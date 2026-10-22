@@ -60,12 +60,20 @@ pub(crate) fn container_versions(
 
 /// Busy instances (active, assigned, starting or scheduling) of the Worker's containers.
 pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> {
+    Ok(busy_instances(account_id, config)?
+        .iter()
+        .map(|(_, count)| count)
+        .sum())
+}
+
+/// Each declared container application of the Worker with its busy instance count.
+pub(crate) fn busy_instances(account_id: &str, config: &Value) -> Result<Vec<(String, u64)>> {
     let declared = inventory::containers(config);
     let apps: Value = serde_json::from_slice(&wrangler::output(
         account_id,
         &["containers", "list", "--json", "--per-page", "100"],
     )?)?;
-    let mut busy = 0;
+    let mut busy = Vec::new();
     for app in apps.as_array().into_iter().flatten() {
         let (Some(name), Some(id)) = (app["name"].as_str(), app["id"].as_str()) else {
             continue;
@@ -78,12 +86,54 @@ pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> 
             &["containers", "info", id, "--json"],
         )?)?;
         let counts = &info["health"]["instances"];
-        busy += ["active", "assigned", "starting", "scheduling"]
+        let count = ["active", "assigned", "starting", "scheduling"]
             .iter()
             .map(|k| counts[*k].as_u64().unwrap_or(0))
             .sum::<u64>();
+        busy.push((name.to_owned(), count));
     }
     Ok(busy)
+}
+
+/// `cargo xtask live-check --env <env>`: CI's dev deploy job asks whether this commit is
+/// already live. Writes `deploy=true|false` to `$GITHUB_OUTPUT` (and the skip line to the job
+/// summary). An unreachable `/health` means deploy: the deploy's own guards then decide.
+pub(crate) async fn live_check(args: &[String]) -> Result<()> {
+    let env = Env::from_args(args)?;
+    let spec = Spec::load(&env)?;
+    let head = guard::head()?;
+    let mut revisions = Vec::new();
+    for worker in inventory::deployables(&spec, &Lock::load(&env)?)? {
+        if worker.health.is_some() {
+            revisions.push((worker.name.clone(), live_revision(&worker).await));
+        }
+    }
+    let (deploy, line) = match guard::live_check(&head, &revisions) {
+        guard::LiveCheck::Skip(line) => (false, line),
+        guard::LiveCheck::Deploy(line) => (true, line),
+    };
+    println!("{line}");
+    append_env_file("GITHUB_OUTPUT", &format!("deploy={deploy}\n"))?;
+    if !deploy {
+        append_env_file(
+            "GITHUB_STEP_SUMMARY",
+            &format!("### Deploy dev\n\n{line}\n\n"),
+        )?;
+    }
+    Ok(())
+}
+
+/// Appends to the file a GitHub Actions variable names; nothing outside Actions.
+fn append_env_file(var: &str, text: &str) -> Result<()> {
+    if let Some(path) = std::env::var_os(var) {
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(path)?
+            .write_all(text.as_bytes())?;
+    }
+    Ok(())
 }
 
 pub(crate) async fn rollback(args: &[String]) -> Result<()> {
