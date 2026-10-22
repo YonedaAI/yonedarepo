@@ -103,6 +103,8 @@ pub(super) fn retry<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let jid = format!("job:{id}");
     let mut job = get(db, "jobs", &jid)?;
+    // Attempts that timed out before checkpoints were recorded still hold their bindings here.
+    super::super::leases::resume::backfill(&mut job);
     let epoch = number(&job, "epoch")?
         .checked_add(1)
         .ok_or_else(|| bad("Attempt epoch overflow"))?;
