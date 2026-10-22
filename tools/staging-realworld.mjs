@@ -18,6 +18,9 @@
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --agent-smoke [--smoke-provider zai|mimo] [--smoke-timeout <s>]
 //          (= --only 0,smoke: one cheap single-agent run must reach a checked candidate)
+//        node tools/staging-realworld.mjs --sandbox-smoke [--smoke-provider zai|mimo] [--smoke-timeout <s>]
+//          (= --only 0,sandbox: the same brief on runtime sandbox-cli-v1, Claude Code in a
+//          Cloudflare Sandbox; passes when the pushed commit is recorded, about 5 min, < $0.01)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -26,6 +29,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { agentSmoke } from './staging/agent-smoke.mjs';
+import { sandboxSmoke } from './staging/sandbox-smoke.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
@@ -53,14 +57,22 @@ const { values } = parseArgs({
     'skip-bursts': { type: 'boolean', default: false },
     // The post-deploy agent smoke alone (items 0 and smoke); `--only smoke` also selects it.
     'agent-smoke': { type: 'boolean', default: false },
+    // The sandbox-cli-v1 smoke alone (items 0 and sandbox).
+    'sandbox-smoke': { type: 'boolean', default: false },
     'smoke-provider': { type: 'string', default: 'zai' },
-    'smoke-timeout': { type: 'string', default: '360' },
+    'smoke-timeout': { type: 'string' },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const only = values['agent-smoke'] ? new Set(['0', 'smoke']) : values.only ? new Set(values.only.split(',')) : null;
-// The smoke repeats item 2's coverage, so a full kit run leaves it out unless it is named.
-const wanted = (id) => (only ? only.has(id) : id !== 'smoke') && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const only = values['agent-smoke']
+  ? new Set(['0', 'smoke'])
+  : values['sandbox-smoke']
+    ? new Set(['0', 'sandbox'])
+    : values.only
+      ? new Set(values.only.split(','))
+      : null;
+// The smokes repeat item 2's coverage, so a full kit run leaves them out unless named.
+const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 const { OWNER_TOKEN } = readEnvFile('staging.env');
 if (values.fund) {
@@ -117,7 +129,10 @@ await step('5', 'External agent via remote MCP', async (m) => {
   await externalAgent(account, state.project, m);
 });
 await step('smoke', 'Agent smoke: one cheap agent to a checked candidate', (m) =>
-  agentSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], timeoutMs: Number(values['smoke-timeout']) * 1000 }, m),
+  agentSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], timeoutMs: Number(values['smoke-timeout'] ?? 360) * 1000 }, m),
+);
+await step('sandbox', 'Sandbox smoke: Claude Code in a Cloudflare Sandbox pushes a checked commit', (m) =>
+  sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], timeoutMs: Number(values['smoke-timeout'] ?? 300) * 1000 }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
@@ -172,12 +187,12 @@ if (['12', '13', '14', '15', '16', '17'].some(wanted)) {
 
 // A failed run still spent money: its last observed spend is in item 2's metrics.
 const itemSpend = (id) => Number(rec.items.find((i) => i.id === id)?.metrics.spend_usd ?? 0);
-const modelSpend = (state.spend ?? itemSpend('2')) + itemSpend('smoke');
+const modelSpend = (state.spend ?? itemSpend('2')) + itemSpend('smoke') + itemSpend('sandbox');
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smokeOnly = !!only && [...only].every((id) => ['0', 'smoke'].includes(id)) && only.has('smoke');
-const file = resolve(root, `.local/staging/${smokeOnly ? 'agent-smoke' : 'realworld'}-${Date.now()}.json`);
+const smoke = ['smoke', 'sandbox'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const file = resolve(root, `.local/staging/${smoke === 'smoke' ? 'agent-smoke' : smoke === 'sandbox' ? 'sandbox-smoke' : 'realworld'}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nModel spend: $${modelSpend.toFixed(4)}. Evidence: ${file}`);
 process.exitCode = rec.items.some((i) => i.status === 'fail') ? 1 : 0;

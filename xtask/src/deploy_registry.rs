@@ -15,7 +15,7 @@ use std::time::Duration;
 
 const MANIFEST_TYPES: &str = "application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json, application/vnd.docker.distribution.manifest.list.v2+json";
 
-/// Each container application the Workers declare -> the image it runs now.
+/// Each runtime container application the Workers declare -> the image it runs now.
 pub(crate) fn deployed_images(
     spec: &Spec,
     workers: &[Deployable],
@@ -32,7 +32,7 @@ pub(crate) fn deployed_images(
         .collect();
     Ok(workers
         .iter()
-        .flat_map(|w| inventory::containers(&w.config).into_keys())
+        .flat_map(|w| inventory::runtime_containers(&w.config).into_keys())
         .map(|app| {
             let image = live.get(app.as_str()).map(|i| (*i).to_owned());
             (app, image)

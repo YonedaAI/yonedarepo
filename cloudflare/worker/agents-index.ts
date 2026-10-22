@@ -10,4 +10,6 @@ export {
   SourceWorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 export { AgentsEntrypoint as default } from './agents-entrypoint';
+export { AgentSandbox } from './sandbox-agent';
+export { SandboxOutbound } from './sandbox-outbound';
 export { ExecutionContainer };

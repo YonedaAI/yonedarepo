@@ -71,6 +71,10 @@ const codes = new Set([
   'REMOTE_AUTH_REQUIRED',
   'UPSTREAM_UNAVAILABLE',
   'MEMORY_LIMIT',
+  'SANDBOX_UNAVAILABLE',
+  'SANDBOX_HARNESS',
+  'SANDBOX_GATEWAY',
+  'SANDBOX_LOST',
 ]);
 export function failureCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;

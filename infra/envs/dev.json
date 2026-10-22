@@ -323,7 +323,12 @@
         "The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a",
         "route takes precedence over a Custom Domain, and the most specific route pattern wins. The",
         "exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same",
-        "pattern production uses for www)."
+        "pattern production uses for www).",
+        "Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts",
+        "containers/sandbox.Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound",
+        "adds the provider key and the project token. Model requests go through the AI Gateway named",
+        "in SANDBOX_AI_GATEWAY (custom providers custom-zai and custom-mimo; one-time setup in",
+        "docs/runbook.md). The sandbox clones from SANDBOX_PLATFORM_ORIGIN."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -374,7 +379,9 @@
           "ZAI_MODEL": "glm-5.3-flash",
           "STARTER_REPO": "yoneda-website-starter",
           "SITE_ORIGIN": "https://{prefix}-sites.{subdomain}.workers.dev",
-          "MANAGED_PROVIDER_KEYS": "secrets-store"
+          "MANAGED_PROVIDER_KEYS": "secrets-store",
+          "SANDBOX_PLATFORM_ORIGIN": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "SANDBOX_AI_GATEWAY": "{account_id}/{prefix}"
         },
         "services": [
           {
@@ -427,6 +434,10 @@
               "name": "WORKSPACES",
               "class_name": "WorkspaceAuthority",
               "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "AGENT_SANDBOX",
+              "class_name": "AgentSandbox"
             }
           ]
         },
@@ -438,6 +449,12 @@
               "LiveRoom",
               "ExecutionContainer",
               "SourceWorkspaceAuthority"
+            ]
+          },
+          {
+            "tag": "v2",
+            "new_sqlite_classes": [
+              "AgentSandbox"
             ]
           }
         ],
@@ -455,6 +472,16 @@
               "regions": [
                 "ENAM"
               ]
+            }
+          },
+          {
+            "class_name": "AgentSandbox",
+            "scheduling_policy": "durable_object",
+            "images": {
+              "agent": {
+                "dockerfile": "./containers/sandbox.Dockerfile",
+                "build_context": ".."
+              }
             }
           }
         ],

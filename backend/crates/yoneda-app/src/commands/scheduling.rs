@@ -74,6 +74,7 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
             e["routing"] = routing.clone();
         }
         super::adaptive_team::configure_execution(run, agent, index, &mut e)?;
+        super::sandbox::mark_execution(run, &mut e);
         if run["comparison"]["approval"].is_object() {
             e["agent_index"] = json!(index);
             e["comparison_role"] = json!("builder");

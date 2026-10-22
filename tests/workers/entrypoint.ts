@@ -28,3 +28,18 @@ export default class TestEntrypoint extends YonedaEntrypoint {
   }
 }
 export { LandCombiner } from '../../cloudflare/worker/repo-land-combiner';
+import { DurableObject } from 'cloudflare:workers';
+/** Stands in for AgentSandbox (which needs a container): records the attempt it was given. */
+export class FakeAgentSandbox extends DurableObject {
+  async begin(attempt: Record<string, unknown>) {
+    const count = ((await this.ctx.storage.get<number>('count')) ?? 0) + 1;
+    await this.ctx.storage.put({ attempt, count });
+    return 'started';
+  }
+  async begun() {
+    return { attempt: await this.ctx.storage.get('attempt'), count: await this.ctx.storage.get('count') };
+  }
+  async activity(after: number) {
+    return { entries: [], next: after, has_more: false, phase: 'running', last_activity_at: null };
+  }
+}

@@ -42,8 +42,8 @@ const FAILED = ['failed', 'cancelled', 'needs_attention', 'awaiting_intent'];
 const UNSETTLED_CANDIDATE = ['pending', 'capturing', 'evaluating', 'queued', 'running'];
 const seconds = (ms) => (ms / 1000).toFixed(1);
 
-/** Starts a single-agent run on one managed connection; returns its id. */
-async function startSingle(account, repo, provider) {
+/** Starts a single-agent run on one managed connection (`runtime`: sandbox-cli-v1); returns its id. */
+export async function startSingle(account, repo, provider, runtime) {
   const id = `run-${crypto.randomUUID()}`;
   await account.post(`/api/repos/${repo}/start_run`, {
     id,
@@ -53,6 +53,7 @@ async function startSingle(account, repo, provider) {
     ...SMOKE_BRIEF,
     context: [],
     adaptive_team: { version: 1, requested_agents: [{ connection: `managed-${provider}`, role: 'builder' }] },
+    ...(runtime ? { runtime } : {}),
   });
   return id;
 }
@@ -92,7 +93,7 @@ const logLine = (start, { at, data = {} }) =>
   `  +${seconds(at - start).padStart(6)} s ${data.stage ?? data.kind ?? '?'}${data.request_number !== undefined ? ` #${data.request_number}` : ''}${data.http_status !== undefined ? ` HTTP ${data.http_status}` : ''}${data.duration_ms !== undefined ? ` ${data.duration_ms} ms` : ''}${data.error_code ? ` ${data.error_code}` : ''}${data.summary || data.message ? ` ${String(data.summary ?? data.message).slice(0, 160)}` : ''}`;
 
 /** Where the time went: per execution, claim -> first request -> completion, from its log. */
-async function timeline(account, repo, detail, startedAt, { verbose }) {
+export async function timeline(account, repo, detail, startedAt, { verbose }) {
   const lines = [];
   for (const execution of detail.executions ?? []) {
     const entries = await executionLogs(account, repo, execution.id).catch((e) => {
