@@ -39,6 +39,14 @@ export class FakeAgentSandbox extends DurableObject {
   async begun() {
     return { attempt: await this.ctx.storage.get('attempt'), count: await this.ctx.storage.get('count') };
   }
+  async beginCheck(check: Record<string, unknown>) {
+    const count = ((await this.ctx.storage.get<number>('checks')) ?? 0) + 1;
+    await this.ctx.storage.put({ check, checks: count });
+    return 'started';
+  }
+  async checkBegun() {
+    return { check: await this.ctx.storage.get('check'), count: await this.ctx.storage.get('checks') };
+  }
   async activity(after: number) {
     return { entries: [], next: after, has_more: false, phase: 'running', last_activity_at: null };
   }
