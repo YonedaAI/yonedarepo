@@ -40,19 +40,13 @@ pub(crate) fn deployed_images(
         .collect())
 }
 
-/// Every tag of one registry repository.
+/// Every tag of one registry repository. wrangler's `--filter` regex is not matched against
+/// the bare name (an anchored `^name$` lists nothing), so it only narrows the listing and the
+/// exact name is compared here.
 pub(crate) fn tags(spec: &Spec, repo: &str) -> Result<Vec<String>> {
-    let filter = format!("^{repo}$");
     let listing: Value = serde_json::from_slice(&wrangler::output(
         &spec.account_id,
-        &[
-            "containers",
-            "images",
-            "list",
-            "--json",
-            "--filter",
-            &filter,
-        ],
+        &["containers", "images", "list", "--json", "--filter", repo],
     )?)?;
     Ok(listing
         .as_array()
