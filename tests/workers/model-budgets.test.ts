@@ -1,7 +1,9 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
+import { grantOutputAllowance } from '../../cloudflare/worker/model-budget';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
+import { sourceResume } from '../../cloudflare/worker/source-resume';
 import { trackProviderUsage } from '../../cloudflare/worker/provider-usage';
 import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 import { ledger } from '../../cloudflare/worker/storage';
@@ -116,4 +118,50 @@ it('shares real DO reservations across roots and eviction and settles an upstrea
   expect(before.runs[0].model_budgets[0].charged_microusd).toBeLessThan(3 * reservation.reservation_microusd);
   await expect(reserve(jobs[1])).rejects.toMatchObject({ code: 'MODEL_REQUEST_LIMIT' });
   expect((await call({ op: 'snapshot' })).runs[0].model_budgets).toEqual(before.runs[0].model_budgets);
+});
+
+it('lowers but never raises the provider output cap to the ledger grant, keeping thinking valid', () => {
+  expect(grantOutputAllowance({ max_tokens: 4096 }, 'claude', 1200).max_tokens).toBe(1200);
+  expect(grantOutputAllowance({ max_tokens: 512 }, 'claude', 1200).max_tokens).toBe(512);
+  expect(grantOutputAllowance({ max_tokens: 4096, thinking: { type: 'enabled', budget_tokens: 2048 } },
+    'claude', 1500).thinking).toEqual({ type: 'enabled', budget_tokens: 1499 });
+  expect(grantOutputAllowance({ max_tokens: 4096, thinking: { type: 'enabled', budget_tokens: 2048 } },
+    'claude', 800).thinking).toEqual({ type: 'disabled' });
+  expect(grantOutputAllowance({ max_output_tokens: 4096 }, 'codex', 700).max_output_tokens).toBe(700);
+  expect(grantOutputAllowance({ generationConfig: { maxOutputTokens: 4096 } }, 'gemini', 300)
+    .generationConfig.maxOutputTokens).toBe(300);
+});
+
+it('extends a progressing attempt in the real ledger and shrinks a request to the remaining spend', async () => {
+  const repo = 'progress-integration';
+  const call = approvedLedger(bindings, repo);
+  await call({ op: 'init', id: repo, name: 'Progress fixture', commit: 'a'.repeat(40),
+    remote: { namespace: 'test', name: repo }, policy: {
+      version: 'budget-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+      required_checks: ['syntax'], build: { setup: [], checks: [{ name: 'syntax', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] },
+    } });
+  // 1 µ$ per token; 100 input bytes reserve 8292 input tokens, leaving 408 µ$ for output.
+  const tight = { ...budget, max_requests: null, spend_limit_microusd: 8700,
+    pricing: { ...budget.pricing, output_microusd_per_million: 1000000 } };
+  await call({ op: 'start_run', id: 'progressing', intent: 'Progress verification',
+    agents: [{ provider: budget.provider, model: budget.model, strategy: 'only' }], model_budgets: [tight] });
+  const job = await call({ op: 'claim', job_id: 'job:progressing:agent-1' });
+  await call({ op: 'progress', job_id: job.id, epoch: job.epoch, progress: { stage: 'container_ready' } });
+  const idle = await call({ op: 'heartbeat', job_id: job.id, epoch: job.epoch, active: false });
+  // No-progress window (5 min) plus grace under the 30 min ceiling, not the old fixed 2 min.
+  expect(idle.attempt_deadline - Date.now()).toBeGreaterThan(355_000);
+  expect(idle.attempt_ceiling_at - idle.attempt_deadline).toBeGreaterThan(1_000_000);
+  const active = await call({ op: 'heartbeat', job_id: job.id, epoch: job.epoch, active: true });
+  expect(active.attempt_deadline).toBeGreaterThanOrEqual(idle.attempt_deadline);
+  const reserve = () => call({ op: 'reserve_request', job_id: job.id, epoch: job.epoch, kind: 'model',
+    input_bytes: 100, output_tokens: 512 });
+  const granted = await reserve();
+  expect(granted.output_tokens).toBe(408);
+  expect((await call({ op: 'heartbeat', job_id: job.id, epoch: job.epoch })).model_active).toBe(true);
+  await expect(reserve()).rejects.toMatchObject({ code: 'MODEL_SPEND_LIMIT' });
+});
+
+it('returns an empty resume manifest for an attempt without a recorded checkpoint', async () => {
+  const manifest = await sourceResume(bindings, { repo_id: 'none', job: { id: 'job', epoch: 1, kind: 'agent' } } as never);
+  expect(manifest).toMatchObject({ files: [], deleted: [], skipped: [], epoch: null });
 });

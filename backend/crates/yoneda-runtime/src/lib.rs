@@ -6,6 +6,8 @@ mod agent_harness;
 mod agent_transcript;
 pub mod app_bundle;
 mod attempt_failure;
+mod attempt_resume;
+mod attempt_watchdog;
 mod broker;
 pub mod check_runner;
 #[cfg(all(test, unix))]

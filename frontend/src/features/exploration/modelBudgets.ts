@@ -31,9 +31,23 @@ export interface ModelBudgetConfig {
   model: string;
   max_requests: number | null;
   max_output_tokens: number;
+  /** Legacy wall-clock field. Agents now stop on lack of progress; see `agentTimeRule`. */
   max_execution_ms: number;
+  /** No-progress window; the ledger applies `AGENT_IDLE_STOP_MS` when absent. */
+  idle_timeout_ms?: number | null;
   spend_limit_microusd: number | null;
   pricing: ModelPricing | null;
+}
+
+/** Mirrors `DEFAULT_IDLE_TIMEOUT_MS` and `MAX_MODEL_EXECUTION_MS` in yoneda-agents-core. */
+export const AGENT_IDLE_STOP_MS = 300_000;
+export const AGENT_ATTEMPT_CEILING_MS = 1_800_000;
+
+/** How long an agent attempt may run: until it stops making progress, never past the ceiling. */
+export function agentTimeRule(idleMs?: number | null) {
+  const idle = (idleMs ?? AGENT_IDLE_STOP_MS) / 60_000;
+  const minutes = idle.toLocaleString(undefined, { maximumFractionDigits: 3 });
+  return `Stops after ${minutes} min without progress · ${AGENT_ATTEMPT_CEILING_MS / 60_000} min safety ceiling`;
 }
 
 export interface ModelBudget extends ModelBudgetConfig {

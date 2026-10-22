@@ -51,10 +51,14 @@ async fn agent_deadline_retains_tool_feedback_that_was_emitted_before_cancellati
     }
     let calls = Arc::new(Mutex::new(Vec::new()));
     let captured = calls.clone();
-    crate::supervisor_task::report_deadline(Some(&transcript), move |path, body, trusted| {
-        captured.lock().unwrap().push((path, body, trusted));
-        async { Ok(json!({"digest":"a".repeat(64)})) }
-    })
+    crate::supervisor_task::report_deadline(
+        Some(&transcript),
+        crate::attempt_watchdog::Expiry::Idle(Duration::from_secs(300)),
+        move |path, body, trusted| {
+            captured.lock().unwrap().push((path, body, trusted));
+            async { Ok(json!({"digest":"a".repeat(64)})) }
+        },
+    )
     .await
     .unwrap();
     let calls = calls.lock().unwrap();
@@ -68,7 +72,11 @@ async fn agent_deadline_retains_tool_feedback_that_was_emitted_before_cancellati
     assert_eq!(calls[1].0, "/failed");
     assert_eq!(
         calls[1].1["error"],
-        "EXECUTION_TIMEOUT: Execution deadline exceeded"
+        "EXECUTION_TIMEOUT: No agent progress for 5 min (no model response, tool call or file change). Retry resumes from the files it already wrote."
+    );
+    assert_eq!(
+        calls[1].1["retryable"], true,
+        "a stalled attempt is retryable"
     );
     assert!(
         calls.iter().all(|call| call.2),
@@ -105,10 +113,14 @@ async fn agent_deadline_preserves_acknowledged_evidence_and_still_reports_reject
     transcript.mark_recorded().unwrap();
     let calls = Arc::new(Mutex::new(Vec::new()));
     let captured = calls.clone();
-    crate::supervisor_task::report_deadline(Some(&transcript), move |path, _, trusted| {
-        captured.lock().unwrap().push((path, trusted));
-        async { Ok(json!({})) }
-    })
+    crate::supervisor_task::report_deadline(
+        Some(&transcript),
+        crate::attempt_watchdog::Expiry::Idle(Duration::from_secs(300)),
+        move |path, _, trusted| {
+            captured.lock().unwrap().push((path, trusted));
+            async { Ok(json!({})) }
+        },
+    )
     .await
     .unwrap();
     assert_eq!(
@@ -119,19 +131,23 @@ async fn agent_deadline_preserves_acknowledged_evidence_and_still_reports_reject
     let transcript = Transcript::default();
     let calls = Arc::new(Mutex::new(Vec::new()));
     let captured = calls.clone();
-    crate::supervisor_task::report_deadline(Some(&transcript), move |path, _, trusted| {
-        captured.lock().unwrap().push((path, trusted));
-        async move {
-            if path == "/evidence" {
-                Err(yoneda_agents_core::Error::new(
-                    "FENCED",
-                    "Simulated stale attempt",
-                ))
-            } else {
-                Ok(json!({}))
+    crate::supervisor_task::report_deadline(
+        Some(&transcript),
+        crate::attempt_watchdog::Expiry::Idle(Duration::from_secs(300)),
+        move |path, _, trusted| {
+            captured.lock().unwrap().push((path, trusted));
+            async move {
+                if path == "/evidence" {
+                    Err(yoneda_agents_core::Error::new(
+                        "FENCED",
+                        "Simulated stale attempt",
+                    ))
+                } else {
+                    Ok(json!({}))
+                }
             }
-        }
-    })
+        },
+    )
     .await
     .unwrap();
     assert_eq!(
@@ -151,15 +167,19 @@ async fn agent_deadline_stops_a_stalled_evidence_upload_before_failure_reporting
     let captured = calls.clone();
     tokio::time::timeout(
         Duration::from_secs(3),
-        crate::supervisor_task::report_deadline(Some(&transcript), move |path, _, trusted| {
-            captured.lock().unwrap().push((path, trusted));
-            async move {
-                if path == "/evidence" {
-                    std::future::pending::<()>().await;
+        crate::supervisor_task::report_deadline(
+            Some(&transcript),
+            crate::attempt_watchdog::Expiry::Idle(Duration::from_secs(300)),
+            move |path, _, trusted| {
+                captured.lock().unwrap().push((path, trusted));
+                async move {
+                    if path == "/evidence" {
+                        std::future::pending::<()>().await;
+                    }
+                    Ok(json!({}))
                 }
-                Ok(json!({}))
-            }
-        }),
+            },
+        ),
     )
     .await
     .expect("two-second evidence cap must leave time for failure reporting")

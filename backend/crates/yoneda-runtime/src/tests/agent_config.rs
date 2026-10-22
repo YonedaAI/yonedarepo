@@ -162,7 +162,13 @@ async fn model_budgets_runtime_uses_frozen_output_and_execution_limits() {
     let budget = crate::execution_limits::model_budget(&job)
         .unwrap()
         .unwrap();
-    assert_eq!(crate::execution_limits::timeout_ms(&job).unwrap(), 50000);
+    // The legacy one-minute time field no longer kills progress: idle window plus ceiling.
+    assert_eq!(
+        crate::execution_limits::timeout_ms(&job).unwrap(),
+        1_790_000
+    );
+    let limits = crate::execution_limits::limits(&job).unwrap();
+    assert_eq!(limits.idle, Some(std::time::Duration::from_secs(300)));
     let mut command = Command::new("/bin/sh");
     untrusted(&mut command, std::path::Path::new("/tmp"));
     configure_output_limit(&mut command, Some(&budget));

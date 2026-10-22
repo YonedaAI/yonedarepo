@@ -69,7 +69,7 @@ fn comparison_phase_capture_from_actual_ledger_finish_ignores_inference_budget_a
     for (index, job) in builders.iter().enumerate() {
         assert_eq!(job["payload"]["run"]["model_budgets"][0]["requests"], 0);
         assert_eq!(model_budget(job).unwrap().unwrap().requests, 0);
-        assert_eq!(timeout_ms(job).unwrap(), 590000);
+        assert_eq!(timeout_ms(job).unwrap(), 1_790_000);
         call(
             &db,
             json!({"op":"hint_complete","job_id":job["id"],"epoch":job["epoch"],"summary":"Ready for independent capture"}),
@@ -110,7 +110,7 @@ fn comparison_phase_capture_from_actual_ledger_finish_ignores_inference_budget_a
 fn comparison_phase_agent_and_kindless_prompt_still_fence_changed_or_missing_approval() {
     let (_, builders) = comparison();
     let original = &builders[0];
-    assert_eq!(timeout_ms(original).unwrap(), 590000);
+    assert_eq!(timeout_ms(original).unwrap(), 1_790_000);
     for kindless in [false, true] {
         let mut forged = original.clone();
         if kindless {

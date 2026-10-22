@@ -1,8 +1,10 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
+pub(super) mod resume;
 pub(super) mod source;
 mod status;
+pub(super) mod timing;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "claim" => {
@@ -68,12 +70,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             source::claimed(&mut j, now)?;
             j["runtime_started_at"] = Value::Null;
             j["progress"] = Value::Null;
-            let duration = duration(db, &j)?;
-            if let Some(budget) = super::model_budgets::for_job(db, &j)? {
+            resume::claimed(&mut j);
+            let budget = super::model_budgets::for_job(db, &j)?;
+            if let Some(budget) = &budget {
                 j["model_budget"] = json!(budget);
             }
-            j["attempt_deadline"] = json!((now + 120_000 + duration).min(number(&j, "deadline")?));
-            j["lease_until"] = json!((now + 120_000).min(number(&j, "attempt_deadline")?));
+            timing::claimed(&mut j, budget.as_ref(), now)?;
             save(db, "jobs", &id, &j)?;
             if j["kind"] == "agent" {
                 let eid = string(&j["payload"]["execution"], "id")?;
@@ -109,12 +111,14 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         "heartbeat" | "progress" => {
             let mut j = active(db, &c, now)?;
             let id = string(&j, "id")?;
+            let budget = super::model_budgets::for_job(db, &j)?;
             if c["progress"]["stage"] == "container_ready" && j["runtime_started_at"].is_null() {
-                j["runtime_started_at"] = json!(now);
                 source::runtime_ready(&mut j, now);
-                let duration = duration(db, &j)?;
-                j["attempt_deadline"] = json!((now + duration).min(number(&j, "deadline")?));
+                timing::runtime_ready(&mut j, budget.as_ref(), now)?;
+                j["runtime_started_at"] = json!(now);
             }
+            let model_active =
+                timing::heartbeat(&mut j, budget.as_ref(), timing::supervisor_active(&c), now)?;
             let lease = if j["runtime_started_at"].is_null() {
                 (now + 60_000).max(number(&j, "lease_until")?)
             } else {
@@ -128,7 +132,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 event(db, "job.progress", now, data)?;
             }
             save(db, "jobs", &id, &j)?;
-            Ok(json!({"lease_until":j["lease_until"]}))
+            Ok(
+                json!({"lease_until":j["lease_until"],"attempt_deadline":j["attempt_deadline"],
+                "attempt_ceiling_at":j["attempt_ceiling_at"],"model_active":model_active}),
+            )
         }
         "fail" => {
             let mut j = active(db, &c, now)?;
@@ -141,6 +148,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             source::terminal(&mut j, now);
             finished(&mut j, now);
             j["error"] = c["error"].clone();
+            resume::failed(&mut j);
             j["lease_until"] = json!(0);
             save(db, "jobs", &id, &j)?;
             if j["status"] == "queued" {
@@ -164,6 +172,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             for row in rows {
                 // Recovering a parent may fence a child selected in this same pass.
                 let mut j = get(db, "jobs", &string(&row, "id")?)?;
+                let interrupted = j["status"] == "running";
                 if (j["status"] == "running" && number(&j, "lease_until")? <= now)
                     || (j["status"] == "queued"
                         && (number(&j, "deadline")? <= now || dispatch_expired(&j, now)))
@@ -179,6 +188,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     });
                     source::terminal(&mut j, now);
                     finished(&mut j, now);
+                    if interrupted {
+                        resume::interrupted(&mut j);
+                    }
                     save(db, "jobs", &id, &j)?;
                     reflect_status(db, &j, now)?;
                     if j["status"] == "queued" {
@@ -199,13 +211,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         }
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
     }
-}
-
-fn duration<S: SqlStore>(db: &S, job: &Value) -> Result<i64> {
-    if job["kind"] == "evaluate" {
-        return Ok(120_000);
-    }
-    Ok(super::model_budgets::for_job(db, job)?.map_or(600_000, |budget| budget.max_execution_ms))
 }
 
 fn dispatch_expired(job: &Value, now: i64) -> bool {

@@ -47,6 +47,8 @@ pub(crate) fn model_budget(job: &Value) -> Result<Option<ModelBudget>> {
     Ok(Some(budget))
 }
 
+/// Hard wall-clock ceiling for one attempt. Agent attempts normally stop earlier, through the
+/// idle watchdog, only when they stop making progress.
 pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     if job["kind"] == "evaluate" {
         return Ok(110_000);
@@ -59,16 +61,30 @@ pub(crate) fn timeout_ms(job: &Value) -> Result<u64> {
     let Some(budget) = model_budget(job)? else {
         return Ok(570_000);
     };
-    // Agent cleanup may consume two seconds; retain an unchanged absolute deadline while
-    // reserving ten seconds for process termination, a two-second evidence upload and failure.
-    // Other job kinds retain their existing five-second callback window.
+    // Reserve ten seconds for process termination, a two-second evidence upload and failure,
+    // so the supervisor reports before the ledger's ceiling. Other kinds keep five seconds.
     let report_window = if job["kind"] == "agent" {
         10_000
     } else {
         5_000
     };
-    u64::try_from(budget.max_execution_ms - report_window)
+    u64::try_from(budget.attempt_ceiling_ms() - report_window)
         .map_err(|_| Error::new("INVALID_INPUT", "Invalid model execution duration"))
+}
+
+/// The supervisor watchdog limits: a no-progress window for budgeted agents plus the ceiling.
+pub(crate) fn limits(job: &Value) -> Result<crate::attempt_watchdog::Limits> {
+    let ceiling = std::time::Duration::from_millis(timeout_ms(job)?);
+    let idle = if job["kind"] == "agent" {
+        model_budget(job)?
+            .map(|budget| u64::try_from(budget.idle_timeout_ms()))
+            .transpose()
+            .map_err(|_| Error::new("INVALID_INPUT", "Invalid idle window"))?
+            .map(std::time::Duration::from_millis)
+    } else {
+        None
+    };
+    Ok(crate::attempt_watchdog::Limits { idle, ceiling })
 }
 
 #[cfg(test)]

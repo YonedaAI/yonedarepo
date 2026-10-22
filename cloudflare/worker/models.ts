@@ -9,7 +9,7 @@ import {
 } from './campaign-usage';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
-import { requestUsage } from './model-budget';
+import { grantOutputAllowance, requestUsage } from './model-budget';
 import { prepareModelRequest } from './model-policy';
 import { trackClaudeUsage } from './model-usage';
 import { trackProviderUsage } from './provider-usage';
@@ -125,6 +125,9 @@ export const modelHandler =
       });
       requestNumber = counted.number;
       countedReservation = counted;
+      // A smaller granted response replaces a refusal near the end of the approved allowance.
+      if (Number.isSafeInteger(counted.output_tokens))
+        prepared.body = grantOutputAllowance(prepared.body, provider, counted.output_tokens);
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
       const reservationId = await sha(
         `${sharedContext?.comparison_approval_id ? `${sharedContext.comparison_approval_id}:` : ''}${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`,
