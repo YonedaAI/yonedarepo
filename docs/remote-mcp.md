@@ -1,10 +1,104 @@
-# Local agents and repository keys
+# Remote MCP, tokens and the CLI
+
+This page has two parts:
+
+- **The source platform** (`api.dev.yonedarepo.com`, prod `api.yonedarepo.com`): personal access tokens, device login, the `yoneda` CLI with plain `git`, the account MCP and the agent plugins.
+- **The agent layer** ([below](#agent-layer-local-agents-and-repository-keys)): repository keys and the attempt workflow of the agents website.
+
+## Platform quick start
+
+1. Install the CLI (it also installs the `git-remote-yoneda` helper):
+
+   ```sh
+   cargo install --path backend/crates/yoneda-cli
+   ```
+
+2. Sign in: `yoneda login --origin https://api.dev.yonedarepo.com`. The CLI prints a code and opens `https://dev.yonedarepo.com/device`. Approve the code there with the scopes, expiry and repositories you choose. The CLI stores the resulting personal access token in `~/.config/yoneda/credentials` (mode 0600). `YONEDA_TOKEN` overrides it.
+3. Create and clone a repository, then use plain git:
+
+   ```sh
+   yoneda repo create demo                                  # CLI repositories land solo (no approvals)
+   git clone yoneda::https://api.dev.yonedarepo.com/<repo-id> demo
+   cd demo && git commit -am "change" && git push origin main
+   ```
+
+   `git push origin main` lands. Disjoint concurrent changes from other clones merge on the server, and the push succeeds; then `git pull`. A same-line conflict is reported with its paths: pull, resolve, commit, push again.
+4. Read on the server instead of opening files: `yoneda grep|blame|symbols|log|diff`, each with `--at <version>` for an earlier landed version.
+
+Each repository's **Connect** tab in `/source` shows these commands with that repository's id and the configured API origin.
+
+## Personal access tokens and device login
+
+A personal access token (`ypat_…`) is account-wide:
+
+| Property | Values |
+|---|---|
+| Scopes | `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin` (create, delete, tokens, policy) |
+| Repositories | all (default), or an allowlist of repository ids |
+| Expiry | 1–90 days (default 30), revocable at any time |
+
+The server keeps only a hash and verifies the token on every request. Create and revoke tokens on the **Tokens** page in `/source` (shown once, with copy), or through the API with the session cookie: `GET/POST/DELETE /api/v1/tokens`. The same page lists and creates repository tokens (`yrp_…`, one repository, optional paths).
+
+Device login follows RFC 8628: `POST /api/v1/device/code`, approval at `/device` (signed in, session only), then the CLI polls `POST /api/v1/device/token`. Codes are `XXXX-XXXX`, single use, and expire after 10 minutes.
+
+## Account MCP
+
+`POST https://api.dev.yonedarepo.com/api/v1/mcp` with `Authorization: Bearer <ypat_…>` (a session cookie or a repository token also works, within its own scope). It is stateless Streamable HTTP with JSON responses (protocol `2025-06-18` or `2025-03-26`), like the per-repository `/api/v1/repos/<id>/mcp`.
+
+| Tools | Notes |
+|---|---|
+| `repo_list` | repositories the credential can use |
+| `repo_create {name, files?, policy?}` | needs `repo:admin`; `policy {approvals:0, required_checks:[]}` lands solo |
+| `repo_delete {repo, confirm}` | needs `repo:admin`; `confirm` must equal the repository name |
+| all 31 platform tools (`git_*`, `symbol_*`) | each takes a required `repo` (id or exact name) |
+
+The platform tools dispatch through the same operation table as REST and the per-repository MCP, with the caller's own credential: scopes and the allowlist apply exactly as they do for REST. A typical cloud-agent loop is `repo_create`, `git_commit` (server-side, nothing to push), `git_land`, then `git_grep` or `git_cat_file`.
+
+### Plugins
+
+| Client | Install |
+|---|---|
+| Claude Code | `/plugin marketplace add YonedaAI/yonedarepo`, then `/plugin install yoneda@yoneda` |
+| Codex | `yoneda setup codex` (copies `plugins/codex/`) |
+| Gemini CLI | `yoneda setup gemini` (copies `plugins/gemini/` to `~/.gemini/extensions/yoneda/`) |
+
+The Claude Code plugin (`plugins/yoneda/`) adds:
+
+- the `yoneda` skill: the git workflow for `yoneda::` remotes
+- the account MCP, with `Authorization: Bearer ${YONEDA_TOKEN}` read from the environment
+- a SessionStart hook that runs `yoneda status --brief`, only in checkouts with a `yoneda::` remote
+
+Set `YONEDA_TOKEN` before starting Claude Code. For production, also set `YONEDA_MCP_URL=https://api.yonedarepo.com/api/v1/mcp`.
+
+Without the plugin, use this `.mcp.json` (or the Codex block, appended to `~/.codex/config.toml`):
+
+```json
+{
+  "mcpServers": {
+    "yoneda": {
+      "type": "http",
+      "url": "https://api.dev.yonedarepo.com/api/v1/mcp",
+      "headers": { "Authorization": "Bearer ${YONEDA_TOKEN}" }
+    }
+  }
+}
+```
+
+```toml
+[mcp_servers.yoneda]
+url = "https://api.dev.yonedarepo.com/api/v1/mcp"
+bearer_token_env_var = "YONEDA_TOKEN"
+```
+
+Codex reads user skills from `~/.agents/skills/`; `yoneda setup codex` installs the skill there.
+
+## Agent layer: local agents and repository keys
 
 Sign in, open a repository and choose **Connect local agent**. Create a read or contribution key with a 1–31 day expiry. Save the key privately when it appears: the server retains only its hash. Revoke it in the same panel; subsequent MCP requests fail immediately. Account recovery also revokes all repository keys. Keys cannot access other repositories or the owner API.
 
 Set `YONEDA_MCP_TOKEN` in the environment of the client process, using your password manager or a private shell prompt. Never put the value in a URL, command argument, committed configuration or prompt. Replace the example endpoint below with the one shown by the website.
 
-## Codex
+### Codex
 
 Add to `~/.codex/config.toml`:
 
@@ -16,7 +110,7 @@ bearer_token_env_var = "YONEDA_MCP_TOKEN"
 
 Alternatively, `codex mcp add yoneda --url https://YOUR-WORKER.workers.dev/mcp/YOUR-REPO --bearer-token-env-var YONEDA_MCP_TOKEN` writes the same configuration. Restart Codex with the environment variable available. This uses the official [HTTP bearer token setting](https://developers.openai.com/codex/config-reference/); it was also checked against the installed CLI's `mcp add --help`.
 
-## Claude Code
+### Claude Code
 
 Create `.mcp.json` in your working folder:
 
@@ -34,7 +128,7 @@ Create `.mcp.json` in your working folder:
 
 Start Claude Code from the environment containing the variable and approve the server in `/mcp`. Claude documents [environment expansion for HTTP headers](https://code.claude.com/docs/en/mcp#environment-variable-expansion-in-mcp-json). The configuration contains a variable reference, not a secret.
 
-## Explore and contribute
+### Explore and contribute
 
 Ask a fresh agent to call `repo_context`, search prior context and inspect `decision`, `why`, `graph` and `artifact_get`. It can distinguish agent assertions, independently captured source, evaluator observations and the human decision. `context_search` returns a cursor for bounded pagination.
 
@@ -47,7 +141,7 @@ A contribution key additionally permits:
 
 The key never reaches the platform: the agent layer commits with the project's own repository token, which cannot land.
 
-## Limits and evidence
+### Limits and evidence
 
 Hosted coding attempts additionally receive `delegate_agent` and `delegation_status` through their attempt-scoped MCP server when the owner enables subagents in the run. Identity comes from the active container lease. Children inherit approved provider/model/source/context and produce independently checked alternatives under shared limits. Repository keys for local agents deliberately do not grant paid hosted-agent creation; their contribution workflow above remains separate. See [delegation operation and limits](runbook.md#agent-concurrency-and-delegation).
 
@@ -55,7 +149,7 @@ The remote endpoint implements stateless Streamable HTTP JSON-RPC: POST JSON res
 
 Each `attempt_commit` carries at most 500 regular files of 1 MiB each within a 4 MiB request, including executable bits and base64 binary transfer. Symlinks and submodules must be converted. Expired attempts fail without scheduling paid hosted inference. Local workerd tests cover durable grants, revocation after eviction, cross-repository denial, canonical-write denial, attribution, platform branch commits, frozen revision submission and fresh capture on the base. Actual third-party client connections are recorded separately in the release evidence.
 
-## Offline CLI
+### Offline CLI
 
 `yoneda` (crate `backend/crates/yoneda-cli`) lets a local agent or person work offline and sync later. The work is one long optimistic transaction pinned to the clone's base version; landing applies the platform's usual path-level checks and same-file three-way merge.
 
