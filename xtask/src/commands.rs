@@ -110,6 +110,10 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         },
         "rollback" => crate::deploy_live::rollback(&args).await,
         "status" => crate::deploy_live::status(&args).await,
+        "live-check" => crate::deploy_live::live_check(&args).await,
+        "runtime-image" if args.get(1).map(String::as_str) == Some("record") => {
+            crate::deploy_registry::record_command(&args).await
+        }
         "infra" => crate::infra::execute(&args).await,
         "seed-template" | "demo" | "verify-live" | "upgrade-policy" => {
             let url = args
@@ -135,7 +139,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
             );
             Ok(())
         }
