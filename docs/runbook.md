@@ -133,6 +133,26 @@ Production cutover notes (not applied to `prod.json` until the owner promotes):
 - Pin ExecutionContainer and CheckContainer with `constraints.regions: ["ENAM"]` and give the agents Worker `placement: {mode: "targeted", region: "aws:us-east-1"}`, as dev has: unpinned dev agent containers ran in HKG/TXL with about 1 s round trips to the Durable Objects, against about 330 ms elsewhere.
 - Set `check_instances` (CheckContainer max_instances = checks consumer max_concurrency).
 
+## Sandbox runs (`sandbox-cli-v1`, staging)
+
+A single-agent run started with `"runtime": "sandbox-cli-v1"` in its `start_run` body runs unmodified Claude Code (`claude -p --output-format stream-json`) in a Cloudflare Sandbox instead of the harness container, following Cloudflare's [coding agent runner](https://developers.cloudflare.com/sandbox/get-started/build-a-coding-agent-runner/). One `AgentSandbox` Durable Object per attempt starts `cloudflare/containers/sandbox.Dockerfile` with Internet access off, `git clone yoneda::<platform>/<repo>` onto a real disk, runs the CLI in the background, streams its events into the activity log every 10 s ("View logs", "Last activity", "idle N min" after 10 silent minutes, never a kill), then squashes the work into one commit on the frozen base and `git push`es it to `attempts/<run>/<n>`. That commit is the run's candidate; the existing evaluator checks it and the owner publishes it as before. The only stop is a two-hour safety cap, which still commits and pushes what exists. Compare and team runs are refused (`NOT_SUPPORTED`); deployments without the `AGENT_SANDBOX` binding refuse the runtime (`SANDBOX_UNAVAILABLE`).
+
+No credential enters the sandbox. Its traffic goes through `SandboxOutbound`, which allows only the run's model endpoint (adding the saved connection's key; managed GLM and MiMo keys stay in the Secrets Store) and this project's platform repository (adding the project's agent token: reads, object and commit upload, and branch moves under `attempts/<run>/` only; never land, review, checks or tokens).
+
+One-time setup on the dev account, with a token that has **AI Gateway Edit** (the model requests go through the gateway named by `SANDBOX_AI_GATEWAY`, `<account>/yonedarepo-staging`, for its logs and analytics; the provider key is still added by the Worker, so the gateway stores no key and needs no authentication):
+
+```sh
+A=https://api.cloudflare.com/client/v4/accounts/f011d0ee02b23cad26b4b38151b204ad/ai-gateway
+H=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
+curl "${H[@]}" -X POST "$A/gateways" -d '{"id":"yonedarepo-staging","collect_logs":true,"cache_ttl":0,"cache_invalidate_on_update":false,"rate_limiting_interval":0,"rate_limiting_limit":0,"rate_limiting_technique":"fixed"}'
+curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"Z.ai","slug":"zai","base_url":"https://api.z.ai","enable":true}'
+curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"MiMo","slug":"mimo","base_url":"https://api.xiaomimimo.com","enable":true}'
+```
+
+The CLI then calls `https://gateway.ai.cloudflare.com/v1/<account>/yonedarepo-staging/custom-zai/api/anthropic` ([custom providers](https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/), provider-specific endpoint). MiMo Token Plan connections (regional hosts) bypass the gateway and call their region directly. Without the gateway, remove `SANDBOX_AI_GATEWAY` from `infra/envs/dev.json`: requests then go straight to the provider. Gateway dynamic routing accepts only the OpenAI chat format, so there is no GLM→MiMo fallback for Claude Code, and spend limits price only models AI Gateway knows; the smoke reports cost from the CLI's own token counts at the registry's conservative rates.
+
+Deploy: `cargo xtask deploy --env dev` builds the sandbox image from its Dockerfile (wrangler `images.agent`; the runtime-image swap leaves it alone) and adds the `AgentSandbox` class (migration `v2`). Then `node tools/staging-realworld.mjs --sandbox-smoke [--smoke-provider zai|mimo]`: the agent smoke's brief on this runtime must record the pushed commit within 5 minutes; it prints the same timing table plus sandbox milestones and tokens, and fails if the checks reject the commit. Evidence: `.local/staging/sandbox-smoke-*.json`.
+
 ## Legacy retry fixture workflow
 
 Create the retry fixture as an ordinary console project from `fixtures/retry-client` (its source lives in the project's platform repository, created in your own request); there is no separate seed command or Git push. Pass its id to `demo`, `verify-live` and `upgrade-policy` with `--repo ID`.
