@@ -32,6 +32,10 @@ mod tests;
 mod workspace_tests;
 
 #[cfg(test)]
+#[path = "tests/account_tokens.rs"]
+mod account_tokens_tests;
+
+#[cfg(test)]
 #[path = "tests/project_setup.rs"]
 mod project_setup_tests;
 

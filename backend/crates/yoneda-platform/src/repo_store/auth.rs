@@ -13,6 +13,8 @@ pub struct Actor {
     pub owner: bool,
     /// A person signed in to their own account (never a token, platform role or script).
     human: bool,
+    /// An account's personal access token: whole-repository Git reads with `read`.
+    account_token: bool,
     scopes: Vec<String>,
     /// Directory grant (`None`: whole repository).
     pub grant: super::grants::Grant,
@@ -43,10 +45,13 @@ impl Actor {
             ))
         }
     }
-    /// Git clone access: a person signed in to their own account who may read the whole
-    /// repository. Agents and scripts use the API; a directory grant cannot clone it all.
+    /// Git clone access: a person signed in to their own account, or that account's personal
+    /// token with `repo:read`, who may read the whole repository. Repository tokens and
+    /// scripts use the API; a directory grant cannot clone it all.
     pub fn require_human_reader(&self) -> Result<()> {
-        if self.human && self.grant.is_none() && (self.owner || self.can("read")) {
+        let reader = (self.human && (self.owner || self.can("read")))
+            || (self.account_token && self.can("read"));
+        if reader && self.grant.is_none() {
             Ok(())
         } else {
             Err(Error::new(
@@ -102,7 +107,8 @@ pub fn actor_with(
     token: impl Fn(&str) -> Result<Option<Value>>,
 ) -> Result<Actor> {
     if let Some(
-        system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"),
+        system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
+        | "purge"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -116,6 +122,7 @@ pub fn actor_with(
             principal: format!("platform:{system}"),
             owner: false,
             human: false,
+            account_token: false,
             grant: None,
             scopes: std::iter::once("read")
                 .chain(roles.iter().copied())
@@ -134,9 +141,13 @@ pub fn actor_with(
             principal: string(session, "principal")?,
             owner: true,
             human: session["human"] == true,
+            account_token: false,
             scopes: Vec::new(),
             grant: None,
         });
+    }
+    if let Some(pat) = c.get("_pat").filter(|s| s.is_object()) {
+        return account_token(pat, workspace);
     }
     let secret =
         string(c, "_token").map_err(|_| Error::new("UNAUTHORIZED", "Missing credentials"))?;
@@ -146,12 +157,47 @@ pub fn actor_with(
         principal: format!("token:{}", row["name"].as_str().unwrap_or_default()),
         owner: false,
         human: false,
+        account_token: false,
         scopes: serde_json::from_str(row["scopes"].as_str().unwrap_or("[]"))
             .map_err(|_| bad("Corrupt scopes"))?,
         grant: match row["paths"].as_str() {
             Some(paths) => Some(serde_json::from_str(paths).map_err(|_| bad("Corrupt grant"))?),
             None => None,
         },
+    })
+}
+
+/// A personal access token the adapter verified against its account: the account's
+/// principal (never human, so break-glass stays out of reach), `repo:admin` as the owner,
+/// and the other account scopes as the repository scopes of the same name. The adapter
+/// enforces the token's repository allowlist before calling.
+fn account_token(pat: &Value, workspace: &str) -> Result<Actor> {
+    if string(pat, "workspace")? != workspace {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Repository belongs to another workspace",
+        ));
+    }
+    let held: Vec<String> =
+        serde_json::from_value(pat["scopes"].clone()).map_err(|_| bad("Corrupt token scopes"))?;
+    let mut scopes = Vec::new();
+    let mut owner = false;
+    for scope in &held {
+        match scope.as_str() {
+            "repo:admin" => owner = true,
+            "repo:read" | "repo:write" | "repo:land" | "repo:review" => {
+                scopes.push(scope["repo:".len()..].to_owned())
+            }
+            _ => return Err(Error::new("FORBIDDEN", "Unknown token scope")),
+        }
+    }
+    Ok(Actor {
+        principal: string(pat, "principal")?,
+        owner,
+        human: false,
+        account_token: true,
+        scopes,
+        grant: None,
     })
 }
 
