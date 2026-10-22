@@ -87,6 +87,7 @@ pub fn read(command: &str, rest: &[String]) -> Result<Command> {
         "blame" => ReadCommand::Blame {
             path: p.exactly(1, "blame <path>")?[0].clone(),
             branch: p.flag("ref"),
+            at,
         },
         "diff" => {
             p.at_most(2)?;

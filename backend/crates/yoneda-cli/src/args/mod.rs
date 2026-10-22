@@ -1,5 +1,7 @@
 //! Command-line parsing: a small table-driven parser (no framework). The command set is
 //! wide but each command has a handful of flags; clap would add more than it removes.
+#[cfg(test)]
+mod docs;
 mod parser;
 mod sub;
 
@@ -226,6 +228,18 @@ mod tests {
                     path: None,
                     ignore_case: true,
                     at: Some(7)
+                }
+            })
+        );
+        // Every read command takes --at <version>.
+        assert_eq!(
+            parsed("blame src/a.rs --ref main --at 4").ok(),
+            Some(Command::Read {
+                target: Target::default(),
+                command: ReadCommand::Blame {
+                    path: "src/a.rs".into(),
+                    branch: Some("main".into()),
+                    at: Some(4)
                 }
             })
         );

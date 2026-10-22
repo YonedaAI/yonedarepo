@@ -91,8 +91,12 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             ]);
             print_hits(&t.api.get(&format!("/search{q}")).await?);
         }
-        ReadCommand::Blame { path, branch } => {
-            let q = query(&[("path", Some(path)), ("ref", branch)]);
+        ReadCommand::Blame {
+            path,
+            branch,
+            at: version,
+        } => {
+            let q = query(&[("path", Some(path)), ("ref", branch), ("at", at(version))]);
             print_json(&t.api.get(&format!("/blame{q}")).await?);
         }
         ReadCommand::Diff {

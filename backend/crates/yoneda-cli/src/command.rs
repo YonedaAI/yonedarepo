@@ -8,7 +8,7 @@ account
   logout [--origin <url>]
   repo create <name> | repo list | repo delete <id> --confirm <name>
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
-  setup claude|codex|gemini                              MCP config for a coding agent
+  setup claude|codex|gemini                              a coding agent's skill files and MCP config
 
 repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>])
   land [--branch <b>]                 land the branch's head on main
@@ -17,11 +17,12 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
   grep <query> [--path <p>] [-i] [--at <version>]
-  blame <path> [--ref <b>]
+  blame <path> [--ref <b>] [--at <version>]
   diff [<base>] [<head>] [--path <p>] [--at <version>]
   symbols <path> [--at <version>]
   check run <name> [--commit <sha>] | check status [<run-id>] [--commit <sha>]
   conflicts                           the last refused landing's conflicting paths
+  status [--brief]                    one line, no network: commits not on the platform yet
 
 offline checkouts (`yoneda clone`, kept for existing scripts)
   clone <repo-id> [dir] [--origin <url>]
@@ -94,6 +95,7 @@ pub enum ReadCommand {
     Blame {
         path: String,
         branch: Option<String>,
+        at: Option<u64>,
     },
     Diff {
         base: Option<String>,

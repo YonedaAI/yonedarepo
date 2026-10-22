@@ -223,11 +223,19 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
         c.git(&dir, &["rev-parse", "HEAD"])? == main,
         "after a pull, HEAD is the platform's main",
     )?;
+    let requests = |w: &World| {
+        ["GET", "POST", "PUT", "DELETE"]
+            .iter()
+            .map(|m| w.proxy.count(m, ""))
+            .sum::<usize>()
+    };
+    let before = requests(w);
     let brief = c.ok(&dir, &["status", "--brief"])?;
     check(
-        brief.contains("main: 0 commit(s) not on the platform"),
+        brief.lines().count() == 1 && brief.contains("main: 0 commit(s) not on the platform"),
         &brief,
     )?;
+    check(requests(w) == before, "status --brief makes no request")?;
     let log = c.ok(&dir, &["log"])?;
     check(log.contains("add d") || log.contains(&pushed), &log)?;
     check(
@@ -680,8 +688,52 @@ fn account_and_repository_commands(w: &World) -> TestResult {
     c.ok(
         &c.home,
         &["token", "revoke", "ci", "--repo", id, "--origin", origin],
+    )?;
+    setup_installs_the_agent_files(&c, origin)
+}
+
+/// `yoneda setup` in a scratch HOME, with a token in the environment: the skill and
+/// extension files land where each agent reads them, and no file holds the token.
+fn setup_installs_the_agent_files(c: &Client, origin: &str) -> TestResult {
+    let project = c.home.join("project");
+    std::fs::create_dir_all(&project).map_err(|e| e.to_string())?;
+    let said = c.ok(&project, &["setup", "claude", "--origin", origin])?;
+    check(
+        said.contains("/plugin marketplace add YonedaAI/yonedarepo")
+            && said.contains("/plugin install yoneda@yoneda"),
+        &said,
+    )?;
+    c.ok(&project, &["setup", "codex", "--origin", origin])?;
+    c.ok(&project, &["setup", "gemini", "--origin", origin])?;
+    let files = [
+        project.join(".mcp.json"),
+        c.home.join(".codex/config.toml"),
+        c.home.join(".agents/skills/yoneda/SKILL.md"),
+        c.home
+            .join(".gemini/extensions/yoneda/gemini-extension.json"),
+        c.home.join(".gemini/extensions/yoneda/GEMINI.md"),
+        c.home.join(".gemini/settings.json"),
+    ];
+    let skill =
+        std::fs::read_to_string(support::repo_root().join("plugins/codex/skills/yoneda/SKILL.md"))
+            .map_err(|e| e.to_string())?;
+    check(
+        read(&c.home, ".agents/skills/yoneda/SKILL.md") == skill,
+        "codex skill",
+    )?;
+    for file in files {
+        let text =
+            std::fs::read_to_string(&file).map_err(|e| format!("{}: {e}", file.display()))?;
+        check(
+            !c.token.is_empty() && !text.contains(&c.token),
+            &format!("{} holds the token", file.display()),
+        )?;
+    }
+    check(
+        read(&c.home, ".gemini/extensions/yoneda/gemini-extension.json")
+            .contains(&format!("{origin}/api/v1/mcp")),
+        "the extension points at the origin",
     )
-    .map(|_| ())
 }
 
 #[test]
