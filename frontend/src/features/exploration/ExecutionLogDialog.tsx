@@ -3,6 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import { ExecutionFailure } from './ExecutionFailure';
+import { SandboxActivity } from './SandboxActivity';
+import { isSandbox } from './sandboxActivityView';
 
 type Entry = {
   seq: number;
@@ -46,8 +48,11 @@ export default function LogDialog({
   const [error, setError] = useState('');
   const alive = useRef(true);
   const path = `repos/${repo}/execution_logs?execution_id=${encodeURIComponent(execution.id)}`;
+  const sandbox = isSandbox(execution);
   useEffect(() => {
     alive.current = true;
+    // A sandbox attempt makes no proxied model requests; its log is the CLI's own activity.
+    if (sandbox) return;
     void api<Page>(path)
       .then((result) => {
         if (alive.current) setPage(result);
@@ -61,7 +66,7 @@ export default function LogDialog({
     return () => {
       alive.current = false;
     };
-  }, [path]);
+  }, [path, sandbox]);
   async function more() {
     setLoading(true);
     setError('');
@@ -93,9 +98,31 @@ export default function LogDialog({
       {execution.status === 'failed' && (
         <ExecutionFailure repo={repo} execution={execution} onProviders={onProviders} />
       )}
+      {sandbox ? (
+        <SandboxActivity repo={repo} execution={execution} />
+      ) : (
+        <RequestTimeline page={page} loading={loading} error={error} onMore={() => void more()} />
+      )}
+    </Dialog>
+  );
+}
+
+function RequestTimeline({
+  page,
+  loading,
+  error,
+  onMore,
+}: {
+  page: Page;
+  loading: boolean;
+  error: string;
+  onMore: () => void;
+}) {
+  return (
+    <>
       <div className="execution-log-heading">
         <h3>Request timeline</h3>
-        <button type="button" className="quiet" onClick={() => void more()} disabled={loading}>
+        <button type="button" className="quiet" onClick={onMore} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spin' : undefined} />
           {loading ? 'Loading…' : page.has_more ? 'Load more' : 'Refresh logs'}
         </button>
@@ -135,6 +162,6 @@ export default function LogDialog({
       <p className="subtle">
         Logs retain status and timing. API keys, prompts and provider response bodies are excluded.
       </p>
-    </Dialog>
+    </>
   );
 }
