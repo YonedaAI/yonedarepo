@@ -20,9 +20,8 @@ export type ProviderFailureCode =
 
 const notices: Record<ProviderFailureCode, { title: string; action: string }> = {
   EXECUTION_TIMEOUT: {
-    title: 'reached the execution time limit',
-    action:
-      'Use Restart run to allow more execution time or narrow the task. Set the time limit for this model in the run settings.',
+    title: 'stopped before finishing',
+    action: 'Start the run again. No settings need to change.',
   },
   PROVIDER_CONFIGURATION: {
     title: 'key and billing settings do not match',
@@ -69,9 +68,9 @@ const notices: Record<ProviderFailureCode, { title: string; action: string }> = 
     action: 'Use Restart run to raise the approved request allowance or reduce the brief.',
   },
   MODEL_SPEND_LIMIT: {
-    title: 'estimated model allowance was reached',
+    title: 'approved spend allowance is used up',
     action:
-      'Review the approved pricing and remaining allowance. Use Restart run with a larger allowance or a smaller task; the next request must fit its worst-case reservation.',
+      'Requests already shrink their response to fit what remains; even the smallest response no longer fits. Use Restart run with a larger allowance to continue.',
   },
   CAMPAIGN_MODEL_REQUEST_LIMIT: {
     title: 'used this model’s shared campaign request allowance',
@@ -111,9 +110,26 @@ export function executionFailureCode(execution: Record<string, any>) {
   return providerFailureCode(prefix);
 }
 
+/** Timeouts are the platform stopping the agent, not a provider error or an owner setting. */
+function timeoutNotice(execution: Record<string, any>) {
+  const error = typeof execution.error === 'string' ? execution.error : '';
+  const title = error.includes('No agent progress')
+    ? 'Agent stopped after several minutes without progress'
+    : error.includes('safety ceiling')
+      ? 'Agent reached the 30-minute safety ceiling while still working'
+      : 'Agent was stopped by the old fixed time limit, possibly while still working';
+  return {
+    title,
+    action: execution.team_task
+      ? 'Use Retry task. It continues from the files this attempt already wrote, and dependent tasks start when it succeeds. No settings need to change.'
+      : notices.EXECUTION_TIMEOUT.action,
+  };
+}
+
 export function providerFailureNotice(execution: Record<string, any>, code?: ProviderFailureCode) {
   const platform = platformFailureNotice(execution);
   if (platform) return platform;
+  if (code === 'EXECUTION_TIMEOUT') return timeoutNotice(execution);
   const provider = providerNames[execution.provider ?? execution.harness] ?? 'Agent provider';
   return code
     ? {
@@ -160,8 +176,9 @@ function terminalBudgetCode(result: unknown): ProviderFailureCode | undefined {
     if (text === 'Campaign, bucket, chain or model allowance exhausted')
       return 'CAMPAIGN_EXHAUSTED';
     if (
-      text ===
-      'This provider/model group has insufficient approved spend remaining for the conservative request ceiling'
+      text.startsWith(
+        'This provider/model group has insufficient approved spend remaining for the conservative request ceiling',
+      )
     )
       return 'MODEL_SPEND_LIMIT';
     try {

@@ -93,8 +93,16 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
                 .as_bool()
                 .ok_or_else(|| bad("Invalid count-only marker"))?,
         };
-        let (amount, input_tokens) =
-            budget.reserve_charge(input_bytes, output_tokens, count_only)?;
+        // Shrink the response allowance to what remains instead of refusing; the provider
+        // enforces the granted cap, so settled spend can never pass the owner's limit.
+        let granted = if count_only {
+            output_tokens
+        } else {
+            budget
+                .fit_output_tokens(input_bytes, output_tokens)?
+                .ok_or_else(|| spend_refusal(&budget, input_bytes))?
+        };
+        let (amount, input_tokens) = budget.reserve_charge(input_bytes, granted, count_only)?;
         let charged = budget
             .charged_microusd
             .checked_add(amount)
@@ -120,9 +128,12 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
         let id = format!("model-request:{key}");
         let reservation = json!({"id":id,"run_id":rid,"job_id":jid,"epoch":epoch,
             "provider":budget.provider,"model":budget.model,"reserved_microusd":amount,
-            "charged_microusd":amount,"input_token_ceiling":input_tokens,"output_token_ceiling":output_tokens,
+            "charged_microusd":amount,"input_token_ceiling":input_tokens,"output_token_ceiling":granted,
             "pricing":budget.pricing,"status":"reserved","created_at":now,"count_only":count_only,"comparison_approval_id":execution["comparison_approval_id"]});
         create(db, "model_reservations", &id, &reservation)?;
+        if granted < output_tokens {
+            response["output_tokens"] = json!(granted);
+        }
         response["reservation_id"] = json!(id);
         response["reservation_microusd"] = json!(amount);
         response["model_budget"] = json!(budget);
@@ -133,6 +144,8 @@ pub(super) fn reserve<S: SqlStore>(db: &S, c: &Value, mut job: Value, now: i64) 
         run["model_requests"] = json!(total);
     }
     job["model_requests"] = json!(request_number);
+    // Ledger-observed model activity is attempt progress (see leases::timing).
+    job["model_request_at"] = json!(now);
     save(db, "runs", &rid, &run)?;
     save(db, "jobs", &string(&job, "id")?, &job)?;
     if response.get("reservation_id").is_some() {
@@ -161,7 +174,7 @@ pub(super) fn settle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         return Err(bad("Provider usage exceeds the reserved token ceilings"));
     }
     let jid = string(&reservation, "job_id")?;
-    let job = get(db, "jobs", &jid)?;
+    let mut job = get(db, "jobs", &jid)?;
     if c.get("comparison_approval_id").is_some()
         && c["comparison_approval_id"] != reservation["comparison_approval_id"]
     {
@@ -212,6 +225,10 @@ pub(super) fn settle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     reservation["settled_at"] = json!(now);
     save(db, "model_reservations", &id, &reservation)?;
     save(db, "runs", &rid, &run)?;
+    if job["status"] == "running" && job["epoch"] == reservation["epoch"] {
+        job["model_response_at"] = json!(now);
+        save(db, "jobs", &jid, &job)?;
+    }
     event(
         db,
         "model.request_settled",
@@ -219,4 +236,26 @@ pub(super) fn settle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
         json!({"reservation":reservation,"refund_microusd":refund,"model_budget":budget}),
     )?;
     Ok(reservation)
+}
+
+/// Refuse only when even the smallest useful response cannot fit the real remaining allowance.
+fn spend_refusal(
+    budget: &yoneda_agents_core::model_budget::ModelBudget,
+    input_bytes: i64,
+) -> Error {
+    let limit = budget.spend_limit_microusd.unwrap_or_default();
+    let remaining = limit.saturating_sub(budget.charged_microusd).max(0);
+    let needed = budget
+        .reserve_charge(
+            input_bytes,
+            yoneda_agents_core::model_budget::MIN_MODEL_OUTPUT_TOKENS.min(budget.max_output_tokens),
+            false,
+        )
+        .map_or(0, |(amount, _)| amount);
+    Error::new(
+        "MODEL_SPEND_LIMIT",
+        format!(
+            "This provider/model group has insufficient approved spend remaining for the conservative request ceiling: the next request needs at least {needed} microdollars, {remaining} of {limit} remain"
+        ),
+    )
 }

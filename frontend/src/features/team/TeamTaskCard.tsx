@@ -4,11 +4,13 @@ import type { Snapshot } from '../../lib/types';
 import { ExecutionLogs } from '../exploration/ExecutionLogs';
 import { capturedPathCount } from '../source-workspace/sourcePathCount';
 import { TeamHandoff } from './TeamHandoff';
+import { TeamRetry } from './TeamRetry';
 import { TeamSource } from './TeamSource';
 import {
-  canRetryTeamTask,
   classifyTeamHandoffs,
   dependencyBlockers,
+  interruptedTask,
+  retryBlocker,
   type TeamRecord,
   taskError,
   teamAgentBusy,
@@ -79,11 +81,15 @@ export function TeamTaskCard({
       )}
       {task.status === 'blocked' && (
         <p role="status">
-          {blockers.length
-            ? `Waiting for ${blockers.map(label).join(', ')}.`
-            : teamAgentBusy(task, tasks)
-              ? 'Waiting for this agent’s current task and source capture.'
-              : 'Waiting for the scheduler to make this task ready.'}
+          {blockers.some(
+            (id: string) => tasks.find((other) => other.task_id === id)?.status === 'failed',
+          )
+            ? `Blocked until ${blockers.map(label).join(', ')} succeeds. Use Retry task on it; this task starts automatically afterwards.`
+            : blockers.length
+              ? `Waiting for ${blockers.map(label).join(', ')}.`
+              : teamAgentBusy(task, tasks)
+                ? 'Waiting for this agent’s current task and source capture.'
+                : 'Waiting for the scheduler to make this task ready.'}
         </p>
       )}
       {task.status === 'queued' && (
@@ -260,26 +266,14 @@ export function TeamTaskCard({
       {task.status === 'complete' && task.output && (
         <TeamSource repo={snapshot.repository.id} run={run.id} task={task} />
       )}
-      {!reviewer &&
-        task.status === 'failed' &&
-        (canRetryTeamTask(task, tasks, run) ? (
-          <button
-            type="button"
-            className="quiet"
-            disabled={busy || snapshot.capabilities?.collaborative_runs !== 1}
-            onClick={() => onRetry(task)}
-          >
-            Retry task
-          </button>
-        ) : (
-          <p>
-            {task.revision >= 3
-              ? 'This task exhausted its three approved attempts. Start a fresh run to continue.'
-              : teamAgentBusy(task, tasks)
-                ? 'Retry is available after this agent’s current task and source capture finish.'
-                : 'A retry requires a fresh run because dependent work already started or this attempt version is unavailable.'}
-          </p>
-        ))}
+      {!reviewer && task.status === 'failed' && (
+        <TeamRetry
+          blocker={retryBlocker(task, tasks, run, execution)}
+          resumes={interruptedTask(task, execution)}
+          disabled={busy || snapshot.capabilities?.collaborative_runs !== 1}
+          onRetry={() => onRetry(task)}
+        />
+      )}
     </li>
   );
 }

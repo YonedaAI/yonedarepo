@@ -105,6 +105,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "source_bind"
         | "source_register_changeset"
         | "source_registered"
+        | "source_resume_grant"
         | "source_capture_context" => crate::source_binding::handle(db, &c, now),
         "approve_comparison_review"
         | "select_comparison_candidate"

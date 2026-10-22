@@ -18,8 +18,13 @@ pub(crate) async fn execute(
         .ok_or_else(|| crate::err("Source workspace parent missing"))?;
     let (owned, parent) = (job.clone(), parent.to_path_buf());
     let session = off_runtime(move || SourceRun::prepare(&owned, &parent, false)).await?;
+    // A retry of an interrupted attempt continues from its staged files.
+    let prompt = match crate::attempt_resume::restore(job, session.root()).await {
+        Some(note) => format!("{prompt}\n\n{note}"),
+        None => prompt.to_owned(),
+    };
     let evidence =
-        crate::agent_harness::run(job, session.root(), transcript, prompt, budget).await?;
+        crate::agent_harness::run(job, session.root(), transcript, &prompt, budget).await?;
     let id = format!("source-complete-{}", crate::field(job, "id")?);
     let workspace = off_runtime(move || session.finish(&id)).await?;
     let mut result =

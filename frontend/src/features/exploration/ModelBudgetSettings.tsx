@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { providerNames } from '../workspace/providerModels';
 import {
+  agentTimeRule,
   defaultModelBudget,
   editDollarBudget,
   editModelPricing,
@@ -32,18 +33,6 @@ function ModelAllowance({
       <legend>{providerNames[model.provider] ?? model.provider}</legend>
       <code className="model-name">{model.model}</code>
       <div className="budget-controls budget-main-controls">
-        <label>
-          Minutes per execution
-          <input
-            type="number"
-            min={1}
-            max={30}
-            step="any"
-            required
-            value={value.minutes}
-            onChange={(event) => change({ minutes: event.target.value })}
-          />
-        </label>
         <label className="model-request-label">
           Request limit (optional)
           <input
@@ -77,6 +66,10 @@ function ModelAllowance({
       <p className="subtle">
         One request is one model call. Blank means no YonedaRepo request cap; provider quotas still
         apply.
+      </p>
+      <p className="subtle">
+        Time: an agent keeps working while it makes progress (model responses, tool calls, file
+        changes). {agentTimeRule()}. A retry continues from the files it already wrote.
       </p>
       {value.usdEnabled && (
         <p className={missingRates ? 'budget-rate-guidance' : 'subtle'}>

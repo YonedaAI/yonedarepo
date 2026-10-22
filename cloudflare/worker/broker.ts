@@ -8,6 +8,7 @@ import { error, readJson, response } from './http';
 import { attemptLog, failureCode } from './logging';
 import { scopeFor } from './scope';
 import { sourceAgentCompletion } from './source-completion';
+import { sourceResume } from './source-resume';
 import { ledger, object } from './storage';
 import { testBundle } from './test-bundle';
 import type { Env, Json } from './types';
@@ -50,11 +51,14 @@ export const brokerHandler: OutboundHandler<Env> = async (req, env, ctx) => {
       return response({ review_id: review.id, manifest_digest: review.manifest_digest });
     }
     if (path === '/test-bundle') return response(await testBundle(env, scope, String(body.digest)));
+    if (path === '/resume') return response(await sourceResume(env, scope));
     if (path === '/heartbeat' || path === '/progress')
       return response(
         await ledger(env, scope.repo_id, {
           op: path === '/progress' ? 'progress' : 'heartbeat',
           progress: body.progress,
+          // Supervisor-observed agent progress moves the attempt's no-progress deadline.
+          ...(typeof body.active === 'boolean' ? { active: body.active } : {}),
           ...identity,
         }),
       );

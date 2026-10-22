@@ -25,3 +25,5 @@ fuser = "=0.18.0"
 
 [dev-dependencies]
 yoneda-app = { workspace = true, features = ["native", "test-kit"] }
+# Paused virtual time for watchdog tests; no extra crates.
+tokio = { version = "1", features = ["full", "test-util"] }
