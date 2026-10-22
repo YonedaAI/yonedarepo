@@ -1,3 +1,4 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
 // Staging agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,
 // remote MCP). Same code as wrangler.agents.jsonc; it reaches only the staging platform, through
 // the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the
@@ -10,83 +11,20 @@
 // Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy
 // (POST /api/admin/workspace/allowance); it is a total, not a daily reset.
 // Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:
-//   OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)
-//   VAULT_KEY    64 hex characters, shared with yonedarepo-staging-platform
+// OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)
+// VAULT_KEY    64 hex characters, shared with yonedarepo-staging-platform
+// The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
+// route takes precedence over a Custom Domain, and the most specific route pattern wins. The
+// exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same
+// pattern production uses for www).
+// Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts
+// containers/sandbox.Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound
+// adds the provider key and the project token. Model requests go through the AI Gateway named
+// in SANDBOX_AI_GATEWAY (custom providers custom-zai and custom-mimo; one-time setup in
+// docs/runbook.md). The sandbox clones from SANDBOX_PLATFORM_ORIGIN.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "yonedarepo-staging-agents",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
-  "main": "worker/agents-index.ts",
-  "compatibility_date": "2026-10-07",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
-  "limits": {
-    "subrequests": 50000
-  },
-  "workers_dev": true,
-  "preview_urls": false,
-  // Run next to the platform (also aws:us-east-1): the agent layer calls it on every step.
-  "placement": {
-    "mode": "targeted",
-    "region": "aws:us-east-1"
-  },
-  // The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
-  // route takes precedence over a Custom Domain, and the most specific route pattern wins. The
-  // exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same
-  // pattern production uses for www).
-  "routes": [
-    {
-      "pattern": "dev.yonedarepo.com",
-      "custom_domain": true
-    },
-    {
-      "pattern": "https://dev.yonedarepo.com/*",
-      "zone_name": "yonedarepo.com"
-    }
-  ],
-  "observability": {
-    "enabled": true
-  },
-  "assets": {
-    "directory": "../frontend/dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": true
-  },
-  "vars": {
-    "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
-    "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
-    "CODEX_MODEL": "gpt-5.6-luna",
-    "CLAUDE_MODEL": "claude-sonnet-5-5",
-    "MIMO_MODEL": "mimo-v2.6-flash",
-    "ZAI_MODEL": "glm-5.3-flash",
-    "STARTER_REPO": "yoneda-website-starter",
-    "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev",
-    "MANAGED_PROVIDER_KEYS": "secrets-store"
-  },
-  "services": [
-    {
-      "binding": "SELF",
-      "service": "yonedarepo-staging-agents"
-    },
-    {
-      "binding": "PLATFORM",
-      "service": "yonedarepo-staging-platform"
-    }
-  ],
-  "secrets_store_secrets": [
-    {
-      "binding": "MIMO_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "MiMo"
-    },
-    {
-      "binding": "ZAI_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "ZAI"
-    }
-  ],
   "artifacts": [
     {
       "binding": "ARTIFACTS",
@@ -94,76 +32,131 @@
       "remote": true
     }
   ],
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "REPOSITORIES",
-        "class_name": "RepositoryAuthority"
-      },
-      {
-        "name": "LIVE",
-        "class_name": "LiveRoom"
-      },
-      {
-        "name": "EXECUTIONS",
-        "class_name": "ExecutionContainer"
-      },
-      {
-        "name": "SOURCES",
-        "class_name": "SourceWorkspaceAuthority"
-      },
-      {
-        "name": "WORKSPACES",
-        "class_name": "WorkspaceAuthority",
-        "script_name": "yonedarepo-staging-platform"
-      }
-    ]
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
   },
-  "migrations": [
-    {
-      "tag": "v1",
-      "new_sqlite_classes": [
-        "RepositoryAuthority",
-        "LiveRoom",
-        "ExecutionContainer",
-        "SourceWorkspaceAuthority"
-      ]
-    }
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
   ],
   "containers": [
     {
       "class_name": "ExecutionContainer",
-      "image": "./containers/Dockerfile",
-      "image_build_context": "..",
-      "max_instances": 6,
-      "instance_type": "standard-1",
-      // Next to the Durable Objects (ENAM): unpinned, agent containers ran in HKG/TXL with
-      // ~1 s round trips to them.
       "constraints": {
         "regions": [
           "ENAM"
         ]
       },
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "standard-1",
+      "max_instances": 6,
       "rollout_step_percentage": [
         100
       ]
-    }
-  ],
-  "r2_buckets": [
+    },
     {
-      "binding": "OBJECTS",
-      "bucket_name": "yonedarepo-staging-agents-objects"
+      "class_name": "AgentSandbox",
+      "images": {
+        "agent": {
+          "build_context": "..",
+          "dockerfile": "./containers/sandbox.Dockerfile"
+        }
+      },
+      "scheduling_policy": "durable_object"
     }
   ],
   "d1_databases": [
     {
       "binding": "INDEX",
-      "database_name": "yonedarepo-staging-agents-index",
       "database_id": "7e8e3f13-39c1-4778-9bec-262985dacfac",
+      "database_name": "yonedarepo-staging-agents-index",
       "migrations_dir": "migrations"
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "RepositoryAuthority",
+        "name": "REPOSITORIES"
+      },
+      {
+        "class_name": "LiveRoom",
+        "name": "LIVE"
+      },
+      {
+        "class_name": "ExecutionContainer",
+        "name": "EXECUTIONS"
+      },
+      {
+        "class_name": "SourceWorkspaceAuthority",
+        "name": "SOURCES"
+      },
+      {
+        "class_name": "WorkspaceAuthority",
+        "name": "WORKSPACES",
+        "script_name": "yonedarepo-staging-platform"
+      },
+      {
+        "class_name": "AgentSandbox",
+        "name": "AGENT_SANDBOX"
+      }
+    ]
+  },
+  "limits": {
+    "subrequests": 50000
+  },
+  "main": "worker/agents-index.ts",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "RepositoryAuthority",
+        "LiveRoom",
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ],
+      "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": [
+        "AgentSandbox"
+      ],
+      "tag": "v2"
+    }
+  ],
+  "name": "yonedarepo-staging-agents",
+  "observability": {
+    "enabled": true
+  },
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
+  "preview_urls": false,
   "queues": {
+    "consumers": [
+      {
+        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "queue": "yonedarepo-staging-agents-agent"
+      },
+      {
+        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "queue": "yonedarepo-staging-agents-capture"
+      },
+      {
+        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "max_batch_size": 1,
+        "max_retries": 3,
+        "queue": "yonedarepo-staging-agents-evaluate"
+      }
+    ],
     "producers": [
       {
         "binding": "AGENT_QUEUE",
@@ -177,28 +170,14 @@
         "binding": "EVALUATE_QUEUE",
         "queue": "yonedarepo-staging-agents-evaluate"
       }
-    ],
-    "consumers": [
-      {
-        "queue": "yonedarepo-staging-agents-agent",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter"
-      },
-      {
-        "queue": "yonedarepo-staging-agents-capture",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter"
-      },
-      {
-        "queue": "yonedarepo-staging-agents-evaluate",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter"
-      }
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-staging-agents-objects"
+    }
+  ],
   "ratelimits": [
     {
       "name": "AUTH_LIMITER",
@@ -208,5 +187,51 @@
         "period": 60
       }
     }
-  ]
+  ],
+  "routes": [
+    {
+      "custom_domain": true,
+      "pattern": "dev.yonedarepo.com"
+    },
+    {
+      "pattern": "https://dev.yonedarepo.com/*",
+      "zone_name": "yonedarepo.com"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "MIMO_KEY",
+      "secret_name": "MiMo",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    },
+    {
+      "binding": "ZAI_KEY",
+      "secret_name": "ZAI",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    }
+  ],
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-staging-agents"
+    },
+    {
+      "binding": "PLATFORM",
+      "service": "yonedarepo-staging-platform"
+    }
+  ],
+  "vars": {
+    "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
+    "CLAUDE_MODEL": "claude-sonnet-5-5",
+    "CODEX_MODEL": "gpt-5.6-luna",
+    "MANAGED_PROVIDER_KEYS": "secrets-store",
+    "MIMO_MODEL": "mimo-v2.6-flash",
+    "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
+    "SANDBOX_AI_GATEWAY": "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-staging",
+    "SANDBOX_PLATFORM_ORIGIN": "https://api.dev.yonedarepo.com",
+    "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev",
+    "STARTER_REPO": "yoneda-website-starter",
+    "ZAI_MODEL": "glm-5.3-flash"
+  },
+  "workers_dev": true
 }
