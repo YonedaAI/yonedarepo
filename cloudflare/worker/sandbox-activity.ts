@@ -85,11 +85,20 @@ export function parseActivity(line: string): Activity[] {
           : [];
       });
     case 'result': {
-      const cost = typeof event.total_cost_usd === 'number' ? event.total_cost_usd : undefined;
+      // Token counts, not the CLI's dollar figure: Claude Code prices every model at
+      // Anthropic rates, which says nothing about GLM or MiMo.
       const turns = typeof event.num_turns === 'number' ? event.num_turns : undefined;
+      const usage = record(event.usage);
+      const count = (key: string) => (typeof usage[key] === 'number' ? (usage[key] as number) : 0);
+      const input =
+        count('input_tokens') +
+        count('cache_creation_input_tokens') +
+        count('cache_read_input_tokens');
       const facts = [
         turns !== undefined ? `${turns} turns` : '',
-        cost !== undefined ? `CLI cost estimate $${cost.toFixed(4)}` : '',
+        input || count('output_tokens')
+          ? `${input} input / ${count('output_tokens')} output tokens`
+          : '',
       ].filter(Boolean);
       const outcome = event.is_error === true ? 'Agent failed' : 'Agent finished';
       return [
