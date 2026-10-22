@@ -8,6 +8,7 @@ import { deliverOutbox } from './outbox-delivery';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
 import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
+import { beginSandbox } from './sandbox-attempt';
 import { authorizePreview } from './sites';
 import type { SourceGcDue, SourceIndexEnvelope } from './source-contract';
 import { prepareSourceDispatch } from './source-dispatch';
@@ -106,6 +107,13 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             return;
           }
           claimed = { id: String(job.id), epoch: Number(job.epoch) };
+          // A sandbox attempt is driven by its own Durable Object: no harness container.
+          if (job.sandbox === true) {
+            launchRequested = true;
+            await beginSandbox(this.env, envelope.repo_id, job);
+            message.ack();
+            return;
+          }
           job.model = modelForJob(job, {
             codex: this.env.CODEX_MODEL,
             claude: this.env.CLAUDE_MODEL,

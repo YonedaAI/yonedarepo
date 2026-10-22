@@ -105,6 +105,15 @@ async function credential(env: Env, owner: string, project: string, reread: bool
 }
 
 /**
+ * The project's platform repository and agent token, for the sandbox egress handler, which
+ * adds it to the sandbox's own Git traffic so the token never enters the sandbox.
+ */
+export async function projectToken(env: Env, owner: string, project: string) {
+  const { repo, token } = await credential(env, owner, project, false);
+  return { repo, token };
+}
+
+/**
  * The project's platform repository, acting with the project's agent token. A cached token
  * the platform refuses (revoked, or a reused identity) is re-read once before failing.
  */
