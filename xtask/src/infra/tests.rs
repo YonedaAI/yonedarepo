@@ -230,7 +230,8 @@ fn inventory_reads_resources_and_health_origins() {
     assert_eq!(
         platform.health,
         Some((
-            "https://yonedarepo-staging-platform.mlong-f01.workers.dev".into(),
+            // The platform's own custom domain wins over its workers.dev hostname.
+            "https://api.dev.yonedarepo.com".into(),
             "yonedarepo-platform".into()
         ))
     );
