@@ -299,24 +299,22 @@ fn a_successful_retry_after_timeout_unblocks_dependent_tasks() {
     )
     .unwrap();
     let next = at(&db, json!({"op":"claim","job_id":JOB}), 510_000).unwrap();
-    at(
-        &db,
-        json!({"op":"finish","job_id":JOB,"epoch":next["epoch"],
-        "result":{"workspace":"b".repeat(64)}}),
-        520_000,
-    )
-    .unwrap();
+    // Coding completes only through an independently registered source seal.
+    let registration = source_kit::finish_agent(&db, &next, 520_000);
     let capture = at(
         &db,
         json!({"op":"claim","job_id":"capture:laundry:task:site:r2"}),
         530_000,
     )
     .unwrap();
+    let result = source_kit::with_lineage(
+        &registration,
+        json!({"id":"captured-site","revision":{"repository":"test/site","commit":"e".repeat(40)},
+        "tree":"c".repeat(40),"paths":["public/order.js"],"summary":"site","diff":"d"}),
+    );
     at(
         &db,
-        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":{
-        "id":"captured-site","revision":{"repository":"test/site","commit":"e".repeat(40)},
-        "tree":"c".repeat(40),"paths":["public/order.js"],"summary":"site","diff":"d"}}),
+        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":result}),
         540_000,
     )
     .unwrap();

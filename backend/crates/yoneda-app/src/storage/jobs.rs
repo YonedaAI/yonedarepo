@@ -78,7 +78,9 @@ pub(crate) fn job<S: SqlStore>(
             (60_000..=yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS).contains(duration)
         })
         // Progress decides when an attempt stops; the job window must admit the full ceiling.
-        .map_or(0, |_| yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS)
+        .map_or(0, |_| {
+            yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS
+        })
     } else {
         0
     };

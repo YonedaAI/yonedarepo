@@ -239,7 +239,10 @@ pub(super) fn settle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
 }
 
 /// Refuse only when even the smallest useful response cannot fit the real remaining allowance.
-fn spend_refusal(budget: &yoneda_agents_core::model_budget::ModelBudget, input_bytes: i64) -> Error {
+fn spend_refusal(
+    budget: &yoneda_agents_core::model_budget::ModelBudget,
+    input_bytes: i64,
+) -> Error {
     let limit = budget.spend_limit_microusd.unwrap_or_default();
     let remaining = limit.saturating_sub(budget.charged_microusd).max(0);
     let needed = budget
