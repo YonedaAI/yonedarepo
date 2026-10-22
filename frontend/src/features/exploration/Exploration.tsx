@@ -4,6 +4,7 @@ import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { comparisonBusy } from './comparisonView';
+import { actionErrorMessage, sendOwnerAction } from './ownerAction';
 import { acceptRequest, publishOnPlatform } from './platformPublication';
 import { PendingReviews } from './RunAttention';
 import { RunEvidenceBoundary } from './RunEvidenceBoundary';
@@ -138,7 +139,10 @@ export function Exploration({
   ): Promise<boolean> {
     setBusy(true);
     try {
-      await then?.(await api<Record<string, any>>(`repos/${repo.id}/${action}`, body));
+      await sendOwnerAction(
+        () => api<Record<string, any>>(`repos/${repo.id}/${action}`, body),
+        then,
+      );
       await onChange();
       return true;
     } catch (error) {
@@ -153,7 +157,8 @@ export function Exploration({
         ].includes(action)
       )
         throw error;
-      onError((error as Error).message);
+      // App renders this in its role="alert" banner; never pass it an empty message.
+      onError(actionErrorMessage(error, action));
       return false;
     } finally {
       setBusy(false);
