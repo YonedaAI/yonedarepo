@@ -38,7 +38,11 @@ export async function commitInShard(
   const paths = body.changes.map((c: Json) => c?.path);
   const fromHead =
     body.begin_from_head === true && onMain
-      ? await timed('begin.head', () => beginFromHead(ctx, paths))
+      ? await timed('begin.head', () => beginFromHead(ctx, paths)).catch((e) => {
+          // No main to publish (an empty repository): the authority begins the first commit.
+          if (e?.code === 'NOT_FOUND') return null;
+          throw e;
+        })
       : null;
   const begun =
     fromHead ??

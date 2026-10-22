@@ -14,6 +14,7 @@ use yoneda_core::{
 const COMMITTER: (&str, &str) = ("YonedaRepo", "commits@yonedarepo.invalid");
 
 /// What a commit needs to know about a parent.
+#[derive(Clone, Copy)]
 pub(crate) struct Parent {
     pub id: ObjectId,
     pub tree: ObjectId,

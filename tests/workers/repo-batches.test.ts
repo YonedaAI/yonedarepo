@@ -34,12 +34,66 @@ it('lands a batch from shard records, reads its own writes, and adopts only when
   const shown = await api(`${repo}/commits/${made[0].body.commit}`, owner, {}, batched);
   expect(shown.status).toBe(200);
   expect(shown.body.landings[0].version).toBe(landed[0].body.version);
-  // Main's Git view: batches share commits, each linear on the one before.
+  // Main's Git view: batches merge their landed commits, so every pushed commit is in
+  // main's history by its own id (each lander's pull fast-forwards).
   const head = (await api(`${repo}/refs`, owner, {}, batched)).body;
   expect(head.version).toBe(9);
-  const tip = (await api(`${repo}/commits/${head.refs['refs/heads/main']}`, owner, {}, batched)).body;
-  expect(tip.parents).toHaveLength(1);
+  const history = await ancestors(repo, owner, head.refs['refs/heads/main'], batched);
+  for (const m of made) expect(history.has(m.body.commit)).toBe(true);
   expect((await api(`${repo}/blob?path=w/7.txt`, owner, {}, batched)).body.content).toBe('7\n');
+});
+
+/** Every commit reachable from `head` (small test histories). */
+async function ancestors(repo: string, who: { cookie?: string }, head: string, target: Env) {
+  const seen = new Set<string>([head]);
+  const pending = [head];
+  while (pending.length) {
+    const shown = (await api(`${repo}/commits/${pending.pop()}`, who, {}, target)).body;
+    for (const parent of shown.parents as string[])
+      if (!seen.has(parent)) {
+        seen.add(parent);
+        pending.push(parent);
+      }
+  }
+  return seen;
+}
+
+it('lands a lone push on main as the pushed commit, and concurrent ones as a merge of each', async () => {
+  const target = { ...batched, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const { owner, repo } = await repoWith('shapes', [file('a.txt', '0\n')], target);
+  const seed = (await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/main'];
+  const lone = await commitOn(repo, owner, [file('b.txt', 'b\n')], target);
+  expect((await landOn(repo, owner, lone.body.commit, target)).status).toBe(200);
+  // No wrapper commit: main is the pushed commit, a child of the old main.
+  const main = (await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/main'];
+  expect(main).toBe(lone.body.commit);
+  expect((await api(`${repo}/commits/${main}`, owner, {}, target)).body.parents).toEqual([seed]);
+  const made = await Promise.all(
+    ['c', 'd'].map((p) => commitOn(repo, owner, [file(`${p}.txt`, `${p}\n`)], target)),
+  );
+  const landed = await Promise.all(made.map((m) => landOn(repo, owner, m.body.commit, target)));
+  expect(landed.map((l) => l.status)).toEqual([200, 200]);
+  const merged = (await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/main'];
+  const tip = (await api(`${repo}/commits/${merged}`, owner, {}, target)).body;
+  expect(tip.principal).toBe('platform:merge');
+  const history = await ancestors(repo, owner, merged, target);
+  for (const m of [lone, ...made]) expect(history.has(m.body.commit)).toBe(true);
+});
+
+it('creates main at the first pushed commit of an empty repository', async () => {
+  const { owner, repo } = await repoWith('emptyfirst', [], batched);
+  expect((await api(`${repo}/refs`, owner, {}, batched)).body.refs).toEqual({});
+  const root = await commitOn(repo, owner, [file('a.txt', 'a\n')], batched);
+  expect([root.status, root.body.parents]).toEqual([200, []]);
+  const child = await api(`${repo}/commits`, owner, {
+    body: { parent: root.body.commit, base_version: 0, changes: [file('b.txt', 'b\n')], message: 'b', author },
+  }, batched);
+  expect(child.status).toBe(200);
+  const landed = await landOn(repo, owner, child.body.commit, batched);
+  expect(landed.status).toBe(200);
+  const refs = (await api(`${repo}/refs`, owner, {}, batched)).body.refs;
+  expect(refs['refs/heads/main']).toBe(child.body.commit);
+  expect((await api(`${repo}/blob?path=a.txt`, owner, {}, batched)).body.content).toBe('a\n');
 });
 
 it('refuses a landing whose token was revoked after its commit began', async () => {

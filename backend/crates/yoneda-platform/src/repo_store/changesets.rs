@@ -156,6 +156,9 @@ fn head_at<S: SqlStore>(db: &S, refname: &str, version: u64) -> Result<Option<Ob
 
 pub(super) enum Route {
     FastForward(Option<ObjectId>),
+    /// The branch does not exist yet: the landing creates it at the commit (whose whole
+    /// history is recorded first, so it is rooted), as a first push does.
+    Create,
     Changeset,
     Merge,
     Fail(Error),
@@ -179,6 +182,9 @@ pub(super) fn route_writing<S: SqlStore>(
     fast_forward: bool,
 ) -> Result<Route> {
     let head = rows::projected_ref(db, refname)?;
+    if head.is_none() {
+        return Ok(Route::Create);
+    }
     let [parent] = commit.parents.as_slice() else {
         return Ok(Route::Merge);
     };
@@ -269,6 +275,10 @@ pub fn land<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         let result = match route(db, &refname, &commit)? {
             Route::FastForward(head) => {
                 let out = append(db, c, TxKind::Commit, &refname, head, &commit, principal)?;
+                json!({ "version": out["version"], "commit": commit.id })
+            }
+            Route::Create => {
+                let out = append(db, c, TxKind::Commit, &refname, None, &commit, principal)?;
                 json!({ "version": out["version"], "commit": commit.id })
             }
             Route::Changeset => {

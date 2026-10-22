@@ -47,7 +47,9 @@ async fn known<'a>(session: &'a Session, commits: &[String]) -> Result<Known<'a>
 
 /// The plan for pushing local commit `local`: the commits after its newest first-parent
 /// ancestor the platform has (asked in growing batches: a short push costs one request).
-pub async fn plan_for(session: &Session, local: &str) -> Result<Plan> {
+/// A push creating a branch (`creates`) may bring history the platform has none of: its
+/// whole first-parent chain, from the root (the first push into an empty repository).
+pub async fn plan_for(session: &Session, local: &str, creates: bool) -> Result<Plan> {
     let listed = session.git.run(&[
         "rev-list",
         "--first-parent",
@@ -74,6 +76,24 @@ pub async fn plan_for(session: &Session, local: &str) -> Result<Plan> {
         start = end;
         size *= 8;
     }
+    let rooted = match commits.last() {
+        Some(oldest) => session.git.first_parent_of(oldest)?.is_none(),
+        None => false,
+    };
+    if creates && rooted {
+        let pending: Vec<String> = commits.into_iter().rev().collect();
+        let none = Known {
+            map: &session.map,
+            platform: HashSet::new(),
+        };
+        let plan = plan::plan(&session.git, &none, &pending, &chunk::API)?;
+        if matches!(plan.steps.first(), Some(Step::Empty { .. })) {
+            return Err(Error::new(format!(
+                "{local}'s root commit is empty: the platform's first commit must add a file"
+            )));
+        }
+        return Ok(plan);
+    }
     Err(Error::new(format!(
         "{local} shares no commit with {}: clone it and commit on top (or use `yoneda repo import`)",
         session.url.repo
@@ -89,6 +109,7 @@ pub struct Uploaded {
 
 /// Uploads `plan` (nothing moves a ref); returns the tip and (server, local) pairs.
 pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
+    // A root commit (empty start) is based on nothing: version 0.
     let base_version = session.heads.version(&plan.start);
     let mut parent = plan.start.clone();
     let mut made = Vec::new();

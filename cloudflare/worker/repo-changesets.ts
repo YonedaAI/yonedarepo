@@ -2,14 +2,16 @@
 // path-disjoint commit appends its changeset to the authority's log: no Git objects and no
 // merge commit on the landing path. A projector builds main's Git commit for each
 // changeset version afterwards, deterministically (same versions, same ids), so it can
-// run in the background, on demand for a read, or twice at once without harm.
+// run in the background, on demand for a read, or twice at once without harm. Main's
+// history keeps the pushed commits: a lone changeset on main's head becomes main as
+// itself, anything else a merge of main and the landed commits (platform_project.rs).
 import { dispatchRuns } from './repo-checks';
 import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
-import { shardStagedOf } from './repo-shards';
+import { shardLanded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -39,6 +41,35 @@ export const landMode = (env: Env, requested?: string | null): LandMode =>
 const PROJECTION_ROUNDS = 64;
 
 /**
+ * The plan's landed commits from their shards, one call each: their staged objects (usually
+ * still there: fetched at once rather than walking the tiers object by object; drained ones
+ * are in R2, and the authority is never asked, being busy landing), and the records of
+ * those the authority does not hold yet (batch landing never adopts). Main's history names
+ * each pushed commit, so the record call adopts them first (in landing order, parents
+ * first); each one found is marked recorded for compute. A record already gone leaves its
+ * commit out of main's history (its files still land).
+ */
+async function fromShards(env: Env, repo: string, items: Json[]) {
+  const landed = new Map<string, Json[]>();
+  for (const step of items)
+    for (const commit of step.landed as Json[])
+      landed.set(commit.id, [...(landed.get(commit.id) ?? []), commit]);
+  const found = await Promise.all(
+    [...landed].map(async ([id, entries]) => {
+      const wanted = entries.some((commit) => !commit.recorded);
+      const { objects, record } = await shardLanded(env, repo, id, wanted);
+      if (!wanted || !record) return { objects, record: null };
+      for (const commit of entries) commit.recorded = true;
+      return { objects, record };
+    }),
+  );
+  return {
+    staged: found.flatMap((f) => f.objects),
+    records: found.flatMap((f) => (f.record ? [f.record] : [])),
+  };
+}
+
+/**
  * Builds and records the Git commits of every unprojected changeset (oldest first, up to
  * 64 versions per round). The authority stages their new objects as it records them, and
  * the object projector writes them to R2. Returns how many versions this call projected.
@@ -54,19 +85,10 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     const plan = await projector.call({ op: 'repo_changeset_plan' });
     if (!plan.items?.length) break;
     const objects = await projector.objects();
-    // Landed commits' objects are usually still staged in their commit shard: fetch each
-    // commit's in one call rather than walking the tiers object by object. Drained ones are
-    // in R2 already (never ask the authority: it is busy landing).
-    const staged = await timed('project.staged', () =>
-      Promise.all(
-        [
-          ...new Set(
-            (plan.items as Json[]).flatMap((step) => step.changes.map((c: Json) => c.source.id)),
-          ),
-        ].map((commit) => shardStagedOf(env, repo, commit)),
-      ),
+    const { staged, records } = await timed('project.staged', () =>
+      fromShards(env, repo, plan.items),
     );
-    const known = new Map([...previous, ...staged.flat()].map((o) => [o.id, o]));
+    const known = new Map([...previous, ...staged].map((o) => [o.id, o]));
     const built = await timed('project.compute', () =>
       withTrees(objects, { op: 'project_changesets', head: plan.head, items: plan.items }, known),
     );
@@ -78,9 +100,11 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
         ref: plan.ref,
         from: plan.head.id,
         items: built.projected,
+        records,
       });
     } catch (e: any) {
-      // Another projector recorded these versions first: plan again from its head.
+      // Another projector recorded these versions first, or a landed commit was adopted
+      // after this plan: plan again.
       if (e?.code !== 'STALE_HEAD') throw e;
       continue;
     }

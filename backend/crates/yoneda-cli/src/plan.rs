@@ -26,9 +26,13 @@ pub enum Step {
     },
 }
 
+/// Git's empty tree: what a root commit's changes are taken against.
+const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
 #[derive(Debug)]
 pub struct Plan {
-    /// The platform commit the first step builds on.
+    /// The platform commit the first step builds on (empty: the first step is a root
+    /// commit, as the first push into an empty repository makes).
     pub start: String,
     pub steps: Vec<Step>,
 }
@@ -86,10 +90,15 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
             steps: Vec::new(),
         });
     };
-    let start = platform_of(mapping, &git.first_parent(&commits[first])?)?;
+    let start = match git.first_parent_of(&commits[first])? {
+        Some(parent) => platform_of(mapping, &parent)?,
+        None => String::new(),
+    };
     let mut steps = Vec::new();
     for local in &commits[first..] {
-        let parent = git.first_parent(local)?;
+        let parent = git
+            .first_parent_of(local)?
+            .unwrap_or_else(|| EMPTY_TREE.to_owned());
         let chunks = chunk::chunk(changes::between(git, &parent, local)?, limits)?;
         if chunks.is_empty() {
             steps.push(Step::Empty {
@@ -197,6 +206,38 @@ mod tests {
         let rest = super::plan(&repo.git, &mapped, &[big, empty], &ATTEMPT)?;
         assert_eq!(rest.start, "q".repeat(40));
         assert_eq!(rest.steps.len(), 1);
+        Ok(())
+    }
+
+    struct Nothing;
+    impl Mapping for Nothing {
+        fn platform_of(&self, _: &str) -> Option<String> {
+            None
+        }
+    }
+
+    #[test]
+    fn plans_a_history_from_its_root_commit() -> Result<()> {
+        let repo = Repo::new()?;
+        repo.write("a.txt", b"a\n")?;
+        let root = repo.commit("root")?;
+        repo.write("b.txt", b"b\n")?;
+        let child = repo.commit("child")?;
+        let plan = plan(
+            &repo.git,
+            &Nothing,
+            &[root.clone(), child.clone()],
+            &ATTEMPT,
+        )?;
+        assert_eq!(plan.start, "", "the first step is a root commit");
+        assert_eq!(
+            plan.trees(),
+            [repo.git.tree_of(&root)?, repo.git.tree_of(&child)?]
+        );
+        let Some(Step::Commit { changes, .. }) = plan.steps.first() else {
+            return Err(Error::new("no first step"));
+        };
+        assert_eq!(changes.len(), 1, "the root adds its one file");
         Ok(())
     }
 }

@@ -8,6 +8,20 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
+/// The parent and base version of a commit on `refname`: its settled head; in an empty
+/// repository (no branch at all), none: the first commit is a root, which landing makes
+/// the branch.
+pub(super) fn base_on_branch<S: SqlStore>(
+    db: &S,
+    refname: &str,
+) -> Result<(Option<ObjectId>, u64)> {
+    let (head, version) = super::changesets::settled_head(db, refname)?;
+    if head.is_some() || db.query("SELECT 1 AS x FROM refs LIMIT 1", &[])?.is_empty() {
+        return Ok((head, version));
+    }
+    Err(Error::new("NOT_FOUND", format!("{refname} does not exist")))
+}
+
 /// Authorizes a commit by `principal` and returns its parent (a branch head at the current
 /// version, or the given parent when this store has it) and the base version.
 pub fn begin<S: SqlStore>(
@@ -20,10 +34,7 @@ pub fn begin<S: SqlStore>(
         if c.get("parent").is_none_or(Value::is_null) && c["ref"].is_string() {
             let refname = branch_ref(c)?;
             // New work builds on the last projected head, at the version it reflects.
-            let (head, version) = super::changesets::settled_head(db, &refname)?;
-            let head =
-                head.ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
-            (Some(head), version)
+            base_on_branch(db, &refname)?
         } else {
             let base_version = c["base_version"].as_u64().unwrap_or(0);
             if base_version > current_version(db)? {
