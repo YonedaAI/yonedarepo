@@ -63,9 +63,10 @@ impl Actor {
             ))
         }
     }
-    /// Break-glass gate: every other caller gets the same refusal, whatever it holds.
+    /// Break-glass gate: the owner's own signed-in session (never an admin member); every
+    /// other caller gets the same refusal, whatever it holds.
     pub fn require_human_owner(&self) -> Result<()> {
-        if self.owner && self.human {
+        if self.owner && self.human && self.member.is_none() {
             Ok(())
         } else {
             Err(super::break_glass::refusal())

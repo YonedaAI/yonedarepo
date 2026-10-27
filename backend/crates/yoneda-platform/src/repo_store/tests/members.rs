@@ -153,7 +153,13 @@ fn admins_act_as_the_owner_except_for_admins_and_deletion() {
         code(ada(json!({"op":"repo_member_remove","account":"will"}))),
         "OK"
     );
-    // Admins never grant, change or remove admins, and never delete the repository.
+    // Admins never grant, change or remove admins, never delete the repository, and never
+    // break glass, even from their own signed-in session.
+    let glass = ada(json!({"op":"repo_break_glass","action":"pause","reason":"x"}));
+    assert_eq!(
+        glass.unwrap_err().message,
+        "Break-glass recovery is only for a signed-in human owner"
+    );
     for op in [
         json!({"op":"repo_member_put","account":"will","role":"admin"}),
         json!({"op":"repo_member_put","account":"abe","role":"read"}),
