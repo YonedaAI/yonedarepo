@@ -172,8 +172,9 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Secrets { worker: 2 },
             Step::Health { worker: 2 },
             d(3),
+            d(4),
         ],
-        "superfan (no /health), platform, agents, sites"
+        "superfan (no /health), platform, agents, sites, bench (no secrets or /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
