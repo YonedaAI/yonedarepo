@@ -1,5 +1,6 @@
-// The coding CLI a sandbox runs, unmodified and headless. Only the command line and its
-// environment are CLI-specific; the sandbox, activity log, push and recording are shared.
+// The coding CLI a sandbox runs, unmodified and headless. Only the command lines (start, and
+// resume of a session) and the environment are CLI-specific; the sandbox, activity log,
+// push, landing and recording are shared.
 // Claude Code is the one implemented CLI (Z.ai GLM and MiMo speak its Anthropic protocol);
 // Codex CLI (`codex exec --json`) is added here as another `AgentCli` when a run needs it.
 import type { SandboxAttempt } from './sandbox-attempt';
