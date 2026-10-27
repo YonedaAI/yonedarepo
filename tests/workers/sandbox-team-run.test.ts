@@ -14,7 +14,7 @@ import {
 import { landOnTeam, teamPort } from '../../cloudflare/worker/sandbox-team';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
-import { platformCommit, platformProject } from './platform-fixture';
+import { platformProject } from './platform-fixture';
 
 const bindings = env as unknown as Env;
 afterEach(reset);
@@ -72,9 +72,24 @@ async function teamRun(owner: string, run: string, paths: [string, string]) {
   return { repo, base, attempts, platform };
 }
 
-/** What a member's `git push` leaves on the platform: one commit on the base, on its branch. */
+/**
+ * What a member's `git push` leaves on the platform: one commit on the base, on its branch,
+ * pinned like the CLI pins it, to the version at which the base was main's head as the push
+ * reads it (main does not move during a team run), so possibly after a teammate landed.
+ */
 async function push(platform: any, attempt: SandboxAttempt, files: Record<string, string>) {
-  const pushed = await platformCommit(platform, attempt.base.commit, files);
+  const { version } = await platform.call('GET', '/');
+  const changes = Object.entries(files).map(([path, content]) => ({
+    path,
+    content_b64: btoa(content),
+  }));
+  const pushed = await platform.call('POST', '/commits', {
+    parent: attempt.base.commit,
+    base_version: version,
+    changes,
+    message: 'Member change',
+    author: { name: 'Member', email: 'member@example.com' },
+  });
   await platform.call('POST', '/branches', { ref: attempt.branch, commit: pushed.commit, expected: null });
   return pushed.commit;
 }
@@ -101,9 +116,10 @@ it('lands two disjoint members through the platform merge; the team branch is th
   expect((await refs())['refs/heads/attempts/team-run/team']).toBe(base.commit);
 
   const one = await push(platform, first, { 'notes/one.md': 'one\n' });
-  const two = await push(platform, second, { 'notes/two.md': 'two\n' });
   const landedOne = await landOnTeam(bindings, first);
   expect(landedOne).toMatchObject({ landed: true, commit: one, teamCommit: one });
+  // Pushed after the first landing (as a slower member's CLI does): still a merge.
+  const two = await push(platform, second, { 'notes/two.md': 'two\n' });
   // The second member's base moved under it: the branch's queue and combiner merge it.
   const landedTwo = await landOnTeam(bindings, second);
   expect(landedTwo).toMatchObject({ landed: true, commit: two });
@@ -136,9 +152,10 @@ it('resumes a conflicting member once; a second conflict fails it and what lande
   ]);
   const [first, second] = attempts;
   const one = await push(platform, first, { 'notes/same.md': 'first line\n' });
-  await push(platform, second, { 'notes/same.md': 'second line\n' });
   const landedOne = await landOnTeam(bindings, first);
   await report(first)(landedOne, 0);
+  // Pushed after the first landing: a real conflict, never a stale parent.
+  await push(platform, second, { 'notes/same.md': 'second line\n' });
   const clash = await landOnTeam(bindings, second);
   expect(clash).toEqual({ landed: false, paths: ['notes/same.md'] });
   expect(await report(second)(clash, 0)).toEqual({ resume: true });
