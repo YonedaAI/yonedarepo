@@ -54,6 +54,7 @@ impl Harness {
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
+            None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
             None if principal == "token:public" => {
                 c["_token"] = json!("public-secret-0123456789abcdef0123456789")
             }
@@ -686,7 +687,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        24
+        25
     );
     // Upgraded repositories start live (not tombstoned).
     assert!(
@@ -1579,6 +1580,7 @@ mod change_records;
 mod changesets;
 mod check_posters;
 mod checkpoints;
+mod hooks;
 mod land_cas;
 mod land_shapes;
 mod pushed;

@@ -3,6 +3,7 @@
 // files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
 import type { CheckJob } from './check-container';
 import { replay } from './repo-commit';
+import { dispatchHooks } from './repo-hooks';
 import { parseStore, RepoObjects } from './repo-objects';
 import { caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
@@ -116,6 +117,7 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
         ...objects.hits,
       },
     });
+    if (completed.hooks) await dispatchHooks(env, repo).catch(() => {});
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     // Advance bisects that were waiting on this result (and queue their next run).
     for (const id of (completed.bisects ?? []) as string[]) {
@@ -123,10 +125,11 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
       await dispatchRuns(env, repo, step.runs);
     }
   } catch (e: any) {
-    await complete('error', {
+    const errored = await complete('error', {
       error: String(e?.message ?? e).slice(0, 500),
       code: e?.code ?? 'CHECK_EXECUTOR',
     });
+    if (errored.hooks) await dispatchHooks(env, repo).catch(() => {});
   }
   return {};
 }

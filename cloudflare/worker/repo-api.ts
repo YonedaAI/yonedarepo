@@ -13,6 +13,7 @@ import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
+import { hooksRoute, notifyHooks } from './repo-hooks';
 import { repoMcp } from './repo-mcp';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -193,6 +194,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
   if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
+  if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });
@@ -240,6 +242,7 @@ async function batchRefs(ctx: RepoContext, body: Json) {
     throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
       stale: result.stale,
     });
+  await notifyHooks(ctx.env, ctx.repo);
   return { version: result.version, refs: result.refs };
 }
 

@@ -1,17 +1,9 @@
+import { hmacHex, hmacKey } from './hmac';
 import { response } from './http';
 import type { Env } from './types';
 
 const cookieName = 'yoneda_session';
 const lifetime = 60 * 60 * 1000;
-async function key(secret: string) {
-  return crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  );
-}
 export async function sessionValid(req: Request, env: Env) {
   if (!env.OWNER_TOKEN) return false;
   const cookie = req.headers
@@ -28,7 +20,7 @@ export async function sessionValid(req: Request, env: Env) {
   const bytes = Uint8Array.from(signature.match(/.{2}/g) ?? [], (v) => Number.parseInt(v, 16));
   return crypto.subtle.verify(
     'HMAC',
-    await key(env.OWNER_TOKEN),
+    await hmacKey(env.OWNER_TOKEN),
     bytes,
     new TextEncoder().encode(`${expiry}.${nonce}`),
   );
@@ -37,12 +29,7 @@ export async function ownerSession(req: Request, env: Env) {
   let value = '';
   if (req.method === 'POST' && env.OWNER_TOKEN) {
     const payload = `${Date.now() + lifetime}.${crypto.randomUUID()}`;
-    const signature = await crypto.subtle.sign(
-      'HMAC',
-      await key(env.OWNER_TOKEN),
-      new TextEncoder().encode(payload),
-    );
-    value = `${payload}.${[...new Uint8Array(signature)].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+    value = `${payload}.${await hmacHex(env.OWNER_TOKEN, payload)}`;
   }
   const result = response({ connected: Boolean(value) });
   result.headers.set('cache-control', 'no-store');

@@ -148,7 +148,8 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
-          "WEB_ORIGIN": "{origin}"
+          "WEB_ORIGIN": "{origin}",
+          "WORKERS_SUBDOMAIN": "{subdomain}"
         },
         "artifacts": [
           {
@@ -582,6 +583,54 @@
         "observability": {
           "enabled": true
         }
+      }
+    },
+    {
+      "role": "bench",
+      "file": "wrangler.staging-bench.jsonc",
+      "notes": [
+        "Staging bench client (tools/fanout-bench/worker.js): many concurrent writers for the kit's",
+        "bursts (items 8-10) and the webhook receiver boxes (POST /hooks/<box>) for the B3 gate",
+        "(tools/staging/webhook-flow.mjs). No bindings to platform state. BENCH_KEY is set once from",
+        "stdin (wrangler secret put BENCH_KEY) and kept across deploys; the kit reads it from",
+        "~/.config/yonedarepo/staging-bench.env.",
+        "The platform never calls this account's workers.dev, so the receiver needs a Custom Domain on",
+        "a zone without a wildcard Worker route (yonedarepo.com has the apps Worker's). Once the owner",
+        "approves it, add to this Worker's config in infra/envs/dev.json:",
+        "  \"routes\": [{ \"pattern\": \"hook-receiver.yonedaai.org\", \"custom_domain\": true }]",
+        "then run cargo xtask infra gen --env dev and deploy."
+      ],
+      "secrets": [],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-bench",
+        "main": "../tools/fanout-bench/worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "HOOK_BOXES",
+              "class_name": "HookBox"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "HookBox"
+            ]
+          }
+        ]
       }
     }
   ]

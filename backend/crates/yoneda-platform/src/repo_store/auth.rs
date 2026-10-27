@@ -108,7 +108,7 @@ pub fn actor_with(
 ) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
-        | "purge"),
+        | "purge" | "hooks"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -116,6 +116,7 @@ pub fn actor_with(
             "merge" => &["write", "lander"],
             "repair" => &["write"],
             "derive" => &["classify"],
+            "hooks" => &["hooks"],
             _ => &["system"],
         };
         return Ok(Actor {
