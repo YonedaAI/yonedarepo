@@ -1,5 +1,6 @@
-//! `sandbox-cli-v1`: one agent runs an unmodified coding CLI (Claude Code) in a Cloudflare
-//! Sandbox that the Worker's `AgentSandbox` Durable Object drives. The ledger keeps only:
+//! `sandbox-cli-v1`: each agent of a compare run (one to six) runs an unmodified coding CLI
+//! (Claude Code) in its own Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
+//! Object, and pushes to its own `attempts/<run>/<n>` branch. The ledger keeps only:
 //! - the claim, with one long lease that is a safety backstop, never a heartbeat;
 //! - the latest observed activity, for "last activity" and the idle marker;
 //! - the pushed commit, which becomes the candidate directly (no capture job), with the same
@@ -22,7 +23,9 @@ pub(super) fn requested(c: &Value) -> bool {
     c["workspace_transport"] == TRANSPORT
 }
 
-/// Single-agent coding runs only: compare, team and delegation come later.
+/// Independent coding attempts only: a compare run's agents (the roster is already validated
+/// as one to six), each with its own sandbox and candidate, chosen by the owner. Team runs,
+/// delegation and the comparison reviewer are not sandbox work.
 pub(super) fn freeze(
     c: &Value,
     general: bool,
@@ -30,11 +33,10 @@ pub(super) fn freeze(
     delegation: &DelegationPolicy,
     run: &mut Value,
 ) -> Result<()> {
-    let agents = c["agents"].as_array().map_or(0, Vec::len);
-    if !general || agents != 1 || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
+    if !general || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
-            "Sandbox runs take exactly one coding agent, without team or comparison review",
+            "Sandbox runs take independent coding agents, without team or comparison review",
         ));
     }
     if delegation.enabled {
@@ -102,7 +104,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     }
     match string(&c, "op")?.as_str() {
         "sandbox_progress" => progress(db, &mut j, &c["activity"], now),
+        // A team member's commit lands on the team branch; the team gets one candidate.
+        "sandbox_finish" if super::sandbox_team::member(&j) => Err(Error::new(
+            "FORBIDDEN",
+            "Team members land on the team branch",
+        )),
         "sandbox_finish" => finish(db, &mut j, &c["result"], now),
+        "sandbox_land" => super::sandbox_team::land(db, &mut j, &c["landing"], now),
         _ => Err(Error::new("NOT_FOUND", "Unknown sandbox operation")),
     }
 }
@@ -110,7 +118,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
 /// Observed activity: what the CLI last did and when. It never changes the lease.
 fn progress<S: SqlStore>(db: &S, j: &mut Value, activity: &Value, now: i64) -> Result<Value> {
     let phase = string(activity, "phase")?;
-    if !["starting", "cloning", "running", "finalizing", "recording"].contains(&phase.as_str()) {
+    if ![
+        "starting",
+        "cloning",
+        "running",
+        "finalizing",
+        "landing",
+        "resolving",
+        "recording",
+    ]
+    .contains(&phase.as_str())
+    {
         return Err(bad("Unknown sandbox phase"));
     }
     let at = activity["last_activity_at"]

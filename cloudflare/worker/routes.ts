@@ -25,7 +25,7 @@ import { deleteRepository } from './repository-deletion';
 import { publicationReadback, recordPublicationChecks, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
-import { sandboxActivity } from './sandbox-attempt';
+import { advertiseSandbox, sandboxActivity } from './sandbox-attempt';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
@@ -246,7 +246,8 @@ export async function fetchRequest(
       _workspace: principal.workspace,
     };
     const value = await ledger(env, repo, command);
-    if (action === 'accept') await recordPublicationChecks(env, repo, value);
+    if (action === 'snapshot' || action === 'repository_overview') advertiseSandbox(env, value);
+    if (action === 'accept') await recordPublicationChecks(env, repo, value, req);
     if (action === 'cancel_run')
       for (const stop of value.stop) {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);

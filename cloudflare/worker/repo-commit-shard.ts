@@ -25,7 +25,8 @@ export const shardable = (env: { COMMIT_SHARDS?: unknown }, body: Json) =>
   Array.isArray(body.changes) &&
   body.changes.every((c: Json) => c?.blob === undefined);
 
-/** Builds and records `body` in its shard; null when it is too large to stage. */
+/** Builds and records `body` in its shard; null when it is too large to stage or when a
+ * secret scan refuses it (the authority applies the policy's allowances and decides). */
 export async function commitInShard(
   ctx: RepoContext,
   given: RepoObjects | null,
@@ -72,17 +73,24 @@ export async function commitInShard(
   const trees: Record<string, TreeEntry[]> = {};
   let built: Json | null = null;
   for (let round = 0; round < 64 && !built; round++) {
-    const step = compute({
-      op: 'build_commit',
-      now: Date.now(),
-      parent,
-      changes: body.changes,
-      message: body.message,
-      author: body.author,
-      ...(body.committer ? { committer: body.committer } : {}),
-      read_set: body.read_set ?? [],
-      trees,
-    });
+    let step: Json;
+    try {
+      step = compute({
+        op: 'build_commit',
+        now: Date.now(),
+        parent,
+        changes: body.changes,
+        message: body.message,
+        author: body.author,
+        ...(body.committer ? { committer: body.committer } : {}),
+        read_set: body.read_set ?? [],
+        trees,
+      });
+    } catch (e: any) {
+      // Only the authority knows the policy's accepted false positives: it decides.
+      if (e?.code === 'SECRET_DETECTED') return null;
+      throw e;
+    }
     if (!step.need_trees) built = step;
     else
       await timed('trees', () =>

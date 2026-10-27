@@ -18,8 +18,14 @@ export const PLATFORM_NAMESPACE = 'platform';
 export const AGENT_SCOPES = ['read', 'write', 'check'];
 /** The name of the project's agent token on its platform repository. */
 export const AGENT_TOKEN = 'yoneda-agents';
+/** The agent layer's check on the platform, posted only with the project's agent token. */
+export const AGENT_CHECK = 'yoneda-checks';
 /** The project's repository policy: agent checks must pass and the owner must approve. */
-export const PLATFORM_POLICY = { required_checks: ['yoneda-checks'], approvals: 1 };
+export const PLATFORM_POLICY = {
+  required_checks: [AGENT_CHECK],
+  approvals: 1,
+  check_posters: { [AGENT_CHECK]: [`token:${AGENT_TOKEN}`] },
+};
 
 const failure = (code: string, message: string, status?: number) =>
   Object.assign(new Error(message), { code, status });
@@ -57,10 +63,14 @@ export async function platformRequest(
   );
   const value: Json = await response.json<Json>().catch(() => ({}));
   if (!response.ok || value?.error)
-    throw failure(
-      value?.error?.code ?? 'PLATFORM_UNAVAILABLE',
-      value?.error?.message ?? `Platform request failed (${response.status})`,
-      response.status,
+    throw Object.assign(
+      failure(
+        value?.error?.code ?? 'PLATFORM_UNAVAILABLE',
+        value?.error?.message ?? `Platform request failed (${response.status})`,
+        response.status,
+      ),
+      // A landing's merge conflicts name their paths here.
+      { details: value?.error?.details },
     );
   return value;
 }

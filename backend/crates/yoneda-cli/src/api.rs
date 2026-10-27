@@ -19,6 +19,11 @@ impl fmt::Display for Failure {
     }
 }
 
+/// No answer, an unreadable one, or a gateway error: worth retrying when nothing changes.
+fn transient(failure: &Failure) -> bool {
+    matches!(failure.status, 0 | 502 | 503 | 504)
+}
+
 impl From<Failure> for Error {
     fn from(failure: Failure) -> Self {
         Error::new(failure.to_string())
@@ -155,7 +160,32 @@ impl Api {
     }
 
     pub async fn get(&self, path: &str) -> std::result::Result<Value, Failure> {
-        self.send(reqwest::Method::GET, path, None).await
+        self.read(reqwest::Method::GET, path, None).await
+    }
+
+    /// A POST that only reads (the batch object read), retried like a GET.
+    pub async fn post_read(&self, path: &str, body: &Value) -> std::result::Result<Value, Failure> {
+        self.read(reqwest::Method::POST, path, Some(body)).await
+    }
+
+    /// Reads change nothing, so a dropped connection, a body cut off mid-stream or a gateway
+    /// error is retried (three attempts in about 4 s) instead of failing a whole clone.
+    async fn read(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> std::result::Result<Value, Failure> {
+        let mut attempt = 0;
+        loop {
+            match self.send(method.clone(), path, body).await {
+                Err(failure) if attempt < 2 && transient(&failure) => {
+                    attempt += 1;
+                    tokio::time::sleep(std::time::Duration::from_millis(1000 * attempt)).await;
+                }
+                result => return result,
+            }
+        }
     }
 
     pub async fn post(&self, path: &str, body: &Value) -> std::result::Result<Value, Failure> {
@@ -333,6 +363,44 @@ mod tests {
     #[test]
     fn encodes_unicode_query_values() {
         assert_eq!(encode("dir/ünï/f le&x"), "dir/%C3%BCn%C3%AF/f%20le%26x");
+    }
+
+    /// A read whose body is cut off mid-stream (seen live: "error decoding response body"
+    /// during a clone) succeeds on the next attempt; a write is never repeated.
+    #[tokio::test]
+    async fn retries_a_read_cut_off_mid_body_and_never_a_write() -> Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        let origin = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|e| Error::new(e.to_string()))?
+        );
+        let server = tokio::spawn(async move {
+            let mut served = 0;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                served += 1;
+                let reply: &[u8] = if served % 2 == 1 {
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n{\"ok\""
+                } else {
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}"
+                };
+                let _ = socket.write_all(reply).await;
+                drop(socket);
+            }
+        });
+        let api = Api::account(&origin, None)?;
+        let read = api.get("/repos").await.map_err(Error::from)?;
+        assert_eq!(read, json!({ "ok": true }));
+        let write = api.post("/repos", &json!({})).await;
+        assert!(matches!(write, Err(Failure { status: 0, .. })), "{write:?}");
+        server.abort();
+        Ok(())
     }
 
     #[test]

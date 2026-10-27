@@ -157,6 +157,9 @@ pub(super) fn validate_candidate<S: SqlStore>(
     candidate: &Value,
 ) -> Result<()> {
     super::autonomy::validate_candidate(run, candidate)?;
+    if super::sandbox_team::is_team(run) {
+        return super::sandbox_team::validate_candidate(db, candidate);
+    }
     if run["mode"] != "collaborate" {
         return Ok(());
     }

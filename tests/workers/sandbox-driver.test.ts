@@ -4,6 +4,7 @@ import {
   type DriverState,
   initialState,
   LIMITS,
+  type LandOutcome,
   type PushResult,
   type SandboxPort,
   step,
@@ -32,6 +33,11 @@ class FakeSandbox implements SandboxPort {
   stderr = '';
   throwOn: string | null = null;
   onTick?: (sandbox: FakeSandbox) => void;
+  team = false;
+  /** What each landing returns, in order (then: landed). */
+  landings: LandOutcome[] = [];
+  reports: { outcome: LandOutcome; round: number }[] = [];
+  resumed: { session: string; paths: string[] }[] = [];
 
   private guard(name: string) {
     this.calls.push(name);
@@ -57,9 +63,27 @@ class FakeSandbox implements SandboxPort {
   };
   stderrTail = async () => this.stderr;
   stopAgent = async () => this.guard('stopAgent');
-  commitAndPush = async (message: string) => {
-    this.guard(`push:${message}`);
+  commitAndPush = async (message: string, keepHistory: boolean) => {
+    this.guard(`push:${message}${keepHistory ? ' (history)' : ''}`);
     return this.push;
+  };
+  land = async (): Promise<LandOutcome> => {
+    this.guard('land');
+    return (
+      this.landings.shift() ?? { landed: true, commit: 'c'.repeat(40), teamCommit: 'd'.repeat(40), version: 4 }
+    );
+  };
+  // The ledger's rule: a conflict in round 0 gets the one resume.
+  reportLanding = async (outcome: LandOutcome, round: number) => {
+    this.reports.push({ outcome, round });
+    return { resume: !outcome.landed && round === 0 };
+  };
+  resumeAgent = async (session: string, paths: string[]) => {
+    this.guard('resume');
+    this.resumed.push({ session, paths });
+    // The resumed CLI writes a fresh task directory.
+    this.stdout = [];
+    this.taskState = { state: 'running' };
   };
   record = async (summary: string) => {
     this.guard('record');
@@ -224,5 +248,91 @@ describe('sandbox attempt steps', () => {
     };
     await drive(sandbox);
     expect(sandbox.failed).toBe('The sandbox stopped before the agent finished');
+  });
+});
+
+describe('sandbox team member steps', () => {
+  const init = line({ type: 'system', subtype: 'init', session_id: 'session-0123-abcd', model: 'glm' });
+  const conflict: LandOutcome = { landed: false, paths: ['src/math.js'] };
+  /** A member whose CLI finishes once per start or resume. */
+  function member() {
+    const sandbox = new FakeSandbox();
+    sandbox.team = true;
+    let runs = 0;
+    sandbox.onTick = (s) => {
+      const starts = s.calls.filter((c) => c === 'startAgent' || c === 'resume').length;
+      if (starts > runs && s.taskState.state === 'running') {
+        runs = starts;
+        s.stdout.push(init, result(false, `Done ${runs}`));
+        s.taskState = { state: 'exited', exitCode: 0 };
+      }
+    };
+    return sandbox;
+  }
+
+  it('lands the pushed commit on the team branch instead of recording a candidate', async () => {
+    const sandbox = member();
+    const final = await drive(sandbox);
+    expect(final.phase).toBe('done');
+    expect(sandbox.calls.filter((c) => !c.startsWith('task'))).toEqual([
+      'prepare',
+      'clone',
+      'startAgent',
+      'push:Agent change: Done 1',
+      'land',
+    ]);
+    expect(sandbox.recorded).toBeNull();
+    expect(sandbox.reports.map((r) => [r.outcome.landed, r.round])).toEqual([[true, 0]]);
+    expect(sandbox.failed).toBeNull();
+    expect(sandbox.destroyed).toBe(true);
+  });
+
+  it('resumes the same CLI session exactly once on a conflict, then lands its merge', async () => {
+    const sandbox = member();
+    sandbox.landings = [conflict];
+    const final = await drive(sandbox);
+    expect(final.phase).toBe('done');
+    expect(sandbox.resumed).toEqual([{ session: 'session-0123-abcd', paths: ['src/math.js'] }]);
+    // The resumed work keeps its history: the agent's merge of the team branch lands as is.
+    expect(sandbox.calls.filter((c) => c.startsWith('push') || c === 'land' || c === 'resume')).toEqual([
+      'push:Agent change: Done 1',
+      'land',
+      'resume',
+      'push:Agent change: Done 2 (history)',
+      'land',
+    ]);
+    expect(sandbox.reports.map((r) => [r.outcome.landed, r.round])).toEqual([
+      [false, 0],
+      [true, 1],
+    ]);
+    expect(sandbox.progressed.map((p) => p.phase)).toEqual(
+      expect.arrayContaining(['landing', 'resolving']),
+    );
+    expect(sandbox.failed).toBeNull();
+  });
+
+  it('fails the member with the conflict paths after a second conflict', async () => {
+    const sandbox = member();
+    sandbox.landings = [conflict, conflict];
+    await drive(sandbox);
+    expect(sandbox.resumed).toHaveLength(1);
+    expect(sandbox.failed).toBe('Conflicts with the team branch on src/math.js after one resume');
+    expect(sandbox.destroyed).toBe(true);
+  });
+
+  it('fails a conflicting member whose session cannot be resumed', async () => {
+    const sandbox = member();
+    sandbox.landings = [conflict];
+    sandbox.onTick = (s) => {
+      if (s.calls.includes('startAgent') && s.taskState.state === 'running') {
+        s.stdout.push(result(false, 'Done'));
+        s.taskState = { state: 'exited', exitCode: 0 };
+      }
+    };
+    await drive(sandbox);
+    expect(sandbox.resumed).toEqual([]);
+    expect(sandbox.failed).toBe(
+      'Conflicts with the team branch on src/math.js; the agent session cannot be resumed',
+    );
   });
 });

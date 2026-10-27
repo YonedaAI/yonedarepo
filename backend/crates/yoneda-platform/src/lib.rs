@@ -18,6 +18,7 @@ pub mod platform_git_upload;
 mod platform_git_verify;
 mod platform_graph;
 mod platform_head;
+mod platform_instructions;
 mod platform_narrative;
 mod platform_objects;
 mod platform_project;
@@ -27,6 +28,7 @@ mod platform_symbol_graph;
 mod platform_symbols;
 mod platform_views;
 pub(crate) mod repo_store;
+mod secret_scan;
 
 pub use commit_store::{execute_commit_store, migrate_commit_store};
 pub use platform_compute::compute as platform_compute;

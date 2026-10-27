@@ -76,11 +76,12 @@ it('lets only the human owner land, revert and pause while checks and queues are
 
   // Pausing stops automation's verdicts and landings; the owner and reads carry on.
   expect((await glass(owner, { action: 'pause_automation', reason: 'agents misbehaving' })).body.paused).toBe(true);
-  const verdict = await api(`${repo}/commits/${sha}/checks`, ci, { body: { name: 'unit', status: 'pass' } }, down);
+  // `unit` is the platform runner's alone; `lint` is an informational verdict any check token posts.
+  const verdict = await api(`${repo}/commits/${sha}/checks`, ci, { body: { name: 'lint', status: 'pass' } }, down);
   expect([verdict.status, verdict.body.error.code]).toEqual([423, 'AUTOMATION_PAUSED']);
   expect((await api(repo, owner, {}, down)).body.automation.paused.reason).toBe('agents misbehaving');
   expect((await glass(owner, { action: 'resume_automation', reason: 'fixed' })).body.paused).toBe(false);
-  expect((await api(`${repo}/commits/${sha}/checks`, ci, { body: { name: 'unit', status: 'pass' } }, down)).status).toBe(200);
+  expect((await api(`${repo}/commits/${sha}/checks`, ci, { body: { name: 'lint', status: 'pass' } }, down)).status).toBe(200);
 });
 
 it('is not an MCP tool, even for an owner session', async () => {
