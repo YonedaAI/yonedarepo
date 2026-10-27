@@ -33,6 +33,10 @@
 //        node tools/staging-realworld.mjs --members
 //          (= --only 0,members: a second kit account reads, pushes and lands by role with
 //          stock Git and REST, and is refused at once when removed)
+//        node tools/staging-realworld.mjs --reads-sessions
+//          (= --only 0,reads: stock Git over smart HTTP; a push declaring a read that changed
+//          meanwhile is refused as a read conflict, lands after git pull, and its session
+//          record reads back; zero model spend)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -48,6 +52,7 @@ import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
+import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 import { BRIEFS, bindManagedProviders, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
@@ -90,6 +95,8 @@ const { values } = parseArgs({
     receiver: { type: 'string' },
     // The members gate alone (items 0 and members).
     members: { type: 'boolean', default: false },
+    // The declared-reads and session-records gate alone (items 0 and reads).
+    'reads-sessions': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -101,12 +108,14 @@ const only = values['agent-smoke']
       ? new Set(['0', 'hooks'])
       : values.members
       ? new Set(['0', 'members'])
+      : values['reads-sessions']
+      ? new Set(['0', 'reads'])
       : values.only
       ? new Set(values.only.split(','))
       : null;
 // The smokes repeat item 2's coverage, so a full kit run leaves them out unless named; the
 // webhook gate needs a receiver and the members gate a second account, so they run only when named too.
-const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'hooks', 'members'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'hooks', 'members', 'reads'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 const { OWNER_TOKEN } = readEnvFile('staging.env');
 if (values.fund) {
@@ -173,6 +182,9 @@ await step('hooks', 'Webhooks: signed, ordered, retried deliveries to a receiver
 );
 await step('members', 'Members: a second account reads, pushes and lands by role, removal refuses at once', (m) =>
   membersFlow({ origin: values.origin, api: values.api, kit, platform: platformAccount }, m),
+);
+await step('reads', 'Declared reads: a stale read is refused on a plain git push; session records', (m) =>
+  readsSessionsFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
