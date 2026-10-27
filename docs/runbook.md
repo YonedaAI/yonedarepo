@@ -37,12 +37,10 @@ The call uses the platform Worker's own Secrets Store binding `REVIEW_MODEL_KEY`
 
 ## History, archives and Git conflicts
 
-Every run works in a lazy source workspace (`api-source-v1`); agents never clone or push.
-Deployments require the `SOURCES` binding and `v3` SQLite class migration, the matching
-runtime image and all four health markers: `source_api`, `lazy_source`, `source_capture`
-and `child_privilege_drop`. The last marker requires an observed UID/GID 1000 process with
-zero capability masks and `NoNewPrivs=1`. Without them, starts fail with `LEDGER_UPDATING`
-or `RUNTIME_UPDATING` before inference. Never rewrite an existing run's transport or funding.
+Every run is a sandbox run (`sandbox-cli-v1`): agents clone the platform repository and push
+to their own attempt branch. `start_run` refuses any other transport with `SANDBOX_REQUIRED`, and
+resolving a conflict always starts a sandbox resolver run (`SANDBOX_REQUIRED` where a deployment
+has no sandboxes). Never rewrite an existing run's transport or funding.
 
 Source indexing progresses through bounded queue messages before launching models. Signed
 metadata journals and completed index manifests bind the verified Git root, immutable
@@ -188,8 +186,8 @@ Children produce independent alternatives from the frozen base. They are separat
 Deploy both the Worker/Repo DO and the new container image. The snapshot advertises `agent_limits`; the browser retains its earlier four-agent maximum until these limits appear. The Worker refuses six-agent or delegated runs against an older ledger. The supervisor must advertise `capabilities.agent_delegation: 1` before a delegated root or child starts inference. During propagation or image rollout, retry after the compatibility error; do not bypass the guard.
 
 Console budget approvals additionally require `capabilities.model_budgets: 1` in the repository
-snapshot and supervisor health. The Worker rejects older implementations before inference.
-Uncapped requests additionally require `capabilities.optional_model_requests: 1` in both.
+snapshot. The Worker rejects older implementations before inference.
+Uncapped requests additionally require `capabilities.optional_model_requests: 1`.
 New hosted runs record an explicit optional-limit policy and have no default request/dollar cap;
 time and response limits remain. Existing runs retain their recorded historical limits.
 The Repo DO migration adds a durable model-reservation ledger; existing runs keep their legacy
@@ -209,17 +207,13 @@ An execution-budget stop is distinct from provider billing. Approved console run
 
 Repo DO alarms recover expired leases and retry durable outbox work. Queue redelivery is expected. Late callbacks are fenced. Check the current snapshot and execution errors before restarting work. The dead-letter queue is diagnostic transport evidence; the Repo DO job record remains authoritative.
 
-Cold container startup has a separate two-minute lease; the normal runtime budget begins when the supervisor port is ready. Startup stages and harness start are recorded as events. Launch errors become retryable job errors, rather than disappearing until lease expiry. Heartbeats extend running leases only within the attempt deadline.
-
-Agent harnesses reserve the last ten seconds of an explicitly configured execution window for process cleanup and failure reporting. On timeout, the supervisor retains up to 2 MiB each of stdout and stderr in private memory, terminates the process group, then attempts a partial transcript upload through the owner-scoped evidence endpoint before recording failure. That upload is capped at two seconds; heartbeats remain active until failure reporting finishes. An already acknowledged transcript stays immutable. Cancelled, stale or expired attempts cannot attach evidence or extend their deadline. Raw transcript content is kept out of console and structured logs.
-
-Before launching work, the Worker checks the supervisor's protocol and evaluator environment/suite support. Incompatible images fail before inference. Evaluation reports also identify their actual environment, which the ledger matches against policy. A rejected environment or protocol during deployment calls for waiting for the image rollout, rather than treating the candidate source as defective.
+Sandbox attempts are single-shot: the claim is the final attempt, its lease is a two-hour backstop, and an expired lease fails the attempt (no retry). Activity arrives through `sandbox_progress` and never extends the lease.
 
 Research artifacts must include `metadata.assumptions`, an array of objects with `statement`, `metric` (string), `limit` (integer), and `path` (validated repository path). The MCP schema and agent prompt expose this contract, and malformed publication returns a corrective error. These remain agent assertions; validation makes them queryable, not externally proven.
 
 Artifact lookup accepts canonical IDs and bare UUID aliases only within the current attempt's frozen context. The Worker authorizes the lookup, reads and verifies the immutable R2 content, then records retrieval with the canonical ID and attempt epoch. Authorization alone does not establish a content read.
 
-Each execution container runs one attempt. The root supervisor reserves UID 1000 for untrusted code, sets no-new-privileges, becomes a Linux subreaper, and terminates and reaps that UID before exporting source or trusting evaluator output. The barrier also catches daemonized descendants that leave their process group. Docker builds run Linux regressions serially because tests intentionally share that reserved UID.
+Each `CheckContainer` runs one check and is destroyed afterwards. `yoneda-runtime check-server` writes the commit's files to a fresh directory and runs the policy's argv as UID 1000 with no capabilities, `NoNewPrivs=1`, a scrubbed environment, no network and a hard timeout that kills the whole process group. The image carries sh, git, Python, Node/npm with the workspace's TypeScript under `/opt/yoneda/node_modules`, and Rust; no agent CLIs.
 
 A publication conflict (platform `main` moved to another commit before the owner's fast-forward landing) blocks the repository. Preserve both commits and the decision record; inspect the platform repository and reconcile explicitly. Nothing rebases or overwrites automatically.
 

@@ -132,7 +132,10 @@ export async function resolveInSandbox(
   const owner = principal.workspace;
   const repository = await ledger(env, repo, { op: 'repository_status', _workspace: owner });
   if (!env.AGENT_SANDBOX || !((repository.capabilities?.sandbox_cli ?? 0) >= 1))
-    fail('SANDBOX_REQUIRED', 'Conflicts are resolved in a sandbox, which this deployment does not run');
+    fail(
+      'SANDBOX_REQUIRED',
+      'Conflicts are resolved in a sandbox, which this deployment does not run',
+    );
   const id = typeof input.conflict_id === 'string' ? input.conflict_id : '';
   const request = typeof input.request_id === 'string' ? input.request_id : '';
   if (!id || !request || request.length > 128)
