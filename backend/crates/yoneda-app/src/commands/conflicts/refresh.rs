@@ -19,10 +19,10 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     } else {
         owner(c)?;
     }
-    if run["workspace_transport"] != "api-source-v1" {
+    if !crate::commands::sandbox::platform_source(&run["workspace_transport"]) {
         return Err(Error::new(
             "NOT_SUPPORTED",
-            "Only lazy-source runs can refresh candidates",
+            "Only lazy-source and sandbox runs can refresh candidates",
         ));
     }
     // The refresh job fences these runs (source_refresh::context); refuse before queueing it.
@@ -130,7 +130,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     // Only the authenticated broker capture path can finish this internal operation.
     // Bind its readback to the server-frozen source job; a result flag supplied by
     // the caller is not evidence that Git was read back from the canonical Artifact.
-    if active_job["payload"]["workspace_transport"] != "api-source-v1" {
+    if !crate::commands::sandbox::platform_source(&active_job["payload"]["workspace_transport"]) {
         return Err(Error::new(
             "FORBIDDEN",
             "Remote head readback requires a trusted source capture job",
