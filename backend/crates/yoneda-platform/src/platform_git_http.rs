@@ -13,9 +13,10 @@ use yoneda_core::{
 const AGENT: &str = "agent=yonedarepo/1";
 const UPLOAD_CAPABILITIES: &str = "multi_ack_detailed side-band-64k side-band no-progress";
 /// `no-thin`: every delta base is in the pack, so a push never depends on objects the
-/// server would have to look up while it unpacks.
+/// server would have to look up while it unpacks. `push-options`: `-o yoneda.reads=…`
+/// declares the push's read set (`platform_push_reads`).
 const RECEIVE_CAPABILITIES: &str =
-    "report-status delete-refs atomic ofs-delta no-thin side-band-64k quiet";
+    "report-status delete-refs atomic ofs-delta no-thin side-band-64k quiet push-options";
 const MAIN: &str = "refs/heads/main";
 const MAX_HAVES: usize = 256;
 

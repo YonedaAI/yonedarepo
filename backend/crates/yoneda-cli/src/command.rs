@@ -23,6 +23,13 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   check run <name> [--commit <sha>] | check status [<run-id>] [--commit <sha>]
   conflicts                           the last refused landing's conflicting paths
   status [--brief]                    one line, no network: commits not on the platform yet
+  session record [<sha>] --cli <c> --summary <text> [--model <m>] [--transcript-ref <r>]
+  session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
+
+declared reads (closure coverage: landing refuses a push whose reads changed meanwhile)
+  reads add <path>... | reads list | reads clear    this session's reads ($GIT_DIR/yoneda/reads)
+  push [<git push args>]              git push -o yoneda.reads=<recorded reads>, then clear them
+  hook claude-read|claude-bash|claude-stop          agent hook entry points (JSON on stdin)
 
 offline checkouts (`yoneda clone`, kept for existing scripts)
   clone <repo-id> [dir] [--origin <url>]
@@ -121,6 +128,38 @@ pub enum CheckCommand {
     },
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReadsCommand {
+    Add { paths: Vec<String> },
+    List,
+    Clear,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum SessionCommand {
+    Record {
+        commit: Option<String>,
+        cli: String,
+        summary: String,
+        model: Option<String>,
+        transcript_ref: Option<String>,
+    },
+    List {
+        commit: Option<String>,
+    },
+}
+
+/// The agent hook a `yoneda hook <event>` call serves.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum HookEvent {
+    /// Claude Code PostToolUse on Read/Grep: records the files read.
+    ClaudeRead,
+    /// Claude Code PreToolUse on Bash: sends `git push` with recorded reads to `yoneda push`.
+    ClaudeBash,
+    /// Claude Code Stop: posts a session record for each commit pushed this turn.
+    ClaudeStop,
+}
+
 /// A coding agent `yoneda setup` configures.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Agent {
@@ -185,4 +224,12 @@ pub enum Command {
     },
     Sync(SyncMode),
     Pull,
+    Reads(ReadsCommand),
+    /// `git push` with the recorded reads declared; the arguments go to Git unchanged.
+    Push(Vec<String>),
+    Session {
+        target: Target,
+        command: SessionCommand,
+    },
+    Hook(HookEvent),
 }

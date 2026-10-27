@@ -119,6 +119,13 @@ async function land(
     return null;
   } catch (e: any) {
     if (e?.code !== 'CONFLICT') return reason(e);
+    const read = staleRead(e);
+    if (read.length > 0) {
+      for (const path of read)
+        messages.push(`read conflict on ${path}: it changed after your base`);
+      messages.push('next: git pull, check your change still holds, git push');
+      return `read conflict on ${read.join(', ')}: run git pull`.slice(0, 300);
+    }
     const paths = conflictPaths(e);
     for (const path of paths) messages.push(`conflict in ${path}`);
     messages.push('next: git pull, resolve the conflicts, commit, git push');
@@ -126,14 +133,18 @@ async function land(
   }
 }
 
-/** The conflicting paths a CONFLICT names, in details or (as the log check words it) its
- * message. */
+/** The declared reads a landing refused as written concurrently (the authority's stale-read
+ * CONFLICT names them: "… on <paths>, which this commit read"); empty for a write conflict. */
+function staleRead(e: any): string[] {
+  const listed = /at version \d+ on (.+), which this commit read/.exec(String(e?.message ?? ''));
+  return listed ? listed[1].split(', ') : [];
+}
+
+/** The conflicting paths a CONFLICT names in its details. */
 function conflictPaths(e: any): string[] {
   const details = e?.details ?? {};
   const named = [...(details.conflicts ?? []), ...(details.paths ?? [])]
     .map((p: any) => (typeof p === 'string' ? p : p?.path))
     .filter((p: unknown): p is string => typeof p === 'string');
-  if (named.length > 0) return [...new Set(named)].sort();
-  const listed = /on (.+), which this commit read/.exec(String(e?.message ?? ''));
-  return listed ? listed[1].split(', ') : [];
+  return [...new Set(named)].sort();
 }

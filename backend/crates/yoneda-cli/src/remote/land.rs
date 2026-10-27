@@ -42,14 +42,29 @@ fn short(id: &str) -> &str {
     &id[..id.len().min(12)]
 }
 
-/// Reports a refused landing: the paths on stderr and in the conflict file.
+/// Reports a refused landing: the paths on stderr and in the conflict file. A stale
+/// declared read (a file the push read changed after its base) is a read conflict.
 fn conflict(session: &Session, failure: &Failure) -> String {
-    let paths = conflict_paths(&failure.details);
+    let read = stale_reads(&failure.message);
+    let paths = if read.is_empty() {
+        conflict_paths(&failure.details)
+    } else {
+        read.clone()
+    };
     say(&format!("landing on main refused: {}", failure.message));
-    for path in &paths {
-        say(&format!("conflict in {path}"));
+    if read.is_empty() {
+        for path in &paths {
+            say(&format!("conflict in {path}"));
+        }
+        say("next: git pull, resolve the conflicts, commit, git push");
+    } else {
+        for path in &paths {
+            say(&format!(
+                "read conflict on {path}: it changed after your base"
+            ));
+        }
+        say("next: git pull, check your change still holds, git push");
     }
-    say("next: git pull, resolve the conflicts, commit, git push");
     let record = json!({ "message": failure.message, "paths": paths, "details": failure.details });
     let file = session.conflict_path();
     let saved = file
@@ -60,7 +75,22 @@ fn conflict(session: &Session, failure: &Failure) -> String {
     if let Err(e) = saved {
         say(&e.message);
     }
-    "conflict".into()
+    if read.is_empty() {
+        "conflict".into()
+    } else {
+        format!("read conflict on {}: run git pull", read.join(", "))
+    }
+}
+
+/// The declared reads a stale-read CONFLICT names ("… at version N on <paths>, which this
+/// commit read").
+fn stale_reads(message: &str) -> Vec<String> {
+    message
+        .split_once(", which this commit read")
+        .and_then(|(head, _)| head.split_once(" at version "))
+        .and_then(|(_, rest)| rest.split_once(" on "))
+        .map(|(_, paths)| paths.split(", ").map(str::to_owned).collect())
+        .unwrap_or_default()
 }
 
 /// The conflicting paths a CONFLICT names (`details.conflicts[].path` or `details.paths`).
@@ -91,5 +121,12 @@ mod tests {
             json!({"conflicts":[{"path":"b.txt","base":"x"},{"path":"a.txt"}],"paths":["a.txt"]});
         assert_eq!(conflict_paths(&details), ["a.txt", "b.txt"]);
         assert!(conflict_paths(&Value::Null).is_empty());
+    }
+
+    #[test]
+    fn names_the_reads_of_a_stale_read_conflict() {
+        let message = "refs/heads/main changed at version 4 on config.json, src/a.rs, which this commit read; reconcile and re-check";
+        assert_eq!(stale_reads(message), ["config.json", "src/a.rs"]);
+        assert!(stale_reads("Merge conflict in f.txt").is_empty());
     }
 }

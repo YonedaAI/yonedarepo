@@ -6,7 +6,7 @@
 use super::list::{MAIN, branches};
 use super::tags::{TAGS, create_tag, tag_refusal};
 use super::upload::{self, Uploaded};
-use super::{Session, land, say};
+use super::{Session, declared, land, say};
 use crate::error::{Error, Result};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -135,7 +135,15 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         ready.clear();
     }
     if !session.options.dry_run && !ready.is_empty() {
-        publish(session, ready, atomic, &mut outcomes).await;
+        match declared::reads(session) {
+            Ok(reads) => {
+                let tips = publish(session, ready, atomic, &reads, &mut outcomes).await;
+                if outcomes.values().all(|o| o.is_ok()) {
+                    declared::spent(session, &tips, &reads);
+                }
+            }
+            Err(e) => refuse_rest(&mut outcomes, &e.message),
+        }
     }
     specs
         .iter()
@@ -150,18 +158,21 @@ fn refuse_rest(outcomes: &mut BTreeMap<String, std::result::Result<(), String>>,
     }
 }
 
-/// Uploads every ready ref, then publishes them.
+/// Uploads every ready ref, each tip declaring `reads`, then publishes them; returns the
+/// published tips.
 async fn publish(
     session: &mut Session,
     ready: Vec<Ready>,
     atomic: bool,
+    reads: &[String],
     outcomes: &mut BTreeMap<String, std::result::Result<(), String>>,
-) {
+) -> Vec<String> {
     let mut uploaded = Vec::new();
+    let mut tips = Vec::new();
     for item in ready {
         let creates = item.current.is_none();
         let result = match upload::plan_for(session, &item.local, creates).await {
-            Ok(plan) => upload::upload(session, plan).await,
+            Ok(plan) => upload::upload(session, plan, reads).await,
             Err(e) => Err(e),
         };
         match result {
@@ -174,17 +185,18 @@ async fn publish(
     if atomic {
         if outcomes.values().any(|o| o.is_err()) {
             refuse_rest(outcomes, "atomic push refused");
-            return;
+            return tips;
         }
         let result = batch(session, &uploaded).await;
         for (item, done) in &uploaded {
             let outcome = result.as_ref().map_err(|stale| stale(&item.spec.dst));
             if outcome.is_ok() {
                 remember(session, done);
+                tips.push(done.tip.clone());
             }
             outcomes.insert(item.spec.dst.clone(), outcome.map(|_| ()));
         }
-        return;
+        return tips;
     }
     for (item, done) in uploaded {
         let outcome = if item.spec.dst == MAIN {
@@ -196,9 +208,11 @@ async fn publish(
         };
         if outcome.is_ok() {
             remember(session, &done);
+            tips.push(done.tip.clone());
         }
         outcomes.insert(item.spec.dst.clone(), outcome);
     }
+    tips
 }
 
 /// Maps the published commits whose platform id differs from the local one (most match).
