@@ -17,16 +17,16 @@ backend/crates/
   yoneda-app/              Transactional state, graph, scheduling and migrations
   yoneda-cloudflare/       Rust-to-Cloudflare binding adapters
   yoneda-worker/           Rust Durable Objects compiled to Wasm
-  yoneda-runtime/          Native supervisor, MCP, capture and evaluation
+  yoneda-runtime/          Check server that runs inside the CheckContainer image
 cloudflare/
   worker/                 Authentication, HTTP/MCP and SDK adapters
   sites/                  Separate Worker serving published static websites
-  containers/             Pinned native runtime Docker image
+  containers/             Pinned CheckContainer Docker image (check server and check toolchains)
   migrations/             Forward-only D1 discovery migrations
   wrangler*.jsonc         Cloudflare deployment configuration
 shared/                   Provider contracts shared with TypeScript
 xtask/                    Setup, checks, builds and deployment commands
-tests/                    Workers, runtime and container integration tests
+tests/                    Workers and runtime integration tests
 fixtures/                 Small source repositories for tests and demonstrations
 docs/                     Architecture, operations and verification
 context/                  Original design material
@@ -46,7 +46,7 @@ credentials, local state and diagnostic exports are ignored by Git.
 | Cloudflare binding adapter | Implements the storage interface and bridges SDK operations | [yoneda-cloudflare](../backend/crates/yoneda-cloudflare/src/lib.rs) |
 | Rust Durable Objects | Repository authority, workspace authority, recovery alarms and live notifications | [yoneda-worker](../backend/crates/yoneda-worker/src/lib.rs) |
 | Worker transport | Authentication, HTTP routes, remote MCP, platform API calls, container lifecycle and credential injection | [Worker entrypoint](../cloudflare/worker/index.ts), [routes](../cloudflare/worker/routes.ts) |
-| Native execution | Tokio/Axum supervisor, agent CLI harnesses, stdio MCP, source capture and clean evaluation | [yoneda-runtime](../backend/crates/yoneda-runtime/src/lib.rs) |
+| Check executor | Axum `check-server`: runs one platform check's argv on the exact commit's files as an unprivileged user without network, returning bounded evidence | [yoneda-runtime](../backend/crates/yoneda-runtime/src/lib.rs) |
 
 The browser submits commands and displays recorded state. Rust owns authoritative repository
 transitions. The application uses the same commands with native SQLite in local tests and
@@ -111,7 +111,7 @@ The Apps Worker (`yonedarepo-apps-dev`) serves checked apps on `apps.yonedarepo.
 | Live DO (`LiveRoom`) | Hibernating WebSocket connections and payload-free refresh signals. Clients reauthenticate when fetching data. |
 | Sandbox DO (`AgentSandbox`) | One Cloudflare Sandbox per agent attempt: it runs a stock coding CLI on a clone of the platform repository and pushes to the attempt's own `attempts/<run>/<n>` branch. |
 | Queues | Separate dispatch queues for agent, capture and evaluate work. The agent queue also carries `provision` (project setup) jobs, which start no model or container. All three consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
-| Containers | `CheckContainer` runs the platform's checks on the native runtime image; agent attempts run in `AgentSandbox` sandboxes. Containers never publish. |
+| Containers | `CheckContainer` runs the platform's checks in the check-server image (sh, git, Python, Node/npm with TypeScript, Rust); agent attempts run in `AgentSandbox` sandboxes. Containers never publish. |
 | Source platform | Each project's source is one platform repository reached only through its public `/api/v1`: the agent layer commits candidates onto its own branches with a read/write/check token sealed in the workspace, and only the owner's own session reviews and lands. Artifacts holds only the operator-published starter templates. |
 | R2 | Immutable context objects, workspace snapshots, transcripts, verification evidence and static asset manifests. |
 | D1 | Rebuildable repository discovery projection. It does not authorize selection or publication. |
@@ -140,12 +140,16 @@ migration histories with stable resource identities.
 
 ## Development workflow
 
-Agent attempts run only in Cloudflare Sandboxes (`sandbox-cli-v1`). The earlier lazy-source
-transport, with its per-attempt source workspace authority and harness container, was retired;
-a Durable Object class migration deletes both classes. A sandbox's pushed commit becomes its
+Agent attempts run only in Cloudflare Sandboxes (`sandbox-cli-v1`); `start_run` refuses any other
+transport with `SANDBOX_REQUIRED`. The earlier lazy-source transport, with its per-attempt source
+workspace authority and harness container, was retired: a Durable Object class migration deleted
+both classes, and the native supervisor, harnesses, stdio MCP, source capture and the ledger's
+source-binding, broker (heartbeat, model reservation, transcript) and harness resolver operations
+are gone. Their old tables stay (no DROP migration). A sandbox's pushed commit becomes its
 candidate, and a fresh check sandbox checks that exact commit. Refresh is a server-side platform
 merge that retains both parents; a conflicting merge yields a workspace commit for a sandbox
-resolver. Human selection and publication remain separate.
+resolver. Resolving a conflict always starts a sandbox resolver run; a deployment without
+sandboxes refuses with `SANDBOX_REQUIRED`. Human selection and publication remain separate.
 
 Signup and login create an opaque session backed by Workspace DO SQLite. Project creation
 reserves a stable ID there and, in the owner's own request, creates the project's platform
@@ -239,7 +243,7 @@ message bodies and platform delivery/acknowledgment receipts; those receipts do 
 understanding. Historical reads and context retrieval use bounded, stable-watermark pages.
 Historical queries are anchored to a specific source revision and path; graph traversal is bounded.
 
-Hosted agents use the native stdio MCP server. External agents use Streamable HTTP MCP and
+Hosted agents are stock CLIs in sandboxes. External agents use Streamable HTTP MCP and
 revocable repository-scoped grants: `attempt_read` and `attempt_commit` read and commit files on
 the attempt's own platform branch through the Worker, which never returns a platform credential.
 On submission a trusted Worker capture rebuilds the bound tree as one fresh commit on the frozen
@@ -264,7 +268,8 @@ response bounds, provider quotas and the Claude workspace allowance still apply.
 
 `cargo xtask` coordinates setup, checks, native/Wasm and browser builds, local servers and
 deployment. Local integration tests use real workerd Durable Objects, SQLite and R2 without
-paid inference. The same runtime binary runs in the pinned Linux container image.
+paid inference. The check server's binary is built and tested inside the pinned Linux
+CheckContainer image.
 
 See [README setup and deployment](../README.md), [runbook](runbook.md),
 [provider configuration](providers.md), [MCP guide](remote-mcp.md) and
