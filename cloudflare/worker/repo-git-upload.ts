@@ -5,6 +5,7 @@
 // streams out (on side-band when asked) and is never held whole. Refs are served from the
 // log, so a fetch never sees Git projection lag.
 
+import { transient } from './durable';
 import { compute } from './repo-compute';
 import { inBatches, rawObject, treeFor } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
@@ -79,6 +80,8 @@ export async function uploadPack(
     listed = await enumerate(session, objects);
   } catch (e: any) {
     session.close();
+    // Nothing is sent yet: an overloaded authority is an HTTP 503 Git can retry.
+    if (transient(e)) throw e;
     // Git prints an ERR line as `remote error: <message>`.
     const message = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`.slice(0, 500);
     return new Response(concat([ack, pkt(`ERR ${message}\n`)]), { headers: RESULT });

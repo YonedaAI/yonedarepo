@@ -4,6 +4,7 @@
 // a 401 asks Git's credential helper for one. The authority decides access per request:
 // read to fetch, write to push, and never a path-restricted grant.
 
+import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
@@ -21,12 +22,15 @@ const STATUS: Record<string, number> = {
   NOT_FOUND: 404,
   GONE: 404,
   RATE_LIMITED: 429,
+  OVERLOADED: 503,
 };
 
-/** A plain-text refusal Git shows as `remote: <message>`; a 401 invites credentials. */
+/** A plain-text refusal Git shows as `remote: <message>`; a 401 invites credentials and a
+ * 503 says when to try again. */
 export function refusal(status: number, message: string) {
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   if (status === 401) headers['www-authenticate'] = 'Basic realm="YonedaRepo"';
+  if (status === 503) headers['retry-after'] = String(RETRY_AFTER_SECONDS);
   return new Response(`${message}\n`, { status, headers });
 }
 
@@ -79,7 +83,9 @@ async function serve(req: Request, env: Env): Promise<Response> {
       ? await uploadPack(ctx, objects, body)
       : await receivePack(ctx, objects, body, access.secret_allow ?? []);
   } catch (e: any) {
-    const code = e instanceof ApiError ? e.code : (e?.code ?? 'ERROR');
+    // A push refused because the authority was overloaded moved nothing (receivePack
+    // throws only then), so Git gets a status it reports instead of a per-ref refusal.
+    const code = failureCode(e);
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
     if (status >= 500) console.error(`git ${service} failed: ${code}`);
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
