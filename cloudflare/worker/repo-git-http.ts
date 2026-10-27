@@ -10,6 +10,7 @@ import { receivePack } from './repo-git-receive';
 import { uploadPack } from './repo-git-upload';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { timed, withTimings } from './repo-timing';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
@@ -47,8 +48,15 @@ async function gitCredentials(req: Request, env: Env): Promise<Credentials | nul
   );
 }
 
-/** Serves a `/git/` request, or answers why it cannot. */
+/** Serves a `/git/` request, or answers why it cannot, with its phases in Server-Timing
+ * (Git shows response headers under `GIT_TRACE_CURL=1`). */
 export async function gitHttp(req: Request, env: Env): Promise<Response> {
+  const { value, header } = await withTimings(() => serve(req, env));
+  if (header) value.headers.set('server-timing', header);
+  return value;
+}
+
+async function serve(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   const match = PATH.exec(url.pathname);
   if (!match) return refusal(404, 'Not a Git repository URL: use /git/<repository id>.git');
@@ -58,7 +66,7 @@ export async function gitHttp(req: Request, env: Env): Promise<Response> {
     return refusal(403, 'Only smart HTTP is served (Git 1.6.6 or newer)');
   if ((action === 'info/refs') !== (req.method === 'GET'))
     return refusal(405, `${req.method} is not allowed here`);
-  const auth = await gitCredentials(req, env);
+  const auth = await timed('git.auth', () => gitCredentials(req, env));
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   try {
