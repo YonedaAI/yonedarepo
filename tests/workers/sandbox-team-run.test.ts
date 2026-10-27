@@ -11,6 +11,7 @@ import {
   type SandboxAttempt,
   sandboxName,
 } from '../../cloudflare/worker/sandbox-attempt';
+import { candidateSource } from '../../cloudflare/worker/candidate-source';
 import { landOnTeam, teamPort } from '../../cloudflare/worker/sandbox-team';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
@@ -154,6 +155,11 @@ it('lands two disjoint members through the platform merge; the team branch is th
     status: 'evaluating',
     summary: 'Team branch: 2 of 2 tasks landed',
   });
+  // What the team smoke reads back: the team head's own tree, with both members' files.
+  const source = await (await candidateSource(bindings, repo, candidate.id)).json<any>();
+  expect(source.revision.commit).toBe(head);
+  expect(source.files['notes/one.md'].content).toBe('one\n');
+  expect(source.files['notes/two.md'].content).toBe('two\n');
 });
 
 it('a resumed member that merges the team branch lands: one resume, both members landed', async () => {
