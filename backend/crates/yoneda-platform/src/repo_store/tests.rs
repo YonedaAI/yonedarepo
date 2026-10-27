@@ -1587,11 +1587,8 @@ mod checkpoints;
 mod hooks;
 mod land_cas;
 mod land_shapes;
-<<<<<<< HEAD
-mod model_runner;
-=======
 mod members;
->>>>>>> dev
+mod model_runner;
 mod pushed;
 mod secrets;
 mod sessions;

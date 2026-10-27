@@ -41,11 +41,8 @@ mod reads;
 mod record;
 mod reviewers;
 mod rows;
-<<<<<<< HEAD
 mod runner;
-=======
 mod sessions;
->>>>>>> dev
 pub(crate) mod staging;
 mod store_lineage;
 mod submitted;
