@@ -420,7 +420,7 @@ fn an_immutable_test_bundle_is_checked_in_the_check_sandbox() {
 }
 
 #[test]
-fn app_bundle_and_guided_sandbox_runs_are_refused_at_start() {
+fn app_bundle_sandbox_runs_are_refused_at_start() {
     let db = bundle_repository(true);
     let refused = call(&db, start(glm(), json!({}))).unwrap_err();
     assert_eq!(refused.code, "NOT_SUPPORTED");
@@ -432,11 +432,6 @@ fn app_bundle_and_guided_sandbox_runs_are_refused_at_start() {
     let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
     claimed_check(&db, &mut evaluator, 1000).unwrap();
     assert!(evaluator.get("sandbox_check").is_none());
-    let guided = json!({"runtime":TRANSPORT,"guided":{"session_id":"s"}});
-    assert_eq!(
-        checkable_start(&guided, &json!({})).unwrap_err().code,
-        "NOT_SUPPORTED"
-    );
 }
 
 #[test]

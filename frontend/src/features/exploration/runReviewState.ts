@@ -1,6 +1,5 @@
 import type { Snapshot } from '../../lib/types';
 import { activeDecision, rejectionOf } from './agentsPick';
-import { guidedPublicationBlocker } from './guidedPublication';
 import { refreshedSelection, refreshesSelection } from './refreshedSelection';
 import { runHasActiveAttempts } from './runControlState';
 import { runCandidates } from './runResults';
@@ -41,8 +40,6 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
     if (refreshed && refreshed.id !== candidate.id)
       return 'Superseded: this selection was built on an older main and has been refreshed onto the current one. Publish the refreshed result instead.';
   }
-  const guideBlocker = guidedPublicationBlocker(snapshot, run, candidate);
-  if (guideBlocker) return guideBlocker;
   if (candidate.status !== 'eligible') return 'This result has not passed the required checks.';
   if (snapshot.repository.pending) return 'Another publication is in progress in this repository.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready for publication.';

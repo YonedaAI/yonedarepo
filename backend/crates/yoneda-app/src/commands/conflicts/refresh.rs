@@ -263,12 +263,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     attach_typed(db, &mut record)?;
     record["conflict_paths"] = json!([]);
     save(db, "conflicts", &id, &record)?;
-    if let Some(binding) = super::super::guided::evaluation_binding(db, &candidate)? {
-        let jid = format!("evaluate:{new_id}");
-        let mut evaluator = get(db, "jobs", &jid)?;
-        evaluator["payload"]["guided"] = binding;
-        save(db, "jobs", &jid, &evaluator)?;
-    }
     event(
         db,
         "candidate.refreshed",
