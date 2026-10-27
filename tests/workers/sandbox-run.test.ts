@@ -4,13 +4,16 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
+import { runsInSandbox } from '../../shared/providers';
 import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import {
+  advertiseSandbox,
   agentEgress,
   recordSandboxCandidate,
   type SandboxAttempt,
   sandboxName,
 } from '../../cloudflare/worker/sandbox-attempt';
+import { refsAllowed } from '../../cloudflare/worker/sandbox-outbound';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { platformCommit } from './platform-fixture';
@@ -26,6 +29,17 @@ type Queue = {
   ): Promise<{ acked: boolean; retries: number[]; launchRequested: boolean }>;
 };
 type Fake = { begun(): Promise<{ attempt: SandboxAttempt; count: number }> };
+
+it('advertises the sandbox to the browser only where it is deployed and the ledger takes it', () => {
+  const read = (sandbox_cli: number, deployed: boolean) =>
+    advertiseSandbox((deployed ? { AGENT_SANDBOX: {} } : {}) as Env, { capabilities: { sandbox_cli } })
+      .capabilities.sandbox_runtime;
+  expect(read(2, true)).toBe('sandbox-cli-v1');
+  expect(read(1, true)).toBeUndefined();
+  expect(read(2, false)).toBeUndefined();
+  expect(runsInSandbox('zai') && runsInSandbox('mimo') && runsInSandbox('claude')).toBe(true);
+  expect(runsInSandbox('codex') || runsInSandbox('gemini') || runsInSandbox('unknown')).toBe(false);
+});
 
 it('claims once, starts one sandbox and records the pushed commit as the candidate', async () => {
   const owner = 'sandbox_owner';
@@ -104,6 +118,70 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
   expect(await ledger(bindings, repo, { op: 'job_status', id: jobId })).toMatchObject({
     status: 'done',
   });
+});
+
+it('gives each agent of a compare run its own sandbox, branch and candidate', async () => {
+  const owner = 'sandbox_compare';
+  const fixture = await readyReviewer(owner);
+  const repo = fixture.repo;
+  const base = { repository: `platform/${repo}`, commit: fixture.head, tree: fixture.tree };
+  await ledger(bindings, repo, {
+    op: 'start_run',
+    id: 'compare-run',
+    intent: 'Add function add(a,b) in src/math.js with a test',
+    mode: 'compare',
+    workspace_transport: 'sandbox-cli-v1',
+    _source_transport_approved: true,
+    _source_base: base,
+    agents: [
+      { provider: 'zai', model: 'glm-5.3-flash', strategy: 'builder approach 1' },
+      { provider: 'mimo', model: 'mimo-v2.6-flash', strategy: 'builder approach 2' },
+    ],
+  });
+  const queue = bindings.SELF as unknown as Queue;
+  const attempts: SandboxAttempt[] = [];
+  for (const n of [1, 2]) {
+    const envelope: Envelope = { v: 1, kind: 'agent', repo_id: repo, job_id: `job:compare-run:agent-${n}` };
+    expect(await queue.dispatchOneForTest(envelope, false)).toMatchObject({ acked: true });
+    const sandbox = (bindings.AGENT_SANDBOX as any).getByName(
+      sandboxName(repo, `compare-run:agent-${n}`),
+    ) as Fake;
+    const { attempt, count } = await sandbox.begun();
+    expect(count).toBe(1);
+    attempts.push(attempt);
+  }
+  expect(attempts.map((a) => [a.branch, a.provider])).toEqual([
+    ['attempts/compare-run/1', 'zai'],
+    ['attempts/compare-run/2', 'mimo'],
+  ]);
+  // Agent 1's egress can move its own branch and never agent 2's.
+  const first = agentEgress(attempts[0]).ref;
+  expect(refsAllowed({ ref: attempts[0].branch }, first)).toBe(true);
+  expect(refsAllowed({ ref: attempts[1].branch }, first)).toBe(false);
+
+  // Both agents push the same change: still one candidate per agent, each checked on its own.
+  const platform = await projectPlatform(bindings, owner, repo);
+  const pushed = await platformCommit(platform, base.commit, {
+    'src/math.js': 'export const add = (a, b) => a + b;\n',
+  });
+  for (const attempt of attempts) {
+    await platform.call('POST', '/branches', {
+      ref: attempt.branch,
+      commit: pushed.commit,
+      expected: null,
+    });
+    await recordSandboxCandidate(bindings, attempt, 'Added add(a,b)');
+  }
+  const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
+  const candidates = snapshot.candidates.filter((c: any) => c.run_id === 'compare-run');
+  expect(candidates.map((c: any) => c.execution).sort()).toEqual([
+    'compare-run:agent-1',
+    'compare-run:agent-2',
+  ]);
+  for (const candidate of candidates)
+    expect(
+      await ledger(bindings, repo, { op: 'job_status', id: `evaluate:${candidate.id}` }),
+    ).toMatchObject({ kind: 'evaluate', status: 'queued' });
 });
 
 it('fails the attempt with the reason when its sandbox cannot start', async () => {

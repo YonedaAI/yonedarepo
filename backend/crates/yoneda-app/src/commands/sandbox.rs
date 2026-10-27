@@ -1,5 +1,6 @@
-//! `sandbox-cli-v1`: one agent runs an unmodified coding CLI (Claude Code) in a Cloudflare
-//! Sandbox that the Worker's `AgentSandbox` Durable Object drives. The ledger keeps only:
+//! `sandbox-cli-v1`: each agent of a compare run (one to six) runs an unmodified coding CLI
+//! (Claude Code) in its own Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
+//! Object, and pushes to its own `attempts/<run>/<n>` branch. The ledger keeps only:
 //! - the claim, with one long lease that is a safety backstop, never a heartbeat;
 //! - the latest observed activity, for "last activity" and the idle marker;
 //! - the pushed commit, which becomes the candidate directly (no capture job), with the same
@@ -22,7 +23,9 @@ pub(super) fn requested(c: &Value) -> bool {
     c["workspace_transport"] == TRANSPORT
 }
 
-/// Single-agent coding runs only: compare, team and delegation come later.
+/// Independent coding attempts only: a compare run's agents (the roster is already validated
+/// as one to six), each with its own sandbox and candidate, chosen by the owner. Team runs,
+/// delegation and the comparison reviewer are not sandbox work.
 pub(super) fn freeze(
     c: &Value,
     general: bool,
@@ -30,11 +33,10 @@ pub(super) fn freeze(
     delegation: &DelegationPolicy,
     run: &mut Value,
 ) -> Result<()> {
-    let agents = c["agents"].as_array().map_or(0, Vec::len);
-    if !general || agents != 1 || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
+    if !general || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
-            "Sandbox runs take exactly one coding agent, without team or comparison review",
+            "Sandbox runs take independent coding agents, without team or comparison review",
         ));
     }
     if delegation.enabled {
