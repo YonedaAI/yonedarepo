@@ -1,6 +1,6 @@
 //! Freeze API source identity only after the authenticated Worker reads Artifacts.
 use serde_json::Value;
-use yoneda_agents_core::{Error, Result, source_workspace::SourceRevision};
+use yoneda_agents_core::{Error, Result, source_revision::SourceRevision};
 
 pub(super) fn freeze(command: &Value, run: &mut Value) -> Result<()> {
     if command["_source_transport_approved"] != true {
