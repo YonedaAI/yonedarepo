@@ -25,7 +25,8 @@ export function runtimeChoice(
     ? `${unsupported.label} can't run in the sandbox: it runs Claude Code only.`
     : undefined;
   const sandbox = offered && preferred === 'sandbox' && !blocker;
-  // A sandbox run is independent compare attempts (1–6) the owner chooses among: no reviewer.
+  // A sandbox run is independent compare attempts (1–6) the owner chooses among, no reviewer,
+  // or a team on the owner's task plan whose members land on one team branch.
   return { offered, blocker, sandbox, request: sandbox ? { runtime: SANDBOX_RUNTIME } : undefined };
 }
 

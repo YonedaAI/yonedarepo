@@ -22,6 +22,9 @@
 //          (= --only 0,sandbox: the same brief on runtime sandbox-cli-v1, Claude Code in a
 //          Cloudflare Sandbox; passes when the pushed commit is recorded, about 5 min, < $0.01;
 //          --agents 2: one compare run, GLM and MiMo each in a sandbox, both must be checked)
+//        node tools/staging-realworld.mjs --sandbox-smoke --team | --team-conflict [...]
+//          (an owner-written two-task team: both members land on the team branch through the
+//          platform merge and its candidate is eligible; or two tasks on one line: one resume)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -66,6 +69,9 @@ const { values } = parseArgs({
     'smoke-check-wait': { type: 'string' },
     // The sandbox smoke's agents: 1 (default) or 2 (one compare run, GLM and MiMo).
     agents: { type: 'string' },
+    // With --sandbox-smoke: a two-task team run on disjoint files, or on one line.
+    team: { type: 'boolean', default: false },
+    'team-conflict': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -137,7 +143,7 @@ await step('smoke', 'Agent smoke: one cheap agent to a checked candidate', (m) =
   agentSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], timeoutMs: Number(values['smoke-timeout'] ?? 360) * 1000 }, m),
 );
 await step('sandbox', 'Sandbox smoke: Claude Code in a Cloudflare Sandbox pushes a checked commit', (m) =>
-  sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], agents: Number(values.agents ?? 1), timeoutMs: Number(values['smoke-timeout'] ?? 300) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
+  sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], agents: Number(values.agents ?? 1), team: values['team-conflict'] ? 'conflict' : values.team ? 'disjoint' : null, timeoutMs: Number(values['smoke-timeout'] ?? (values.team || values['team-conflict'] ? 900 : 300)) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));

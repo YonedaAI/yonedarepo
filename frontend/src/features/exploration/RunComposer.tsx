@@ -56,6 +56,8 @@ export function RunComposer({
   );
   const [mode, setMode] = useState<RunMode>(draft.mode);
   const [runtime, setRuntime] = useState<RunRuntime>('sandbox');
+  // A sandbox run compares by default; "Build together" there is a team on the owner's plan.
+  const [sandboxMode, setSandboxMode] = useState<RunMode>('compare');
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
   const [manualTeam, setManualTeam] = useState(!!draft.team);
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
@@ -67,7 +69,9 @@ export function RunComposer({
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
   const choice = runtimeChoice(snapshot, runtime, agents, providers);
   const { offered, blocker, sandbox } = choice;
-  const runMode: RunMode = sandbox ? 'compare' : mode;
+  const runMode: RunMode = sandbox ? sandboxMode : mode;
+  // Automatic team planning is a Classic agent; a sandbox team takes the owner's task plan.
+  const automaticPlanning = automaticSupport && !sandbox;
   function changeAgents(next: AdaptiveAgentDraft[]) {
     setAgents(!sandbox && mode === 'compare' ? compareBuilders(next) : next);
     setTeam((current) => reconcileTeam(current, next));
@@ -113,7 +117,7 @@ export function RunComposer({
       if (!intent.trim()) throw new Error('Describe the change you want to make.');
       if (runMode === 'collaborate' && !teamSupport)
         throw new Error('This deployment does not support team runs yet.');
-      const teamBody = teamSubmission(runMode, manualTeam, team, agents, automaticSupport);
+      const teamBody = teamSubmission(runMode, manualTeam, team, agents, automaticPlanning);
       if (
         agents.length < (runMode === 'collaborate' ? 1 : limits.min_root_agents) ||
         agents.length > limits.max_root_agents
@@ -242,14 +246,12 @@ export function RunComposer({
             disabled={draftLocked}
           />
         </label>
-        {!sandbox && (
-          <RunModePicker
-            value={mode}
-            supported={teamSupport}
-            locked={draftLocked}
-            onChange={changeMode}
-          />
-        )}
+        <RunModePicker
+          value={runMode}
+          supported={teamSupport}
+          locked={draftLocked}
+          onChange={sandbox ? setSandboxMode : changeMode}
+        />
         {runMode === 'collaborate' ? (
           <TeamPlanOptions
             manual={manualTeam}
@@ -257,7 +259,7 @@ export function RunComposer({
             value={team}
             agents={agents}
             locked={draftLocked}
-            automaticSupported={automaticSupport}
+            automaticSupported={automaticPlanning}
             previous={draft.previousTeamPlan}
             previousAutomatic={draft.previousAutomatic}
             onChange={setTeam}

@@ -143,7 +143,7 @@ A contribution key additionally permits:
 3. `attempt_submit` with the attempt ID. The platform closes contribution writes, binds the branch head it observes, and rebuilds that tree as one fresh commit on the frozen base before independent clean evaluation. Client-supplied revision claims are ignored. Retrying submission cannot change the bound revision.
 4. `attempt_status` reports the attempt. Open the website to inspect its candidate and checks. Only a human with the owner session can select it and land it on the platform.
 
-The key never reaches the platform: the agent layer commits with the project's own repository token, which cannot land.
+The key never reaches the platform: the agent layer commits with the project's own repository token, which cannot land on protected refs.
 
 ### Limits and evidence
 

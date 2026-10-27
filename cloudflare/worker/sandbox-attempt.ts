@@ -6,6 +6,7 @@ import { repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
 import type { AgentEgress } from './sandbox-outbound';
+import { ensureTeamBranch, runSegment, teamBranch } from './sandbox-team';
 import { platformSource } from './source-objects';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
@@ -24,6 +25,8 @@ export type SandboxAttempt = {
   base: { repository: string; commit: string };
   /** `attempts/<run>/<n>`, the branch the result is pushed to. */
   branch: string;
+  /** A team member: its pushed commit lands on `attempts/<run>/team` (sandbox-team.ts). */
+  team?: { branch: string };
   harness: string;
   provider: string;
   connection?: string;
@@ -85,12 +88,21 @@ export function modelBase(env: Env, provider: string, routing?: Json | null): st
   return `https://gateway.ai.cloudflare.com/v1/${account}/${id}/custom-${provider}${path}`;
 }
 
-/** The task as Claude Code receives it: the owner's brief and criteria, nothing else. */
-export function agentPrompt(run: Json): string {
+/**
+ * The task as Claude Code receives it: the owner's brief and criteria, then (a team member)
+ * its own task and that the other tasks run in parallel, nothing else.
+ */
+export function agentPrompt(run: Json, task?: Json): string {
   const criteria: string[] = Array.isArray(run.criteria) ? run.criteria : [];
   return [
     String(run.intent ?? '').trim(),
     criteria.length ? `\nAcceptance criteria:\n${criteria.map((c) => `- ${c}`).join('\n')}` : '',
+    ...(task
+      ? [
+          `\nYour task: ${String(task.title ?? '').trim()}\n${String(task.instructions ?? '').trim()}`,
+          'Other agents work on the other tasks in parallel on the same base.',
+        ]
+      : []),
     '\nWork in this Git repository. Edit, run and test files here. Your file changes are',
     'committed and pushed for review automatically when you finish: do not push yourself.',
   ]
@@ -104,9 +116,6 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
   const run = job.payload?.run ?? {};
   const repository = await ledger(env, repo, { op: 'repository_status' });
   const index = /:agent-(\d+)$/.exec(String(execution.id ?? ''))?.[1];
-  const runSegment = /^[A-Za-z0-9._-]{1,100}$/.test(String(run.id ?? ''))
-    ? String(run.id)
-    : (await sha(String(run.id))).slice(0, 32);
   if (!index || !repository.platform_repo || !env.SANDBOX_PLATFORM_ORIGIN)
     fail('INVALID_INPUT', 'Sandbox attempt needs a platform repository and an agent index');
   return {
@@ -122,7 +131,8 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
       repository: String(execution.base?.repository),
       commit: String(execution.base?.commit),
     },
-    branch: `attempts/${runSegment}/${index}`,
+    branch: `attempts/${await runSegment(String(run.id))}/${index}`,
+    ...(execution.sandbox_task ? { team: { branch: await teamBranch(String(run.id)) } } : {}),
     harness: String(execution.harness),
     provider: String(execution.provider),
     connection: execution.connection ?? undefined,
@@ -131,7 +141,7 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
     // The owner's rule for GLM (and the cheap default for all): low unless the run asks.
     effort: typeof execution.reasoning_effort === 'string' ? execution.reasoning_effort : 'low',
     model_base: modelBase(env, String(execution.provider), execution.routing),
-    prompt: agentPrompt(run),
+    prompt: agentPrompt(run, execution.sandbox_task ?? undefined),
   };
 }
 
@@ -150,6 +160,7 @@ export async function beginSandbox(env: Env, repo: string, job: Json): Promise<v
   const namespace = env.AGENT_SANDBOX;
   if (!namespace) return fail('SANDBOX_UNAVAILABLE', 'Sandbox runs are not deployed here');
   const attempt = await sandboxAttempt(env, repo, job);
+  await ensureTeamBranch(env, attempt);
   await namespace.getByName(sandboxName(repo, attempt.execution_id)).begin(attempt);
 }
 

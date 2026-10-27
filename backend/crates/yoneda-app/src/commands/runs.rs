@@ -114,7 +114,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 ));
             }
             run["workspace_transport"] = json!("api-source-v1");
-            if sandbox {
+            if sandbox && collaborate {
+                super::sandbox_team::freeze(&c, general, team.as_ref(), &delegation, &mut run)?;
+            } else if sandbox {
                 super::sandbox::freeze(&c, general, team.is_some(), &delegation, &mut run)?;
             }
             if automatic {
@@ -125,7 +127,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 super::team::validate_plan_scopes(&run, plan)?;
                 run["team_plan"] = json!(plan);
                 run["team_plan_revision"] = json!(1);
-                run["execution_count"] = json!(plan.tasks.len() + 1);
+                // The old team adds an integrator; a sandbox team integrates by landing.
+                run["execution_count"] = json!(plan.tasks.len() + usize::from(!sandbox));
             }
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
@@ -202,6 +205,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 if automatic {
                     super::team::start_planner(db, &run, now)?;
+                } else if team.is_some() && sandbox {
+                    super::sandbox_team::start(db, &run, now)?;
                 } else if team.is_some() {
                     super::team::start(db, &run, now)?;
                 } else {

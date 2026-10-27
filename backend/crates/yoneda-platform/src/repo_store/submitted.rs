@@ -9,7 +9,7 @@
 //! members that would skew an earlier member wait for the next batch.
 use super::adopt::adopt_one;
 use super::changesets::{Route, route_writing};
-use super::land::{append, gates, write_entry_with};
+use super::land::{append, require_gates, write_entry_with};
 use super::merging::BatchWrites;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version};
 use crate::storage::{SqlStore, bad, number, string};
@@ -118,7 +118,7 @@ fn land_one<S: SqlStore>(
         }
         Err(e) => return Ok(refused(e)),
     };
-    if let Err(e) = actor.require("land") {
+    if let Err(e) = actor.require(super::land::scope(refname)) {
         return Ok(refused(e));
     }
     if !actor.owner
@@ -159,12 +159,8 @@ fn land_one<S: SqlStore>(
             &[json!(commit.id.hex()), touch["path"].clone(), touch["symbols"].clone(), c["now"].clone()],
         )?;
     }
-    let gate = gates(db, &commit.id, settings)?;
-    if gate["ready"] != true {
-        return Ok(refused(Error::new(
-            "NOT_READY",
-            format!("Commit cannot land yet: {gate}"),
-        )));
+    if let Err(e) = require_gates(db, &commit.id, refname, settings) {
+        return Ok(refused(e));
     }
     let writes: BTreeSet<String> = touches.iter().map(|t| t.path.clone()).collect();
     if !batch.admits(&commit.read_set, &writes) {
