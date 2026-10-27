@@ -1,6 +1,6 @@
 //! Landing tickets: a landing that cannot move its branch directly joins the branch's queue
 //! and is settled (landed or failed, with the reason) by whoever lands the batch it rides.
-use super::land::gates;
+use super::land::require_gates;
 use super::rows::{self, Settings, branch_ref};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
@@ -14,13 +14,7 @@ pub fn enqueue<S: SqlStore>(
 ) -> Result<Value> {
     let refname = branch_ref(c)?;
     let commit = rows::recorded(db, &rows::object_id(c, "commit")?)?;
-    let gate = gates(db, &commit.id, settings)?;
-    if gate["ready"] != true {
-        return Err(Error::new(
-            "NOT_READY",
-            format!("Commit cannot land yet: {gate}"),
-        ));
-    }
+    require_gates(db, &commit.id, &refname, settings)?;
     let existing = db.query(
         "SELECT ticket FROM land_queue WHERE refname=? AND commit_id=? AND status='pending'",
         &[json!(refname), json!(commit.id.hex())],
