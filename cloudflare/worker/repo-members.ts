@@ -28,7 +28,7 @@ export const memberOperations = {
     )
       .bind(ctx.repo, put.account, put.role)
       .run();
-    await refreshHead(ctx.env, ctx.repo);
+    await refreshHead(ctx.env, ctx.repo, true);
     return put;
   },
   git_member_remove: async (ctx: RepoContext, a: Json) => {
@@ -36,7 +36,7 @@ export const memberOperations = {
     await ctx.env.INDEX.prepare('DELETE FROM platform_members WHERE repo=? AND account=?')
       .bind(ctx.repo, removed.account)
       .run();
-    await refreshHead(ctx.env, ctx.repo);
+    await refreshHead(ctx.env, ctx.repo, true);
     return removed;
   },
 };
