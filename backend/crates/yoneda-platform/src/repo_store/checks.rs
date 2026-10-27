@@ -137,8 +137,7 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let commit = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
     let recorded = rows::recorded(db, &commit)?;
     let mut claimed = json!({
-        "run_id": id, "epoch": epoch, "commit": commit, "tree": recorded.tree,
-        "parents": recorded.parents, "name": row["name"],
+        "run_id": id, "epoch": epoch, "commit": commit, "tree": recorded.tree, "name": row["name"],
         // How long the run waited for an executor (the check queue).
         "queued_ms": now - row["created_at"].as_i64().unwrap_or(now),
     });
