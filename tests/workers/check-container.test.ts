@@ -2,7 +2,9 @@
 // runtime is PID 1 without a SIGTERM handler, so a polite stop is ignored and the instance
 // would hold one of the few container slots forever: every outcome must end in a kill.
 import { expect, it } from 'vitest';
-import { type CheckInstance, runCheckOnce } from '../../cloudflare/worker/check-container';
+import { type CheckInstance, type CheckJob, executeCheck, startCheck } from '../../cloudflare/worker/check-container';
+
+const runCheckOnce = async (instance: CheckInstance, job: CheckJob) => executeCheck(instance, job, await startCheck(instance));
 
 function instance(behavior: { start?: Error; status?: number }) {
   const calls: string[] = [];

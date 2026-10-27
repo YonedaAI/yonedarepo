@@ -1,29 +1,37 @@
 // The published head of main: what a commit begins from and a read serves, without an
-// authority round trip. The repository's head holder (the land combiner class, named
-// `<repo>#head`) keeps the authority's latest `repo_head` answer and refreshes it when a
-// land batch, a projection or an access change makes it stale; isolates keep it briefly.
-// Stale is safe: landing re-checks access and validates the base against the log, and a
-// reader that passes the version it landed at waits until the head reaches it.
+// authority round trip. Isolates copy it from the repository's head holder
+// (repo-head-holder.ts) and keep the copy for ACCESS_MS. Stale is safe for the head itself:
+// landing re-checks access and validates the base against the log, and a reader that
+// passes the version it landed at waits until the head reaches it. Access is bounded: the
+// holder reloads before an access change answers, the isolate that served the change drops
+// its copy, and every other isolate decides on a copy at most ACCESS_MS old, so a revoked
+// token or removed member is refused everywhere within ACCESS_MS of the change's answer.
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
-import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
+import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
+import { ApiError, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
-const ISOLATE_MS = 1000;
-/** An isolate never serves a head older than this without fetching first. */
-const STALE_MS = 10_000;
+/** The oldest copy of the head (and its access snapshot) an isolate decides on. Past it,
+ * the isolate asks the holder again, which answers from memory. */
+const ACCESS_MS = 1000;
 /** Per repository: main's head (small, changes per landing) and the access snapshot
- * (live token digests and members' roles; changes only with access, versioned), each
- * fetched once per isolate at a time. */
+ * (live token digests and members' roles; changes only with access, versioned). */
 const heads = new Map<string, { head: Json; at: number }>();
-/** The least version this isolate's reads and begins need: its own latest landing. */
+/** The least version this isolate's reads need: its own latest landing. */
 const floors = new Map<string, number>();
+/** This isolate's landings, with the paths each wrote (null: unknown, so every path): a
+ * begin waits for the head to reach only the ones whose paths it writes again. */
+const landings = new Map<string, { version: number; paths: string[] | null }[]>();
+/** Paths of the commits this isolate built, by commit id, until they land (bounded). */
+const built = new Map<string, string[]>();
+const BUILT = 1024;
 const accesses = new Map<string, Json>();
 const loading = new Map<string, Promise<Json>>();
 
 type Holder = {
-  head(repo: string, minVersion: number, since?: number): Promise<Json>;
+  head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
   access(repo: string): Promise<Json>;
   refresh(repo: string, access?: boolean): Promise<void>;
 };
@@ -34,18 +42,6 @@ function holder(env: Env, repo: string): Holder | null {
   const stub = namespace.get(namespace.idFromName(`${repo}#head`)) as unknown as Partial<Holder>;
   return typeof stub.head === 'function' ? (stub as Holder) : null;
 }
-
-/** The authority's head of main (a platform read; access is decided from its snapshot). */
-export const fetchHead = (env: Env, repo: string) =>
-  caller(env, repo, { _system: 'projection' })({ op: 'repo_head', ref: 'main' });
-
-/** `head` without its access snapshot, and the snapshot alone. */
-const withoutTokens = ({ tokens: _, members: __, ...head }: Json) => head;
-const accessOf = (head: Json) => ({
-  version: head.access_version,
-  tokens: head.tokens,
-  members: head.members ?? [],
-});
 
 /** The account a session or personal token acts for (a member, if not the owner). */
 function accountOf(credentials: Json): string | null {
@@ -71,52 +67,50 @@ function once(key: string, load: () => Promise<Json>) {
   return pending;
 }
 
-async function headOf(env: Env, repo: string, wanted: number): Promise<Json> {
-  const minVersion = Math.max(wanted, floors.get(repo) ?? 0);
+async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
   const cached = heads.get(repo);
-  if (cached && cached.head.version >= minVersion) {
-    const age = Date.now() - cached.at;
-    if (age < ISOLATE_MS) return cached.head;
-    // Recent enough to serve while a fresh copy loads (a begin validates its base when it
-    // lands; a reader that needs its own landing passes min_version and waits).
-    if (age < STALE_MS) {
-      void fetchInto(env, repo, 0).catch((e) => {
-        if (e?.code === 'GONE') heads.delete(repo);
-      });
-      return cached.head;
-    }
-  }
+  if (cached && cached.head.version >= minVersion && Date.now() - cached.at < ACCESS_MS)
+    return cached.head;
   let head = await fetchInto(env, repo, minVersion);
-  // A shared fetch may have started before this caller's landing: fetch again once.
-  if (head.version < minVersion) {
-    forgetHead(repo);
-    head = await fetchInto(env, repo, minVersion);
-  }
+  // The holder answers below `minVersion` only when its reload is behind: once more.
+  if (head.version < minVersion) head = await fetchInto(env, repo, minVersion);
   if (head.version < minVersion)
     throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
   return head;
 }
 
-/** Fetches main's head (one fetch per isolate at a time) and caches it. With a cached
- * copy, only the overlay entries newer than it travel; the rest are kept from the copy. */
+/** Fetches main's head and caches it. Fetches that need no newer version than the copy
+ * share one call (the holder answers it from memory); one that needs a landing waits for
+ * the holder to reach it, alone. With a cached copy, only the overlay entries newer than it
+ * travel, and the access snapshot only when it changed. */
 async function fetchInto(env: Env, repo: string, minVersion: number): Promise<Json> {
   const shared = holder(env, repo);
-  const head = await once(`head:${repo}`, async () => {
-    const prev = heads.get(repo)?.head;
+  const prev = heads.get(repo)?.head;
+  const key = minVersion > (prev?.version ?? 0) ? `head:${repo}@${minVersion}` : `head:${repo}`;
+  const head = await once(key, async () => {
     if (!shared) {
       const full = await fetchHead(env, repo);
       accesses.set(repo, accessOf(full));
       return withoutTokens(full);
     }
-    const next = await shared.head(repo, minVersion, prev?.version);
-    if (!prev || next.overlay_since === null || next.overlay_since === undefined) return next;
-    const kept = (prev.overlay as Json[]).filter(
+    const base = heads.get(repo)?.head;
+    const { access, ...next } = await shared.head(
+      repo,
+      minVersion,
+      base?.version,
+      accesses.get(repo)?.version ?? null,
+    );
+    if (access) accesses.set(repo, access);
+    if (!base || next.overlay_since === null || next.overlay_since === undefined) return next;
+    const kept = (base.overlay as Json[]).filter(
       (e) => e.version > (next.projected_version ?? 0) && e.version <= next.overlay_since,
     );
     return { ...next, overlay: [...kept, ...next.overlay] };
   });
   const cached = heads.get(repo);
   if (!cached || cached.head.version <= head.version) heads.set(repo, { head, at: Date.now() });
+  const reached = landings.get(repo)?.filter((l) => l.version > head.version);
+  if (reached) landings.set(repo, reached);
   return head;
 }
 
@@ -131,13 +125,12 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   return access;
 }
 
-/** Main's published head for `credentials` (carrying only their token or member row), at
- * least at `minVersion` (a reader's own landing). */
-export async function publishedHead(
+/** Main's published head for `credentials`, carrying only their token or member row. */
+async function headFor(
   env: Env,
   repo: string,
   credentials: Json,
-  minVersion = 0,
+  minVersion: number,
 ): Promise<Json> {
   const [digest, head] = await Promise.all([
     tokenDigest(credentials),
@@ -150,17 +143,41 @@ export async function publishedHead(
   return { ...head, tokens: token ? [token] : [], members: member ? [member] : [] };
 }
 
-/** After this isolate landed at `version`, its reads and begins need at least that
- * version; without one, its copy of the head is dropped. */
-export function forgetHead(repo: string, version?: number) {
+/** This isolate built `commit`, writing `paths`: its landing then holds back only begins
+ * that write them again. */
+export function noteBuilt(commit: string, paths: string[]) {
+  if (built.size >= BUILT) built.delete(built.keys().next().value as string);
+  built.set(commit, paths);
+}
+
+/** After this isolate landed `commit` at `version`, its reads need at least that version,
+ * and its begins too when they write a path the commit wrote; without a version, its copy
+ * of the head is dropped. */
+export function forgetHead(repo: string, version?: number, commit?: string) {
   noteWrite(repo);
-  if (version === undefined) heads.delete(repo);
-  else floors.set(repo, Math.max(version, floors.get(repo) ?? 0));
+  if (version === undefined) {
+    heads.delete(repo);
+    return;
+  }
+  floors.set(repo, Math.max(version, floors.get(repo) ?? 0));
+  const paths = (commit && built.get(commit)) || null;
+  if (commit) built.delete(commit);
+  if (version > (heads.get(repo)?.head.version ?? 0))
+    landings.set(repo, [...(landings.get(repo) ?? []), { version, paths }]);
+}
+
+/** The version a begin writing `paths` needs: this isolate's latest landing it meets. */
+function beginFloor(repo: string, paths: string[]) {
+  let floor = 0;
+  for (const l of landings.get(repo) ?? [])
+    if (!l.paths || l.paths.some((p) => paths.some((path) => meets(path, p))))
+      floor = Math.max(floor, l.version);
+  return floor;
 }
 
 /** Marks the published head stale after a landing, projection or access change. After an
- * access change (`access`) it returns once the holder dropped the head it held, so no
- * reader is admitted by the access snapshot that change replaced. */
+ * access change (`access`) it returns once the holder reloaded from a read that started
+ * after the change, so no reader is admitted by the access snapshot that change replaced. */
 export async function refreshHead(env: Env, repo: string, access = false) {
   noteWrite(repo);
   heads.delete(repo);
@@ -172,38 +189,57 @@ export async function refreshHead(env: Env, repo: string, access = false) {
 /** Paths meet when equal or when one is a directory of the other. */
 const meets = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`);
 
+/** `command` decided on main's head for `credentials`. A refusal from a copy this isolate
+ * already held is asked of the holder once more (a token or member may be newer than the
+ * copy); only a refusal on the holder's own snapshot goes to the authority (null). */
+async function decided(ctx: RepoContext, credentials: Json, minVersion: number, command: Json) {
+  const asked = Date.now();
+  let head = await timed('head.fetch', () => headFor(ctx.env, ctx.repo, credentials, minVersion));
+  let decision = decide(head, command);
+  if (!decision && (heads.get(ctx.repo)?.at ?? 0) < asked) {
+    heads.delete(ctx.repo);
+    head = await timed('head.fetch', () => headFor(ctx.env, ctx.repo, credentials, minVersion));
+    decision = decide(head, command);
+  }
+  return { head, decision };
+}
+
 /**
  * Authorizes a commit on the published head (stateless compute, the authority's rules), or
  * returns null when the authority must decide (see `decide`).
  * A commit writing a path that a landed but unprojected changeset wrote would build on
  * that path's old content (a conflict at landing for a writer who just landed it), so it
  * waits for the projection first; work on other paths begins at once on the projected
- * head and is validated at landing like any concurrent work.
+ * head and is validated at landing like any concurrent work. Likewise it waits for this
+ * isolate's own landing only when it writes a path that landing wrote.
  */
 export async function beginFromHead(ctx: RepoContext, paths: string[]): Promise<Json | null> {
   const credentials = ctx.call.sign({});
-  let head = await timed('head.fetch', () => publishedHead(ctx.env, ctx.repo, credentials));
+  const command = { op: 'head_begin', credentials, paths };
+  let { head, decision } = await decided(ctx, credentials, beginFloor(ctx.repo, paths), command);
   for (let round = 0; round < 3; round++) {
     const pending = (head.overlay as Json[]).some((c) =>
       c.paths.some((p: Json) => paths.some((path) => meets(path, p.path))),
     );
     if (!pending) break;
     await awaitProjection(ctx.env, ctx.repo);
-    forgetHead(ctx.repo);
-    head = await publishedHead(ctx.env, ctx.repo, credentials, head.version);
+    heads.delete(ctx.repo);
+    head = await headFor(ctx.env, ctx.repo, credentials, head.version);
+    decision = decide(head, command);
   }
-  return decide(head, { op: 'head_begin', credentials, paths });
+  return decision;
 }
 
 /** The caller's read access and main's head for a read served from the published head,
  * or null when the authority must decide (see `decide`). */
 export async function readFromHead(ctx: RepoContext, minVersion = 0) {
   const credentials = ctx.call.sign({});
-  const head = await timed('head.fetch', () =>
-    publishedHead(ctx.env, ctx.repo, credentials, minVersion),
-  );
-  const access = decide(head, { op: 'head_access', credentials });
-  return access && { head, access };
+  const floor = Math.max(minVersion, floors.get(ctx.repo) ?? 0);
+  const { head, decision } = await decided(ctx, credentials, floor, {
+    op: 'head_access',
+    credentials,
+  });
+  return decision && { head, access: decision };
 }
 
 /**
@@ -218,80 +254,5 @@ function decide(head: Json, command: Json): Json | null {
   } catch (e: any) {
     if (['UNAUTHORIZED', 'FORBIDDEN'].includes(e.code)) return null;
     throw new ApiError(e.code ?? 'INVALID_INPUT', e.message);
-  }
-}
-
-/** The head holder's state, refreshed from the authority one call at a time. */
-export class HeadHolder {
-  #head: Json | null = null;
-  #stale = true;
-  #loading: Promise<Json> | null = null;
-  /** Bumped by an access change: loads started before it never set the head. */
-  #generation = 0;
-
-  constructor(private readonly env: Env) {}
-
-  /** The head it holds when that is recent enough for the caller (a stale one is
-   * refreshed in the background: begins validate their base when they land); otherwise
-   * waits for a load that reaches `minVersion`. */
-  async head(repo: string, minVersion: number, since?: number): Promise<Json> {
-    let head = this.#head;
-    if (head && head.version >= minVersion) {
-      if (this.#stale) void this.#load(repo, 0).catch(() => {});
-    } else head = await this.#load(repo, minVersion);
-    // A caller holding a copy at `since` gets only the overlay entries newer than it.
-    if (since === undefined) return withoutTokens(head);
-    return {
-      ...withoutTokens(head),
-      overlay: (head.overlay as Json[]).filter((e) => e.version > since),
-      overlay_since: since,
-    };
-  }
-
-  async access(repo: string): Promise<Json> {
-    return accessOf(this.#head ?? (await this.#load(repo, 0)));
-  }
-
-  async refresh(repo: string, access = false) {
-    this.#stale = true;
-    if (access) {
-      // The held head's access snapshot may admit what the change refused: drop it, and
-      // let no earlier load set it again.
-      this.#generation++;
-      this.#head = null;
-      this.#loading = null;
-    }
-    // Loads in the background; readers that need it sooner wait for the same load.
-    const load = this.#load(repo, 0);
-    if (access) await load;
-    else void load.catch(() => {});
-  }
-
-  async #load(repo: string, minVersion: number): Promise<Json> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      // A load already running may have started before the version this caller needs.
-      this.#loading ??= this.#fetch(repo);
-      const head = await this.#loading;
-      if (head.version >= minVersion) return head;
-    }
-    return this.#head as Json;
-  }
-
-  #fetch(repo: string): Promise<Json> {
-    const generation = this.#generation;
-    const current = () => generation === this.#generation;
-    const loading: Promise<Json> = (async () => {
-      this.#stale = false;
-      const head = await fetchHead(this.env, repo).catch((e) => {
-        // A deleted repository's head is never served again.
-        if (e?.code === 'GONE' && current()) this.#head = null;
-        throw e;
-      });
-      if (current()) this.#head = head;
-      return head;
-    })().finally(() => {
-      if (this.#loading === loading) this.#loading = null;
-    });
-    return loading;
   }
 }

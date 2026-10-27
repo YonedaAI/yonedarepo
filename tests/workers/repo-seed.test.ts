@@ -13,7 +13,7 @@ const policy = { required_checks: ['unit'], approvals: 0, runners: { unit: { com
 async function checked(owner: { cookie: string }, repo: string, changes: unknown[]) {
   const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes, message: 'c', author } }, local);
   const run = queued.filter((m) => m.kind === 'platform_check').at(-1);
-  expect(await executeCheckRun(local, run)).toEqual({});
+  expect(await executeCheckRun(local, run)).toBeUndefined();
   const detail = await api(`${repo}/commits/${made.body.commit}`, owner, {}, local);
   return { job: executed.at(-1).job, evidence: JSON.parse(detail.body.checks[0].evidence) };
 }

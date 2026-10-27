@@ -230,7 +230,7 @@ async fn set_branch(
     done: &Uploaded,
 ) -> std::result::Result<(), String> {
     let body = json!({ "ref": item.spec.dst, "commit": done.tip, "expected": item.current });
-    match session.api.post("/branches", &body).await {
+    match session.api.post_idempotent("/branches", &body).await {
         Ok(_) => Ok(()),
         Err(f) if f.code == "STALE_HEAD" => {
             Err("fetch first: the branch moved on the platform".into())

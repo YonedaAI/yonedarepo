@@ -63,7 +63,7 @@ it('records seed and object tiers in check-run evidence, cold then warm', async 
   const { owner, id, repo } = await repoWith('tiered', local, policy);
   const run = async (path: string) => {
     const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file(path, 'x\n')], message: 'c', author } }, local);
-    expect(await executeCheckRun(local, queued.filter((m) => m.kind === 'platform_check').at(-1))).toEqual({});
+    expect(await executeCheckRun(local, queued.filter((m) => m.kind === 'platform_check').at(-1))).toBeUndefined();
     const detail = await api(`${repo}/commits/${made.body.commit}`, owner, {}, local);
     return JSON.parse(detail.body.checks[0].evidence).tiers;
   };
