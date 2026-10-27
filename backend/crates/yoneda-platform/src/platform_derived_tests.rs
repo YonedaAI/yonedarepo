@@ -1,0 +1,87 @@
+//! Part II's key sufficiency for search: a partition is keyed by its tree id alone, so the
+//! segment stored under that key must not name the directory the tree sits at.
+use crate::platform_compute::compute;
+use base64::{Engine, engine::general_purpose::STANDARD};
+use serde_json::{Value, json};
+use yoneda_core::git_object::{
+    FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object,
+};
+
+fn tree(entries: &[(&str, FileMode, ObjectId)]) -> (ObjectId, Value) {
+    let list: Vec<TreeEntry> = entries
+        .iter()
+        .map(|(name, mode, id)| TreeEntry {
+            name: (*name).into(),
+            mode: *mode,
+            id: *id,
+        })
+        .collect();
+    let id = hash_object(ObjectKind::Tree, &encode_tree(&list).unwrap());
+    (id, crate::platform_objects::entries_json(&list))
+}
+
+/// Plans the root's partitions and answers `query` from each one's segment.
+fn search(root: ObjectId, trees: &Value, blobs: &Value, query: &str) -> (Vec<Value>, Vec<String>) {
+    let plan = compute(json!({ "op": "search_plan", "root": root, "trees": trees })).unwrap();
+    let partitions = plan["partitions"].as_array().unwrap().clone();
+    let mut paths = Vec::new();
+    for p in &partitions {
+        let built = compute(json!({ "op": "index_partition", "tree": p["tree"],
+            "shallow": p["shallow"], "trees": trees, "blobs": blobs }))
+        .unwrap();
+        let found = compute(json!({ "op": "search_segment", "segment": built["segment"],
+            "prefix": p["prefix"], "query": query }))
+        .unwrap();
+        for file in found["candidates"].as_array().unwrap() {
+            paths.push(file["path"].as_str().unwrap().to_owned());
+        }
+    }
+    paths.sort();
+    (partitions, paths)
+}
+
+#[test]
+fn renamed_and_duplicated_directories_share_a_key_and_a_segment_but_not_paths() {
+    let content = b"fn retry_with_backoff() {}\n";
+    let blob = hash_object(ObjectKind::Blob, content);
+    let blobs = json!({ blob.hex(): STANDARD.encode(content) });
+    let (sub, sub_json) = tree(&[("retry.rs", FileMode::Blob, blob)]);
+    let index = |trees: &Value, p: &Value| {
+        compute(
+            json!({ "op": "index_partition", "tree": p["tree"], "shallow": p["shallow"],
+            "trees": trees, "blobs": blobs }),
+        )
+        .unwrap()["segment"]
+            .clone()
+    };
+
+    // A rename of src/ to lib/ that leaves the content alone keeps the key and the segment.
+    let (before, before_json) = tree(&[("src", FileMode::Tree, sub)]);
+    let (after, after_json) = tree(&[("lib", FileMode::Tree, sub)]);
+    let t1 = json!({ before.hex(): before_json, sub.hex(): sub_json });
+    let t2 = json!({ after.hex(): after_json, sub.hex(): sub_json });
+    let (p1, found1) = search(before, &t1, &blobs, "retry_with");
+    let (p2, found2) = search(after, &t2, &blobs, "retry_with");
+    assert_eq!(
+        p1[0]["key"], p2[0]["key"],
+        "the renamed subtree keeps its key"
+    );
+    assert_eq!(
+        index(&t1, &p1[0]),
+        index(&t2, &p2[0]),
+        "so its segment must match"
+    );
+    assert_eq!(found1, ["src/retry.rs"]);
+    assert_eq!(
+        found2,
+        ["lib/retry.rs"],
+        "answers name the queried tree's paths"
+    );
+
+    // Two identical directories in one commit share one segment and keep their own paths.
+    let (both, both_json) = tree(&[("a", FileMode::Tree, sub), ("b", FileMode::Tree, sub)]);
+    let t3 = json!({ both.hex(): both_json, sub.hex(): sub_json });
+    let (p3, found3) = search(both, &t3, &blobs, "retry_with");
+    assert_eq!(p3[0]["key"], p3[1]["key"]);
+    assert_eq!(found3, ["a/retry.rs", "b/retry.rs"]);
+}

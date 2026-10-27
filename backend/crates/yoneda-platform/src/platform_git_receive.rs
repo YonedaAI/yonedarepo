@@ -98,16 +98,21 @@ impl ReceiveSession {
         Ok(())
     }
 
-    /// The commands parsed so far (each marked when its ref is protected) and the
-    /// capabilities the client asked for; none before the command list is complete.
+    /// The commands parsed so far (each marked when its ref is protected, and once the pack
+    /// is read, when its new value is an annotated tag object) and the capabilities the
+    /// client asked for; none before the command list is complete.
     pub fn commands(&self) -> Value {
+        let annotated = |id: &Option<ObjectId>| {
+            id.and_then(|id| self.pack.as_ref()?.kind(&id)) == Some(ObjectKind::Tag)
+        };
         let listed: Vec<Value> = self
             .commands
             .iter()
             .flatten()
             .map(|c| {
                 json!({ "ref": c.refname, "old": c.old, "new": c.new,
-                        "protected": crate::repo_store::protected_ref(&c.refname) })
+                        "protected": crate::repo_store::protected_ref(&c.refname),
+                        "annotated": annotated(&c.new) })
             })
             .collect();
         json!({ "commands": listed, "capabilities": self.capabilities })

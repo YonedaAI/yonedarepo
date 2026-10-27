@@ -20,7 +20,8 @@ const MAIN: &str = "refs/heads/main";
 const MAX_HAVES: usize = 256;
 
 /// `git_advertise`: `{service, refs: {name: id}, haves}` → the `info/refs` body, branches
-/// in name order behind `HEAD` (main, when it exists).
+/// and tags in name order behind `HEAD` (main, when it exists). Tags are lightweight, so
+/// each names its commit and needs no peeled line.
 ///
 /// A push lists no protected branch. They move only by landing, which merges work based on
 /// an older head instead of refusing it, so Git must not refuse that push as
@@ -33,7 +34,8 @@ pub fn advertise(c: &Value) -> Result<Value> {
     let push = service == "git-receive-pack";
     let mut refs: Vec<(String, ObjectId)> = Vec::new();
     for (name, id) in c["refs"].as_object().into_iter().flatten() {
-        if name.starts_with("refs/heads/") && !(push && crate::repo_store::protected_ref(name)) {
+        let listed = name.starts_with("refs/heads/") || name.starts_with("refs/tags/");
+        if listed && !(push && crate::repo_store::protected_ref(name)) {
             refs.push((
                 name.clone(),
                 ObjectId::parse(id.as_str().unwrap_or_default())?,
@@ -151,18 +153,21 @@ mod tests {
         let main = "a".repeat(40);
         let body = advertise(&json!({
             "service": "git-upload-pack",
-            "refs": { "refs/heads/main": main, "refs/heads/x": "b".repeat(40), "refs/yoneda/c/z": main },
+            "refs": { "refs/heads/main": main, "refs/heads/x": "b".repeat(40), "refs/yoneda/c/z": main,
+                      "refs/tags/v1": main },
         }))
         .unwrap();
         let text = String::from_utf8(STANDARD.decode(body["body_b64"].as_str().unwrap()).unwrap())
             .unwrap();
+        assert!(text.contains(&format!("{main} refs/tags/v1\n")));
         assert!(text.starts_with("001e# service=git-upload-pack\n0000"));
         assert!(text.contains(&format!("{main} HEAD\0multi_ack_detailed side-band-64k")));
         assert!(text.contains("symref=HEAD:refs/heads/main"));
         assert!(text.contains("refs/heads/x\n") && !text.contains("refs/yoneda"));
         let pushed = advertise(&json!({
             "service": "git-receive-pack",
-            "refs": { "refs/heads/main": main, "refs/heads/release/1": main, "refs/heads/x": "b".repeat(40) },
+            "refs": { "refs/heads/main": main, "refs/heads/release/1": main, "refs/heads/x": "b".repeat(40),
+                      "refs/tags/v1": "c".repeat(40) },
             "haves": [main, main, "b".repeat(40)],
         }))
         .unwrap();
@@ -173,6 +178,10 @@ mod tests {
         )
         .unwrap();
         assert!(text.contains("refs/heads/x\0report-status") && !text.contains("refs/heads/main"));
+        assert!(
+            text.contains("refs/tags/v1\n"),
+            "a push sees tags, so Git keeps them"
+        );
         assert_eq!(text.matches(&format!("{main} .have\n")).count(), 1);
         let report = report(&json!({
             "refs": [{ "ref": "refs/heads/main", "refused": null }],

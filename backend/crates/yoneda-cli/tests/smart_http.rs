@@ -1,10 +1,10 @@
 //! Stock `git` (no remote helper) against the local platform's smart HTTP at
 //! `/git/<repo>.git`, with tokens from Git's own credential store: clone, push a branch,
 //! push main (exact ids on a fast-forward, the server's merge otherwise), conflicts,
-//! `--atomic` with a stale ref, a push cut off mid-body, deltified pushes and a fresh clone
-//! that matches the platform byte for byte. Run with `cargo test -p yoneda-cli --test
-//! smart_http -- --include-ignored --nocapture`; it needs the workspace's node modules
-//! (wrangler) and the Rust Wasm worker build.
+//! `--atomic` with a stale ref, lightweight tags, a push cut off mid-body, deltified
+//! pushes and a fresh clone that matches the platform byte for byte. Run with `cargo test
+//! -p yoneda-cli --test smart_http -- --include-ignored --nocapture`; it needs the
+//! workspace's node modules (wrangler) and the Rust Wasm worker build.
 #[allow(dead_code)] // shared with the remote helper tests
 mod support;
 
@@ -335,13 +335,73 @@ fn clone_push_branch_and_main(w: &World) -> TestResult {
         w.refs(&repo)?.get("refs/heads/feature").is_none(),
         "feature deleted",
     )?;
-    let tag = push(&c, &dir, &["origin", "HEAD:refs/tags/v1"])?;
-    check(
-        !tag.status.success() && text(&tag).contains("tags are not supported yet"),
-        &text(&tag),
-    )?;
     check(
         w.refs(&repo)?["refs/heads/main"] == merged.as_str(),
+        "refusals moved nothing",
+    )
+}
+
+/// Lightweight tags: `git push origin v1` creates one, a fresh clone has it, and it never
+/// moves or disappears; an annotated tag is refused.
+fn tags_push_and_clone(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("tags", &token)?;
+    let dir = w.clone(&c, &repo, "work")?;
+    let first = c.commit(&dir, "release", &[("r.txt", "r\n")])?;
+    check(
+        push(&c, &dir, &["origin", "main"])?.status.success(),
+        "push main",
+    )?;
+    c.git(&dir, &["tag", "v1"])?;
+    let pushed = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        pushed.status.success(),
+        &format!("push tag: {}", text(&pushed)),
+    )?;
+    check(
+        w.refs(&repo)?["refs/tags/v1"] == first.as_str(),
+        "the tag names the pushed commit",
+    )?;
+    let again = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+
+    let other = w.client("tags-fresh", &token)?;
+    let copy = w.clone(&other, &repo, "copy")?;
+    check(
+        other.git(&copy, &["tag", "--list"])? == "v1",
+        "a fresh clone lists the tag",
+    )?;
+    check(
+        other.git(&copy, &["rev-parse", "v1"])? == first,
+        "the cloned tag names the commit",
+    )?;
+
+    // Moving or deleting it is refused; the tag stays where it was.
+    c.commit(&dir, "later", &[("l.txt", "l\n")])?;
+    c.git(&dir, &["tag", "-f", "v1"])?;
+    let moved = push(&c, &dir, &["--force", "origin", "v1"])?;
+    check(
+        !moved.status.success() && text(&moved).contains("tags are immutable"),
+        &text(&moved),
+    )?;
+    let deleted = push(&c, &dir, &["origin", "--delete", "v1"])?;
+    check(
+        !deleted.status.success() && text(&deleted).contains("cannot be deleted"),
+        &text(&deleted),
+    )?;
+    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
+    let annotated = push(&c, &dir, &["origin", "v2"])?;
+    check(
+        !annotated.status.success()
+            && text(&annotated).contains("annotated tags are not supported"),
+        &text(&annotated),
+    )?;
+    let refs = w.refs(&repo)?;
+    check(
+        refs["refs/tags/v1"] == first.as_str() && refs.get("refs/tags/v2").is_none(),
         "refusals moved nothing",
     )
 }
@@ -659,6 +719,7 @@ fn stock_git_over_https() -> TestResult {
         platform: Platform::start()?,
     };
     clone_push_branch_and_main(&w).map_err(|e| format!("basics: {e}"))?;
+    tags_push_and_clone(&w).map_err(|e| format!("tags: {e}"))?;
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
     same_line_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;

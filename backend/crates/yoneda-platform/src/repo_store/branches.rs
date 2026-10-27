@@ -36,11 +36,25 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             ),
         ));
     }
+    let version = move_ref(db, c, &refname, current, &commit, principal)?;
+    Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+}
+
+/// Logs `refname` moving from `old` to `commit`, moves it, records its projection target
+/// (for the refs the object store mirrors) and checkpoints; returns the log version.
+pub(super) fn move_ref<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    refname: &str,
+    old: Option<ObjectId>,
+    commit: &rows::CommitRow,
+    principal: &str,
+) -> Result<u64> {
     let (version, chain) = log_move(
         db,
         c,
-        &refname,
-        current,
+        refname,
+        old,
         Some(commit.id),
         &commit.message,
         principal,
@@ -49,9 +63,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
-    super::projection::target(db, &refname, &commit.id, version, number(c, "now")?)?;
+    super::projection::target(db, refname, &commit.id, version, number(c, "now")?)?;
     rows::maybe_checkpoint(db, version, &chain)?;
-    Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+    Ok(version)
 }
 
 /// Deletes a working branch still at its expected value (a missing branch is already gone).
@@ -116,6 +130,7 @@ fn log_move<S: SqlStore>(
         actor: principal.into(),
         intent_digest: yoneda_core::digest(intent.as_bytes()),
         committed_at_ms: number(c, "now")?,
+        checkpoint_refs: rows::refs_digest_at(db, version - 1)?,
         chain: String::new(),
     };
     entry.chain = chain_digest(&previous, &entry)?;
@@ -138,12 +153,12 @@ fn log_move<S: SqlStore>(
 /// Most ref updates one batch carries.
 const BATCH_LIMIT: usize = 100;
 
-/// An atomic multi-ref push: several working-branch moves (or deletes: a null commit) in
-/// this one transaction. Every update is validated first (protected refs, recorded
-/// commits, no ref twice); if any
+/// An atomic multi-ref push: several working-branch moves (or deletes: a null commit) and
+/// tag creations in this one transaction. Every update is validated first (protected refs,
+/// immutable tags, recorded commits, no ref twice); if any
 /// expected old value is stale, nothing moves and the answer names the stale refs
 /// (`{stale}`, an answer rather than an error, so the adapter can report them). Otherwise
-/// each moves like `set`, in order.
+/// each moves like `set` (or `tags::create`), in order.
 pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let updates = c["updates"]
         .as_array()
@@ -152,6 +167,13 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let mut seen = std::collections::BTreeSet::new();
     let mut stale = Vec::new();
     for update in updates {
+        if let Some(tag) = super::tags::in_update(update)? {
+            if !seen.insert(tag.clone()) {
+                return Err(bad(&format!("{tag} appears twice in the batch")));
+            }
+            super::tags::check(db, update, &tag)?;
+            continue;
+        }
         let refname = branch_ref(update)?;
         if rows::protected(&refname) {
             return Err(Error::new(
@@ -180,7 +202,9 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     for update in updates {
         let mut command = update.clone();
         command["now"] = c["now"].clone();
-        refs.push(if update.get("commit").is_none_or(Value::is_null) {
+        refs.push(if let Some(tag) = super::tags::in_update(update)? {
+            super::tags::create_at(db, &command, &tag, principal)?
+        } else if update.get("commit").is_none_or(Value::is_null) {
             delete(db, &command, principal)?
         } else {
             set(db, &command, principal)?
