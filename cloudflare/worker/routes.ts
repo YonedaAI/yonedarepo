@@ -10,7 +10,6 @@ import {
 import { comparisonOwnerRoute } from './comparison-owner-route';
 import { evidence } from './evidence';
 import { grantRoute } from './grants';
-import { guidedRoute } from './guided-route';
 import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
@@ -165,8 +164,6 @@ export async function fetchRequest(
     if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
       return await deleteRepository(req, env, principal, repo);
     await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
-    const guided = await guidedRoute(req, env, principal, repo, action);
-    if (guided) return guided;
     const sourceResponse = await sourceRoute(req, env, principal, repo);
     if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')

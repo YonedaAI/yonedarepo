@@ -18,13 +18,11 @@ export function WorkspaceWelcome({
   state,
   onProject,
   onProviders,
-  onGuidedDemo,
 }: {
   reviewer?: boolean;
   state: ReturnType<typeof useRepository>;
   onProject: () => void;
   onProviders: () => void;
-  onGuidedDemo?: () => void;
 }) {
   if (state.project && ['provisioning', 'failed'].includes(state.project.status))
     return (
@@ -124,11 +122,6 @@ export function WorkspaceWelcome({
           <Plus size={17} />
           Add repository
         </button>
-        {onGuidedDemo && (
-          <button type="button" className="quiet" onClick={onGuidedDemo}>
-            Try guided demo
-          </button>
-        )}
       </div>
       <div className="getting-started">
         <div>

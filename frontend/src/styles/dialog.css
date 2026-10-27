@@ -37,8 +37,7 @@
 }
 .dialog .workspace-panel,
 .dialog .run-composer,
-.dialog .decision-form,
-.dialog .demo-guide {
+.dialog .decision-form {
   margin: 0;
   padding: 0;
   background: transparent;

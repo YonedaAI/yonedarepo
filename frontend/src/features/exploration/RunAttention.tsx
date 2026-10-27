@@ -2,62 +2,27 @@ import { CircleAlert, CircleCheck, ClipboardCheck, LoaderCircle } from 'lucide-r
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { activeDecision } from './agentsPick';
-import {
-  type GuidedBlockerKind,
-  guidedBlockerTitle,
-  guidedPublicationState,
-} from './guidedPublication';
 import { runAttention } from './runReviewState';
 import { runTitle } from './runTitle';
 import { SiteLink } from './SiteLink';
-
-/** Guide continuation opens the guided demo; the others open run evidence directly. */
-const guideActions: Record<GuidedBlockerKind, 'guide' | 'activity' | 'details'> = {
-  refresh_evidence: 'guide',
-  active_work: 'activity',
-  failed_work: 'guide',
-  final_result: 'guide',
-  recorded_decision: 'details',
-};
 
 export function RunAttention({
   snapshot,
   run,
   busy,
   onAction,
-  onGuidedContinue,
   onCancel,
 }: {
   snapshot: Snapshot;
   run: Record<string, any>;
   busy: boolean;
-  onGuidedContinue?: () => void;
   /** Shown beside the status while the run can still be stopped. */
   onCancel?: () => void;
   onAction: (action: 'review' | 'activity' | 'results' | 'details', candidate?: string) => void;
 }) {
   const recorded = runAttention(snapshot, run);
-  const eligible = snapshot.candidates.find(
-    (item) => item.run_id === run.id && item.status === 'eligible' && !item.owner_rejection,
-  );
   const decision = activeDecision(snapshot, run);
-  // One distinct guide blocker and one action; recorded decisions keep their own attention.
-  const guide =
-    eligible && !decision && recorded.tone !== 'neutral'
-      ? guidedPublicationState(snapshot, run, eligible)
-      : undefined;
-  const guideAction = guide ? guideActions[guide.kind] : undefined;
-  const attention = guide
-    ? {
-        ...recorded,
-        tone: guide.kind === 'active_work' ? ('working' as const) : ('blocked' as const),
-        title: guidedBlockerTitle(guide.kind),
-        detail: guide.message,
-        actionLabel: guide.action,
-        action: guideAction === 'guide' ? ('results' as const) : guideAction,
-        candidate: eligible,
-      }
-    : recorded;
+  const attention = runAttention(snapshot, run);
   const evaluation = snapshot.evaluations.find(
     (item) => item.id === attention.candidate?.evaluation,
   );
@@ -91,13 +56,9 @@ export function RunAttention({
         {attention.action && (
           <button
             type="button"
-            className={guide ? 'primary' : attention.tone === 'review' ? undefined : 'quiet'}
+            className={attention.tone === 'review' ? undefined : 'quiet'}
             disabled={busy}
             onClick={() => {
-              if (guideAction === 'guide' && onGuidedContinue) {
-                onGuidedContinue();
-                return;
-              }
               if (attention.action) onAction(attention.action, attention.candidate?.id);
             }}
           >

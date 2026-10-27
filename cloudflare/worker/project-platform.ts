@@ -10,7 +10,6 @@ import {
   platformRequest,
   projectPlatform,
 } from './agents-platform';
-import { guidedStarter } from './guided-project';
 import { sourceBranch } from './project-remote';
 import type { Env, Json } from './types';
 
@@ -19,17 +18,10 @@ const TEMPLATE_BYTES = 16 * 1024 * 1024;
 const AUTHOR = { name: 'YonedaRepo', email: 'projects@yonedarepo.invalid' };
 const fail = (code: string, message: string) => Object.assign(new Error(message), { code });
 
-export type ProjectSeed = { template: string; commit?: string; tree?: string } | { url: string };
+export type ProjectSeed = { template: string; commit?: string } | { url: string };
 
 /** Where a reserved project's first commit comes from. */
 export async function projectSeed(env: Env, project: Json): Promise<ProjectSeed> {
-  const starter = await guidedStarter(env, project);
-  if (starter)
-    return {
-      template: starter,
-      commit: project.guided_project.starter.commit,
-      tree: project.guided_project.starter.tree,
-    };
   if (project.source) return { url: project.source };
   return { template: env.STARTER_REPO ?? 'yoneda-website-starter' };
 }
@@ -110,8 +102,6 @@ export async function ensureProjectPlatform(
     });
   } else {
     const template = await templateFiles(env, seed.template, seed.commit);
-    if (seed.tree && template.tree !== seed.tree)
-      throw fail('GUIDED_PROFILE_UNAVAILABLE', 'The immutable guided starter changed');
     created = await platformRequest(env, auth, 'POST', '/repos', {
       ...common,
       files: template.files,

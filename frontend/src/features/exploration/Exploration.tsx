@@ -34,11 +34,6 @@ export function Exploration({
   onSelectedRun,
   initialRunId = '',
   requestedRunError = '',
-  onGuidedDemo,
-  focusedRunId,
-  focusRequest = 0,
-  focusedCandidateId,
-  onGuidedContinue,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -50,20 +45,9 @@ export function Exploration({
   onSelectedRun: (runId: string) => void;
   initialRunId?: string;
   requestedRunError?: string;
-  onGuidedDemo?: () => void;
-  focusedRunId?: string;
-  /** Increments when the focused run should be scrolled to and focused. */
-  focusRequest?: number;
-  /** A result within the focused run to reveal on each focus request. */
-  focusedCandidateId?: string;
-  onGuidedContinue?: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [runId, setRunId] = useState(focusedRunId || initialRunId);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a repeated request reselects the same run.
-  useEffect(() => {
-    if (focusedRunId) setRunId(focusedRunId);
-  }, [focusedRunId, focusRequest]);
+  const [runId, setRunId] = useState(initialRunId);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const [branchSource, setBranchSource] = useState<InitialRun>();
@@ -171,8 +155,6 @@ export function Exploration({
         snapshot={snapshot}
         canStart={canStart}
         onNewRun={onCompose}
-        onGuidedDemo={onGuidedDemo}
-        onGuidedContinue={onGuidedContinue}
       />
       <RunSamples
         disabled={!canStart}
@@ -234,11 +216,8 @@ export function Exploration({
                 key={run.id}
                 snapshot={snapshot}
                 run={run}
-                focusRequest={run.id === focusedRunId ? focusRequest : 0}
-                focusCandidate={run.id === focusedRunId ? focusedCandidateId : undefined}
                 busy={busy}
                 canStart={canStart}
-                onGuidedContinue={onGuidedContinue}
                 onSelectRun={setRunId}
                 onRestart={() => {
                   launcher.current = createRunStart(repo.id);

@@ -1,4 +1,3 @@
-import type { GuidedProfileVersion, GuidedSession } from '../../../shared/guided-runs';
 import type {
   CandidateDiffPageContract,
   ConflictStatusContract,
@@ -42,7 +41,6 @@ export interface GraphEdge {
   evidence: string;
 }
 export interface Repository {
-  guided_project?: { profile_id: 'task-board-v1'; version: GuidedProfileVersion };
   id: string;
   name: string;
   created_at?: number;
@@ -73,7 +71,6 @@ export type ProjectMetadata = Pick<
   'id' | 'name' | 'status' | 'error' | 'error_code' | 'stage' | 'setup_started_at' | 'updated_at'
 >;
 export interface Snapshot {
-  guided_session?: GuidedSession;
   source_preparation?: SourcePreparationJob[];
   repository: Repository;
   runs: DevelopmentRun[];

@@ -48,10 +48,7 @@ export function RunDetail({
   onAnswerIntent,
   onComparisonAction,
   onRefresh,
-  onGuidedContinue,
   onReject,
-  focusRequest = 0,
-  focusCandidate,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -74,11 +71,7 @@ export function RunDetail({
   onAnswerIntent?: (question: string, answer: string) => Promise<boolean>;
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
-  onGuidedContinue?: () => void;
   onReject?: (candidate: string, reason: string) => Promise<boolean>;
-  focusRequest?: number;
-  /** A result to reveal when `focusRequest` changes, e.g. from the guided demo. */
-  focusCandidate?: string;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
@@ -120,10 +113,6 @@ export function RunDetail({
     setTab('results');
     setResultFocus((current) => ({ candidate, request: (current?.request ?? 0) + 1 }));
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: each request reveals the result again.
-  useEffect(() => {
-    if (focusRequest && focusCandidate) openResult(focusCandidate);
-  }, [focusRequest, focusCandidate]);
   useEffect(() => {
     if (!focusTarget) return;
     const element = document.getElementById(focusTarget);
@@ -134,7 +123,6 @@ export function RunDetail({
   return (
     <>
       <RunOverviewHeader
-        focusRequest={focusRequest}
         run={run}
         roots={roots}
         subagents={coding.length - roots}
@@ -153,7 +141,6 @@ export function RunDetail({
         snapshot={snapshot}
         run={run}
         busy={busy}
-        onGuidedContinue={onGuidedContinue}
         onCancel={canCancelRun(run, activeAttempts) ? onCancel : undefined}
         onAction={(action, candidate) => {
           if ((action === 'review' || action === 'results') && candidate) openResult(candidate);

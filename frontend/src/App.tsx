@@ -1,6 +1,5 @@
 import { X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { useGuidedNavigation } from './features/guided-demo/useGuidedNavigation';
 import { DeleteRepositoryDialog } from './features/workspace/DeleteRepositoryDialog';
 import { RepositoryRecovery } from './features/workspace/RepositoryRecovery';
 import { RepositoryWorkspace } from './features/workspace/RepositoryWorkspace';
@@ -14,16 +13,10 @@ import type { Repository } from './lib/types';
 
 export function App() {
   const state = useRepository();
-  const guided = useGuidedNavigation(state.id, state.authenticated);
   const [panel, setPanel] = useState<WorkspacePanel>(null);
   const [deleting, setDeleting] = useState<Repository | null>(null);
   const [notice, setNotice] = useState('');
   const providerReturn = useRef<(() => void) | undefined>(undefined);
-  // The guided demo spends operator-funded agents, so only reviewer accounts are offered it.
-  const openGuidedDemo =
-    state.identity?.role === 'user' && state.identity.reviewer === true
-      ? () => setPanel('guided-project')
-      : undefined;
   useEffect(() => {
     if (!state.sessionEnded) return;
     setPanel(null);
@@ -100,9 +93,6 @@ export function App() {
               <RepositoryWorkspace
                 key={state.id}
                 snapshot={state.snapshot}
-                guidedSessionId={guided.session}
-                onGuidedSession={guided.remember}
-                onGuidedDemo={openGuidedDemo}
                 initialRunId={state.requestedRunId}
                 requestedRunError={state.requestedRunError}
                 onChange={state.refresh}
@@ -117,7 +107,6 @@ export function App() {
               <WorkspaceWelcome
                 state={state}
                 onProject={() => setPanel('project')}
-                onGuidedDemo={openGuidedDemo}
                 onProviders={() => setPanel('agents')}
               />
             )}
@@ -126,7 +115,6 @@ export function App() {
       </main>
       <WorkspacePanels
         panel={panel}
-        onGuidedCreated={guided.remember}
         state={state}
         onPanel={setPanel}
         onClose={() => {

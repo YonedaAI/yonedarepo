@@ -84,12 +84,6 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     record["resolver_delta_paths"] = result["resolver_delta_paths"].clone();
     super::source::compact(db, &mut record)?;
     save(db, "conflicts", &conflict_id, &record)?;
-    // The final phase is authorized only after the exact resolver capture is
-    // registered, so recompute the evaluator binding after that transition.
-    if let Some(binding) = super::super::guided::evaluation_binding(db, &candidate)? {
-        evaluator["payload"]["guided"] = binding;
-        save(db, "jobs", &string(&evaluator, "id")?, &evaluator)?;
-    }
     Ok(json!({"conflict_id":conflict_id,"candidate_id":result["id"],"status":"evaluating"}))
 }
 

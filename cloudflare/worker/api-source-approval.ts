@@ -10,8 +10,6 @@ const fail = (code: string, message: string): never => {
 /**
  * Every run works on platform source (a lazy source workspace, or a sandbox's clone); its base
  * is read back from the platform.
- * `checkpoint` is the revision the ledger restores the working branch to before the run
- * starts (a guided concurrent retry); the branch head is still checked against the lease.
  */
 export async function freezeSourceApproval(
   env: Env,
@@ -19,7 +17,6 @@ export async function freezeSourceApproval(
   repo: string,
   input: Json,
   repository: Json,
-  checkpoint?: { repository: string; commit: string },
 ): Promise<void> {
   const transport = approvedTransport(env, input.runtime);
   delete input.runtime;
@@ -51,7 +48,7 @@ export async function freezeSourceApproval(
       branch.version !== input.expected_working_version
     )
       fail('WORKING_HEAD_MOVED', 'The working source changed; refresh your brief.');
-    revision = checkpoint ?? branch.working_revision;
+    revision = branch.working_revision;
   }
   if (!/^[a-f0-9]{40}$/.test(revision.commit ?? ''))
     fail('INVALID_CAPTURE', 'Approved source identity is unavailable.');

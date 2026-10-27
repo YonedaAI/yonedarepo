@@ -94,33 +94,3 @@
   cursor: pointer;
   color: var(--muted);
 }
-.guided-decision .rationale-lead {
-  font-weight: 600;
-}
-.guided-decision details summary {
-  cursor: pointer;
-  color: var(--muted);
-}
-.guided-autopilot {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.guided-autopilot p {
-  margin: 0;
-  flex: 1 1 320px;
-}
-.guided-progress {
-  margin: 4px 0 8px;
-  font-weight: 600;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.guided-progress-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}

@@ -277,7 +277,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     )
 }
 
-/// Paths a resolver must never edit: the guided verification floor plus the
+/// Paths a resolver must never edit: the always-protected verification floor plus the
 /// policy's protected test-bundle paths. Every other valid path is editable.
 fn protected_paths(policy: &Value) -> Vec<String> {
     let mut paths: Vec<String> = yoneda_agents_core::resolver_scope::ALWAYS_PROTECTED

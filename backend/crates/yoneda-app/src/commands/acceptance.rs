@@ -58,7 +58,6 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let cid = string(c, "candidate")?;
     let candidate = get(db, "candidates", &cid)?;
     super::publication::not_rejected(&candidate)?;
-    super::guided::validate_publish(db, &candidate)?;
     let working_publishable = super::branches::publishable(db, &candidate, &r)?;
     if !working_publishable
         && (candidate

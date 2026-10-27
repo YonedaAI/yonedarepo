@@ -15,11 +15,10 @@ A Git-compatible source platform built for agents and other API clients. Clients
 - **Review and checks.** Checks run in Containers on the exact commit. Comment-, docs- and formatting-only changes can be auto-approved; anything unparseable needs a human. Gates apply to protected refs only (`main`, `release`, `release/*`); unprotected refs land with `write`, like a branch move.
 - **Scoped access.** Tokens can be limited to directories, enforced on every read, search and cache path. A human-only break-glass path can land, revert or pause automation when checks or agents are down; it is never exposed over MCP.
 
-The agent features below (runs, teams, compare, guided demo) are a separate layer that uses the platform like any other client.
+The agent features below (runs, teams, compare) are a separate layer that uses the platform like any other client.
 
 ## Try it
 
-- **Reviewers:** open [yonedarepo.com](https://yonedarepo.com/), choose **Have a reviewer access key?** and enter the key. Then open the **guided demo**: build together → continue from context → reconcile concurrent changes → review and publish. The guided demo is available to reviewer accounts only.
 - **Everyone else:** sign up, save the recovery code, connect your own provider key under **Connect Agents**, add a repository and choose **Start a Run**.
 - **Read-only CLI** (Node 24, starts no inference): `node tools/reviewer.mjs --checked`. It prompts for the key without echoing it.
 - Publication is always a separate human decision. Opening forms or sample briefs starts no work.
