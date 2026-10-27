@@ -1,6 +1,9 @@
 //! Parsing a commit request's changes: paths, modes, preconditions and content, within
 //! the request size limits. A referenced blob must already belong to this repository.
+//! Sent content is scanned for credentials here, the one place every commit path (REST,
+//! MCP, helper, merges, codemods, symbol edits; authority or stateless) decodes it.
 use super::super::rows::object_id;
+use crate::secret_scan::SecretAllow;
 use crate::storage::{SqlStore, bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -43,7 +46,9 @@ fn file_mode(change: &Value) -> Result<FileMode> {
     })
 }
 
-pub(crate) fn changes(c: &Value) -> Result<Vec<Change>> {
+/// `allow`: the policy's accepted false positives (none on the stateless path, whose
+/// adapter falls back to the authority when a scan refuses).
+pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
     let list = c["changes"]
         .as_array()
         .filter(|l| l.len() <= MAX_CHANGES)
@@ -87,6 +92,7 @@ pub(crate) fn changes(c: &Value) -> Result<Vec<Change>> {
             let content = STANDARD
                 .decode(encoded)
                 .map_err(|_| bad("content_b64 is not base64"))?;
+            crate::secret_scan::scan(&path, &content, allow)?;
             total += content.len();
             if content.len() > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES {
                 return Err(Error::new(
