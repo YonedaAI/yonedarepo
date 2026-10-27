@@ -59,7 +59,7 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
     _source_base: base,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Sandbox smoke' }],
   });
-  expect(run).toMatchObject({ runtime: 'sandbox-cli-v1', workspace_transport: 'api-source-v1' });
+  expect(run).toMatchObject({ runtime: 'sandbox-cli-v1', workspace_transport: 'sandbox-cli-v1' });
 
   const queue = bindings.SELF as unknown as Queue;
   const jobId = 'job:sandbox-run:agent-1';

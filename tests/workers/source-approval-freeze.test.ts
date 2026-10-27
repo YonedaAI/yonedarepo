@@ -52,6 +52,18 @@ it('takes a sandbox compare run only from a ledger that runs one sandbox per age
   expect(compare).toMatchObject({ workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true });
 });
 
+it('starts a sandbox run without lazy-source workspaces: the sandbox clones the platform', async () => {
+  const read = readCommit();
+  const platform = await syntheticPlatform(workerEnv as unknown as Env, { 'repo-fresh': { readCommit: read } });
+  const env = { ...platform, SOURCES: undefined, AGENT_SANDBOX: {} } as unknown as Env;
+  const ledger = { ...repository, capabilities: { sandbox_cli: 2 } };
+  const input = { runtime: 'sandbox-cli-v1', agents: [{ provider: 'zai' }] };
+  await freezeSourceApproval(env, 'owner', 'repo-fresh', input, ledger);
+  expect(input).toMatchObject({ workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true });
+  // A lazy-source run still needs them.
+  await expect(freezeSourceApproval(env, 'owner', 'repo-fresh', {}, ledger)).rejects.toMatchObject({ code: 'LEDGER_UPDATING' });
+});
+
 it('rejects a source identity outside this namespace before any read', async () => {
   const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
   const env = { SOURCES: {}, PLATFORM: { fetch: get } } as unknown as Env;

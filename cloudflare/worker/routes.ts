@@ -26,6 +26,7 @@ import { publicationReadback, recordPublicationChecks, resynchronize } from './r
 import { reviewerGuard, reviewerRoute } from './reviewer';
 import { reviewerCampaignRoute } from './reviewer-campaign';
 import { advertiseSandbox, sandboxActivity } from './sandbox-attempt';
+import { resolveInSandbox } from './sandbox-resolve';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
@@ -240,6 +241,10 @@ export async function fetchRequest(
     }
 
     if (action === 'start_run') input = await approveOwnerRun(env, principal, repo, input);
+    if (action === 'resolve_conflict') {
+      const started = await resolveInSandbox(env, principal, repo, input);
+      if (started) return response(started);
+    }
     const command = {
       ...input,
       op: action,

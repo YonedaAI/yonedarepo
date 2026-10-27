@@ -13,6 +13,8 @@ export interface ConflictInventoryItem {
   conflict_id?: string;
   refreshed_candidate_id?: string;
   resolver_candidate_id?: string;
+  /** The sandbox run resolving this conflict (deployments with sandboxes). */
+  resolver_run_id?: string;
   head_commit?: string;
   expected_version?: number;
   /** Only complete legacy inline paths may enter the existing mutation envelope; never page results. */
@@ -72,6 +74,9 @@ export function normalizeConflictInventory(raw: unknown): ConflictInventoryView 
         : {}),
       ...(typeof row.resolver_candidate_id === 'string'
         ? { resolver_candidate_id: row.resolver_candidate_id }
+        : {}),
+      ...(isRecord(row.sandbox_resolver) && typeof row.sandbox_resolver.run_id === 'string'
+        ? { resolver_run_id: row.sandbox_resolver.run_id }
         : {}),
       ...(headCommit ? { head_commit: headCommit } : {}),
       ...(typeof row.expected_version === 'number'

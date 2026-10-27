@@ -77,6 +77,8 @@ export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
   routing: attempt.routing,
   modelBase: attempt.model_base,
   modelPaths: modelPaths(attempt),
+  job_id: attempt.job_id,
+  epoch: attempt.epoch,
 });
 
 /** One sandbox per execution; the name also finds its activity log later. */

@@ -9,11 +9,14 @@
 //   object/commit upload and moving the attempt's own branch `attempts/<run>/<n>`, never
 //   another agent's branch of the same run.
 // Everything else gets a 403, so the agent cannot install packages or reach other services.
+// Model responses are metered (sandbox-meter.ts): each one's reported usage is recorded on the
+// run, and a new request is refused once the run's approved allowance is actually spent.
 // A check sandbox (role `check`) gets less: GET requests to the project repository only, so it
 // can clone the candidate but never push, upload or move a ref, and it has no model endpoint.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { providerDefinition } from '../../shared/providers';
 import { projectToken } from './agents-platform';
+import { forwardModel } from './sandbox-meter';
 import type { Env, Json } from './types';
 import { providerCredentials } from './vault';
 
@@ -40,6 +43,9 @@ export type AgentEgress = PlatformAccess & {
    * `modelPaths`); absent for attempts begun before it, which ran Claude Code.
    */
   modelPaths?: string[];
+  /** The ledger attempt its model spend is recorded on; absent for attempts begun before it. */
+  job_id?: string;
+  epoch?: number;
 };
 /** A check sandbox: reads its project repository, nothing else. */
 export type CheckEgress = PlatformAccess & { role: 'check' };
@@ -124,7 +130,11 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
         props.routing,
       );
       headers.set(definition.auth_header, `${definition.auth_prefix}${key}`);
-      return fetch(new Request(request, { headers }));
+      const attempt =
+        props.job_id && Number.isSafeInteger(props.epoch)
+          ? { project: props.project, job_id: props.job_id, epoch: Number(props.epoch) }
+          : null;
+      return forwardModel(this.env, (work) => this.ctx.waitUntil(work), request, headers, attempt);
     } else if (decision.refs) {
       const body = await request
         .clone()

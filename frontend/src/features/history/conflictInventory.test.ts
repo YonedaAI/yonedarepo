@@ -27,6 +27,19 @@ describe('conflict inventory boundary', () => {
     expect(view.records[2].path_sets.conflict_paths).toMatchObject({ state: 'inline', count: 0 });
     expect(view.overlaps[0].path_set).toMatchObject({ state: 'paged', count: 4 });
   });
+  it('names the sandbox run resolving a conflict', () => {
+    const view = normalizeConflictInventory({
+      conflicts: [
+        {
+          id: 'conflict',
+          candidate_id: 'candidate',
+          status: 'unresolved',
+          sandbox_resolver: { run_id: 'resolve-abc', request_id: 'r1' },
+        },
+      ],
+    });
+    expect(view.records[0].resolver_run_id).toBe('resolve-abc');
+  });
   it('does not interpret the empty paths placeholder of a not-analyzed stale candidate as no overlap', () => {
     const view = normalizeConflictInventory({
       conflicts: [

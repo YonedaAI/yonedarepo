@@ -19,6 +19,9 @@ export type SandboxActivityPage = {
 };
 
 export const isSandbox = (execution: Record<string, any>) => execution?.runtime === SANDBOX_RUNTIME;
+/** A sandbox team run: owner tasks on `sandbox-cli-v1`, integrated by landing. */
+export const isSandboxTeam = (run?: Record<string, any>) =>
+  run?.mode === 'collaborate' && run?.runtime === SANDBOX_RUNTIME;
 
 export function ago(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));

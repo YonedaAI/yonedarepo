@@ -159,6 +159,11 @@ export function ConflictStatusPanel({
                   Refreshed candidate: <code>{conflict.refreshed_candidate_id}</code>
                 </p>
               )}
+              {conflict.resolver_run_id && (
+                <p>
+                  Resolving in sandbox run <code>{conflict.resolver_run_id}</code>
+                </p>
+              )}
               {conflict.resolver_candidate_id && (
                 <p>
                   Resolver candidate: <code>{conflict.resolver_candidate_id}</code>
