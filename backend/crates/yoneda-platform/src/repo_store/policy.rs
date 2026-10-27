@@ -1,4 +1,5 @@
 //! The repository's landing policy and check names.
+pub use super::runner::Runner;
 use crate::secret_scan::SecretAllow;
 use crate::storage::bad;
 use serde::{Deserialize, Serialize};
@@ -7,8 +8,9 @@ use std::collections::BTreeMap;
 use yoneda_core::{Error, Result};
 
 /// Landing policy: which checks must pass and how many independent approvals are needed.
-/// `runners` are owner-defined commands the platform executes itself; definitions come
-/// from policy, never from the commit under test, so a change cannot weaken its own check.
+/// `runners` are owner-defined checks the platform executes itself (a command, or one model
+/// review call); definitions come from policy, never from the commit under test, so a
+/// change cannot weaken its own check.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
@@ -31,18 +33,6 @@ pub struct Policy {
     pub secret_allow: Vec<SecretAllow>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Runner {
-    /// argv, executed without a shell unless the owner writes `["sh", "-c", ...]`.
-    pub command: Vec<String>,
-    #[serde(default = "default_timeout")]
-    pub timeout_seconds: u32,
-}
-fn default_timeout() -> u32 {
-    600
-}
-
 impl Policy {
     pub fn parse(value: &Value) -> Result<(Self, Value, String)> {
         let policy: Policy = serde_json::from_value(value.clone())
@@ -52,17 +42,11 @@ impl Policy {
             .iter()
             .chain(policy.runners.keys())
             .try_for_each(|name| check_name(name))?;
-        if policy.runners.len() > 32
-            || policy.runners.values().any(|r| {
-                r.command.is_empty()
-                    || r.command.len() > 64
-                    || r.command.iter().any(|a| a.len() > 4096 || a.contains('\0'))
-                    || !(1..=3600).contains(&r.timeout_seconds)
-            })
-        {
-            return Err(bad(
-                "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
-            ));
+        if policy.runners.len() > 32 {
+            return Err(bad("A policy has at most 32 runners"));
+        }
+        for (name, runner) in &policy.runners {
+            runner.validate(name)?;
         }
         if let Some(class) = policy
             .auto_approve
