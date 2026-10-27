@@ -93,8 +93,6 @@ const props = {
   onSelectRun: noop,
   onRestart: noop,
   onCancel: noop,
-  onRetry: noop,
-  onRepairTask: async () => true,
   onAccept: async () => true,
   onContext: noop,
 };
@@ -113,22 +111,10 @@ beforeEach(() => {
   hooks.cursor = 0;
 });
 describe('outcome-first human review', () => {
-  it('shows three concurrent agents and their finite frozen coordination approval', () => {
-    const approved = {
-      ...run,
-      autonomy_policy: {
-        version: 1,
-        enabled: true,
-        max_repair_rounds: 2,
-        max_concurrent_agents: 3,
-        max_executions: 20,
-        source_scope: 'project',
-        allow_intent_questions: true,
-      },
-    };
+  it('shows three concurrent agents working', () => {
     const ongoing = {
       ...snapshot,
-      executions: ['calendar', 'navigation', 'coordinator'].map((id) => ({
+      executions: ['calendar', 'navigation', 'search'].map((id) => ({
         id,
         run_id: run.id,
         role: 'coding',
@@ -137,34 +123,10 @@ describe('outcome-first human review', () => {
       })),
     };
     const html = renderToStaticMarkup(
-      createElement(AgentWorkSummary, { snapshot: ongoing, run: approved, onInspect: noop }),
+      createElement(AgentWorkSummary, { snapshot: ongoing, run, onInspect: noop }),
     );
     expect(html.match(/>Working<\/span>/g)).toHaveLength(3);
-    expect(html).toContain('Frozen work approval');
-    expect(html).toContain('3 agents concurrently');
-    expect(html).toContain('20 executions');
-    expect(html).toContain('2 repair rounds');
-    expect(html).toContain('Publication requires a separate owner decision');
-  });
-  it('surfaces the recorded intent question while coordinating agents await an answer', () => {
-    const input = {
-      ...props,
-      run: {
-        ...run,
-        status: 'awaiting_intent',
-        intent_question: {
-          id: 'question',
-          run_id: run.id,
-          status: 'pending',
-          question: 'Should calendar access remain anonymous?',
-          options: ['Keep anonymous access', 'Require sign-in'],
-        },
-      },
-    };
-    const html = renderToStaticMarkup(render(input));
-    expect(html).toContain('Should calendar access remain anonymous?');
-    expect(html).toContain('Keep anonymous access');
-    expect(html).toContain('Record intent answer');
+    expect(html).toContain('Agent progress is separate from independent checks and publication.');
   });
   it('enables the existing preview API for a checked full-stack app bundle without static deployment output', () => {
     const html = renderToStaticMarkup(
@@ -214,46 +176,5 @@ describe('outcome-first human review', () => {
     expect(html.indexOf('Behavior checks')).toBeLessThan(html.indexOf('Decision and context'));
     expect(html).toContain('Use this result');
     expect(html).toContain('Inspect evidence graph');
-  });
-  it('summarizes active repair and dependency blocks in the default review without implying failed parallel work stopped', () => {
-    const input = {
-      ...props,
-      run: { ...run, mode: 'collaborate', team_repair_rounds: 1 },
-      snapshot: {
-        ...snapshot,
-        candidates: [],
-        evaluations: [],
-        executions: [
-          {
-            id: 'repair',
-            run_id: run.id,
-            role: 'coding',
-            status: 'running',
-            strategy: 'Calendar repair',
-          },
-        ],
-        team_tasks: [
-          {
-            task_id: 'calendar',
-            run_id: run.id,
-            title: 'Fix calendar',
-            execution_id: 'repair',
-            status: 'running',
-            revision: 2,
-          },
-          {
-            task_id: 'navigation',
-            run_id: run.id,
-            title: 'Update navigation',
-            status: 'blocked',
-            depends_on: ['calendar'],
-          },
-        ],
-      },
-    };
-    const html = renderToStaticMarkup(render(input));
-    expect(html).toContain('Agent work');
-    expect(html).toContain('Repairing');
-    expect(html).toContain('Waiting for Fix calendar');
   });
 });

@@ -122,7 +122,6 @@ it('stores only encrypted plan keys, exposes the route and fences changed routin
     method: 'POST', headers: { cookie }, body: JSON.stringify({ id: 'routed', intent: 'Build a site',
       agents: ['minimal', 'accessible'].map(strategy => ({ strategy, connection: connection.id,
         provider: 'mimo', model: 'mimo-v2.6-flash', routing: { plan: 'token_plan', region: 'cn' } })),
-      delegation: { enabled: true, max_depth: 1, max_executions: 3 },
     }),
   });
   expect(started.status).toBe(200);
@@ -134,16 +133,12 @@ it('stores only encrypted plan keys, exposes the route and fences changed routin
   expect(await workspace(bindings, 'token_plan_user', { op: 'workspace_spend_status' })).toMatchObject({
     version: 1, limit_microusd: 50000000, charged_microusd: 0, reserved_microusd: 0, remaining_microusd: 50000000,
   });
-  const legacy = await approvedLegacyFixture('token_plan_user', repo, { id: 'legacy-routed', intent: 'Prior approved delegation routing fixture',
+  const legacy = await approvedLegacyFixture('token_plan_user', repo, { id: 'legacy-routed', intent: 'Prior approved routing fixture',
     agents: ['minimal', 'accessible'].map(strategy => ({ strategy, connection: connection.id,
-      provider: 'mimo', model: 'mimo-v2.6-flash', routing: { plan: 'token_plan', region: 'cn' } })),
-    delegation: { enabled: true, max_depth: 1, max_executions: 3 } });
+      provider: 'mimo', model: 'mimo-v2.6-flash', routing: { plan: 'token_plan', region: 'cn' } })) });
   expect(legacy.workspace_spend).toBeUndefined();
   const parent = await ledger(bindings, repo, { op: 'claim', job_id: 'job:legacy-routed:agent-1' });
   expect(parent.payload.execution.routing).toEqual(routing);
-  const child = await ledger(bindings, repo, { op: 'delegate_agent', job_id: parent.id,
-    epoch: parent.epoch, request_id: 'child', task: 'Build an independent approach', strategy: 'keyboard-first' });
-  expect(child.execution.routing).toEqual(routing);
   expect((await save({ plan: 'api_credits' }, 'tp-offline-fixture-key')).status).toBe(400);
   expect((await save(routing, 'sk-offline-fixture-key')).status).toBe(400);
   expect((await save({ plan: 'token_plan', region: 'us' }, 'tp-offline-fixture-key')).status).toBe(400);

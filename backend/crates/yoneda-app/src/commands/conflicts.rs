@@ -42,7 +42,3 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         _ => Err(Error::new("NOT_FOUND", "Unknown conflict operation")),
     }
 }
-
-pub(crate) fn validate_source_resolution<S: SqlStore>(db: &S, record: &Value) -> Result<()> {
-    repair_authority::validate_capture(db, &source::hydrate(db, record)?)
-}

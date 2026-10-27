@@ -1,4 +1,4 @@
-import { resolveAdaptiveApproval } from './adaptive-approval';
+import { resolveRunRoster } from './run-roster';
 import type { Json } from './types';
 
 /** Older clients keep their fixed roster; new work still receives trusted shared accounting. */
@@ -20,7 +20,7 @@ export function resolveFixedApproval(input: Json, connections: Json[], limit: nu
         code: 'PROVIDER_MISSING',
       });
   }
-  const approved = resolveAdaptiveApproval(
+  const approved = resolveRunRoster(
     {
       ...input,
       mode: input.mode ?? 'compare',
@@ -35,7 +35,6 @@ export function resolveFixedApproval(input: Json, connections: Json[], limit: nu
     },
     connections,
     limit,
-    false,
   );
   approved.agents = approved.agents.map((agent: Json, index: number) => ({
     ...agent,

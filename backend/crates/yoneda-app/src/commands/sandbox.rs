@@ -35,12 +35,11 @@ pub(super) fn requested(c: &Value) -> bool {
 /// delegation and the comparison reviewer are not sandbox work.
 pub(super) fn freeze(
     c: &Value,
-    general: bool,
     team: bool,
     delegation: &DelegationPolicy,
     run: &mut Value,
 ) -> Result<()> {
-    if !general || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
+    if team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
             "Sandbox runs take independent coding agents, without team or comparison review",
@@ -128,17 +127,11 @@ const CHECK_CAP_MS: i64 = 15 * 60_000;
 const CHECK_LEASE_MS: i64 = CHECK_CAP_MS + 5 * 60_000;
 
 /// Refuses, at run start, a sandbox run whose candidates the check sandbox cannot check: a
-/// guided run, or a project policy with an app bundle (its digest-exact app encoding exists
-/// only in the evaluator container). Immutable test bundles are checked in the sandbox.
+/// project policy with an app bundle (its digest-exact app encoding exists only in the
+/// evaluator container). Immutable test bundles are checked in the sandbox.
 pub(super) fn checkable_start(run: &Value, policy: &Value) -> Result<()> {
     if run["runtime"] != TRANSPORT {
         return Ok(());
-    }
-    if run["guided"].is_object() {
-        return Err(Error::new(
-            "NOT_SUPPORTED",
-            "Guided runs do not run in a sandbox",
-        ));
     }
     if !policy["build"]["app"].is_null() {
         return Err(Error::new(
@@ -152,14 +145,11 @@ pub(super) fn checkable_start(run: &Value, policy: &Value) -> Result<()> {
 /// Marks a claimed evaluation of a sandbox run's candidate as one check-sandbox attempt,
 /// never re-dispatched: the report still arrives through `verify_finish` with the same
 /// validation. The check sandbox installs an immutable test bundle as the evaluator does;
-/// guided steps and app bundles stay with the evaluator container.
+/// app bundles stay with the evaluator container.
 pub(super) fn claimed_check<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Result<()> {
     let payload = &job["payload"];
     let build = &payload["policy"]["build"];
-    let checkable = job["kind"] == "evaluate"
-        && payload["guided"].is_null()
-        && build.is_object()
-        && build["app"].is_null();
+    let checkable = job["kind"] == "evaluate" && build.is_object() && build["app"].is_null();
     let Some(run_id) = payload["run_id"].as_str().filter(|_| checkable) else {
         return Ok(());
     };

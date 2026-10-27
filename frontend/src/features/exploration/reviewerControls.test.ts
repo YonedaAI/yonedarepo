@@ -2,7 +2,6 @@ import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../lib/types';
-import { TeamWorkflow } from '../team/TeamWorkflow';
 import { Exploration } from './Exploration';
 import { RunControls } from './RunControls';
 import { RunDetail } from './RunDetail';
@@ -36,19 +35,6 @@ const snapshot: Snapshot = {
   artifacts: [],
   seq: 1,
   capabilities: { model_budgets: 1, collaborative_runs: 1 },
-  team_tasks: [
-    {
-      id: 'task',
-      task_id: 'task',
-      run_id: 'run',
-      title: 'Failed task',
-      role: 'specialist',
-      status: 'failed',
-      epoch: 1,
-      revision: 1,
-      depends_on: [],
-    },
-  ],
 };
 const noop = () => {};
 describe('reviewer run permissions', () => {
@@ -129,39 +115,42 @@ describe('reviewer run permissions', () => {
       renderToStaticMarkup(createElement(RunControls, { ...props, reviewer: false })),
     ).toContain('Restart run');
   });
-  it('hides retry on a failed, otherwise retryable team task only for reviewers', () => {
-    const props = {
-      snapshot,
-      run: { id: 'run', status: 'failed' },
-      busy: false,
-      onRetry: noop,
-      onRepair: async () => true,
-      onProviders: noop,
-      reviewer: true,
+  it('shows a sandbox team’s task landings in Agent activity', () => {
+    const run = {
+      id: 'team',
+      intent: 'Write the notes',
+      status: 'exploring',
+      mode: 'collaborate',
+      runtime: 'sandbox-cli-v1',
+      base: { commit: 'head' },
     };
-    expect(renderToStaticMarkup(createElement(TeamWorkflow, props))).not.toContain('Retry task');
-    expect(
-      renderToStaticMarkup(createElement(TeamWorkflow, { ...props, reviewer: false })),
-    ).toContain('Retry task');
-  });
-  it('allows an approved reviewer to repair stale team output without exposing retry', () => {
-    const task = {
-      ...snapshot.team_tasks?.[0],
-      status: 'complete',
-      output: { revision: { commit: 'old' }, paths: ['src/a.rs'] },
+    const member = {
+      id: 'team:agent-1',
+      run_id: 'team',
+      role: 'coding',
+      model: 'glm-5.3-flash',
+      status: 'completed',
+      sandbox_task: { id: 'notes', title: 'Write the note' },
+      landing: { status: 'landed', team_commit: 'c'.repeat(40), version: 1 },
     };
-    const repairedSnapshot = { ...snapshot, team_tasks: [task] };
-    const props = {
-      snapshot: repairedSnapshot,
-      run: { id: 'run', status: 'exploring', team_plan: { tasks: [{ id: 'task' }] } },
-      busy: false,
-      onRetry: noop,
-      onRepair: async () => true,
-      reviewer: true,
-    };
-    const html = renderToStaticMarkup(createElement(TeamWorkflow, props));
-    expect(html).toContain('Repair task using existing trial approval');
-    expect(html).not.toContain('Retry task');
+    const html = renderToStaticMarkup(
+      createElement(RunDetail, {
+        snapshot: { ...snapshot, runs: [run], executions: [member], candidates: [] },
+        run,
+        reviewer: true,
+        busy: false,
+        canStart: true,
+        onSelectRun: noop,
+        onRestart: noop,
+        onCancel: noop,
+        onAccept: async () => true,
+        onContext: noop,
+      }),
+    );
+    expect(html).toContain('Build together');
+    expect(html).toContain('Write the note');
+    expect(html).toContain('1 / 1 tasks landed on the team branch');
+    expect(html).not.toContain('execution-hierarchy-heading');
   });
   it('passes permissions through RunDetail, hiding provider changes while preserving eligible candidate review', () => {
     const run = {
@@ -210,8 +199,6 @@ describe('reviewer run permissions', () => {
       onSelectRun: noop,
       onRestart: noop,
       onCancel: noop,
-      onRetry: noop,
-      onRepairTask: async () => true,
       onAccept: async () => true,
       onProviders: noop,
       onContext: noop,

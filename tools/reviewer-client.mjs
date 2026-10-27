@@ -67,23 +67,6 @@ export async function workspaceEntry(api, options) {
   return { ...entry, message: 'No current-policy checked run is available. Historical runs remain in the workspace. Open Start a Run to describe a change and approve it in the browser. This command starts no inference.' };
 }
 
-export async function campaignEntry(api, campaign, newTrial, requestId, resume = false) {
-  if (!campaign.enabled) throw new Error('The fresh campaign is not ready for review yet.');
-  if (resume) {
-    if (!campaign.active_trial) throw new Error('No campaign trial to resume.');
-    return api('reviewer/campaign/resume', {});
-  }
-  if (!newTrial) {
-    const checked = await api('reviewer/campaign/checked');
-    if (!checked) throw new Error('No checked app is ready yet. This command does not start work.');
-    return checked;
-  }
-  if (campaign.active_trial) {
-    return {repo_id:campaign.repo_id,run_id:campaign.active_trial,
-      url:`/?repo=${encodeURIComponent(campaign.repo_id)}&run=${encodeURIComponent(campaign.active_trial)}`};
-  }
-  return api('reviewer/campaign/trial',{request_id:requestId});
-}
 function isLegacyUnknownOperation(error) {
   return error?.code === 'NOT_FOUND' && error.message === 'Unknown repository operation'
     && (error.status == null || [404, 409].includes(error.status));

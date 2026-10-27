@@ -2,11 +2,9 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::agents::*;
 use yoneda_agents_core::{Error, Result};
-#[path = "repository_guided.rs"]
-mod guided_init;
 pub(super) fn capabilities<S: SqlStore>(db: &S, now: i64) -> Result<Value> {
     Ok(
-        json!({"guided_runs":1,"source_api":1,"source_capture_retry":1,"comparison_review":1,"artifact_reads":2,"adaptive_teams":1,"adaptive_specialists":1,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"sandbox_cli":2,"campaign_budget":1,"coordinator_retry":1,"max_execution_ms":yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"agent_coordination":1,"autonomous_repair":1,"context_usage":1,"collaborative_runs":1,"team_planning":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
+        json!({"source_api":1,"artifact_reads":2,"reasoning_effort":1,"workspace_spend":1,"workspace_authority":1,"model_budgets":1,"sandbox_cli":2,"max_execution_ms":yoneda_agents_core::model_budget::MAX_MODEL_EXECUTION_MS,"optional_model_requests":1,"published_continuation":1,"working_branches":1,"context_usage":1,"collaborative_runs":1,"context_usage_since":super::context_access::activation(db,now)?,"agent_limits":{"min_root_agents":MIN_ROOT_AGENTS,"max_root_agents":MAX_ROOT_AGENTS,"max_run_executions":MAX_RUN_EXECUTIONS,"max_delegation_depth":MAX_DELEGATION_DEPTH,"max_run_model_requests":null}}),
     )
 }
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
@@ -39,8 +37,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 }
                 r["platform_repo"] = platform.clone();
             }
-            super::study::initialize(&c, &mut r)?;
-            guided_init::initialize(&c, &mut r)?;
             create(db, "repository", "repo", &r)?;
             node(db, &id, "repository", &name, "owner", now, r.clone())?;
             event(db, "repository.created", now, json!({"id":id}))?;

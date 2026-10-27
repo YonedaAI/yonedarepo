@@ -11,12 +11,11 @@ async function verifyOutcomeReview(page) {
   const unexpected = [];
   const onError = (error) => errors.push(error.message);
   page.on('pageerror', onError);
-  let reviewer = false;
-  let enabled = false;
+  const reviewer = false;
   const fixtureResponse = await page.request.get(
     `${origin}/src/features/exploration/reviewBrowserFixture.json`,
   );
-  const { repo, constraint, linked, run, execution, candidate, evaluation, snapshot } =
+  const { repo, constraint, linked, run, execution, candidate, snapshot } =
     await fixtureResponse.json();
   let failUsage = true;
   let releaseUsage;
@@ -75,23 +74,6 @@ async function verifyOutcomeReview(page) {
         watermark: 10,
         has_more: false,
         next_cursor: null,
-      });
-    if (path === '/api/reviewer/campaign')
-      return reply(
-        enabled
-          ? {
-              campaign: { id: 'fresh', version: 1, enabled: true },
-              approval: { entry: { repo_id: repo.id } },
-            }
-          : null,
-      );
-    if (path === '/api/reviewer/campaign/checked')
-      return reply({
-        repo_id: repo.id,
-        run_id: run.id,
-        candidate_id: candidate.id,
-        revision: candidate.revision,
-        evaluation_id: evaluation.id,
       });
     unexpected.push(path);
     return reply({ error: { message: 'Unexpected offline fixture read' } }, 404);
@@ -171,24 +153,9 @@ async function verifyOutcomeReview(page) {
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
       'Mobile review must not overflow horizontally',
     );
-    reviewer = true;
-    await page.reload();
-    await page.getByText('Legacy live trials are disabled.', { exact: false }).waitFor();
-    assert(
-      (await page.getByRole('button', { name: /Start new|Resume interrupted/ }).count()) === 0,
-      'Disabled campaign must not expose legacy paid actions',
-    );
-    enabled = true;
-    await page.getByRole('button', { name: 'Refresh campaign status', exact: true }).click();
-    await page.getByRole('link', { name: 'Review checked app result' }).waitFor();
-    assert(
-      (await page.getByText('The trail guide is the example', { exact: false }).count()) === 0,
-      'Enabled campaign must replace legacy default copy',
-    );
-    reviewer = false;
     snapshot.working_branches = [
       {
-        id: 'campaign-development',
+        id: 'development',
         status: 'active',
         version: 2,
         working_commit: candidate.revision.commit,
@@ -199,7 +166,7 @@ async function verifyOutcomeReview(page) {
       },
     ];
     snapshot.capabilities.working_branches = 1;
-    run.working_branch_id = 'campaign-development';
+    run.working_branch_id = 'development';
     snapshot.runs = [run];
     await page.reload();
     await page.getByRole('heading', { name: 'Checked working branch', exact: true }).waitFor();
@@ -220,16 +187,7 @@ async function verifyOutcomeReview(page) {
       'Continuation must keep canonical publication separate',
     );
     await page.keyboard.press('Escape');
-    run.status = 'coordinating';
-    run.autonomy_policy = {
-      version: 1,
-      enabled: true,
-      max_repair_rounds: 2,
-      max_concurrent_agents: 3,
-      max_executions: 20,
-      source_scope: 'project',
-      allow_intent_questions: true,
-    };
+    run.status = 'exploring';
     snapshot.executions = ['Access contract', 'Calendar behavior', 'App integration'].map(
       (strategy, index) => ({ ...execution, id: `ongoing-${index}`, strategy, status: 'running' }),
     );
@@ -237,23 +195,15 @@ async function verifyOutcomeReview(page) {
     snapshot.evaluations = [];
     await page.reload();
     const agents = page.getByRole('region', { name: 'Agent work', exact: true });
-    await agents.getByRole('heading', { name: 'Frozen work approval', exact: true }).waitFor();
+    await agents.getByRole('heading', { name: 'Agent work', exact: true }).waitFor();
     assert((await agents.locator('li').count()) === 3, 'All three ongoing agents must be visible');
     assert(
       (await agents.getByText('Working', { exact: true }).count()) === 3,
       'All three active agents must show Working',
     );
-    const approval = await agents.innerText();
-    for (const bound of [
-      '3 agents concurrently',
-      '20 executions total',
-      '2 repair rounds',
-      'Publication requires a separate owner decision.',
-    ])
-      assert(approval.includes(bound), `Frozen approval missing ${bound}`);
     assert(
       await page.getByRole('button', { name: 'Continue checked work', exact: true }).isDisabled(),
-      'Active coordination must block overlapping continuation',
+      'Active agents must block overlapping continuation',
     );
     assert(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -278,7 +228,6 @@ async function verifyOutcomeReview(page) {
         'safe evidence retry and linked statement',
         'graph drilldown',
         'mobile width',
-        'disabled then enabled reviewer campaign',
         'checked branch continuation with separate canonical source',
         'three ongoing agents and finite frozen approval',
       ],

@@ -10,15 +10,10 @@ pub(super) fn blocked(run: &Value) -> Option<&'static str> {
         )
 }
 pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    let agent = c.get("job_id").is_some();
+    owner(c)?;
     let candidate_id = string(c, "candidate_id")?;
     let candidate = get(db, "candidates", &candidate_id)?;
     let run = get(db, "runs", &string(&candidate, "run_id")?)?;
-    if agent {
-        super::super::autonomy::authorize_repair(db, c, &run, now)?;
-    } else {
-        owner(c)?;
-    }
     if !crate::commands::sandbox::platform_source(&run["workspace_transport"]) {
         return Err(Error::new(
             "NOT_SUPPORTED",
@@ -91,7 +86,7 @@ pub(super) fn refresh<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     record["receipt"] = receipt.clone();
     super::source::compact(db, &mut record)?;
     create(db, "conflicts", &id, &record)?;
-    let mut payload = json!({"workspace_transport":"api-source-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"target_revision":target["revision"],"working_branch_id":target["working_branch_id"],"declared_paths":paths,"run_id":candidate["run_id"],"policy":if agent { &run["policy"] } else { &repository["policy"] }});
+    let mut payload = json!({"workspace_transport":"api-source-v1","capture_subtype":"refresh_candidate","conflict_id":id,"candidate":candidate,"expected_base":candidate["base"]["commit"],"expected_head":head,"expected_version":expected_version,"target_revision":target["revision"],"working_branch_id":target["working_branch_id"],"declared_paths":paths,"run_id":candidate["run_id"],"policy":repository["policy"]});
     crate::path_lists::compact(db, &mut payload, "declared_paths")?;
     job(db, &job_id, "capture", now, payload)?;
     event(db, "candidate.refresh_requested", now, receipt.clone())?;
@@ -202,10 +197,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
             now,
             json!({"conflict_id":id,"paths":record["conflict_paths"]}),
         )?;
-        let run = get(db, "runs", &string(&record["candidate"], "run_id")?)?;
-        let mut signal = record["candidate"].clone();
-        signal["coordination_signal"] = json!(format!("unresolved:{}", string(&record, "id")?));
-        super::super::team::evaluated(db, &run, &signal, false, now)?;
         return Ok(record);
     }
     if result["status"] != "clean" {
@@ -263,12 +254,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value
     attach_typed(db, &mut record)?;
     record["conflict_paths"] = json!([]);
     save(db, "conflicts", &id, &record)?;
-    if let Some(binding) = super::super::guided::evaluation_binding(db, &candidate)? {
-        let jid = format!("evaluate:{new_id}");
-        let mut evaluator = get(db, "jobs", &jid)?;
-        evaluator["payload"]["guided"] = binding;
-        save(db, "jobs", &jid, &evaluator)?;
-    }
     event(
         db,
         "candidate.refreshed",

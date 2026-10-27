@@ -114,7 +114,7 @@ pub(super) fn record<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 .checked_add(amount)
                 .filter(|v| *v <= MAX_SAFE_BUDGET_INTEGER)
                 .ok_or_else(|| bad("Model budget amount overflow"))?;
-            super::comparison::put_budget(&mut run, execution, index, json!(budget))?;
+            run["model_budgets"][index] = json!(budget);
             (amount, Some(budget))
         }
         None => (0, None),

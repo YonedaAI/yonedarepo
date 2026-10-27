@@ -5,12 +5,11 @@ import { api } from '../../lib/api';
 import type { Repository, Snapshot } from '../../lib/types';
 import { RunModePicker } from '../team/RunModePicker';
 import { TeamPlanOptions } from '../team/TeamPlanOptions';
-import { reconcileTeam, seedTeam, teamSubmission } from '../team/teamDraft';
+import { reconcileTeam, seedTeam, serializeTeam } from '../team/teamDraft';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
-import { type AdaptiveAgentDraft, compareBuilders, requestedAgents } from './adaptiveDraft';
+import { type AdaptiveAgentDraft, requestedAgents } from './adaptiveDraft';
 import { runAgentLimits } from './agentLimits';
-import { CompareApprovalNotice } from './CompareApprovalNotice';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { type RunRuntime, RunRuntimePicker, runtimeChoice } from './RunRuntimePicker';
 import { RunSourceNotice } from './RunSourceNotice';
@@ -51,17 +50,11 @@ export function RunComposer({
   const [providersError, setProvidersError] = useState('');
   const [providersRequest, setProvidersRequest] = useState(0);
   const limits = runAgentLimits(snapshot);
-  const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(
-    draft.mode === 'compare' ? compareBuilders(draft.agents) : draft.agents,
-  );
+  const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(draft.agents);
   const [mode, setMode] = useState<RunMode>(draft.mode);
   const [runtime, setRuntime] = useState<RunRuntime>('sandbox');
-  // A sandbox run compares by default; "Build together" there is a team on the owner's plan.
-  const [sandboxMode, setSandboxMode] = useState<RunMode>('compare');
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
-  const [manualTeam, setManualTeam] = useState(!!draft.team);
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
-  const automaticSupport = snapshot.capabilities?.team_planning === 1;
   const [context, setContext] = useState<string[]>(draft.context);
   const [policy, setPolicy] = useState(draft.policy);
   const [error, setError] = useState('');
@@ -69,20 +62,11 @@ export function RunComposer({
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
   const choice = runtimeChoice(snapshot, runtime, agents, providers);
   const { offered, blocker, sandbox } = choice;
-  const runMode: RunMode = sandbox ? sandboxMode : mode;
-  // Automatic team planning is a Classic agent; a sandbox team takes the owner's task plan.
-  const automaticPlanning = automaticSupport && !sandbox;
+  // A team runs only in the sandbox, on the owner's task list; a Classic run always compares.
+  const runMode: RunMode = sandbox && teamSupport ? mode : 'compare';
   function changeAgents(next: AdaptiveAgentDraft[]) {
-    setAgents(!sandbox && mode === 'compare' ? compareBuilders(next) : next);
+    setAgents(next);
     setTeam((current) => reconcileTeam(current, next));
-  }
-  function changeRuntime(next: RunRuntime) {
-    if (next === 'classic' && mode === 'compare') setAgents(compareBuilders(agents));
-    setRuntime(next);
-  }
-  function changeMode(next: RunMode) {
-    if (next === 'compare') changeAgents(compareBuilders(agents));
-    setMode(next);
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry starts a fresh cancellable request.
   useEffect(() => {
@@ -115,9 +99,7 @@ export function RunComposer({
         return;
       }
       if (!intent.trim()) throw new Error('Describe the change you want to make.');
-      if (runMode === 'collaborate' && !teamSupport)
-        throw new Error('This deployment does not support team runs yet.');
-      const teamBody = teamSubmission(runMode, manualTeam, team, agents, automaticPlanning);
+      const teamBody = runMode === 'collaborate' ? { team: serializeTeam(team, agents) } : {};
       if (
         agents.length < (runMode === 'collaborate' ? 1 : limits.min_root_agents) ||
         agents.length > limits.max_root_agents
@@ -167,7 +149,7 @@ export function RunComposer({
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         ...(sampleProfileId ? { sample_profile_id: sampleProfileId } : {}),
         adaptive_team: { version: 1, requested_agents: preferences },
-        ...(choice.request ?? (mode === 'compare' ? { comparison: { version: 1 } } : {})),
+        ...choice.request,
       };
       await onStart(submitted.current);
     } catch (error) {
@@ -218,13 +200,11 @@ export function RunComposer({
           sandbox={sandbox}
           blocker={blocker}
           locked={draftLocked}
-          onChange={changeRuntime}
+          onChange={setRuntime}
         />
       )}
       <AgentRoster
         sandbox={sandbox}
-        team={runMode === 'collaborate'}
-        compare={runMode === 'compare' && !sandbox}
         agents={agents}
         providers={providers}
         loading={providersLoading}
@@ -235,7 +215,6 @@ export function RunComposer({
         onProviders={() => onProviders(() => setProvidersRequest((request) => request + 1))}
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
-      {runMode === 'compare' && !sandbox && <CompareApprovalNotice />}
       <details className="run-advanced">
         <summary>Advanced</summary>
         <label>
@@ -249,20 +228,16 @@ export function RunComposer({
         </label>
         <RunModePicker
           value={runMode}
-          supported={teamSupport}
+          supported={teamSupport && sandbox}
           locked={draftLocked}
-          onChange={sandbox ? setSandboxMode : changeMode}
+          onChange={setMode}
         />
         {runMode === 'collaborate' ? (
           <TeamPlanOptions
-            manual={manualTeam}
-            onManualChange={setManualTeam}
             value={team}
             agents={agents}
             locked={draftLocked}
-            automaticSupported={automaticPlanning}
             previous={draft.previousTeamPlan}
-            previousAutomatic={draft.previousAutomatic}
             onChange={setTeam}
           />
         ) : null}

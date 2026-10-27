@@ -7,7 +7,6 @@ import { sourceScope } from '../../cloudflare/worker/source-scope';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope, Scope } from '../../cloudflare/worker/types';
 import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
-import { modernCompareApproval } from './comparison-review-fixture';
 import { readyReviewer } from './reviewer-fixture';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { syntheticPlatform } from './platform-fixture';
@@ -79,41 +78,3 @@ it('defers a cold source launch transactionally, fences its epoch, and launches 
   const bound = await sourceScope(local, launched[0], 'repo');
   expect(bound.binding.epoch).toBe(3);
 }, 15000);
-
-it('skips zero-result review and acknowledges stale failed-builder delivery without launch or source indexing', async () => {
-  const f = await readyReviewer('source_failed_dispatch');
-  await workspace(f.scoped, f.owner, { op: 'workspace_spend_configure', expected_version: 0, limit_microusd: 50000000 });
-  await approvedLedger(f.scoped, f.repo)({ ...modernCompareApproval(), op: 'start_run', id: 'review-cold',
-    intent: 'Explain pre-model builder failures with no source captures', workspace_transport: 'api-source-v1',
-    _source_transport_approved: true, _source_base: { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree } });
-  for (const index of [1, 2]) {
-    const job = await ledger(f.scoped, f.repo, { op: 'claim', job_id: `job:review-cold:agent-${index}` });
-    await ledger(f.scoped, f.repo, { op: 'fail', job_id: job.id, epoch: job.epoch, retryable: false,
-      error: { code: 'FIXTURE_UNREADABLE_SOURCE', message: 'Synthetic source unavailable before inference' } });
-  }
-  const detail = await ledger(f.scoped, f.repo, { op: 'run_detail', run_id: 'review-cold' });
-  expect(detail.run.comparison).toMatchObject({ status: 'needs_attention', reviewer_status: 'skipped',
-    review_skip_reason: { code: 'NO_CHECKED_RESULTS', authority: 'platform' } });
-  expect(detail.run.comparison.review_execution_id).toBeFalsy();
-  expect(detail.run.status).toBe('failed');
-  expect(detail.executions.some((execution: any) => execution.role === 'reviewer')).toBe(false);
-  const spending = await workspace(f.scoped, f.owner, { op: 'workspace_spend_status' });
-  const jobId = 'job:review-cold:agent-2';
-  const get = vi.fn(async (): Promise<Response> => { throw new Error('The failed original source must not be opened by the reviewer'); });
-  const send = vi.fn();
-  const launches: Scope[] = [];
-  const env = { ...f.scoped, PLATFORM: { fetch: get }, AGENT_QUEUE: { send } } as unknown as Env;
-  const service = { env, launchExecution: async (_name: string, scope: Scope) => { launches.push(scope); } };
-  const ack = vi.fn(); const retry = vi.fn();
-  const objectGet = vi.spyOn(f.scoped.OBJECTS, 'get');
-  try {
-    await YonedaEntrypoint.prototype.queue.call(service as YonedaEntrypoint,
-      { messages: [{ body: { v: 1, kind: 'agent', repo_id: f.repo, job_id: jobId }, ack, retry }] } as unknown as MessageBatch<Envelope>);
-    expect(launches).toHaveLength(0);
-    expect(send).not.toHaveBeenCalled(); expect(get).not.toHaveBeenCalled(); expect(objectGet).not.toHaveBeenCalled();
-    expect(ack).toHaveBeenCalledOnce(); expect(retry).not.toHaveBeenCalled();
-    expect(detail.run.model_requests).toBe(0);
-    expect(await workspace(f.scoped, f.owner, { op: 'workspace_spend_status' })).toEqual(spending);
-    expect((await ledger(f.scoped, f.repo, { op: 'run_detail', run_id: 'review-cold' })).run).toEqual(detail.run);
-  } finally { objectGet.mockRestore(); }
-});

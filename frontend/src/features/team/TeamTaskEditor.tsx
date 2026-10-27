@@ -2,14 +2,12 @@ import type { AgentDraft } from '../exploration/agentLimits';
 import type { TeamTaskDraft } from './teamDraft';
 export function TeamTaskEditor({
   task,
-  tasks,
   agents,
   locked,
   onChange,
   onRemove,
 }: {
   task: TeamTaskDraft;
-  tasks: TeamTaskDraft[];
   agents: AgentDraft[];
   locked: boolean;
   onChange: (task: TeamTaskDraft) => void;
@@ -71,28 +69,6 @@ export function TeamTaskEditor({
       <p className="subtle">
         Use exact files or a directory ending in /. Each worker owns separate paths.
       </p>
-      <fieldset className="team-dependencies">
-        <legend>Wait for these tasks</legend>
-        {tasks
-          .filter((other) => other.id !== task.id)
-          .map((other) => (
-            <label key={other.id}>
-              <input
-                type="checkbox"
-                checked={task.dependsOn.includes(other.id)}
-                disabled={locked}
-                onChange={(e) =>
-                  patch({
-                    dependsOn: e.target.checked
-                      ? [...task.dependsOn, other.id]
-                      : task.dependsOn.filter((id) => id !== other.id),
-                  })
-                }
-              />
-              {other.title || other.id}
-            </label>
-          ))}
-      </fieldset>
       <button
         type="button"
         className="text-button"

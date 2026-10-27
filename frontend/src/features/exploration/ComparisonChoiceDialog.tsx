@@ -9,7 +9,6 @@ export function ComparisonChoiceDialog({
   blocker,
   onChoose,
   onClose,
-  reviewed = false,
 }: {
   candidate: Record<string, any>;
   busy: boolean;
@@ -17,23 +16,19 @@ export function ComparisonChoiceDialog({
   blocker?: string;
   onChoose: (reason: string) => Promise<boolean>;
   onClose: () => void;
-  reviewed?: boolean;
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   return (
     <Dialog
-      title={reviewed ? 'Use other result' : 'Use this result'}
+      title="Use this result"
       initialFocus="textarea"
       locked={busy || uncertain}
       onClose={onClose}
     >
       <p>
-        Choose revision <code>{short(candidate.revision?.commit)}</code> as the working result. The{' '}
-        {reviewed
-          ? 'reviewer’s original proposal stays recorded. '
-          : 'original alternatives stay recorded. '}
-        This does not publish.
+        Choose revision <code>{short(candidate.revision?.commit)}</code> as the working result. The
+        original alternatives stay recorded. This does not publish.
       </p>
       <form
         onSubmit={(event) => {

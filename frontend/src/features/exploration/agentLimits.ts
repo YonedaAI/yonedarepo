@@ -42,9 +42,3 @@ export interface AgentDraft {
   fromPreviousRun?: boolean;
   reasoning_effort?: string;
 }
-
-export interface DelegationDraft {
-  enabled: boolean;
-  max_depth: number;
-  max_executions: number;
-}

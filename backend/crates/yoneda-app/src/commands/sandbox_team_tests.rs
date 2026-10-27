@@ -111,14 +111,14 @@ fn freeze_refuses_automatic_planning_delegation_peers_and_dependencies() {
     let plan: TeamPlan = serde_json::from_value(c["team"].clone()).unwrap();
     let mut run = json!({"agents":c["agents"]});
     let disabled = DelegationPolicy::disabled(1);
-    let refused = freeze(&c, true, Some(&plan), &disabled, &mut run);
+    let refused = freeze(&c, Some(&plan), &disabled, &mut run);
     assert_eq!(refused.unwrap_err().code, "NOT_SUPPORTED");
     let delegation: DelegationPolicy =
         serde_json::from_value(json!({"enabled":true,"max_depth":1,"max_executions":2})).unwrap();
-    let refused = freeze(&start(json!({})), true, Some(&plan), &delegation, &mut run);
+    let refused = freeze(&start(json!({})), Some(&plan), &delegation, &mut run);
     assert_eq!(refused.unwrap_err().code, "NOT_SUPPORTED");
     assert!(run["runtime"].is_null());
-    freeze(&start(json!({})), true, Some(&plan), &disabled, &mut run).unwrap();
+    freeze(&start(json!({})), Some(&plan), &disabled, &mut run).unwrap();
     assert_eq!(run["runtime"], TRANSPORT);
     assert_eq!(run["agents"][0]["cli"], "claude");
 }
@@ -179,8 +179,8 @@ fn one_conflict_resumes_once_and_the_team_branch_becomes_the_only_candidate() {
     let candidate = get(&db, "candidates", "team-candidate").unwrap();
     assert_eq!(candidate["execution"], "run-t:team");
     assert_eq!(candidate["revision"]["commit"], "d".repeat(40));
-    let run = get(&db, "runs", "run-t").unwrap();
-    super::super::team::validate_candidate(&db, &run, &candidate).unwrap();
+    assert!(is_team(&get(&db, "runs", "run-t").unwrap()));
+    validate_candidate(&db, &candidate).unwrap();
     // The team branch is checked in a fresh check sandbox like any sandbox candidate.
     let check = call(
         &db,

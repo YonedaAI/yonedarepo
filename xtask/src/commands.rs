@@ -1,12 +1,10 @@
 use crate::{
     layout::{DevelopmentPaths, FRONTEND, PLATFORM_CONFIG, SITES_CONFIG, WORKER_CRATE},
-    live,
     process::{Result, deploy_token, ensure_token, run},
 };
 pub async fn execute(args: Vec<String>) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("help");
     match command {
-        "context-study" => crate::context_study::execute(&args).await,
         "cloudflare-configure" => crate::cloudflare::configure(&args),
         "cloudflare-deploy" => crate::cloudflare_deploy::deploy(&args).await,
         "doctor" => {
@@ -115,31 +113,17 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             crate::deploy_registry::record_command(&args).await
         }
         "infra" => crate::infra::execute(&args).await,
-        "seed-template" | "demo" | "verify-live" | "upgrade-policy" => {
+        "seed-template" => {
             let url = args
                 .windows(2)
                 .find(|v| v[0] == "--url")
                 .map(|v| v[1].as_str())
                 .unwrap_or("http://127.0.0.1:8787");
-            // The retry fixture is an ordinary console project; name it with --repo.
-            let repo = args
-                .windows(2)
-                .find(|v| v[0] == "--repo")
-                .map(|v| v[1].as_str())
-                .unwrap_or("retry-client");
-            if command == "seed-template" {
-                crate::bootstrap::seed_template(url).await
-            } else if command == "demo" {
-                live::start(url, repo).await
-            } else if command == "upgrade-policy" {
-                live::upgrade_policy(url, repo).await
-            } else {
-                live::verify(url, repo).await
-            }
+            crate::bootstrap::seed_template(url).await
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template|demo|verify-live|upgrade-policy> [--url URL] [--repo ID]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference. demo starts real agents. verify-live checks existing recorded evidence."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference."
             );
             Ok(())
         }

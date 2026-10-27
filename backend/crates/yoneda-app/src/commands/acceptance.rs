@@ -58,7 +58,6 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let cid = string(c, "candidate")?;
     let candidate = get(db, "candidates", &cid)?;
     super::publication::not_rejected(&candidate)?;
-    super::guided::validate_publish(db, &candidate)?;
     let working_publishable = super::branches::publishable(db, &candidate, &r)?;
     if !working_publishable
         && (candidate
@@ -81,7 +80,14 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let run = get(db, "runs", &string(&candidate, "run_id")?)?;
     super::comparison::validate_publish(db, &run, &candidate)?;
-    super::team::validate_candidate(db, &run, &candidate)?;
+    if super::sandbox_team::is_team(&run) {
+        super::sandbox_team::validate_candidate(db, &candidate)?;
+    } else if run["mode"] == "collaborate" {
+        return Err(Error::new(
+            "FORBIDDEN",
+            "Only sandbox team runs remain selectable among team runs",
+        ));
+    }
     if run["status"] == "cancelled" {
         return Err(Error::new("FENCED", "Run was cancelled"));
     }
@@ -109,7 +115,6 @@ fn accept<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     r["pending"] = json!(did);
     save(db, "repository", "repo", &r)?;
     node(db, &did, "decision", &rationale, authorship, now, d.clone())?;
-    super::comparison::link_decision(db, &d)?;
     for other in all(db, "candidates")?
         .iter()
         .filter(|v| v["run_id"] == candidate["run_id"])

@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { comparisonFixture } from '../../../../tests/frontend/comparisonFixture';
+import type { ComparisonState } from '../../lib/comparison';
 
 const hooks = vi.hoisted(() => ({ cells: [] as unknown[], cursor: 0 }));
 vi.mock('react', async (original) => ({
@@ -28,18 +28,24 @@ function find(
   const el = node as ReactElement<Record<string, any>>;
   return predicate(el) ? el : find(el.props.children, predicate);
 }
+const comparison: ComparisonState = {
+  version: 1,
+  status: 'selected',
+  selected_candidate_id: 'left',
+  selected_by: 'owner',
+  selection_reason: 'Preserves anonymous access.',
+  selection_version: 1,
+};
 beforeEach(() => {
   hooks.cells = [];
   hooks.cursor = 0;
 });
-it('publishes stored agent reasons only after an explicit checkbox, without requiring a human note or rejected-reason retyping', () => {
-  const input = comparisonFixture();
+it('publishes the recorded owner choice only after an explicit checkbox, without requiring a note', () => {
   const accept = vi.fn().mockResolvedValue(undefined);
   const render = () => {
     hooks.cursor = 0;
     return ReviewedDecisionForm({
-      comparison: input.comparison,
-      candidate: 'left',
+      comparison,
       busy: false,
       onAccept: accept,
       onClose: () => {},
@@ -54,19 +60,14 @@ it('publishes stored agent reasons only after an explicit checkbox, without requ
   expect(find(render(), (el) => el.type === 'textarea')?.props.required).toBeUndefined();
   render().props.onSubmit({ preventDefault() {} });
   expect(accept).toHaveBeenCalledOnce();
-  expect(accept.mock.calls[0][0]).toContain(input.comparison.latest_review?.rationale);
-  expect(accept.mock.calls[0][1]).toEqual([
-    { candidate: 'right', reason: input.comparison.latest_review?.alternatives[1].reason },
-  ]);
+  expect(accept.mock.calls[0]).toEqual(['Owner choice: Preserves anonymous access.', []]);
 });
 it('preserves the publishing note but requires new confirmation when exact check or selection metadata changes', () => {
-  const input = comparisonFixture();
   const accept = vi.fn();
   const render = (confirmationKey: string) => {
     hooks.cursor = 0;
     return ReviewedDecisionForm({
-      comparison: input.comparison,
-      candidate: 'left',
+      comparison,
       busy: false,
       onAccept: accept,
       onClose: () => {},

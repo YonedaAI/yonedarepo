@@ -145,7 +145,7 @@ it('fresh updates use one Auto seed while explicit restarts restore recorded mod
   expect(state).toEqual(before);
 });
 
-it('keeps the winning subagent as publication evidence while a fresh brief uses one Auto seed', () => {
+it('keeps the winning attempt as publication evidence while a fresh brief uses one Auto seed', () => {
   const state = snapshot();
   state.executions[1].parent_execution = 'first';
   state.executions[1].strategy = 'Keep the approved editorial design with warm colors';
@@ -155,10 +155,9 @@ it('keeps the winning subagent as publication evidence while a fresh brief uses 
   expect(draft.publication?.execution?.strategy).toBe(state.executions[1].strategy);
   expect(draft.publication?.execution?.parent_execution).toBe('first');
   expect(draft.agents[0].id).not.toBe('winner');
-  expect(draft.delegation.enabled).toBe(false);
   expect(draft.intent).toBe('');
   expect(draft.restartOf).toBeUndefined();
-  expect(draft.mode).toBe('collaborate');
+  expect(draft.mode).toBe('compare');
   expect(draft.publication?.decision.id).toBe('decision:release');
 });
 
@@ -186,12 +185,10 @@ it('carries the selected decision, brief, checked revision, artifacts and lineag
   state.executions[1].context = ['constraint:original'];
   state.executions.push(
     { id: 'parent', run_id: 'release', role: 'coding' },
-    { id: 'research', run_id: 'release', role: 'research' },
   );
   state.artifacts = [
     { id: 'artifact:winner', producer: 'winner' },
     { id: 'artifact:parent', producer: 'parent' },
-    { id: 'artifact:research', producer: 'research' },
     { id: 'artifact:rival', producer: 'first' },
     { id: 'artifact:failed', producer: 'failed' },
   ];
@@ -205,14 +202,12 @@ it('carries the selected decision, brief, checked revision, artifacts and lineag
       'constraint:original',
       'artifact:winner',
       'artifact:parent',
-      'artifact:research',
       'artifact:rival',
       'artifact:failed',
       'linked-assertion',
     ].map((id) => node(id)),
     node('finding:winner', 'winner'),
     node('constraint:parent', 'parent'),
-    node('finding:research', 'research'),
     node('finding:rival', 'first'),
     node('finding:failed', 'failed'),
   ];
@@ -236,10 +231,8 @@ it('carries the selected decision, brief, checked revision, artifacts and lineag
       'constraint:original',
       'artifact:winner',
       'artifact:parent',
-      'artifact:research',
       'finding:winner',
       'constraint:parent',
-      'finding:research',
       'linked-assertion',
     ]),
   );
@@ -376,7 +369,7 @@ it('keeps restart semantics separate and initial builds editable without publish
   expect(newProject.agents).toHaveLength(1);
   expect(newProject.agents[0]).toMatchObject({ connection: '', role: 'auto' });
   expect(newProject.intent).toBe('');
-  expect(newProject.mode).toBe('collaborate');
+  expect(newProject.mode).toBe('compare');
   expect(newProject.context).toEqual([]);
   expect(newProject.criteria).not.toContain(preservePublishedCriteria);
 });

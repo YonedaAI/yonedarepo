@@ -1,6 +1,4 @@
 import type { Snapshot } from '../../lib/types';
-import { comparisonSkipNotice } from '../exploration/comparisonSkipNotice';
-import { comparisonChoiceBlocker, comparisonState } from '../exploration/comparisonView';
 import { reviewableCandidates } from '../exploration/runReviewState';
 import { platformFailureNotice } from '../exploration/workflowFailure';
 
@@ -49,7 +47,7 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
     return view(
       'capture_failed',
       'Capture failed',
-      'Agent work stopped during platform source capture. No checked result was produced. Inspect Agent activity; any separately recorded reviewer activity remains visible there.',
+      'Agent work stopped during platform source capture. No checked result was produced. Inspect Agent activity.',
       true,
     );
   if (run.status === 'failed')
@@ -76,16 +74,6 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
       failed.length > 0,
     );
   if (run.status === 'ready')
-    if (
-      comparisonSkipNotice(comparisonState(run))?.code === 'CAPTURE_RECOVERY_CHECK_ONLY' &&
-      snapshot.candidates.some((candidate) => !comparisonChoiceBlocker(snapshot, run, candidate))
-    )
-      return view(
-        'choice',
-        'Ready for human choice',
-        'Saved source passed the current checks. Automatic review was skipped for this recovery. Inspect the exact evidence and choose a checked result; publication still requires your decision.',
-      );
-  if (run.status === 'ready')
     return reviewableCandidates(snapshot, run).length
       ? view(
           'review',
@@ -109,7 +97,7 @@ export function runSourceProgress(snapshot: Snapshot, run: Record<string, unknow
     return view(
       'checking',
       'Checking the result',
-      'Captured source is being checked and reviewed; capture alone does not establish eligibility.',
+      'Captured source is being checked; capture alone does not establish eligibility.',
     );
   if ((typeof run.model_requests === 'number' && run.model_requests > 0) || started.length)
     return view(

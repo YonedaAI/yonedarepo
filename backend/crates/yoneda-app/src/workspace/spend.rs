@@ -51,9 +51,6 @@ fn status<S: SqlStore>(db: &S, state: &Value) -> Result<Value> {
         json!({"version":number(state,"version")?,"limit_microusd":money(state,"limit_microusd")?,"charged_microusd":charged,"reserved_microusd":reserved,"remaining_microusd":(money(state,"limit_microusd")?-used).max(0)}),
     )
 }
-pub(super) fn require_legacy<S: SqlStore>(db: &S) -> Result<()> {
-    transition::require_legacy(db)
-}
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
     let mut s = state(db)?;
