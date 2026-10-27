@@ -7,7 +7,7 @@ import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
-import { beginFromHead } from './repo-head';
+import { beginFromHead, noteBuilt } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
@@ -106,6 +106,7 @@ export async function commitInShard(
   const raw = built.raw as Json[];
   const bytes = raw.reduce((n, o) => n + (o.data_b64.length * 3) / 4, 0);
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
+  noteBuilt(built.commit, paths);
   const all = built.objects as CachedObject[];
   // Written through at commit time: this colo's first reads are served from the edge.
   const edge = timed('cache', () => store.cache(all, 'edge'));

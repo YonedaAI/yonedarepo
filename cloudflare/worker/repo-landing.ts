@@ -91,7 +91,7 @@ export async function landWithMerge(
 ) {
   const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority);
   // This isolate's next read and begin see its own landing (others pass min_version).
-  forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined);
+  forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined, sha);
   return landed;
 }
 

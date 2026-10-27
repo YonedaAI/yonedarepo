@@ -9,6 +9,7 @@ import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
 import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
+import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
 import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
@@ -139,6 +140,10 @@ function inProcess(name: string): InProcess {
   }
   return combiner;
 }
+// The head holder role (`<repo>#head`) runs in-process as in production: isolates read
+// main's head and access snapshot from it, never from the authority directly.
+const holders = new Map<string, HeadHolder>();
+const holderOf = (name: string) => holders.get(name) ?? holders.set(name, new HeadHolder(scoped)).get(name)!;
 export const fakeCombiners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
@@ -146,6 +151,10 @@ export const fakeCombiners = {
       inProcess(name).batcher.wait({ repo, ref }, ticket, timeoutMs),
     submit: (repo: string, ref: string, item: Record<string, unknown>, timeoutMs: number) =>
       inProcess(name).batcher.submit({ repo, ref }, item, timeoutMs),
+    head: (repo: string, minVersion: number, since?: number, accessVersion?: string) =>
+      holderOf(name).head(repo, minVersion, since, accessVersion),
+    access: (repo: string) => holderOf(name).access(repo),
+    refresh: async (repo: string, wait?: boolean) => holderOf(name).refresh(repo, wait),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */
@@ -154,6 +163,8 @@ async function quiesceCombiners() {
   await Promise.all([...combiners.values()].map((c) => c.running));
   await Promise.all([...combiners.values()].map((c) => c.batcher.idle()));
   combiners.clear();
+  await Promise.all([...holders.values()].map((h) => h.idle()));
+  holders.clear();
 }
 export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 

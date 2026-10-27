@@ -10,7 +10,8 @@
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
 import { DurableObject } from 'cloudflare:workers';
 import { kickProjection, landChangesets, ProjectionRunner } from './repo-changesets';
-import { HeadHolder, refreshHead } from './repo-head';
+import { refreshHead } from './repo-head';
+import { HeadHolder } from './repo-head-holder';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
@@ -111,7 +112,7 @@ export class LandBatcher {
         kickProjection(merger.env, merger.repo).catch((e) =>
           console.warn(`projection kick failed: ${e?.message ?? e}`),
         ),
-        refreshHead(merger.env, merger.repo),
+        refreshHead(merger.env, merger.repo, 'landing'),
       ]).finally(() => this.#background.delete(notified));
       this.#background.add(notified);
     }
@@ -239,9 +240,10 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#batcher.submit({ repo, ref }, item, timeoutMs);
   }
 
-  /** Head role: main's published head, at least at `minVersion`. */
-  head(repo: string, minVersion: number, since?: number) {
-    return this.#head.head(repo, minVersion, since);
+  /** Head role: main's published head, at least at `minVersion` (with the access snapshot
+   * when it differs from the caller's `accessVersion`). */
+  head(repo: string, minVersion: number, since?: number, accessVersion?: string | null) {
+    return this.#head.head(repo, minVersion, since, accessVersion);
   }
 
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
@@ -249,9 +251,10 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#head.access(repo);
   }
 
-  /** Head role: the head is stale (a landing, projection or access change). */
-  refresh(repo: string) {
-    this.#head.refresh(repo);
+  /** Head role: the head is stale (a landing or projection; with `wait`, an access change,
+   * answered once the holder has reloaded). */
+  refresh(repo: string, wait = false) {
+    return this.#head.refresh(repo, wait);
   }
 
   /** Projector role: waits until this repository's changesets are projected. */
