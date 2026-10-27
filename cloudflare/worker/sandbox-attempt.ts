@@ -1,7 +1,7 @@
 // The agent layer's side of a `sandbox-cli-v1` attempt: which runs take the sandbox, what an
 // attempt needs to start, where its model requests go, and recording the pushed commit.
 // The ledger owns the run; the AgentSandbox Durable Object owns the sandbox.
-import { providerDefinition } from '../../shared/providers';
+import { providerDefinition, runsInSandbox } from '../../shared/providers';
 import { repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
@@ -46,13 +46,16 @@ export function approvedTransport(env: Env, runtime: unknown): string {
   return SANDBOX_TRANSPORT;
 }
 
-/** The agent sandbox's egress: its model endpoint and pushes under its own attempt prefix. */
+/**
+ * The agent sandbox's egress: its model endpoint and pushes to its own branch only, so one
+ * agent of a compare run can never move another's `attempts/<run>/<m>`.
+ */
 export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
   project: attempt.repo,
   owner: attempt.owner,
   platformRepo: attempt.platform_repo,
   platformOrigin: attempt.platform_origin,
-  refPrefix: `refs/heads/${attempt.branch.replace(/[^/]+$/, '')}`,
+  ref: `refs/heads/${attempt.branch}`,
   provider: attempt.provider,
   connection: attempt.connection,
   model: attempt.model,
@@ -69,9 +72,9 @@ export const sandboxName = (repo: string, execution: string) => `${repo}/${execu
  * set and the gateway has a custom provider for that upstream (`custom-<provider>`).
  */
 export function modelBase(env: Env, provider: string, routing?: Json | null): string {
-  const definition = providerDefinition(provider);
-  if (definition.harness !== 'claude')
+  if (!runsInSandbox(provider))
     fail('SANDBOX_HARNESS', `Sandbox runs use Claude Code; ${provider} needs another CLI`);
+  const definition = providerDefinition(provider);
   const upstream = provider === 'mimo' ? mimoUpstream(routing) : definition.api_base;
   const gateway = env.SANDBOX_AI_GATEWAY;
   if (!gateway || upstream !== definition.api_base) return upstream;
@@ -132,6 +135,16 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
   };
 }
 
+/**
+ * Tells the owner's browser that new runs may use the sandbox: this deployment has the
+ * AgentSandbox binding and its ledger takes sandbox compare runs (`sandbox_cli` 2).
+ */
+export function advertiseSandbox(env: Env, value: Json): Json {
+  if (env.AGENT_SANDBOX && value?.capabilities?.sandbox_cli >= 2)
+    value.capabilities.sandbox_runtime = SANDBOX_TRANSPORT;
+  return value;
+}
+
 /** Starts (or re-finds) the attempt's sandbox; repeated delivery starts nothing twice. */
 export async function beginSandbox(env: Env, repo: string, job: Json): Promise<void> {
   const namespace = env.AGENT_SANDBOX;
@@ -167,7 +180,8 @@ export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, 
     job_id: attempt.job_id,
     epoch: attempt.epoch,
     result: {
-      id: `sandbox-${(await sha(`${attempt.repo}:${commit.hash}`)).slice(0, 32)}`,
+      // Per execution: two agents of one run may push byte-identical commits.
+      id: `sandbox-${(await sha(`${attempt.repo}:${attempt.execution_id}:${commit.hash}`)).slice(0, 32)}`,
       revision: { repository, commit: commit.hash },
       ...facts,
       summary: summary.slice(0, 500) || 'Sandbox agent change',

@@ -252,6 +252,9 @@ export function checkPort(env: Env, host: SandboxHost, check: CheckAttempt): Che
         retryable: false,
       });
     },
+    defer: async () => {
+      await ledger(env, check.repo, { op: 'defer_job', ...identity, reason: 'container_capacity' });
+    },
     destroy: () => host.destroy(),
   };
 }

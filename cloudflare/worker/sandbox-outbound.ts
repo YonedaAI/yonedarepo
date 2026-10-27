@@ -5,7 +5,8 @@
 // - the model endpoint the run's connection resolves to (AI Gateway or the provider), with
 //   the provider key from the saved connection;
 // - this project's own platform repository, with the project's agent token, limited to reads,
-//   object/commit upload and moving branches under the attempt's own `attempts/<run>/` prefix.
+//   object/commit upload and moving the attempt's own branch `attempts/<run>/<n>`, never
+//   another agent's branch of the same run.
 // Everything else gets a 403, so the agent cannot install packages or reach other services.
 // A check sandbox (role `check`) gets less: GET requests to the project repository only, so it
 // can clone the candidate but never push, upload or move a ref, and it has no model endpoint.
@@ -25,8 +26,8 @@ type PlatformAccess = {
 /** An agent sandbox (no role: attempts started before roles existed are agents). */
 export type AgentEgress = PlatformAccess & {
   role?: 'agent';
-  /** `refs/heads/attempts/<run>/`: the only refs the sandbox may create or move. */
-  refPrefix: string;
+  /** `refs/heads/attempts/<run>/<n>`: the only ref the sandbox may create or move. */
+  ref: string;
   provider: string;
   connection?: string;
   model: string;
@@ -74,21 +75,13 @@ export function outboundDecision(url: URL, method: string, props: OutboundProps)
   return { deny: `${url.hostname} is not reachable from this sandbox` };
 }
 
-/** Every ref a push names must be under the attempt's own prefix (short or full form). */
-export function refsAllowed(body: unknown, prefix: string): boolean {
+/** Every ref a push names must be the attempt's own branch exactly (short or full form). */
+export function refsAllowed(body: unknown, branch: string): boolean {
   const value = (body ?? {}) as Json;
   const updates: Json[] = Array.isArray(value.updates) ? value.updates : [value];
-  const short = prefix.replace(/^refs\/heads\//, '');
+  const short = branch.replace(/^refs\/heads\//, '');
   return (
-    updates.length > 0 &&
-    updates.every((update) => {
-      const ref = typeof update?.ref === 'string' ? update.ref : '';
-      return (
-        !ref.includes('..') &&
-        ((ref.startsWith(prefix) && ref.length > prefix.length) ||
-          (ref.startsWith(short) && ref.length > short.length))
-      );
-    })
+    updates.length > 0 && updates.every((update) => update?.ref === branch || update?.ref === short)
   );
 }
 
@@ -107,8 +100,10 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
     if (props.role === 'check') {
       // Defense in depth: outboundDecision already gives a check sandbox platform reads only.
       const read =
-        request.method === 'GET' || (request.method === 'POST' && url.pathname.endsWith('/objects'));
-      if (decision.route !== 'platform' || !read) return forbidden('Checks read the repository only');
+        request.method === 'GET' ||
+        (request.method === 'POST' && url.pathname.endsWith('/objects'));
+      if (decision.route !== 'platform' || !read)
+        return forbidden('Checks read the repository only');
     } else if (decision.route === 'model') {
       const definition = providerDefinition(props.provider);
       const { key } = await providerCredentials(
@@ -126,8 +121,7 @@ export class SandboxOutbound extends WorkerEntrypoint<Env, OutboundProps> {
         .clone()
         .json()
         .catch(() => null);
-      if (!refsAllowed(body, props.refPrefix))
-        return forbidden(`Agents push only to ${props.refPrefix}<n>`);
+      if (!refsAllowed(body, props.ref)) return forbidden(`Agents push only to ${props.ref}`);
     }
     const { token } = await projectToken(this.env, props.owner, props.project);
     headers.set('authorization', `Bearer ${token}`);

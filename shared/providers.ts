@@ -43,3 +43,11 @@ export function providerDefinition(id: string): ProviderDefinition {
   if (!definition) throw new Error('Unknown provider');
   return definition;
 }
+
+/** Harnesses whose CLI a sandbox run can start; widen here when another sandbox CLI lands. */
+const sandboxHarnesses: readonly Harness[] = ['claude'];
+/** Whether a provider's models can run in a sandbox (runtime `sandbox-cli-v1`). */
+export function runsInSandbox(provider: string): boolean {
+  const definition = providers.find((entry) => entry.id === provider);
+  return !!definition && sandboxHarnesses.includes(definition.harness);
+}

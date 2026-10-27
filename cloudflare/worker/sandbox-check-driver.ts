@@ -7,6 +7,9 @@
 // evaluator's report format, so ledger validation, evidence and publish gating are unchanged.
 // No wall-clock kill beyond each command's own timeout, plus one generous overall cap. This
 // module holds no Cloudflare API: `CheckPort` is the sandbox and the ledger.
+// A check whose sandbox cannot start for lack of container capacity is given back to the
+// ledger (deferred, then claimed again into a fresh check sandbox), never failed.
+import { capacityUnavailable } from './container-capacity';
 import type { CommandResult } from './sandbox-driver';
 
 export type CommandSpec = { name: string; argv: string[]; timeout_seconds: number };
@@ -61,6 +64,8 @@ export interface CheckPort {
   captureSite(directory: string): Promise<SiteCapture>;
   report(report: Record<string, unknown>): Promise<void>;
   fail(reason: string): Promise<void>;
+  /** Gives the claim back to be retried later: no container could be allocated yet. */
+  defer(): Promise<void>;
   destroy(): Promise<void>;
 }
 
@@ -155,6 +160,13 @@ export async function checkStep(
     state.errors = 0;
     return done ? await finish(state, port) : { state, next: port.now() };
   } catch (failure) {
+    if (state.phase === 'starting' && capacityUnavailable(failure)) {
+      const deferred = await port.defer().then(
+        () => true,
+        () => false,
+      );
+      if (deferred) return await finish(state, port);
+    }
     state.errors += 1;
     const message = failure instanceof Error ? failure.message : String(failure);
     if (state.errors < CHECK_LIMITS.maxErrors)
