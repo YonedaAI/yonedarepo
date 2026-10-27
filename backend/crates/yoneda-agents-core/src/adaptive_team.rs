@@ -133,60 +133,6 @@ impl AdaptiveTeam {
         }
         Ok(())
     }
-    pub fn validate_selection(
-        &self,
-        pool: &[ApprovedModel],
-        agents: &[AgentSelection],
-    ) -> Result<()> {
-        self.validate(pool)?;
-        if agents.len() < self.requested_agents.len() || agents.len() > MAX_ADAPTIVE_AGENTS {
-            return Err(invalid(
-                "The planned roster must retain every requested agent within six slots",
-            ));
-        }
-        for (index, agent) in agents.iter().enumerate() {
-            if !pool.iter().any(|m| m.connection == agent.connection) {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "Planned connection is outside the frozen pool",
-                ));
-            }
-            if let Some(effort) = agent.reasoning_effort
-                && !pool.iter().any(|m| {
-                    m.connection == agent.connection && m.reasoning_efforts.contains(&effort)
-                })
-            {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "Planned reasoning effort is outside the approved model capabilities",
-                ));
-            }
-            if agent.reasoning_effort
-                != self
-                    .requested_agents
-                    .get(index)
-                    .and_then(|r| r.reasoning_effort)
-            {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "The plan changed requested reasoning effort or replaced Auto",
-                ));
-            }
-            if let Some(request) = self.requested_agents.get(index)
-                && (request
-                    .connection
-                    .as_ref()
-                    .is_some_and(|c| c != &agent.connection)
-                    || request.role != AgentRole::Auto && request.role != agent.role)
-            {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "The plan changed an explicitly requested model or role",
-                ));
-            }
-        }
-        Ok(())
-    }
 }
 pub fn validate_pool(pool: &[ApprovedModel]) -> Result<()> {
     if !(1..=MAX_POOL_CONNECTIONS).contains(&pool.len()) {
