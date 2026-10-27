@@ -1,0 +1,43 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Staging bench client (tools/fanout-bench/worker.js): many concurrent writers for the kit's
+// bursts (items 8-10) and the webhook receiver boxes (POST /hooks/<box>) for the B3 gate
+// (tools/staging/webhook-flow.mjs). No bindings to platform state. BENCH_KEY is set once from
+// stdin (wrangler secret put BENCH_KEY) and kept across deploys; the kit reads it from
+// ~/.config/yonedarepo/staging-bench.env.
+// The platform never calls this account's workers.dev, so the receiver needs a Custom Domain on
+// a zone without a wildcard Worker route (yonedarepo.com has the apps Worker's). Once the owner
+// approves it, add to this Worker's config in infra/envs/dev.json:
+//   "routes": [{ "pattern": "hook-receiver.yonedaai.org", "custom_domain": true }]
+// then run cargo xtask infra gen --env dev and deploy.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "HookBox",
+        "name": "HOOK_BOXES"
+      }
+    ]
+  },
+  "main": "../tools/fanout-bench/worker.js",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "HookBox"
+      ],
+      "tag": "v1"
+    }
+  ],
+  "name": "yonedarepo-staging-bench",
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
+  "preview_urls": false,
+  "workers_dev": true
+}

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { providerDefinition } from '../../shared/providers';
-import { resolveAdaptiveApproval } from '../../cloudflare/worker/adaptive-approval';
+import { resolveRunRoster } from '../../cloudflare/worker/run-roster';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
 import { normalizeReasoningEffort } from '../../cloudflare/worker/model-reasoning';
 const connections = [
@@ -16,7 +16,7 @@ const connections = [
           requested_agents: [{ connection: connection.id, role: 'builder' }],
         },
       };
-      const approved = resolveAdaptiveApproval(input, connections);
+      const approved = resolveRunRoster(input, connections);
       expect(approved.agents[0]).toMatchObject({
         connection: connection.id,
         provider: 'mimo',
@@ -76,13 +76,13 @@ const connections = [
       );
     }
     expect(() =>
-      resolveAdaptiveApproval(
+      resolveRunRoster(
         { adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] } },
         connections,
       ),
     ).toThrow();
     expect(() =>
-      resolveAdaptiveApproval(
+      resolveRunRoster(
         {
           adaptive_team: {
             version: 1,

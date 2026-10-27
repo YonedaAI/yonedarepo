@@ -4,8 +4,6 @@ use serde_json::json;
 
 #[path = "tests/attempt_progress.rs"]
 mod attempt_progress;
-#[path = "tests/autonomous_migration.rs"]
-mod autonomous_migration;
 #[path = "tests/comparison_branch_gate.rs"]
 mod comparison_branch_gate;
 #[path = "tests/context_intent.rs"]
@@ -14,12 +12,8 @@ mod context_intent;
 mod context_seed;
 #[path = "tests/context_sessions.rs"]
 mod context_sessions;
-#[path = "tests/context_study.rs"]
-mod context_study;
 #[path = "tests/context_usage.rs"]
 mod context_usage;
-#[path = "tests/delegation.rs"]
-mod delegation;
 #[path = "tests/deletion.rs"]
 mod deletion;
 #[path = "tests/execution_logs.rs"]
@@ -28,8 +22,6 @@ mod execution_logs;
 mod graph_status;
 #[path = "tests/model_budgets.rs"]
 mod model_budgets;
-#[path = "tests/peer_messages.rs"]
-mod peer_messages;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
 #[path = "tests/publication_recovery.rs"]
@@ -55,8 +47,18 @@ fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     source_kit::approve_start(db, &mut c);
     execute(db, c)
 }
+/// Runs need a build policy; `ready` passes both of its required checks.
+pub(super) fn build_policy() -> Value {
+    json!({"version":"build-v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1",
+        "required_checks":["build","behavior"],
+        "build":{"checks":[{"name":"build","argv":["cargo","build"],"timeout_seconds":30},
+            {"name":"behavior","argv":["cargo","test"],"timeout_seconds":30}]}})
+}
+pub(super) fn one_agent() -> Value {
+    json!([{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"}])
+}
 fn repo() -> NativeStore {
-    repo_with_policy(serde_json::to_value(yoneda_agents_core::Policy::default()).unwrap())
+    repo_with_policy(build_policy())
 }
 fn repo_with_policy(policy: Value) -> NativeStore {
     let db = NativeStore::memory().unwrap();
@@ -65,7 +67,30 @@ fn repo_with_policy(policy: Value) -> NativeStore {
 }
 
 fn start(db: &NativeStore) -> Value {
-    call(db,json!({"op":"start_run","id":"run-one","intent":"Retry transient failures within a bounded deadline","criteria":["Do not retry unsafe writes"]})).unwrap()
+    call(db,json!({"op":"start_run","id":"run-one","intent":"Retry transient failures within a bounded deadline","criteria":["Do not retry unsafe writes"],"agents":one_agent()})).unwrap()
+}
+/// The owner selects a checked compare result, which advances the run's working branch from
+/// `head` at `version`.
+fn select_on_branch(db: &NativeStore, run: &str, candidate: &str, head: &str, version: i64) {
+    let repository = crate::storage::repo(db).unwrap();
+    call(
+        db,
+        json!({"op":"select_comparison_candidate","run_id":run,"request_id":format!("select-{run}"),
+        "candidate_id":candidate,"reason":"Owner chose the checked step",
+        "expected_commit":repository["head_commit"],"expected_version":repository["version"],
+        "expected_policy_version":repository["policy"]["version"],"expected_working_commit":head,
+        "expected_working_version":version,"expected_selection_version":0}),
+    )
+    .unwrap();
+}
+/// Run one's agent records an artifact; run two freezes it as context. Returns run two's job.
+fn shared_artifact(db: &NativeStore, id: &str) -> &'static str {
+    start(db);
+    let producer = "job:run-one:agent-1";
+    call(db, json!({"op":"claim","job_id":producer})).unwrap();
+    call(db,json!({"op":"publish_artifact","job_id":producer,"epoch":1,"id":id,"digest":"b".repeat(64),"label":"Shared notes","kind":"notes","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
+    call(db,json!({"op":"start_run","id":"run-two","intent":"Use the shared notes","context":[id],"agents":one_agent()})).unwrap();
+    "job:run-two:agent-1"
 }
 #[test]
 fn run_creation_commits_graph_and_dispatch_together() {
@@ -106,7 +131,7 @@ fn run_creation_commits_graph_and_dispatch_together() {
 fn duplicate_claims_and_late_completions_are_fenced() {
     let db = repo();
     start(&db);
-    let job = "job:run-one:research";
+    let job = "job:run-one:agent-1";
     let claim = call(&db, json!({"op":"claim","job_id":job})).unwrap();
     assert_eq!(claim["epoch"], 1);
     assert_eq!(
@@ -133,51 +158,14 @@ fn failed_mutations_rollback_the_event_log() {
     let db = repo();
     start(&db);
     let before = call(&db, json!({"op":"events","after":0})).unwrap();
-    assert!(call(&db,json!({"op":"publish_artifact","job_id":"job:run-one:research","epoch":99,"id":"artifact","digest":"bad","label":"test","kind":"research","metadata":{}})).is_err());
+    assert!(call(&db,json!({"op":"publish_artifact","job_id":"job:run-one:agent-1","epoch":99,"id":"artifact","digest":"bad","label":"test","kind":"notes","metadata":{}})).is_err());
     assert_eq!(before, call(&db, json!({"op":"events","after":0})).unwrap());
-}
-#[test]
-fn research_completion_launches_three_harnesses_with_identical_context() {
-    let db = repo();
-    start(&db);
-    let job = "job:run-one:research";
-    call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    call(&db,json!({"op":"publish_artifact","job_id":job,"epoch":1,"id":"research-a","digest":"b".repeat(64),"label":"Latency assumptions","kind":"research","metadata":{"assumptions":[{"statement":"Upstream replies within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/retry.rs"}]}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":job,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    let coding: Vec<_> = s["executions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|e| e["role"] == "coding")
-        .collect();
-    assert_eq!(coding.len(), 3);
-    assert_eq!(coding[0]["context"], json!(["research-a"]));
-    assert_eq!(coding[0]["context"], coding[1]["context"]);
-    assert!(coding.iter().any(|e| e["harness"] == "codex"));
-    assert!(coding.iter().any(|e| e["harness"] == "claude"));
 }
 fn captured(db: &NativeStore) {
     start(db);
-    let research = "job:run-one:research";
-    call(db, json!({"op":"claim","job_id":research})).unwrap();
-    call(db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":"research-a","digest":"b".repeat(64),"label":"Research","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
-    call(
-        db,
-        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let coding = call(
-        db,
-        json!({"op":"claim","job_id":"job:run-one:codex-minimal"}),
-    )
-    .unwrap();
+    let coding = call(db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     let registration = source_kit::finish_agent(db, &coding, 1000);
-    let capture = "capture:run-one:codex-minimal";
+    let capture = "capture:run-one:agent-1";
     call(db, json!({"op":"claim","job_id":capture})).unwrap();
     call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}))})).unwrap();
 }
@@ -258,12 +246,12 @@ fn stale_head_and_failed_checks_never_select_code() {
 fn cancellation_revokes_running_attempts() {
     let db = repo();
     start(&db);
-    call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     call(&db, json!({"op":"cancel_run","run_id":"run-one"})).unwrap();
     assert_eq!(
         call(
             &db,
-            json!({"op":"heartbeat","job_id":"job:run-one:research","epoch":1})
+            json!({"op":"heartbeat","job_id":"job:run-one:agent-1","epoch":1})
         )
         .unwrap_err()
         .code,
@@ -339,7 +327,7 @@ fn a_platform_main_that_moved_elsewhere_blocks_publication_as_a_conflict() {
 fn expired_attempt_recovery_updates_execution_status() {
     let db = repo();
     start(&db);
-    let job = "job:run-one:research";
+    let job = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
     call(&db, json!({"op":"recover","now":122000})).unwrap();
     call(&db, json!({"op":"claim","job_id":job,"now":122000})).unwrap();
@@ -352,35 +340,24 @@ fn expired_attempt_recovery_updates_execution_status() {
 fn configured_model_and_transcript_remain_attached_to_execution() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
-    call(&db,json!({"op":"claim","job_id":id,"models":{"claude":"claude-sonnet-4-6","codex":"gpt-5.6-luna"}})).unwrap();
+    let id = "job:run-one:agent-1";
+    call(&db, json!({"op":"claim","job_id":id})).unwrap();
     let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    assert_eq!(s["executions"][0]["model"], "claude-sonnet-4-6");
-    call(&db,json!({"op":"publish_artifact","job_id":id,"epoch":1,"id":"research","digest":"b".repeat(64),"label":"Research","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
-    call(&db,json!({"op":"finish","job_id":id,"epoch":1,"result":{"transcript":"c".repeat(64),"model":"claude-sonnet-4-6"}})).unwrap();
+    assert_eq!(s["executions"][0]["model"], "mimo-v2.6-flash");
+    source_kit::finish_job(
+        &db,
+        id,
+        1000,
+        json!({"transcript":"c".repeat(64),"model":"mimo-v2.6-flash"}),
+    );
     let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    let e = s["executions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|e| e["role"] == "research")
-        .unwrap();
-    assert_eq!(e["transcript"], "c".repeat(64));
+    assert_eq!(s["executions"][0]["transcript"], "c".repeat(64));
 }
 
 #[test]
 fn frozen_context_rejects_unlisted_artifacts_and_completion_hints_do_not_capture() {
     let db = repo();
-    start(&db);
-    let research = "job:run-one:research";
-    call(&db, json!({"op":"claim","job_id":research})).unwrap();
-    call(&db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":"shared","digest":"b".repeat(64),"label":"Shared research","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let coding = "job:run-one:codex-minimal";
+    let coding = shared_artifact(&db, "shared");
     call(&db, json!({"op":"claim","job_id":coding})).unwrap();
     call(
         &db,
@@ -404,10 +381,6 @@ fn frozen_context_rejects_unlisted_artifacts_and_completion_hints_do_not_capture
     assert_eq!(hint["authoritative"], false);
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     assert!(snapshot["candidates"].as_array().unwrap().is_empty());
-    assert_eq!(
-        call(&db, json!({"op":"claim","job_id":research})).unwrap()["already_done"],
-        true
-    );
 }
 
 #[test]
@@ -474,10 +447,12 @@ fn history_starts_at_the_requested_root_after_global_snapshot_limits() {
 
 #[test]
 fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
-    let legacy = json!({"version":"retry-v1","suite":"retry-contract-v1","environment":"rust-1.94-evaluator-v1","required_checks":["build","behavior"]});
-    let db = repo_with_policy(legacy);
+    let db = repo();
     let selection = ready(&db);
-    call(&db,json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"retry-v1","policy":yoneda_agents_core::Policy::default()})).unwrap();
+    let mut upgraded = build_policy();
+    upgraded["version"] = json!("build-v2");
+    upgraded["build"]["checks"][1]["argv"] = json!(["cargo", "test", "--locked"]);
+    call(&db,json!({"op":"update_policy","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy":"build-v1","policy":upgraded})).unwrap();
     assert_eq!(
         call(&db, selection.clone()).unwrap_err().code,
         "EVIDENCE_MISMATCH"
@@ -485,13 +460,12 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(snapshot["evaluations"].as_array().unwrap().len(), 1);
     assert_eq!(snapshot["candidates"][0]["status"], "evaluating");
-    let job = "evaluate:candidate-a:retry-v2";
+    let job = "evaluate:candidate-a:build-v2";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    let mut report = json!({"build":{"exit":0},"cases":yoneda_agents_core::retry::cases().iter().map(|c|json!({"input":c,"exit":0,"actual":yoneda_agents_core::retry::expected(c)})).collect::<Vec<_>>()});
-    report["environment"] = json!("rust-1.94-evaluator-v1");
-    report["suite"] = json!("retry-contract-v2");
+    let mut report = json!({"suite":"commands-v1","environment":"rust-1.94-evaluator-v1","setup":[],
+        "commands":[{"name":"build","output":{"exit":0}},{"name":"behavior","output":{"exit":0}}]});
     assert!(call(&db,json!({"op":"verify_finish","job_id":job,"epoch":1,"evidence":"e".repeat(64),"report":report})).is_err());
-    report["environment"] = json!(yoneda_agents_core::Policy::default().environment);
+    report["environment"] = upgraded["environment"].clone();
     call(&db,json!({"op":"verify_finish","job_id":job,"epoch":1,"evidence":"e".repeat(64),"report":report})).unwrap();
     assert_eq!(
         call(&db, json!({"op":"snapshot"})).unwrap()["evaluations"]
@@ -510,7 +484,7 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
 fn cold_container_boot_has_time_to_start_before_runtime_lease_begins() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     call(&db,json!({"op":"progress","job_id":id,"epoch":1,"now":100000,"progress":{"stage":"container_ready"}})).unwrap();
     call(
@@ -521,12 +495,12 @@ fn cold_container_boot_has_time_to_start_before_runtime_lease_begins() {
 }
 
 #[test]
-fn research_assumptions_must_have_a_structured_queryable_contract() {
+fn artifact_assumptions_must_have_a_structured_queryable_contract() {
     let db = repo();
     start(&db);
-    let job = "job:run-one:research";
+    let job = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    let mut publish = json!({"op":"publish_artifact","job_id":job,"epoch":1,"id":"research-contract","digest":"b".repeat(64),"label":"Research","kind":"research","metadata":{"assumption":"upstream_p99_ms <= 100","metric":100,"integer_limit":10,"path":"src/main.rs"}});
+    let mut publish = json!({"op":"publish_artifact","job_id":job,"epoch":1,"id":"notes-contract","digest":"b".repeat(64),"label":"Notes","kind":"notes","metadata":{"assumptions":"upstream_p99_ms <= 100","metric":100,"integer_limit":10,"path":"src/main.rs"}});
     assert!(call(&db, publish.clone()).is_err());
     publish["metadata"] = json!({"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]});
     call(&db, publish.clone()).unwrap();
@@ -565,17 +539,8 @@ fn automated_fixture_selection_is_not_labelled_as_a_human_decision() {
 #[test]
 fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
     let db = repo();
-    start(&db);
-    let research = "job:run-one:research";
-    call(&db, json!({"op":"claim","job_id":research})).unwrap();
     let uuid = "6cf12bf4-792f-4449-bfe6-d8bbece773f8";
-    call(&db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":format!("artifact:{uuid}"),"digest":"b".repeat(64),"label":"Research","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let coding = "job:run-one:codex-minimal";
+    let coding = shared_artifact(&db, &format!("artifact:{uuid}"));
     call(&db, json!({"op":"claim","job_id":coding})).unwrap();
     let authorized = call(
         &db,
@@ -611,9 +576,5 @@ fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
 }
 
 mod sites;
-mod team;
 
 mod external;
-
-#[path = "tests/team_planning.rs"]
-mod team_planning;

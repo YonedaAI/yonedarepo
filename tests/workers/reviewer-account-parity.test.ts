@@ -76,15 +76,15 @@ it('allows all ordinary owner commands on the legacy entry repository without ad
   const grant = await api(f.scoped, `/api/repos/${f.repo}/grants`, f.cookie, { label: 'Owner key on existing entry', scope: 'read', days: 1 });
   expect(grant.status).toBe(200);
   const started = await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, {
-    id: 'normal-owner-entry-run', intent: 'Use normal coordination on my existing project',
+    id: 'normal-owner-entry-run', intent: 'Compare approaches on my existing project',
     working_branch_id: 'owner-development', expected_working_commit: f.head, expected_working_version: 0,
     adaptive_team: { version: 1, requested_agents: [{ connection: 'reviewer-codex', role: 'builder' }, { connection: 'reviewer-claude-sonnet-5-5', role: 'review' }] },
   });
   expect(started.status).toBe(200);
   const run = await started.json<Json>();
   expect(run.id).toBe('normal-owner-entry-run');
-  expect(run.mode).toBe('collaborate');
+  expect(run.mode).toBe('compare');
   expect(run.campaign).toBeUndefined();
-  expect(run.adaptive_team.version).toBe(1);
+  expect(run.adaptive_team).toBeUndefined();
   expect(await workspace(bindings, f.owner, { op: 'reviewer_status' })).toEqual(oldApproval);
 });

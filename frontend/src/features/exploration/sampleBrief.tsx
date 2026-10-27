@@ -19,9 +19,9 @@ export function sampleBrief(
     agents: Array.from({ length: sample.id === 'build-together' ? 2 : 1 }, automaticAgent),
     context: draft.context,
     budgets: draft.budgets,
-    delegation: draft.delegation,
     policy: draft.policy,
-    mode: 'collaborate',
+    // Building together means a team on a task list the owner writes before starting.
+    mode: sample.id === 'build-together' ? 'collaborate' : 'compare',
   };
 }
 

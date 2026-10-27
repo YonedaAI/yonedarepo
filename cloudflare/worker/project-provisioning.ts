@@ -5,7 +5,6 @@ import { safeId } from './http';
 import { writeLog } from './logging';
 import { platformHead } from './project-platform';
 import { pendingSetup, setupCode, setupError, setupMessage } from './project-remote';
-import { sourceFingerprint } from './source-crypto';
 import { platformSource } from './source-objects';
 import { ledger } from './storage';
 import type { Env, Envelope, Json } from './types';
@@ -36,34 +35,12 @@ async function initializeProject(
       platform_repo: platform.repo,
       remote: { namespace: PLATFORM_NAMESPACE, name: project.id, branch: 'main' },
       policy: project.policy,
-      ...(project.guided_project ? { _guided_project: project.guided_project } : {}),
     });
   } catch (error: any) {
     if (error.code !== 'ALREADY_EXISTS') throw error;
     const existing = await ledger(env, project.id, { op: 'snapshot', _workspace: owner });
     if (existing.repository.remote.name !== project.id)
       throw new Error('Repository identity mismatch');
-    if (
-      project.guided_project &&
-      (!existing.repository.guided_project ||
-        (await sourceFingerprint(existing.repository.guided_project)) !==
-          (await sourceFingerprint(project.guided_project)))
-    )
-      throw setupError('IDEMPOTENCY_CONFLICT', 'Existing repository has another guided profile');
-  }
-  if (project.guided_project) {
-    const stored = await ledger(env, project.id, { op: 'repository_status', _workspace: owner });
-    if (stored.capabilities?.guided_runs !== 1 || !stored.guided_project)
-      throw setupError('LEDGER_UPDATING', 'Guided repository setup is updating; retry shortly.');
-    if (
-      (await sourceFingerprint(stored.guided_project)) !==
-        (await sourceFingerprint(project.guided_project)) ||
-      (await sourceFingerprint(stored.policy)) !== project.guided_project.policy_digest
-    )
-      throw setupError(
-        'IDEMPOTENCY_CONFLICT',
-        'The initialized guided profile differs from its fixed reservation',
-      );
   }
 }
 

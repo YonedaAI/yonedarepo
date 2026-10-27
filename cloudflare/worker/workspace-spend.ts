@@ -1,5 +1,4 @@
 import { canonicalJson } from './canonical-json';
-import { comparisonSpendForAttempt, comparisonSpendMatches } from './comparison-spend';
 import { ledger } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -13,8 +12,6 @@ export type WorkspaceSpendContext = {
   provider: string;
   model: string;
   model_budget: Json;
-  comparison_approval_id?: string;
-  comparison_approval_digest?: string;
 };
 export type WorkspaceSpendReservation = { id: string; identity: Json; amount: number };
 const fail = (message: string) =>
@@ -31,8 +28,6 @@ function budgetConfiguration(budget: Json): string {
 }
 /** The separate argument is trusted Worker authority, never a provider-input flag. */
 export function workspaceSpendApprovesJob(context: WorkspaceSpendContext, job: Json): boolean {
-  if (context.comparison_approval_id !== undefined) return comparisonSpendMatches(context, job);
-  if (job.payload?.execution?.comparison_approval_id != null) return false;
   const execution = job.payload?.execution;
   const run = job.payload?.run;
   const budget = run?.model_budgets?.find(
@@ -40,7 +35,6 @@ export function workspaceSpendApprovesJob(context: WorkspaceSpendContext, job: J
   );
   return (
     workspaceSpendRun(run) &&
-    run.campaign === undefined &&
     Boolean(budget?.pricing) &&
     job.id === context.job_id &&
     job.epoch === context.epoch &&
@@ -52,8 +46,6 @@ export function workspaceSpendApprovesJob(context: WorkspaceSpendContext, job: J
 }
 
 export function validateWorkspaceSpendRun(run: Json) {
-  if (run.campaign !== undefined)
-    throw fail('A pooled workspace run cannot claim a legacy campaign');
   const budgets = run.model_budgets;
   if (!Array.isArray(budgets) || budgets.length === 0)
     throw fail('Workspace inference requires priced approved model groups');
@@ -76,8 +68,6 @@ export function validateWorkspaceSpendRun(run: Json) {
 }
 
 export async function workspaceSpendForAttempt(env: Env, owner: string, repo: string, job: Json) {
-  if (job.payload?.execution?.comparison_approval_id != null)
-    return comparisonSpendForAttempt(env, owner, repo, job);
   if (!workspaceSpendRun(job.payload?.run)) {
     await assertLegacyInferenceAllowed(env, owner);
     return null;

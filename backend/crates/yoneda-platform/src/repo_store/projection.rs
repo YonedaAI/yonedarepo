@@ -7,7 +7,8 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Result, git_object::ObjectId};
 
-/// Called in the same transaction as the ref move; only protected refs are projected.
+/// Called in the same transaction as the ref move; only protected refs and tags are
+/// projected.
 pub fn target<S: SqlStore>(
     db: &S,
     refname: &str,
@@ -15,7 +16,7 @@ pub fn target<S: SqlStore>(
     version: u64,
     now: i64,
 ) -> Result<()> {
-    if !super::rows::protected(refname) {
+    if !super::rows::protected(refname) && !super::rows::is_tag(refname) {
         return Ok(());
     }
     db.query(

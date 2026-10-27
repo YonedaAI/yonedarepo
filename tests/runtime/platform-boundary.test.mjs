@@ -15,8 +15,12 @@ const neutral = new Set([
   './background',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
+  // HMAC-SHA256 helpers (session cookies, webhook signatures); imports nothing.
+  './hmac',
   // The account authority's command call (accounts, personal tokens); imports only types.
   './workspace',
+  // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
+  '../../shared/account',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
   '../../backend/crates/yoneda-core/src/platform_tools.json',
 ]);
@@ -66,7 +70,8 @@ function topLevel(source, start) {
 }
 
 test('platform Rust modules use only platform code and core contracts', async () => {
-  const allowed = ['git_object', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'hex'];
+  // `account`: members are named by account identifier, the same contract signup validates.
+  const allowed = ['git_object', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'account', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'hex'];
   const root = `${crates}/yoneda-platform/src`;
   const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith('.rs'));
   assert.ok(files.length >= 20, files.join());

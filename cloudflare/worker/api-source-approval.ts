@@ -8,9 +8,8 @@ const fail = (code: string, message: string): never => {
 };
 
 /**
- * Every run works in a lazy source workspace; its base is read back from the platform.
- * `checkpoint` is the revision the ledger restores the working branch to before the run
- * starts (a guided concurrent retry); the branch head is still checked against the lease.
+ * Every run works on platform source (a lazy source workspace, or a sandbox's clone); its base
+ * is read back from the platform.
  */
 export async function freezeSourceApproval(
   env: Env,
@@ -18,14 +17,14 @@ export async function freezeSourceApproval(
   repo: string,
   input: Json,
   repository: Json,
-  checkpoint?: { repository: string; commit: string },
 ): Promise<void> {
   const transport = approvedTransport(env, input.runtime);
   delete input.runtime;
   delete input._source_base;
   delete input._source_transport_approved;
   delete input.workspace_transport;
-  if (!env.SOURCES || repository.capabilities?.source_api !== 1)
+  // Lazy-source attempts read through the SOURCES workspaces; a sandbox clones the platform.
+  if (transport === 'api-source-v1' && (!env.SOURCES || repository.capabilities?.source_api !== 1))
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
   // Ledger `sandbox_cli` 1 takes one sandbox agent; 2 takes compare runs, one sandbox each.
   const agents = (input.agents ?? input.adaptive_team?.requested_agents ?? []).length;
@@ -49,7 +48,7 @@ export async function freezeSourceApproval(
       branch.version !== input.expected_working_version
     )
       fail('WORKING_HEAD_MOVED', 'The working source changed; refresh your brief.');
-    revision = checkpoint ?? branch.working_revision;
+    revision = branch.working_revision;
   }
   if (!/^[a-f0-9]{40}$/.test(revision.commit ?? ''))
     fail('INVALID_CAPTURE', 'Approved source identity is unavailable.');

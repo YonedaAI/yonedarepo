@@ -23,7 +23,7 @@ fn failed_external_evaluation_finishes_run_without_a_mode_field() {
     let db = repo();
     captured(&db);
     db.query("UPDATE runs SET payload=json_set(json_remove(payload,'$.mode'),'$.external',json('true')) WHERE id='run-one'", &[]).unwrap();
-    db.query("UPDATE executions SET payload=json_set(payload,'$.status','cancelled') WHERE id<>'run-one:codex-minimal'",&[]).unwrap();
+    db.query("UPDATE executions SET payload=json_set(payload,'$.status','cancelled') WHERE id<>'run-one:agent-1'",&[]).unwrap();
     call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
     call(&db,json!({"op":"fail","job_id":"evaluate:candidate-a","epoch":1,"retryable":false,"error":"Controlled external evaluator failure"})).unwrap();
     assert_eq!(
@@ -144,7 +144,7 @@ fn owner_resync_preserves_conflict_audit_and_clears_stale_site() {
     assert_eq!(decision["observed"]["commit"], "f".repeat(40));
     call(
         &db,
-        json!({"op":"start_run","id":"after-resync","intent":"Continue from observed remote"}),
+        json!({"op":"start_run","id":"after-resync","intent":"Continue from observed remote","agents":one_agent()}),
     )
     .unwrap();
     db.query("UPDATE repository SET payload=json_set(payload,'$.version',3,'$.head_commit',?,'$.published_commit',?)", &[json!("d".repeat(40)),json!("d".repeat(40))]).unwrap();
@@ -208,7 +208,7 @@ fn owner_resync_requires_owner_explicit_cas_and_blocked_state() {
 fn capacity_defer_refunds_once_fences_epoch_and_enforces_durable_delay() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     let request = json!({"op":"defer_job","job_id":id,"epoch":1,"reason":"container_capacity"});
     let deferred = call(&db, request.clone()).unwrap();
@@ -256,7 +256,7 @@ fn capacity_defer_refunds_once_fences_epoch_and_enforces_durable_delay() {
         "FENCED"
     );
     assert_eq!(
-        crate::storage::get(&db, "executions", "run-one:research").unwrap()["status"],
+        crate::storage::get(&db, "executions", "run-one:agent-1").unwrap()["status"],
         "queued"
     );
     call(&db, json!({"op":"recover","now":1201000})).unwrap();
@@ -270,7 +270,7 @@ fn capacity_defer_refunds_once_fences_epoch_and_enforces_durable_delay() {
 fn capacity_defer_rejects_unknown_failure_or_started_runtime_without_refund() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     assert_eq!(
         call(
@@ -302,7 +302,7 @@ fn capacity_defer_rejects_unknown_failure_or_started_runtime_without_refund() {
 fn rollout_defer_preserves_attempt_before_execution_and_rejects_after_start() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     let deferred = call(
         &db,
@@ -358,7 +358,7 @@ fn recovery_replay_rejects_same_commit_advance_and_changed_pending_decision() {
 fn capacity_backoff_is_bounded_and_never_extends_job_deadlines() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     let original = crate::storage::get(&db, "jobs", id).unwrap();
     let mut now = 1000;
     for backoff in [5000, 10000, 20000, 40000, 60000, 60000] {
@@ -386,7 +386,7 @@ fn capacity_backoff_is_bounded_and_never_extends_job_deadlines() {
 fn deferred_first_attempt_expires_at_dispatch_deadline_even_with_long_execution_budget() {
     let db = repo();
     start(&db);
-    let id = "job:run-one:research";
+    let id = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":id})).unwrap();
     call(
         &db,

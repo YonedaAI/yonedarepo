@@ -4,7 +4,7 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { runsInSandbox } from '../../shared/providers';
+import { defaultSandboxCli, runsInSandbox } from '../../shared/providers';
 import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import {
   advertiseSandbox,
@@ -37,8 +37,10 @@ it('advertises the sandbox to the browser only where it is deployed and the ledg
   expect(read(2, true)).toBe('sandbox-cli-v1');
   expect(read(1, true)).toBeUndefined();
   expect(read(2, false)).toBeUndefined();
-  expect(runsInSandbox('zai') && runsInSandbox('mimo') && runsInSandbox('claude')).toBe(true);
-  expect(runsInSandbox('codex') || runsInSandbox('gemini') || runsInSandbox('unknown')).toBe(false);
+  for (const provider of ['zai', 'mimo', 'claude', 'codex', 'gemini'])
+    expect(runsInSandbox(provider)).toBe(true);
+  expect(runsInSandbox('unknown')).toBe(false);
+  expect(['zai', 'codex', 'gemini'].map(defaultSandboxCli)).toEqual(['claude', 'codex', 'opencode']);
 });
 
 it('claims once, starts one sandbox and records the pushed commit as the candidate', async () => {
@@ -57,7 +59,7 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
     _source_base: base,
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Sandbox smoke' }],
   });
-  expect(run).toMatchObject({ runtime: 'sandbox-cli-v1', workspace_transport: 'api-source-v1' });
+  expect(run).toMatchObject({ runtime: 'sandbox-cli-v1', workspace_transport: 'sandbox-cli-v1' });
 
   const queue = bindings.SELF as unknown as Queue;
   const jobId = 'job:sandbox-run:agent-1';
@@ -118,6 +120,16 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
   expect(await ledger(bindings, repo, { op: 'job_status', id: jobId })).toMatchObject({
     status: 'done',
   });
+  // The platform keeps the session that made the commit, posted with the project token.
+  const { sessions } = await platform.call('GET', `/commits/${pushed.commit}/sessions`);
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]).toMatchObject({
+    cli: 'claude-code',
+    model: 'glm-5.3-flash',
+    summary: 'Added add(a,b)',
+    transcript_ref: `sandbox:${attempt.execution_id}`,
+  });
+  expect(sessions[0].prompt_digest).toMatch(/^[0-9a-f]{64}$/);
 });
 
 it('gives each agent of a compare run its own sandbox, branch and candidate', async () => {
@@ -184,7 +196,7 @@ it('gives each agent of a compare run its own sandbox, branch and candidate', as
     ).toMatchObject({ kind: 'evaluate', status: 'queued' });
 });
 
-it('fails the attempt with the reason when its sandbox cannot start', async () => {
+it('starts an OpenAI agent in its sandbox with Codex CLI, egress to the Responses API only', async () => {
   const fixture = await readyReviewer('sandbox_codex');
   const repo = fixture.repo;
   await ledger(bindings, repo, {
@@ -194,8 +206,7 @@ it('fails the attempt with the reason when its sandbox cannot start', async () =
     workspace_transport: 'sandbox-cli-v1',
     _source_transport_approved: true,
     _source_base: { repository: `platform/${repo}`, commit: fixture.head, tree: fixture.tree },
-    // Codex speaks another protocol; the sandbox runs Claude Code only.
-    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Unsupported CLI' }],
+    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Codex CLI' }],
   });
   const queue = bindings.SELF as unknown as Queue;
   const jobId = 'job:codex-run:agent-1';
@@ -203,11 +214,14 @@ it('fails the attempt with the reason when its sandbox cannot start', async () =
     await queue.dispatchOneForTest({ v: 1, kind: 'agent', repo_id: repo, job_id: jobId }, false),
   ).toMatchObject({ acked: true, retries: [] });
   expect(await ledger(bindings, repo, { op: 'job_status', id: jobId })).toMatchObject({
-    status: 'failed',
+    status: 'running',
   });
-  const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
-  const execution = snapshot.executions.find((e: any) => e.id === 'codex-run:agent-1');
-  expect(execution).toMatchObject({ status: 'failed', error: 'Queue dispatch failed (SANDBOX_HARNESS)' });
+  const sandbox = bindings.AGENT_SANDBOX?.getByName(
+    sandboxName(repo, 'codex-run:agent-1'),
+  ) as unknown as Fake;
+  const { attempt } = await sandbox.begun();
+  expect(attempt).toMatchObject({ cli: 'codex', provider: 'codex', model: 'gpt-5.6-luna' });
+  expect(agentEgress(attempt).modelPaths).toEqual(['/v1/responses']);
 });
 
 it('refuses a pushed commit that is not one commit on the frozen base', async () => {

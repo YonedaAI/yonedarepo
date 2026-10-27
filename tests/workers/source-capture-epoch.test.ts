@@ -12,8 +12,25 @@ import {
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Json, Scope } from '../../cloudflare/worker/types';
 import { bindings, sha256 } from '../../tools/source-benchmark/workerd-source-fixture';
-import { modernCompareApproval, policy } from './comparison-review-fixture';
+import { resolveRunRoster } from '../../cloudflare/worker/run-roster';
 import { approvedLedger } from './source-kit';
+
+const policy = {
+  version: 'comparison-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1',
+  required_checks: ['build'],
+  build: { setup: [], checks: [{ name: 'build', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }], static_dir: 'public' },
+};
+/** A two-builder compare roster from saved connections, as the owner's approval resolves it. */
+function compareApproval() {
+  const connections = [
+    { id: 'sol-builder', provider: 'codex', model: 'gpt-6-sol', version: 1 },
+    { id: 'sonnet-builder', provider: 'claude', model: 'claude-sonnet-5-5', version: 1 },
+  ];
+  return resolveRunRoster({ mode: 'compare', adaptive_team: { version: 1, requested_agents: [
+    { connection: 'sol-builder', role: 'builder' },
+    { connection: 'sonnet-builder', role: 'builder' },
+  ] } }, connections, 50000000);
+}
 
 afterEach(reset);
 const repo = 'source-capture-epoch';
@@ -50,7 +67,7 @@ async function prepareRegisteredSource() {
     policy,
   });
   await call({
-    ...modernCompareApproval(),
+    ...compareApproval(),
     op: 'start_run',
     id: runId,
     intent: 'Capture the exact registered source after preparation',
@@ -305,6 +322,6 @@ it('roundtrips a real deferred epoch-three producer through SourceWS/R2 and epoc
     'workspace_spend',
   ])
     expect(detail.run[field]).toEqual(before[field]);
-  expect(detail.run.comparison).toEqual({ ...before.comparison, status: 'checking' });
+  expect(detail.run.comparison).toEqual(before.comparison);
   expect((await call({ op: 'repository_status' })).head_commit).toBe(base.commit);
 }, 30000);

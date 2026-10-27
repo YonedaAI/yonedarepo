@@ -1,9 +1,8 @@
 import type { Snapshot } from '../../lib/types';
-import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
-import { runCandidates } from '../team/teamView';
 import { activeDecision, rejectionOf } from './agentsPick';
 import { refreshedSelection, refreshesSelection } from './refreshedSelection';
 import { runHasActiveAttempts } from './runControlState';
+import { runCandidates } from './runResults';
 import { branchPublishable } from './workingBranchView';
 
 type RecordValue = Record<string, any>;
@@ -24,25 +23,15 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
     return 'You rejected this result. Its decision and reason are recorded; it cannot be published.';
   if (run.status === 'cancelled') return 'This run was cancelled.';
   if (run.status === 'accepted') return 'This run has already been selected.';
-  if (run.status === 'awaiting_intent')
-    return 'Record the pending product-intent answer before a publishing decision.';
   if (!candidate) return 'Waiting for a captured result.';
   if (run.comparison?.version === 1) {
-    if (
-      runHasActiveAttempts(snapshot, run) ||
-      ['building', 'checking', 'reviewing', 'repairing'].includes(run.comparison.status)
-    )
-      return 'Wait for automatic review and repairs to finish before publishing.';
-    if (run.comparison.status === 'stale')
-      return 'The comparison proposal is stale. Refresh current source and checks.';
+    if (runHasActiveAttempts(snapshot, run)) return 'Wait for agents to finish before publishing.';
     if (!refreshesSelection(snapshot, run, candidate))
       return 'Choose this checked result before publishing it.';
     const refreshed = refreshedSelection(snapshot, run);
     if (refreshed && refreshed.id !== candidate.id)
       return 'Superseded: this selection was built on an older main and has been refreshed onto the current one. Publish the refreshed result instead.';
   }
-  const guideBlocker = guidedPublicationBlocker(snapshot, run, candidate);
-  if (guideBlocker) return guideBlocker;
   if (candidate.status !== 'eligible') return 'This result has not passed the required checks.';
   if (snapshot.repository.pending) return 'Another publication is in progress in this repository.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready for publication.';
@@ -112,15 +101,6 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
       action: 'details',
       actionLabel: 'View run details',
     };
-  if (run.status === 'awaiting_intent')
-    return {
-      tone: 'blocked',
-      title: 'Waiting for intent answer',
-      detail:
-        'Coordinating work is paused for the recorded product question. Review the question above; captured source remains available.',
-      action: 'results',
-      actionLabel: 'Inspect current results',
-    };
   const current = runCandidates(snapshot, run);
   const rejected = current.find((candidate) => rejectionOf(snapshot, candidate));
   if (current.length && current.every((candidate) => rejectionOf(snapshot, candidate)))
@@ -139,13 +119,13 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
     return {
       tone: 'review',
       title: 'Review required',
-      detail: `${run.mode === 'collaborate' ? 'The integrated team result is' : `${reviewable.length} result${reviewable.length === 1 ? ' is' : 's are'}`} independently checked and ready for your decision. Nothing from this run has been published.${failed ? ` ${failed} agent attempt${failed === 1 ? '' : 's'} failed; their evidence is in Agent activity.` : ''}`,
+      detail: `${run.mode === 'collaborate' ? 'The team result is' : `${reviewable.length} result${reviewable.length === 1 ? ' is' : 's are'}`} independently checked and ready for your decision. Nothing from this run has been published.${failed ? ` ${failed} agent attempt${failed === 1 ? '' : 's'} failed; their evidence is in Agent activity.` : ''}`,
       action: 'review',
       actionLabel:
         reviewable.length > 1
           ? 'Review approaches'
           : run.mode === 'collaborate'
-            ? 'Review integrated result'
+            ? 'Review team result'
             : 'Review result',
       candidate: reviewable.length === 1 ? reviewable[0] : undefined,
     };
@@ -190,9 +170,9 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
     };
   return {
     tone: 'working',
-    title: run.status === 'planning' ? 'Agents are planning' : 'Agents are working',
+    title: 'Agents are working',
     detail:
-      'No shipping decision is needed yet. Task progress, handoffs and execution logs are in Agent activity.',
+      'No shipping decision is needed yet. Task progress and execution logs are in Agent activity.',
     action: 'activity',
     actionLabel: 'View agent activity',
   };

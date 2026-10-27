@@ -1,4 +1,3 @@
-import type { GuidedProfileVersion, GuidedSession } from '../../../shared/guided-runs';
 import type {
   CandidateDiffPageContract,
   ConflictStatusContract,
@@ -42,7 +41,6 @@ export interface GraphEdge {
   evidence: string;
 }
 export interface Repository {
-  guided_project?: { profile_id: 'task-board-v1'; version: GuidedProfileVersion };
   id: string;
   name: string;
   created_at?: number;
@@ -73,7 +71,6 @@ export type ProjectMetadata = Pick<
   'id' | 'name' | 'status' | 'error' | 'error_code' | 'stage' | 'setup_started_at' | 'updated_at'
 >;
 export interface Snapshot {
-  guided_session?: GuidedSession;
   source_preparation?: SourcePreparationJob[];
   repository: Repository;
   runs: DevelopmentRun[];
@@ -87,8 +84,6 @@ export interface Snapshot {
   seq: number;
   watermark?: number;
   graph_paged?: boolean;
-  team_tasks?: Record<string, any>[];
-  team_handoffs?: Record<string, any>[];
   working_branches?: Record<string, any>[];
   capabilities?: {
     source_api?: number;
@@ -97,10 +92,7 @@ export interface Snapshot {
     optional_model_requests?: number;
     published_continuation?: number;
     collaborative_runs?: number;
-    team_planning?: number;
     working_branches?: number;
-    agent_coordination?: number;
-    autonomous_repair?: number;
     /** Set by the Worker where new runs may use the sandbox (`sandbox-cli-v1`). */
     sandbox_runtime?: string;
   };

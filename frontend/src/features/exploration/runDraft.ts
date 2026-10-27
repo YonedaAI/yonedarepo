@@ -14,7 +14,7 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
   const inheritedContext = publication
     ? publishedContext(snapshot, publication)
     : { ids: [], total: 0 };
-  const mode = source ? runMode(source.mode) : 'collaborate';
+  const mode = source ? runMode(source.mode) : 'compare';
   const agents: AdaptiveAgentDraft[] = source
     ? structuredClone(source.agents)
     : defaultRunAgents(snapshot);
@@ -28,8 +28,6 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
       ? [...new Set([...criteria, preservePublishedCriteria])]
       : criteria;
   const previousTeamPlan = readTeamPlan(source?.team ?? publication?.run.team_plan);
-  const previousAutomatic =
-    (source?.teamPlanning ?? publication?.run.team_planning) === 'automatic';
   return {
     restartOf: source?.workingBranch ? undefined : source?.id,
     workingBranch: source?.workingBranch,
@@ -40,9 +38,8 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
     agents,
     mode,
     previousTeamPlan,
-    previousAutomatic,
     team:
-      source?.id && mode === 'collaborate' && !previousAutomatic && previousTeamPlan
+      source?.id && mode === 'collaborate' && previousTeamPlan
         ? restoreTeam(previousTeamPlan, agents)
         : undefined,
     context: [...(textList(source?.context) ?? inheritedContext.ids)],
@@ -50,13 +47,6 @@ export function runDraft(snapshot: Snapshot, source?: InitialRun) {
       source?.budgets ?? (publication ? restoreModelBudgets(publication.run, agents) : {}),
     ),
     policy: source?.policy ?? JSON.stringify(snapshot.repository.policy?.build, null, 2),
-    delegation: structuredClone(
-      source?.delegation ?? {
-        enabled: false,
-        max_depth: 1,
-        max_executions: agents.length,
-      },
-    ),
   };
 }
 

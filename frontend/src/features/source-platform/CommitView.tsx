@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BreakGlass, type BreakGlassRecord } from './BreakGlass';
 import { CommitDiff } from './CommitDiff';
 import { CommitRepairs, type Repair } from './CommitRepairs';
+import { CommitSessions } from './CommitSessions';
 import { Failure, Loading } from './SourceStatus';
 import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
@@ -254,6 +255,7 @@ export function CommitView({
         </ul>
       </section>
       <CommitRepairs repo={repo} repairs={d.repairs} onNavigate={onNavigate} />
+      <CommitSessions repo={repo} commit={commit} />
       <section aria-label="Reviews">
         <h3>Reviews</h3>
         {d.reviews.length === 0 && <p className="source-empty">No reviews yet.</p>}

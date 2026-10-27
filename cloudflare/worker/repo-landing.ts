@@ -78,7 +78,8 @@ function outcome(sha: string, status: Json) {
 /**
  * Lands `sha` on `ref` (see the module comment). A queued landing waits for the branch's
  * combiner, or drains the queue itself when the combiner cannot be reached. No caller
- * rebuilds a merge against a moving head.
+ * rebuilds a merge against a moving head. `inAuthority`: the caller knows the authority
+ * already records `sha` (a commit pushed with Git), so no shard is asked for it.
  */
 export async function landWithMerge(
   ctx: RepoContext,
@@ -86,8 +87,9 @@ export async function landWithMerge(
   sha: string,
   fastForwardOnly = false,
   mode: LandMode = landMode(ctx.env),
+  inAuthority = false,
 ) {
-  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode);
+  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority);
   // This isolate's next read and begin see its own landing (others pass min_version).
   forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined);
   return landed;
@@ -97,13 +99,14 @@ async function landOn(
   ctx: RepoContext,
   ref: string,
   sha: string,
-  fastForwardOnly = false,
-  mode: LandMode = landMode(ctx.env),
+  fastForwardOnly: boolean,
+  mode: LandMode,
+  inAuthority: boolean,
 ) {
   // Batched landing serves main (the branch with a published head); other branches, and
   // a branch landed for the first time, take the queued path.
   const main = ref === 'main' || ref === 'refs/heads/main';
-  if (mode === 'batch' && main && !fastForwardOnly && ctx.env.LAND_COMBINERS) {
+  if (mode === 'batch' && main && !fastForwardOnly && ctx.env.LAND_COMBINERS && !inAuthority) {
     // Batched landing takes the commit's shard record; an adopted commit lands as before.
     const own = await timed('land.record', () => shardRecord(ctx.env, ctx.repo, sha));
     const submitted = own && (await landSubmitted(ctx, ref, sha, own));
@@ -117,7 +120,9 @@ async function landOn(
     fast_forward_only: fastForwardOnly,
     ...(fastForwardOnly ? {} : { enqueue: true }),
   };
-  const landed = await timed('land.request', () => adoptAndLand(ctx, sha, land));
+  const landed = await timed('land.request', () =>
+    inAuthority ? ctx.call(land) : adoptAndLand(ctx, sha, land),
+  );
   if (!landed.queued) {
     if (!landed.already) await moved(ctx, ref);
     return landed;

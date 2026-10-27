@@ -47,6 +47,15 @@ fn passwords_are_slow_hashed_and_sessions_are_revocable() {
     assert!(call(&db, json!({"op":"signup","username":"alice","password":"another good password","salt":"02".repeat(16),"recovery_hash":"d".repeat(64),"session_hash":"e".repeat(64)})).is_err());
 }
 #[test]
+fn account_exists_only_after_signup() {
+    let db = NativeStore::memory().unwrap();
+    let exists =
+        |db: &NativeStore| call(db, json!({"op":"account_exists"})).unwrap()["exists"].clone();
+    assert_eq!(exists(&db), false);
+    signup(&db);
+    assert_eq!(exists(&db), true);
+}
+#[test]
 fn recovery_rotates_password_code_and_revokes_all_existing_sessions() {
     let db = NativeStore::memory().unwrap();
     signup(&db);

@@ -48,10 +48,7 @@ pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<
         "SELECT decision FROM reviews WHERE commit_id=?",
         &[json!(id.hex())],
     )?;
-    let approvals = reviews
-        .iter()
-        .filter(|r| r["decision"] == "approve")
-        .count();
+    let approvals = super::reviewers::approvals(db, id)?;
     let rejected = reviews.iter().any(|r| r["decision"] == "reject");
     let checks = db.query(
         "SELECT name,status FROM checks WHERE commit_id=? AND policy_digest=?",
@@ -151,6 +148,7 @@ pub(super) fn write_entry_with<S: SqlStore>(
         actor: principal.into(),
         intent_digest: yoneda_core::digest(commit.message.as_bytes()),
         committed_at_ms: number(c, "now")?,
+        checkpoint_refs: rows::refs_digest_at(db, version - 1)?,
         chain: String::new(),
     };
     entry.chain = chain_digest(&previous, &entry)?;

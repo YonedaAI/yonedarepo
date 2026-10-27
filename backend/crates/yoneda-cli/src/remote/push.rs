@@ -1,10 +1,12 @@
 //! `push`: every ref's commits are uploaded first; then one compare-and-swap per branch
-//! (one batch for `--atomic`) or one landing for main publishes them. A push killed
+//! (one batch for `--atomic`), one landing for main, or one creation per new lightweight
+//! tag publishes them (tags never move or disappear). A push killed
 //! before that leaves every ref as it was: uploaded commits stay unreferenced and the
 //! platform's vacuum removes them.
 use super::list::{MAIN, branches};
+use super::tags::{TAGS, create_tag, tag_refusal};
 use super::upload::{self, Uploaded};
-use super::{Session, land, say};
+use super::{Session, declared, land, say};
 use crate::error::{Error, Result};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -43,8 +45,11 @@ struct Ready {
 
 /// Why a ref is refused before anything is uploaded (`None`: nothing to do, or go).
 fn refusal(session: &Session, spec: &Spec, local: &str, current: Option<&str>) -> Option<String> {
+    if spec.dst.starts_with(TAGS) {
+        return tag_refusal(session, &spec.src, local, current);
+    }
     if !spec.dst.starts_with("refs/heads/") {
-        return Some("only branches (refs/heads/*) can be pushed".into());
+        return Some("only branches (refs/heads/*) and tags (refs/tags/*) can be pushed".into());
     }
     if spec.dst == MAIN {
         return spec
@@ -83,10 +88,12 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
     let mut ready = Vec::new();
     for spec in &specs {
         if spec.src.is_empty() {
-            outcomes.insert(
-                spec.dst.clone(),
-                Err("deleting branches is not supported".into()),
-            );
+            let why = if spec.dst.starts_with(TAGS) {
+                "tags are immutable and cannot be deleted"
+            } else {
+                "deleting branches is not supported"
+            };
+            outcomes.insert(spec.dst.clone(), Err(why.into()));
             continue;
         }
         let local = match session.git.commit_of(&spec.src) {
@@ -128,7 +135,15 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         ready.clear();
     }
     if !session.options.dry_run && !ready.is_empty() {
-        publish(session, ready, atomic, &mut outcomes).await;
+        match declared::reads(session) {
+            Ok(reads) => {
+                let tips = publish(session, ready, atomic, &reads, &mut outcomes).await;
+                if outcomes.values().all(|o| o.is_ok()) {
+                    declared::spent(session, &tips, &reads);
+                }
+            }
+            Err(e) => refuse_rest(&mut outcomes, &e.message),
+        }
     }
     specs
         .iter()
@@ -143,18 +158,21 @@ fn refuse_rest(outcomes: &mut BTreeMap<String, std::result::Result<(), String>>,
     }
 }
 
-/// Uploads every ready ref, then publishes them.
+/// Uploads every ready ref, each tip declaring `reads`, then publishes them; returns the
+/// published tips.
 async fn publish(
     session: &mut Session,
     ready: Vec<Ready>,
     atomic: bool,
+    reads: &[String],
     outcomes: &mut BTreeMap<String, std::result::Result<(), String>>,
-) {
+) -> Vec<String> {
     let mut uploaded = Vec::new();
+    let mut tips = Vec::new();
     for item in ready {
         let creates = item.current.is_none();
         let result = match upload::plan_for(session, &item.local, creates).await {
-            Ok(plan) => upload::upload(session, plan).await,
+            Ok(plan) => upload::upload(session, plan, reads).await,
             Err(e) => Err(e),
         };
         match result {
@@ -167,29 +185,34 @@ async fn publish(
     if atomic {
         if outcomes.values().any(|o| o.is_err()) {
             refuse_rest(outcomes, "atomic push refused");
-            return;
+            return tips;
         }
         let result = batch(session, &uploaded).await;
         for (item, done) in &uploaded {
             let outcome = result.as_ref().map_err(|stale| stale(&item.spec.dst));
             if outcome.is_ok() {
                 remember(session, done);
+                tips.push(done.tip.clone());
             }
             outcomes.insert(item.spec.dst.clone(), outcome.map(|_| ()));
         }
-        return;
+        return tips;
     }
     for (item, done) in uploaded {
         let outcome = if item.spec.dst == MAIN {
             land::land(session, &item.local, &done).await
+        } else if item.spec.dst.starts_with(TAGS) {
+            create_tag(session, &item.spec.dst, &done).await
         } else {
             set_branch(session, &item, &done).await
         };
         if outcome.is_ok() {
             remember(session, &done);
+            tips.push(done.tip.clone());
         }
         outcomes.insert(item.spec.dst.clone(), outcome);
     }
+    tips
 }
 
 /// Maps the published commits whose platform id differs from the local one (most match).

@@ -146,31 +146,13 @@
   line-height: 1.5;
   font-size: 10px;
 }
-.shared-context {
-  padding: 0 0 20px;
-  border-bottom: 1px solid var(--line);
-}
-.shared-context h2,
 .comparison-heading h2 {
   font-size: 17px;
 }
-.shared-context p,
 .recorded-decision p {
   max-width: 80ch;
   line-height: 1.6;
   font-size: 13px;
-}
-.shared-context summary {
-  cursor: pointer;
-  color: var(--blue);
-  font-size: 13px;
-}
-.shared-context pre {
-  padding: 16px;
-  max-height: 350px;
-  overflow: auto;
-  background: #fff;
-  border: 1px solid var(--line);
 }
 .recorded-decision {
   margin: 18px 0;

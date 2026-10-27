@@ -2,7 +2,6 @@ mod bootstrap;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
-mod context_study;
 mod deploy_credentials;
 mod deploy_env;
 mod deploy_exec;
@@ -19,7 +18,6 @@ mod layout;
 mod live;
 mod local_config;
 mod process;
-mod verification;
 use std::path::PathBuf;
 
 #[tokio::main]

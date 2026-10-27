@@ -127,17 +127,11 @@ pub(super) fn citations<S: SqlStore>(
             targets.push(entry);
         }
         let candidates = db.query("SELECT payload FROM candidates WHERE json_extract(payload,'$.execution')=? ORDER BY id", &[json!(execution)])?;
-        let mut candidates: Vec<Value> = candidates.into_iter().map(|row| {
+        let candidates: Vec<Value> = candidates.into_iter().map(|row| {
             let candidate: Value = serde_json::from_str(row["payload"].as_str().ok_or_else(|| bad("Corrupt candidate"))?).map_err(|_| bad("Corrupt candidate"))?;
             let evaluation = checked.iter().find(|evaluation| evaluation["candidate_id"] == candidate["id"] && evaluation["evaluation_id"] == candidate["evaluation"]);
             Ok(json!({"id":candidate["id"],"revision":candidate["revision"],"capture_job_id":candidate.get("capture_job").cloned().unwrap_or_else(||json!(format!("capture:{execution}"))),"evaluation":evaluation,"capture_kind":if candidate.get("integration_manifest").is_some(){json!("integration")}else{Value::Null}}))
         }).collect::<Result<_>>()?;
-        candidates.extend(super::team::citation_sources(
-            db,
-            &execution,
-            &node["data"]["epoch"],
-            checked,
-        )?);
         let sequence = db.query("SELECT seq FROM events WHERE kind='context.published' AND json_extract(data,'$.id')=? ORDER BY seq LIMIT 1", &[node["id"].clone()])?;
         result.push(json!({"record_id":node["id"],"execution_id":execution,"seq":sequence.first().map(|row| &row["seq"]),
             "at":node["recorded_at"],"epoch":node["data"]["epoch"],"authority":"assertion","targets":targets,"candidates":candidates}));

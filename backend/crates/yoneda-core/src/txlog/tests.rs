@@ -34,6 +34,7 @@ fn entry(
         actor: "attempt:a".into(),
         intent_digest: "i".into(),
         committed_at_ms: version as i64,
+        checkpoint_refs: None,
         chain: String::new(),
     };
     e.chain = chain_digest(prev, &e).unwrap();
@@ -90,6 +91,30 @@ fn replay_rebuilds_refs_and_verifies_the_chain() {
         replay(&Checkpoint::default(), &stale).is_err(),
         "wrong old value must fail"
     );
+}
+
+#[test]
+fn checkpoints_verify_their_ref_map_against_the_stored_and_logged_digest() {
+    let entries = log();
+    let mid = replay(&Checkpoint::default(), &entries[..2]).unwrap();
+    let digest = mid.refs_digest().unwrap();
+    let mut next = entry(&mid.chain, 3, Some(11), 12, &["web/app.tsx"], &[]);
+    next.checkpoint_refs = Some(digest.clone());
+    next.chain = chain_digest(&mid.chain, &next).unwrap();
+    mid.verify(&digest, None).unwrap();
+    mid.verify(&digest, Some(&next)).unwrap();
+    // One ref altered while the chain digest and the stored digest are kept.
+    let mut altered = mid.clone();
+    altered.refs.insert("refs/heads/main".into(), oid(99));
+    assert_eq!(
+        altered.verify(&digest, None).unwrap_err().code,
+        "TXLOG_INVALID"
+    );
+    // Rewriting the stored digest too is caught by the digest the next entry carries.
+    let forged = altered.refs_digest().unwrap();
+    assert!(altered.verify(&forged, Some(&next)).is_err());
+    // An entry written before digests existed does not vouch for a checkpoint.
+    assert!(mid.verify(&digest, Some(&entries[2])).is_err());
 }
 
 #[test]

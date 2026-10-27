@@ -1,5 +1,6 @@
 //! `sandbox-cli-v1`: each agent of a compare run (one to six) runs an unmodified coding CLI
-//! (Claude Code) in its own Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
+//! (Claude Code, Codex CLI, opencode or MiMo Code: the agent's frozen `cli`) in its own
+//! Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
 //! Object, and pushes to its own `attempts/<run>/<n>` branch. The ledger keeps only:
 //! - the claim, with one long lease that is a safety backstop, never a heartbeat;
 //! - the latest observed activity, for "last activity" and the idle marker;
@@ -18,6 +19,12 @@ pub(crate) const TRANSPORT: &str = "sandbox-cli-v1";
 const LEASE_MS: i64 = 2 * 3_600_000 + 15 * 60_000;
 const SUMMARY_LIMIT: usize = 200;
 
+/// Whether a run (or job payload) transport works on platform source: lazy API source, or a
+/// sandbox run. Sandbox runs started before their own tag carry `api-source-v1` and `runtime`.
+pub(crate) fn platform_source(transport: &Value) -> bool {
+    transport == "api-source-v1" || transport == TRANSPORT
+}
+
 /// Whether `start_run` asks for a sandbox attempt (set only by the authenticated adapter).
 pub(super) fn requested(c: &Value) -> bool {
     c["workspace_transport"] == TRANSPORT
@@ -28,12 +35,11 @@ pub(super) fn requested(c: &Value) -> bool {
 /// delegation and the comparison reviewer are not sandbox work.
 pub(super) fn freeze(
     c: &Value,
-    general: bool,
     team: bool,
     delegation: &DelegationPolicy,
     run: &mut Value,
 ) -> Result<()> {
-    if !general || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
+    if team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
             "Sandbox runs take independent coding agents, without team or comparison review",
@@ -42,14 +48,63 @@ pub(super) fn freeze(
     if delegation.enabled {
         return Err(Error::new("NOT_SUPPORTED", "Sandbox runs do not delegate"));
     }
+    freeze_clis(run)?;
     run["runtime"] = json!(TRANSPORT);
     Ok(())
 }
 
-/// Marks a sandbox execution at schedule time.
-pub(super) fn mark_execution(run: &Value, execution: &mut Value) {
+/// The stock CLIs that can drive each provider harness's API, the default first. Claude Code
+/// speaks Anthropic Messages only and Codex CLI the OpenAI Responses API only; opencode and
+/// its fork MiMo Code carry all three. Mirrors `sandboxClis` in `shared/providers.ts`.
+fn clis(harness: &str) -> &'static [&'static str] {
+    match harness {
+        "claude" => &["claude", "opencode", "mimo"],
+        "codex" => &["codex", "opencode", "mimo"],
+        "gemini" => &["opencode", "mimo"],
+        _ => &[],
+    }
+}
+
+/// Freezes each agent's CLI: the owner's choice when it can drive the agent's provider, the
+/// provider's default when none was chosen. An impossible pair is refused before any start.
+pub(super) fn freeze_clis(run: &mut Value) -> Result<()> {
+    let agents = run["agents"]
+        .as_array_mut()
+        .ok_or_else(|| bad("Missing agents"))?;
+    for agent in agents {
+        let provider = string(agent, "provider")?;
+        let fits = clis(&yoneda_agents_core::providers::provider(&provider)?.harness);
+        let cli = match agent.get("cli").filter(|v| !v.is_null()) {
+            None => *fits
+                .first()
+                .ok_or_else(|| harness(&format!("No sandbox CLI runs {provider} models")))?,
+            Some(value) => {
+                let cli = value.as_str().unwrap_or_default();
+                if !["claude", "codex", "opencode", "mimo"].contains(&cli) {
+                    return Err(bad(
+                        "The sandbox CLI is one of claude, codex, opencode or mimo",
+                    ));
+                }
+                *fits
+                    .iter()
+                    .find(|fit| **fit == cli)
+                    .ok_or_else(|| harness(&format!("{cli} cannot run {provider} models")))?
+            }
+        };
+        agent["cli"] = json!(cli);
+    }
+    Ok(())
+}
+
+fn harness(message: &str) -> Error {
+    Error::new("SANDBOX_HARNESS", message)
+}
+
+/// Marks a sandbox execution at schedule time with its frozen agent's (`slot`) CLI.
+pub(super) fn mark_execution(run: &Value, slot: usize, execution: &mut Value) {
     if run["runtime"] == TRANSPORT {
         execution["runtime"] = json!(TRANSPORT);
+        execution["cli"] = run["agents"][slot]["cli"].clone();
     }
 }
 
@@ -71,18 +126,30 @@ pub(super) fn claimed(job: &mut Value, now: i64) {
 const CHECK_CAP_MS: i64 = 15 * 60_000;
 const CHECK_LEASE_MS: i64 = CHECK_CAP_MS + 5 * 60_000;
 
+/// Refuses, at run start, a sandbox run whose candidates the check sandbox cannot check: a
+/// project policy with an app bundle (its digest-exact app encoding exists only in the
+/// evaluator container). Immutable test bundles are checked in the sandbox.
+pub(super) fn checkable_start(run: &Value, policy: &Value) -> Result<()> {
+    if run["runtime"] != TRANSPORT {
+        return Ok(());
+    }
+    if !policy["build"]["app"].is_null() {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Sandbox runs cannot check app bundles yet: this project's policy builds an app. Remove the app from the policy or start the run without the sandbox",
+        ));
+    }
+    Ok(())
+}
+
 /// Marks a claimed evaluation of a sandbox run's candidate as one check-sandbox attempt,
 /// never re-dispatched: the report still arrives through `verify_finish` with the same
-/// validation. Checks the sandbox does not run (guided steps, immutable test bundles and app
-/// bundles) stay with the evaluator container.
+/// validation. The check sandbox installs an immutable test bundle as the evaluator does;
+/// app bundles stay with the evaluator container.
 pub(super) fn claimed_check<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Result<()> {
     let payload = &job["payload"];
     let build = &payload["policy"]["build"];
-    let checkable = job["kind"] == "evaluate"
-        && payload["guided"].is_null()
-        && build.is_object()
-        && build["app"].is_null()
-        && build["test_bundle"].is_null();
+    let checkable = job["kind"] == "evaluate" && build.is_object() && build["app"].is_null();
     let Some(run_id) = payload["run_id"].as_str().filter(|_| checkable) else {
         return Ok(());
     };

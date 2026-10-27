@@ -35,8 +35,19 @@ fn identity(c: &Value) -> Result<Value> {
     }
     Ok(v.clone())
 }
+fn identifier(value: &Value, field: &str) -> Result<String> {
+    let id = string(value, field)?;
+    if !(1..=100).contains(&id.len())
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    {
+        return Err(bad("Invalid reservation identifier"));
+    }
+    Ok(id)
+}
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, state: &mut Value, now: i64) -> Result<()> {
-    let id = super::super::campaign::identifier(c, "id")?;
+    let id = identifier(c, "id")?;
     let key = format!("workspace-spend:reservation:{id}");
     let identity = identity(c)?;
     let amount = money(c, "amount")?;

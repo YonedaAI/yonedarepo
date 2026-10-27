@@ -10,7 +10,6 @@ const reads = new Set([
   'run_detail',
   'run_graph_page',
   'events',
-  'peer_messages_page',
   'graph',
   'why',
   'decision',
@@ -26,21 +25,15 @@ const reads = new Set([
 const writes = new Set([
   'start_run',
   'create_working_branch',
-  'answer_intent',
   'accept',
   'reject_candidate',
   'cancel_run',
   'observe',
   'update_policy',
   'context_publish',
-  'configure_context_study',
-  'retry_team_task',
-  'retry_capture',
-  'repair_team',
   'refresh_candidate',
   'resolve_conflict',
   'run_set_visibility',
-  'approve_comparison_review',
   'select_comparison_candidate',
 ]);
 
@@ -80,9 +73,6 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     '_trusted',
     '_capture',
     '_adapter',
-    'campaign',
-    '_campaign_grant',
-    '_campaign_signing_key',
     'repair_escalation',
     '_approved_model_pool',
     'approved_model_pool',
@@ -107,14 +97,9 @@ export async function ownerCommandInput(req: Request, action: string): Promise<J
     'source_changeset',
     'source_view',
     'source_approval',
-    'guided',
-    'guided_project',
-    'guided_session',
-    'guided_profile_id',
   ])
     delete input[key];
   for (const key of Object.keys(input))
-    if (key.startsWith('_comparison_') || key.startsWith('_source_') || key.startsWith('_guided_'))
-      delete input[key];
+    if (key.startsWith('_comparison_') || key.startsWith('_source_')) delete input[key];
   return input;
 }

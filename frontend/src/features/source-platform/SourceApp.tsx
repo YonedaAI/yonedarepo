@@ -6,6 +6,7 @@ import { DevicePage } from './DevicePage';
 import { RepoFiles } from './RepoFiles';
 import { RepoHistory } from './RepoHistory';
 import { RepoList } from './RepoList';
+import { RepoMembers, type Viewer } from './RepoMembers';
 import { RepoOverview } from './RepoOverview';
 import { RepoSearch } from './RepoSearch';
 import { RepoTransactions } from './RepoTransactions';
@@ -37,9 +38,10 @@ export function SourceApp() {
     version: number;
     policy: { required_checks: string[]; approvals: number };
     projections?: { refname: string; status: string; detail?: string }[];
+    viewer?: Viewer;
   }>(repo ? `/repos/${repo}` : null);
   const drift = status.data?.projections?.filter((p) => p.status === 'drift') ?? [];
-  type Tab = 'files' | 'overview' | 'history' | 'transactions' | 'search' | 'connect';
+  type Tab = 'files' | 'overview' | 'history' | 'transactions' | 'search' | 'connect' | 'members';
   const entry = (view: Tab, repo: string): SourceRoute =>
     view === 'files' || view === 'overview'
       ? { view, repo, path: '', ref: 'main' }
@@ -132,6 +134,7 @@ export function SourceApp() {
                 {tab('transactions', 'Transactions')}
                 {tab('search', 'Search')}
                 {tab('connect', 'Connect')}
+                {tab('members', 'Members')}
               </nav>
             </>
           )}
@@ -147,6 +150,9 @@ export function SourceApp() {
                 navigate({ view: 'repos' });
               }}
             />
+          )}
+          {route.view === 'members' && (
+            <RepoMembers repo={route.repo} viewer={status.data?.viewer} />
           )}
           {route.view === 'files' && <RepoFiles route={route} onNavigate={navigate} />}
           {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}

@@ -208,7 +208,8 @@
   "vars": {
     "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
     "LAND_MODE": "batch",
-    "WEB_ORIGIN": "https://dev.yonedarepo.com"
+    "WEB_ORIGIN": "https://dev.yonedarepo.com",
+    "WORKERS_SUBDOMAIN": "mlong-f01"
   },
   "workers_dev": true,
   "workflows": [

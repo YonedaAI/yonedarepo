@@ -41,7 +41,6 @@ const snapshot = {
   repository: { id: 'repo', policy: { build: { setup: [], checks: [] } } },
   capabilities: {
     collaborative_runs: 1,
-    team_planning: 1,
     agent_limits: {
       min_root_agents: 1,
       max_root_agents: 4,
@@ -104,7 +103,7 @@ describe('preference-only brief submission', () => {
     expect(hooks.api).not.toHaveBeenCalled();
     expect(start).toHaveBeenCalledOnce();
     expect(start.mock.calls[0][0]).toMatchObject({
-      mode: 'collaborate',
+      mode: 'compare',
       intent: 'Fix duplicate registration',
       sample_profile_id: 'build-together',
       adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] },
@@ -117,76 +116,31 @@ describe('preference-only brief submission', () => {
       'workspace_spend',
       'delegation',
       'team',
+      'comparison',
     ])
       expect(start.mock.calls[0][0]).not.toHaveProperty(field);
   });
-  it('retains explicit builder roles and requests automatic comparison without a third seed', async () => {
+  it('retains explicit roles on a Classic compare run without requesting a reviewer', async () => {
     enterBrief();
     find(render(), (el) => el.type === AgentRoster)?.props.onChange([
       { id: 'a', connection: '', role: 'backend', strategy: 'Team participant' },
       { id: 'b', connection: '', role: 'testing', strategy: 'Team participant' },
+      { id: 'c', connection: '', role: 'review', strategy: 'Team participant' },
     ]);
-    find(render(), (el) => el.type === RunModePicker)?.props.onChange('compare');
+    expect(find(render(), (el) => el.type === RunModePicker)?.props.supported).toBe(false);
     await submit();
     expect(start.mock.calls[0][0]).toMatchObject({
       mode: 'compare',
-      comparison: { version: 1 },
       adaptive_team: {
         requested_agents: [
           { connection: null, role: 'backend' },
           { connection: null, role: 'testing' },
-        ],
-      },
-    });
-    expect(start.mock.calls[0][0]).not.toHaveProperty('delegation');
-  });
-  it('switching Compare adds a second Auto builder and keeps exactly two rows without add/remove controls', () => {
-    enterBrief();
-    find(render(), (el) => el.type === RunModePicker)?.props.onChange('compare');
-    const roster = find(render(), (el) => el.type === AgentRoster);
-    expect(roster?.props.agents).toHaveLength(2);
-    expect(roster?.props.agents[1]).toMatchObject({ connection: '', role: 'auto' });
-    expect(roster?.props.compare).toBe(true);
-    roster?.props.onChange([
-      ...roster.props.agents,
-      { id: 'extra', connection: '', role: 'review' },
-    ]);
-    expect(find(render(), (el) => el.type === AgentRoster)?.props.agents).toHaveLength(2);
-  });
-  it('keeps manual task indices aligned with the requested seed order', async () => {
-    enterBrief();
-    find(render(), (el) => el.type === AgentRoster)?.props.onChange([
-      { id: 'a', connection: '', role: 'backend', strategy: 'Team participant' },
-      { id: 'b', connection: '', role: 'review', strategy: 'Team participant' },
-    ]);
-    const plan = find(render(), (el) => el.type === TeamPlanOptions);
-    plan?.props.onManualChange(true);
-    plan?.props.onChange({
-      contract: 'API schema stays compatible',
-      integratorId: 'b',
-      integrationPaths: 'src/',
-      tasks: [
-        {
-          id: 'api',
-          title: 'Repair API',
-          instructions: 'Add the regression test and fix',
-          agentId: 'a',
-          dependsOn: [],
-          writePaths: 'src/api.ts',
-        },
-      ],
-    });
-    await submit();
-    expect(start.mock.calls[0][0]).toMatchObject({
-      mode: 'collaborate',
-      team: { integrator_agent: 1, tasks: [{ agent: 0 }] },
-      adaptive_team: {
-        requested_agents: [
-          { connection: null, role: 'backend' },
           { connection: null, role: 'review' },
         ],
       },
     });
+    expect(start.mock.calls[0][0]).not.toHaveProperty('comparison');
+    expect(start.mock.calls[0][0]).not.toHaveProperty('delegation');
   });
   it('rejects unsupported effort before changing the repository check policy', async () => {
     hooks.api.mockResolvedValue({
@@ -249,8 +203,10 @@ describe('sandbox runtime', () => {
   it('defaults to independent sandbox attempts the owner chooses among, without a reviewer', async () => {
     const tree = view();
     expect(find(tree, (el) => el.type === RunRuntimePicker)?.props.sandbox).toBe(true);
-    expect(find(tree, (el) => el.type === RunModePicker)?.props.value).toBe('compare');
-    expect(find(tree, (el) => el.type === AgentRoster)?.props.compare).toBe(false);
+    expect(find(tree, (el) => el.type === RunModePicker)?.props).toMatchObject({
+      value: 'compare',
+      supported: true,
+    });
     const body = await startRun([]);
     expect(body).toMatchObject({
       mode: 'compare',
@@ -262,11 +218,9 @@ describe('sandbox runtime', () => {
   });
   it('starts a sandbox team on the owner-written task plan, never automatic planning', async () => {
     find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
-    expect(find(view(), (el) => el.type === TeamPlanOptions)?.props.automaticSupported).toBe(false);
-    // Without an advanced task plan the start is refused in the browser already.
+    // Without a written task the start is refused in the browser already.
     expect(await startRun([])).toBeUndefined();
     const options = () => find(view(), (el) => el.type === TeamPlanOptions)?.props;
-    options()?.onManualChange(true);
     const plan = options()?.value;
     options()?.onChange({
       ...plan,
@@ -289,30 +243,72 @@ describe('sandbox runtime', () => {
     expect(body.team.tasks.length).toBeGreaterThan(0);
     expect(body).not.toHaveProperty('comparison');
   });
+  it('keeps task indices aligned with the requested seed order', async () => {
+    find(view(), (el) => el.type === 'textarea' && el.props.maxLength === 16000)?.props.onChange({
+      target: { value: 'Fix duplicate registration' },
+    });
+    find(view(), (el) => el.type === AgentRoster)?.props.onChange([
+      { id: 'a', connection: '', role: 'backend', strategy: 'Team participant' },
+      { id: 'b', connection: '', role: 'review', strategy: 'Team participant' },
+    ]);
+    find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
+    find(view(), (el) => el.type === TeamPlanOptions)?.props.onChange({
+      contract: 'API schema stays compatible',
+      integratorId: 'b',
+      integrationPaths: 'src/',
+      tasks: [
+        {
+          id: 'api',
+          title: 'Repair API',
+          instructions: 'Add the regression test and fix',
+          agentId: 'a',
+          writePaths: 'src/api.ts',
+        },
+      ],
+    });
+    await submit({ snapshot: deployed });
+    expect(start.mock.calls[0][0]).toMatchObject({
+      mode: 'collaborate',
+      team: { integrator_agent: 1, tasks: [{ agent: 0, depends_on: [] }] },
+      adaptive_team: {
+        requested_agents: [
+          { connection: null, role: 'backend' },
+          { connection: null, role: 'review' },
+        ],
+      },
+    });
+  });
   it('takes more than two sandbox agents', async () => {
     const three = ['a', 'b', 'c'].map((id) => ({ id, connection: '', role: 'auto', strategy: id }));
     const body = await startRun(three);
     expect(body.adaptive_team.requested_agents).toHaveLength(3);
     expect(body).toMatchObject({ mode: 'compare', runtime: 'sandbox-cli-v1' });
   });
-  it('disables the sandbox with a reason when a chosen model needs another CLI', async () => {
+  it('runs an OpenAI model in the sandbox with the coding CLI the owner chose', async () => {
     await connect([{ id: 'codex', provider: 'codex', model: 'gpt-5.6-luna', label: 'Codex' }]);
-    find(view(), (el) => el.type === AgentRoster)?.props.onChange([
-      { id: 'a', connection: 'codex', role: 'auto', strategy: 'a' },
-    ]);
+    const agents = [{ id: 'a', connection: 'codex', role: 'auto', strategy: 'a', cli: 'opencode' }];
+    find(view(), (el) => el.type === AgentRoster)?.props.onChange(agents);
     const picker = find(view(), (el) => el.type === RunRuntimePicker);
-    expect(picker?.props).toMatchObject({ sandbox: false });
-    expect(picker?.props.blocker).toContain("Codex can't run in the sandbox");
-    const body = await startRun([]);
-    expect(body).not.toHaveProperty('runtime');
-    expect(body.mode).toBe('collaborate');
+    expect(picker?.props).toMatchObject({ sandbox: true, blocker: undefined });
+    expect(find(view(), (el) => el.type === AgentRoster)?.props.sandbox).toBe(true);
+    const body = await startRun(agents);
+    expect(body).toMatchObject({ runtime: 'sandbox-cli-v1' });
+    expect(body.adaptive_team.requested_agents).toEqual([
+      { connection: 'codex', role: 'auto', cli: 'opencode' },
+    ]);
   });
-  it('keeps Classic exactly as before when chosen', async () => {
+  it('always compares on Classic, even after Build together was chosen in the sandbox', async () => {
+    find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
     find(view(), (el) => el.type === RunRuntimePicker)?.props.onChange('classic');
-    expect(find(view(), (el) => el.type === RunModePicker)).toBeDefined();
+    expect(find(view(), (el) => el.type === RunModePicker)?.props).toMatchObject({
+      value: 'compare',
+      supported: false,
+    });
+    expect(find(view(), (el) => el.type === TeamPlanOptions)).toBeUndefined();
     const body = await startRun([]);
-    expect(body).toMatchObject({ mode: 'collaborate' });
+    expect(body).toMatchObject({ mode: 'compare' });
     expect(body).not.toHaveProperty('runtime');
+    expect(body).not.toHaveProperty('team');
   });
   it('offers no sandbox where the deployment does not advertise it', () => {
     expect(find(render(), (el) => el.type === RunRuntimePicker)).toBeUndefined();

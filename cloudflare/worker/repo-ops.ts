@@ -34,7 +34,8 @@ export type Credentials =
         | 'repair'
         | 'derive'
         | 'commits'
-        | 'purge';
+        | 'purge'
+        | 'hooks';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_system'];

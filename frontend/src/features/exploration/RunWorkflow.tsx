@@ -1,48 +1,12 @@
-import { useEffect, useState } from 'react';
-import { api, short } from '../../lib/api';
+import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
-import { isSandboxTeam, sandboxMembers } from '../team/sandboxTeamView';
+import { sandboxMembers } from '../team/sandboxTeamView';
 import { activeDecision } from './agentsPick';
-import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { RecordedDecisionStory } from './RecordedDecisionStory';
 import { reviewableCandidates } from './runReviewState';
 
-function SharedResearch({ repo, artifact }: { repo: string; artifact: Record<string, any> }) {
-  const [open, setOpen] = useState(false);
-  const [content, setContent] = useState('');
-  const [error, setError] = useState('');
-  useEffect(() => {
-    if (!open) return;
-    let current = true;
-    setContent('');
-    setError('');
-    void api<{ content: string }>(`repos/${repo}/evidence?digest=${artifact.digest}`)
-      .then((r) => {
-        if (current) setContent(r.content);
-      })
-      .catch((e) => {
-        if (current) setError(e.message);
-      });
-    return () => {
-      current = false;
-    };
-  }, [open, repo, artifact.digest]);
-  return (
-    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Read shared research: {artifact.label}</summary>
-      <p>
-        <code>{artifact.id}</code> · recorded by the research agent
-      </p>
-      {error ? <p role="alert">{error}</p> : <pre>{content || 'Loading recorded research…'}</pre>}
-    </details>
-  );
-}
-
 export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record<string, any> }) {
-  if (run.comparison?.version === 1 && run.comparison.approval)
-    return <ComparisonWorkflow snapshot={snapshot} run={run} />;
   const executions = snapshot.executions.filter((e) => e.run_id === run.id);
-  const research = executions.find((e) => e.role === 'research');
   const coding = executions.filter((e) => e.role === 'coding');
   const candidates = snapshot.candidates.filter((c) => c.run_id === run.id);
   const checked = candidates.filter((c) => c.evaluation);
@@ -50,73 +14,44 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   // A selection outranks owner rejections, which otherwise show as the latest recorded decision.
   const decision =
     activeDecision(snapshot, run) ?? snapshot.decisions.findLast((d) => d.run_id === run.id);
-  const shared = snapshot.artifacts.filter((a) => a.producer === research?.id);
   const done = coding.filter((e) => e.finished_at).length;
   const queued = coding.filter((e) => e.status === 'queued').length;
   const historical = ['accepted', 'cancelled', 'failed'].includes(run.status);
   const reviewable = reviewableCandidates(snapshot, run);
   const reviewReady = !decision && run.status === 'ready' && reviewable.length > 0;
-  const team = run.mode === 'collaborate';
-  const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
-  const specialists = tasks.filter((task) => task.role !== 'integrator');
-  const integrator = tasks.find((task) => task.role === 'integrator');
-  const planner = executions.find((execution) => execution.team_role === 'planner');
-  // A sandbox team: members land on the team branch, which the platform's merge integrates.
-  const members = isSandboxTeam(run) ? sandboxMembers(snapshot, run) : null;
+  // A team: members land on the team branch, which the platform's merge integrates.
+  const members = run.mode === 'collaborate' ? sandboxMembers(snapshot, run) : null;
   const landed = members?.filter((execution) => execution.landing?.status === 'landed').length;
   const stages = [
-    ...(research
-      ? [{ name: 'Research', value: research.status, detail: research.model }]
-      : [
-          {
-            name: team && run.team_planning === 'automatic' ? 'Brief and planning' : 'Shared brief',
-            value:
-              team && run.team_planning === 'automatic'
-                ? run.team_plan
-                  ? 'plan validated'
-                  : (planner?.status ?? run.status)
-                : run.external
-                  ? 'agent requested'
-                  : 'approved',
-            detail: `${run.context?.length ?? 0} context references`,
-          },
-        ]),
     {
-      name: team ? 'Specialist tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
-      value: members
-        ? `${landed} / ${members.length} landed`
-        : team
-          ? specialists.length
-            ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
-            : 'waiting for plan'
-          : `${done} / ${coding.length} finished`,
-      detail: members
-        ? 'One sandbox per task on the same base'
-        : team
-          ? 'Complementary source scopes'
-          : queued > 0
-            ? `${queued} queued · capacity limited`
-            : historical
-              ? 'Recorded execution history'
-              : coding.length > 0 && done === coding.length
-                ? 'All agents finished'
-                : coding.length > 0
-                  ? 'Execution in progress'
-                  : 'Waiting for agents',
+      name: 'Shared brief',
+      value: run.external ? 'agent requested' : 'approved',
+      detail: `${run.context?.length ?? 0} context references`,
     },
     {
-      name: team ? 'Integration' : 'Capture source',
+      name: members ? 'Team tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
+      value: members
+        ? `${landed} / ${members.length} landed`
+        : `${done} / ${coding.length} finished`,
+      detail: members
+        ? 'One sandbox per task on the same base'
+        : queued > 0
+          ? `${queued} queued · capacity limited`
+          : historical
+            ? 'Recorded execution history'
+            : coding.length > 0 && done === coding.length
+              ? 'All agents finished'
+              : coding.length > 0
+                ? 'Execution in progress'
+                : 'Waiting for agents',
+    },
+    {
+      name: members ? 'Integration' : 'Capture source',
       value: members
         ? (executions.find((execution) => execution.team_role === 'team_branch')?.status ??
           'waiting for landings')
-        : team
-          ? (integrator?.status ?? 'waiting for task inputs')
-          : `${candidates.length} / ${coding.length} captured`,
-      detail: members
-        ? 'Platform merge on the team branch'
-        : team
-          ? 'One combined source revision'
-          : 'Exact fork commits',
+        : `${candidates.length} / ${coding.length} captured`,
+      detail: members ? 'Platform merge on the team branch' : 'Exact fork commits',
     },
     {
       name: 'Independent checks',
@@ -157,20 +92,6 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
           </li>
         ))}
       </ol>
-      {shared.length > 0 && (
-        <div className="shared-context">
-          <h2>Agent-authored context</h2>
-          <p>
-            {shared.length
-              ? `${shared.length} research artifact${shared.length === 1 ? '' : 's'} frozen for the coding agents.`
-              : 'Agents publish typed findings, assumptions, alternatives and questions into the graph below.'}{' '}
-            Agent assertions and external verification remain separate.
-          </p>
-          {shared.map((artifact) => (
-            <SharedResearch key={artifact.id} repo={snapshot.repository.id} artifact={artifact} />
-          ))}
-        </div>
-      )}
       {decision && (
         <details className="recorded-decision" id="recorded-shipping-decision" open tabIndex={-1}>
           <summary>Recorded shipping decision</summary>

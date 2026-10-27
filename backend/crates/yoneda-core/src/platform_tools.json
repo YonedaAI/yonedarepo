@@ -885,6 +885,64 @@
     }
   },
   {
+    "name": "git_session_record",
+    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, and an optional transcript_ref (a URL or opaque id; transcripts are never uploaded). Posting the same record again answers the first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "cli": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "prompt_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "transcript_ref": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "read_set_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "commit",
+        "cli",
+        "summary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_sessions",
+    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, who recorded each and when.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_bisect",
     "description": "Find the first commit on a branch that breaks a policy check: start with good, bad and check (a policy runner name); the platform runs the check on midpoints and narrows the range as results arrive. Pass id to read progress.",
     "inputSchema": {
@@ -1128,6 +1186,28 @@
     }
   },
   {
+    "name": "git_tag",
+    "description": "Create a lightweight tag (refs/tags/<name>) at a recorded commit. Tags are immutable: creating an existing tag at the same commit is a no-op, at another commit returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs, served to git clone and mirrored to the object store. Annotated tags are not supported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "name",
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_land",
     "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged. Returns the landing's transaction-log version: reads of main that pass it as min_version see the landing at once, while main's Git commit is projected shortly after (git_commit is null until then).",
     "inputSchema": {
@@ -1147,6 +1227,137 @@
       "required": [
         "ref",
         "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_list",
+    "description": "Webhooks of this repository: id, url, events, paths, active, consecutive failures and undelivered count. Secrets are never listed. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_create",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "land",
+              "merged",
+              "refused",
+              "branch",
+              "tag",
+              "check"
+            ]
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_delete",
+    "description": "Delete a webhook; undelivered events are dropped. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_deliveries",
+    "description": "A webhook's last 50 delivery attempts, newest first: delivery_id, event, attempt, ok, HTTP status, ms, error. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_member_list",
+    "description": "Members of this repository: account, role (read, write, land or admin), added_by and added_at. The owner is not listed. Needs the owner or an admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_member_add",
+    "description": "Add an existing account as a member, or change its role. Roles: read (read and clone); write (also commit, push branches, post checks); land (also review and land on protected refs); admin (also act as the owner, except deleting the repository and managing admins). A member's personal token holds only what both its scopes and the role allow. Only the owner grants, changes or removes admin. Needs the owner or an admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "The account's username"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write",
+            "land",
+            "admin"
+          ]
+        }
+      },
+      "required": [
+        "account",
+        "role"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_member_remove",
+    "description": "Remove a member; its access ends at once. The owner cannot be removed. Needs the owner or an admin (only the owner removes an admin).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account"
       ],
       "additionalProperties": false
     }

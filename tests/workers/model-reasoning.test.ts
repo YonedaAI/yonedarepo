@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { providerDefinition } from '../../shared/providers';
-import { resolveAdaptiveApproval } from '../../cloudflare/worker/adaptive-approval';
+import { resolveRunRoster } from '../../cloudflare/worker/run-roster';
 import { resolveFixedApproval } from '../../cloudflare/worker/fixed-run-approval';
 import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
 import type { Json } from '../../cloudflare/worker/types';
@@ -9,22 +9,14 @@ import type { WorkspaceSpendContext } from '../../cloudflare/worker/workspace-sp
 const connections = [{ id: 'luna', provider: 'codex', model: 'gpt-5.6-luna', version: 1 }];
 const request = (effort: unknown) => ({ adaptive_team: { version: 1, requested_agents: [{ connection: 'luna', role: 'builder', reasoning_effort: effort }] } });
 
-it('freezes supported explicit effort in seed, requested intent and registry-derived support pool', () => {
-  const approved = resolveAdaptiveApproval(request('high'), connections);
-  expect(approved.agents[0].reasoning_effort).toBe('high');
-  expect(approved.adaptive_team.requested_agents[0].reasoning_effort).toBe('high');
-  expect(approved._approved_model_pool[0].reasoning_efforts).toContain('high');
-  for (const value of ['unsupported', 'auto', true, 1]) expect(() => resolveAdaptiveApproval(request(value), connections)).toThrow();
-  expect(resolveAdaptiveApproval(request(null), connections).agents[0].reasoning_effort).toBeUndefined();
-});
 
 it('retains effort on fixed approvals and restricts Auto seeds without disabling explicit catalog models', () => {
   const fixed = resolveFixedApproval({ agents: [{ connection: 'luna', provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Fixed', reasoning_effort: 'low' }] }, connections, 50000000);
   expect(fixed.agents[0].reasoning_effort).toBe('low');
   const modern = [{ id: 'sol', provider: 'codex', model: 'gpt-6.1-sol', version: 1 }];
-  expect(() => resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] } }, modern)).toThrow();
-  expect(resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: 'sol', role: 'builder', reasoning_effort: 'max' }] } }, modern).agents[0]).toMatchObject({ connection: 'sol', reasoning_effort: 'max' });
-  expect(() => resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: 'sol', role: 'builder', reasoning_effort: 'none' }] } }, modern)).toThrow();
+  expect(() => resolveRunRoster({ adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] } }, modern)).toThrow();
+  expect(resolveRunRoster({ adaptive_team: { version: 1, requested_agents: [{ connection: 'sol', role: 'builder', reasoning_effort: 'max' }] } }, modern).agents[0]).toMatchObject({ connection: 'sol', reasoning_effort: 'max' });
+  expect(() => resolveRunRoster({ adaptive_team: { version: 1, requested_agents: [{ connection: 'sol', role: 'builder', reasoning_effort: 'none' }] } }, modern)).toThrow();
 });
 
 function job(provider: string, model: string, effort?: unknown): Json {
@@ -40,14 +32,14 @@ it('forces Codex effort from the frozen execution instead of request-body escala
   expect(() => prepareModelRequest(job('codex', 'gpt-6.1-sol', 'none'), 'codex', '/v1/responses', {})).toThrow();
 });
 
-it('forces Claude effort and adaptive thinking while keeping legacy absent-effort behavior and campaign fences', () => {
+it('forces Claude effort and adaptive thinking while keeping legacy absent-effort behavior and the Opus fence', () => {
   const result = prepareModelRequest(job('claude', 'claude-sonnet-5-5', 'max'), 'claude', '/v1/messages', { output_config: { effort: 'low' }, thinking: { type: 'disabled' } });
   expect(result.body.output_config.effort).toBe('max');
   expect(result.body.thinking.type).toBe('adaptive');
   const legacy = prepareModelRequest(job('claude', 'claude-sonnet-5-5'), 'claude', '/v1/messages', { output_config: { effort: 'low' }, thinking: { type: 'disabled' } });
   expect(legacy.body.thinking.type).toBe('between_tools');
   expect(legacy.body.output_config.effort).toBe('low');
-  expect(() => prepareModelRequest(job('claude', 'claude-opus-5-5', 'max'), 'claude', '/v1/messages', {})).toThrow('preapproved');
+  expect(() => prepareModelRequest(job('claude', 'claude-opus-5-5', 'max'), 'claude', '/v1/messages', {})).toThrow('workspace-approved');
 });
 
 it('forces documented GLM effort without exposing an unsupported off switch', () => {
@@ -104,13 +96,6 @@ it('clamps modern Sol transport to the frozen effort and exact shared approval',
   expect(() => prepareModelRequest(attempt, 'codex', '/v1/responses', {}, { ...context, epoch: 2 })).toThrow('frozen attempt');
 });
 
-it('excludes manual-only models from an Auto planner pool until explicitly selected', () => {
-  const pool = [...connections, { id: 'new-sol', provider: 'codex', model: 'gpt-6.1-sol', version: 1 }];
-  const auto = resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'auto' }] } }, pool);
-  expect(auto._approved_model_pool.map((entry: Json) => entry.connection)).toEqual(['luna']);
-  const explicit = resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: 'new-sol', role: 'builder', reasoning_effort: 'low' }] } }, pool);
-  expect(explicit._approved_model_pool.map((entry: Json) => entry.connection)).toContain('new-sol');
-});
 
 it('runs GLM at low effort when no effort was chosen, instead of the provider maximum', () => {
   const result = prepareModelRequest(job('zai', 'glm-5.3-flash'), 'claude', '/v1/messages', { output_config: { effort: 'max' } });

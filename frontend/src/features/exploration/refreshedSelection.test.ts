@@ -1,6 +1,5 @@
 import { expect, it } from 'vitest';
 import type { Snapshot } from '../../lib/types';
-import { latestBuilderCandidates } from './comparisonView';
 import { refreshedSelection } from './refreshedSelection';
 import { reviewableCandidates, runAttention, selectionBlocker } from './runReviewState';
 
@@ -77,11 +76,6 @@ it('marks the original pick superseded and stale instead of publishable', () => 
   expect(selectionBlocker(snapshot, run, left)).toMatch(/superseded/i);
   expect(selectionBlocker(snapshot, run, left)).toMatch(/older main/i);
   expect(selectionBlocker(snapshot, run, right)).toMatch(/Choose this checked result/);
-});
-
-it('keeps the original pick as the builder result and the refresh out of the review roster', () => {
-  const snapshot = snapshotWith([left, right, refreshed]);
-  expect(latestBuilderCandidates(snapshot, run).map((c) => c.id)).toEqual(['left', 'right']);
 });
 
 it('does not treat refreshes of an alternative or of another run as the selection', () => {

@@ -1,5 +1,4 @@
 import { contextResponse } from './context-access';
-import { guardContextAccess } from './context-policy';
 import { contribution } from './contributions';
 import { ledger, readObject } from './storage';
 import type { Env, Json, Principal } from './types';
@@ -18,7 +17,6 @@ export async function remoteTool(
     ...(sessionId ? { session_id: sessionId } : {}),
   };
   const command = (input: Json) => ledger(env, repo, { ...input, ...identity });
-  await guardContextAccess(env, repo, identity, name, args);
   const finish = (value: Json) => contextResponse(env, repo, identity, name, value);
   if (name === 'repo_context') {
     const s = await command({ op: 'snapshot' });

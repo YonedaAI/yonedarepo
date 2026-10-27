@@ -40,8 +40,7 @@
 }
 .status.running,
 .status.capturing,
-.status.evaluating,
-.status.researching {
+.status.evaluating {
   color: #6157a4;
   background: #eeedf7;
   border-color: #dad7ee;

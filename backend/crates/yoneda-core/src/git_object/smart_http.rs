@@ -114,24 +114,45 @@ pub struct CommandList {
     pub commands: Vec<RefCommand>,
     /// What the client asked for on the first command.
     pub capabilities: Vec<String>,
+    /// `git push -o <option>` values, in order (only with the `push-options` capability).
+    pub push_options: Vec<String>,
     /// Bytes the list took (the pack follows).
     pub used: usize,
 }
 
-/// Parses the command list at the front of `bytes`; `None` until its closing flush.
+/// Push options accepted per push; each is one pkt-line, so at most 65516 bytes.
+const MAX_PUSH_OPTIONS: usize = 64;
+
+/// Parses the command list at the front of `bytes` (and, when the client asked for
+/// `push-options`, the option lines and flush after it); `None` until it is complete.
 pub fn command_list(bytes: &[u8]) -> Result<Option<CommandList>> {
     let mut at = 0;
     let mut commands = Vec::new();
-    let mut capabilities = Vec::new();
+    let mut capabilities: Vec<String> = Vec::new();
     loop {
         let Some((line, used)) = next_pkt(&bytes[at..])? else {
             return Ok(None);
         };
         at += used;
         let Some(line) = line else {
+            let mut push_options = Vec::new();
+            if capabilities.iter().any(|c| c == "push-options") {
+                loop {
+                    let Some((option, used)) = next_pkt(&bytes[at..])? else {
+                        return Ok(None);
+                    };
+                    at += used;
+                    let Some(option) = option else { break };
+                    if push_options.len() == MAX_PUSH_OPTIONS {
+                        return Err(invalid("Too many push options"));
+                    }
+                    push_options.push(text(option)?.to_owned());
+                }
+            }
             return Ok(Some(CommandList {
                 commands,
                 capabilities,
+                push_options,
                 used: at,
             }));
         };
@@ -269,6 +290,7 @@ mod tests {
             commands,
             capabilities,
             used,
+            ..
         } = command_list(&body).unwrap().unwrap();
         assert_eq!(&body[used..], b"PACK");
         assert_eq!(capabilities, ["report-status", "atomic", "side-band-64k"]);
@@ -288,6 +310,31 @@ mod tests {
         ]
         .concat();
         assert!(command_list(&bad).is_err());
+    }
+
+    #[test]
+    fn reads_push_options_after_the_command_list() {
+        let command =
+            |caps: &str| pkt_line(format!("{ZERO} {} refs/heads/a\0{caps}\n", id('a')).as_bytes());
+        let body = [
+            command("report-status push-options"),
+            FLUSH.to_vec(),
+            pkt_line(b"yoneda.reads=a.txt,src/\n"),
+            pkt_line(b"ci.skip\n"),
+            FLUSH.to_vec(),
+            b"PACK".to_vec(),
+        ]
+        .concat();
+        // Not complete until the options' own flush.
+        assert_eq!(command_list(&body[..body.len() - 8]).unwrap(), None);
+        let list = command_list(&body).unwrap().unwrap();
+        assert_eq!(list.push_options, ["yoneda.reads=a.txt,src/", "ci.skip"]);
+        assert_eq!(&body[list.used..], b"PACK");
+        // Without the capability, what follows the flush is the pack.
+        let plain = [command("report-status"), FLUSH.to_vec(), b"PACK".to_vec()].concat();
+        let list = command_list(&plain).unwrap().unwrap();
+        assert!(list.push_options.is_empty());
+        assert_eq!(&plain[list.used..], b"PACK");
     }
 
     #[test]

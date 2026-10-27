@@ -52,6 +52,18 @@ it('takes a sandbox compare run only from a ledger that runs one sandbox per age
   expect(compare).toMatchObject({ workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true });
 });
 
+it('starts a sandbox run without lazy-source workspaces: the sandbox clones the platform', async () => {
+  const read = readCommit();
+  const platform = await syntheticPlatform(workerEnv as unknown as Env, { 'repo-fresh': { readCommit: read } });
+  const env = { ...platform, SOURCES: undefined, AGENT_SANDBOX: {} } as unknown as Env;
+  const ledger = { ...repository, capabilities: { sandbox_cli: 2 } };
+  const input = { runtime: 'sandbox-cli-v1', agents: [{ provider: 'zai' }] };
+  await freezeSourceApproval(env, 'owner', 'repo-fresh', input, ledger);
+  expect(input).toMatchObject({ workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true });
+  // A lazy-source run still needs them.
+  await expect(freezeSourceApproval(env, 'owner', 'repo-fresh', {}, ledger)).rejects.toMatchObject({ code: 'LEDGER_UPDATING' });
+});
+
 it('rejects a source identity outside this namespace before any read', async () => {
   const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
   const env = { SOURCES: {}, PLATFORM: { fetch: get } } as unknown as Env;
@@ -60,10 +72,10 @@ it('rejects a source identity outside this namespace before any read', async () 
   expect(get).not.toHaveBeenCalled();
 });
 
-it('strips guided authority from ordinary browser starts including future private markers', async () => {
+it('strips source authority from ordinary browser starts including future private markers', async () => {
   const input = await ownerCommandInput(new Request('https://yoneda/api/repos/repo/start_run', { method: 'POST', body: JSON.stringify({
-    id: 'ordinary', intent: 'Normal account work', guided: { session_id: 'foreign' }, guided_session: { forged: true },
-    guided_profile_id: 'task-board-v1', _guided_runs: [{ id: 'paid-forged' }], _guided_authority: true,
+    id: 'ordinary', intent: 'Normal account work', source_view: { forged: true }, source_approval: { forged: true },
+    _source_base: { commit: 'f'.repeat(40) }, _source_future_authority: true,
   }) }), 'start_run');
   expect(input).toEqual({ id: 'ordinary', intent: 'Normal account work' });
 });

@@ -3,15 +3,20 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { comparisonFixture } from '../../../../tests/frontend/comparisonFixture';
 import type { Snapshot } from '../../lib/types';
-import { activeDecision, recordedRationale, rejectionOf, supersededResults } from './agentsPick';
+import { activeDecision, rejectionOf, supersededResults } from './agentsPick';
 import { pendingLanding } from './platformPublication';
 import { RunCandidates } from './RunCandidates';
 import { runAttention, selectionBlocker } from './runReviewState';
 
 function teamFixture() {
   const f = comparisonFixture();
-  const run = { ...f.run, mode: 'collaborate', working_branch_id: undefined };
-  const earlier = { ...f.candidates[0], id: 'integrated', execution: 'run:integrate' };
+  const run = {
+    ...f.run,
+    mode: 'collaborate',
+    runtime: 'sandbox-cli-v1',
+    working_branch_id: undefined,
+  };
+  const earlier = { ...f.candidates[0], id: 'integrated', execution: `${run.id}:team` };
   const current = {
     ...f.candidates[1],
     id: 'reconciled',
@@ -23,50 +28,15 @@ function teamFixture() {
     ...f.snapshot,
     runs: [run],
     candidates: [earlier, current],
-    team_tasks: [{ run_id: run.id, task_id: 'integrate', role: 'integrator' }],
-    team_handoffs: [
-      {
-        id: 'h1',
-        run_id: run.id,
-        task_id: 'integrate',
-        execution_id: 'run:integrate',
-        authority: 'assertion',
-        summary: 'Combined filter and UI',
-      },
-      {
-        id: 'h2',
-        run_id: run.id,
-        task_id: 'integrate',
-        execution_id: 'run:resolver',
-        authority: 'assertion',
-        summary: 'Kept both filter and sort in visibleTasks',
-      },
-      {
-        id: 'h3',
-        run_id: run.id,
-        task_id: 'integrate',
-        execution_id: 'run:resolver',
-        authority: 'captured_revision',
-      },
-    ],
   } as unknown as Snapshot;
   return { snapshot, run, earlier, current };
 }
 
-it('shows only recorded resolver rationale and keeps superseded results as history', () => {
+it('keeps superseded team results as history', () => {
   const f = teamFixture();
-  expect(recordedRationale(f.snapshot, f.run, f.current)).toEqual([
-    {
-      id: 'h2',
-      text: 'Kept both filter and sort in visibleTasks',
-      source: 'Conflict resolver handoff',
-    },
-  ]);
   expect(supersededResults(f.snapshot, f.run, [f.current]).map((item) => item.id)).toEqual([
     'integrated',
   ]);
-  const silent = { ...f.snapshot, team_handoffs: [] } as Snapshot;
-  expect(recordedRationale(silent, f.run, f.current)).toEqual([]);
 });
 
 it('treats an owner rejection as a recorded decision that blocks only that result', () => {
@@ -131,7 +101,6 @@ function renderPick(snapshot: Snapshot, run: Record<string, any>, current: Recor
       candidates: [current],
       onCompare: () => {},
       onSelect: () => {},
-      onInspectTask: () => {},
       onContext: () => {},
       onGraph: () => {},
       onReject: () => {},
@@ -140,12 +109,11 @@ function renderPick(snapshot: Snapshot, run: Record<string, any>, current: Recor
   );
 }
 
-it('renders one Agents’ pick with recorded rationale, approve and reject, and collapsed history', () => {
+it('renders one team result with approve and reject, and collapsed history', () => {
   const f = teamFixture();
   const html = renderPick(f.snapshot, f.run, f.current);
-  expect(html).toContain('Agents’ pick');
-  expect(html).toContain('Kept both filter and sort in visibleTasks');
-  expect(html).not.toContain('Combined filter and UI');
+  expect(html).toContain('Team result');
+  expect(html).toContain('Reconciled team result');
   expect(html).toContain('Approve &amp; publish');
   expect(html).toContain('>Reject<');
   expect(html).toContain('Earlier results (superseded) · 1');
@@ -154,7 +122,7 @@ it('renders one Agents’ pick with recorded rationale, approve and reject, and 
   expect(html.match(/class="candidate /g)).toHaveLength(1);
 });
 
-it('shows a rejected pick as a recorded decision without publish or reject actions', () => {
+it('shows a rejected team result as a recorded decision without publish or reject actions', () => {
   const f = teamFixture();
   const rejection = {
     id: 'decision:no',

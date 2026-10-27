@@ -126,17 +126,7 @@ fn usage_pagination_preserves_full_run_counts_and_validates_filters() {
 #[test]
 fn artifact_receipts_follow_verified_delivery_and_commit_compatibility_edges_atomically() {
     let db = repo();
-    start(&db);
-    call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
-    call(&db, json!({"op":"publish_artifact","job_id":"job:run-one:research","epoch":1,
-        "id":"artifact:notes","kind":"research","label":"Prior context","digest":"a".repeat(64),
-        "metadata":{"assumptions":[{"statement":"Keep bounded requests","metric":"requests","limit":3,"path":"src/main.rs"}]}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":"job:run-one:research","epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let job = "job:run-one:codex-minimal";
+    let job = shared_artifact(&db, "artifact:notes");
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
     call(
         &db,
@@ -144,15 +134,15 @@ fn artifact_receipts_follow_verified_delivery_and_commit_compatibility_edges_ato
     )
     .unwrap();
     assert_eq!(
-        call(&db, json!({"op":"context_usage","run_id":"run-one"})).unwrap()["counts"]["read_calls"],
+        call(&db, json!({"op":"context_usage","run_id":"run-two"})).unwrap()["counts"]["read_calls"],
         0
     );
     let mut c = json!({"op":"record_context_access","job_id":job,"epoch":1,"call_id":"artifact-open",
-        "tool":"artifact_get","stage":"opened","targets":[{"id":"artifact:notes","digest":"b".repeat(64)}]});
+        "tool":"artifact_get","stage":"opened","targets":[{"id":"artifact:notes","digest":"a".repeat(64)}]});
     let before = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(call(&db, c.clone()).unwrap_err().code, "DIGEST_MISMATCH");
     assert_eq!(call(&db, json!({"op":"snapshot"})).unwrap(), before);
-    c["targets"][0]["digest"] = json!("a".repeat(64));
+    c["targets"][0]["digest"] = json!("b".repeat(64));
     call(&db, c.clone()).unwrap();
     call(&db, c).unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
@@ -162,11 +152,11 @@ fn artifact_receipts_follow_verified_delivery_and_commit_compatibility_edges_ato
             .unwrap()
             .iter()
             .any(|e| e["source"] == "artifact:notes"
-                && e["target"] == "run-one:codex-minimal"
+                && e["target"] == "run-two:agent-1"
                 && e["relation"] == "retrieved_by")
     );
     assert_eq!(
-        call(&db, json!({"op":"context_usage","run_id":"run-one"})).unwrap()["counts"]["read_calls"],
+        call(&db, json!({"op":"context_usage","run_id":"run-two"})).unwrap()["counts"]["read_calls"],
         1
     );
 }

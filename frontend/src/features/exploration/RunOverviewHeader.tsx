@@ -1,36 +1,22 @@
-import { useEffect, useRef } from 'react';
 import { short } from '../../lib/api';
 import { RunIntent } from './RunIntent';
 import { runTitle } from './runTitle';
 
 export function RunOverviewHeader({
-  focusRequest = 0,
   run,
   roots,
-  subagents,
   previousRun,
   onSelectRun,
 }: {
-  /** A positive, changing value scrolls this run into view and focuses its heading. */
-  focusRequest?: number;
   run: Record<string, any>;
   roots: number;
-  subagents: number;
   previousRun?: string;
   onSelectRun: (id: string) => void;
 }) {
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    if (!focusRequest || !heading.current) return;
-    heading.current.scrollIntoView({ block: 'start' });
-    heading.current.focus({ preventScroll: true });
-  }, [focusRequest]);
   return (
     <div className="intent-row">
       <div className="run-heading">
-        <h2 ref={heading} tabIndex={-1}>
-          {runTitle(run.intent)}
-        </h2>
+        <h2>{runTitle(run.intent)}</h2>
         <RunIntent intent={String(run.intent ?? '')} />
         {run.criteria?.length > 0 && (
           <details className="review-criteria">
@@ -50,11 +36,9 @@ export function RunOverviewHeader({
           <span>
             {run.mode === 'collaborate'
               ? `${run.agents?.length ?? roots} team agents · Build together`
-              : run.comparison?.approval
-                ? `${roots} builders · automatic reviewer`
-                : run.mode === 'compare'
-                  ? `${roots} builders · manual comparison`
-                  : `${roots} root agents · ${subagents} subagents`}
+              : run.mode === 'compare'
+                ? `${roots} builders · manual comparison`
+                : `${roots} root agents`}
           </span>
           {previousRun && (
             <button type="button" className="text-button" onClick={() => onSelectRun(previousRun)}>

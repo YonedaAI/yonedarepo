@@ -1,12 +1,6 @@
 import type { RepositoryOverview, RunDetail, RunsPage, Snapshot } from '../lib/types';
 
-const ACTIVE_RUN_STATES = new Set([
-  'planning',
-  'researching',
-  'exploring',
-  'coordinating',
-  'awaiting_intent',
-]);
+const ACTIVE_RUN_STATES = new Set(['planning', 'exploring', 'coordinating', 'awaiting_intent']);
 
 export class RequestedRunNotFoundError extends Error {
   constructor(runId: string) {
@@ -67,8 +61,6 @@ export function emptySnapshot(overview: RepositoryOverview): Snapshot {
     watermark: overview.watermark,
     graph_paged: true,
     capabilities: overview.capabilities as Snapshot['capabilities'],
-    team_tasks: [],
-    team_handoffs: [],
     working_branches: overview.working_branches ?? [],
   };
 }
@@ -106,8 +98,6 @@ export function mergeRunDetails(
     next.evaluations = mergeRows(next.evaluations, detail.evaluations);
     next.decisions = mergeRows(next.decisions, detail.decisions);
     next.artifacts = mergeRows(next.artifacts, detail.artifacts);
-    next.team_tasks = mergeRows(next.team_tasks ?? [], detail.team_tasks ?? []);
-    next.team_handoffs = mergeRows(next.team_handoffs ?? [], detail.team_handoffs ?? []);
     if (!detail.graph_paged) {
       next.nodes = mergeRows(next.nodes, detail.nodes) as Snapshot['nodes'];
       const edges = new Map(
@@ -145,8 +135,6 @@ export function preferSnapshotRows(snapshot: Snapshot, detail: RunDetail): Snaps
     evaluations: keep(merged.evaluations, snapshot.evaluations),
     decisions: keep(merged.decisions, snapshot.decisions),
     artifacts: keep(merged.artifacts, snapshot.artifacts),
-    team_tasks: keep(merged.team_tasks ?? [], snapshot.team_tasks ?? []),
-    team_handoffs: keep(merged.team_handoffs ?? [], snapshot.team_handoffs ?? []),
     nodes: keep(merged.nodes, snapshot.nodes),
   };
 }

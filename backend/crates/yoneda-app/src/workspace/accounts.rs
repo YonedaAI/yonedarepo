@@ -33,6 +33,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 Ok(json!({"authenticated":false}))
             }
         }
+        // Whether this account was signed up (the platform invites members by account).
+        "account_exists" => Ok(json!({"exists": get(db, TABLE, "account").is_ok()})),
         "logout" => {
             db.query(
                 "DELETE FROM workspace_records WHERE id=?",

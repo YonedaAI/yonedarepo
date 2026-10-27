@@ -41,11 +41,9 @@ describe('repository selection after discovery', () => {
 });
 
 describe('repository link cleanup', () => {
-  it('drops repository, run and guided parameters and keeps the rest', () => {
-    expect(
-      withoutRepositoryLink(
-        'https://yonedarepo.com/?repo=repo-x&run=r1&guided=task-board-v1&session=s1&tab=runs#top',
-      ),
-    ).toBe('https://yonedarepo.com/?tab=runs#top');
+  it('drops repository and run parameters and keeps the rest', () => {
+    expect(withoutRepositoryLink('https://yonedarepo.com/?repo=repo-x&run=r1&tab=runs#top')).toBe(
+      'https://yonedarepo.com/?tab=runs#top',
+    );
   });
 });

@@ -7,7 +7,6 @@ fn configured() -> (NativeStore, Value) {
     let command = json!({"op":"start_run","id":"budgeted","intent":"Build a useful website",
         "agents":[{"provider":"mimo","connection":"personal","model":"flash","strategy":"minimal"},
         {"provider":"mimo","connection":"team","model":"flash","strategy":"accessible"}],
-        "delegation":{"enabled":true,"max_depth":2,"max_executions":12},
         "model_budgets":[{"provider":"mimo","model":"flash","max_requests":40,"max_output_tokens":512,
         "max_execution_ms":60000,"spend_limit_microusd":null,"pricing":null,"requests":0,"charged_microusd":0}]});
     (db, command)
@@ -125,30 +124,20 @@ fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
 }
 
 #[test]
-fn model_budgets_share_requests_across_connections_subagents_and_retries() {
+fn model_budgets_share_requests_across_connections_and_retries() {
     let (db, mut command) = configured();
     command["model_budgets"][0]["max_requests"] = json!(3);
     call(&db, command).unwrap();
     let root = "job:budgeted:agent-1";
+    let other = "job:budgeted:agent-2";
     claim(&db, root, 1000);
-    let child = call(
-        &db,
-        json!({"op":"delegate_agent","job_id":root,"epoch":1,"request_id":"child",
-        "task":"Build another independent alternative","strategy":"accessible"}),
-    )
-    .unwrap();
-    let child_job = child["job_id"].as_str().unwrap();
-    assert_eq!(
-        child["execution"]["budget"],
-        json!({"provider":"mimo","model":"flash"})
-    );
-    claim(&db, child_job, 1000);
+    claim(&db, other, 1000);
     assert_eq!(
         reserve(&db, root, 1).unwrap()["model_budget"]["requests"],
         1
     );
     assert_eq!(
-        reserve(&db, child_job, 1).unwrap()["model_budget"]["requests"],
+        reserve(&db, other, 1).unwrap()["model_budget"]["requests"],
         2
     );
     call(
@@ -161,8 +150,6 @@ fn model_budgets_share_requests_across_connections_subagents_and_retries() {
         reserve(&db, root, 2).unwrap()["model_budget"]["requests"],
         3
     );
-    let other = "job:budgeted:agent-2";
-    claim(&db, other, 1000);
     assert_eq!(
         reserve(&db, other, 1).unwrap_err().code,
         "MODEL_REQUEST_LIMIT"

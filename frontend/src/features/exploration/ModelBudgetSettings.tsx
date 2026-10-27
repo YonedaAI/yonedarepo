@@ -172,8 +172,8 @@ export function ModelBudgetSettings({
         <>
           <p className="subtle">
             Request and dollar caps are optional and off by default. Any limits you set are shared
-            by agents, subagents and retries using the same model. Execution time and response size
-            remain bounded.
+            by agents and retries using the same model. Execution time and response size remain
+            bounded.
           </p>
           {!models.length && <p>Select a provider connection above to configure its budget.</p>}
           {models.map((model) => (

@@ -1,4 +1,4 @@
-import { BookOpen, Bot, ExternalLink, GitBranch, KeyRound, Menu, Plus, X } from 'lucide-react';
+import { Bot, ExternalLink, GitBranch, KeyRound, Menu, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { useRepository } from '../../hooks/useRepository';
 import type { WorkspacePanel } from './WorkspacePanels';
@@ -80,10 +80,6 @@ export function WorkspaceRail({
           </nav>
         )}
         <div className="rail-bottom">
-          <button type="button" onClick={() => show('guide')}>
-            <BookOpen size={17} />
-            How it works
-          </button>
           <a href="https://github.com/MagnetonIO/yonedarepo" target="_blank" rel="noreferrer">
             <ExternalLink size={16} />
             Source code

@@ -1,16 +1,13 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
-import { campaignRoute } from './campaign-route';
 import {
   candidateDetail,
   candidateSource,
   hydrateOwnerSnapshot,
   publishedSource,
 } from './candidate-source';
-import { comparisonOwnerRoute } from './comparison-owner-route';
 import { evidence } from './evidence';
 import { grantRoute } from './grants';
-import { guidedRoute } from './guided-route';
 import { historyDetail } from './history-archive';
 import { candidateDiffPage } from './history-pages';
 import { error, readJson, response, safeId } from './http';
@@ -24,13 +21,12 @@ import { ownerCommandInput, repositoryOperationAllowed } from './repository-comm
 import { deleteRepository } from './repository-deletion';
 import { publicationReadback, recordPublicationChecks, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
-import { reviewerCampaignRoute } from './reviewer-campaign';
 import { advertiseSandbox, sandboxActivity } from './sandbox-attempt';
+import { resolveInSandbox } from './sandbox-resolve';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
 import { ledger, sha } from './storage';
-import { teamTaskSource } from './team-source';
 import { approveTestPolicy } from './test-policy';
 import type { Env } from './types';
 import { websiteAssets } from './website-metadata';
@@ -66,10 +62,6 @@ export async function fetchRequest(
       return error('FORBIDDEN', 'Use the scoped MCP and Git endpoints', 403);
     const restricted = await reviewerGuard(req, env, principal);
     if (restricted) return restricted;
-    const campaign = await campaignRoute(req, env, principal);
-    if (campaign) return campaign;
-    const campaignReviewer = await reviewerCampaignRoute(req, env, principal);
-    if (campaignReviewer) return campaignReviewer;
     const reviewer = await reviewerRoute(req, env, principal);
     if (reviewer) return reviewer;
     const managed = await managedProviderRoute(req, env, principal);
@@ -164,8 +156,6 @@ export async function fetchRequest(
     if (parts.length === 4 && action === 'delete_repository' && req.method === 'POST')
       return await deleteRepository(req, env, principal, repo);
     await ledger(env, repo, { op: 'repository_status', _workspace: principal.workspace });
-    const guided = await guidedRoute(req, env, principal, repo, action);
-    if (guided) return guided;
     const sourceResponse = await sourceRoute(req, env, principal, repo);
     if (sourceResponse) return sourceResponse;
     if (action === 'resync_repository' && req.method === 'POST')
@@ -211,21 +201,12 @@ export async function fetchRequest(
           url.searchParams.get('watermark') ?? undefined,
         ),
       );
-    if (action === 'team_source' && req.method === 'GET')
-      return await teamTaskSource(
-        env,
-        repo,
-        url.searchParams.get('run_id') ?? '',
-        url.searchParams.get('task_id') ?? '',
-      );
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       await ledger(env, repo, { op: 'repository_status' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
     }
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
-    if (['approve_comparison_review', 'select_comparison_candidate'].includes(action))
-      return await comparisonOwnerRoute(req, env, principal, repo, action);
     let input = await ownerCommandInput(req, action);
     if (action === 'job_status') {
       if (typeof input.id !== 'string' || !input.id || input.id.length > 256)
@@ -240,6 +221,10 @@ export async function fetchRequest(
     }
 
     if (action === 'start_run') input = await approveOwnerRun(env, principal, repo, input);
+    if (action === 'resolve_conflict') {
+      const started = await resolveInSandbox(env, principal, repo, input);
+      if (started) return response(started);
+    }
     const command = {
       ...input,
       op: action,

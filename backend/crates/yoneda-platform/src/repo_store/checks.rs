@@ -215,9 +215,18 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
             row["name"].as_str().unwrap_or_default(),
         )?
     };
+    let hooks = super::hook_events::check(
+        db,
+        row["commit_id"].as_str().unwrap_or_default(),
+        row["name"].as_str().unwrap_or_default(),
+        &outcome,
+        principal,
+        now,
+        Some(&id),
+    )?;
     Ok(
         json!({ "run_id": id, "status": status, "commit": row["commit_id"], "name": row["name"],
-        "repair": repair, "bisects": bisects }),
+        "repair": repair, "bisects": bisects, "hooks": hooks }),
     )
 }
 

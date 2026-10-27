@@ -61,6 +61,35 @@ it('searches with partition reuse, blames lines and detects renames', async () =
   ]);
 });
 
+it('keeps search and codemod paths right when a directory is renamed or duplicated unchanged', async () => {
+  // Part II's key-sufficiency defect: a renamed subtree keeps its tree id, so a segment
+  // keyed by that id alone used to answer with the old directory's paths.
+  const retry = 'fn retry_with_backoff() {}\n';
+  const { owner, repo, land } = await setup('renamer', { required_checks: [], approvals: 0 }, [
+    file('src/retry.rs', retry),
+    file('README.md', 'top level\n'),
+  ]);
+  const paths = async (query: string) =>
+    (await api(`${repo}/search?query=${query}`, owner)).body.results.map((r: any) => r.path).sort();
+  expect(await paths('retry_with')).toEqual(['src/retry.rs']);
+
+  await land([{ path: 'src/retry.rs', delete: true }, file('lib/retry.rs', retry)], 'rename src to lib');
+  const renamed = await api(`${repo}/search?query=retry_with`, owner);
+  expect(renamed.body.results.map((r: any) => r.path)).toEqual(['lib/retry.rs']);
+  expect(renamed.body.partitions_built).toBe(0); // same subtree: its segment is reused
+  expect(await paths('lib/retry')).toEqual(['lib/retry.rs']);
+  expect(await paths('src/retry')).toEqual([]);
+
+  await land([file('vendor/retry.rs', retry)], 'duplicate lib as vendor');
+  const both = await api(`${repo}/search?query=retry_with`, owner);
+  expect(both.body.results.map((r: any) => r.path).sort()).toEqual(['lib/retry.rs', 'vendor/retry.rs']);
+  expect(both.body.partitions_built).toBe(0);
+
+  const codemod = await api(`${repo}/codemods`, owner, { body: { find: 'retry_with_backoff', replace: 'retry_later', author } });
+  expect(codemod.status).toBe(200);
+  expect(codemod.body.touches.map((t: any) => t.path).sort()).toEqual(['lib/retry.rs', 'vendor/retry.rs']);
+});
+
 it('bisects to the first bad commit through platform check runs', async () => {
   // The fake executor passes when a.txt starts with "good".
   const policy = { required_checks: [], approvals: 0, runners: { unit: { command: ['true'] } } };

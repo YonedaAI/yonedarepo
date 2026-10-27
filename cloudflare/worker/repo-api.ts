@@ -13,7 +13,9 @@ import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
+import { hooksRoute, notifyHooks } from './repo-hooks';
 import { repoMcp } from './repo-mcp';
+import { membersRoute } from './repo-members';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
@@ -150,6 +152,10 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return run('git_commit', await bodyOf(req, COMMIT_BODY_LIMIT));
   if (resource === 'commits' && sha && sub === 'checks' && post)
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
+  if (resource === 'commits' && sha && sub === 'sessions' && post)
+    return run('git_session_record', { ...(await bodyOf(req)), commit: sha });
+  if (resource === 'commits' && sha && sub === 'sessions' && get)
+    return run('git_sessions', { commit: sha });
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'revert' && post)
@@ -191,7 +197,10 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
       land_mode: req.headers.get('x-yoneda-land-mode'),
     });
   if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
+  if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
+  if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
+  if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });
@@ -239,6 +248,7 @@ async function batchRefs(ctx: RepoContext, body: Json) {
     throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
       stale: result.stale,
     });
+  await notifyHooks(ctx.env, ctx.repo);
   return { version: result.version, refs: result.refs };
 }
 

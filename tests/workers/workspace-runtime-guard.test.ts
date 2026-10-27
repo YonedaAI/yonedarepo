@@ -9,13 +9,6 @@ it('rejects an old ledger before it can silently drop trusted shared accounting'
   expect(() => checkLedger(old)).not.toThrow();
 });
 
-it('labels an old adaptive runtime as a rollout error and does not affect legacy jobs', () => {
-  const job = { kind: 'agent', payload: { run: { adaptive_team: { version: 1 } } } };
-  try { checkRuntime({ protocol: 2 }, job); throw new Error('accepted'); }
-  catch (e) { expect(e).toMatchObject({ code: 'RUNTIME_UPDATING' }); }
-  expect(() => checkRuntime({ protocol: 2, capabilities: { adaptive_teams: 1 } }, job)).not.toThrow();
-  expect(() => checkRuntime({ protocol: 2 }, { kind: 'agent', payload: {} })).not.toThrow();
-});
 
 it('preserves safe workspace error codes without logging arbitrary provider text', () => {
   expect(failureCode({ code: 'WORKSPACE_SPEND_EXHAUSTED' })).toBe('WORKSPACE_SPEND_EXHAUSTED');
