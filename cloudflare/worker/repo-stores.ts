@@ -204,6 +204,15 @@ export function putRaw(env: Env, key: (id: string) => string, objects: RawObject
   );
 }
 
+/** Raw objects given as bytes (a push's verified objects), written like `putRaw`. */
+export function putRawBytes(
+  env: Env,
+  key: (id: string) => string,
+  objects: { id: string; kind: string; data: Uint8Array }[],
+) {
+  return Promise.all(objects.map((o) => writeOnce(env, key(o.id), o.kind, () => o.data)));
+}
+
 function writeOnce(env: Env, key: string, kind: string, body: () => Uint8Array | string) {
   if (written.has(key)) return Promise.resolve();
   let write = writing.get(key);

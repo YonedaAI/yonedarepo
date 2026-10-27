@@ -1,0 +1,181 @@
+//! Commits pushed with stock Git, recorded under their own ids. The adapter has verified
+//! the pack (every object hashed, every tree and blob a new commit names either in the pack
+//! or already here) and written the objects to R2, the store of record. This store checks
+//! what it can itself: each commit's bytes hash to its id, and its parents are recorded
+//! (earlier in the same call counts). The base version is derived here, never taken from
+//! the client. Recording moves no ref and writes no log entry.
+use super::auth::Actor;
+use super::rows::{self, CommitRow, Settings, object_id};
+use crate::storage::{SqlStore, bad, number};
+use base64::{Engine, engine::general_purpose::STANDARD};
+use serde_json::{Value, json};
+use yoneda_core::{
+    Error, Result,
+    git_object::{Commit, ObjectKind, hash_object, next_generation},
+    txlog::PathTouch,
+};
+
+const COMMITS: usize = 500;
+const TOUCHES: usize = 100_000;
+/// First-parent steps searched for a landed ancestor before falling back to version 0.
+const BASE_WALK: usize = 10_000;
+
+/// `repo_record_pushed`: `commits` parents first, each `{commit, data_b64, touches,
+/// objects: [{id, kind}], check}`; `check` starts platform checks (the pushed tips).
+pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
+    actor.require("write")?;
+    super::git_http::whole_repository(actor)?;
+    let now = number(c, "now")?;
+    let commits = c["commits"]
+        .as_array()
+        .filter(|list| !list.is_empty() && list.len() <= COMMITS)
+        .ok_or_else(|| bad(&format!("commits must list 1-{COMMITS} pushed commits")))?;
+    let mut recorded = 0;
+    let mut runs = Vec::new();
+    for item in commits {
+        let id = object_id(item, "commit")?;
+        if rows::commit_row(db, &id)?.is_none() {
+            record_one(db, item, &actor.principal, now)?;
+            recorded += 1;
+        }
+        if item["check"] == true {
+            runs.extend(super::checks::request(
+                db,
+                &id,
+                None,
+                &actor.principal,
+                settings,
+                now,
+            )?);
+        }
+    }
+    Ok(json!({ "recorded": recorded, "check_runs": runs }))
+}
+
+fn record_one<S: SqlStore>(db: &S, item: &Value, principal: &str, now: i64) -> Result<()> {
+    let id = object_id(item, "commit")?;
+    let data = STANDARD
+        .decode(item["data_b64"].as_str().unwrap_or_default())
+        .map_err(|_| bad("data_b64 is not base64"))?;
+    if hash_object(ObjectKind::Commit, &data) != id {
+        return Err(Error::new(
+            "GIT_OBJECT_INVALID",
+            format!("Commit bytes do not hash to {id}"),
+        ));
+    }
+    let commit = Commit::decode(&data)?;
+    let parents = commit.parents()?;
+    let parent_rows = parents
+        .iter()
+        .map(|p| rows::recorded(db, p))
+        .collect::<Result<Vec<_>>>()?;
+    let generation = next_generation(&parent_rows.iter().map(|r| r.generation).collect::<Vec<_>>());
+    let base_version = base_version(db, parent_rows.first())?;
+    let touches: Vec<PathTouch> = serde_json::from_value(item["touches"].clone())
+        .map_err(|e| bad(&format!("Invalid touches: {e}")))?;
+    if touches.len() > TOUCHES {
+        return Err(Error::new(
+            "TOO_LARGE",
+            "Too many changed paths in one pushed commit",
+        ));
+    }
+    let message: String = String::from_utf8_lossy(commit.message())
+        .chars()
+        .take(16_384)
+        .collect();
+    db.query(
+        // The objects are in R2; Artifacts gets them with the first protected ref that
+        // includes this commit (commit_objects lists them until then).
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,'[]',?,'push',0,NULL)",
+        &[json!(id.hex()), json!(commit.tree()?.hex()), json!(json!(parents).to_string()), json!(generation),
+          json!(base_version), json!(principal), json!(message), json!(now)],
+    )?;
+    for chunk in touches.chunks(16) {
+        let mut params = Vec::with_capacity(chunk.len() * 6);
+        for touch in chunk {
+            yoneda_core::validate_path(&touch.path)?;
+            let encoded = serde_json::to_value(touch).map_err(|e| bad(&e.to_string()))?;
+            params.extend([
+                json!(id.hex()),
+                encoded["path"].clone(),
+                encoded["op"].clone(),
+                encoded["old_blob"].clone(),
+                encoded["new_blob"].clone(),
+                encoded["mode"].clone(),
+            ]);
+        }
+        let rows = vec!["(?,?,?,?,?,?)"; chunk.len()].join(",");
+        db.query(
+            &format!(
+                "INSERT INTO commit_paths(commit_id,path,op,old_blob,new_blob,mode) VALUES{rows}"
+            ),
+            &params,
+        )?;
+    }
+    let objects = item["objects"]
+        .as_array()
+        .ok_or_else(|| bad("objects must be a list"))?;
+    if !objects.iter().any(|o| o["id"] == json!(id.hex())) {
+        return Err(bad("A pushed commit must list its own object"));
+    }
+    for chunk in objects.chunks(33) {
+        let mut params = Vec::with_capacity(chunk.len() * 3);
+        for object in chunk {
+            let kind = object["kind"].as_str().unwrap_or_default();
+            if !matches!(kind, "commit" | "tree" | "blob") {
+                return Err(bad("Object kind must be commit, tree or blob"));
+            }
+            params.extend([
+                json!(id.hex()),
+                json!(object_id(object, "id")?.hex()),
+                json!(kind),
+            ]);
+        }
+        let rows = vec!["(?,?,?)"; chunk.len()].join(",");
+        db.query(
+            &format!(
+                "INSERT INTO commit_objects(commit_id,id,kind) VALUES{rows} ON CONFLICT DO NOTHING"
+            ),
+            &params,
+        )?;
+    }
+    Ok(())
+}
+
+/// The log version a pushed commit is based on: the first landing of its nearest
+/// first-parent ancestor that landed anywhere (a parent pushed earlier passes on its own
+/// base). Too old is safe: landing then checks more of the log; too new could hide a
+/// concurrent change, so anything unknown falls back to 0.
+fn base_version<S: SqlStore>(db: &S, parent: Option<&CommitRow>) -> Result<u64> {
+    let Some(first) = parent else { return Ok(0) };
+    let mut at = first.id;
+    for _ in 0..BASE_WALK {
+        let landed = db.query(
+            "SELECT MIN(version) AS v FROM landings WHERE commit_id=?",
+            &[json!(at.hex())],
+        )?;
+        if let Some(version) = landed.first().and_then(|r| r["v"].as_u64()) {
+            return Ok(version);
+        }
+        let Some(row) = db
+            .query(
+                "SELECT origin,base_version,parents FROM commits WHERE id=?",
+                &[json!(at.hex())],
+            )?
+            .into_iter()
+            .next()
+        else {
+            return Ok(0);
+        };
+        if row["origin"] == "push" {
+            return Ok(row["base_version"].as_u64().unwrap_or(0));
+        }
+        let parents: Vec<String> = serde_json::from_str(row["parents"].as_str().unwrap_or("[]"))
+            .map_err(|_| rows::corrupt("parents"))?;
+        match parents.first() {
+            Some(next) => at = yoneda_core::git_object::ObjectId::parse(next)?,
+            None => return Ok(0),
+        }
+    }
+    Ok(0)
+}

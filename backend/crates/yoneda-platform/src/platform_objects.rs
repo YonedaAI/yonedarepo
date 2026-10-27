@@ -64,6 +64,37 @@ pub fn supplied_trees(c: &Value) -> Result<HashMap<ObjectId, Vec<TreeEntry>>> {
     Ok(trees)
 }
 
+/// One tree an adapter read: raw Git bytes (`data_b64`) or `{name, type, id}` entries,
+/// either way checked against `id`.
+pub fn supplied_tree(id: &ObjectId, tree: &Value) -> Result<Vec<TreeEntry>> {
+    let entries = match tree.get("data_b64").and_then(Value::as_str) {
+        Some(data) => decode_tree(
+            &STANDARD
+                .decode(data)
+                .map_err(|_| bad("Tree data is not base64"))?,
+        )?,
+        None => tree["entries"]
+            .as_array()
+            .ok_or_else(|| bad("A supplied tree needs data_b64 or entries"))?
+            .iter()
+            .map(|e| {
+                Ok(TreeEntry {
+                    name: string(e, "name")?,
+                    mode: mode(&string(e, "type")?)?,
+                    id: ObjectId::parse(&string(e, "id")?)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+    };
+    if hash_object(ObjectKind::Tree, &encode_tree(&entries)?) != *id {
+        return Err(Error::new(
+            "TREE_INVALID",
+            format!("Supplied tree does not match {id}"),
+        ));
+    }
+    Ok(entries)
+}
+
 /// Structured object form shared by the R2 cache tier and the R2 object store, so
 /// adapters never parse Git formats themselves.
 pub fn object_json(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
