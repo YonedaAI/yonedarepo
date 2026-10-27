@@ -1,3 +1,4 @@
+import { defaultSandboxCli, sandboxCliNames, sandboxClis } from '../../../../shared/providers';
 import type { AgentLimits } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
 import {
@@ -25,6 +26,7 @@ export function AgentRoster({
   onProviders,
   onRetry,
   compare = false,
+  sandbox = false,
 }: {
   agents: AdaptiveAgentDraft[];
   providers: Provider[];
@@ -37,6 +39,8 @@ export function AgentRoster({
   onRetry: () => void;
   team?: boolean;
   compare?: boolean;
+  /** A sandbox run: each agent with a chosen model also picks the stock CLI it runs. */
+  sandbox?: boolean;
 }) {
   function update(id: string, patch: Partial<AdaptiveAgentDraft>) {
     onChange(agents.map((agent) => (agent.id === id ? { ...agent, ...patch } : agent)));
@@ -66,6 +70,11 @@ export function AgentRoster({
           ? modelReasoningEfforts(connection.provider, connection.model)
           : [];
         const effortIssue = reasoningIssue(agent, providers);
+        const clis = sandbox && connection ? sandboxClis(connection.provider) : [];
+        const cli =
+          agent.cli && clis.includes(agent.cli)
+            ? agent.cli
+            : connection && defaultSandboxCli(connection.provider);
         return (
           <fieldset
             className={`agent-inputs seed-agent${efforts.length > 0 || agent.reasoning_effort != null ? ' has-reasoning' : ''}`}
@@ -87,6 +96,7 @@ export function AgentRoster({
                     expectedModel: undefined,
                     fromPreviousRun: false,
                     reasoning_effort: undefined,
+                    cli: undefined,
                   })
                 }
               >
@@ -129,6 +139,27 @@ export function AgentRoster({
                   {efforts.map((effort) => (
                     <option key={effort} value={effort}>
                       {reasoningLabel(effort)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            {clis.length > 0 && (
+              <label>
+                Coding CLI
+                <select
+                  aria-label={`Coding CLI for agent ${index + 1}`}
+                  disabled={locked}
+                  value={cli}
+                  onChange={(event) => {
+                    const next = clis.find((value) => value === event.target.value);
+                    if (next) update(agent.id, { cli: next });
+                  }}
+                >
+                  {clis.map((value) => (
+                    <option key={value} value={value}>
+                      {sandboxCliNames[value]}
+                      {value === defaultSandboxCli(connection?.provider ?? '') ? ' (default)' : ''}
                     </option>
                   ))}
                 </select>
