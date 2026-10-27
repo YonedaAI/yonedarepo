@@ -28,13 +28,37 @@ impl Default for PackLimits {
 
 pub fn write_pack(objects: &[(ObjectKind, &[u8])]) -> Result<Vec<u8>> {
     let count = u32::try_from(objects.len()).map_err(|_| invalid("Too many pack objects"))?;
-    let mut out = b"PACK".to_vec();
-    out.extend_from_slice(&2u32.to_be_bytes());
-    out.extend_from_slice(&count.to_be_bytes());
+    let (mut writer, mut out) = PackWriter::new(count);
     for (kind, data) in objects {
+        out.extend(writer.entry(*kind, data));
+    }
+    out.extend_from_slice(&writer.finish());
+    Ok(out)
+}
+
+/// Writes an undeltified pack piece by piece (header, each entry, trailer), so a large
+/// pack streams out without being held whole.
+pub struct PackWriter {
+    hasher: Sha1,
+}
+
+impl PackWriter {
+    /// The writer and the pack header for `count` entries.
+    pub fn new(count: u32) -> (Self, Vec<u8>) {
+        let mut header = b"PACK".to_vec();
+        header.extend_from_slice(&2u32.to_be_bytes());
+        header.extend_from_slice(&count.to_be_bytes());
+        let mut hasher = Sha1::new();
+        hasher.update(&header);
+        (Self { hasher }, header)
+    }
+
+    /// One whole object, zlib-compressed.
+    pub fn entry(&mut self, kind: ObjectKind, data: &[u8]) -> Vec<u8> {
         let mut size = data.len();
         let mut byte = (kind.pack_code() << 4) | (size & 15) as u8;
         size >>= 4;
+        let mut out = Vec::with_capacity(data.len() / 2 + 16);
         while size > 0 {
             out.push(byte | 0x80);
             byte = (size & 0x7f) as u8;
@@ -42,10 +66,14 @@ pub fn write_pack(objects: &[(ObjectKind, &[u8])]) -> Result<Vec<u8>> {
         }
         out.push(byte);
         out.extend_from_slice(&compress_to_vec_zlib(data, 6));
+        self.hasher.update(&out);
+        out
     }
-    let trailer: [u8; 20] = Sha1::digest(&out).into();
-    out.extend_from_slice(&trailer);
-    Ok(out)
+
+    /// The trailer: SHA-1 of everything written before it.
+    pub fn finish(self) -> [u8; 20] {
+        self.hasher.finalize().into()
+    }
 }
 
 /// Reads an undeltified pack, verifying the trailer checksum and every size limit.
@@ -98,7 +126,7 @@ pub fn read_pack(bytes: &[u8], limits: PackLimits) -> Result<Vec<(ObjectKind, Ve
     Ok(objects)
 }
 
-fn inflate_exact(input: &[u8], size: usize) -> Result<(Vec<u8>, usize)> {
+pub(super) fn inflate_exact(input: &[u8], size: usize) -> Result<(Vec<u8>, usize)> {
     let mut state = InflateState::new_boxed(DataFormat::Zlib);
     // One spare byte detects a stream that inflates past its declared size.
     let mut out = vec![0u8; size + 1];

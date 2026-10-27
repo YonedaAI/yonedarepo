@@ -52,6 +52,10 @@ pub fn compute(c: Value) -> Result<Value> {
         "project_changesets" => crate::platform_project::project_changesets(&c),
         "head_begin" => crate::platform_head::head_begin(&c),
         "head_access" => crate::platform_head::head_access(&c),
+        "git_advertise" => crate::platform_git_http::advertise(&c),
+        "git_upload_request" => crate::platform_git_http::parse_upload(&c),
+        "git_acknowledge" => crate::platform_git_http::acknowledge(&c),
+        "git_report" => crate::platform_git_http::report(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }

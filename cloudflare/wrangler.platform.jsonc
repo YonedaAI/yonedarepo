@@ -9,6 +9,11 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  // Git over HTTPS reads or writes one R2 object per Git object it sends or receives
+  // (up to 40,000 per push or fetch).
+  "limits": {
+    "subrequests": 50000
+  },
   "workers_dev": true,
   "preview_urls": false,
   "observability": {

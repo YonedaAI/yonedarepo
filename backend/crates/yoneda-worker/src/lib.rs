@@ -6,6 +6,7 @@ mod workspace;
 pub use workspace::WorkspaceAuthority;
 mod commit_shard;
 mod compute;
+mod git_http;
 mod source_repository;
 mod source_workspace;
 pub use commit_shard::CommitShard;
