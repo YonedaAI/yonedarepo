@@ -1,4 +1,5 @@
 //! The repository's landing policy and check names.
+use crate::secret_scan::SecretAllow;
 use crate::storage::bad;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -25,6 +26,9 @@ pub struct Policy {
     /// that never bind posters keep their digest.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub check_posters: BTreeMap<String, Vec<String>>,
+    /// Secret-scan false positives the owner accepted, by path and rule. Omitted when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub secret_allow: Vec<SecretAllow>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -70,6 +74,7 @@ impl Policy {
             )));
         }
         policy.check_bound_posters()?;
+        crate::secret_scan::validate_allow(&policy.secret_allow)?;
         let json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
         let digest = yoneda_core::fingerprint(&json)?;
         Ok((policy, json, digest))

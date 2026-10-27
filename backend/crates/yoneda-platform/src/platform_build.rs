@@ -32,7 +32,7 @@ pub fn build_commit(c: &Value) -> Result<Value> {
         .flatten()
         .map(parent)
         .collect::<Result<Vec<_>>>()?;
-    let changes = changes(c)?;
+    let changes = changes(c, &[])?;
     let trees = Trees(supplied_trees(c)?);
     let paths: Vec<&str> = changes.iter().map(|ch| ch.path.as_str()).collect();
     let missing = frontier(first.as_ref().map(|p| p.tree), &paths, &trees);
