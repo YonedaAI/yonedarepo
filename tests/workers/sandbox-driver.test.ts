@@ -153,7 +153,7 @@ describe('sandbox attempt steps', () => {
       }
     };
     await drive(sandbox);
-    expect(sandbox.failed).toBe('Claude Code failed: API Error: 401 Unauthorized');
+    expect(sandbox.failed).toBe('The agent CLI failed: API Error: 401 Unauthorized');
     expect(sandbox.calls.some((c) => c.startsWith('push'))).toBe(false);
     expect(sandbox.destroyed).toBe(true);
   });
@@ -165,7 +165,7 @@ describe('sandbox attempt steps', () => {
       if (s.calls.includes('startAgent')) s.taskState = { state: 'exited', exitCode: 1 };
     };
     await drive(sandbox);
-    expect(sandbox.failed).toBe('Claude Code failed: exited with 1: Error: Invalid API key');
+    expect(sandbox.failed).toBe('The agent CLI failed: exited with 1: Error: Invalid API key');
   });
 
   it('commits and pushes what exists at the safety cap, then stops', async () => {

@@ -42,27 +42,32 @@ describe('trusted adaptive run approval', () => {
     expect(() => resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'publisher' }] } }, pool)).toThrow();
     expect(() => resolveAdaptiveApproval(request, [])).toThrow();
   });
-  it('lets a sandbox run use only models its coding CLI can run', () => {
+  it('gives each sandbox agent a stock CLI its model can run, and refuses any other pair', () => {
     const sonnet = { id: 'sonnet', provider: 'claude', model: 'claude-sonnet-5-5', version: 1 };
     const compare = { ...request, mode: 'compare' };
-    // Without the sandbox, Auto takes the cheaper Codex model.
-    expect(resolveAdaptiveApproval(compare, [pool[0], sonnet]).agents[0].connection).toBe('codex');
-    for (const marker of [{ runtime: 'sandbox-cli-v1' }, { workspace_transport: 'sandbox-cli-v1' }]) {
-      const approved = resolveAdaptiveApproval({ ...compare, ...marker }, [pool[0], sonnet]);
-      expect(approved.agents.map((a: { connection: string }) => a.connection)).toEqual(['sonnet']);
-      expect(approved.model_budgets.map((b: { provider: string }) => b.provider)).toEqual(['claude']);
-    }
-    const mimo = { id: 'mimo', provider: 'mimo', model: 'mimo-v2.6-flash', version: 1 };
-    const chosen = (connection: string) => ({ mode: 'compare', runtime: 'sandbox-cli-v1',
-      adaptive_team: { version: 1, requested_agents: [{ connection: 'glm', role: 'builder' }, { connection, role: 'builder' }] } });
-    expect(resolveAdaptiveApproval(chosen('mimo'), [...pool, mimo]).agents).toHaveLength(2);
-    let refused: unknown;
-    try {
-      resolveAdaptiveApproval(chosen('codex'), pool);
-    } catch (error) {
-      refused = error;
-    }
-    expect(refused).toMatchObject({ code: 'SANDBOX_HARNESS' });
+    // Every provider has a sandbox CLI now (Codex CLI for OpenAI): Auto still takes the cheaper.
+    for (const marker of [{}, { runtime: 'sandbox-cli-v1' }, { workspace_transport: 'sandbox-cli-v1' }])
+      expect(resolveAdaptiveApproval({ ...compare, ...marker }, [pool[0], sonnet]).agents[0].connection).toBe('codex');
+    const chosen = (connection: string, cli?: string, runtime: object = { runtime: 'sandbox-cli-v1' }) => ({
+      mode: 'compare',
+      ...runtime,
+      adaptive_team: { version: 1, requested_agents: [{ connection: 'glm', role: 'builder' }, { connection, role: 'builder', ...(cli ? { cli } : {}) }] },
+    });
+    const approved = resolveAdaptiveApproval(chosen('codex', 'opencode'), pool).agents;
+    // Unchosen, the ledger freezes the provider's default CLI.
+    expect(approved.map((agent: { cli?: string }) => agent.cli)).toEqual([undefined, 'opencode']);
+    const refusal = (body: object) => {
+      try {
+        resolveAdaptiveApproval(body, pool);
+      } catch (error) {
+        return (error as { code?: string }).code;
+      }
+    };
+    // Claude Code speaks only Anthropic Messages; Codex CLI only OpenAI Responses.
+    expect(refusal(chosen('codex', 'claude'))).toBe('SANDBOX_HARNESS');
+    expect(refusal(chosen('glm', 'codex'))).toBe('SANDBOX_HARNESS');
+    expect(refusal(chosen('glm', 'aider'))).toBe('SANDBOX_HARNESS');
+    expect(refusal(chosen('codex', 'codex', {}))).toBe('INVALID_INPUT');
   });
   it('retains saved billing routing and bounded priced budgets for every allowed group', () => {
     const approved = resolveAdaptiveApproval(request, [{ ...pool[1], routing: { plan: 'api_credits' } }]);
