@@ -57,11 +57,14 @@ class FakeCheckSandbox implements CheckPort {
   destroyed = false;
   active = true;
   throwOn: string | null = null;
+  error: string | null = null;
+  deferred = 0;
+  deferFails = false;
   onTick?: (sandbox: FakeCheckSandbox) => void;
 
   private guard(name: string) {
     this.calls.push(name);
-    if (this.throwOn === name) throw new Error(`${name} unavailable`);
+    if (this.throwOn === name) throw new Error(this.error ?? `${name} unavailable`);
   }
   now = () => this.clock;
   attemptActive = async () => this.active;
@@ -88,6 +91,11 @@ class FakeCheckSandbox implements CheckPort {
   };
   fail = async (reason: string) => {
     this.failed = reason;
+  };
+  defer = async () => {
+    this.calls.push('defer');
+    if (this.deferFails) throw new Error('ledger unavailable');
+    this.deferred += 1;
   };
   destroy = async () => {
     this.destroyed = true;
@@ -229,6 +237,33 @@ describe('check sandbox steps', () => {
     expect(sandbox.calls.filter((c) => c === 'run:math')).toHaveLength(CHECK_LIMITS.maxErrors);
     expect(sandbox.failed).toBe('Check sandbox checks failed: run:math unavailable');
     expect(sandbox.destroyed).toBe(true);
+  });
+
+  it('gives the check back to be retried later when no sandbox can start yet', async () => {
+    const sandbox = new FakeCheckSandbox();
+    sandbox.throwOn = 'prepare';
+    sandbox.error = 'Maximum number of running container instances exceeded. Try again later.';
+    const state = await drive(sandbox);
+    expect(sandbox.deferred).toBe(1);
+    expect(sandbox.failed).toBeNull();
+    expect(sandbox.calls).toEqual(['prepare', 'defer']);
+    expect(state.phase).toBe('done');
+    expect(sandbox.destroyed).toBe(true);
+  });
+
+  it('fails a start error that is not capacity, and counts a lost deferral as an error', async () => {
+    const other = new FakeCheckSandbox();
+    other.throwOn = 'prepare';
+    await drive(other);
+    expect(other.deferred).toBe(0);
+    expect(other.failed).toBe('Check sandbox starting failed: prepare unavailable');
+    const lost = new FakeCheckSandbox();
+    lost.throwOn = 'prepare';
+    lost.error = 'there is no container instance that can be provided to this durable object';
+    lost.deferFails = true;
+    await drive(lost);
+    expect(lost.calls.filter((c) => c === 'prepare')).toHaveLength(CHECK_LIMITS.maxErrors);
+    expect(lost.failed).toContain('Check sandbox starting failed');
   });
 
   it('stops once the ledger cancelled or superseded the check attempt', async () => {

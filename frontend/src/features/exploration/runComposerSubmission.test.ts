@@ -34,6 +34,7 @@ import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { AgentRoster } from './AgentRoster';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunComposer } from './RunComposer';
+import { RunRuntimePicker } from './RunRuntimePicker';
 import { readAllowance } from './WorkspaceAllowance';
 
 const snapshot = {
@@ -223,6 +224,98 @@ describe('preference-only brief submission', () => {
     enterBrief();
     await submit({ startUncertain: true });
     expect(start.mock.calls[1][0]).toBe(start.mock.calls[0][0]);
+  });
+});
+describe('sandbox runtime', () => {
+  const deployed = {
+    ...snapshot,
+    capabilities: { ...snapshot.capabilities, sandbox_runtime: 'sandbox-cli-v1' },
+  } as unknown as Snapshot;
+  const view = () => render({ snapshot: deployed });
+  async function connect(providers: Record<string, string>[]) {
+    hooks.api.mockResolvedValue({ providers });
+    view();
+    hooks.effects[0]();
+    for (let i = 0; i < 3; i++) await Promise.resolve();
+  }
+  async function startRun(agents: Record<string, string>[]) {
+    find(view(), (el) => el.type === 'textarea' && el.props.maxLength === 16000)?.props.onChange({
+      target: { value: 'Fix duplicate registration' },
+    });
+    if (agents.length) find(view(), (el) => el.type === AgentRoster)?.props.onChange(agents);
+    await submit({ snapshot: deployed });
+    return start.mock.calls[0]?.[0];
+  }
+  it('defaults to independent sandbox attempts the owner chooses among, without a reviewer', async () => {
+    const tree = view();
+    expect(find(tree, (el) => el.type === RunRuntimePicker)?.props.sandbox).toBe(true);
+    expect(find(tree, (el) => el.type === RunModePicker)?.props.value).toBe('compare');
+    expect(find(tree, (el) => el.type === AgentRoster)?.props.compare).toBe(false);
+    const body = await startRun([]);
+    expect(body).toMatchObject({
+      mode: 'compare',
+      runtime: 'sandbox-cli-v1',
+      adaptive_team: { requested_agents: [{ connection: null, role: 'auto' }] },
+    });
+    expect(body).not.toHaveProperty('comparison');
+    expect(body).not.toHaveProperty('team');
+  });
+  it('starts a sandbox team on the owner-written task plan, never automatic planning', async () => {
+    find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
+    expect(find(view(), (el) => el.type === TeamPlanOptions)?.props.automaticSupported).toBe(false);
+    // Without an advanced task plan the start is refused in the browser already.
+    expect(await startRun([])).toBeUndefined();
+    const options = () => find(view(), (el) => el.type === TeamPlanOptions)?.props;
+    options()?.onManualChange(true);
+    const plan = options()?.value;
+    options()?.onChange({
+      ...plan,
+      contract: 'Each task writes its own file',
+      // The plan format still names integration paths; a sandbox team integrates by landing.
+      integrationPaths: 'notes/',
+      tasks: plan.tasks.map((task: Record<string, unknown>) => ({
+        ...task,
+        title: 'Write the note',
+        instructions: 'Create notes/one.md',
+        writePaths: 'notes/',
+      })),
+    });
+    const body = await startRun([]);
+    expect(body).toMatchObject({
+      mode: 'collaborate',
+      runtime: 'sandbox-cli-v1',
+      team: { version: 1 },
+    });
+    expect(body.team.tasks.length).toBeGreaterThan(0);
+    expect(body).not.toHaveProperty('comparison');
+  });
+  it('takes more than two sandbox agents', async () => {
+    const three = ['a', 'b', 'c'].map((id) => ({ id, connection: '', role: 'auto', strategy: id }));
+    const body = await startRun(three);
+    expect(body.adaptive_team.requested_agents).toHaveLength(3);
+    expect(body).toMatchObject({ mode: 'compare', runtime: 'sandbox-cli-v1' });
+  });
+  it('disables the sandbox with a reason when a chosen model needs another CLI', async () => {
+    await connect([{ id: 'codex', provider: 'codex', model: 'gpt-5.6-luna', label: 'Codex' }]);
+    find(view(), (el) => el.type === AgentRoster)?.props.onChange([
+      { id: 'a', connection: 'codex', role: 'auto', strategy: 'a' },
+    ]);
+    const picker = find(view(), (el) => el.type === RunRuntimePicker);
+    expect(picker?.props).toMatchObject({ sandbox: false });
+    expect(picker?.props.blocker).toContain("Codex can't run in the sandbox");
+    const body = await startRun([]);
+    expect(body).not.toHaveProperty('runtime');
+    expect(body.mode).toBe('collaborate');
+  });
+  it('keeps Classic exactly as before when chosen', async () => {
+    find(view(), (el) => el.type === RunRuntimePicker)?.props.onChange('classic');
+    expect(find(view(), (el) => el.type === RunModePicker)).toBeDefined();
+    const body = await startRun([]);
+    expect(body).toMatchObject({ mode: 'collaborate' });
+    expect(body).not.toHaveProperty('runtime');
+  });
+  it('offers no sandbox where the deployment does not advertise it', () => {
+    expect(find(render(), (el) => el.type === RunRuntimePicker)).toBeUndefined();
   });
 });
 describe('workspace allowance readback', () => {

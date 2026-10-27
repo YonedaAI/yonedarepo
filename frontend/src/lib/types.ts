@@ -101,6 +101,8 @@ export interface Snapshot {
     working_branches?: number;
     agent_coordination?: number;
     autonomous_repair?: number;
+    /** Set by the Worker where new runs may use the sandbox (`sandbox-cli-v1`). */
+    sandbox_runtime?: string;
   };
 }
 export interface AgentLimits {

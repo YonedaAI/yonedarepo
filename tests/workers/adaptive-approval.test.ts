@@ -42,6 +42,28 @@ describe('trusted adaptive run approval', () => {
     expect(() => resolveAdaptiveApproval({ adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'publisher' }] } }, pool)).toThrow();
     expect(() => resolveAdaptiveApproval(request, [])).toThrow();
   });
+  it('lets a sandbox run use only models its coding CLI can run', () => {
+    const sonnet = { id: 'sonnet', provider: 'claude', model: 'claude-sonnet-5-5', version: 1 };
+    const compare = { ...request, mode: 'compare' };
+    // Without the sandbox, Auto takes the cheaper Codex model.
+    expect(resolveAdaptiveApproval(compare, [pool[0], sonnet]).agents[0].connection).toBe('codex');
+    for (const marker of [{ runtime: 'sandbox-cli-v1' }, { workspace_transport: 'sandbox-cli-v1' }]) {
+      const approved = resolveAdaptiveApproval({ ...compare, ...marker }, [pool[0], sonnet]);
+      expect(approved.agents.map((a: { connection: string }) => a.connection)).toEqual(['sonnet']);
+      expect(approved.model_budgets.map((b: { provider: string }) => b.provider)).toEqual(['claude']);
+    }
+    const mimo = { id: 'mimo', provider: 'mimo', model: 'mimo-v2.6-flash', version: 1 };
+    const chosen = (connection: string) => ({ mode: 'compare', runtime: 'sandbox-cli-v1',
+      adaptive_team: { version: 1, requested_agents: [{ connection: 'glm', role: 'builder' }, { connection, role: 'builder' }] } });
+    expect(resolveAdaptiveApproval(chosen('mimo'), [...pool, mimo]).agents).toHaveLength(2);
+    let refused: unknown;
+    try {
+      resolveAdaptiveApproval(chosen('codex'), pool);
+    } catch (error) {
+      refused = error;
+    }
+    expect(refused).toMatchObject({ code: 'SANDBOX_HARNESS' });
+  });
   it('retains saved billing routing and bounded priced budgets for every allowed group', () => {
     const approved = resolveAdaptiveApproval(request, [{ ...pool[1], routing: { plan: 'api_credits' } }]);
     expect(approved.agents[0].routing).toEqual({ plan: 'api_credits' });

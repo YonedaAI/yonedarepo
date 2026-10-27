@@ -27,7 +27,12 @@ export async function freezeSourceApproval(
   delete input.workspace_transport;
   if (!env.SOURCES || repository.capabilities?.source_api !== 1)
     fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
-  if (transport !== 'api-source-v1' && repository.capabilities?.sandbox_cli !== 1)
+  // Ledger `sandbox_cli` 1 takes one sandbox agent; 2 takes compare runs, one sandbox each.
+  const agents = (input.agents ?? input.adaptive_team?.requested_agents ?? []).length;
+  if (
+    transport !== 'api-source-v1' &&
+    !((repository.capabilities?.sandbox_cli ?? 0) >= (agents > 1 ? 2 : 1))
+  )
     fail('LEDGER_UPDATING', 'Sandbox runs are updating; refresh before starting.');
   let revision = {
     repository: `${repository.remote.namespace}/${repository.remote.name}`,

@@ -34,7 +34,15 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
     if (!path.endsWith('/provision') || req.method !== 'POST')
       return error('NOT_FOUND', 'Unknown reviewer operation', 404);
     const repo = `reviewer-${(await sha(owner)).slice(0, 24)}`;
-    const expires = Date.UTC(2026, 9, 23);
+    // The judging window by default; tests pass their own, at most 30 days ahead.
+    const expires = body.expires_at ?? Date.UTC(2026, 9, 23);
+    if (
+      body.expires_at !== undefined &&
+      (!Number.isSafeInteger(expires) ||
+        expires <= Date.now() ||
+        expires > Date.now() + 30 * 24 * 60 * 60 * 1000)
+    )
+      return error('INVALID_INPUT', 'expires_at must be within the next 30 days');
     const policy = await workspace(env, owner, {
       op: 'reviewer_configure',
       repo_id: repo,

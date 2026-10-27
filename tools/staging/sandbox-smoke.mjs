@@ -3,12 +3,15 @@
 // commit as its candidate within the time limit, and fails when the checks reject that commit.
 // It reports the same timing table as the agent smoke plus the sandbox's own milestones, the
 // tokens the CLI reported and their cost at the registry's conservative rates, and always
-// deletes the project.
-// `--team`: an owner-written two-task team run whose tasks touch different files, so both
-// members' commits must land on the team branch through the platform's merge. It passes only
-// when both members landed, the team branch candidate holds both changes and its checks make
-// it eligible. `--team-conflict`: two tasks rewrite the same line; it passes when exactly one
-// member was resumed once after a conflict and the run still formed its team candidate.
+// deletes the project. `agents: 2` runs one compare run instead, one managed GLM and one MiMo
+// agent, each in its own sandbox: it passes only when both candidates are recorded and checked
+// (eligible), and prints each agent's timing.
+// `team: 'disjoint'` (`--team`): an owner-written two-task team run whose tasks touch different
+// files, so both members' commits must land on the team branch through the platform's merge.
+// It passes only when both members landed, the team branch candidate holds both changes and
+// its checks make it eligible. `team: 'conflict'` (`--team-conflict`): two tasks rewrite the
+// same line; it passes when exactly one member was resumed once after a conflict and the run
+// still formed its team candidate.
 import { readFileSync } from 'node:fs';
 import { SMOKE_BRIEF, SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
 import { sleep } from './client.mjs';
@@ -108,27 +111,41 @@ function teamVerdict(detail, mode) {
   return { lines, problem, landed, resumed };
 }
 
-/** Polls until the run records a candidate (the pushed commit) or cannot (throws). */
-async function waitPushed(account, repo, id, timeoutMs) {
+/** One compare run on the sandbox: one managed GLM and one MiMo agent, no reviewer. */
+async function startCompare(account, repo) {
+  const id = `run-${crypto.randomUUID()}`;
+  const requested = ['zai', 'mimo'].map((provider) => ({ connection: `managed-${provider}`, role: 'builder' }));
+  await account.post(`/api/repos/${repo}/start_run`, { id, mode: 'compare', ...SMOKE_BRIEF, context: [], adaptive_team: { version: 1, requested_agents: requested }, runtime: 'sandbox-cli-v1' });
+  return id;
+}
+
+/**
+ * Polls until every agent's pushed commit is a candidate, or one cannot be (throws). A team
+ * has one candidate, its team branch, which forms even when a member failed (`team`).
+ */
+async function waitPushed(account, repo, id, agents, timeoutMs, team = false) {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const detail = await account.get(`/api/repos/${repo}/runs/${id}`);
-    const candidate = (detail.candidates ?? []).find((c) => c.revision?.commit);
-    if (candidate) return { detail, candidate };
-    if (FAILED.includes(detail.run.status)) throw new Error(`Run ${detail.run.status}: ${runFailure(detail) || 'no recorded error'}`);
-    if (Date.now() >= deadline) throw new Error(`No pushed commit within ${seconds(timeoutMs)} s (run ${detail.run.status})`);
+    const candidates = (detail.candidates ?? []).filter((c) => c.revision?.commit);
+    if (candidates.length >= agents) return { detail, candidates };
+    const failed = !team && (detail.executions ?? []).find((e) => e.status === 'failed');
+    if (FAILED.includes(detail.run.status) || failed) throw new Error(`Run ${detail.run.status}: ${runFailure(detail) || failed?.error || 'no recorded error'}`);
+    if (Date.now() >= deadline) throw new Error(`${candidates.length} of ${agents} pushed commits within ${seconds(timeoutMs)} s (run ${detail.run.status})`);
     await sleep(3000);
   }
 }
 
-/** Polls the candidate's checks; `null` when they have not finished within `waitMs`. */
-async function waitChecked(account, repo, id, candidateId, waitMs) {
+/** Polls the candidates' checks; a `null` status has not finished within `waitMs`. */
+async function waitChecked(account, repo, id, candidateIds, waitMs) {
   const deadline = Date.now() + waitMs;
   for (;;) {
     const detail = await account.get(`/api/repos/${repo}/runs/${id}`);
-    const candidate = (detail.candidates ?? []).find((c) => c.id === candidateId);
-    if (candidate && !['evaluating', 'pending', 'queued', 'running'].includes(candidate.status)) return { detail, status: candidate.status };
-    if (Date.now() >= deadline) return { detail, status: null };
+    const statuses = candidateIds.map((cid) => {
+      const status = (detail.candidates ?? []).find((c) => c.id === cid)?.status;
+      return ['evaluating', 'pending', 'queued', 'running', undefined].includes(status) ? null : status;
+    });
+    if (statuses.every(Boolean) || Date.now() >= deadline) return { detail, statuses };
     await sleep(5000);
   }
 }
@@ -142,12 +159,15 @@ function sandboxLines(entries, startedAt) {
   ];
 }
 
-export async function sandboxSmoke({ account, owner, username, provider = 'zai', team: mode = null, timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
+export async function sandboxSmoke({ account, owner, username, provider = 'zai', agents = 1, team: mode = null, timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
   const cheap = CHEAP.find((c) => c.provider === provider);
   if (!cheap) throw new Error(`Smoke provider must be one of ${CHEAP.map((c) => c.provider).join(', ')}`);
+  if (![1, 2].includes(agents)) throw new Error('The sandbox smoke takes --agents 1 or 2');
   const team = mode ? TEAMS[mode] : null;
   if (mode && !team) throw new Error(`Team smoke must be one of ${Object.keys(TEAMS).join(', ')}`);
-  Object.assign(metrics, { runtime: 'sandbox-cli-v1', model: `${provider}/${cheap.model}`, ...(mode ? { team: mode } : {}) });
+  if (team && agents !== 1) throw new Error('A team smoke runs two tasks on one agent model: drop --agents');
+  const models = agents === 2 ? CHEAP.filter((c) => ['zai', 'mimo'].includes(c.provider)) : [cheap];
+  Object.assign(metrics, { runtime: 'sandbox-cli-v1', agents, model: models.map((m) => `${m.provider}/${m.model}`).join(' + '), ...(mode ? { team: mode } : {}) });
   const project = await createProject(account, `sandbox-smoke-${Date.now()}`, metrics, team?.policy ?? SMOKE_POLICY);
   let failure;
   try {
@@ -156,23 +176,32 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
     const startedAt = Date.now();
     const runId = team
       ? await startTeam(account, project.id, provider, cheap.model, team)
-      : await startSingle(account, project.id, provider, 'sandbox-cli-v1');
+      : agents === 2
+        ? await startCompare(account, project.id)
+        : await startSingle(account, project.id, provider, 'sandbox-cli-v1');
     metrics.run = runId;
+    // Each agent's own timing (its sandbox milestones), then the run's shared timeline.
     const report = async (detail) => {
-      const execution = detail?.executions?.find((e) => e.runtime === 'sandbox-cli-v1');
-      const log = execution ? await activity(account, project.id, execution.id).catch(() => ({ entries: [] })) : { entries: [] };
-      const tokens = tokenSpend(provider, cheap.model, log.entries.find((e) => e.kind === 'result')?.text);
-      if (tokens) metrics.tokens = `${tokens.input}/${tokens.output}`;
-      if (tokens?.usd != null) metrics.spend_usd = tokens.usd.toFixed(4);
-      if (tokens?.usd != null) metrics.spend_target = tokens.usd < SMOKE_TARGET_USD ? 'met' : `over $${SMOKE_TARGET_USD}`;
-      const members = team && detail ? ['team members:', ...teamVerdict(detail, mode).lines] : [];
-      return [await timeline(account, project.id, detail, startedAt, { verbose: false }), ...sandboxLines(log.entries, startedAt), ...members].join('\n');
+      const lines = [await timeline(account, project.id, detail, startedAt, { verbose: false })];
+      let usd = 0;
+      for (const execution of detail?.executions ?? []) {
+        const log = await activity(account, project.id, execution.id).catch(() => ({ entries: [] }));
+        const tokens = tokenSpend(execution.provider, execution.model, log.entries.find((e) => e.kind === 'result')?.text);
+        if (tokens) metrics[`tokens_${execution.provider}`] = `${tokens.input}/${tokens.output}`;
+        usd += tokens?.usd ?? 0;
+        const candidate = (detail.candidates ?? []).find((c) => c.execution === execution.id);
+        lines.push(`${execution.id} ${execution.provider}/${execution.model}: ${execution.status}${candidate ? `, candidate ${candidate.status}${candidate.created_at ? ` at +${seconds(candidate.created_at - startedAt)} s` : ''}` : ''}`, ...sandboxLines(log.entries, startedAt));
+      }
+      metrics.spend_usd = usd.toFixed(4);
+      metrics.spend_target = usd < SMOKE_TARGET_USD * agents ? 'met' : `over $${SMOKE_TARGET_USD * agents}`;
+      if (team && detail) lines.push('team members:', ...teamVerdict(detail, mode).lines);
+      return lines.join('\n');
     };
     try {
-      const { candidate } = await waitPushed(account, project.id, runId, timeoutMs);
-      Object.assign(metrics, { pushed_s: seconds(Date.now() - startedAt), commit: candidate.revision.commit.slice(0, 12) });
-      const checked = await waitChecked(account, project.id, runId, candidate.id, checkWaitMs);
-      metrics.checked = checked.status ?? `pending after ${seconds(checkWaitMs)} s`;
+      const { candidates } = await waitPushed(account, project.id, runId, agents, timeoutMs, !!team);
+      Object.assign(metrics, { pushed_s: seconds(Date.now() - startedAt), commits: candidates.map((c) => c.revision.commit.slice(0, 12)).join(' ') });
+      const checked = await waitChecked(account, project.id, runId, candidates.map((c) => c.id), checkWaitMs);
+      metrics.checked = checked.statuses.map((s) => s ?? `pending after ${seconds(checkWaitMs)} s`).join(', ');
       metrics.wall_s = seconds(Date.now() - startedAt);
       console.log(`Sandbox smoke timeline (run ${runId}):\n${await report(checked.detail)}`);
       if (team) {
@@ -180,12 +209,14 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
         const verdict = teamVerdict(checked.detail, mode);
         Object.assign(metrics, { landed: verdict.landed, resumed: verdict.resumed });
         if (verdict.problem) throw new Error(`Team smoke: ${verdict.problem}`);
-        const { diff = '' } = await account.get(`/api/repos/${project.id}/candidate?id=${encodeURIComponent(candidate.id)}`);
+        const { diff = '' } = await account.get(`/api/repos/${project.id}/candidate?id=${encodeURIComponent(candidates[0].id)}`);
         const missing = team.paths.filter((path) => !diff.includes(`diff --git a/${path} b/${path}`));
         if (missing.length) throw new Error(`The team branch lacks ${missing.join(', ')}`);
-        if (mode === 'disjoint' && checked.status !== 'eligible') throw new Error(`The team branch was ${checked.status ?? 'not checked in time'}`);
+        if (mode === 'disjoint' && checked.statuses[0] !== 'eligible') throw new Error(`The team branch was ${checked.statuses[0] ?? 'not checked in time'}`);
       }
-      if (checked.status && checked.status !== 'eligible') throw new Error(`The pushed commit was ${checked.status} by its checks`);
+      // A rejected commit fails the smoke; with two agents, so does a check still pending.
+      if (checked.statuses.some((s) => (agents > 1 ? s !== 'eligible' : s && s !== 'eligible')))
+        throw new Error(`Not every pushed commit passed its checks: ${metrics.checked}`);
     } catch (error) {
       failure = error;
       metrics.wall_s ??= seconds(Date.now() - startedAt);
