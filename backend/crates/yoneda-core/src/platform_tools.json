@@ -1128,6 +1128,28 @@
     }
   },
   {
+    "name": "git_tag",
+    "description": "Create a lightweight tag (refs/tags/<name>) at a recorded commit. Tags are immutable: creating an existing tag at the same commit is a no-op, at another commit returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs, served to git clone and mirrored to the object store. Annotated tags are not supported.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "name",
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_land",
     "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged. Returns the landing's transaction-log version: reads of main that pass it as min_version see the landing at once, while main's Git commit is projected shortly after (git_commit is null until then).",
     "inputSchema": {

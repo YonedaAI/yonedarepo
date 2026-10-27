@@ -191,6 +191,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
       land_mode: req.headers.get('x-yoneda-land-mode'),
     });
   if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
+  if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.

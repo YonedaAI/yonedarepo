@@ -39,6 +39,7 @@ pub(crate) mod staging;
 mod store_lineage;
 mod submitted;
 mod symbols;
+mod tags;
 mod tree_cache;
 mod vacuum;
 mod version_projection;
@@ -67,6 +68,11 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let actor = auth::actor(db, c, &settings)?;
     match op.as_str() {
+        // Tags are release markers that never move: creating one needs `land` as well.
+        "repo_tag_create" => actor.require("write").and_then(|()| actor.require("land")),
+        "repo_branch_batch" if tags::in_batch(c) => {
+            actor.require("write").and_then(|()| actor.require("land"))
+        }
         "repo_prepare_commit"
         | "repo_record_commit"
         | "repo_branch_set"
@@ -199,6 +205,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
         "repo_branch_batch" => branches::batch(db, c, principal),
+        "repo_tag_create" => tags::create(db, c, principal),
         // Git over HTTPS: each checks its own scope (read to fetch, write to push).
         "repo_git_access" => git_http::access(&actor, c, &settings),
         "repo_git_walk" => git_http::walk(db, c, &actor),

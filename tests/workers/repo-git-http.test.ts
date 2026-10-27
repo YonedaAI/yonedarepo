@@ -1,9 +1,10 @@
 // Git over HTTPS access: credentials as Git sends them (a token as the Basic password,
 // asked for with a 401) and the authority's verdict per service: read to fetch, write to
-// push, never a path-restricted grant, and a personal token only on its allowlist.
+// push, never a path-restricted grant, and a personal token only on its allowlist. Tags
+// are created once over REST and advertised to Git.
 import { expect, it } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -105,4 +106,32 @@ it('asks Git for credentials and holds each token to its service, grant and allo
 
   expect((await git(`${a}.git/info/refs`, basic(reader))).status).toBe(403);
   expect((await git('nope.git/info/refs?service=git-upload-pack', basic(reader))).status).toBe(404);
+});
+
+it('creates lightweight tags over REST, lists and advertises them, and never moves them', async () => {
+  const cookie = await signup('tagger');
+  const id = await repo(cookie, 'tagged');
+  const owner = { cookie };
+  const { refs } = (await api(`/repos/${id}/refs`, owner)).body;
+  const main = refs['refs/heads/main'];
+  queued.length = 0;
+  const made = await api(`/repos/${id}/tags`, owner, { body: { name: 'v1', commit: main } });
+  expect(made.status).toBe(200);
+  expect(made.body).toMatchObject({ ref: 'refs/tags/v1', commit: main });
+  expect(queued.some((m) => m.kind === 'platform_project')).toBe(true); // mirrored like main
+  expect((await api(`/repos/${id}/refs`, owner)).body.refs['refs/tags/v1']).toBe(main);
+  expect((await api(`/repos/${id}/tags`, owner, { body: { name: 'v1', commit: main } })).body.already).toBe(true);
+
+  const changed = await api(`/repos/${id}/commits`, owner, {
+    body: { ref: 'main', changes: [file('docs/b.md', 'b\n')], message: 'b', author },
+  });
+  const moved = await api(`/repos/${id}/tags`, owner, { body: { name: 'v1', commit: changed.body.commit } });
+  expect(moved.body.error.code).toBe('ALREADY_EXISTS');
+
+  const write = (await api(`/repos/${id}/tokens`, owner, { body: { name: 'w', scopes: ['read', 'write'] } })).body.token;
+  const denied = await api(`/repos/${id}/tags`, { token: write }, { body: { name: 'v2', commit: main } });
+  expect([denied.status, denied.body.error.code]).toEqual([403, 'FORBIDDEN']);
+
+  const advertised = await git(`${id}.git/info/refs?service=git-upload-pack`, basic(write));
+  expect(advertised.text).toContain(`${main} refs/tags/v1\n`);
 });

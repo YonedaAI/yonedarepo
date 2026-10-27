@@ -67,8 +67,8 @@ pub fn raw_objects(c: &Value) -> Result<Vec<(ObjectKind, Vec<u8>)>> {
 /// projected value as the expected old one) in one receive-pack request.
 pub fn branch_push(c: &Value) -> Result<Value> {
     let refname = string(c, "refname")?;
-    if !refname.starts_with("refs/heads/") {
-        return Err(bad("Only branch refs are projected"));
+    if !refname.starts_with("refs/heads/") && !refname.starts_with("refs/tags/") {
+        return Err(bad("Only branch and tag refs are projected"));
     }
     let old = match c.get("old").filter(|o| !o.is_null()) {
         Some(_) => Some(ObjectId::parse(&string(c, "old")?)?),
