@@ -9,7 +9,8 @@ import { workspace } from '../../cloudflare/worker/workspace';
 import { templateArtifacts } from './platform-fixture';
 
 export const bindings = env as unknown as Env;
-export const expires = Date.UTC(2026, 9, 23);
+/** The fixture's own reviewer window; the deployed default (Date.UTC(2026, 9, 23)) has passed. */
+export const expires = Date.now() + 7 * 24 * 60 * 60 * 1000;
 export const testKeys = ['synthetic-codex-key', 'synthetic-claude-key'];
 export function api(scoped: Env, path: string, cookie = '', body?: Json, admin = false) {
   return fetchRequest(new Request(`https://yoneda${path}`, {
@@ -41,7 +42,7 @@ export async function reviewerFixture(owner = 'review_alice') {
   const scoped = { ...bindings, OPENAI_KEY: { get: async () => testKeys[0] },
     ANTHROPIC_KEY: { get: async () => testKeys[1] }, AGENT_QUEUE: { send },
     ARTIFACTS: await templateArtifacts() } as unknown as Env;
-  const response = await api(scoped, '/api/admin/reviewer/provision', '', { username: owner }, true);
+  const response = await api(scoped, '/api/admin/reviewer/provision', '', { username: owner, expires_at: expires }, true);
   expect(response.status).toBe(200);
   const provisioned = await response.json<Json>();
   return { owner, cookie, scoped, send, provisioned, repo: provisioned.repo_id as string };
