@@ -11,6 +11,37 @@ use yoneda_core::{
     txlog::{TxEntry, TxKind, chain_digest},
 };
 
+/// Branch policy: a protected ref (`main`, `release`, `release/*`) lands with the `land` scope
+/// and only once its gates pass; any other branch lands with `write` and no gates, as
+/// `repo_branch_set` already moves it with `write`.
+pub fn scope(refname: &str) -> &'static str {
+    if rows::protected(refname) {
+        "land"
+    } else {
+        "write"
+    }
+}
+
+/// Refuses a landing on a protected ref until the commit's gates pass (see `scope`).
+pub(super) fn require_gates<S: SqlStore>(
+    db: &S,
+    id: &ObjectId,
+    refname: &str,
+    settings: &Settings,
+) -> Result<()> {
+    if !rows::protected(refname) {
+        return Ok(());
+    }
+    let gate = gates(db, id, settings)?;
+    if gate["ready"] != true {
+        return Err(Error::new(
+            "NOT_READY",
+            format!("Commit cannot land yet: {gate}"),
+        ));
+    }
+    Ok(())
+}
+
 /// Why a commit can or cannot land under the current policy.
 pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<Value> {
     let reviews = db.query(
@@ -190,13 +221,7 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     if current == Some(commit.id) || !landed.is_empty() {
         return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
     }
-    let gate = gates(db, &commit.id, settings)?;
-    if gate["ready"] != true {
-        return Err(Error::new(
-            "NOT_READY",
-            format!("Commit cannot land yet: {gate}"),
-        ));
-    }
+    require_gates(db, &commit.id, &refname, settings)?;
     // A fast-forward-only landing compares against the latest version: the adapter projects
     // the pending changesets and retries. Any other landing queues behind them.
     let unprojected = super::changesets::unprojected(db, &refname)?;

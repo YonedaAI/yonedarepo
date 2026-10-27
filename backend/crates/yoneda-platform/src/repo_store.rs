@@ -122,7 +122,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "Only the platform importer records imported history",
         )),
         "repo_review" => actor.require("review"),
-        "repo_land" | "repo_land_enqueue" => actor.require("land"),
+        // Protected refs need `land`; any other branch lands with `write` (`land::scope`).
+        "repo_land" | "repo_land_enqueue" => actor.require(land::scope(&rows::branch_ref(c)?)),
         // Only the platform merger builds and lands batches.
         "repo_land_claim"
         | "repo_land_batch"
