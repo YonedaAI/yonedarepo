@@ -120,6 +120,16 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
   expect(await ledger(bindings, repo, { op: 'job_status', id: jobId })).toMatchObject({
     status: 'done',
   });
+  // The platform keeps the session that made the commit, posted with the project token.
+  const { sessions } = await platform.call('GET', `/commits/${pushed.commit}/sessions`);
+  expect(sessions).toHaveLength(1);
+  expect(sessions[0]).toMatchObject({
+    cli: 'claude-code',
+    model: 'glm-5.3-flash',
+    summary: 'Added add(a,b)',
+    transcript_ref: `sandbox:${attempt.execution_id}`,
+  });
+  expect(sessions[0].prompt_digest).toMatch(/^[0-9a-f]{64}$/);
 });
 
 it('gives each agent of a compare run its own sandbox, branch and candidate', async () => {

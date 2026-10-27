@@ -1590,6 +1590,7 @@ mod land_shapes;
 mod members;
 mod pushed;
 mod secrets;
+mod sessions;
 mod shards;
 mod staging;
 mod tags;
