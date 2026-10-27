@@ -22,6 +22,17 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             "Contribution capture must rebuild the submission on its frozen base",
         ));
     }
+    // A sandbox team's candidate is its team branch head in the project's own repository; the
+    // trusted capture checked that the frozen base is its merge base.
+    if j["payload"]["capture_subtype"] == "sandbox_team"
+        && (result["revision"]["repository"] != j["payload"]["base"]["repository"]
+            || result["parents"].as_array().is_none_or(Vec::is_empty))
+    {
+        return Err(yoneda_agents_core::Error::new(
+            "INVALID_CAPTURE",
+            "A team capture is the team branch head in the project's repository",
+        ));
+    }
     hash(result, "tree", &[40, 64])?;
     let paths = result["paths"]
         .as_array()

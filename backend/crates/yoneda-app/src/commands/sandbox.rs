@@ -102,7 +102,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     }
     match string(&c, "op")?.as_str() {
         "sandbox_progress" => progress(db, &mut j, &c["activity"], now),
+        // A team member's commit lands on the team branch; the team gets one candidate.
+        "sandbox_finish" if super::sandbox_team::member(&j) => Err(Error::new(
+            "FORBIDDEN",
+            "Team members land on the team branch",
+        )),
         "sandbox_finish" => finish(db, &mut j, &c["result"], now),
+        "sandbox_land" => super::sandbox_team::land(db, &mut j, &c["landing"], now),
         _ => Err(Error::new("NOT_FOUND", "Unknown sandbox operation")),
     }
 }
@@ -110,7 +116,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
 /// Observed activity: what the CLI last did and when. It never changes the lease.
 fn progress<S: SqlStore>(db: &S, j: &mut Value, activity: &Value, now: i64) -> Result<Value> {
     let phase = string(activity, "phase")?;
-    if !["starting", "cloning", "running", "finalizing", "recording"].contains(&phase.as_str()) {
+    if ![
+        "starting",
+        "cloning",
+        "running",
+        "finalizing",
+        "landing",
+        "resolving",
+        "recording",
+    ]
+    .contains(&phase.as_str())
+    {
         return Err(bad("Unknown sandbox phase"));
     }
     let at = activity["last_activity_at"]

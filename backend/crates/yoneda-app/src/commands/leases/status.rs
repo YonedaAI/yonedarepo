@@ -84,6 +84,9 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             }
         }
         if job["status"] == "failed" {
+            super::super::sandbox_team::failed(db, &e, now)?;
+        }
+        if job["status"] == "failed" {
             let rid = string(&e, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
             if (run["mode"] == "compare" || run["external"] == true) && run["status"] == "exploring"
