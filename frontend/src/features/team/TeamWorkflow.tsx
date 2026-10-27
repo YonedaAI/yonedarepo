@@ -1,4 +1,6 @@
 import type { Snapshot } from '../../lib/types';
+import { SandboxTeam } from './SandboxTeam';
+import { isSandboxTeam } from './sandboxTeamView';
 import { TeamPlanning } from './TeamPlanning';
 import { TeamTaskCard } from './TeamTaskCard';
 import { type TeamRecord, teamTasks } from './teamView';
@@ -21,6 +23,17 @@ export function TeamWorkflow({
 }) {
   const tasks = teamTasks(snapshot, run);
   const specialists = tasks.filter((task) => task.role !== 'integrator');
+  if (isSandboxTeam(run))
+    return (
+      <section className="team-workflow" aria-labelledby="team-workflow-heading">
+        <h2 id="team-workflow-heading">Build together</h2>
+        <SandboxTeam
+          snapshot={snapshot}
+          run={run}
+          onProviders={reviewer ? undefined : onProviders}
+        />
+      </section>
+    );
   return (
     <section className="team-workflow" aria-labelledby="team-workflow-heading">
       <h2 id="team-workflow-heading">Build together</h2>
