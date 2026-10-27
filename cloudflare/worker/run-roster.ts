@@ -51,9 +51,8 @@ export function resolveRunRoster(
       .map((agent: Json) => agent.connection)
       .filter((id: unknown) => typeof id === 'string'),
   );
-  // A sandbox run starts a coding CLI per agent: Auto picks only models it can run, and a
-  // chosen model it cannot run is refused before the run starts.
-  const sandbox = [input.runtime, input.workspace_transport].includes('sandbox-cli-v1');
+  // Every run starts a coding CLI per agent in a sandbox: Auto picks only models one can run,
+  // and a chosen model none can run is refused before the run starts.
   const pool = connections.flatMap((connection) => {
     let definition: ProviderDefinition;
     try {
@@ -61,7 +60,7 @@ export function resolveRunRoster(
     } catch {
       return [];
     }
-    if (sandbox && !runsInSandbox(definition.id)) {
+    if (!runsInSandbox(definition.id)) {
       if (explicitConnections.has(connection.id))
         throw Object.assign(new Error(`No sandbox CLI runs ${definition.name} models.`), {
           code: 'SANDBOX_HARNESS',
@@ -125,8 +124,6 @@ export function resolveRunRoster(
     );
     // A sandbox agent's stock CLI; unchosen, the ledger freezes the provider's default.
     const cli = preference.cli ?? undefined;
-    if (cli !== undefined && !sandbox)
-      throw invalid('A coding CLI is chosen for sandbox runs only.');
     if (cli !== undefined && !sandboxCliFits(selected.provider, cli))
       throw Object.assign(
         new Error(

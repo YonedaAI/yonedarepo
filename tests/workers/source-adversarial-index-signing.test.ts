@@ -8,7 +8,6 @@ import {
   type IndexJournal,
   type IndexManifest,
 } from '../../cloudflare/worker/source-index-journal';
-import { verifySourceView } from '../../cloudflare/worker/source-view-proof';
 import { bindings, sha256 } from '../../tools/source-benchmark/workerd-source-fixture';
 import { syntheticPlatform } from './platform-fixture';
 
@@ -145,20 +144,6 @@ it('rejects a validly authenticated journal transplanted from a different reques
   await expect(sourceIndexBounded(f.local, f.base)).rejects.toMatchObject({
     code: 'SOURCE_INDEX_CERTIFICATE',
   });
-});
-
-it('full membership verification currently rejects omitted files rather than treating cache digests as authority', async () => {
-  const f = await partialIndex();
-  f.journal.stack = [];
-  await bindings.OBJECTS.put(`${f.prefix}/journal`, JSON.stringify(f.journal));
-  try {
-    const state = await sourceIndexBounded(f.local, f.base);
-    if (state.state !== 'prepared') return;
-    const view = await preparedSourceView(f.local, f.base);
-    await expect(verifySourceView(f.local, view)).rejects.toMatchObject({ code: 'SOURCE_INDEX' });
-  } catch (error) {
-    expect((error as { code?: string }).code).toMatch(/^SOURCE_/);
-  }
 });
 
 async function completedIndex() {

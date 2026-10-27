@@ -77,22 +77,6 @@ export function failureCode(error: unknown): string {
   const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
   return typeof code === 'string' && codes.has(code) ? code : 'UNKNOWN';
 }
-export function providerStatusCode(status: number): string | undefined {
-  return (
-    (
-      {
-        400: 'PROVIDER_REQUEST',
-        401: 'PROVIDER_AUTH',
-        402: 'PROVIDER_BALANCE',
-        403: 'PROVIDER_FORBIDDEN',
-        404: 'PROVIDER_MODEL',
-        413: 'PROVIDER_REQUEST_LIMIT',
-        422: 'PROVIDER_REQUEST',
-        429: 'PROVIDER_RATE_LIMIT',
-      } as Record<number, string>
-    )[status] ?? (status >= 500 ? 'PROVIDER_UNAVAILABLE' : undefined)
-  );
-}
 // Construct fields explicitly; never spread a Request, Error, job payload or provider response.
 export function writeLog(
   event: string,

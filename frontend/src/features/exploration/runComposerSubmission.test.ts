@@ -34,12 +34,12 @@ import { TeamPlanOptions } from '../team/TeamPlanOptions';
 import { AgentRoster } from './AgentRoster';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
 import { RunComposer } from './RunComposer';
-import { RunRuntimePicker } from './RunRuntimePicker';
 import { readAllowance } from './WorkspaceAllowance';
 
 const snapshot = {
   repository: { id: 'repo', policy: { build: { setup: [], checks: [] } } },
   capabilities: {
+    sandbox_runtime: 'sandbox-cli-v1',
     collaborative_runs: 1,
     agent_limits: {
       min_root_agents: 1,
@@ -120,14 +120,13 @@ describe('preference-only brief submission', () => {
     ])
       expect(start.mock.calls[0][0]).not.toHaveProperty(field);
   });
-  it('retains explicit roles on a Classic compare run without requesting a reviewer', async () => {
+  it('retains explicit roles on a compare run without requesting a reviewer', async () => {
     enterBrief();
     find(render(), (el) => el.type === AgentRoster)?.props.onChange([
       { id: 'a', connection: '', role: 'backend', strategy: 'Team participant' },
       { id: 'b', connection: '', role: 'testing', strategy: 'Team participant' },
       { id: 'c', connection: '', role: 'review', strategy: 'Team participant' },
     ]);
-    expect(find(render(), (el) => el.type === RunModePicker)?.props.supported).toBe(false);
     await submit();
     expect(start.mock.calls[0][0]).toMatchObject({
       mode: 'compare',
@@ -181,11 +180,7 @@ describe('preference-only brief submission', () => {
   });
 });
 describe('sandbox runtime', () => {
-  const deployed = {
-    ...snapshot,
-    capabilities: { ...snapshot.capabilities, sandbox_runtime: 'sandbox-cli-v1' },
-  } as unknown as Snapshot;
-  const view = () => render({ snapshot: deployed });
+  const view = () => render();
   async function connect(providers: Record<string, string>[]) {
     hooks.api.mockResolvedValue({ providers });
     view();
@@ -197,12 +192,12 @@ describe('sandbox runtime', () => {
       target: { value: 'Fix duplicate registration' },
     });
     if (agents.length) find(view(), (el) => el.type === AgentRoster)?.props.onChange(agents);
-    await submit({ snapshot: deployed });
+    await submit();
     return start.mock.calls[0]?.[0];
   }
   it('defaults to independent sandbox attempts the owner chooses among, without a reviewer', async () => {
     const tree = view();
-    expect(find(tree, (el) => el.type === RunRuntimePicker)?.props.sandbox).toBe(true);
+    expect(find(tree, (el) => el.type === AgentRoster)?.props.sandbox).toBe(true);
     expect(find(tree, (el) => el.type === RunModePicker)?.props).toMatchObject({
       value: 'compare',
       supported: true,
@@ -266,7 +261,7 @@ describe('sandbox runtime', () => {
         },
       ],
     });
-    await submit({ snapshot: deployed });
+    await submit();
     expect(start.mock.calls[0][0]).toMatchObject({
       mode: 'collaborate',
       team: { integrator_agent: 1, tasks: [{ agent: 0, depends_on: [] }] },
@@ -288,8 +283,6 @@ describe('sandbox runtime', () => {
     await connect([{ id: 'codex', provider: 'codex', model: 'gpt-5.6-luna', label: 'Codex' }]);
     const agents = [{ id: 'a', connection: 'codex', role: 'auto', strategy: 'a', cli: 'opencode' }];
     find(view(), (el) => el.type === AgentRoster)?.props.onChange(agents);
-    const picker = find(view(), (el) => el.type === RunRuntimePicker);
-    expect(picker?.props).toMatchObject({ sandbox: true, blocker: undefined });
     expect(find(view(), (el) => el.type === AgentRoster)?.props.sandbox).toBe(true);
     const body = await startRun(agents);
     expect(body).toMatchObject({ runtime: 'sandbox-cli-v1' });
@@ -297,21 +290,19 @@ describe('sandbox runtime', () => {
       { connection: 'codex', role: 'auto', cli: 'opencode' },
     ]);
   });
-  it('always compares on Classic, even after Build together was chosen in the sandbox', async () => {
-    find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
-    find(view(), (el) => el.type === RunRuntimePicker)?.props.onChange('classic');
-    expect(find(view(), (el) => el.type === RunModePicker)?.props).toMatchObject({
-      value: 'compare',
-      supported: false,
-    });
-    expect(find(view(), (el) => el.type === TeamPlanOptions)).toBeUndefined();
-    const body = await startRun([]);
-    expect(body).toMatchObject({ mode: 'compare' });
-    expect(body).not.toHaveProperty('runtime');
-    expect(body).not.toHaveProperty('team');
-  });
-  it('offers no sandbox where the deployment does not advertise it', () => {
-    expect(find(render(), (el) => el.type === RunRuntimePicker)).toBeUndefined();
+  it('starts no run where the deployment has no sandbox', async () => {
+    const bare = {
+      ...snapshot,
+      capabilities: { ...snapshot.capabilities, sandbox_runtime: undefined },
+    } as unknown as Snapshot;
+    find(
+      render({ snapshot: bare }),
+      (el) => el.type === 'textarea' && el.props.maxLength === 16000,
+    )?.props.onChange({ target: { value: 'Fix duplicate registration' } });
+    const button = find(render({ snapshot: bare }), (el) => el.props.type === 'submit');
+    expect(button?.props.disabled).toBe(true);
+    await submit({ snapshot: bare });
+    expect(start).not.toHaveBeenCalled();
   });
 });
 describe('workspace allowance readback', () => {

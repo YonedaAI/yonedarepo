@@ -1,18 +1,15 @@
-// Capture and refresh against the real platform: captures commit onto the attempt's own
-// candidate branch through the broker's `commit` operation, and a stale candidate is refreshed
-// by the platform's server-side merge, with the real ledger accepting every readback.
+// Refresh against the real platform: a stale sandbox candidate is refreshed by the platform's
+// server-side merge, with the real ledger accepting every readback.
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { refreshCandidate } from '../../cloudflare/worker/candidate-refresh';
 import { recordPublicationChecks } from '../../cloudflare/worker/repository-recovery';
 import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
-import { sourceCapture } from '../../cloudflare/worker/source-capture';
-import { ledger } from '../../cloudflare/worker/storage';
+import { object } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
-import { platformProject } from './platform-fixture';
-import { attempt, commitSealed, lazyCandidate, sealedProducer } from './platform-source-fixture';
+import { platformCommit, platformProject } from './platform-fixture';
 import { bindings, signup } from './reviewer-fixture';
-import { approvedLedger } from './source-kit';
+import { approvedLedger, finishSandbox, sandboxStart } from './source-kit';
 
 afterEach(reset);
 const owner = 'capture_owner';
@@ -20,42 +17,39 @@ const repo = 'platform-capture';
 const baseFiles = { 'public/index.html': '<!doctype html><title>Base</title>\n' };
 const call = approvedLedger(bindings, repo);
 
-async function lazyRun(runs = ['run']) {
+async function sandboxRuns(runs: string[]) {
   const cookie = await signup(owner);
   const project = await platformProject(bindings, owner, repo, baseFiles, reviewerPolicy);
   for (const id of runs)
-    await call({ op: 'start_run', id, intent: `Lazy-source platform capture ${id}`,
-      workspace_transport: 'api-source-v1', _source_transport_approved: true, _source_base: project.base,
+    await call({ op: 'start_run', id, intent: `Sandbox platform change ${id}`, ...sandboxStart(project.base),
       agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'minimal' }] });
   return { cookie, ...project };
 }
-const refs = async (f: Awaited<ReturnType<typeof lazyRun>>) => (await f.platform.call('GET', '/refs')).refs;
+type Runs = Awaited<ReturnType<typeof sandboxRuns>>;
+const refs = async (f: Runs) => (await f.platform.call('GET', '/refs')).refs;
 
-it('commits a sealed capture onto its assigned candidate branch and reuses it on retry', async () => {
-  const f = await lazyRun();
-  const files = { 'public/new.txt': 'sealed change\n' };
-  const { capture } = await sealedProducer(bindings, repo, 'run:agent-1', f.base, files);
-  const scope = attempt(repo, capture);
-  const { body, committed } = await commitSealed(bindings, scope, baseFiles, files);
-  const branch = scope.job.source_capture_ref.branch;
-  expect(branch).toMatch(/^agents\/capture-[0-9a-f]{32}$/);
-  expect(committed).toMatchObject({ verified: true, revision: { repository: `platform/${repo}` },
-    tree: body.tree, parents: [f.base.commit] });
-  expect((await refs(f))[`refs/heads/${branch}`]).toBe(committed.revision.commit);
-  expect((await refs(f))['refs/heads/main']).toBe(f.base.commit);
-  // A retried attempt finds its branch already holding the same tree and parents.
-  const retried = await (await sourceCapture(bindings, scope, 'commit', body)).json<Json>();
-  expect(retried.revision).toEqual(committed.revision);
-  // A tree the platform does not reproduce, or foreign parents, never move the branch.
-  await expect(sourceCapture(bindings, scope, 'commit', { ...body, tree: 'e'.repeat(40) }))
-    .rejects.toMatchObject({ code: 'SOURCE_CHANGED' });
-  await expect(sourceCapture(bindings, scope, 'commit', { ...body, parents: ['e'.repeat(40)] }))
-    .rejects.toMatchObject({ code: 'SOURCE_SCOPE' });
-  expect((await refs(f))[`refs/heads/${branch}`]).toBe(committed.revision.commit);
-});
+/** A checked, eligible candidate: the commit the run's sandbox agent pushed on its base. */
+async function sandboxCandidate(f: Runs, run: string, files: Record<string, string>) {
+  const made = await platformCommit(f.platform, f.base.commit, files);
+  const agent = await call({ op: 'claim', job_id: `job:${run}:agent-1` });
+  const id = `candidate-${run}`;
+  await finishSandbox(bindings, repo, agent, f.base, made, { id, paths: Object.keys(files) });
+  const evaluator = await call({ op: 'claim', job_id: `evaluate:${id}` });
+  const policy = evaluator.payload.policy;
+  const revision = { repository: f.base.repository, commit: made.commit };
+  const site = { 'index.html': { content: `<!doctype html><title>${id}</title>` } };
+  await call({ op: 'register_site', job_id: evaluator.id, epoch: evaluator.epoch,
+    digest: (await object(bindings, JSON.stringify({ repo, revision, files: site }))).digest, files: site });
+  await call({ op: 'verify_finish', job_id: evaluator.id, epoch: evaluator.epoch,
+    evidence: (await object(bindings, `Synthetic evaluator observations for ${id}`)).digest,
+    report: { suite: policy.suite, environment: policy.environment,
+      setup: policy.build.setup.map((check: Json) => ({ name: check.name, output: { exit: 0 } })),
+      commands: policy.build.checks.map((check: Json) => ({ name: check.name, output: { exit: 0 } })) } });
+  return { id, revision };
+}
 
 /** Publish candidate A as the owner (agent checks, owner approval and fast-forward land). */
-async function publish(f: Awaited<ReturnType<typeof lazyRun>>, candidate: { id: string; revision: Json }) {
+async function publish(f: Runs, candidate: { id: string; revision: Json }) {
   const receipt = await call({ op: 'accept', request_id: `publish-${candidate.id}`, candidate: candidate.id,
     expected_commit: f.base.commit, expected_version: 0, rationale: 'Owner selects the first checked result' });
   await recordPublicationChecks(bindings, repo, receipt);
@@ -70,15 +64,15 @@ async function publish(f: Awaited<ReturnType<typeof lazyRun>>, candidate: { id: 
 
 async function staleRefresh(conflicting: boolean) {
   // Two concurrent runs from the same base: publishing one makes the other's result stale.
-  const f = await lazyRun(['first', 'second']);
-  const first = await lazyCandidate(bindings, repo, 'first:agent-1', f.base, baseFiles, { 'public/a.txt': 'first\n' });
-  const second = await lazyCandidate(bindings, repo, 'second:agent-1', f.base, baseFiles,
+  const f = await sandboxRuns(['first', 'second']);
+  const first = await sandboxCandidate(f, 'first', { 'public/a.txt': 'first\n' });
+  const second = await sandboxCandidate(f, 'second',
     conflicting ? { 'public/a.txt': 'second\n', 'public/c.txt': 'clean\n' } : { 'public/b.txt': 'second\n' });
   await publish(f, first);
   const receipt = await call({ op: 'refresh_candidate', request_id: 'refresh-second', candidate_id: second.id,
     expected_commit: first.revision.commit, expected_version: 1 });
   const job = await call({ op: 'claim', job_id: receipt.job_id });
-  const command = await refreshCandidate(bindings, attempt(repo, job));
+  const command = await refreshCandidate(bindings, { repo_id: repo, job });
   return { f, first, second, receipt, command };
 }
 

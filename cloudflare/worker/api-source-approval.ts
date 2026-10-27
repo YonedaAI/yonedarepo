@@ -7,10 +7,7 @@ const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
 
-/**
- * Every run works on platform source (a lazy source workspace, or a sandbox's clone); its base
- * is read back from the platform.
- */
+/** Every run works in sandboxes that clone platform source; its base is read back from the platform. */
 export async function freezeSourceApproval(
   env: Env,
   owner: string,
@@ -23,15 +20,9 @@ export async function freezeSourceApproval(
   delete input._source_base;
   delete input._source_transport_approved;
   delete input.workspace_transport;
-  // Lazy-source attempts read through the SOURCES workspaces; a sandbox clones the platform.
-  if (transport === 'api-source-v1' && (!env.SOURCES || repository.capabilities?.source_api !== 1))
-    fail('LEDGER_UPDATING', 'Source access is updating; refresh before starting.');
   // Ledger `sandbox_cli` 1 takes one sandbox agent; 2 takes compare runs, one sandbox each.
   const agents = (input.agents ?? input.adaptive_team?.requested_agents ?? []).length;
-  if (
-    transport !== 'api-source-v1' &&
-    !((repository.capabilities?.sandbox_cli ?? 0) >= (agents > 1 ? 2 : 1))
-  )
+  if (!((repository.capabilities?.sandbox_cli ?? 0) >= (agents > 1 ? 2 : 1)))
     fail('LEDGER_UPDATING', 'Sandbox runs are updating; refresh before starting.');
   let revision = {
     repository: `${repository.remote.namespace}/${repository.remote.name}`,

@@ -7,13 +7,6 @@ import { approvedLedger } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
-it('refuses a previous image for a general agent run and preserves the configured provider model', async () => {
-  const {checkRuntime, modelForJob} = await import('../../cloudflare/worker/runtime');
-  const job = {kind:'agent', model:'mimo-v2-flash', payload:{policy:{build:{checks:[]}},execution:{harness:'claude'}}};
-  expect(() => checkRuntime({protocol:2,suites:['retry-contract-v2']},job)).toThrow();
-  expect(() => checkRuntime({protocol:2,suites:['commands-v1']},job)).not.toThrow();
-  expect(modelForJob(job,{codex:'gpt-5.6-luna',claude:'claude-sonnet-4-6'})).toBe('mimo-v2-flash');
-});
 it('persists concurrent general attempts and immutable typed context through eviction', async () => {
   const id = 'portfolio';
   const call = approvedLedger(bindings, id);

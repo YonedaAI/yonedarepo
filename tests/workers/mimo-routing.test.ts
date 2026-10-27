@@ -1,7 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { prepareModelRequest } from '../../cloudflare/worker/model-policy';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { providerCredentials } from '../../cloudflare/worker/vault';
 import { ledger } from '../../cloudflare/worker/storage';
@@ -16,9 +15,6 @@ const bindings = env as unknown as Env;
 const startRun = (url: string, init: RequestInit) => fetchRequest(new Request(url, init), bindings);
 afterEach(async () => { await reset(); });
 const routing = { plan: 'token_plan', region: 'sgp' };
-const job = (route?: object) => ({ kind: 'agent', model: 'mimo-v2.6-flash', payload: {
-  execution: { provider: 'mimo', harness: 'claude', ...(route ? { routing: route } : {}) },
-} });
 
 // Explicit grandfathered approval fixture: no generic new-run pricing, funding or upstream calls.
 async function approvedLegacyFixture(owner: string, repo: string, input: Json) {
@@ -31,19 +27,6 @@ async function approvedLegacyFixture(owner: string, repo: string, input: Json) {
   }
   return approvedLedger(bindings, repo)({ ...input, agents, op: 'start_run', _workspace: owner });
 }
-
-it('pins Token Plan requests to the approved region and rejects arbitrary destinations', () => {
-  for (const region of ['cn', 'sgp', 'ams']) {
-    const result = prepareModelRequest(job({ plan: 'token_plan', region }), 'claude', '/v1/messages', {});
-    expect(result.url).toBe(`https://token-plan-${region}.xiaomimimo.com/anthropic/v1/messages`);
-  }
-  expect(prepareModelRequest(job(), 'claude', '/v1/messages', {}).url)
-    .toBe('https://api.xiaomimimo.com/anthropic/v1/messages');
-  for (const route of [{ plan: 'token_plan' }, { plan: 'token_plan', region: 'us' },
-    { plan: 'token_plan', region: 'sgp', url: 'https://attacker.invalid' }]) {
-    expect(() => prepareModelRequest(job(route), 'claude', '/v1/messages', {})).toThrow();
-  }
-});
 
 it('blocks a legacy Token Plan key on the API route before scheduling and repairs it without replacing the secret', async () => {
   const owner = 'legacy_plan_user';

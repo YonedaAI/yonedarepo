@@ -404,7 +404,7 @@ mod plan_diff {
             "yonedarepo-apps-dev".into(),
         );
         live.containers.insert(
-            "yonedarepo-staging-agents-executioncontainer".into(),
+            "yonedarepo-staging-platform-checkcontainer".into(),
             json!({"max_instances": 16}),
         );
         let rows = diff(&spec, &lock, &workers, &live);
@@ -445,7 +445,7 @@ mod plan_diff {
             action(
                 &rows,
                 "container",
-                "yonedarepo-staging-agents-executioncontainer"
+                "yonedarepo-staging-platform-checkcontainer"
             ),
             Action::Drift
         );

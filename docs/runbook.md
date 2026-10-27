@@ -149,7 +149,7 @@ CI deploy tokens live in the GitHub Environments `dev` and `production` (one tok
 
 Production cutover notes (not applied to `prod.json` until the owner promotes):
 - Give the production CI token (`yonedarepo-ci-prod`) Secrets Store Write before the first `deploy --env prod`.
-- Pin ExecutionContainer and CheckContainer with `constraints.regions: ["ENAM"]` and give the agents Worker `placement: {mode: "targeted", region: "aws:us-east-1"}`, as dev has: unpinned dev agent containers ran in HKG/TXL with about 1 s round trips to the Durable Objects, against about 330 ms elsewhere.
+- Pin CheckContainer with `constraints.regions: ["ENAM"]` and give the agents Worker `placement: {mode: "targeted", region: "aws:us-east-1"}`, as dev has: unpinned dev agent containers ran in HKG/TXL with about 1 s round trips to the Durable Objects, against about 330 ms elsewhere.
 - Set `check_instances` (CheckContainer max_instances = checks consumer max_concurrency).
 
 ## Sandbox runs (`sandbox-cli-v1`, staging)

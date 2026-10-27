@@ -51,7 +51,8 @@ describe('trusted run roster approval', () => {
     expect(refusal(chosen('codex', 'claude'))).toBe('SANDBOX_HARNESS');
     expect(refusal(chosen('glm', 'codex'))).toBe('SANDBOX_HARNESS');
     expect(refusal(chosen('glm', 'aider'))).toBe('SANDBOX_HARNESS');
-    expect(refusal(chosen('codex', 'codex', {}))).toBe('INVALID_INPUT');
+    // Every run is a sandbox run, so a request without the marker takes a CLI too.
+    expect(refusal(chosen('codex', 'codex', {}))).toBeUndefined();
   });
   it('retains saved billing routing and bounded priced budgets for every allowed group', () => {
     const approved = resolveRunRoster(request, [{ ...pool[1], routing: { plan: 'api_credits' } }]);

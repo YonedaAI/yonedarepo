@@ -4,7 +4,7 @@ import { afterEach, expect, it } from 'vitest';
 import { checkLedger } from '../../cloudflare/worker/runtime';
 import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
-import { approvedLedger, finishSealed, withLineage } from './source-kit';
+import { approvedLedger, finishSandbox, sandboxStart } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'single-agent-test';
@@ -31,16 +31,16 @@ it('fences single-agent requests during ledger rollout without blocking supporte
   expect(() => checkLedger(current, { agents: agents.slice(1) })).not.toThrow();
 });
 
-async function checkedCandidate(run: string, index: number, commit: string) {
+const base = (commit: string) => ({ repository: `platform/${repo}`, commit, tree: 'e'.repeat(40) });
+async function checkedCandidate(run: string, index: number, from: string, commit: string) {
   const execution = `${run}:agent-${index}`;
   const agent = await call({ op: 'claim', job_id: `job:${execution}` });
   const files = { 'index.html': { content: '<!doctype html><title>Ledger fixture</title>' } };
-  const registration = await finishSealed(bindings, repo, agent);
-  const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
   const candidate = `candidate-${run}-${index}`;
   const revision = { repository: `platform/${repo}`, commit };
   // Synthetic observations exercise real DO/R2 transitions, without invoking Git, builds or models.
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id: candidate, revision, tree: 'f'.repeat(40), paths: ['public/index.html'], diff: 'fixture diff', summary: 'Website fixture' }) });
+  await finishSandbox(bindings, repo, agent, base(from), { commit, tree: 'f'.repeat(40) },
+    { id: candidate, paths: ['public/index.html'], summary: 'Website fixture' });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${candidate}` });
   const site = await object(bindings, JSON.stringify({ repo, revision, files }));
   await call({ op: 'register_site', job_id: evaluator.id, epoch: evaluator.epoch, digest: site.digest, files });
@@ -56,18 +56,18 @@ async function publish(candidate: string, request_id: string, commit: string) {
 
 it('publishes a single-agent update from the canonical two-agent release while preserving its history across eviction', async () => {
   await call({ op: 'init', id: repo, name: 'Website', remote: { namespace: 'platform', name: repo, branch: 'main' }, commit: 'a'.repeat(40), policy });
-  await call({ op: 'start_run', id: 'initial', intent: 'Build a website', agents });
-  const selected = await checkedCandidate('initial', 1, 'b'.repeat(40));
-  await checkedCandidate('initial', 2, 'c'.repeat(40));
+  await call({ op: 'start_run', id: 'initial', intent: 'Build a website', ...sandboxStart(base('a'.repeat(40))), agents });
+  const selected = await checkedCandidate('initial', 1, 'a'.repeat(40), 'b'.repeat(40));
+  await checkedCandidate('initial', 2, 'a'.repeat(40), 'c'.repeat(40));
   await publish(selected, 'initial-choice', 'b'.repeat(40));
   const before = await call({ op: 'snapshot' });
   const remaining = agents.slice(1);
   checkLedger(before, { agents: remaining });
-  const update = await call({ op: 'start_run', id: 'update', intent: 'Improve the website', agents: remaining, context: ['intent:initial'] });
+  const update = await call({ op: 'start_run', id: 'update', intent: 'Improve the website', ...sandboxStart(base('b'.repeat(40))), agents: remaining, context: ['intent:initial'] });
   expect(update).toMatchObject({ base: { repository: `platform/${repo}`, commit: 'b'.repeat(40) }, base_version: 1, execution_count: 1, delegation: { enabled: false, max_depth: 0, max_executions: 1 } });
   expect(update.model_budgets).toHaveLength(1);
   expect(update.model_budgets[0]).toMatchObject({ provider: 'zai', model: agents[1].model, requests: 0 });
-  const candidate = await checkedCandidate('update', 1, 'd'.repeat(40));
+  const candidate = await checkedCandidate('update', 1, 'b'.repeat(40), 'd'.repeat(40));
   await publish(candidate, 'update-choice', 'd'.repeat(40));
   await evictDurableObject(bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo)));
   const after = await call({ op: 'snapshot' });

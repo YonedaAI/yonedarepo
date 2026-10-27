@@ -35,10 +35,6 @@
         "class_name": "WorkspaceAuthority"
       },
       {
-        "name": "SOURCES",
-        "class_name": "SourceWorkspaceAuthority"
-      },
-      {
         "name": "SOURCE_REPOS",
         "class_name": "SourceRepository"
       },
@@ -108,6 +104,12 @@
       "tag": "v8",
       "new_sqlite_classes": [
         "FakeAgentSandbox"
+      ]
+    },
+    {
+      "tag": "v9",
+      "deleted_classes": [
+        "SourceWorkspaceAuthority"
       ]
     }
   ],

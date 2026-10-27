@@ -114,28 +114,3 @@ export async function captureFileProvenance(
     throw new Error('File provenance exceeds the receipt limit');
   return receipts.sort((a, b) => String(a.path).localeCompare(String(b.path)));
 }
-
-/** Validate optional context references against the assigned immutable source tree. */
-export async function validateFilePathAssertions(
-  repo: GitRepository,
-  sourceCommit: string,
-  paths: unknown,
-): Promise<string[]> {
-  if (!Array.isArray(paths) || paths.length > 32 || paths.some((path) => typeof path !== 'string'))
-    throw new Error('File path assertions must be a bounded list of paths');
-  const source = await filesAt(repo, sourceCommit);
-  for (const path of paths as string[]) {
-    if (
-      !path ||
-      path.startsWith('/') ||
-      path.includes('\\') ||
-      path
-        .split('/')
-        .some((part) => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')
-    )
-      throw new Error('File path assertion is unsafe');
-    if (!source.has(path))
-      throw new Error(`File path assertion is absent from the assigned source: ${path}`);
-  }
-  return [...new Set(paths as string[])];
-}

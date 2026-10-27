@@ -1,6 +1,5 @@
 import { archiveDueHistory } from './history-archive';
 import { deliverDeletion } from './repository-deletion';
-import { sha } from './storage';
 import type { Env, Envelope, Json } from './types';
 
 export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
@@ -24,8 +23,8 @@ export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
       } else if (['workspace_delete', 'delete_artifact'].includes(entry.kind)) {
         await deliverDeletion(env, repo, entry);
       } else if (entry.kind === 'stop') {
-        const name = await sha(`${repo}:${entry.payload.job_id}:${entry.payload.epoch}`);
-        await env.EXECUTIONS.get(env.EXECUTIONS.idFromName(name)).stop();
+        // The ledger still asks to stop a fenced attempt's container. Only sandboxes run now,
+        // and a sandbox's driver stops itself once the ledger fences its attempt.
       } else {
         const queues: Record<string, Queue<Envelope>> = {
           agent: env.AGENT_QUEUE,

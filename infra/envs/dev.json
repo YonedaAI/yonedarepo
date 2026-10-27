@@ -435,14 +435,6 @@
               "class_name": "LiveRoom"
             },
             {
-              "name": "EXECUTIONS",
-              "class_name": "ExecutionContainer"
-            },
-            {
-              "name": "SOURCES",
-              "class_name": "SourceWorkspaceAuthority"
-            },
-            {
               "name": "WORKSPACES",
               "class_name": "WorkspaceAuthority",
               "script_name": "{prefix}-platform"
@@ -468,24 +460,16 @@
             "new_sqlite_classes": [
               "AgentSandbox"
             ]
+          },
+          {
+            "tag": "v3",
+            "deleted_classes": [
+              "ExecutionContainer",
+              "SourceWorkspaceAuthority"
+            ]
           }
         ],
         "containers": [
-          {
-            "class_name": "ExecutionContainer",
-            "image": "./containers/Dockerfile",
-            "image_build_context": "..",
-            "max_instances": 6,
-            "instance_type": "standard-1",
-            "rollout_step_percentage": [
-              100
-            ],
-            "constraints": {
-              "regions": [
-                "ENAM"
-              ]
-            }
-          },
           {
             "class_name": "AgentSandbox",
             "scheduling_policy": "durable_object",
