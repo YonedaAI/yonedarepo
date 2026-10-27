@@ -36,7 +36,7 @@
         <mxCell id="do4" value="&lt;b&gt;LiveRoom&lt;/b&gt;&lt;br&gt;live updates&lt;br&gt;to the browser" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="650" y="268" width="176" height="96" as="geometry" />
         </mxCell>
-        <mxCell id="do5" value="&lt;b&gt;ExecutionContainer&lt;/b&gt;&lt;br&gt;one per agent attempt&lt;br&gt;starts &amp;amp; stops it" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
+        <mxCell id="do5" value="&lt;b&gt;AgentSandbox&lt;/b&gt;&lt;br&gt;one per agent attempt&lt;br&gt;stock coding CLI" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontSize=13;" vertex="1" parent="1">
           <mxGeometry x="838" y="268" width="176" height="96" as="geometry" />
         </mxCell>
 

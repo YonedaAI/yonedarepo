@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { captureFileProvenance, validateFilePathAssertions } from '../../cloudflare/worker/provenance';
+import { captureFileProvenance } from '../../cloudflare/worker/provenance';
 
 function fakeGit(trees: Record<string, { name: string; type: string; hash: string }[]>) {
   return {
@@ -79,10 +79,4 @@ describe('trusted per-file capture receipts', () => {
     ).rejects.toThrow('receipt limit');
   });
 
-  it('checks optional context file paths against the assigned captured source tree', async () => {
-    const git = fakeGit({ source: [{ name: 'main.rs', type: 'blob', hash: 'b'.repeat(40) }] });
-    await expect(validateFilePathAssertions(git, 'source', ['main.rs', 'main.rs'])).resolves.toEqual(['main.rs']);
-    await expect(validateFilePathAssertions(git, 'source', ['missing.rs'])).rejects.toThrow('absent from the assigned source');
-    await expect(validateFilePathAssertions(git, 'source', ['../secret'])).rejects.toThrow('unsafe');
-  });
 });

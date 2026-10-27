@@ -53,7 +53,7 @@ it('commits onto the attempt branch, binds the server-observed head and captures
  expect((await call('attempt_submit',{attempt_id:attempt.attempt_id})).status).toBe('capture_requested');
  const capture=await ledger(bindings,'remote-repo',{op:'claim',job_id:`capture:${attempt.attempt_id}`});
  expect(capture.payload).toMatchObject({capture_subtype:'platform_commit',contribution:submitted.submitted_revision,base:{commit:base.commit}});
- const scope:Scope={repo_id:'remote-repo',job:capture,supervisor:'fixture',model_calls:0,created_at:Date.now()};
+ const scope:Scope={repo_id:'remote-repo',job:capture};
  const finished=await captureContribution(bindings,scope);
  // The contributor's two commits become one fresh commit on the frozen base with the same tree.
  const source=platformSource(project.platform);

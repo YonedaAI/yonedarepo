@@ -1,12 +1,9 @@
 import type { AgentsEntrypoint } from './agents-entrypoint';
-import type { ExecutionContainer } from './container';
 export type Json = Record<string, any>;
 export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
 export interface Env {
   REPOSITORIES: DurableObjectNamespace;
   WORKSPACES: DurableObjectNamespace;
-  /** Source staging is separate from workspace accounts and spending authority. */
-  SOURCES?: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
   SOURCE_REPOS: DurableObjectNamespace;
   /** Commit shards (platform write path); absent where not yet deployed. */
@@ -33,7 +30,6 @@ export interface Env {
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   LIVE: DurableObjectNamespace;
-  EXECUTIONS: DurableObjectNamespace<ExecutionContainer>;
   /** One Cloudflare Sandbox per sandbox-cli-v1 attempt; absent where not deployed. */
   AGENT_SANDBOX?: DurableObjectNamespace<import('./sandbox-agent').AgentSandbox>;
   /** `<account id>/<gateway id>`: sandbox model requests go through this AI Gateway. */
@@ -88,11 +84,8 @@ export type Principal = {
   reviewer?: boolean;
   grant?: { id: string; repo: string; scope: string; expires?: number };
 };
+/** A claimed job, as its dispatch and platform captures see it. */
 export type Scope = {
   repo_id: string;
   job: Json;
-  supervisor: string;
-  fork?: string;
-  model_calls: number;
-  created_at: number;
 };

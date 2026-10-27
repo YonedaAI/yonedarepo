@@ -2,9 +2,9 @@ import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { checkLedger } from '../../cloudflare/worker/runtime';
-import { ledger, object, readObject } from '../../cloudflare/worker/storage';
+import { object } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
-import { approvedLedger, finishSealed, withLineage } from './source-kit';
+import { approvedLedger, finishSandbox, sandboxStart } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'published-continuation';
@@ -17,43 +17,23 @@ const policy = {
   required_checks: ['build'],
   build: { checks: [{ name: 'build', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] },
 };
-const start = (id: string, extra: Json = {}) =>
-  call({ op: 'start_run', id, intent: 'Improve the published website', agents, ...extra });
+// What the start route approves: a sandbox run on the published commit.
+async function start(id: string, extra: Json = {}) {
+  const { published_commit: commit } = await call({ op: 'repository_status' });
+  return call({ op: 'start_run', id, intent: 'Improve the published website', agents,
+    ...sandboxStart({ repository: `platform/${repo}`, commit, tree: 'e'.repeat(40) }), ...extra });
+}
 afterEach(async () => {
   await reset();
 });
 
-// Synthetic capture, evaluation and publication observations test the real DO without inference.
+// Synthetic sandbox, evaluation and publication observations test the real DO without inference.
 async function release(run: string, commit: string) {
-  const execution = `${run}:agent-1`;
-  const agent = await call({ op: 'claim', job_id: `job:${execution}` });
-  const design = await object(bindings, `Keep the published design from ${run}`);
-  await call({
-    op: 'publish_artifact',
-    job_id: agent.id,
-    epoch: agent.epoch,
-    id: `artifact:${run}`,
-    digest: design.digest,
-    label: 'Published design notes',
-    kind: 'design',
-  });
-  const registration = await finishSealed(bindings, repo, agent);
-  const capture = await call({ op: 'claim', job_id: `capture:${execution}` });
+  const agent = await call({ op: 'claim', job_id: `job:${run}:agent-1` });
+  const { base } = (await call({ op: 'snapshot' })).runs.find((r: Json) => r.id === run);
   const candidate = `candidate-${run}`;
-  const revision = { repository: `platform/${repo}`, commit };
-  await call({
-    op: 'finish',
-    job_id: capture.id,
-    epoch: capture.epoch,
-    result: withLineage(registration, {
-      id: candidate,
-      revision,
-      tree: 'f'.repeat(40),
-      paths: ['app.js'],
-      diff: 'fixture diff',
-      summary: 'Published fixture',
-    }),
-  });
+  await finishSandbox(bindings, repo, agent, base, { commit, tree: 'f'.repeat(40) },
+    { id: candidate, paths: ['app.js'], summary: 'Published fixture' });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${candidate}` });
   await call({
     op: 'verify_finish',
@@ -138,7 +118,7 @@ it('continues the published decision despite newer failed and unpublished runs, 
   const before = await call({ op: 'snapshot' });
   const update = await start('update', {
     continuation_of: published,
-    context: ['context:brand', 'artifact:original'],
+    context: ['context:brand'],
   });
   expect(update).toMatchObject({
     continuation_of: published,
@@ -152,37 +132,10 @@ it('continues the published decision despite newer failed and unpublished runs, 
     expect.objectContaining({ source: published, target: 'update', relation: 'continues' }),
   );
   for (const historical of before.runs) expect(snapshot.runs).toContainEqual(historical);
-  const job = await call({ op: 'claim', job_id: 'job:update:agent-1' });
-  const delivered = await call({ op: 'context', job_id: job.id, epoch: job.epoch });
-  expect(delivered.run.continuation_of).toBe(published);
-  expect(delivered.run.context_records).toEqual(update.context_records);
-  expect(delivered.run.context_records[0]).toMatchObject({
+  expect(update.context_records[0]).toMatchObject({
     id: 'context:brand',
     label: 'Keep the published brand colors',
   });
-  expect(delivered.run.context_records[1]).toMatchObject({
-    id: 'artifact:original',
-    kind: 'context',
-  });
-  const artifact = await call({
-    op: 'get_artifact',
-    job_id: job.id,
-    epoch: job.epoch,
-    id: 'artifact:original',
-  });
-  expect(await readObject(bindings, artifact.digest)).toBe(
-    'Keep the published design from original',
-  );
-  await expect(
-    call({ op: 'get_artifact', job_id: job.id, epoch: job.epoch, id: 'artifact:unselected' }),
-  ).rejects.toMatchObject({ code: 'FORBIDDEN' });
-  expect((await call({ op: 'snapshot' })).edges).toContainEqual(
-    expect.objectContaining({
-      source: 'artifact:original',
-      target: job.payload.execution.id,
-      relation: 'retrieved_by',
-    }),
-  );
 });
 
 it('fences stale, missing and mixed continuation references without graph, events or dispatch side effects', async () => {

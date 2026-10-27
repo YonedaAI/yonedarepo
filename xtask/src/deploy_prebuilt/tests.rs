@@ -136,7 +136,7 @@ fn a_sandbox_with_its_own_images_keeps_its_dockerfile() {
     let sandbox = json!({"class_name": "AgentSandbox", "scheduling_policy": "durable_object",
         "images": {"agent": {"dockerfile": "./sandbox/Dockerfile", "build_context": ".."}}});
     let config = json!({"name": "w", "containers": [
-        {"class_name": "ExecutionContainer", "image": "./containers/Dockerfile"}, sandbox.clone()]});
+        {"class_name": "CheckContainer", "image": "./containers/Dockerfile"}, sandbox.clone()]});
     let swapped = with_image(config.clone(), "registry.cloudflare.com/acct/r:t");
     assert_eq!(
         swapped["containers"][0]["image"],
@@ -144,7 +144,7 @@ fn a_sandbox_with_its_own_images_keeps_its_dockerfile() {
     );
     assert_eq!(swapped["containers"][1], sandbox);
     let runtime = crate::infra::inventory::runtime_containers(&config);
-    assert_eq!(runtime.keys().collect::<Vec<_>>(), ["w-executioncontainer"]);
+    assert_eq!(runtime.keys().collect::<Vec<_>>(), ["w-checkcontainer"]);
 }
 
 #[test]

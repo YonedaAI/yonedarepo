@@ -26,7 +26,7 @@ type Queue = {
   dispatchOneForTest(
     envelope: Envelope,
     loseAck: boolean,
-  ): Promise<{ acked: boolean; retries: number[]; launchRequested: boolean }>;
+  ): Promise<{ acked: boolean; retries: number[] }>;
 };
 type Fake = { begun(): Promise<{ attempt: SandboxAttempt; count: number }> };
 

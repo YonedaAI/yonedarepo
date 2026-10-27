@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
+import { checkLedger } from '../../cloudflare/worker/runtime';
 import { failureCode } from '../../cloudflare/worker/logging';
 
 it('rejects an old ledger before it can silently drop trusted shared accounting', () => {

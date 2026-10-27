@@ -4,7 +4,7 @@ import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import { fetchRequest } from '../../cloudflare/worker/routes';
 import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
 import { ledger } from '../../cloudflare/worker/storage';
-import type { Env, Json, Scope } from '../../cloudflare/worker/types';
+import type { Env, Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { templateArtifacts } from './platform-fixture';
 
@@ -59,12 +59,4 @@ export async function readyReviewer(owner = 'review_alice') {
     platform_repo: platform.repo, policy: reviewerPolicy });
   await workspace(bindings, owner, { op: 'project_update', id: repo, status: 'ready' });
   return { ...fixture, head: head as string, tree: tree as string };
-}
-export function containerBindings(scoped: Env, scope: Scope) {
-  // Fake Container RPC supplies only the trusted attempt identity. scopeFor
-  // still checks that identity and epoch against the actual repository DO.
-  const stop = vi.fn(async () => {});
-  const result = { ...scoped, EXECUTIONS: { idFromString: (id: string) => id,
-    get: () => ({ scope: async () => scope, scheduleStop: stop }) } } as unknown as Env;
-  return { scoped: result, stop };
 }

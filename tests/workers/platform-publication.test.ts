@@ -7,7 +7,7 @@ import { ledger, object } from '../../cloudflare/worker/storage';
 import type { Json } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
 import { api, bindings, signup } from './reviewer-fixture';
-import { approvedLedger, finishSealed, withLineage } from './source-kit';
+import { approvedLedger, finishSandbox, sandboxStart } from './source-kit';
 
 afterEach(reset);
 const owner = 'publish_owner';
@@ -32,19 +32,15 @@ async function fixture() {
   return { cookie, owned, ...project };
 }
 
-/** A checked candidate whose capture is a real commit on the project's platform repository. */
+/** A checked candidate: the commit its sandbox agent pushed on the project's platform repository. */
 async function checkedCandidate(f: Awaited<ReturnType<typeof fixture>>, run: string, content: string) {
-  await call({ op: 'start_run', id: run, intent: 'Improve the app',
-    agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'minimal' }] });
   const status = await call({ op: 'repository_status' });
+  await call({ op: 'start_run', id: run, intent: 'Improve the app', ...sandboxStart(f.base),
+    agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'minimal' }] });
   const made = await platformCommit(f.platform, status.head_commit, { 'app.js': content });
   const agent = await call({ op: 'claim', job_id: `job:${run}:agent-1` });
-  const registration = await finishSealed(bindings, repo, agent);
-  const capture = await call({ op: 'claim', job_id: `capture:${run}:agent-1` });
   const id = `candidate-${run}`;
-  await call({ op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id,
-    revision: { repository: f.base.repository, commit: made.commit }, tree: made.tree,
-    paths: ['app.js'], diff: 'app diff', summary: 'Checked app change' }) });
+  await finishSandbox(bindings, repo, agent, f.base, made, { id, paths: ['app.js'], summary: 'Checked app change' });
   const evaluator = await call({ op: 'claim', job_id: `evaluate:${id}` });
   await call({ op: 'verify_finish', job_id: evaluator.id, epoch: evaluator.epoch,
     report: { suite: policy.suite, environment: policy.environment, setup: [], commands: [{ name: 'build', output: { exit: 0 } }] },

@@ -21,7 +21,7 @@ async function fixture(): Promise<Scope> {
     remote: { namespace: 'test', name: repo }, policy: buildPolicy });
   await approvedLedger(bindings, repo)({ op: 'start_run', id: 'logged-run', intent: 'Offline logging fixture', agents: oneAgent });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:logged-run:agent-1' });
-  return { repo_id: repo, job, supervisor: 'private-supervisor', model_calls: 0, created_at: Date.now() };
+  return { repo_id: repo, job };
 }
 
 it('stores safe correlated diagnostics in real DO SQLite, survives eviction and enforces owner scope', async () => {

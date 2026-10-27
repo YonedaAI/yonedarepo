@@ -97,16 +97,8 @@
         "class_name": "LiveRoom"
       },
       {
-        "name": "EXECUTIONS",
-        "class_name": "ExecutionContainer"
-      },
-      {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority"
-      },
-      {
-        "name": "SOURCES",
-        "class_name": "SourceWorkspaceAuthority"
       },
       {
         "name": "SOURCE_REPOS",
@@ -170,19 +162,16 @@
       "new_sqlite_classes": [
         "AgentSandbox"
       ]
+    },
+    {
+      "tag": "v8",
+      "deleted_classes": [
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ]
     }
   ],
   "containers": [
-    {
-      "class_name": "ExecutionContainer",
-      "image": "./containers/Dockerfile",
-      "image_build_context": "..",
-      "max_instances": 16,
-      "instance_type": "standard-1",
-      "rollout_step_percentage": [
-        100
-      ]
-    },
     {
       "class_name": "CheckContainer",
       "image": "./containers/Dockerfile",

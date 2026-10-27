@@ -1,8 +1,8 @@
-// Agent-layer Worker (not deployed): runs, attempt source workspaces and harness containers,
-// switched off independently of the platform. It calls the platform Worker only through its
-// public API (PLATFORM service binding, `/api/v1`) and shares the platform's accounts through
-// the WORKSPACES script binding. Its D1 index and R2 bucket are created at cutover; the
-// all-zero database_id is never deployable.
+// Agent-layer Worker (not deployed): runs and their sandboxes, switched off independently of
+// the platform. It calls the platform Worker only through its public API (PLATFORM service
+// binding, `/api/v1`) and shares the platform's accounts through the WORKSPACES script binding.
+// Its D1 index and R2 bucket are created at cutover; the all-zero database_id is never
+// deployable.
 // Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts
 // sandbox/Dockerfile with Internet off; SandboxOutbound adds the provider key and the project
 // token, and meters model spend. The sandbox clones from SANDBOX_PLATFORM_ORIGIN; model
@@ -97,14 +97,6 @@
         "class_name": "LiveRoom"
       },
       {
-        "name": "EXECUTIONS",
-        "class_name": "ExecutionContainer"
-      },
-      {
-        "name": "SOURCES",
-        "class_name": "SourceWorkspaceAuthority"
-      },
-      {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority",
         "script_name": "yonedarepo-platform-dev"
@@ -130,19 +122,16 @@
       "new_sqlite_classes": [
         "AgentSandbox"
       ]
+    },
+    {
+      "tag": "v3",
+      "deleted_classes": [
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ]
     }
   ],
   "containers": [
-    {
-      "class_name": "ExecutionContainer",
-      "image": "./containers/Dockerfile",
-      "image_build_context": "..",
-      "max_instances": 16,
-      "instance_type": "standard-1",
-      "rollout_step_percentage": [
-        100
-      ]
-    },
     {
       "class_name": "AgentSandbox",
       "images": {
