@@ -10,7 +10,8 @@
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
 import { DurableObject } from 'cloudflare:workers';
 import { kickProjection, landChangesets, ProjectionRunner } from './repo-changesets';
-import { HeadHolder, refreshHead } from './repo-head';
+import { refreshHead } from './repo-head';
+import { HeadHolder } from './repo-head-holder';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
@@ -241,9 +242,10 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#batcher.submit({ repo, ref }, item, timeoutMs);
   }
 
-  /** Head role: main's published head, at least at `minVersion`. */
-  head(repo: string, minVersion: number, since?: number) {
-    return this.#head.head(repo, minVersion, since);
+  /** Head role: main's published head, at least at `minVersion` (with the access snapshot
+   * when it differs from the caller's `accessVersion`). */
+  head(repo: string, minVersion: number, since?: number, accessVersion?: string | null) {
+    return this.#head.head(repo, minVersion, since, accessVersion);
   }
 
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */

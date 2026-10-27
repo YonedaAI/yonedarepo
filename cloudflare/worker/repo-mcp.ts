@@ -3,6 +3,7 @@
 // account-mcp.ts) share this JSON-RPC handling. Authentication is the same credential as
 // the REST API, and every platform tool dispatches to the same operation table.
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
+import { RETRY_AFTER_SECONDS, transient } from './durable';
 import { error, readJson, response } from './http';
 import type { Json, RepoContext } from './repo-ops';
 import { operations } from './repo-tools';
@@ -68,11 +69,14 @@ export async function serveMcp(req: Request, server: McpServer): Promise<Respons
         structuredContent: value,
       });
     } catch (e: any) {
-      const code = e?.code ? `${e.code}: ` : '';
+      // An overloaded authority is named, so an agent retries instead of changing its input.
+      const busy = transient(e);
+      const code = e?.code ? `${e.code}: ` : busy ? 'OVERLOADED: ' : '';
+      const retry = busy ? ` (retry after ${RETRY_AFTER_SECONDS} s)` : '';
       const details = e?.details ? `\n${JSON.stringify(e.details)}` : '';
       return reply({
         isError: true,
-        content: [{ type: 'text', text: `${code}${e?.message ?? e}${details}` }],
+        content: [{ type: 'text', text: `${code}${e?.message ?? e}${retry}${details}` }],
       });
     }
   }

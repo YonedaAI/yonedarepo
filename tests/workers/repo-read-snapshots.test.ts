@@ -4,7 +4,7 @@
 // pinned versions from an immutable snapshot cache; refs from a snapshot at most two
 // `REFS_MS` old (or at least at the reader's `min_version`). Grants hold on every path.
 import { expect, it, vi } from 'vitest';
-import { HeadHolder } from '../../cloudflare/worker/repo-head';
+import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
 import { REFS_MS, RefsHolder } from '../../cloudflare/worker/repo-snapshots';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';

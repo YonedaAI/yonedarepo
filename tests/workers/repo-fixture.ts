@@ -8,7 +8,9 @@ import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
 import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { type CheckReport, completeContainerCheck } from '../../cloudflare/worker/repo-checks';
 import { compute } from '../../cloudflare/worker/repo-compute';
+import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
 import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
@@ -57,9 +59,11 @@ function unpack(body: Uint8Array, first: string) {
   single.set(body.subarray(at), head.length);
   return compute({ op: 'receive_pack', body_b64: toBase64(single) }).objects as any[];
 }
-// Platform jobs and check containers: the queue records messages; the executor stands in
-// for the Container by evaluating the shipped files (the real one is tested in Rust).
+// Platform jobs and check containers: the queue records messages (delayed ones apart, as
+// they are not delivered yet); the executor stands in for the Container by evaluating the
+// shipped files (the real one is tested in Rust).
 export const queued: any[] = [];
+export const delayed: any[] = [];
 export const executed: any[] = [];
 /** Runs queued object projections (staged commits to the object store), like the consumer. */
 export async function drainObjects(target: Env = scoped) {
@@ -68,7 +72,8 @@ export async function drainObjects(target: Env = scoped) {
   for (const message of jobs) await projectObjects(target, message.repo_id, message.job_id);
 }
 export const fakeQueue = {
-  send: async (body: any) => void queued.push(body),
+  send: async (body: any, options?: { delaySeconds?: number }) =>
+    void (options?.delaySeconds ? delayed : queued).push(body),
   sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)),
 };
 /** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
@@ -88,18 +93,21 @@ function commands(body: Uint8Array) {
     at += length;
   }
 }
-export const fakeRunners = {
+/** CHECK_RUNNERS standing in for the CheckContainer: `run` evaluates the shipped files at
+ * once, then the run completes the way the container completes it. */
+export const runners = (run: (job: any, name: string) => Promise<any>) => ({
   idFromName: (name: string) => name,
   get: (name: string) => ({
-    run: async (job: any) => {
-      executed.push({ name, job });
-      const file = job.files.find((f: any) => f.path === 'a.txt');
-      const ok = file && atob(file.data_b64).startsWith('good');
-      return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 5,
-        output_bytes: 4, output_sha256: 'f'.repeat(64), output_tail: ok ? 'ok\n' : 'bad\n' };
-    },
+    launch: async (job: any, report: CheckReport) => completeContainerCheck(scoped, report, await run(job, name)),
   }),
-};
+});
+export const fakeRunners = runners(async (job, name) => {
+  executed.push({ name, job });
+  const file = job.files.find((f: any) => f.path === 'a.txt');
+  const ok = file && atob(file.data_b64).startsWith('good');
+  return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 5,
+    output_bytes: 4, output_sha256: 'f'.repeat(64), output_tail: ok ? 'ok\n' : 'bad\n' };
+});
 // The push queue's batching runs in-process, so its receive-packs reach the fake endpoint.
 const batchers = new Map<string, PushBatcher>();
 export const fakePushQueues = {
@@ -139,6 +147,10 @@ function inProcess(name: string): InProcess {
   }
   return combiner;
 }
+// The head holder role (`<repo>#head`) runs in-process as in production: isolates read
+// main's head and access snapshot from it, never from the authority directly.
+const holders = new Map<string, HeadHolder>();
+const holderOf = (name: string) => holders.get(name) ?? holders.set(name, new HeadHolder(scoped)).get(name)!;
 export const fakeCombiners = {
   idFromName: (name: string) => name,
   get: (name: string) => ({
@@ -146,6 +158,10 @@ export const fakeCombiners = {
       inProcess(name).batcher.wait({ repo, ref }, ticket, timeoutMs),
     submit: (repo: string, ref: string, item: Record<string, unknown>, timeoutMs: number) =>
       inProcess(name).batcher.submit({ repo, ref }, item, timeoutMs),
+    head: (repo: string, minVersion: number, since?: number, accessVersion?: string) =>
+      holderOf(name).head(repo, minVersion, since, accessVersion),
+    access: (repo: string) => holderOf(name).access(repo),
+    refresh: async (repo: string, access?: boolean) => holderOf(name).refresh(repo, access),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */
@@ -154,6 +170,8 @@ async function quiesceCombiners() {
   await Promise.all([...combiners.values()].map((c) => c.running));
   await Promise.all([...combiners.values()].map((c) => c.batcher.idle()));
   combiners.clear();
+  await Promise.all([...holders.values()].map((h) => h.idle()));
+  holders.clear();
 }
 export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 
@@ -179,6 +197,7 @@ beforeEach(async () => {
   receivePacks.down = false;
   receivePacks.hold = null;
   queued.length = 0;
+  delayed.length = 0;
   executed.length = 0;
   const original = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
