@@ -121,7 +121,8 @@ async function land(
     if (e?.code !== 'CONFLICT') return reason(e);
     const read = staleRead(e);
     if (read.length > 0) {
-      for (const path of read) messages.push(`read conflict on ${path}: it changed after your base`);
+      for (const path of read)
+        messages.push(`read conflict on ${path}: it changed after your base`);
       messages.push('next: git pull, check your change still holds, git push');
       return `read conflict on ${read.join(', ')}: run git pull`.slice(0, 300);
     }
