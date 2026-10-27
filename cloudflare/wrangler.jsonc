@@ -44,7 +44,8 @@
     "MIMO_MODEL": "mimo-v2.6-flash",
     "ZAI_MODEL": "glm-5.3-flash",
     "STARTER_REPO": "yoneda-website-starter",
-    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev"
+    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev",
+    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo.com"
   },
   "services": [
     {
@@ -118,6 +119,10 @@
       {
         "name": "OBJECT_PUSHES",
         "class_name": "ObjectPushQueue"
+      },
+      {
+        "name": "AGENT_SANDBOX",
+        "class_name": "AgentSandbox"
       }
     ]
   },
@@ -159,6 +164,12 @@
       "new_sqlite_classes": [
         "ObjectPushQueue"
       ]
+    },
+    {
+      "tag": "v7",
+      "new_sqlite_classes": [
+        "AgentSandbox"
+      ]
     }
   ],
   "containers": [
@@ -181,6 +192,16 @@
       "rollout_step_percentage": [
         100
       ]
+    },
+    {
+      "class_name": "AgentSandbox",
+      "images": {
+        "agent": {
+          "build_context": "..",
+          "dockerfile": "./sandbox/Dockerfile"
+        }
+      },
+      "scheduling_policy": "durable_object"
     }
   ],
   "r2_buckets": [
