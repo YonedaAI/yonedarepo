@@ -137,3 +137,73 @@ fn a_submitted_batch_applies_the_same_rule() {
     let queued = submit("feature/x", AGENT, &a);
     assert_eq!(queued["status"], "queued", "{queued}");
 }
+
+/// A pushed commit's base version is the version at which its parent was main's head, so it
+/// can postdate another commit's landing on an unprotected branch (a CLI push after a
+/// teammate landed). That landing is still concurrent work on that branch: the commit joins
+/// the merge path, never `STALE_PARENT`. Protected refs keep their rule.
+#[test]
+fn a_branch_landing_counts_what_landed_there_since_the_commit_parent() {
+    let (h, root) = gated();
+    h.ok(AGENT, json!({"op":"repo_land","ref":"team","commit":root}));
+    let a = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("a.txt", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(AGENT, json!({"op":"repo_land","ref":"team","commit":a}));
+    let now = h.ok(OWNER, json!({"op":"repo_status"}))["version"]
+        .as_u64()
+        .unwrap();
+    let same = |path: &str, text: &str| {
+        h.commit(
+            AGENT,
+            Some(&root),
+            now,
+            json!([file(path, text)]),
+            json!([]),
+        )
+        .unwrap()
+    };
+    // Disjoint work rebases into a merge; work on the same file needs a three-way merge.
+    for commit in [same("b.txt", "b\n"), same("a.txt", "other\n")] {
+        assert_eq!(
+            code(h.run(
+                AGENT,
+                json!({"op":"repo_land","ref":"team","commit":commit})
+            )),
+            "MERGE_REQUIRED"
+        );
+    }
+    // Main: the same shape is still a stale parent.
+    let main_a = same("m.txt", "m\n");
+    h.approve_and_check(&main_a);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":main_a}),
+    );
+    let later = h.ok(OWNER, json!({"op":"repo_status"}))["version"]
+        .as_u64()
+        .unwrap();
+    let main_b = h
+        .commit(
+            AGENT,
+            Some(&root),
+            later,
+            json!([file("n.txt", "n\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.approve_and_check(&main_b);
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_land","ref":"main","commit":main_b})
+        )),
+        "STALE_PARENT"
+    );
+}
