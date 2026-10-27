@@ -55,9 +55,6 @@ export function publishedContext(snapshot: Snapshot, publication: PublishedRun) 
       (item) => item.id === execution?.parent_execution && item.run_id === publication.run.id,
     );
   }
-  for (const item of snapshot.executions) {
-    if (item.run_id === publication.run.id && item.role === 'research') lineage.add(item.id);
-  }
   const artifacts = snapshot.artifacts.filter((item) => lineage.has(item.producer));
   const artifactIds = new Set(artifacts.map((item) => item.id));
   const nodes = new Set(snapshot.nodes.map((item) => item.id));

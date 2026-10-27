@@ -1,13 +1,20 @@
 use crate::{SqlStore, commands::source_kit::execute, native::NativeStore};
 use serde_json::{Value, json};
 
+fn policy() -> Value {
+    json!({"version":"build-v1","suite":"commands-v1","environment":"linux-node24-rust1.94-v1",
+        "required_checks":["build"],
+        "build":{"checks":[{"name":"build","argv":["cargo","build"],"timeout_seconds":30}]}})
+}
+
 fn fixture() -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    execute(&db, json!({"op":"init","id":"repo-test","name":"Owner project","workspace":"alice","remote":{"namespace":"test","name":"private"},"commit":"a".repeat(40),"policy":yoneda_agents_core::Policy::default()})).unwrap();
+    execute(&db, json!({"op":"init","id":"repo-test","name":"Owner project","workspace":"alice","remote":{"namespace":"test","name":"private"},"commit":"a".repeat(40),"policy":policy()})).unwrap();
     for (id, at) in [("old", 1), ("current", 2), ("older", 0)] {
         execute(
             &db,
-            json!({"op":"start_run","id":id,"intent":"Inspect source","now":at}),
+            json!({"op":"start_run","id":id,"intent":"Inspect source","now":at,
+                "agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"minimal"}]}),
         )
         .unwrap();
         execute(&db, json!({"op":"cancel_run","run_id":id,"now":at+10})).unwrap();
@@ -71,7 +78,7 @@ fn visibility_requires_owner_authority_and_validates_cas_without_partial_changes
     for authority in [
         json!({"_workspace":"bob"}),
         json!({"_workspace":"alice","_grant":"agent"}),
-        json!({"_workspace":"alice","job_id":"job:old:research"}),
+        json!({"_workspace":"alice","job_id":"job:old:agent-1"}),
     ] {
         let mut c = visibility("old", true, false);
         for (k, v) in authority.as_object().unwrap() {

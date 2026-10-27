@@ -1,12 +1,6 @@
 import type { RepositoryOverview, RunDetail, RunsPage, Snapshot } from '../lib/types';
 
-const ACTIVE_RUN_STATES = new Set([
-  'planning',
-  'researching',
-  'exploring',
-  'coordinating',
-  'awaiting_intent',
-]);
+const ACTIVE_RUN_STATES = new Set(['planning', 'exploring', 'coordinating', 'awaiting_intent']);
 
 export class RequestedRunNotFoundError extends Error {
   constructor(runId: string) {

@@ -34,6 +34,13 @@ export async function approvedStart(env: Env, repo: string, command: Json): Prom
   return { ...command, _guided_runs: command._guided_runs.map((run: Json) => approve(run, base)) };
 }
 
+/** A build policy, which every run needs, and a one-agent roster for it. */
+export const buildPolicy = {
+  version: 'build-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1', required_checks: ['build'],
+  build: { checks: [{ name: 'build', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] },
+};
+export const oneAgent = [{ provider: 'mimo', model: 'mimo-v2.6-flash', strategy: 'minimal' }];
+
 /** `ledger` with the start approval applied, for fixtures that issue raw commands. */
 export const approvedLedger = (env: Env, repo: string) => async (command: Json) =>
   ledger(env, repo, await approvedStart(env, repo, command));

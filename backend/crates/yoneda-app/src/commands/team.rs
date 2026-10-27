@@ -18,7 +18,7 @@ pub(super) fn recover_budget<S: SqlStore>(db: &S, run: &Value, now: i64) -> Resu
     coordination::maybe_start(db, run, now)
 }
 
-pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<TeamPlan>> {
+pub(super) fn freeze(c: &Value) -> Result<Option<TeamPlan>> {
     let mode = c
         .get("mode")
         .map(|m| m.as_str().ok_or_else(|| bad("Run mode must be a string")))
@@ -28,7 +28,7 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<TeamPlan>> {
         "compare" if c.get("team").is_none_or(Value::is_null) => Ok(None),
         "compare" => Err(bad("Team configuration requires Build together mode")),
         "collaborate" => {
-            if !general || c["delegation"]["enabled"] == true {
+            if c["delegation"]["enabled"] == true {
                 return Err(Error::new(
                     "FORBIDDEN",
                     "Teams require hosted coding and cannot create independent comparison subagents",

@@ -3,16 +3,7 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use yoneda_agents_core::{Error, Result, model_budget::ModelBudget};
 
-pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>>> {
-    if !general {
-        if c.get("model_budgets").is_none() {
-            return Ok(None);
-        }
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Model budgets require a hosted coding run",
-        ));
-    }
+pub(super) fn freeze(c: &Value) -> Result<Option<Vec<ModelBudget>>> {
     let mut approved_agents = if c["adaptive_team"].is_object() {
         c["_approved_model_pool"].clone()
     } else {

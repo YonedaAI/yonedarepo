@@ -65,12 +65,6 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
         if job["kind"] == "agent" || job["status"] == "failed" {
             fence_descendants(db, job, now)?;
         }
-        if job["status"] == "failed" && e["role"] == "research" {
-            let rid = string(&e, "run_id")?;
-            let mut run = get(db, "runs", &rid)?;
-            run["status"] = json!("failed");
-            save(db, "runs", &rid, &run)?;
-        }
         if job["kind"] == "evaluate" && job["status"] == "failed" {
             let cid = string(&job["payload"]["candidate"], "id")?;
             let mut candidate = get(db, "candidates", &cid)?;

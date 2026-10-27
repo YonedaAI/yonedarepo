@@ -159,50 +159,6 @@ pub(crate) fn event<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> R
     outbox(db, &format!("index:{seq}"), "index", payload)?;
     Ok(())
 }
-pub(crate) fn execution<S: SqlStore>(
-    db: &S,
-    run: &Value,
-    harness: &str,
-    strategy: &str,
-    role: &str,
-    context: Value,
-    now: i64,
-) -> Result<()> {
-    let run_id = string(run, "id")?;
-    let suffix = if role == "research" {
-        "research".to_owned()
-    } else {
-        format!("{harness}-{strategy}")
-    };
-    let id = format!("{run_id}:{suffix}");
-    let e = json!({"id":id,"run_id":run_id,"harness":harness,"strategy":strategy,"role":role,"status":"queued","context":context,"base":run["base"]});
-    create(db, "executions", &id, &e)?;
-    node(
-        db,
-        &id,
-        "execution",
-        &format!("{harness} / {strategy}"),
-        "platform",
-        now,
-        e.clone(),
-    )?;
-    edge(db, &run_id, &id, "depends_on", "schedule")?;
-    for artifact in context
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-    {
-        edge(db, artifact, &id, "provided_to", "frozen execution context")?;
-    }
-    job(
-        db,
-        &format!("job:{id}"),
-        "agent",
-        now,
-        json!({"execution":e,"run":run,"policy":repo(db)?["policy"]}),
-    )
-}
 pub(crate) fn active<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let id = string(c, "job_id")?;
     let j = get(db, "jobs", &id)?;

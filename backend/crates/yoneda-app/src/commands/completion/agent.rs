@@ -17,26 +17,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     }
     if super::super::team::finish_planner(db, j, result, &mut run, now)? {
         // A successful read-only planner freezes a validated DAG; it creates no source capture.
-    } else if e["role"] == "research" {
-        let context: Vec<_> = all(db, "artifacts")?
-            .iter()
-            .filter(|a| a["producer"] == eid)
-            .map(|a| a["id"].clone())
-            .collect();
-        if context.is_empty() {
-            return Err(Error::new(
-                "MISSING_CONTEXT",
-                "Research must publish an artifact through MCP",
-            ));
-        }
-        for (h, s) in [
-            ("codex", "minimal"),
-            ("claude", "defensive"),
-            ("codex", "maintainable"),
-        ] {
-            execution(db, &run, h, s, "coding", json!(context), now)?;
-        }
-        run["status"] = json!("exploring");
     } else {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
         match j["payload"]["workspace_transport"].as_str() {
