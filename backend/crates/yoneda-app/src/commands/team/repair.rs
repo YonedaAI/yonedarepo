@@ -274,21 +274,9 @@ mod autonomous_tests;
 mod lifecycle_tests;
 
 #[cfg(test)]
-#[path = "tests/escalation.rs"]
-mod escalation_tests;
-
-#[cfg(test)]
 #[path = "tests/intent_evaluation.rs"]
 mod intent_evaluation_tests;
 
 #[cfg(test)]
 #[path = "tests/plan_scopes.rs"]
 mod plan_scope_tests;
-
-#[cfg(test)]
-#[path = "tests/budget_availability.rs"]
-mod budget_tests;
-
-#[cfg(test)]
-#[path = "tests/coordinator_retry.rs"]
-mod coordinator_retry_tests;

@@ -40,7 +40,6 @@ export function workspaceSpendApprovesJob(context: WorkspaceSpendContext, job: J
   );
   return (
     workspaceSpendRun(run) &&
-    run.campaign === undefined &&
     Boolean(budget?.pricing) &&
     job.id === context.job_id &&
     job.epoch === context.epoch &&
@@ -52,8 +51,6 @@ export function workspaceSpendApprovesJob(context: WorkspaceSpendContext, job: J
 }
 
 export function validateWorkspaceSpendRun(run: Json) {
-  if (run.campaign !== undefined)
-    throw fail('A pooled workspace run cannot claim a legacy campaign');
   const budgets = run.model_budgets;
   if (!Array.isArray(budgets) || budgets.length === 0)
     throw fail('Workspace inference requires priced approved model groups');

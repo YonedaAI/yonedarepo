@@ -40,14 +40,14 @@ it('forces Codex effort from the frozen execution instead of request-body escala
   expect(() => prepareModelRequest(job('codex', 'gpt-6.1-sol', 'none'), 'codex', '/v1/responses', {})).toThrow();
 });
 
-it('forces Claude effort and adaptive thinking while keeping legacy absent-effort behavior and campaign fences', () => {
+it('forces Claude effort and adaptive thinking while keeping legacy absent-effort behavior and the Opus fence', () => {
   const result = prepareModelRequest(job('claude', 'claude-sonnet-5-5', 'max'), 'claude', '/v1/messages', { output_config: { effort: 'low' }, thinking: { type: 'disabled' } });
   expect(result.body.output_config.effort).toBe('max');
   expect(result.body.thinking.type).toBe('adaptive');
   const legacy = prepareModelRequest(job('claude', 'claude-sonnet-5-5'), 'claude', '/v1/messages', { output_config: { effort: 'low' }, thinking: { type: 'disabled' } });
   expect(legacy.body.thinking.type).toBe('between_tools');
   expect(legacy.body.output_config.effort).toBe('low');
-  expect(() => prepareModelRequest(job('claude', 'claude-opus-5-5', 'max'), 'claude', '/v1/messages', {})).toThrow('preapproved');
+  expect(() => prepareModelRequest(job('claude', 'claude-opus-5-5', 'max'), 'claude', '/v1/messages', {})).toThrow('workspace-approved');
 });
 
 it('forces documented GLM effort without exposing an unsupported off switch', () => {

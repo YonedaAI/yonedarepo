@@ -249,6 +249,3 @@ async function runDetailIfPresent(
     throw failure;
   }
 }
-
-// The versioned fullstack campaign has its own approval and spend records.
-export { campaignTrialRequest, startCampaignTrial } from './reviewer-campaign';

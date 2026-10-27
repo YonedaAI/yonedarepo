@@ -7,7 +7,6 @@ mod archive;
 mod autonomy;
 mod branches;
 mod budget_availability;
-mod campaign;
 mod capture_completion;
 mod capture_source;
 mod comparison;
@@ -111,7 +110,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "comparison_submit"
         | "comparison_approval" => comparison::handle(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
-        "observe_campaign_model_limit" => budget_availability::observe(db, &c, now),
         "candidate_paths" => crate::path_lists::page(db, &c),
         "repository_status" => {
             let mut r = crate::storage::repo(db)?;
@@ -159,7 +157,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "integration_request"
         | "retry_team_task"
         | "repair_request"
-        | "retry_coordinator"
         | "repair_team" => team::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),

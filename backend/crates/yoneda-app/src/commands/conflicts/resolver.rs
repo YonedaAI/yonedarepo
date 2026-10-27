@@ -209,18 +209,6 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
                 .ok_or_else(|| bad("Execution count overflow"))?
         );
         save(db, "runs", &run_id, &run)?;
-        if let Some(selected) = super::super::campaign::claim_escalation(db, &run, &execution, now)?
-        {
-            if let Some(object) = execution.as_object_mut() {
-                object.remove("routing");
-            }
-            for (key, value) in selected
-                .as_object()
-                .ok_or_else(|| bad("Invalid approved escalation selection"))?
-            {
-                execution[key] = value.clone();
-            }
-        }
         run = get(db, "runs", &run_id)?;
         record["resolver_plan_revision"] = run["team_plan_revision"].clone();
         record["resolver_task_revisions"] = c["expected_task_revisions"].clone();

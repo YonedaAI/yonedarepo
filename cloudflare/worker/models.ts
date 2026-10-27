@@ -1,12 +1,5 @@
 import type { OutboundHandler } from '@cloudflare/containers';
 import { providerDefinition } from '../../shared/providers';
-import { observeCampaignModelLimit } from './campaign-model-limit';
-import {
-  campaignForAttempt,
-  reserveCampaignUsage,
-  settleCampaignUsage,
-  verifyCampaignReservation,
-} from './campaign-usage';
 import { error, readJson } from './http';
 import { attemptLog, failureCode, providerStatusCode } from './logging';
 import { grantOutputAllowance, requestUsage } from './model-budget';
@@ -67,35 +60,20 @@ export const modelHandler =
         delete prepared.body[key];
       const trialPolicy =
         owner === '_admin' ? null : await workspace(env, owner, { op: 'reviewer_status' });
-      const campaign = await campaignForAttempt(env, owner, scope.repo_id, job);
       const legacyTrial =
         !sharedContext &&
         trialPolicy?.repo_id === scope.repo_id &&
         (trialPolicy?.active_trial === job.payload.execution.run_id ||
           job.payload.execution.run_id?.startsWith('reviewer-'));
-      const reviewer =
-        !sharedContext && Boolean(trialPolicy?.repo_id) && Boolean(campaign || legacyTrial);
+      const reviewer = !sharedContext && Boolean(trialPolicy?.repo_id) && legacyTrial;
       if (
         reviewer &&
         (trialPolicy?.revoked ||
           trialPolicy?.expires <= Date.now() ||
-          (trialPolicy?.repo_id !== scope.repo_id && !campaign))
+          trialPolicy?.repo_id !== scope.repo_id)
       )
         throw Object.assign(new Error('Reviewer inference access expired or outside sandbox'), {
           code: 'REVIEWER_EXPIRED',
-        });
-      if (
-        reviewer &&
-        campaign?.access === 'reviewer' &&
-        prepared.provider !== 'codex' &&
-        !(
-          prepared.provider === 'claude' &&
-          job.model === 'claude-opus-5-5' &&
-          job.payload.execution.campaign_opus === true
-        )
-      )
-        throw Object.assign(new Error('Reviewer campaign execution permits metered Codex only'), {
-          code: 'FORBIDDEN',
         });
       const { key } = await providerCredentials(
         env,
@@ -118,10 +96,6 @@ export const modelHandler =
           : {}),
         ...requestUsage(prepared.body, provider),
         count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
-      }).catch(async (failure) => {
-        if (campaign && failure?.code === 'MODEL_REQUEST_LIMIT')
-          await observeCampaignModelLimit(env, owner, scope.repo_id, job);
-        throw failure;
       });
       requestNumber = counted.number;
       countedReservation = counted;
@@ -133,31 +107,17 @@ export const modelHandler =
         `${sharedContext?.comparison_approval_id ? `${sharedContext.comparison_approval_id}:` : ''}${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`,
       );
       const ceiling =
-        sharedContext || reviewer || campaign ? counted.reservation_microusd : prepared.reservation;
-      if ((sharedContext || reviewer || campaign) && !Number.isSafeInteger(ceiling))
+        sharedContext || reviewer ? counted.reservation_microusd : prepared.reservation;
+      if ((sharedContext || reviewer) && !Number.isSafeInteger(ceiling))
         throw new Error('Reviewer inference requires a priced run reservation');
       if (ceiling !== undefined) {
         try {
-          verifyCampaignReservation(campaign, counted);
           if (sharedContext) {
             sharedReservation = await reserveWorkspaceSpend(
               env,
               sharedContext,
               reservationId,
               counted,
-            );
-          } else if (campaign) {
-            await reserveCampaignUsage(
-              env,
-              owner,
-              campaign,
-              reservationId,
-              prepared.provider,
-              job.model,
-              prepared.body,
-              provider,
-              ceiling,
-              path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
             );
           } else {
             await workspace(env, budgetOwner, {
@@ -185,8 +145,6 @@ export const modelHandler =
               /* Retain the reservation if the release cannot be confirmed. */
             }
           }
-          if (campaign && (failure as { code?: string }).code === 'CAMPAIGN_MODEL_REQUEST_LIMIT')
-            await observeCampaignModelLimit(env, owner, scope.repo_id, job);
           throw failure;
         }
       }
@@ -211,7 +169,7 @@ export const modelHandler =
         error_code: providerStatusCode(result.status),
       });
       const tracked =
-        prepared.reservation && !sharedContext && !reviewer && !campaign
+        prepared.reservation && !sharedContext && !reviewer
           ? trackClaudeUsage(
               result,
               env,
@@ -239,16 +197,6 @@ export const modelHandler =
                 sharedContext.owner,
                 sharedReservation,
                 settled.charged_microusd,
-                usage,
-              );
-            else if (campaign)
-              await settleCampaignUsage(
-                env,
-                owner,
-                campaign,
-                reservationId,
-                prepared.provider,
-                job.model,
                 usage,
               );
             else if (reviewer)

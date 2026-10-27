@@ -20,7 +20,6 @@ export function RunAttention({
   onCancel?: () => void;
   onAction: (action: 'review' | 'activity' | 'results' | 'details', candidate?: string) => void;
 }) {
-  const recorded = runAttention(snapshot, run);
   const decision = activeDecision(snapshot, run);
   const attention = runAttention(snapshot, run);
   const evaluation = snapshot.evaluations.find(

@@ -117,17 +117,6 @@ fn schedule<S: SqlStore>(db: &S, run: &Value, mut task: Value, now: i64) -> Resu
     if run.get("model_budgets").is_some() {
         execution["budget"] = json!({"provider":provider,"model":agent["model"]});
     }
-    if let Some(selected) = super::super::campaign::claim_escalation(db, run, &execution, now)? {
-        if let Some(object) = execution.as_object_mut() {
-            object.remove("routing");
-        }
-        for (key, value) in selected
-            .as_object()
-            .ok_or_else(|| bad("Invalid approved escalation selection"))?
-        {
-            execution[key] = value.clone();
-        }
-    }
     execution["harness"] =
         json!(yoneda_agents_core::providers::provider(&string(&execution, "provider")?)?.harness);
     let latest_run = get(db, "runs", &string(run, "id")?)?;

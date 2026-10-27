@@ -50,7 +50,6 @@ export function checkLedger(snapshot: Json, request?: Json) {
     (request?.mode === 'collaborate' && snapshot?.capabilities?.collaborative_runs !== 1) ||
     (request?.autonomy_policy != null && snapshot?.capabilities?.autonomous_repair !== 1) ||
     (request?.working_branch_id != null && snapshot?.capabilities?.working_branches !== 1) ||
-    (request?.campaign != null && snapshot?.capabilities?.campaign_budget !== 1) ||
     (request?.mode === 'collaborate' &&
       request?.team == null &&
       snapshot?.capabilities?.team_planning !== 1) ||

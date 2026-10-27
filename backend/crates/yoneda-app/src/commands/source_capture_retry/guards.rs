@@ -53,7 +53,6 @@ pub(super) fn validate_run<S: SqlStore>(
         || run["team_plan"].is_object()
         || run["adaptive_team"].is_object()
         || run["external"] == true
-        || run["campaign"].is_object()
         || run["delegation"]["enabled"] == true
         || run["comparison"]["approval"]["budget_scope"] != "run"
         || !e["team_task"].is_null()

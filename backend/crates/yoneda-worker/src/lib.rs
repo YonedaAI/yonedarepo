@@ -138,14 +138,7 @@ impl DurableObject for RepositoryAuthority {
         command["now"] = json!(now());
         // Caller authority is discarded. This key exists only in the transient DO command.
         if let Some(object) = command.as_object_mut() {
-            object.remove("_campaign_signing_key");
             object.remove("_source_signing_key");
-        }
-        if command.get("_campaign_grant").is_some() {
-            let vault = self.env.secret("VAULT_KEY")?.to_string();
-            command["_campaign_signing_key"] = json!(yoneda_core::digest(
-                format!("yoneda:campaign-grant:v1:{vault}").as_bytes()
-            ));
         }
         if command["op"]
             .as_str()

@@ -1,7 +1,6 @@
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { modelHandler } from '../../cloudflare/worker/models';
-import { campaignModelBudgets } from '../../cloudflare/worker/reviewer-campaign';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { seal } from '../../cloudflare/worker/vault';
@@ -11,11 +10,15 @@ import { bindings, containerBindings, readyReviewer } from './reviewer-fixture';
 import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
+const codexBudget = { provider: 'codex', model: 'gpt-5.6-luna', max_requests: 48, max_output_tokens: 4096, max_execution_ms: 600000,
+  spend_limit_microusd: 5000000, pricing: { input_microusd_per_million: 250000, output_microusd_per_million: 1200000,
+    source: 'owner-approved conservative rates' } };
 async function fixture(marked = true) {
   const f = await readyReviewer();
   const connection = 'explicit-owner-opus';
-  const budget = { ...campaignModelBudgets[3], max_requests: 3, max_output_tokens: 4096,
-    max_execution_ms: 120000, spend_limit_microusd: 50000000 };
+  const budget = { provider: 'claude', model: 'claude-opus-5-5', max_requests: 3, max_output_tokens: 4096,
+    max_execution_ms: 120000, spend_limit_microusd: 50000000, pricing: { input_microusd_per_million: 8000000,
+      output_microusd_per_million: 20000000, source: 'owner-approved conservative rates' } };
   await workspace(bindings, f.owner, { op: 'provider_put', provider: 'claude', model: budget.model,
     connection, sealed: await seal(f.scoped, f.owner, 'claude', 'synthetic-opus-key', connection) });
   if (marked) await workspaceSpendConfigure(bindings, f.owner, 0, 50000000);
@@ -60,7 +63,7 @@ it('rejects a container scope with another run/model budget before consuming a r
   const f = await fixture();
   await approvedLedger(bindings, f.repo)({ op: 'start_run', id: 'other-run', _workspace_spend: true,
     intent: 'Different approved group', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', connection: 'reviewer-codex', strategy: 'Other' }],
-    model_budgets: [campaignModelBudgets[1]] });
+    model_budgets: [codexBudget] });
   const job = structuredClone(f.job); job.payload.execution.run_id = 'other-run';
   const scoped = containerBindings(f.scoped, { ...f.scope, job }).scoped;
   const fetch = vi.fn(); vi.stubGlobal('fetch', fetch);
