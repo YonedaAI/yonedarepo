@@ -1,6 +1,8 @@
 //! Commits pushed with stock Git, recorded under their own ids. The adapter has verified
 //! the pack (every object hashed, every tree and blob a new commit names either in the pack
-//! or already here) and written the objects to R2, the store of record. This store checks
+//! or already here) and either written the objects to R2, the store of record, or (a small
+//! push) sent them here to be staged: accepted with the commit in one transaction and
+//! written to R2 by the projector afterwards, as for commits built here. This store checks
 //! what it can itself: each commit's bytes hash to its id, and its parents are recorded
 //! (earlier in the same call counts). The base version is derived here, never taken from
 //! the client. Recording moves no ref and writes no log entry.
@@ -11,7 +13,7 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Error, Result,
-    git_object::{Commit, ObjectKind, hash_object, next_generation},
+    git_object::{Commit, ObjectId, ObjectKind, hash_object, next_generation},
     txlog::PathTouch,
 };
 
@@ -21,7 +23,9 @@ const TOUCHES: usize = 100_000;
 const BASE_WALK: usize = 10_000;
 
 /// `repo_record_pushed`: `commits` parents first, each `{commit, data_b64, touches,
-/// objects: [{id, kind}], check}`; `check` starts platform checks (the pushed tips).
+/// objects: [{id, kind}], check}`; `check` starts platform checks (the pushed tips). With
+/// `staged`, every object also carries its `data_b64` and is staged with its commit;
+/// `dispatch_objects` then says whether the adapter must ask for the drain to R2.
 pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
     actor.require("write")?;
     super::git_http::whole_repository(actor)?;
@@ -30,12 +34,17 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
         .as_array()
         .filter(|list| !list.is_empty() && list.len() <= COMMITS)
         .ok_or_else(|| bad(&format!("commits must list 1-{COMMITS} pushed commits")))?;
+    let staged = c["staged"] == true;
     let mut recorded = 0;
+    let mut dispatch = false;
     let mut runs = Vec::new();
     for item in commits {
         let id = object_id(item, "commit")?;
         if rows::commit_row(db, &id)?.is_none() {
             record_one(db, item, &actor.principal, now)?;
+            if staged {
+                dispatch |= stage(db, &id, item, now)?;
+            }
             recorded += 1;
         }
         if item["check"] == true {
@@ -49,7 +58,46 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
             )?);
         }
     }
-    Ok(json!({ "recorded": recorded, "check_runs": runs }))
+    Ok(json!({ "recorded": recorded, "check_runs": runs, "dispatch_objects": dispatch }))
+}
+
+/// Stages a pushed commit's objects (each checked against its id) and accepts them: reads
+/// fall back to these copies until the projector has written them to R2.
+fn stage<S: SqlStore>(db: &S, id: &ObjectId, item: &Value, now: i64) -> Result<bool> {
+    let mut objects = Vec::new();
+    for object in item["objects"]
+        .as_array()
+        .ok_or_else(|| bad("objects must be a list"))?
+    {
+        let kind = match object["kind"].as_str() {
+            Some("commit") => ObjectKind::Commit,
+            Some("tree") => ObjectKind::Tree,
+            Some("blob") => ObjectKind::Blob,
+            _ => return Err(bad("Object kind must be commit, tree or blob")),
+        };
+        let data = STANDARD
+            .decode(object["data_b64"].as_str().unwrap_or_default())
+            .map_err(|_| bad("data_b64 is not base64"))?;
+        let listed = object_id(object, "id")?;
+        if hash_object(kind, &data) != listed {
+            return Err(Error::new(
+                "GIT_OBJECT_INVALID",
+                format!("Object bytes do not hash to {listed}"),
+            ));
+        }
+        objects.push((listed, kind, data));
+    }
+    let refs: Vec<(ObjectId, ObjectKind, &[u8])> = objects
+        .iter()
+        .map(|(i, k, d)| (*i, *k, d.as_slice()))
+        .collect();
+    if !super::staging::stage(db, id, &refs)? {
+        return Err(Error::new(
+            "TOO_LARGE",
+            "This pushed commit is too large to stage; write its objects to the store first",
+        ));
+    }
+    super::staging::accept(db, id, now)
 }
 
 fn record_one<S: SqlStore>(db: &S, item: &Value, principal: &str, now: i64) -> Result<()> {
@@ -84,8 +132,8 @@ fn record_one<S: SqlStore>(db: &S, item: &Value, principal: &str, now: i64) -> R
         .take(16_384)
         .collect();
     db.query(
-        // The objects are in R2; Artifacts gets them with the first protected ref that
-        // includes this commit (commit_objects lists them until then).
+        // The objects are in R2 (or staged here, below); Artifacts gets them with the first
+        // protected ref that includes this commit (commit_objects lists them until then).
         "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,'[]',?,'push',0,NULL)",
         &[json!(id.hex()), json!(commit.tree()?.hex()), json!(json!(parents).to_string()), json!(generation),
           json!(base_version), json!(principal), json!(message), json!(now)],
