@@ -133,16 +133,12 @@ pub fn check<S: SqlStore>(
     Ok(json!({ "commit": id, "check": name, "status": status, "hooks": hooks }))
 }
 
-/// Reviews are immutable and independent: the commit's author cannot review it.
+/// Reviews are immutable and independent: the commit's author cannot review it, not even
+/// through a token they created (`reviewers`).
 pub fn review<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let id: ObjectId = object_id(c, "commit")?;
     let commit = rows::recorded(db, &id)?;
-    if commit.principal == principal {
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Authors cannot review their own commit",
-        ));
-    }
+    super::reviewers::require_not_author(db, &commit.principal, principal)?;
     let decision = string(c, "decision")?;
     let reason = c["reason"]
         .as_str()

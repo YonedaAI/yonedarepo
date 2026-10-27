@@ -6,6 +6,7 @@ export type SourceRoute =
   | { view: 'tokens' }
   | { view: 'device'; code: string }
   | { view: 'connect'; repo: string }
+  | { view: 'members'; repo: string }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -28,6 +29,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
   if (view === 'connect') return { view: 'connect', repo };
+  if (view === 'members') return { view: 'members', repo };
   if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
@@ -54,6 +56,7 @@ export function formatSourceRoute(route: SourceRoute): string {
       : `${base}/history?ref=${encodeURIComponent(route.ref)}`;
   if (route.view === 'transactions') return `${base}/transactions`;
   if (route.view === 'connect') return `${base}/connect`;
+  if (route.view === 'members') return `${base}/members`;
   if (route.view === 'search')
     return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;

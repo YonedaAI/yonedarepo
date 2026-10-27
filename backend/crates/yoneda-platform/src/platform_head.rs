@@ -4,6 +4,7 @@
 //! work the landing then re-checks against the authority's current access.
 use crate::repo_store::auth::{Actor, actor_with};
 use crate::repo_store::grants;
+use crate::repo_store::members::Role;
 use crate::storage::{bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -18,9 +19,24 @@ fn actor(c: &Value) -> Result<Actor> {
     let tokens = head["tokens"]
         .as_array()
         .ok_or_else(|| bad("The head carries no access snapshot"))?;
-    actor_with(credentials, &string(head, "workspace")?, |digest| {
-        Ok(tokens.iter().find(|t| t["digest"] == digest).cloned())
-    })
+    // A head published before members carries none: members are then refused here and
+    // the authority decides.
+    let members = head["members"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    actor_with(
+        credentials,
+        &string(head, "workspace")?,
+        |digest| Ok(tokens.iter().find(|t| t["digest"] == digest).cloned()),
+        |account| {
+            members
+                .iter()
+                .find(|m| m["account"] == account)
+                .map(|m| Role::parse(m["role"].as_str().unwrap_or_default()))
+                .transpose()
+        },
+    )
 }
 
 /// `head_begin`: authorizes a commit on the published head and names its parent and base.

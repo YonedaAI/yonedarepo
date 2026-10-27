@@ -41,16 +41,18 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
     }
     let paused = !super::break_glass::state(db)?["paused"].is_null();
     let tokens = super::auth::live_tokens(db)?;
-    // Changes only when access does, so caches keep the token snapshot across landings.
-    let access_version = yoneda_core::fingerprint(
-        &json!({ "tokens": tokens, "paused": paused, "workspace": settings.workspace }),
-    )?;
+    let members = super::members::live(db)?;
+    // Changes only when access does, so caches keep the access snapshot across landings.
+    let access_version = yoneda_core::fingerprint(&json!({
+        "tokens": tokens, "members": members, "paused": paused, "workspace": settings.workspace,
+    }))?;
     Ok(json!({
         "ref": refname, "version": current_version(db)?, "base_version": base_version,
         "head": { "id": head, "tree": row.tree, "generation": row.generation },
         "projected_version": projected_version, "overlay": overlay,
         "object_store": settings.object_store, "runners": !settings.policy.runners.is_empty(),
         "workspace": settings.workspace, "owner": settings.owner,
-        "paused": paused, "tokens": tokens, "access_version": access_version,
+        "paused": paused, "tokens": tokens, "members": members,
+        "access_version": access_version,
     }))
 }
