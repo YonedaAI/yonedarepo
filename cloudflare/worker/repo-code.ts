@@ -27,6 +27,8 @@ export async function reviewClasses(
     path: t.path,
     old: t.old_blob ?? null,
     new: t.new_blob ?? null,
+    // The new side's mode: a mode change, an executable or a symlink is never noise.
+    mode: t.mode ?? null,
   }));
   if (changes.length > MAX_CLASSIFIED_FILES)
     return {

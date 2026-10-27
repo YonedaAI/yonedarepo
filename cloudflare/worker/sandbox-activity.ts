@@ -1,7 +1,8 @@
 // The sandbox attempt's activity log is the CLI's own `--output-format stream-json` output:
 // one JSON event per line (system init, assistant text and tool calls, tool results, a final
 // result). Lines come from the sandbox, so they are untrusted: each is parsed defensively,
-// reduced to a short line of text, redacted and bounded before it is stored or shown.
+// reduced to a short line of text, redacted and bounded before it is stored (in the
+// AgentSandbox object's bounded `activity` table) or shown.
 
 export type ActivityKind = 'init' | 'text' | 'tool' | 'tool_error' | 'result' | 'error';
 export type Activity = { kind: ActivityKind; text: string };
@@ -138,6 +139,42 @@ export function resultOutcome(line: string): CliOutcome {
   if (event.type !== 'result' || typeof event.is_error !== 'boolean') return null;
   const message = clip(text(event.result) || text(event.subtype) || 'no result text');
   return event.is_error ? { ok: false, error: message } : { ok: true, result: message };
+}
+
+/** Rows the Durable Object keeps of an attempt's activity log (the oldest are dropped). */
+const ACTIVITY_ROWS = 2000;
+
+/** Appends `entries` to the object's `activity` table and drops what exceeds its bound. */
+export function storeActivity(sql: SqlStorage, at: number, entries: Activity[]) {
+  for (const entry of entries)
+    sql.exec('INSERT INTO activity(at, kind, text) VALUES(?, ?, ?)', at, entry.kind, entry.text);
+  sql.exec('DELETE FROM activity WHERE seq <= (SELECT MAX(seq) FROM activity) - ?', ACTIVITY_ROWS);
+}
+
+/** One page of the activity log after `after`, oldest first. */
+export function activityPage(sql: SqlStorage, after: number, limit: number) {
+  const rows = sql
+    .exec<{ seq: number; at: number; kind: string; text: string }>(
+      'SELECT seq, at, kind, text FROM activity WHERE seq > ? ORDER BY seq LIMIT ?',
+      after,
+      limit + 1,
+    )
+    .toArray();
+  const entries = rows.slice(0, limit);
+  return { entries, next: entries.at(-1)?.seq ?? after, has_more: rows.length > limit };
+}
+
+/** The session id the CLI's `system`/`init` event names, if this line is that event. */
+export function sessionId(line: string): string | null {
+  let event: Record<string, unknown>;
+  try {
+    event = record(JSON.parse(line));
+  } catch {
+    return null;
+  }
+  const id = event.type === 'system' && event.subtype === 'init' ? event.session_id : null;
+  // Untrusted: it becomes one argument of the resume command line.
+  return typeof id === 'string' && /^[A-Za-z0-9-]{8,128}$/.test(id) ? id : null;
 }
 
 /**

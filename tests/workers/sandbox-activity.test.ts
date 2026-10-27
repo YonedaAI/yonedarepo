@@ -111,7 +111,7 @@ describe('sandbox egress', () => {
     owner: 'owner',
     platformRepo: 'r0123456789abcdef0123',
     platformOrigin: 'https://dev.yonedarepo.com',
-    refPrefix: 'refs/heads/attempts/run-1/',
+    ref: 'refs/heads/attempts/run-1/1',
     provider: 'zai',
     model: 'glm-5.3-flash',
     modelBase: 'https://api.z.ai/api/anthropic',
@@ -141,20 +141,30 @@ describe('sandbox egress', () => {
     expect(decide(`${repo}/tokens/x`, 'DELETE')).toHaveProperty('deny');
   });
 
-  it('moves only refs under the attempt prefix', () => {
-    expect(refsAllowed({ ref: 'refs/heads/attempts/run-1/1', commit: 'a' }, props.refPrefix)).toBe(
-      true,
-    );
-    expect(refsAllowed({ ref: 'attempts/run-1/1' }, props.refPrefix)).toBe(true);
-    expect(refsAllowed({ ref: 'refs/heads/main' }, props.refPrefix)).toBe(false);
-    expect(refsAllowed({ ref: 'refs/heads/attempts/run-2/1' }, props.refPrefix)).toBe(false);
-    expect(refsAllowed({ ref: 'refs/heads/attempts/run-1/' }, props.refPrefix)).toBe(false);
+  it("moves only the attempt's own branch", () => {
+    expect(refsAllowed({ ref: 'refs/heads/attempts/run-1/1', commit: 'a' }, props.ref)).toBe(true);
+    expect(refsAllowed({ ref: 'attempts/run-1/1' }, props.ref)).toBe(true);
+    expect(refsAllowed({ ref: 'refs/heads/main' }, props.ref)).toBe(false);
+    expect(refsAllowed({ ref: 'refs/heads/attempts/run-2/1' }, props.ref)).toBe(false);
+    expect(refsAllowed({ ref: 'refs/heads/attempts/run-1/' }, props.ref)).toBe(false);
     expect(
-      refsAllowed(
-        { updates: [{ ref: 'attempts/run-1/1' }, { ref: 'refs/heads/main' }] },
-        props.refPrefix,
-      ),
+      refsAllowed({ updates: [{ ref: 'attempts/run-1/1' }, { ref: 'refs/heads/main' }] }, props.ref),
     ).toBe(false);
-    expect(refsAllowed(null, props.refPrefix)).toBe(false);
+    expect(refsAllowed({ updates: [] }, props.ref)).toBe(false);
+    expect(refsAllowed(null, props.ref)).toBe(false);
+  });
+
+  it("never moves another agent's branch of the same run", () => {
+    for (const ref of [
+      'refs/heads/attempts/run-1/2',
+      'attempts/run-1/2',
+      'refs/heads/attempts/run-1/team',
+      'refs/heads/attempts/run-1/1/x',
+      'attempts/run-1/1/x',
+      'refs/heads/attempts/run-1/10',
+    ]) {
+      expect(refsAllowed({ ref }, props.ref)).toBe(false);
+      expect(refsAllowed({ updates: [{ ref: props.ref }, { ref }] }, props.ref)).toBe(false);
+    }
   });
 });

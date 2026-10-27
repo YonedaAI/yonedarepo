@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { isSandboxTeam, sandboxMembers } from '../team/sandboxTeamView';
 import { activeDecision } from './agentsPick';
 import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { RecordedDecisionStory } from './RecordedDecisionStory';
@@ -60,6 +61,9 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const specialists = tasks.filter((task) => task.role !== 'integrator');
   const integrator = tasks.find((task) => task.role === 'integrator');
   const planner = executions.find((execution) => execution.team_role === 'planner');
+  // A sandbox team: members land on the team branch, which the platform's merge integrates.
+  const members = isSandboxTeam(run) ? sandboxMembers(snapshot, run) : null;
+  const landed = members?.filter((execution) => execution.landing?.status === 'landed').length;
   const stages = [
     ...(research
       ? [{ name: 'Research', value: research.status, detail: research.model }]
@@ -79,29 +83,40 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
         ]),
     {
       name: team ? 'Specialist tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
-      value: team
-        ? specialists.length
-          ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
-          : 'waiting for plan'
-        : `${done} / ${coding.length} finished`,
-      detail: team
-        ? 'Complementary source scopes'
-        : queued > 0
-          ? `${queued} queued · capacity limited`
-          : historical
-            ? 'Recorded execution history'
-            : coding.length > 0 && done === coding.length
-              ? 'All agents finished'
-              : coding.length > 0
-                ? 'Execution in progress'
-                : 'Waiting for agents',
+      value: members
+        ? `${landed} / ${members.length} landed`
+        : team
+          ? specialists.length
+            ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
+            : 'waiting for plan'
+          : `${done} / ${coding.length} finished`,
+      detail: members
+        ? 'One sandbox per task on the same base'
+        : team
+          ? 'Complementary source scopes'
+          : queued > 0
+            ? `${queued} queued · capacity limited`
+            : historical
+              ? 'Recorded execution history'
+              : coding.length > 0 && done === coding.length
+                ? 'All agents finished'
+                : coding.length > 0
+                  ? 'Execution in progress'
+                  : 'Waiting for agents',
     },
     {
       name: team ? 'Integration' : 'Capture source',
-      value: team
-        ? (integrator?.status ?? 'waiting for task inputs')
-        : `${candidates.length} / ${coding.length} captured`,
-      detail: team ? 'One combined source revision' : 'Exact fork commits',
+      value: members
+        ? (executions.find((execution) => execution.team_role === 'team_branch')?.status ??
+          'waiting for landings')
+        : team
+          ? (integrator?.status ?? 'waiting for task inputs')
+          : `${candidates.length} / ${coding.length} captured`,
+      detail: members
+        ? 'Platform merge on the team branch'
+        : team
+          ? 'One combined source revision'
+          : 'Exact fork commits',
     },
     {
       name: 'Independent checks',

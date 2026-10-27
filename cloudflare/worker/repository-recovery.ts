@@ -1,4 +1,9 @@
-import { repositoryPlatform } from './agents-platform';
+import {
+  AGENT_CHECK,
+  PLATFORM_POLICY,
+  platformRequest,
+  repositoryPlatform,
+} from './agents-platform';
 import { error, readJson, response } from './http';
 import { platformSource } from './source-objects';
 import { ledger } from './storage';
@@ -37,16 +42,36 @@ const boundedId = (value: unknown, limit: number) =>
  * After the owner selects a checked candidate, the agent layer records its independent
  * checks on the exact platform commit (its token has the check scope; it can never land).
  * Overridden checks are recorded as failing, so only the owner's break-glass lands them.
+ * A repository created before policies bound check posters refuses the token; the owner's
+ * own request (`owner`) then binds the agent token to this one check and it is retried.
  */
-export async function recordPublicationChecks(env: Env, repo: string, receipt: Json) {
+export async function recordPublicationChecks(
+  env: Env,
+  repo: string,
+  receipt: Json,
+  owner?: Request,
+) {
   const landing = receipt?.publication;
   if (!landing?.commit) return;
   const platform = await repositoryPlatform(env, repo);
-  await platform.call('POST', `/commits/${landing.commit}/checks`, {
-    name: 'yoneda-checks',
-    status: landing.break_glass ? 'fail' : 'pass',
-    evidence: `YonedaRepo decision ${receipt.id}`,
-  });
+  const post = () =>
+    platform.call('POST', `/commits/${landing.commit}/checks`, {
+      name: AGENT_CHECK,
+      status: landing.break_glass ? 'fail' : 'pass',
+      evidence: `YonedaRepo decision ${receipt.id}`,
+    });
+  try {
+    await post();
+  } catch (failure: any) {
+    if (failure.code !== 'FORBIDDEN' || !owner) throw failure;
+    const { policy } = await platform.call('GET', '');
+    if (policy?.check_posters?.[AGENT_CHECK]) throw failure;
+    const check_posters = { ...policy.check_posters, ...PLATFORM_POLICY.check_posters };
+    await platformRequest(env, { forward: owner }, 'PUT', `/repos/${platform.repo}/policy`, {
+      policy: { ...policy, check_posters },
+    });
+    await post();
+  }
 }
 
 /** The owner landed (or tried to) on the platform; only the platform's `main` completes it. */

@@ -97,3 +97,28 @@ if git diff --cached --quiet "$2"; then echo unchanged; exit 0; fi
 git -c core.hooksPath=/dev/null -c user.name="YonedaRepo agent" -c user.email=agent@yonedarepo.invalid commit --quiet --no-verify -m "$3"
 git -c core.hooksPath=/dev/null push --quiet --no-verify --force origin "HEAD:refs/heads/$4"
 echo pushed`;
+/**
+ * `pushScript`'s arguments, for a team member's resumed work: HEAD keeps its history (the
+ * agent's merge of the team branch), so its resolution lands as a merge, not a re-conflict.
+ * Whatever is left, a pending merge included, is committed first.
+ */
+export const historyPushScript = `set -e
+cd "$1"
+git add -A
+if ! git diff --cached --quiet HEAD || [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+	git -c core.hooksPath=/dev/null -c user.name="YonedaRepo agent" -c user.email=agent@yonedarepo.invalid commit --quiet --no-verify -m "$3"
+fi
+git -c core.hooksPath=/dev/null push --quiet --no-verify --force origin "HEAD:refs/heads/$4"
+echo pushed`;
+/**
+ * `dir branch`: fetches the team branch as `origin/<branch>` and starts merging it into the
+ * member's work, so the resumed agent only resolves and its push descends from the team
+ * head. Prints `merged` (clean) or `conflict` (merge in progress); fails otherwise.
+ */
+export const mergeScript = `set -e
+cd "$1"
+git fetch --quiet origin "+refs/heads/$2:refs/remotes/origin/$2"
+if git -c core.hooksPath=/dev/null -c user.name="YonedaRepo agent" -c user.email=agent@yonedarepo.invalid \\
+	merge --quiet --no-edit --no-ff "origin/$2" >/dev/null 2>&1; then echo merged
+elif [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then echo conflict
+else exit 1; fi`;

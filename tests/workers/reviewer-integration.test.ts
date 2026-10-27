@@ -14,7 +14,7 @@ it('upgrades the prepared model without rewriting legacy approvals, credentials 
   const f = await readyReviewer();
   await workspace(f.scoped, f.owner, { op: 'provider_put', provider: 'claude', model: 'claude-sonnet-4-6', connection: 'reviewer-claude', sealed: await seal(f.scoped, f.owner, 'claude', 'legacy-synthetic-key', 'reviewer-claude') });
   await workspace(f.scoped, f.owner, { op: 'budget_reserve', id: 'legacy-charge', amount: 123456 });
-  const repeated = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner }, true);
+  const repeated = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner, expires_at: expires }, true);
   expect(repeated.status).toBe(200);
   expect(await workspace(f.scoped, f.owner, { op: 'provider_secret', provider: 'claude', connection: 'reviewer-claude' })).toMatchObject({ model: 'claude-sonnet-4-6' });
   expect(await workspace(f.scoped, f.owner, { op: 'provider_secret', provider: 'claude', connection: 'reviewer-claude-sonnet-5-5' })).toMatchObject({ model: 'claude-sonnet-5-5' });
@@ -35,7 +35,7 @@ it('provisions a public account only as admin, persists immutable policy and exp
   expect(await workspace(bindings, f.owner, { op: 'reviewer_status' })).toMatchObject({ repo_id: f.repo, expires, limit_microusd: 50_000_000, trial_limit_microusd: 5_000_000 });
   for (const change of [{ repo_id: 'foreign' }, { expires: expires + 1 }])
     await expect(workspace(bindings, f.owner, { op: 'reviewer_configure', repo_id: f.repo, expires, ...change })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
-  const repeated = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner }, true);
+  const repeated = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner, expires_at: expires }, true);
   expect(await repeated.json()).toMatchObject({ repo_id: f.repo, budget_microusd: 50_000_000 });
   for (const path of ['/api/reviewer', '/api/settings', '/api/repositories']) {
     const response = await api(f.scoped, path, f.cookie);
@@ -46,6 +46,19 @@ it('provisions a public account only as admin, persists immutable policy and exp
   }
   const records = await runInDurableObject(stub, (_instance, state) => [...state.storage.sql.exec('SELECT payload FROM workspace_records')]);
   for (const key of testKeys) expect(JSON.stringify(records)).not.toContain(key);
+});
+
+it('keeps refusing the expired default window and bounds a provided one', async () => {
+  await signup('review_late');
+  const provision = async (extra: Json) => {
+    const response = await api(bindings, '/api/admin/reviewer/provision', '', { username: 'review_late', ...extra }, true);
+    return { status: response.status, body: await response.json<Json>() };
+  };
+  // The judge-facing default (Date.UTC(2026, 9, 23)) is unchanged and has passed.
+  expect(await provision({})).toEqual({ status: 409, body: { error: { code: 'INVALID_INPUT', message: 'Invalid reviewer configuration' } } });
+  for (const expires_at of [Date.now() - 1, Date.now() + 31 * 24 * 60 * 60 * 1000, 'soon'])
+    expect(await provision({ expires_at })).toMatchObject({ status: 400, body: { error: { code: 'INVALID_INPUT' } } });
+  expect(await workspace(bindings, 'review_late', { op: 'reviewer_status' })).toBeNull();
 });
 
 it('allows owner review and recovery on the legacy repository without rewriting fixed trial approvals', async () => {
@@ -197,7 +210,7 @@ it('rechecks only the configured sandbox with the fixed profile, preserving spen
   await runInDurableObject(stub, (_instance, state) => {
     state.storage.sql.exec("UPDATE workspace_records SET payload=json_set(payload,'$.policy',json(?)) WHERE id=?", JSON.stringify(oldPolicy), `project:${f.repo}`);
   });
-  const provision = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner }, true);
+  const provision = await api(f.scoped, '/api/admin/reviewer/provision', '', { username: f.owner, expires_at: expires }, true);
   expect(provision.status).toBe(200);
   expect((await workspace(bindings, f.owner, { op: 'project_get', id: f.repo })).policy.version).toBe('reviewer-v1');
   expect((await ledger(bindings, f.repo, { op: 'repository_status' })).policy.version).toBe('reviewer-v2');

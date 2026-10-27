@@ -1,11 +1,12 @@
 // The agent layer's side of a `sandbox-cli-v1` attempt: which runs take the sandbox, what an
 // attempt needs to start, where its model requests go, and recording the pushed commit.
 // The ledger owns the run; the AgentSandbox Durable Object owns the sandbox.
-import { providerDefinition } from '../../shared/providers';
+import { providerDefinition, runsInSandbox } from '../../shared/providers';
 import { repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
 import type { AgentEgress } from './sandbox-outbound';
+import { ensureTeamBranch, runSegment, teamBranch } from './sandbox-team';
 import { platformSource } from './source-objects';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
@@ -24,6 +25,8 @@ export type SandboxAttempt = {
   base: { repository: string; commit: string };
   /** `attempts/<run>/<n>`, the branch the result is pushed to. */
   branch: string;
+  /** A team member: its pushed commit lands on `attempts/<run>/team` (sandbox-team.ts). */
+  team?: { branch: string };
   harness: string;
   provider: string;
   connection?: string;
@@ -46,13 +49,16 @@ export function approvedTransport(env: Env, runtime: unknown): string {
   return SANDBOX_TRANSPORT;
 }
 
-/** The agent sandbox's egress: its model endpoint and pushes under its own attempt prefix. */
+/**
+ * The agent sandbox's egress: its model endpoint and pushes to its own branch only, so one
+ * agent of a compare run can never move another's `attempts/<run>/<m>`.
+ */
 export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
   project: attempt.repo,
   owner: attempt.owner,
   platformRepo: attempt.platform_repo,
   platformOrigin: attempt.platform_origin,
-  refPrefix: `refs/heads/${attempt.branch.replace(/[^/]+$/, '')}`,
+  ref: `refs/heads/${attempt.branch}`,
   provider: attempt.provider,
   connection: attempt.connection,
   model: attempt.model,
@@ -69,9 +75,9 @@ export const sandboxName = (repo: string, execution: string) => `${repo}/${execu
  * set and the gateway has a custom provider for that upstream (`custom-<provider>`).
  */
 export function modelBase(env: Env, provider: string, routing?: Json | null): string {
-  const definition = providerDefinition(provider);
-  if (definition.harness !== 'claude')
+  if (!runsInSandbox(provider))
     fail('SANDBOX_HARNESS', `Sandbox runs use Claude Code; ${provider} needs another CLI`);
+  const definition = providerDefinition(provider);
   const upstream = provider === 'mimo' ? mimoUpstream(routing) : definition.api_base;
   const gateway = env.SANDBOX_AI_GATEWAY;
   if (!gateway || upstream !== definition.api_base) return upstream;
@@ -82,12 +88,21 @@ export function modelBase(env: Env, provider: string, routing?: Json | null): st
   return `https://gateway.ai.cloudflare.com/v1/${account}/${id}/custom-${provider}${path}`;
 }
 
-/** The task as Claude Code receives it: the owner's brief and criteria, nothing else. */
-export function agentPrompt(run: Json): string {
+/**
+ * The task as Claude Code receives it: the owner's brief and criteria, then (a team member)
+ * its own task and that the other tasks run in parallel, nothing else.
+ */
+export function agentPrompt(run: Json, task?: Json): string {
   const criteria: string[] = Array.isArray(run.criteria) ? run.criteria : [];
   return [
     String(run.intent ?? '').trim(),
     criteria.length ? `\nAcceptance criteria:\n${criteria.map((c) => `- ${c}`).join('\n')}` : '',
+    ...(task
+      ? [
+          `\nYour task: ${String(task.title ?? '').trim()}\n${String(task.instructions ?? '').trim()}`,
+          'Other agents work on the other tasks in parallel on the same base.',
+        ]
+      : []),
     '\nWork in this Git repository. Edit, run and test files here. Your file changes are',
     'committed and pushed for review automatically when you finish: do not push yourself.',
   ]
@@ -101,9 +116,6 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
   const run = job.payload?.run ?? {};
   const repository = await ledger(env, repo, { op: 'repository_status' });
   const index = /:agent-(\d+)$/.exec(String(execution.id ?? ''))?.[1];
-  const runSegment = /^[A-Za-z0-9._-]{1,100}$/.test(String(run.id ?? ''))
-    ? String(run.id)
-    : (await sha(String(run.id))).slice(0, 32);
   if (!index || !repository.platform_repo || !env.SANDBOX_PLATFORM_ORIGIN)
     fail('INVALID_INPUT', 'Sandbox attempt needs a platform repository and an agent index');
   return {
@@ -119,7 +131,8 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
       repository: String(execution.base?.repository),
       commit: String(execution.base?.commit),
     },
-    branch: `attempts/${runSegment}/${index}`,
+    branch: `attempts/${await runSegment(String(run.id))}/${index}`,
+    ...(execution.sandbox_task ? { team: { branch: await teamBranch(String(run.id)) } } : {}),
     harness: String(execution.harness),
     provider: String(execution.provider),
     connection: execution.connection ?? undefined,
@@ -128,8 +141,18 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
     // The owner's rule for GLM (and the cheap default for all): low unless the run asks.
     effort: typeof execution.reasoning_effort === 'string' ? execution.reasoning_effort : 'low',
     model_base: modelBase(env, String(execution.provider), execution.routing),
-    prompt: agentPrompt(run),
+    prompt: agentPrompt(run, execution.sandbox_task ?? undefined),
   };
+}
+
+/**
+ * Tells the owner's browser that new runs may use the sandbox: this deployment has the
+ * AgentSandbox binding and its ledger takes sandbox compare runs (`sandbox_cli` 2).
+ */
+export function advertiseSandbox(env: Env, value: Json): Json {
+  if (env.AGENT_SANDBOX && value?.capabilities?.sandbox_cli >= 2)
+    value.capabilities.sandbox_runtime = SANDBOX_TRANSPORT;
+  return value;
 }
 
 /** Starts (or re-finds) the attempt's sandbox; repeated delivery starts nothing twice. */
@@ -137,6 +160,7 @@ export async function beginSandbox(env: Env, repo: string, job: Json): Promise<v
   const namespace = env.AGENT_SANDBOX;
   if (!namespace) return fail('SANDBOX_UNAVAILABLE', 'Sandbox runs are not deployed here');
   const attempt = await sandboxAttempt(env, repo, job);
+  await ensureTeamBranch(env, attempt);
   await namespace.getByName(sandboxName(repo, attempt.execution_id)).begin(attempt);
 }
 
@@ -167,7 +191,8 @@ export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, 
     job_id: attempt.job_id,
     epoch: attempt.epoch,
     result: {
-      id: `sandbox-${(await sha(`${attempt.repo}:${commit.hash}`)).slice(0, 32)}`,
+      // Per execution: two agents of one run may push byte-identical commits.
+      id: `sandbox-${(await sha(`${attempt.repo}:${attempt.execution_id}:${commit.hash}`)).slice(0, 32)}`,
       revision: { repository, commit: commit.hash },
       ...facts,
       summary: summary.slice(0, 500) || 'Sandbox agent change',

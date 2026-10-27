@@ -41,6 +41,7 @@ const STATUS: Record<string, number> = {
   TIMEOUT: 503,
   STALE_HANDLE: 409,
   PARSE_FAILED: 422,
+  SECRET_DETECTED: 422,
   GONE: 404,
   RATE_LIMITED: 429,
 };
