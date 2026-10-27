@@ -168,7 +168,7 @@ it('runs policy checks on the exact commit and gates landing on them', async () 
   const runs = () => queued.filter((m) => m.kind === 'platform_check');
   expect(runs()).toHaveLength(2);
   expect(good.body.check_runs[0]).toMatchObject({ name: 'unit', status: 'queued' });
-  for (const envelope of runs()) expect(await executeCheckRun(scoped, envelope)).toEqual({});
+  for (const envelope of runs()) expect(await executeCheckRun(scoped, envelope)).toBeUndefined();
   // Each run shipped its own commit's bytes to a container instance named per attempt.
   expect(executed.map((e) => e.name)).toEqual([`${runs()[0].job_id}:1`, `${runs()[1].job_id}:1`]);
   expect(executed[1].job.command).toEqual(['sh', '-c', 'test']);
@@ -182,7 +182,7 @@ it('runs policy checks on the exact commit and gates landing on them', async () 
   expect((await api(`${repo}/land`, bot, { body: { ref: 'main', commit: good.body.commit } })).body.landed).toBe(true);
 
   // A redelivered message for a finished run is a no-op.
-  expect(await executeCheckRun(scoped, runs()[1])).toEqual({});
+  expect(await executeCheckRun(scoped, runs()[1])).toBeUndefined();
   expect(executed).toHaveLength(2);
   // Re-requesting a finished check returns the existing run instead of queueing another.
   const again = await api(`${repo}/commits/${good.body.commit}/check-runs`, bot, { body: {} });

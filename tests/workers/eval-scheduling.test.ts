@@ -7,7 +7,7 @@
 import { expect, it } from 'vitest';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, file, queued, runners, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -23,7 +23,7 @@ function arityCheck(job: any) {
   const ok = calls.every((n) => n === declared);
   return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 1, output_bytes: 0, output_sha256: '0'.repeat(64), output_tail: ok ? '' : 'price() arity mismatch\n' };
 }
-const env = { ...scoped, CHECK_RUNNERS: { idFromName: (n: string) => n, get: () => ({ run: async (job: any) => arityCheck(job) }) } } as unknown as Env;
+const env = { ...scoped, CHECK_RUNNERS: runners(async (job) => arityCheck(job)) } as unknown as Env;
 
 type Scheduler = 'disjoint' | 'aware' | 'planned';
 const LABELS: Record<Scheduler, string> = {
