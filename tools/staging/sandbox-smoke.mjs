@@ -10,8 +10,8 @@
 // files, so both members' commits must land on the team branch through the platform's merge.
 // It passes only when both members landed, the team branch candidate holds both changes and
 // its checks make it eligible. `team: 'conflict'` (`--team-conflict`): two tasks rewrite the
-// same line; it passes when exactly one member was resumed once after a conflict and the run
-// still formed its team candidate.
+// same line; it passes when exactly one member was resumed once after the conflict, both
+// members then landed, and the team branch README.md starts with "# ".
 import { readFileSync } from 'node:fs';
 import { SMOKE_BRIEF, SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
 import { sleep } from './client.mjs';
@@ -105,8 +105,8 @@ function teamVerdict(detail, mode) {
   const problem =
     members.length !== 2
       ? `expected 2 members, found ${members.length}`
-      : mode === 'conflict'
-        ? resumed !== 1 && `expected exactly one resumed member, found ${resumed}`
+      : mode === 'conflict' && resumed !== 1
+        ? `expected exactly one resumed member, found ${resumed}`
         : landed !== 2 && `expected both members landed, found ${landed}`;
   return { lines, problem, landed, resumed };
 }
@@ -209,9 +209,12 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
         const verdict = teamVerdict(checked.detail, mode);
         Object.assign(metrics, { landed: verdict.landed, resumed: verdict.resumed });
         if (verdict.problem) throw new Error(`Team smoke: ${verdict.problem}`);
-        const { diff = '' } = await account.get(`/api/repos/${project.id}/candidate?id=${encodeURIComponent(candidates[0].id)}`);
-        const missing = team.paths.filter((path) => !diff.includes(`diff --git a/${path} b/${path}`));
+        // The team head's own tree, read back: every task's file, and (conflict) a title line.
+        const { files = {} } = await account.get(`/api/repos/${project.id}/candidate_source?id=${encodeURIComponent(candidates[0].id)}`);
+        const missing = team.paths.filter((path) => typeof files[path]?.content !== 'string');
         if (missing.length) throw new Error(`The team branch lacks ${missing.join(', ')}`);
+        if (mode === 'conflict' && !files['README.md'].content.startsWith('# '))
+          throw new Error(`The team branch README.md does not start with "# ": ${JSON.stringify(files['README.md'].content.slice(0, 80))}`);
         if (mode === 'disjoint' && checked.statuses[0] !== 'eligible') throw new Error(`The team branch was ${checked.statuses[0] ?? 'not checked in time'}`);
       }
       // A rejected commit fails the smoke; with two agents, so does a check still pending.
