@@ -247,7 +247,7 @@ export async function fetchRequest(
     };
     const value = await ledger(env, repo, command);
     if (action === 'snapshot' || action === 'repository_overview') advertiseSandbox(env, value);
-    if (action === 'accept') await recordPublicationChecks(env, repo, value);
+    if (action === 'accept') await recordPublicationChecks(env, repo, value, req);
     if (action === 'cancel_run')
       for (const stop of value.stop) {
         const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);

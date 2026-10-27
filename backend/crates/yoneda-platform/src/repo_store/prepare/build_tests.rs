@@ -6,7 +6,7 @@ use crate::repo_store::prepare::changes::changes as parse_changes;
 const NOW_MS: i64 = 1_800_000_000_123;
 
 fn added(c: &Value) -> Result<Built> {
-    let changes = parse_changes(c)?;
+    let changes = parse_changes(c, &[])?;
     build(
         c,
         None,

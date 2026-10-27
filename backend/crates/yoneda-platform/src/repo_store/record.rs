@@ -98,16 +98,19 @@ pub fn record<S: SqlStore>(
 }
 
 /// Records a check result for the exact commit under the repository's current policy.
+/// Required checks are posted only by whom the policy binds them to.
 pub fn check<S: SqlStore>(
     db: &S,
     c: &Value,
-    principal: &str,
+    actor: &super::auth::Actor,
     settings: &Settings,
 ) -> Result<Value> {
+    let principal = actor.principal.as_str();
     let id = object_id(c, "commit")?;
     rows::recorded(db, &id)?;
     let name = string(c, "name")?;
     check_name(&name)?;
+    settings.policy.may_post(&name, principal, actor.owner)?;
     let status = string(c, "status")?;
     if !matches!(status.as_str(), "pass" | "fail") {
         return Err(bad("Check status must be pass or fail"));

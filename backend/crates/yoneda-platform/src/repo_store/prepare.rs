@@ -4,7 +4,7 @@
 //! (or stages the objects here when the caller can defer the push).
 pub(crate) mod build;
 pub(crate) mod changes;
-use super::rows::{self, CommitRow, branch_ref, current_version, object_id};
+use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use super::tree_cache;
 use crate::storage::{SqlStore, bad, number};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -40,12 +40,17 @@ fn base<S: SqlStore>(db: &S, c: &Value) -> Result<(Option<ObjectId>, u64)> {
     }
 }
 
-pub fn prepare<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn prepare<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    principal: &str,
+    settings: &Settings,
+) -> Result<Value> {
     let now = number(c, "now")?;
     let (parent, base_version) = base(db, c)?;
     let parent = parent.map(|id| rows::recorded(db, &id)).transpose()?;
     let root = parent.as_ref().map(|p| p.tree);
-    let changes = changes(c)?;
+    let changes = changes(c, &settings.policy.secret_allow)?;
     let mut trees = supplied_trees(c)?;
     let supplied = trees
         .0

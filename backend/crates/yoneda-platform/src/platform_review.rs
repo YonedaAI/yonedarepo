@@ -1,8 +1,9 @@
 //! Review classes (semantic approval): each changed file is classified so policy can
 //! auto-approve noise and focus human review on consequential edits. Code files compare
-//! token streams with comments and layout removed; anything the lexer cannot read
-//! (unterminated strings or comments, binary, unknown languages) is `unknown`, which is
-//! never safe.
+//! token streams with comments and insignificant layout removed; anything the lexer cannot
+//! read (unterminated strings or comments, binary, unknown languages), a mode change, an
+//! executable or a symlink is `unknown`, which is never safe. Agent instruction files steer
+//! every later agent, so they are `instructions`, never `docs`.
 use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -16,6 +17,8 @@ pub enum ReviewClass {
     CommentOnly,
     /// Code tokens changed (including added/removed code files).
     Logic,
+    /// Agent instructions (`AGENTS.md`, `CLAUDE.md`, `.claude/**`, skills, ...).
+    Instructions,
     /// Could not be classified; requires a human.
     Unknown,
 }
@@ -28,8 +31,19 @@ impl ReviewClass {
 enum Syntax {
     /// `//`, `/* */` comments; quotes `"`, `'`, `` ` ``.
     CLike { nested: bool, rust: bool },
-    /// `#` comments; quotes `"` and `'`.
-    Hash,
+    /// `#` comments (at a line start or after whitespace); quotes `"` and `'`.
+    Hash(Layout),
+}
+
+/// Which whitespace carries meaning. Trailing whitespace and blank lines never do.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Layout {
+    /// Only where it keeps two operator characters apart (`+ +` is not `++`).
+    Free,
+    /// Also a line's indentation (Python blocks).
+    Indent,
+    /// Every run inside a line (YAML nesting and plain scalars, shell words).
+    Exact,
 }
 
 fn syntax(path: &str) -> Option<Syntax> {
@@ -46,7 +60,9 @@ fn syntax(path: &str) -> Option<Syntax> {
                 rust: false,
             }
         }
-        "py" | "sh" | "bash" | "zsh" | "rb" | "toml" | "yaml" | "yml" | "pl" | "r" => Syntax::Hash,
+        "py" => Syntax::Hash(Layout::Indent),
+        "sh" | "bash" | "zsh" | "rb" | "yaml" | "yml" | "pl" => Syntax::Hash(Layout::Exact),
+        "toml" | "r" => Syntax::Hash(Layout::Free),
         _ => return None,
     })
 }
@@ -62,6 +78,35 @@ fn is_docs(path: &str) -> bool {
     )
 }
 
+/// Whether a comment starts at `i`.
+fn comment_at(chars: &[char], i: usize, syntax: Syntax) -> bool {
+    match syntax {
+        Syntax::CLike { .. } => chars[i] == '/' && matches!(chars.get(i + 1), Some('/' | '*')),
+        Syntax::Hash(_) => chars[i] == '#' && (i == 0 || chars[i - 1].is_whitespace()),
+    }
+}
+
+const OPERATORS: &str = "+-*/%<>=!&|^~:.?";
+
+/// The token a whitespace run `[start, end)` leaves, if its layout makes it significant.
+fn whitespace(chars: &[char], start: usize, end: usize, syntax: Syntax) -> Option<String> {
+    if end == chars.len() || chars[end] == '\n' || comment_at(chars, end, syntax) {
+        return None; // trailing
+    }
+    let layout = match syntax {
+        Syntax::CLike { .. } => Layout::Free,
+        Syntax::Hash(layout) => layout,
+    };
+    let line_start = start == 0 || chars[start - 1] == '\n';
+    let joins = |c: Option<&char>| c.is_some_and(|c| OPERATORS.contains(*c));
+    let significant = match layout {
+        Layout::Exact => true,
+        Layout::Indent if line_start => true,
+        _ => !line_start && joins(chars.get(start.wrapping_sub(1))) && joins(chars.get(end)),
+    };
+    significant.then(|| chars[start..end].iter().collect())
+}
+
 /// Splits source into code tokens and comment texts, or fails on unterminated input.
 fn lex(source: &str, syntax: Syntax) -> Result<(Vec<String>, Vec<String>), ()> {
     let chars: Vec<char> = source.chars().collect();
@@ -70,10 +115,16 @@ fn lex(source: &str, syntax: Syntax) -> Result<(Vec<String>, Vec<String>), ()> {
     while i < chars.len() {
         let c = chars[i];
         let next = chars.get(i + 1).copied();
-        if c.is_whitespace() {
+        if c == '\n' {
             i += 1;
+        } else if c.is_whitespace() {
+            let start = i;
+            while i < chars.len() && chars[i].is_whitespace() && chars[i] != '\n' {
+                i += 1;
+            }
+            tokens.extend(whitespace(&chars, start, i, syntax));
         } else if matches!(syntax, Syntax::CLike { .. }) && c == '/' && next == Some('/')
-            || syntax == Syntax::Hash && c == '#'
+            || matches!(syntax, Syntax::Hash(_)) && comment_at(&chars, i, syntax)
         {
             let start = i;
             while i < chars.len() && chars[i] != '\n' {
@@ -148,8 +199,21 @@ fn rust_lifetime(chars: &[char], i: usize, syntax: Syntax) -> bool {
     ident(chars.get(i + 1)) && chars.get(i + 2) != Some(&'\'') && chars.get(i + 1) != Some(&'\\')
 }
 
-/// Classifies one file change (`None` content: absent side).
-pub fn classify(path: &str, old: Option<&[u8]>, new: Option<&[u8]>) -> ReviewClass {
+/// Classifies one file change: `mode` is the new side's (`blob`, `exec`, `symlink`; `None`
+/// when deleted) and `None` content an absent side. A change keeps the same content only
+/// when it changes the mode.
+pub fn classify(
+    path: &str,
+    mode: Option<&str>,
+    old: Option<&[u8]>,
+    new: Option<&[u8]>,
+) -> ReviewClass {
+    if crate::platform_instructions::is_instructions(path) {
+        return ReviewClass::Instructions;
+    }
+    if matches!(mode, Some("exec" | "symlink")) || (old.is_some() && old == new) {
+        return ReviewClass::Unknown;
+    }
     if is_docs(path) {
         return ReviewClass::Docs;
     }
@@ -189,7 +253,12 @@ mod tests {
     use ReviewClass::*;
 
     fn c(path: &str, old: &str, new: &str) -> ReviewClass {
-        classify(path, Some(old.as_bytes()), Some(new.as_bytes()))
+        classify(
+            path,
+            Some("blob"),
+            Some(old.as_bytes()),
+            Some(new.as_bytes()),
+        )
     }
 
     #[test]
@@ -232,7 +301,80 @@ mod tests {
         );
         assert_eq!(c("a.ts", "let s = 'x';\n", "let s = 'x;\n"), Unknown);
         assert_eq!(c("data.bin", "a", "b"), Unknown);
-        assert_eq!(classify("a.rs", Some(b"\0\x01"), Some(b"\0\x02")), Unknown);
-        assert_eq!(classify("a.rs", None, Some(b"fn a() {}")), Logic);
+        assert_eq!(
+            classify("a.rs", Some("blob"), Some(b"\0\x01"), Some(b"\0\x02")),
+            Unknown
+        );
+        assert_eq!(
+            classify("a.rs", Some("blob"), None, Some(b"fn a() {}")),
+            Logic
+        );
+    }
+
+    #[test]
+    fn agent_instructions_are_never_docs() {
+        for path in [
+            "AGENTS.md",
+            "agents.md",
+            "web/AGENTS.md",
+            "AGENTS.override.md",
+            "CLAUDE.md",
+            "docs/CLAUDE.md",
+            "GEMINI.md",
+            ".claude/settings.json",
+            ".claude/commands/ship.md",
+            "app/.claude/agents/x.md",
+            ".codex/config.toml",
+            ".cursor/rules/style.mdc",
+            ".cursorrules",
+            ".github/copilot-instructions.md",
+            ".github/instructions/ts.instructions.md",
+            "skills/deploy/SKILL.md",
+        ] {
+            assert_eq!(c(path, "a\n", "b\n"), Instructions, "{path}");
+            assert_eq!(
+                classify(path, Some("blob"), None, Some(b"new\n")),
+                Instructions,
+                "{path}"
+            );
+        }
+        assert!(!ReviewClass::AUTO_APPROVABLE.contains(&"instructions"));
+        assert_eq!(c("README.md", "a\n", "b\n"), Docs);
+        assert_eq!(c("docs/agents-overview.md", "a\n", "b\n"), Docs);
+    }
+
+    #[test]
+    fn significant_whitespace_is_never_formatting() {
+        // Python indentation moves a statement into or out of a block.
+        let py = "if x:\n    a()\nb()\n";
+        assert_eq!(c("a.py", py, &py.replace("\nb()", "\n    b()")), Logic);
+        assert_eq!(c("a.py", py, &py.replace("    a()", "\ta()")), Logic);
+        assert_eq!(c("a.py", "x=1\n", "x = 1   \n\n"), Formatting);
+        // YAML nesting and plain scalars keep their spaces.
+        assert_eq!(c("ci.yml", "a:\n  b: 1\n", "a:\nb: 1\n"), Logic);
+        assert_eq!(c("ci.yaml", "k: a b\n", "k: a  b\n"), Logic);
+        assert_eq!(c("ci.yml", "k: v # c\n", "k: v   # d  \n"), CommentOnly);
+        // A `#` inside a word is not a comment.
+        assert_eq!(c("ci.yml", "u: http://x#a\n", "u: http://x#b\n"), Logic);
+        // Shell assignment versus a command named `x`.
+        assert_eq!(c("run.sh", "x=1\n", "x =1\n"), Logic);
+        // Operators that whitespace kept apart.
+        assert_eq!(c("a.c", "y = a + +b;\n", "y = a ++b;\n"), Logic);
+        assert_eq!(c("a.rs", "if x {\n}\n", "if x  {\n\n}\n"), Formatting);
+        assert_eq!(c("Makefile", "a:\n\tb\n", "a:\n    b\n"), Unknown);
+    }
+
+    #[test]
+    fn mode_changes_are_unknown() {
+        let body = Some(b"echo hi\n".as_slice());
+        // Same content: only the mode changed, in either direction.
+        assert_eq!(classify("run.sh", Some("exec"), body, body), Unknown);
+        assert_eq!(classify("run.sh", Some("blob"), body, body), Unknown);
+        assert_eq!(classify("notes.md", Some("exec"), body, body), Unknown);
+        // Executables and symlinks are never layout or prose.
+        let edited = Some(b"echo hi # greet\n".as_slice());
+        assert_eq!(classify("run.sh", Some("exec"), body, edited), Unknown);
+        assert_eq!(classify("doc.md", Some("symlink"), body, edited), Unknown);
+        assert_eq!(classify("run.sh", Some("blob"), body, edited), CommentOnly);
     }
 }

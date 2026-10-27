@@ -11,7 +11,7 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   const created = await api('/repos', owner, {
     body: {
       name: 'demo-app',
-      policy: { required_checks: ['unit'], approvals: 1 },
+      policy: { required_checks: ['unit'], approvals: 1, check_posters: { unit: ['token:ci'] } },
       files: [file('README.md', '# demo\n'), file('src/lib.rs', 'pub fn a() {}\n')],
       author,
     },
@@ -45,6 +45,9 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   expect((await api(`${repo}/land`, agent, { body: { ref: 'main', commit: sha } })).status).toBe(403);
   expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: sha } })).body.error.code).toBe('NOT_READY');
   expect((await api(`${repo}/commits/${sha}/reviews`, agent, { body: { decision: 'approve' } })).status).toBe(403);
+  // A required check is posted only by its bound posters: not the writer, not even the owner.
+  for (const caller of [agent, owner])
+    expect((await api(`${repo}/commits/${sha}/checks`, caller, { body: { name: 'unit', status: 'pass' } })).status).toBe(403);
   expect((await api(`${repo}/commits/${sha}/checks`, ci, { body: { name: 'unit', status: 'pass' } })).status).toBe(200);
   expect((await api(`${repo}/commits/${sha}/reviews`, owner, { body: { decision: 'approve' } })).status).toBe(200);
   const landed = await api(`${repo}/land`, owner, { body: { ref: 'main', commit: sha } });

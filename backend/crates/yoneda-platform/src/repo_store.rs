@@ -170,14 +170,16 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_vacuum_plan" => vacuum::plan(db, c),
         "repo_vacuum_done" => vacuum::done(db, c),
         // The store travels with the answer, so the adapter needs no status read first.
-        "repo_prepare_commit" => prepare::prepare(db, c, principal).map(|mut prepared| {
-            prepared["object_store"] = json!(settings.object_store);
-            prepared
-        }),
+        "repo_prepare_commit" => {
+            prepare::prepare(db, c, principal, &settings).map(|mut prepared| {
+                prepared["object_store"] = json!(settings.object_store);
+                prepared
+            })
+        }
         "repo_record_commit" => record::record(db, c, principal, &settings),
         "repo_begin_commit" => adopt::begin(db, c, principal, &settings),
         "repo_adopt_commit" => adopt::adopt(db, c, &settings),
-        "repo_check" => record::check(db, c, principal, &settings),
+        "repo_check" => record::check(db, c, &actor, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_check_claim" => checks::claim(db, c),
         "repo_check_run" => checks::run_op(db, c),
