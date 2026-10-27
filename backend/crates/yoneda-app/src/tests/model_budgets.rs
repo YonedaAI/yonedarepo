@@ -11,18 +11,6 @@ fn configured() -> (NativeStore, Value) {
         "max_execution_ms":60000,"spend_limit_microusd":null,"pricing":null,"requests":0,"charged_microusd":0}]});
     (db, command)
 }
-fn claim(db: &NativeStore, id: &str, now: i64) -> Value {
-    call(db, json!({"op":"claim","job_id":id,"now":now})).unwrap()
-}
-fn reserve(db: &NativeStore, id: &str, epoch: i64) -> Result<Value> {
-    call(
-        db,
-        json!({"op":"reserve_request","kind":"model","job_id":id,"epoch":epoch,"input_bytes":100,"output_tokens":512}),
-    )
-}
-fn budget(db: &NativeStore) -> Value {
-    call(db, json!({"op":"snapshot"})).unwrap()["runs"][0]["model_budgets"][0].clone()
-}
 fn priced(command: &mut Value, limit: i64) {
     command["model_budgets"][0]["spend_limit_microusd"] = json!(limit);
     command["model_budgets"][0]["pricing"] = json!({"input_microusd_per_million":1000000,
@@ -70,111 +58,6 @@ fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
             "case {case}"
         );
     }
-}
-
-#[test]
-fn model_budgets_replace_hidden_per_job_limit_and_enforce_output_ceiling() {
-    let (db, command) = configured();
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    claim(&db, root, 1000);
-    for number in 1..=27 {
-        assert_eq!(reserve(&db, root, 1).unwrap()["number"], number);
-    }
-    let before = budget(&db);
-    for c in [
-        json!({"output_tokens":513,"input_bytes":100}),
-        json!({"output_tokens":0,"input_bytes":100}),
-        json!({"output_tokens":512,"input_bytes":262145}),
-    ] {
-        assert_eq!(
-            call(
-                &db,
-                json!({"op":"reserve_request","kind":"model","job_id":root,"epoch":1,
-            "output_tokens":c["output_tokens"],"input_bytes":c["input_bytes"]})
-            )
-            .unwrap_err()
-            .code,
-            "INVALID_INPUT"
-        );
-    }
-    assert_eq!(budget(&db), before);
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"reserve_request","kind":"model","job_id":root,"epoch":1,
-        "output_tokens":0,"input_bytes":100,"count_only":true})
-        )
-        .unwrap()["reservation_microusd"],
-        0
-    );
-}
-
-#[test]
-fn historical_model_budgets_distinct_groups_still_share_the_run_request_maximum() {
-    let (db, mut command) = configured();
-    command["agents"][1]["model"] = json!("second-model");
-    command["model_budgets"][0]["max_requests"] = json!(144);
-    let mut second = command["model_budgets"][0].clone();
-    second["model"] = json!("second-model");
-    command["model_budgets"]
-        .as_array_mut()
-        .unwrap()
-        .push(second);
-    call(&db, command).unwrap();
-    let first = "job:budgeted:agent-1";
-    // Recreate a pre-optional-policy run; its recorded ceiling must not change on upgrade.
-    db.query(
-        "UPDATE runs SET payload=json_remove(payload,'$.request_limits')",
-        &[],
-    )
-    .unwrap();
-    let second = "job:budgeted:agent-2";
-    claim(&db, first, 1000);
-    claim(&db, second, 1000);
-    for _ in 0..100 {
-        reserve(&db, first, 1).unwrap();
-    }
-    for _ in 0..44 {
-        reserve(&db, second, 1).unwrap();
-    }
-    assert_eq!(reserve(&db, second, 1).unwrap_err().code, "RESOURCE_LIMIT");
-    let run = call(&db, json!({"op":"snapshot"})).unwrap()["runs"][0].clone();
-    assert_eq!(run["model_requests"], 144);
-    assert_eq!(run["model_budgets"][0]["requests"], 100);
-    assert_eq!(run["model_budgets"][1]["requests"], 44);
-}
-
-#[test]
-fn new_runs_default_to_no_request_cap_and_continue_past_old_limits() {
-    let (db, mut command) = configured();
-    command.as_object_mut().unwrap().remove("model_budgets");
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    claim(&db, root, 1000);
-    for number in 1..=150 {
-        assert_eq!(reserve(&db, root, 1).unwrap()["number"], number);
-    }
-    assert_eq!(budget(&db)["max_requests"], Value::Null);
-    assert_eq!(budget(&db)["requests"], 150);
-}
-
-#[test]
-fn model_budgets_invalid_usage_never_refunds_and_integer_rounding_is_conservative() {
-    let (db, mut command) = configured();
-    priced(&mut command, 10000);
-    command["model_budgets"][0]["pricing"]["input_microusd_per_million"] = json!(3);
-    command["model_budgets"][0]["pricing"]["output_microusd_per_million"] = json!(7);
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    claim(&db, root, 1000);
-    let reservation = reserve(&db, root, 1).unwrap();
-    assert_eq!(reservation["reservation_microusd"], 1);
-    for (input, output) in [(-1, 0), (0, -1), (8293, 0), (0, 513)] {
-        assert_eq!(call(&db,json!({"op":"settle_model_request","job_id":root,"epoch":1,
-            "reservation_id":reservation["reservation_id"],"input_tokens":input,"output_tokens":output})).unwrap_err().code,"INVALID_INPUT");
-    }
-    assert_eq!(budget(&db)["charged_microusd"], 1);
 }
 
 #[test]

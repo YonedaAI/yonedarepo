@@ -15,7 +15,7 @@ export const start = (id: string, repo: string) => ({
   intent: 'Offline authority load fixture',
   criteria: ['Ledger invariants'],
   agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Offline; dispatch withheld' }],
-  workspace_transport: 'api-source-v1',
+  workspace_transport: 'sandbox-cli-v1',
   _source_transport_approved: true,
   _source_base: { repository: `yoneda-test/${repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) },
 });

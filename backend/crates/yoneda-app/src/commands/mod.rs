@@ -23,12 +23,10 @@ mod history;
 mod leases;
 mod mcp;
 mod model_budgets;
-mod model_reservations;
 mod policy;
 mod publication;
 mod recovery;
 mod repository;
-mod resources;
 mod restarts;
 #[cfg(test)]
 pub(crate) mod run_kit;
@@ -41,7 +39,6 @@ mod scheduling;
 mod sites;
 mod source_refresh;
 mod source_transport;
-mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
@@ -124,9 +121,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "context_session_begin" | "context_session_get" | "context_session_end" => {
             context_sessions::handle(db, c, now)
         }
-        "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
-            leases::handle(db, c, now)
-        }
+        "claim" | "fail" | "recover" => leases::handle(db, c, now),
         "context" | "publish_artifact" | "authorize_artifact" | "get_artifact"
         | "hint_complete" => mcp::handle(db, c, now),
         "outbox" | "outbox_sent" | "outbox_prune" | "events" => events::handle(db, c, now),
@@ -138,11 +133,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "accept" => acceptance::handle(db, c, now),
         "reject_candidate" | "publication_readback" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
-        "record_transcript" => transcripts::record(db, c, now),
         "record_execution_log" => execution_logs::record(db, c, now),
         "execution_logs" => execution_logs::read(db, c),
-        "reserve_request" => resources::reserve(db, c),
-        "settle_model_request" => model_reservations::settle(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }
 }

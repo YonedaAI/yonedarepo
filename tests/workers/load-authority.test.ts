@@ -32,17 +32,18 @@ for (const [repositories, concurrency] of [
           expect(created?.id).toBe(run);
           const job = `job:${run}:agent-1`;
           const claim = await measured.call(repo, { op: 'claim', job_id: job });
-          expect(claim).toMatchObject({ epoch: 1, attempt: 1, status: 'running' });
+          // A sandbox attempt is single-shot: its one claim is the final attempt.
+          expect(claim).toMatchObject({ epoch: 1, attempt: 2, status: 'running', sandbox: true });
           await measured.call(repo, {
-            op: 'progress',
+            op: 'sandbox_progress',
             job_id: job,
             epoch: 1,
-            progress: { stage: 'offline_load_fixture' },
+            activity: { phase: 'running', last_activity_at: 1, summary: 'offline_load_fixture' },
           });
           expect(await measured.call(repo, { op: 'job_status', id: job })).toMatchObject({
             status: 'running',
             epoch: 1,
-            progress: { stage: 'offline_load_fixture' },
+            progress: { stage: 'sandbox', summary: 'offline_load_fixture' },
           });
           const page = await measured.call(repo, { op: 'runs_page', limit: 20 });
           expect(page?.items.some((item: { id: string }) => item.id === run)).toBe(true);

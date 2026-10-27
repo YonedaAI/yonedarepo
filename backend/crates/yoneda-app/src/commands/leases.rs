@@ -101,38 +101,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             event(db, "job.started", now, job_event(&j))?;
             Ok(j)
         }
-        "check_attempt" => {
-            let j = active(db, &c, now)?;
-            Ok(json!({"status":j["status"],"deadline":j["attempt_deadline"]}))
-        }
-        "heartbeat" | "progress" => {
-            let mut j = active(db, &c, now)?;
-            let id = string(&j, "id")?;
-            let budget = super::model_budgets::for_job(db, &j)?;
-            if c["progress"]["stage"] == "container_ready" && j["runtime_started_at"].is_null() {
-                timing::runtime_ready(&mut j, budget.as_ref(), now)?;
-                j["runtime_started_at"] = json!(now);
-            }
-            let model_active =
-                timing::heartbeat(&mut j, budget.as_ref(), timing::supervisor_active(&c), now)?;
-            let lease = if j["runtime_started_at"].is_null() {
-                (now + 60_000).max(number(&j, "lease_until")?)
-            } else {
-                now + 60_000
-            };
-            j["lease_until"] = json!(lease.min(number(&j, "attempt_deadline")?));
-            if c.get("progress").is_some() && j["progress"] != c["progress"] {
-                j["progress"] = c["progress"].clone();
-                let mut data = job_event(&j);
-                data["progress"] = j["progress"].clone();
-                event(db, "job.progress", now, data)?;
-            }
-            save(db, "jobs", &id, &j)?;
-            Ok(
-                json!({"lease_until":j["lease_until"],"attempt_deadline":j["attempt_deadline"],
-                "attempt_ceiling_at":j["attempt_ceiling_at"],"model_active":model_active}),
-            )
-        }
         "fail" => {
             let mut j = active(db, &c, now)?;
             let id = string(&j, "id")?;
