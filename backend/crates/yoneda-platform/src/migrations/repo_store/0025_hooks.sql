@@ -42,4 +42,7 @@ CREATE TABLE hook_attempts(
   error TEXT,
   at INTEGER NOT NULL
 );
-CREATE INDEX hook_attempts_by_hook ON hook_attempts(hook_id, id)
+CREATE INDEX hook_attempts_by_hook ON hook_attempts(hook_id, id);
+-- A changeset landed from its commit shard's record keeps the commit's message too, for
+-- hook payloads (the commit itself is never adopted into the authority).
+ALTER TABLE changesets ADD COLUMN message TEXT

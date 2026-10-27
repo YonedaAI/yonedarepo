@@ -1172,5 +1172,83 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "git_hook_list",
+    "description": "Webhooks of this repository: id, url, events, paths, active, consecutive failures and undelivered count. Secrets are never listed. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_create",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "land",
+              "merged",
+              "refused",
+              "branch",
+              "tag",
+              "check"
+            ]
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_delete",
+    "description": "Delete a webhook; undelivered events are dropped. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_hook_deliveries",
+    "description": "A webhook's last 50 delivery attempts, newest first: delivery_id, event, attempt, ok, HTTP status, ms, error. Needs the owner or repo:admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
   }
 ]
