@@ -93,7 +93,7 @@ fn context_intent_normalization_preserves_cross_intent_rejection_and_atomic_roll
 fn deriving_context_intent_does_not_bypass_attempt_fencing() {
     let db = hosted();
     let before = snapshot(&db);
-    for extra in [json!({"epoch":2}), json!({"now":122000})] {
+    for extra in [json!({"epoch":2}), json!({"now":9_000_000})] {
         let mut command = publish("context:expired");
         for (key, value) in extra.as_object().unwrap() {
             command[key] = value.clone();

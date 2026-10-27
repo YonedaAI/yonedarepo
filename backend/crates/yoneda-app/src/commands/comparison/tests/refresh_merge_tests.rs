@@ -85,7 +85,7 @@ fn claim_evaluator(db: &NativeStore, cid: &str) -> Value {
     f::call(db, json!({"op":"claim","job_id":jid})).unwrap();
     f::call(
         db,
-        json!({"op":"defer_job","job_id":jid,"epoch":1,"reason":"source_preparing"}),
+        json!({"op":"defer_job","job_id":jid,"epoch":1,"reason":"container_capacity"}),
     )
     .unwrap();
     f::call(db, json!({"op":"claim","job_id":jid,"now":6000})).unwrap()

@@ -4,9 +4,12 @@ fn evaluating() -> NativeStore {
     let db = repo_with_policy(policy);
     call(&db,json!({"op":"start_run","id":"site","intent":"A website","agents":[{"provider":"mimo","model":"mimo-v2.6-flash","strategy":"a"},{"provider":"zai","model":"glm-4.7-flash","strategy":"b"}]})).unwrap();
     let agent = call(&db, json!({"op":"claim","job_id":"job:site:agent-1"})).unwrap();
-    let registration = source_kit::finish_agent(&db, &agent, 1000);
-    call(&db, json!({"op":"claim","job_id":"capture:site:agent-1"})).unwrap();
-    call(&db,json!({"op":"finish","job_id":"capture:site:agent-1","epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-site","revision":{"repository":"test/fork","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Website","diff":"html"}))})).unwrap();
+    run_kit::land(
+        &db,
+        agent["id"].as_str().unwrap(),
+        1000,
+        json!({"id":"candidate-site","revision":{"repository":"test/compare","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["public/index.html"],"summary":"Website","diff":"html"}),
+    );
     call(
         &db,
         json!({"op":"claim","job_id":"evaluate:candidate-site"}),

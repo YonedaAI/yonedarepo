@@ -3,7 +3,6 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::Result;
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
-    let source_lineage = super::capture_source::validate(db, j, result, now)?;
     let cid = string(result, "id")?;
     let execution = &j["payload"]["execution"];
     let eid = string(execution, "id")?;
@@ -45,9 +44,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
         super::history::capture_file_provenance(db, j, result, now)?;
     }
     let mut candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"summary":result["summary"],"status":"evaluating","capture_job":j["id"]});
-    if let Some(lineage) = source_lineage {
-        candidate["source_lineage"] = lineage;
-    }
     // Hosted capture stores the diff in R2 before submitting this digest. Legacy
     // native completion fixtures may omit it; inline source never enters the candidate/job.
     if result.get("diff_digest").is_some() {

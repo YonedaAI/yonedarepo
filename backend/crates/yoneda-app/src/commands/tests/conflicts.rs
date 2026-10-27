@@ -1,7 +1,7 @@
+use super::inventory::status;
 use super::refresh::{complete, refresh};
 use super::*;
-use super::{inventory::status, resolver::resolve};
-use crate::{commands::source_kit::execute, native::NativeStore};
+use crate::{commands::run_kit::execute, native::NativeStore};
 
 fn setup() -> NativeStore {
     let db = NativeStore::memory().unwrap();
@@ -199,41 +199,6 @@ fn inventory_includes_stale_candidates_without_a_conflict_id() {
 }
 
 #[test]
-fn resolver_is_a_scoped_agent_on_the_original_model_budget() {
-    let db = setup();
-    let mut execution = get(&db, "executions", "execution").unwrap();
-    execution["harness"] = json!("claude");
-    execution["provider"] = json!("mimo");
-    execution["model"] = json!("mimo-v2.6-flash");
-    execution["context"] = json!([]);
-    execution["budget"] = json!({"provider":"mimo","model":"mimo-v2.6-flash"});
-    execution["team_role"] = json!("worker");
-    save_execution(&db, &execution, 2).unwrap();
-    let candidate = get(&db, "candidates", "candidate").unwrap();
-    create(&db,"conflicts","conflict:unresolved",&json!({"id":"conflict:unresolved","repository_id":"conflict-repo","request_id":"refresh-1","candidate_id":"candidate","candidate":candidate,"candidate_revision":"c".repeat(40),"candidate_base":"a".repeat(40),"expected_version":1,"head_commit":"b".repeat(40),"status":"unresolved","merge_workspace_commit":"f".repeat(40),"workspace_revision":{"repository":"test/merge-workspace","commit":"f".repeat(40)},"evidence":evidence(),"conflict_paths":["src/change.rs"]})).unwrap();
-    let result = resolve(&db, &json!({"op":"resolve_conflict","conflict_id":"conflict:unresolved","request_id":"resolve-1","expected_version":1,"owner_brief":"Preserve both API behaviors"}), 3).unwrap();
-    assert_eq!(result["status"], "resolving");
-    let job = get(&db, "jobs", "job:conflict-resolver:resolve-1").unwrap();
-    assert_eq!(job["kind"], "agent");
-    assert!(job["payload"].get("team_owned_paths").is_none());
-    assert_eq!(
-        job["payload"]["execution"]["conflict_paths"],
-        json!(["src/change.rs"])
-    );
-    assert_eq!(
-        job["payload"]["conflict_resolver"]["candidate"]["revision"]["commit"],
-        "c".repeat(40)
-    );
-    assert_eq!(job["payload"]["execution"]["budget"], execution["budget"]);
-    assert!(
-        job["payload"]["execution"]["task"]
-            .as_str()
-            .unwrap()
-            .contains("trusted premerged changes")
-    );
-}
-
-#[test]
 fn clean_refresh_terminates_capture_and_freezes_fresh_evaluation_with_two_parents() {
     let db = setup();
     let receipt = refresh(&db, &request(), 2).unwrap();
@@ -290,20 +255,6 @@ fn refresh_rejects_forged_tree_readback_atomically() {
 }
 
 #[test]
-fn resolver_without_a_frozen_hosted_model_cannot_queue_a_paid_job() {
-    let db = setup();
-    let candidate = get(&db, "candidates", "candidate").unwrap();
-    create(&db,"conflicts","external-conflict",&json!({"id":"external-conflict","candidate":candidate,"candidate_revision":"c".repeat(40),"expected_version":1,"head_commit":"b".repeat(40),"status":"unresolved","merge_workspace_commit":"f".repeat(40),"workspace_revision":{"repository":"test/merge","commit":"f".repeat(40)},"conflict_paths":["src/change.rs"]})).unwrap();
-    let error = execute(&db,json!({"op":"resolve_conflict","conflict_id":"external-conflict","request_id":"external-resolve","expected_version":1,"owner_brief":"Retain both changes","now":3})).unwrap_err();
-    assert_eq!(error.code, "MISSING_MODEL_APPROVAL");
-    assert!(get(&db, "jobs", "job:conflict-resolver:external-resolve").is_err());
-    assert_eq!(
-        get(&db, "conflicts", "external-conflict").unwrap()["status"],
-        "unresolved"
-    );
-}
-
-#[test]
 fn publication_pending_prevents_refresh_and_exhausted_capture_is_terminal() {
     let db = setup();
     let mut repository = repo(&db).unwrap();
@@ -328,8 +279,6 @@ fn publication_pending_prevents_refresh_and_exhausted_capture_is_terminal() {
         "failed"
     );
 }
-#[path = "conflict_source_limits.rs"]
-mod source_limits;
 
 #[test]
 fn published_or_cancelled_run_candidates_are_refused_before_any_refresh_is_queued() {

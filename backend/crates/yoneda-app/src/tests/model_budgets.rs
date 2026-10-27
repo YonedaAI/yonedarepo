@@ -30,57 +30,6 @@ fn priced(command: &mut Value, limit: i64) {
 }
 
 #[test]
-fn model_budgets_progressing_execution_survives_queue_delay_and_fences_at_the_attempt_ceiling() {
-    let (db, mut command) = configured();
-    command["model_budgets"][0]["max_execution_ms"] = json!(1_800_000);
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    let claimed = claim(&db, root, 601_000);
-    // Boot, then the five-minute no-progress window plus grace; the ceiling is the safety net.
-    assert_eq!(claimed["attempt_deadline"], 1_081_000);
-    assert_eq!(claimed["attempt_ceiling_at"], 2_521_000);
-    call(
-        &db,
-        json!({"op":"progress","job_id":root,"epoch":1,"now":602_000,
-        "progress":{"stage":"container_ready"}}),
-    )
-    .unwrap();
-    for now in (650_000..2_402_000).step_by(50_000) {
-        call(
-            &db,
-            json!({"op":"heartbeat","job_id":root,"epoch":1,"now":now,"active":true}),
-        )
-        .unwrap();
-    }
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":2_401_999})
-        )
-        .unwrap()["deadline"],
-        2_402_000
-    );
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":2_402_000})
-        )
-        .unwrap_err()
-        .code,
-        "FENCED"
-    );
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"claim","job_id":"job:budgeted:agent-2","now":1_201_000})
-        )
-        .unwrap_err()
-        .code,
-        "ATTEMPTS_EXHAUSTED"
-    );
-}
-
-#[test]
 fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
     for case in 0..12 {
         let (db, mut command) = configured();
@@ -121,40 +70,6 @@ fn model_budgets_validate_exact_groups_and_reject_tampered_usage_atomically() {
             "case {case}"
         );
     }
-}
-
-#[test]
-fn model_budgets_share_requests_across_connections_and_retries() {
-    let (db, mut command) = configured();
-    command["model_budgets"][0]["max_requests"] = json!(3);
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    let other = "job:budgeted:agent-2";
-    claim(&db, root, 1000);
-    claim(&db, other, 1000);
-    assert_eq!(
-        reserve(&db, root, 1).unwrap()["model_budget"]["requests"],
-        1
-    );
-    assert_eq!(
-        reserve(&db, other, 1).unwrap()["model_budget"]["requests"],
-        2
-    );
-    call(
-        &db,
-        json!({"op":"fail","job_id":root,"epoch":1,"retryable":true,"error":"Restart transport"}),
-    )
-    .unwrap();
-    claim(&db, root, 1000);
-    assert_eq!(
-        reserve(&db, root, 2).unwrap()["model_budget"]["requests"],
-        3
-    );
-    assert_eq!(
-        reserve(&db, other, 1).unwrap_err().code,
-        "MODEL_REQUEST_LIMIT"
-    );
-    assert_eq!(budget(&db)["requests"], 3);
 }
 
 #[test]
@@ -245,48 +160,6 @@ fn new_runs_default_to_no_request_cap_and_continue_past_old_limits() {
 }
 
 #[test]
-fn model_budgets_unknown_usage_retains_money_and_late_settlement_refunds_once() {
-    let (db, mut command) = configured();
-    priced(&mut command, 10000);
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    claim(&db, root, 1000);
-    let reservation = reserve(&db, root, 1).unwrap();
-    assert_eq!(reservation["reservation_microusd"], 9316);
-    assert_eq!(budget(&db)["charged_microusd"], 9316);
-    assert_eq!(reserve(&db, root, 1).unwrap_err().code, "MODEL_SPEND_LIMIT");
-    assert_eq!(budget(&db)["requests"], 1);
-    call(&db, json!({"op":"recover","now":122000})).unwrap();
-    claim(&db, root, 122000);
-    let settlement = json!({"op":"settle_model_request","job_id":root,"epoch":1,
-        "reservation_id":reservation["reservation_id"],"input_tokens":10,"output_tokens":5,"now":300000});
-    let settled = call(&db, settlement.clone()).unwrap();
-    assert_eq!(settled["charged_microusd"], 20);
-    assert_eq!(budget(&db)["charged_microusd"], 20);
-    let sequence = call(&db, json!({"op":"snapshot"})).unwrap()["seq"].clone();
-    assert_eq!(call(&db, settlement.clone()).unwrap(), settled);
-    assert_eq!(
-        call(&db, json!({"op":"snapshot"})).unwrap()["seq"],
-        sequence
-    );
-    let mut conflicting = settlement.clone();
-    conflicting["input_tokens"] = json!(11);
-    assert_eq!(
-        call(&db, conflicting).unwrap_err().code,
-        "IDEMPOTENCY_CONFLICT"
-    );
-    for (field, value) in [
-        ("job_id", json!("job:budgeted:agent-2")),
-        ("epoch", json!(2)),
-    ] {
-        let mut wrong = settlement.clone();
-        wrong[field] = value;
-        assert_eq!(call(&db, wrong).unwrap_err().code, "FORBIDDEN");
-    }
-    assert_eq!(budget(&db)["charged_microusd"], 20);
-}
-
-#[test]
 fn model_budgets_invalid_usage_never_refunds_and_integer_rounding_is_conservative() {
     let (db, mut command) = configured();
     priced(&mut command, 10000);
@@ -302,40 +175,6 @@ fn model_budgets_invalid_usage_never_refunds_and_integer_rounding_is_conservativ
             "reservation_id":reservation["reservation_id"],"input_tokens":input,"output_tokens":output})).unwrap_err().code,"INVALID_INPUT");
     }
     assert_eq!(budget(&db)["charged_microusd"], 1);
-}
-
-#[test]
-fn model_budgets_heartbeats_without_progress_never_extend_the_attempt() {
-    let (db, command) = configured();
-    call(&db, command).unwrap();
-    let root = "job:budgeted:agent-1";
-    // The legacy one-minute time field no longer kills a progressing attempt.
-    assert_eq!(claim(&db, root, 1000)["attempt_deadline"], 481_000);
-    call(&db,json!({"op":"progress","job_id":root,"epoch":1,"now":1500,"progress":{"stage":"container_ready"}})).unwrap();
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":50000})
-        )
-        .unwrap()["deadline"],
-        361_500
-    );
-    let idle = call(
-        &db,
-        json!({"op":"heartbeat","job_id":root,"epoch":1,"now":50000,"active":false}),
-    )
-    .unwrap();
-    assert_eq!(idle["lease_until"], 110_000);
-    assert_eq!(idle["attempt_deadline"], 361_500);
-    assert_eq!(
-        call(
-            &db,
-            json!({"op":"check_attempt","job_id":root,"epoch":1,"now":110_000})
-        )
-        .unwrap_err()
-        .code,
-        "FENCED"
-    );
 }
 
 #[test]

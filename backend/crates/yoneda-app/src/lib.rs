@@ -3,13 +3,8 @@ use serde_json::Value;
 use yoneda_agents_core::Result;
 mod commands;
 mod path_lists;
-mod source_binding;
-mod source_workspace;
 mod storage;
 mod workspace;
-#[cfg(any(test, feature = "test-kit"))]
-pub use commands::source_kit;
-pub use source_workspace::{execute_source_workspace, migrate_source_workspace};
 pub use storage::{SqlStore, migrate};
 pub use workspace::execute_workspace;
 /// All ledger commands execute synchronously within the host's storage transaction.
