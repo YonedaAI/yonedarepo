@@ -16,7 +16,7 @@ const AUTHOR = { name: 'YonedaRepo break-glass', email: 'break-glass@yonedarepo.
 
 async function nudge(ctx: RepoContext, ref: string, result: Json) {
   // Every action changes what main's published head carries (its head, or the pause).
-  await refreshHead(ctx.env, ctx.repo);
+  await refreshHead(ctx.env, ctx.repo, true);
   if (!result.landed || result.already) return result;
   const sent = await Promise.all([
     dispatchProjection(ctx.env, ctx.repo).then(
