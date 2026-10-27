@@ -49,13 +49,16 @@ export function approvedTransport(env: Env, runtime: unknown): string {
   return SANDBOX_TRANSPORT;
 }
 
-/** The agent sandbox's egress: its model endpoint and pushes under its own attempt prefix. */
+/**
+ * The agent sandbox's egress: its model endpoint and pushes to its own branch only, so one
+ * agent of a compare run can never move another's `attempts/<run>/<m>`.
+ */
 export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
   project: attempt.repo,
   owner: attempt.owner,
   platformRepo: attempt.platform_repo,
   platformOrigin: attempt.platform_origin,
-  refPrefix: `refs/heads/${attempt.branch.replace(/[^/]+$/, '')}`,
+  ref: `refs/heads/${attempt.branch}`,
   provider: attempt.provider,
   connection: attempt.connection,
   model: attempt.model,
