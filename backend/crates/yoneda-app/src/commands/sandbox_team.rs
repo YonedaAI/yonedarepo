@@ -52,6 +52,7 @@ pub(super) fn freeze(
     if plan.tasks.iter().any(|task| !task.depends_on.is_empty()) {
         return refuse("Sandbox team tasks run in parallel on the same base, without dependencies");
     }
+    super::sandbox::freeze_clis(run)?;
     run["runtime"] = json!(super::sandbox::TRANSPORT);
     Ok(())
 }
