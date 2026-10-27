@@ -25,6 +25,7 @@ pub mod remote;
 mod replay;
 mod repo_ops;
 mod run;
+pub mod session_files;
 pub mod setup;
 mod snapshot;
 mod state;

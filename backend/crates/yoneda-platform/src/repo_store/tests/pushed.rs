@@ -205,3 +205,79 @@ fn a_small_push_is_staged_with_its_commits_and_drained_to_the_store_afterwards()
     );
     assert_eq!(gone["objects"], json!([]));
 }
+
+/// A push's declared reads (`-o yoneda.reads=…`) travel with its tip: landing refuses it
+/// as a stale read once a read file was written concurrently, while the same work without
+/// the declaration only needs a merge. Reads accumulate per pusher until the commit lands.
+#[test]
+fn a_pushed_tip_keeps_its_declared_reads_and_landing_validates_them() {
+    let (h, root) = seeded();
+    let tree = h.ok(
+        OWNER,
+        json!({"op":"repo_commit","commit":root,"brief":true}),
+    )["tree"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    // A teammate changes README.md on main after the push's base (version 1).
+    let theirs = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("README.md", "# changed\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.approve_and_check(&theirs);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":theirs}),
+    );
+
+    let (reader, mut item) = pushed(&root, &tree, "relied on the readme");
+    item["read_set"] = json!(["README.md", "src/"]);
+    item["check"] = json!(true);
+    let mut bad = item.clone();
+    bad["read_set"] = json!(["../outside"]);
+    assert_eq!(code(record(&h, AGENT, json!([bad]))), "INVALID_INPUT");
+    record(&h, AGENT, json!([item])).unwrap();
+    let shown = h.ok(OWNER, json!({"op":"repo_commit","commit":reader}));
+    assert_eq!(shown["read_set"], json!(["README.md", "src/"]));
+    // Someone else cannot add reads; the pusher can, and they accumulate.
+    let mut more = item.clone();
+    more["read_set"] = json!(["Cargo.toml"]);
+    record(&h, OWNER, json!([more.clone()])).unwrap();
+    let shown = h.ok(OWNER, json!({"op":"repo_commit","commit":reader}));
+    assert_eq!(shown["read_set"], json!(["README.md", "src/"]));
+    record(&h, AGENT, json!([more])).unwrap();
+    let shown = h.ok(OWNER, json!({"op":"repo_commit","commit":reader}));
+    assert_eq!(
+        shown["read_set"],
+        json!(["Cargo.toml", "README.md", "src/"])
+    );
+    h.approve_and_check(&reader);
+    let refused = h
+        .run(
+            OWNER,
+            json!({"op":"repo_land","ref":"main","commit":reader}),
+        )
+        .unwrap_err();
+    assert_eq!(refused.code, "CONFLICT");
+    assert!(
+        refused
+            .message
+            .contains("README.md, which this commit read"),
+        "{}",
+        refused.message
+    );
+
+    // The same work declaring nothing is independent of the teammate's change: a merge.
+    let (blind, item) = pushed(&root, &tree, "declared nothing");
+    record(&h, AGENT, json!([item])).unwrap();
+    h.approve_and_check(&blind);
+    let merge = h
+        .run(OWNER, json!({"op":"repo_land","ref":"main","commit":blind}))
+        .unwrap_err();
+    assert_eq!(merge.code, "MERGE_REQUIRED");
+}

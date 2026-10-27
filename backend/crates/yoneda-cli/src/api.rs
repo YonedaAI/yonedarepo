@@ -226,8 +226,9 @@ impl Api {
     }
 
     /// Records a commit on `parent` (empty: a root commit) with extra merge parents (a local
-    /// merge commit). `author` may carry `time` and `tz`; with a `committer` too, the
-    /// platform rebuilds the local commit exactly.
+    /// merge commit) and the files it read (`read_set`, validated when it lands). `author`
+    /// may carry `time` and `tz`; with a `committer` too, the platform rebuilds the local
+    /// commit exactly.
     #[allow(clippy::too_many_arguments)]
     pub async fn create_merge_commit(
         &self,
@@ -238,6 +239,7 @@ impl Api {
         author: &Value,
         committer: Option<&Value>,
         merge_parents: &[String],
+        read_set: &[String],
     ) -> std::result::Result<CommitInfo, Failure> {
         let parent = Some(parent).filter(|p| !p.is_empty());
         let mut body = json!({
@@ -249,6 +251,9 @@ impl Api {
         }
         if !merge_parents.is_empty() {
             body["merge_parents"] = json!(merge_parents);
+        }
+        if !read_set.is_empty() {
+            body["read_set"] = json!(read_set);
         }
         commit_info(&self.post("/commits", &body).await?)
     }
@@ -287,6 +292,7 @@ impl Api {
             message,
             author,
             committer,
+            &[],
             &[],
         )
         .await

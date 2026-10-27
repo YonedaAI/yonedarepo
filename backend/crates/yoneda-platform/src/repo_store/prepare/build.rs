@@ -161,15 +161,8 @@ pub(crate) fn build(
     let read_set: Vec<String> =
         serde_json::from_value(c.get("read_set").cloned().unwrap_or(json!([])))
             .map_err(|_| bad("read_set must be a list of paths or path#symbol entries"))?;
-    if read_set.len() > 1000
-        || read_set
-            .iter()
-            .any(|p| p.is_empty() || p.starts_with('/') || p.contains(".."))
-    {
-        return Err(bad(
-            "read_set entries must be relative paths, dir/ prefixes or path#symbol",
-        ));
-    }
+    // The same rules and caps as a push's declared reads.
+    let read_set = crate::platform_push_reads::read_set(read_set)?;
 
     let mut blobs: Vec<(ObjectId, &[u8])> = Vec::new();
     let mut path_changes = Vec::new();

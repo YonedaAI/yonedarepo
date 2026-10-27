@@ -2,7 +2,8 @@
 //! become platform commits (chained by parent, none moving a ref). Each is replayed with
 //! its own author, committer and message, so the platform's commit is the local commit
 //! (same id); the rest are mapped. A local merge keeps its other parents when the
-//! platform has them, so landing it later sees the merge.
+//! platform has them, so landing it later sees the merge. The tip carries the push's
+//! declared reads, which landing validates.
 use super::Session;
 use super::map::CommitMap;
 use crate::chunk;
@@ -107,13 +108,18 @@ pub struct Uploaded {
     pub made: Vec<(String, String)>,
 }
 
-/// Uploads `plan` (nothing moves a ref); returns the tip and (server, local) pairs.
-pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
+/// Uploads `plan` (nothing moves a ref), its last commit declaring `reads`; returns the
+/// tip and (server, local) pairs.
+pub async fn upload(session: &Session, plan: Plan, reads: &[String]) -> Result<Uploaded> {
     // A root commit (empty start) is based on nothing: version 0.
     let base_version = session.heads.version(&plan.start);
     let mut parent = plan.start.clone();
     let mut made = Vec::new();
-    for step in plan.steps {
+    let last = plan
+        .steps
+        .iter()
+        .rposition(|s| matches!(s, Step::Commit { .. }));
+    for (index, step) in plan.steps.into_iter().enumerate() {
         let Step::Commit {
             local,
             part,
@@ -146,6 +152,7 @@ pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
                 &author,
                 committer.as_ref(),
                 &merges,
+                if Some(index) == last { reads } else { &[] },
             )
             .await
             .map_err(|f| Error::new(format!("uploading {local} (part {part} of {parts}): {f}")))?;
