@@ -68,14 +68,6 @@ const snapshot = {
   executions: [],
   evaluations: [evaluation],
   decisions: [],
-  team_tasks: [
-    {
-      run_id: run.id,
-      role: 'integrator',
-      candidate_id: candidate.id,
-      execution_id: candidate.execution,
-    },
-  ],
   artifacts: [],
   nodes: [],
   edges: [],
@@ -170,11 +162,6 @@ describe('recorded decision story across review, workflow and continuation', () 
     });
     expect(html).toContain('Review blocked');
     expect(html).toContain('repository has changed since this run started');
-  });
-  it('preserves the pending intent question rather than suggesting a decision is ready', () => {
-    const html = outcome({ run: { ...run, status: 'awaiting_intent' } });
-    expect(html).toContain('Waiting for intent answer');
-    expect(html).not.toContain('ready for your decision');
   });
   it('keeps skipped checks visible without claiming every behavior passed', () => {
     const html = outcome();

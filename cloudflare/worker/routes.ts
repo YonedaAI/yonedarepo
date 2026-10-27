@@ -6,7 +6,6 @@ import {
   hydrateOwnerSnapshot,
   publishedSource,
 } from './candidate-source';
-import { comparisonOwnerRoute } from './comparison-owner-route';
 import { evidence } from './evidence';
 import { grantRoute } from './grants';
 import { historyDetail } from './history-archive';
@@ -28,7 +27,6 @@ import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
 import { ledger, sha } from './storage';
-import { teamTaskSource } from './team-source';
 import { approveTestPolicy } from './test-policy';
 import type { Env } from './types';
 import { websiteAssets } from './website-metadata';
@@ -203,21 +201,12 @@ export async function fetchRequest(
           url.searchParams.get('watermark') ?? undefined,
         ),
       );
-    if (action === 'team_source' && req.method === 'GET')
-      return await teamTaskSource(
-        env,
-        repo,
-        url.searchParams.get('run_id') ?? '',
-        url.searchParams.get('task_id') ?? '',
-      );
     if (action === 'live' && req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
       await ledger(env, repo, { op: 'repository_status' });
       return env.LIVE.get(env.LIVE.idFromName(repo)).fetch(req);
     }
     if (!repositoryOperationAllowed(req.method, action))
       return error('NOT_FOUND', 'Unknown repository operation', 404);
-    if (['approve_comparison_review', 'select_comparison_candidate'].includes(action))
-      return await comparisonOwnerRoute(req, env, principal, repo, action);
     let input = await ownerCommandInput(req, action);
     if (action === 'job_status') {
       if (typeof input.id !== 'string' || !input.id || input.id.length > 256)

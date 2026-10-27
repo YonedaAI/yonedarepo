@@ -1,9 +1,7 @@
 use super::support::*;
 use super::*;
 pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    if c.get("job_id").is_none() {
-        owner(c)?;
-    }
+    owner(c)?;
     let stored = get(db, "conflicts", &string(c, "conflict_id")?)?;
     let mut record = super::source::hydrate(db, &stored)?;
     let request = string(c, "request_id")?;
@@ -15,17 +13,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
                 "Resolver request ID reused with different input",
             ));
         }
-        if c.get("job_id").is_some() {
-            let caller = active(db, c, now)?;
-            if caller["payload"]["execution"]["id"]
-                != record["resolver_authorization"]["execution_id"]
-            {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "Resolver receipt belongs to a different authority",
-                ));
-            }
-        } else if record["resolver_authorization"]["approved_by"] != "repository_owner" {
+        if record["resolver_authorization"]["approved_by"] != "repository_owner" {
             return Err(Error::new(
                 "FORBIDDEN",
                 "Resolver receipt belongs to agent authority",
@@ -35,14 +23,13 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             json!({"conflict_id":record["id"],"status":record["status"],"job_id":record["resolver_job_id"],"execution_id":record["resolver_execution_id"],"model":record["resolver_model"]}),
         );
     }
-    let (mut run, authorization, brief) = super::repair_authority::prepare(db, c, &record, now)?;
+    let (run, authorization, brief) = super::repair_authority::prepare(db, c, &record)?;
     if run["workspace_transport"] != "api-source-v1" {
         return Err(Error::new(
             "NOT_SUPPORTED",
             "Only lazy-source runs can resolve conflicts",
         ));
     }
-    let autonomous = c.get("job_id").is_some();
     let job_id = format!("job:conflict-resolver:{request}");
     let fingerprint = yoneda_agents_core::fingerprint(
         &json!({"conflict_id":record["id"],"expected_version":c["expected_version"],"guidance":brief,"expected_plan_revision":c["expected_plan_revision"],"expected_task_revisions":c["expected_task_revisions"],"authorization":authorization}),
@@ -120,15 +107,6 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         }
         Ok(())
     })();
-    if autonomous {
-        let group = super::super::model_budgets::group(&run, &source_execution)?;
-        if group.is_none() || source_execution["run_id"] != run["id"] {
-            return Err(Error::new(
-                "MISSING_MODEL_APPROVAL",
-                "Resolver requires the original approved run model and budget",
-            ));
-        }
-    }
     if approved_model.is_err() {
         return Err(Error::new(
             "MISSING_MODEL_APPROVAL",
@@ -138,16 +116,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
     let run_id = string(&record["candidate"], "run_id")?;
     let count = run_executions(db, &run_id)?.len();
     let limit = if run["mode"] == "collaborate" {
-        if autonomous {
-            usize::try_from(
-                run["autonomy_policy"]["max_executions"]
-                    .as_u64()
-                    .unwrap_or(20),
-            )
-            .map_err(|_| bad("Invalid execution budget"))?
-        } else {
-            yoneda_agents_core::team::MAX_TEAM_EXECUTIONS
-        }
+        yoneda_agents_core::team::MAX_TEAM_EXECUTIONS
     } else {
         yoneda_agents_core::agents::MAX_RUN_EXECUTIONS
     };
@@ -158,11 +127,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         ));
     }
     let resolver_id = format!("conflict-resolver:{request}");
-    let protected = protected_paths(if autonomous {
-        &run["policy"]
-    } else {
-        &repository["policy"]
-    });
+    let protected = protected_paths(&repository["policy"]);
     let scope_rule = format!(
         "The Git-conflicting paths are: {}. You may edit any repository file needed to integrate both sides, such as a file only one side changed, except these protected paths, which you must not edit: {}.",
         scopes.join(", "),
@@ -177,7 +142,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         record["candidate_revision"],
         scope_rule
     );
-    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":if autonomous {"Autonomous three-way conflict resolver"} else {"Owner-approved three-way conflict resolver"},"role":"coding","status":"queued","context":if autonomous { &run["context"] } else { &source_execution["context"] },"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"resolver_protected_paths":protected,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
+    let mut execution = json!({"id":resolver_id,"run_id":run_id,"harness":source_execution["harness"],"provider":source_execution["provider"],"connection":source_execution.get("connection").cloned().unwrap_or_else(||source_execution["provider"].clone()),"model":source_execution["model"],"strategy":"Owner-approved three-way conflict resolver","role":"coding","status":"queued","context":source_execution["context"],"base":record.get("target_revision").cloned().unwrap_or_else(||json!({"repository":record["candidate"]["base"]["repository"],"commit":record["head_commit"]})),"depth":0,"source_execution":source_execution["id"],"task":resolver_task,"conflict_id":record["id"],"conflict_paths":scopes,"resolver_protected_paths":protected,"conflict_candidate":record["candidate"],"conflict_expected_version":record["expected_version"],"team_role":if source_execution["team_role"] == "integrator" {json!("integrator")} else {json!("conflict_resolver")}});
     if let Some(budget) = source_execution.get("budget") {
         execution["budget"] = budget.clone();
     }
@@ -186,40 +151,13 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
             execution[field] = value.clone();
         }
     }
-    if autonomous {
-        execution["repair_round"] = json!(
-            run["team_repair_rounds"]
-                .as_u64()
-                .unwrap_or_default()
-                .checked_add(1)
-                .ok_or_else(|| bad("Repair round overflow"))?
-        );
-    }
-    if autonomous {
-        run["team_repair_rounds"] = json!(
-            run["team_repair_rounds"]
-                .as_u64()
-                .unwrap_or_default()
-                .checked_add(1)
-                .ok_or_else(|| bad("Repair round overflow"))?
-        );
-        run["execution_count"] = json!(
-            number(&run, "execution_count")?
-                .checked_add(1)
-                .ok_or_else(|| bad("Execution count overflow"))?
-        );
-        save(db, "runs", &run_id, &run)?;
-        run = get(db, "runs", &run_id)?;
-        record["resolver_plan_revision"] = run["team_plan_revision"].clone();
-        record["resolver_task_revisions"] = c["expected_task_revisions"].clone();
-    }
     create(db, "executions", &resolver_id, &execution)?;
     node(
         db,
         &resolver_id,
         "execution",
         "Scoped conflict resolver",
-        if autonomous { "platform" } else { "owner" },
+        "owner",
         now,
         execution.clone(),
     )?;
@@ -230,11 +168,7 @@ pub(super) fn resolve<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value>
         "resolved_by",
         "owner-approved scoped resolver using both Git parents",
     )?;
-    let policy = if autonomous {
-        run["policy"].clone()
-    } else {
-        repository["policy"].clone()
-    };
+    let policy = repository["policy"].clone();
     let mut compact_record = record.clone();
     super::source::compact(db, &mut compact_record)?;
     job(

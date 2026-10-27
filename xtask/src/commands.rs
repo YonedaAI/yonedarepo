@@ -5,7 +5,6 @@ use crate::{
 pub async fn execute(args: Vec<String>) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("help");
     match command {
-        "context-study" => crate::context_study::execute(&args).await,
         "cloudflare-configure" => crate::cloudflare::configure(&args),
         "cloudflare-deploy" => crate::cloudflare_deploy::deploy(&args).await,
         "doctor" => {
@@ -124,7 +123,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|context-study|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference."
             );
             Ok(())
         }

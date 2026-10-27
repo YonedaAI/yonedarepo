@@ -179,8 +179,8 @@ fn one_conflict_resumes_once_and_the_team_branch_becomes_the_only_candidate() {
     let candidate = get(&db, "candidates", "team-candidate").unwrap();
     assert_eq!(candidate["execution"], "run-t:team");
     assert_eq!(candidate["revision"]["commit"], "d".repeat(40));
-    let run = get(&db, "runs", "run-t").unwrap();
-    super::super::team::validate_candidate(&db, &run, &candidate).unwrap();
+    assert!(is_team(&get(&db, "runs", "run-t").unwrap()));
+    validate_candidate(&db, &candidate).unwrap();
     // The team branch is checked in a fresh check sandbox like any sandbox candidate.
     let check = call(
         &db,

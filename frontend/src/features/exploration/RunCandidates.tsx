@@ -1,13 +1,10 @@
 import { GitCompareArrows } from 'lucide-react';
 import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
-import { IntegrationInputs } from '../team/IntegrationInputs';
-import { AgentsRationale } from './AgentsRationale';
 import { activeDecision, rejectionOf, supersededResults } from './agentsPick';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
 import { ComparisonResults } from './ComparisonResults';
-import { integratedExecutions } from './runResults';
 import { selectionBlocker } from './runReviewState';
 import { SupersededResults } from './SupersededResults';
 
@@ -21,7 +18,6 @@ export function RunCandidates({
   onCompare,
   onSelect,
   onProviders,
-  onInspectTask,
   onContext,
   onGraph,
   onComparisonAction,
@@ -38,7 +34,6 @@ export function RunCandidates({
   onCompare: () => void;
   onSelect: (id: string) => void;
   onProviders?: () => void;
-  onInspectTask: (id: string) => void;
   onContext: () => void;
   onGraph: () => void;
   onComparisonAction?: ComparisonAction;
@@ -52,18 +47,14 @@ export function RunCandidates({
   const coding = snapshot.executions.filter(
     (execution) => execution.run_id === run.id && execution.role === 'coding',
   );
-  const integrators = team ? integratedExecutions(snapshot, run) : [];
-  // A reconciled run shows only the result that is current; earlier ones move to history.
+  // A team's result is its captured branch; a reconciled run shows only the current one.
   const executions = team
-    ? candidates.length
-      ? candidates.map(
-          (item) =>
-            integrators.find((execution) => execution.id === item.execution) ??
-            snapshot.executions.find((execution) => execution.id === item.execution) ?? {
-              id: item.execution,
-            },
-        )
-      : integrators
+    ? candidates.map(
+        (item) =>
+          snapshot.executions.find((execution) => execution.id === item.execution) ?? {
+            id: item.execution,
+          },
+      )
     : coding;
   const decision = activeDecision(snapshot, run);
   if (run.mode === 'compare')
@@ -99,12 +90,11 @@ export function RunCandidates({
           )}
         </div>
       )}
-      {team && candidates.length > 0 && <h2 className="agents-pick-heading">Agents’ pick</h2>}
+      {team && candidates.length > 0 && <h2 className="agents-pick-heading">Team result</h2>}
       {team && !executions.length && (
         <p role="status" className="inline-empty">
-          {run.status === 'planning'
-            ? 'The team plan is being prepared from your brief. A final integrated result follows the task work and independent checks.'
-            : 'The integrated candidate appears after every required specialist output is captured. Open Agent activity for task progress.'}
+          The team result appears once every task has landed or failed and the team branch is
+          captured. Open Agent activity for task progress.
         </p>
       )}
       {!team && !executions.length && (
@@ -135,11 +125,6 @@ export function RunCandidates({
               decision={decision}
               rejection={rejection}
               actionLabel={team ? 'Approve & publish' : undefined}
-              assessment={
-                team && candidate ? (
-                  <AgentsRationale snapshot={snapshot} run={run} candidate={candidate} />
-                ) : undefined
-              }
               onReject={candidate && onReject ? () => onReject(candidate.id) : undefined}
               rejectDisabled={busy}
               focusSignal={
@@ -164,14 +149,6 @@ export function RunCandidates({
           results={supersededResults(snapshot, run, candidates)}
         />
       )}
-      {team &&
-        candidates.map((candidate) => (
-          <IntegrationInputs
-            key={candidate.id}
-            candidate={candidate}
-            onInspectTask={onInspectTask}
-          />
-        ))}
       {!team && comparing && (
         <CandidateComparison key={run.id} repo={repo.id} candidates={candidates} />
       )}

@@ -1,16 +1,6 @@
 //! Trial locks and allowance configuration serialize in the same workspace transaction.
 use super::*;
 
-pub(super) fn require_legacy<S: SqlStore>(db: &S) -> Result<()> {
-    if money(&state(db)?, "version")? >= 1 {
-        return Err(Error::new(
-            "WORKSPACE_LEGACY_INFERENCE_BLOCKED",
-            "Use a new workspace-approved run after allowance transition",
-        ));
-    }
-    Ok(())
-}
-
 pub(super) fn require_unlocked<S: SqlStore>(db: &S) -> Result<()> {
     let rows = db.query(
         "SELECT id,payload FROM workspace_records WHERE id='reviewer_policy' OR id LIKE 'campaign:%'",

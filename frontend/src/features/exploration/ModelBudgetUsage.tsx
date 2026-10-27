@@ -46,10 +46,10 @@ export function ModelBudgetUsage({ run }: { run: Record<string, any> }) {
         </p>
       ) : (
         <p>
-          Shared across all connections, root agents, subagents and retries using the same provider
-          and model. Estimates settle when complete usage is available; pending or unknown usage
-          keeps its reservation. Requests include retries and provider rejections. Provider invoices
-          can differ.
+          Shared across all connections, agents and retries using the same provider and model.
+          Estimates settle when complete usage is available; pending or unknown usage keeps its
+          reservation. Requests include retries and provider rejections. Provider invoices can
+          differ.
         </p>
       )}
       <div className="budget-usage-grid">

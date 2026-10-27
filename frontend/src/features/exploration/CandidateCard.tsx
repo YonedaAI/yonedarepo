@@ -102,9 +102,6 @@ export function CandidateCard({
         </span>
       </div>
       <div className="candidate-content">
-        {execution?.parent_execution && (
-          <p className="strategy-description">Delegated subagent · level {execution.depth ?? 1}</p>
-        )}
         {descriptions[strategy] && <p className="strategy-description">{descriptions[strategy]}</p>}
         <span className={`status ${status}`}>
           {status === 'eligible' ? (

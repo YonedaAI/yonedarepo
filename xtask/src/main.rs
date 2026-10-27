@@ -2,7 +2,6 @@ mod bootstrap;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
-mod context_study;
 mod deploy_credentials;
 mod deploy_env;
 mod deploy_exec;

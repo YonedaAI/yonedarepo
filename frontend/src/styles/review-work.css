@@ -1,6 +1,5 @@
 .agent-work-summary,
-.working-branch-panel,
-.intent-question {
+.working-branch-panel {
   margin: 18px 0;
   padding: 16px;
   border: 1px solid var(--line);
@@ -8,8 +7,7 @@
   background: #fff;
   overflow-wrap: anywhere;
 }
-.working-branch-panel p,
-.intent-question p {
+.working-branch-panel p {
   max-width: 90ch;
   line-height: 1.6;
 }
@@ -40,23 +38,6 @@
 .agent-work-summary li p {
   margin: 8px 0;
 }
-.intent-answer-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 12px 0;
-}
-.intent-question label {
-  display: block;
-  max-width: 80ch;
-  margin-bottom: 12px;
-}
-.intent-question textarea {
-  display: block;
-  width: 100%;
-  min-height: 90px;
-  margin-top: 8px;
-}
 .candidate.inspected {
   border-color: var(--blue);
   outline: 3px solid var(--blue);
@@ -66,11 +47,6 @@
 .agents-pick-heading {
   margin: 4px 0 10px;
 }
-.agents-rationale ul {
-  margin: 6px 0;
-  padding-left: 18px;
-}
-.agents-rationale small,
 .candidate-rejection small {
   color: var(--muted);
 }
@@ -85,12 +61,4 @@
 .superseded-results li {
   margin: 6px 0;
   overflow-wrap: anywhere;
-}
-.agents-rationale .rationale-lead {
-  font-weight: 600;
-  font-size: 16px;
-}
-.agents-rationale details summary {
-  cursor: pointer;
-  color: var(--muted);
 }

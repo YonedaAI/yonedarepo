@@ -2,11 +2,8 @@ use crate::storage::{SqlStore, string};
 use serde_json::Value;
 use yoneda_agents_core::{Error, Result};
 mod acceptance;
-mod adaptive_team;
 mod archive;
-mod autonomy;
 mod branches;
-mod budget_availability;
 mod capture_completion;
 mod capture_source;
 mod comparison;
@@ -19,7 +16,6 @@ mod context_seed;
 mod context_sessions;
 mod context_usage;
 mod continuations;
-mod delegation;
 mod deletion;
 mod events;
 mod execution_logs;
@@ -29,8 +25,6 @@ mod leases;
 mod mcp;
 mod model_budgets;
 mod model_reservations;
-mod peer_messages;
-mod peers;
 mod policy;
 mod publication;
 mod recovery;
@@ -44,13 +38,10 @@ mod sandbox_team;
 mod sandbox_usage;
 mod scheduling;
 mod sites;
-mod source_capture_retry;
 #[cfg(any(test, feature = "test-kit"))]
 pub mod source_kit;
 mod source_refresh;
 mod source_transport;
-mod study;
-mod team;
 mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
@@ -88,14 +79,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         }
     }
     context_access::activation(db, now)?;
-    comparison::guard_tools(db, &c)?;
-    if ["context_search", "context_get"].contains(&op.as_str())
-        && let Some(result) = comparison::read_context(db, &c, now)?
-    {
-        return Ok(result);
-    }
     match string(&c, "op")?.as_str() {
-        "retry_capture" => source_capture_retry::handle(db, &c, now),
         "source_refresh_context" => source_refresh::context(db, &c, now),
         "source_refresh_paths" => source_refresh::paths(db, &c, now),
         "source_read_context"
@@ -104,11 +88,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "source_registered"
         | "source_resume_grant"
         | "source_capture_context" => crate::source_binding::handle(db, &c, now),
-        "approve_comparison_review"
-        | "select_comparison_candidate"
-        | "comparison_context"
-        | "comparison_submit"
-        | "comparison_approval" => comparison::handle(db, &c, now),
+        "select_comparison_candidate" => comparison::owner_select(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "candidate_paths" => crate::path_lists::page(db, &c),
         "repository_status" => {
@@ -126,15 +106,10 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "deletion_status" => deletion::status(db),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
         | "external_bind" | "external_submit" => external::handle(db, c, now),
-        "peer_status" => peers::read(db, &c, now),
-        "peer_messages_page" => peer_messages::page(db, &c),
-        "peer_message" | "peer_inbox" => peer_messages::handle(db, &c, now),
-        "intent_question" | "answer_intent" => autonomy::question(db, &c, now),
         "create_working_branch" | "working_branch" | "working_branches" => {
             branches::handle(db, &c, now)
         }
         "update_policy" => policy::update(db, c, now),
-        "configure_context_study" => study::configure(db, c, now),
         "init"
         | "snapshot"
         | "repository_overview"
@@ -150,14 +125,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "archive_status"
         | "schedule_archive_due" => archive::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
-        "delegate_agent" | "delegation_status" => delegation::handle(db, c, now),
-        "team_context"
-        | "team_plan_propose"
-        | "task_handoff"
-        | "integration_request"
-        | "retry_team_task"
-        | "repair_request"
-        | "repair_team" => team::handle(db, c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),
         "context_usage" => context_usage::read(db, c, now),

@@ -5,7 +5,7 @@ import { runMode } from '../team/teamDraft';
 import { readTeamPlan } from '../team/teamPlanRecord';
 import type { Provider } from '../workspace/ProviderSettings';
 import { modelIsRunnable } from '../workspace/providerModels';
-import type { AgentDraft, DelegationDraft } from './agentLimits';
+import type { AgentDraft } from './agentLimits';
 import { defaultModelBudget, type ModelBudgetConfig, type ModelBudgetDraft } from './modelBudgets';
 import { textList } from './recordFields';
 import type { WorkingBranch } from './workingBranchView';
@@ -17,11 +17,9 @@ export interface InitialRun {
   context: string[];
   agents: AgentDraft[];
   policy: string;
-  delegation: DelegationDraft;
   budgets: Record<string, ModelBudgetDraft>;
   mode?: RunMode;
   team?: TeamPlan;
-  teamPlanning?: string;
   workingBranch?: WorkingBranch;
 }
 
@@ -82,13 +80,9 @@ export function initialRun(snapshot: Snapshot, run: Record<string, any>): Initia
     agents,
     // Historical policy is evidence; restarting must preserve the repository's current checks.
     policy: JSON.stringify(snapshot.repository.policy?.build, null, 2),
-    delegation: run.delegation
-      ? { ...run.delegation, max_depth: Math.max(1, run.delegation.max_depth ?? 1) }
-      : { enabled: false, max_depth: 1, max_executions: agents.length },
     budgets,
     mode: runMode(run.mode),
     team: readTeamPlan(run.team_plan),
-    teamPlanning: typeof run.team_planning === 'string' ? run.team_planning : undefined,
   };
 }
 

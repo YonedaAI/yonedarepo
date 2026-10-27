@@ -4,8 +4,6 @@ use serde_json::json;
 
 #[path = "tests/attempt_progress.rs"]
 mod attempt_progress;
-#[path = "tests/autonomous_migration.rs"]
-mod autonomous_migration;
 #[path = "tests/comparison_branch_gate.rs"]
 mod comparison_branch_gate;
 #[path = "tests/context_intent.rs"]
@@ -14,12 +12,8 @@ mod context_intent;
 mod context_seed;
 #[path = "tests/context_sessions.rs"]
 mod context_sessions;
-#[path = "tests/context_study.rs"]
-mod context_study;
 #[path = "tests/context_usage.rs"]
 mod context_usage;
-#[path = "tests/delegation.rs"]
-mod delegation;
 #[path = "tests/deletion.rs"]
 mod deletion;
 #[path = "tests/execution_logs.rs"]
@@ -28,8 +22,6 @@ mod execution_logs;
 mod graph_status;
 #[path = "tests/model_budgets.rs"]
 mod model_budgets;
-#[path = "tests/peer_messages.rs"]
-mod peer_messages;
 #[path = "tests/product_runs.rs"]
 mod product_runs;
 #[path = "tests/publication_recovery.rs"]
@@ -584,9 +576,5 @@ fn artifact_uuid_alias_resolves_only_inside_the_frozen_context() {
 }
 
 mod sites;
-mod team;
 
 mod external;
-
-#[path = "tests/team_planning.rs"]
-mod team_planning;

@@ -11,9 +11,7 @@ pub(crate) use history::{
     run_page,
 };
 pub(crate) use jobs::{job, job_event};
-pub(crate) use lineage::{
-    cancel_job, check_lineage, descendant_ids, fence_descendants, run_executions, run_jobs,
-};
+pub(crate) use lineage::{cancel_job, check_lineage, fence_descendants, run_executions, run_jobs};
 pub use migrations::migrate;
 
 pub use yoneda_store::SqlStore;

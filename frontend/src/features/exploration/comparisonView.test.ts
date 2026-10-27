@@ -75,13 +75,13 @@ it('allows choosing the eligible sibling in the screenshot while publication sti
   expect(comparisonChoiceBlocker(snapshot, run, candidates[0])).toBeUndefined();
   expect(selectionBlocker(snapshot, run, candidates[1])).toBeUndefined();
 });
-it('does not offer a sibling choice during reviewer activity, after a policy change, or for mismatched exact checks', () => {
+it('does not offer a sibling choice during agent activity, after a policy change, or for mismatched exact checks', () => {
   const variants = [
     {
       ...snapshot,
       executions: [
         ...snapshot.executions,
-        { id: 'review', run_id: run.id, role: 'reviewer', status: 'running' },
+        { id: 'late', run_id: run.id, role: 'coding', status: 'running' },
       ],
     },
     {
@@ -109,7 +109,7 @@ it('does not offer a sibling choice during reviewer activity, after a policy cha
   for (const changed of variants)
     expect(comparisonChoiceBlocker(changed, run, candidates[1])).toBeTruthy();
 });
-it('allows manual choice and review before Compare has promoted its untouched frozen working base', () => {
+it('allows manual choice before Compare has promoted its untouched frozen working base', () => {
   const untouched = {
     ...snapshot,
     working_branches: snapshot.working_branches?.map((b) => ({
@@ -120,7 +120,7 @@ it('allows manual choice and review before Compare has promoted its untouched fr
     })),
   };
   expect(comparisonChoiceBlocker(untouched, run, candidates[0])).toBeUndefined();
-  expect(comparisonChoiceBlocker(untouched, run, candidates[1], true)).toBeUndefined();
+  expect(comparisonChoiceBlocker(untouched, run, candidates[1])).toBeUndefined();
   const downstream = {
     ...untouched,
     working_branches: untouched.working_branches?.map((b) => ({
@@ -133,7 +133,7 @@ it('allows manual choice and review before Compare has promoted its untouched fr
   };
   expect(comparisonChoiceBlocker(downstream, run, candidates[0])).toMatch(/branch/);
 });
-it('allows review of a checked rejection for bounded repair while preventing its selection or publication', () => {
+it('keeps a checked rejection out of selection and publication', () => {
   const rejected = { ...candidates[0], status: 'rejected' };
   const checkedFailure = {
     ...snapshot,
@@ -141,14 +141,6 @@ it('allows review of a checked rejection for bounded repair while preventing its
       e.candidate === rejected.id ? { ...e, checks: [{ name: 'behavior', status: 'fail' }] } : e,
     ),
   };
-  expect(comparisonChoiceBlocker(checkedFailure, run, rejected, true)).toBeUndefined();
   expect(comparisonChoiceBlocker(checkedFailure, run, rejected)).toMatch(/checks/);
   expect(selectionBlocker(checkedFailure, run, rejected)).toBeTruthy();
-  const unfinished = {
-    ...checkedFailure,
-    evaluations: checkedFailure.evaluations.map((e) =>
-      e.candidate === rejected.id ? { ...e, checks: [{ name: 'behavior', status: 'pending' }] } : e,
-    ),
-  };
-  expect(comparisonChoiceBlocker(unfinished, run, rejected, true)).toMatch(/verification/);
 });

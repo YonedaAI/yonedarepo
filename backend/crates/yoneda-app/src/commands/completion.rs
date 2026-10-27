@@ -80,7 +80,6 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let mut candidate = get(db, "candidates", &candidate_id)?;
             let rid = string(&candidate, "run_id")?;
             let mut run = get(db, "runs", &rid)?;
-            let held = super::autonomy::hold_candidate(db, &run, &mut candidate)?;
             let evaluation: yoneda_agents_core::Evaluation =
                 serde_json::from_value(result.clone()).map_err(|e| bad(&e.to_string()))?;
             let policy: yoneda_agents_core::Policy =
@@ -130,9 +129,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             create(db, "evaluations", &evaluation.id, result)?;
             // A late historical evaluation remains evidence but cannot replace current eligibility.
             if j["payload"]["policy"] == repo(db)?["policy"] {
-                candidate["status"] = json!(if held {
-                    "awaiting_intent"
-                } else if validation.is_ok() {
+                candidate["status"] = json!(if validation.is_ok() {
                     "eligible"
                 } else {
                     "rejected"
@@ -169,35 +166,14 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             let mut e = get(db, "executions", &eid)?;
             e["status"] = json!("completed");
             save_execution(db, &e, now)?;
-            if !held && validation.is_ok() && j["payload"]["policy"] == repo(db)?["policy"] {
+            if validation.is_ok() && j["payload"]["policy"] == repo(db)?["policy"] {
                 super::branches::promote(db, &mut run, &mut candidate, now)?;
             }
-            if run["status"] != "accepted" && !super::autonomy::intent_pending(&run) && !held {
+            if run["status"] != "accepted" {
                 run["status"] = json!("ready");
             }
             save(db, "runs", &rid, &run)?;
-            super::conflicts::resolver_evaluated(
-                db,
-                &candidate_id,
-                validation.is_ok() && !held,
-                now,
-            )?;
-            super::team::reflect(
-                db,
-                &e,
-                if held {
-                    "awaiting_intent"
-                } else if validation.is_ok() {
-                    "complete"
-                } else {
-                    "failed"
-                },
-                e["epoch"].clone(),
-                now,
-            )?;
-            if !held {
-                super::team::evaluated(db, &run, &candidate, validation.is_ok(), now)?;
-            }
+            super::conflicts::resolver_evaluated(db, &candidate_id, validation.is_ok(), now)?;
         }
         _ => return Err(bad("Unknown execution job type")),
     }
@@ -205,13 +181,6 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     j["result"] = result.clone();
     j["finished_at"] = json!(now);
     save(db, "jobs", &id, &j)?;
-    if let Some(rid) = j["payload"]["execution"]["run_id"]
-        .as_str()
-        .or_else(|| j["payload"]["candidate"]["run_id"].as_str())
-        .or_else(|| j["payload"]["run_id"].as_str())
-    {
-        super::comparison::wake(db, rid, now)?;
-    }
     event(db, "job.completed", now, job_event(&j))?;
     Ok(json!({"status":"completed","id":id}))
 }

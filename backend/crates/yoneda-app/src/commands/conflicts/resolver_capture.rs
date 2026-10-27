@@ -16,7 +16,6 @@ pub(super) fn complete_resolver_capture<S: SqlStore>(
     let conflict_id = string(&job["payload"], "conflict_id")?;
     let stored = get(db, "conflicts", &conflict_id)?;
     let mut record = super::source::hydrate(db, &stored)?;
-    super::repair_authority::validate_capture(db, &record)?;
     if job["payload"]["expected_head"] != record["head_commit"]
         || job["payload"]["expected_version"] != record["expected_version"]
         || job["payload"]["base"]["commit"] != record["head_commit"]
@@ -106,9 +105,7 @@ pub(super) fn resolver_evaluated<S: SqlStore>(
         .ok_or_else(|| bad("Invalid conflict row"))?;
     let mut record: Value = serde_json::from_str(row["payload"].as_str().unwrap_or_default())
         .map_err(|e| bad(&e.to_string()))?;
-    record["status"] = json!(if !target::evaluated_matches(db, &record, candidate_id)?
-        || super::repair_authority::validate_capture(db, &record).is_err()
-    {
+    record["status"] = json!(if !target::evaluated_matches(db, &record, candidate_id)? {
         "stale"
     } else if eligible {
         "resolved"

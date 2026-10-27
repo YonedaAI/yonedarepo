@@ -5,19 +5,21 @@ import {
   sandboxCliFits,
   sandboxCliNames,
 } from '../../shared/providers';
-import { ownsTask, parseModelMix, resolveModelMix } from './model-mix';
 import { normalizeReasoningEffort } from './model-reasoning';
 import type { Json } from './types';
 
 const roles = new Set(['auto', 'builder', 'frontend', 'backend', 'design', 'testing', 'review']);
 const invalid = (message: string) => Object.assign(new Error(message), { code: 'INVALID_INPUT' });
 
-/** Saved connections and the public pricing catalog define the pool, never browser fields. */
-export function resolveAdaptiveApproval(
+/**
+ * The run's roster from the browser's agent preferences (`adaptive_team.requested_agents`):
+ * saved connections and the public pricing catalog define the pool, never browser fields. A
+ * team run takes its owner-written task list; automatic planning was retired.
+ */
+export function resolveRunRoster(
   input: Json,
   connections: Json[],
   workspaceLimit = 50000000,
-  allowAdaptive = true,
 ): Json {
   if (!Number.isSafeInteger(workspaceLimit) || workspaceLimit <= 0)
     throw invalid('The workspace allowance is unavailable.');
@@ -35,16 +37,20 @@ export function resolveAdaptiveApproval(
     )
   )
     throw invalid('Choose between one and six agent preferences with valid roles.');
-  const coordinated = input.mode !== 'compare';
-  const automatic = allowAdaptive && coordinated && input.team == null;
-  const mix = parseModelMix(requested.model_mix);
-  if (mix && !coordinated) throw invalid('A model mix requires a coordinated team run.');
+  const coordinated = input.mode === 'collaborate';
+  if (coordinated && input.team == null)
+    throw Object.assign(new Error('Team runs take an owner-written task list.'), {
+      code: 'NOT_SUPPORTED',
+    });
+  if (requested.model_mix !== undefined)
+    throw Object.assign(new Error('Model mixes were retired with automatic teams.'), {
+      code: 'NOT_SUPPORTED',
+    });
   const explicitConnections = new Set(
     requested.requested_agents
       .map((agent: Json) => agent.connection)
       .filter((id: unknown) => typeof id === 'string'),
   );
-  const automaticConnections = new Set<string>();
   // A sandbox run starts a coding CLI per agent: Auto picks only models it can run, and a
   // chosen model it cannot run is refused before the run starts.
   const sandbox = [input.runtime, input.workspace_transport].includes('sandbox-cli-v1');
@@ -71,7 +77,6 @@ export function resolveAdaptiveApproval(
       (connection.version !== undefined && !Number.isSafeInteger(connection.version))
     )
       return [];
-    if (model.auto_seed_eligible === true) automaticConnections.add(connection.id);
     return [
       {
         connection: connection.id,
@@ -97,17 +102,17 @@ export function resolveAdaptiveApproval(
     throw Object.assign(new Error('Connect a model with verified pricing before starting.'), {
       code: 'PROVIDER_MISSING',
     });
-  const mixed = mix && resolveModelMix(mix, pool);
-  const automaticChoice = (index: number) =>
-    mixed
-      ? !automatic && ownsTask(input.team, index)
-        ? mixed.specialists
-        : mixed.coordination
-      : pool.find((member) => automaticConnections.has(member.connection));
+  // An unchosen connection takes the cheapest auto-eligible priced model.
+  const automaticChoice = () =>
+    pool.find((member) =>
+      providerDefinition(member.provider).models.some(
+        (model) => model.id === member.model && model.auto_seed_eligible === true,
+      ),
+    );
   const agents = requested.requested_agents.map((preference: Json, index: number) => {
     const selected =
       preference.connection === null
-        ? automaticChoice(index)
+        ? automaticChoice()
         : pool.find((model) => model.connection === preference.connection);
     if (!selected)
       throw invalid('A selected model connection is missing or has no verified pricing.');
@@ -140,7 +145,6 @@ export function resolveAdaptiveApproval(
   const budgets = new Map<string, Json>();
   for (const model of pool) {
     if (
-      !automatic &&
       !agents.some(
         (agent: Json) => agent.provider === model.provider && agent.model === model.model,
       )
@@ -156,42 +160,15 @@ export function resolveAdaptiveApproval(
       pricing: model.pricing,
     });
   }
+  const { adaptive_team: _preferences, ...request } = input;
   return {
-    ...input,
+    ...request,
     mode: coordinated ? 'collaborate' : 'compare',
-    ...(automatic ? { team: null } : {}),
-    adaptive_team: automatic
-      ? {
-          version: 1,
-          requested_agents: requested.requested_agents.map((agent: Json, index: number) => ({
-            connection: agent.connection,
-            role: agent.role,
-            ...(agents[index].reasoning_effort === undefined
-              ? {}
-              : { reasoning_effort: agents[index].reasoning_effort }),
-          })),
-          ...(mixed ? { specialist_connection: mixed.specialists.connection } : {}),
-        }
-      : undefined,
-    _approved_model_pool: automatic
-      ? pool.map(({ pricing: _pricing, ...identity }) => identity)
-      : undefined,
     _workspace_spend: true,
-    agents: automatic ? [agents[0]] : agents,
+    agents,
     model_budgets: [...budgets.values()],
     delegation: coordinated
       ? { enabled: false, max_depth: 0, max_executions: agents.length }
       : input.delegation,
-    autonomy_policy: coordinated
-      ? {
-          version: 1,
-          enabled: true,
-          max_repair_rounds: 2,
-          max_concurrent_agents: 3,
-          max_executions: 20,
-          source_scope: 'project',
-          allow_intent_questions: true,
-        }
-      : undefined,
   };
 }

@@ -116,16 +116,6 @@ it('keeps a committed workspace reservation on lost acknowledgment without upstr
   expect((await f.detail()).run.model_budgets[0]).toMatchObject({ requests: 1, charged_microusd: 0 });
 });
 
-it('prices an adaptive planner from the same shared allowance even without the fixed-run marker', async () => {
-  const f = await setup(false, 50000, budget, true);
-  const fetch = vi.fn(async () => Response.json({ status: 'completed', usage: { input_tokens: 100, output_tokens: 10 } }));
-  vi.stubGlobal('fetch', fetch);
-  expect(f.job.payload.run.workspace_spend).toBeUndefined();
-  expect(f.job.payload.run.adaptive_team.version).toBe(1);
-  const response = await f.call(); expect(response.status).toBe(200); await response.text();
-  expect(await workspaceSpendStatus(bindings, f.owner)).toMatchObject({ charged_microusd: 37, reserved_microusd: 0 });
-  expect(fetch).toHaveBeenCalledOnce();
-});
 
 it('rejects an unpriced marked run before any request count or upstream call', async () => {
   const f = await setup(true, 50000, { ...budget, pricing: null, spend_limit_microusd: null });

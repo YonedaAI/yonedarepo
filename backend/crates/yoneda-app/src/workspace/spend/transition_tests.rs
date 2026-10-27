@@ -21,11 +21,28 @@ fn configure() -> Value {
 fn snapshot(db: &NativeStore) -> Value {
     json!({"records":db.query("SELECT id,payload FROM workspace_records ORDER BY id", &[]).unwrap(),"events":db.query("SELECT kind,at,data FROM workspace_events ORDER BY rowid", &[]).unwrap()})
 }
+/// A legacy trial lock retained from before trials and campaigns were retired.
+fn retain(db: &NativeStore, id: &str, record: Value) {
+    db.query(
+        "UPDATE workspace_records SET payload=? WHERE id=?",
+        &[json!(record.to_string()), json!(id)],
+    )
+    .unwrap();
+    if db
+        .query("SELECT id FROM workspace_records WHERE id=?", &[json!(id)])
+        .unwrap()
+        .is_empty()
+    {
+        crate::storage::create(db, "workspace_records", id, &record).unwrap();
+    }
+}
 
 #[test]
-fn allocated_reviewer_trial_fences_configuration_before_repository_start() {
+fn retained_reviewer_trial_fences_configuration_before_repository_start() {
     let db = fixture();
-    call(&db, json!({"op":"reviewer_trial","id":"paused_reviewer"})).unwrap();
+    let mut policy = call(&db, json!({"op":"reviewer_status"})).unwrap();
+    policy["active_trial"] = json!("paused_reviewer");
+    retain(&db, "reviewer_policy", policy);
     let before = snapshot(&db);
     assert_eq!(
         call(&db, configure()).unwrap_err().code,
@@ -36,23 +53,16 @@ fn allocated_reviewer_trial_fences_configuration_before_repository_start() {
         call(&db, json!({"op":"workspace_spend_status"})).unwrap()["version"],
         0
     );
-    assert_eq!(
-        call(&db, json!({"op":"reviewer_status"})).unwrap()["active_trial"],
-        "paused_reviewer"
-    );
 }
 
-/// A campaign trial retained from before campaigns were retired still fences the transition.
 #[test]
 fn retained_campaign_trial_fences_configuration_before_repository_start() {
     let db = fixture();
-    crate::storage::create(
+    retain(
         &db,
-        "workspace_records",
         "campaign:legacy_campaign",
-        &json!({"id":"legacy_campaign","active_trial":"paused_campaign"}),
-    )
-    .unwrap();
+        json!({"id":"legacy_campaign","active_trial":"paused_campaign"}),
+    );
     let before = snapshot(&db);
     assert_eq!(
         call(&db, configure()).unwrap_err().code,
@@ -62,38 +72,15 @@ fn retained_campaign_trial_fences_configuration_before_repository_start() {
 }
 
 #[test]
-fn configuration_fences_later_legacy_allocations_atomically_without_changing_approvals() {
+fn an_idle_reviewer_workspace_configures_its_allowance() {
     let db = fixture();
     call(&db, configure()).unwrap();
-    let before = snapshot(&db);
     assert_eq!(
-        call(&db, json!({"op":"reviewer_trial","id":"late_reviewer"}))
-            .unwrap_err()
-            .code,
-        "WORKSPACE_LEGACY_INFERENCE_BLOCKED"
+        call(&db, json!({"op":"workspace_spend_status"})).unwrap()["version"],
+        1
     );
-    assert_eq!(snapshot(&db), before);
-}
-
-#[test]
-fn completed_legacy_receipts_remain_readable_but_cannot_reopen_or_restart_after_transition() {
-    let db = fixture();
-    call(&db, json!({"op":"reviewer_trial","id":"old_complete"})).unwrap();
-    call(
-        &db,
-        json!({"op":"reviewer_trial_complete","id":"old_complete","expected_epoch":1}),
-    )
-    .unwrap();
-    call(&db, configure()).unwrap();
-    let before = snapshot(&db);
-    for c in [
-        json!({"op":"reviewer_trial","id":"old_complete"}),
-        json!({"op":"reviewer_trial_reopen","id":"old_complete","request_id":"synthetic-repair-id","fingerprint":"f".repeat(64)}),
-    ] {
-        assert_eq!(
-            call(&db, c).unwrap_err().code,
-            "WORKSPACE_LEGACY_INFERENCE_BLOCKED"
-        );
-        assert_eq!(snapshot(&db), before);
-    }
+    assert_eq!(
+        call(&db, json!({"op":"reviewer_status"})).unwrap()["active_trial"],
+        Value::Null
+    );
 }

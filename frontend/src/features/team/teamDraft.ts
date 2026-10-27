@@ -6,7 +6,6 @@ export interface TeamTaskDraft {
   title: string;
   instructions: string;
   agentId: string;
-  dependsOn: string[];
   writePaths: string;
 }
 export interface TeamDraft {
@@ -31,23 +30,15 @@ export function seedTeam(agents: AgentDraft[]): TeamDraft {
         title: '',
         instructions: '',
         agentId: agents[0]?.id ?? '',
-        dependsOn: [],
         writePaths: '',
       },
     ],
   };
 }
 export function removeTeamTask(team: TeamDraft, id: string): TeamDraft {
-  return {
-    ...team,
-    tasks: team.tasks
-      .filter((task) => task.id !== id)
-      .map((task) => ({
-        ...task,
-        dependsOn: task.dependsOn.filter((dependency) => dependency !== id),
-      })),
-  };
+  return { ...team, tasks: team.tasks.filter((task) => task.id !== id) };
 }
+/** An earlier plan's dependencies are dropped: sandbox team tasks run in parallel. */
 export function restoreTeam(plan: TeamPlan | undefined, agents: AgentDraft[]): TeamDraft {
   if (!plan) return seedTeam(agents);
   return {
@@ -59,7 +50,6 @@ export function restoreTeam(plan: TeamPlan | undefined, agents: AgentDraft[]): T
       title: task.title,
       instructions: task.instructions,
       agentId: agents[task.agent]?.id ?? '',
-      dependsOn: [...task.depends_on],
       writePaths: task.write_paths.join('\n'),
     })),
   };
@@ -104,7 +94,7 @@ function validatePaths(paths: string[], label: string) {
 }
 export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
   if (!agents.length) throw new Error('Choose at least one agent for this run.');
-  if (!team.tasks.length) throw new Error('Add at least one worker task to the advanced plan.');
+  if (!team.tasks.length) throw new Error('Add at least one task to the team plan.');
   if (!team.contract.trim()) throw new Error('Describe the shared interface contract.');
   if (new TextEncoder().encode(team.contract).length > 16384 || team.contract.includes('\0'))
     throw new Error('Keep the shared contract under 16,384 bytes and omit null characters.');
@@ -134,14 +124,13 @@ export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
       throw new Error('Keep task titles under 128 bytes and instructions under 8,192 bytes.');
     const paths = pathsFromText(task.writePaths);
     validatePaths(paths, task.id);
-    if (task.dependsOn.some((id) => id === task.id || !taskIds.has(id)))
-      throw new Error(`Review the dependencies for ${task.id}.`);
     return {
       id: task.id,
       title: task.title.trim(),
       instructions: task.instructions.trim(),
       agent,
-      depends_on: task.dependsOn,
+      // Every task starts on the same base; the platform merges their landings.
+      depends_on: [],
       write_paths: paths,
     };
   });
@@ -156,18 +145,6 @@ export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
         throw new Error(
           'Worker tasks need disjoint write paths. Give shared files to the integrator.',
         );
-  const visiting = new Set<string>(),
-    visited = new Set<string>();
-  function visit(id: string) {
-    if (visiting.has(id)) throw new Error('Task dependencies contain a cycle.');
-    if (visited.has(id)) return;
-    visiting.add(id);
-    for (const dependency of tasks.find((task) => task.id === id)?.depends_on ?? [])
-      visit(dependency);
-    visiting.delete(id);
-    visited.add(id);
-  }
-  for (const task of tasks) visit(task.id);
   const integrationPaths = pathsFromText(team.integrationPaths);
   validatePaths(integrationPaths, 'final integration');
   return {
@@ -180,20 +157,4 @@ export function serializeTeam(team: TeamDraft, agents: AgentDraft[]): TeamPlan {
 }
 export function runMode(value: unknown): RunMode {
   return value === 'collaborate' ? value : 'compare';
-}
-/** The automatic path must not validate or send hidden manual fields. */
-export function teamSubmission(
-  mode: RunMode,
-  manual: boolean,
-  team: TeamDraft,
-  agents: AgentDraft[],
-  automaticSupported: boolean,
-): { team?: TeamPlan } {
-  if (mode !== 'collaborate') return {};
-  if (manual) return { team: serializeTeam(team, agents) };
-  if (!automaticSupported)
-    throw new Error(
-      'Automatic team planning is unavailable on this deployment. Enable Advanced task plan or update the backend.',
-    );
-  return {};
 }

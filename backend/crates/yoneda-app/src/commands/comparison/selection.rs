@@ -37,7 +37,6 @@ fn head_at<S: SqlStore>(db: &S, run: &Value, refreshed: Option<&Value>) -> Resul
     let r = repo(db)?;
     if r["status"] != "ready"
         || !r["pending"].is_null()
-        || super::super::autonomy::intent_pending(run)
         || ["cancelled", "accepted"]
             .iter()
             .any(|s| run["status"] == *s)
@@ -95,18 +94,6 @@ fn head_at<S: SqlStore>(db: &S, run: &Value, refreshed: Option<&Value>) -> Resul
         ));
     }
     Ok(branch)
-}
-pub(in crate::commands) fn validate_repair_head<S: SqlStore>(db: &S, run: &Value) -> Result<()> {
-    if let Some(branch) = head(db, run)?
-        && (branch["version"] != run["comparison"]["approval"]["branch_version"]
-            || branch["working_commit"] != run["comparison"]["approval"]["working_commit"])
-    {
-        return Err(Error::new(
-            "WORKING_HEAD_MOVED",
-            "Approved repair branch lease changed",
-        ));
-    }
-    Ok(())
 }
 pub(in crate::commands) fn choose<S: SqlStore>(
     db: &S,

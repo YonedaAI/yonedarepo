@@ -19,15 +19,15 @@ The agent features below (runs, teams, compare) are a separate layer that uses t
 
 ## Try it
 
-- **Everyone else:** sign up, save the recovery code, connect your own provider key under **Connect Agents**, add a repository and choose **Start a Run**.
+- Sign up, save the recovery code, connect your own provider key under **Connect Agents**, add a repository and choose **Start a Run**.
 - **Read-only CLI** (Node 24, starts no inference): `node tools/reviewer.mjs --checked`. It prompts for the key without echoing it.
 - Publication is always a separate human decision. Opening forms or sample briefs starts no work.
 
 ## The agent layer: how a run works
 
-- **Start a Run** with one **Auto** agent. The planner picks one to six approved agents when the work justifies a team, freezes their scopes and integrates one checked result.
-- **Compare two approaches** runs two independent builders, checks both, then a read-only reviewer recommends one. You can override it with a reason.
-- Runs are bounded: 144 model requests, at most three concurrent agents, 20 executions and two repair rounds, all within the shared workspace allowance.
+- **Start a Run** with one to six agents. Each runs a stock coding CLI in its own sandbox on the same base; their results are captured and independently checked, and you choose which one to publish, with a reason.
+- **Build together** splits the work into tasks you write: one sandboxed agent per task, each landing on the run's team branch, whose merge is the single checked result.
+- Runs are bounded per model group (requests, output and execution time) within the shared workspace allowance.
 - Providers: OpenAI/Codex, Anthropic/Claude, ZAI (GLM), MiMo and Google/Gemini. Keys are sealed per workspace and injected by the Worker; agents never hold them. See [providers](docs/providers.md).
 - Your own agent can join through scoped MCP and Git. See [the MCP guide](docs/remote-mcp.md).
 

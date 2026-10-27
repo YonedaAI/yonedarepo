@@ -97,7 +97,7 @@ describe('ordinary Start a Run', () => {
   it('starts blank with one automatic model and role, without resolving Auto in the browser', () => {
     const draft = runDraft(snapshot);
     expect(draft.intent).toBe('');
-    expect(draft.mode).toBe('collaborate');
+    expect(draft.mode).toBe('compare');
     expect(draft.agents).toHaveLength(1);
     expect(draft.agents[0]).toMatchObject({ connection: '', role: 'auto' });
     expect(defaultConnections(draft.agents, providers)[0].connection).toBe('');
@@ -152,7 +152,6 @@ describe('ordinary Start a Run', () => {
         error: '',
         limits: runAgentLimits(snapshot),
         locked: false,
-        team: true,
         onChange: (next) => {
           agents = next;
         },
@@ -189,7 +188,6 @@ describe('ordinary Start a Run', () => {
       ],
       policy: '{}',
       budgets: {},
-      delegation: { enabled: false, max_depth: 1, max_executions: 1 },
       mode: 'compare' as const,
     };
     const frozen = structuredClone(source);
@@ -197,7 +195,6 @@ describe('ordinary Start a Run', () => {
     expect(defaultConnections(draft.agents, providers)[0].connection).toBe('missing');
     draft.agents[0].connection = 'saved';
     draft.context.push('context:new');
-    draft.delegation.enabled = true;
     expect(source).toEqual(frozen);
     expect(draft.mode).toBe('compare');
   });

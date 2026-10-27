@@ -1,36 +1,14 @@
 import type { ComparisonState } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
-import { comparisonSkipNotice } from './comparisonSkipNotice';
 import { runHasActiveAttempts } from './runControlState';
 import { runWorkingBranch } from './workingBranchView';
 
 export function comparisonState(run: Record<string, any>): ComparisonState | undefined {
   return run.mode === 'compare' && run.comparison?.version === 1 ? run.comparison : undefined;
 }
-export function comparisonBusy(snapshot: Snapshot, run: Record<string, any>) {
-  return (
-    runHasActiveAttempts(snapshot, run) ||
-    ['building', 'checking', 'reviewing', 'repairing'].includes(comparisonState(run)?.status ?? '')
-  );
-}
 export function comparisonPhase(snapshot: Snapshot, run: Record<string, any>) {
   if (run.status === 'cancelled') return 'Cancelled';
-  const state = comparisonState(run);
-  const skip = comparisonSkipNotice(state);
-  if (skip) return skip.title;
-  const labels = {
-    building: 'Building',
-    checking: 'Checking',
-    reviewing: 'Reviewing alternatives',
-    repairing: 'Repairing',
-    selected: 'Ready to publish',
-    needs_attention: 'Needs attention',
-    stale: 'Review needs refresh',
-  };
-  if (state)
-    return state.status === 'selected' && comparisonBusy(snapshot, run)
-      ? 'Reviewing alternatives'
-      : labels[state.status];
+  if (comparisonState(run)?.status === 'selected') return 'Ready to publish';
   return run.status === 'failed'
     ? 'Failed'
     : runHasActiveAttempts(snapshot, run)
@@ -54,21 +32,14 @@ export function comparisonChoiceBlocker(
   snapshot: Snapshot,
   run: Record<string, any>,
   candidate?: Record<string, any>,
-  reviewOnly = false,
 ) {
-  if (run.mode !== 'compare' || ['cancelled', 'accepted', 'awaiting_intent'].includes(run.status))
+  if (run.mode !== 'compare' || ['cancelled', 'accepted'].includes(run.status))
     return 'This run cannot select an alternative.';
-  if (comparisonBusy(snapshot, run)) return 'Wait for building, checking and review to finish.';
+  if (runHasActiveAttempts(snapshot, run)) return 'Wait for building and checking to finish.';
   if (snapshot.decisions.some((d) => d.run_id === run.id) || snapshot.repository.pending)
     return 'A publication decision is already in progress.';
   if (snapshot.repository.status !== 'ready') return 'The repository is not ready.';
-  if (
-    !candidate ||
-    candidate.run_id !== run.id ||
-    !(reviewOnly
-      ? ['eligible', 'rejected'].includes(candidate.status)
-      : candidate.status === 'eligible')
-  )
+  if (!candidate || candidate.run_id !== run.id || candidate.status !== 'eligible')
     return 'This result needs completed independent checks.';
   const policy = snapshot.repository.policy;
   const evaluation = snapshot.evaluations.find((e) => e.id === candidate.evaluation);
@@ -85,9 +56,7 @@ export function comparisonChoiceBlocker(
     policy.required_checks.some(
       (name) =>
         !evaluation.checks?.some(
-          (check: Record<string, any>) =>
-            check.name === name &&
-            (reviewOnly ? ['pass', 'fail'].includes(check.status) : check.status === 'pass'),
+          (check: Record<string, any>) => check.name === name && check.status === 'pass',
         ),
     )
   )
@@ -109,31 +78,4 @@ export function comparisonChoiceBlocker(
   } else if (candidate.base?.commit !== snapshot.repository.head_commit)
     return 'The source changed. Refresh before choosing.';
   return undefined;
-}
-
-export function latestBuilderCandidates(snapshot: Snapshot, run: Record<string, any>) {
-  const executions = snapshot.executions.filter(
-    (e) =>
-      e.run_id === run.id &&
-      e.role === 'coding' &&
-      !e.parent_execution &&
-      e.comparison_role !== 'repair',
-  );
-  return executions
-    .map((execution, index) => {
-      const repairs = snapshot.executions.filter(
-        (e) =>
-          e.run_id === run.id &&
-          e.comparison_role === 'repair' &&
-          e.agent_index === (execution.agent_index ?? index),
-      );
-      const ids = new Set([execution.id, ...repairs.map((e) => e.id)]);
-      return (
-        [...snapshot.candidates]
-          .reverse()
-          // A refresh reuses its parent's producer; it is a later form of a result, not builder output.
-          .find((c) => c.run_id === run.id && ids.has(c.execution) && !c.refresh_of)
-      );
-    })
-    .filter((candidate): candidate is Record<string, any> => !!candidate);
 }

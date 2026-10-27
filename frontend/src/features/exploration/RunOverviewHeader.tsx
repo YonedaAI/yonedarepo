@@ -5,13 +5,11 @@ import { runTitle } from './runTitle';
 export function RunOverviewHeader({
   run,
   roots,
-  subagents,
   previousRun,
   onSelectRun,
 }: {
   run: Record<string, any>;
   roots: number;
-  subagents: number;
   previousRun?: string;
   onSelectRun: (id: string) => void;
 }) {
@@ -38,11 +36,9 @@ export function RunOverviewHeader({
           <span>
             {run.mode === 'collaborate'
               ? `${run.agents?.length ?? roots} team agents · Build together`
-              : run.comparison?.approval
-                ? `${roots} builders · automatic reviewer`
-                : run.mode === 'compare'
-                  ? `${roots} builders · manual comparison`
-                  : `${roots} root agents · ${subagents} subagents`}
+              : run.mode === 'compare'
+                ? `${roots} builders · manual comparison`
+                : `${roots} root agents`}
           </span>
           {previousRun && (
             <button type="button" className="text-button" onClick={() => onSelectRun(previousRun)}>

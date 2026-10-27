@@ -1,8 +1,6 @@
 import { short } from '../../lib/api';
 import type { Graph, GraphNode, Snapshot } from '../../lib/types';
 import { capturedPathCount } from '../source-workspace/sourcePathCount';
-import { TeamHandoff } from '../team/TeamHandoff';
-import { classifyTeamHandoffs } from '../team/teamView';
 import { EvidenceFields } from './EvidenceFields';
 import { authorityLabel } from './evidenceView';
 
@@ -20,8 +18,6 @@ export function EvidenceTrail({
   const run = snapshot.runs.find((item) => item.id === runId);
   const candidates = snapshot.candidates.filter((item) => item.run_id === runId);
   const executions = snapshot.executions.filter((item) => item.run_id === runId);
-  const runHandoffs = (snapshot.team_handoffs ?? []).filter((item) => item.run_id === runId);
-  const { assertions: handoffs, captures, superseded } = classifyTeamHandoffs(runHandoffs);
   const decision = snapshot.decisions.find((item) => item.run_id === runId);
   const assertions = graph.nodes.filter((node) => authorityLabel(node) === 'Agent assertion');
   const evaluations = snapshot.evaluations.filter((item) =>
@@ -57,7 +53,7 @@ export function EvidenceTrail({
       </li>
       <li>
         <article>
-          <h2>2. Agent contributions and handoffs</h2>
+          <h2>2. Agent contributions</h2>
           {!executions.length && <p>No agent contributions recorded yet.</p>}
           {executions.map((execution) => (
             <section key={execution.id}>
@@ -68,21 +64,6 @@ export function EvidenceTrail({
               </p>
               {execution.task && <p>{execution.task}</p>}
               {inspect(execution.id)}
-            </section>
-          ))}
-          {handoffs.map((handoff) => (
-            <section key={handoff.id}>
-              <TeamHandoff handoff={handoff} />
-            </section>
-          ))}
-          {captures.map((handoff) => (
-            <section key={handoff.id}>
-              <TeamHandoff handoff={handoff} />
-            </section>
-          ))}
-          {superseded.map((handoff) => (
-            <section key={handoff.id}>
-              <TeamHandoff handoff={handoff} />
             </section>
           ))}
           {assertions.length > 0 && (
@@ -106,7 +87,7 @@ export function EvidenceTrail({
           <h2>3. Captured revision</h2>
           {!candidates.length && (
             <p>
-              No final source revision captured yet. Agent handoffs alone do not establish a final
+              No final source revision captured yet. Agent reports alone do not establish a final
               result.
             </p>
           )}
