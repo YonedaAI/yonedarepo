@@ -1,4 +1,5 @@
 import type { Snapshot } from '../../lib/types';
+import { isSandboxTeam } from './sandboxTeamView';
 export type TeamRecord = Record<string, any>;
 export function classifyTeamHandoffs(handoffs: TeamRecord[]) {
   return {
@@ -121,7 +122,8 @@ export function integratedExecutions(snapshot: Snapshot, run: TeamRecord) {
 /** Retries reuse the integrator execution; its task row names the current captured candidate. */
 export function runCandidates(snapshot: Snapshot, run?: TeamRecord) {
   const candidates = snapshot.candidates.filter((candidate) => candidate.run_id === run?.id);
-  if (run?.mode !== 'collaborate') return candidates;
+  // A sandbox team's one candidate is its team branch; it has no integrator task.
+  if (run?.mode !== 'collaborate' || isSandboxTeam(run)) return candidates;
   const task = (snapshot.team_tasks ?? []).find(
     (item) => item.run_id === run.id && item.role === 'integrator',
   );

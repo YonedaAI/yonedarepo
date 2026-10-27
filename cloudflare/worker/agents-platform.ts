@@ -57,10 +57,14 @@ export async function platformRequest(
   );
   const value: Json = await response.json<Json>().catch(() => ({}));
   if (!response.ok || value?.error)
-    throw failure(
-      value?.error?.code ?? 'PLATFORM_UNAVAILABLE',
-      value?.error?.message ?? `Platform request failed (${response.status})`,
-      response.status,
+    throw Object.assign(
+      failure(
+        value?.error?.code ?? 'PLATFORM_UNAVAILABLE',
+        value?.error?.message ?? `Platform request failed (${response.status})`,
+        response.status,
+      ),
+      // A landing's merge conflicts name their paths here.
+      { details: value?.error?.details },
     );
   return value;
 }
