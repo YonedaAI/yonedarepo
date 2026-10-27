@@ -9,6 +9,7 @@
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
+import type { TreeEntry } from './repo-objects';
 import { ApiError, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 import type { Env } from './types';
@@ -34,6 +35,12 @@ type Holder = {
   head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
   access(repo: string): Promise<Json>;
   refresh(repo: string, access?: boolean): Promise<void>;
+  trees(
+    repo: string,
+    root: string,
+    paths: string[],
+    commit?: string,
+  ): Promise<Record<string, TreeEntry[]>>;
 };
 
 function holder(env: Env, repo: string): Holder | null {
@@ -184,6 +191,24 @@ export async function refreshHead(env: Env, repo: string, access = false) {
   await holder(env, repo)
     ?.refresh(repo, access)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
+}
+
+/** The trees along `paths` from root tree `root`, from the repository's head holder in
+ * one call (see HeadHolder.trees); null without a holder or when it cannot answer (the
+ * caller reads them itself). */
+export async function headTrees(
+  env: Env,
+  repo: string,
+  root: string,
+  paths: string[],
+  commit?: string,
+): Promise<Record<string, TreeEntry[]> | null> {
+  const shared = holder(env, repo);
+  if (!shared) return null;
+  return shared.trees(repo, root, paths, commit).catch((e) => {
+    console.warn(`head trees failed: ${e?.message ?? e}`);
+    return null;
+  });
 }
 
 /** Paths meet when equal or when one is a directory of the other. */
