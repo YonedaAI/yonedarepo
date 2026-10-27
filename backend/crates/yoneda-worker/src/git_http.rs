@@ -1,0 +1,184 @@
+//! Git over HTTPS sessions exported to the TypeScript adapter. A push or fetch spans many
+//! calls (the body streams in, verification asks for repository objects, objects stream
+//! out), so each keeps its state here under a handle. Sessions an adapter never closed
+//! (a dropped connection) are evicted by age, and few large pushes run in one isolate.
+use std::cell::RefCell;
+use std::collections::HashMap;
+use worker::wasm_bindgen::{JsError, prelude::wasm_bindgen};
+use yoneda_platform::{platform_git_receive::ReceiveSession, platform_git_upload::UploadSession};
+
+/// A session idle this long belongs to a request that is gone.
+const STALE_MS: f64 = 10.0 * 60.0 * 1000.0;
+/// Pushes hold their packs in this isolate's memory (128 MB in all): together at most this.
+const RECEIVE_BYTES: usize = 80 * 1024 * 1024;
+const RECEIVES: usize = 16;
+const UPLOADS: usize = 8;
+
+struct Sessions<T> {
+    next: u32,
+    open: HashMap<u32, (f64, T)>,
+}
+
+impl<T> Sessions<T> {
+    fn new() -> Self {
+        Self {
+            next: 1,
+            open: HashMap::new(),
+        }
+    }
+    fn add(&mut self, now: f64, limit: usize, session: T) -> yoneda_core::Result<u32> {
+        self.open.retain(|_, (used, _)| now - *used < STALE_MS);
+        if self.open.len() >= limit {
+            return Err(yoneda_core::Error::new(
+                "RATE_LIMITED",
+                "The server is busy with other Git transfers; retry shortly",
+            ));
+        }
+        let handle = self.next;
+        self.next = self.next.wrapping_add(1).max(1);
+        self.open.insert(handle, (now, session));
+        Ok(handle)
+    }
+    fn with<R>(
+        &mut self,
+        handle: u32,
+        run: impl FnOnce(&mut T) -> yoneda_core::Result<R>,
+    ) -> yoneda_core::Result<R> {
+        let (_, session) = self
+            .open
+            .get_mut(&handle)
+            .ok_or_else(|| yoneda_core::Error::new("GONE", "The Git session expired"))?;
+        run(session)
+    }
+}
+
+thread_local! {
+    static RECEIVING: RefCell<Sessions<ReceiveSession>> = RefCell::new(Sessions::new());
+    static UPLOADING: RefCell<Sessions<UploadSession>> = RefCell::new(Sessions::new());
+}
+
+fn answer(result: yoneda_core::Result<serde_json::Value>) -> String {
+    match result {
+        Ok(value) => serde_json::json!({ "value": value }),
+        Err(e) => serde_json::json!({ "error": { "code": e.code, "message": e.message } }),
+    }
+    .to_string()
+}
+
+fn thrown(e: yoneda_core::Error) -> JsError {
+    JsError::new(&serde_json::json!({ "code": e.code, "message": e.message }).to_string())
+}
+
+fn parse(input: &str) -> yoneda_core::Result<serde_json::Value> {
+    serde_json::from_str(input)
+        .map_err(|_| yoneda_core::Error::new("INVALID_INPUT", "Session input must be JSON"))
+}
+
+#[wasm_bindgen(js_name = gitReceiveOpen, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_open(now: f64) -> String {
+    answer(
+        RECEIVING
+            .with_borrow_mut(|s| s.add(now, RECEIVES, ReceiveSession::new()))
+            .map(Into::into),
+    )
+}
+
+#[wasm_bindgen(js_name = gitReceiveFeed, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_feed(handle: u32, chunk: &[u8]) -> String {
+    answer(RECEIVING.with_borrow_mut(|s| {
+        let held: usize = s.open.values().map(|(_, r)| r.buffered()).sum();
+        if held + chunk.len() > RECEIVE_BYTES {
+            return Err(yoneda_core::Error::new(
+                "RATE_LIMITED",
+                "The server is busy with other large pushes; retry shortly",
+            ));
+        }
+        s.with(handle, |r| r.feed(chunk))
+            .map(|()| serde_json::Value::Null)
+    }))
+}
+
+/// `{op: "finish" | "commands" | "verify", ...}` (see `ReceiveSession`).
+#[wasm_bindgen(js_name = gitReceiveCall, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_call(handle: u32, input: &str) -> String {
+    answer(parse(input).and_then(|c| {
+        RECEIVING.with_borrow_mut(|s| {
+            s.with(handle, |r| match c["op"].as_str() {
+                Some("finish") => r.finish(),
+                Some("commands") => Ok(r.commands()),
+                Some("verify") => r.verify(&c),
+                _ => Err(yoneda_core::Error::new("UNKNOWN_OP", "Unknown receive op")),
+            })
+        })
+    }))
+}
+
+#[wasm_bindgen(js_name = gitReceiveObjects, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_objects(handle: u32, budget: u32) -> Result<Vec<u8>, JsError> {
+    RECEIVING
+        .with_borrow_mut(|s| s.with(handle, |r| r.next_objects(budget as usize)))
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitReceiveClose, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_close(handle: u32) {
+    RECEIVING.with_borrow_mut(|s| s.open.remove(&handle));
+}
+
+/// Opens a fetch over `repo_git_walk`'s answer.
+#[wasm_bindgen(js_name = gitUploadOpen, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_open(now: f64, walk: &str) -> String {
+    answer(
+        parse(walk)
+            .and_then(|w| UploadSession::new(&w))
+            .and_then(|session| {
+                UPLOADING
+                    .with_borrow_mut(|s| s.add(now, UPLOADS, session))
+                    .map(Into::into)
+            }),
+    )
+}
+
+#[wasm_bindgen(js_name = gitUploadStep, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_step(handle: u32, input: &str) -> String {
+    answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.step(&c)))))
+}
+
+#[wasm_bindgen(js_name = gitUploadStart, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_start(handle: u32) -> Result<Vec<u8>, JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.pack_start()))
+        .map_err(thrown)
+}
+
+/// One entry: a tree the session read (`data` ignored), or a blob or commit's content.
+#[wasm_bindgen(js_name = gitUploadEntry, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_entry(
+    handle: u32,
+    kind: &str,
+    id: &str,
+    data: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| {
+            s.with(handle, |u| {
+                u.pack_entry(kind, id, (kind != "tree").then_some(data))
+            })
+        })
+        .map_err(thrown)
+}
+
+/// The trailer; closes the session.
+#[wasm_bindgen(js_name = gitUploadFinish, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_finish(handle: u32) -> Result<Vec<u8>, JsError> {
+    let trailer = UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.pack_finish()))
+        .map_err(thrown);
+    git_upload_close(handle);
+    trailer
+}
+
+#[wasm_bindgen(js_name = gitUploadClose, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_close(handle: u32) {
+    UPLOADING.with_borrow_mut(|s| s.open.remove(&handle));
+}

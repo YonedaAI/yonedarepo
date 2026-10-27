@@ -90,6 +90,9 @@
       }
     ]
   },
+  "limits": {
+    "subrequests": 50000
+  },
   "main": "worker/platform-index.ts",
   "migrations": [
     {

@@ -122,6 +122,9 @@
         "compatibility_flags": [
           "nodejs_compat"
         ],
+        "limits": {
+          "subrequests": 50000
+        },
         "workers_dev": true,
         "preview_urls": false,
         "observability": {
