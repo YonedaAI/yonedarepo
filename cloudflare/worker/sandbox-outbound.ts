@@ -3,7 +3,8 @@
 // Two destinations are open, both over HTTPS, and the Worker adds each credential, so no key
 // or token ever enters the sandbox:
 // - the model endpoint the run's connection resolves to (AI Gateway or the provider), with
-//   the provider key from the saved connection;
+//   the provider key from the saved connection: POSTs to the model paths the run's CLI uses
+//   only (Anthropic Messages, OpenAI Responses or Chat Completions, Gemini generateContent);
 // - this project's own platform repository, with the project's agent token, limited to reads,
 //   object/commit upload and moving the attempt's own branch `attempts/<run>/<n>`, never
 //   another agent's branch of the same run.
@@ -32,8 +33,13 @@ export type AgentEgress = PlatformAccess & {
   connection?: string;
   model: string;
   routing?: Json | null;
-  /** `https://host/path` the CLI uses as ANTHROPIC_BASE_URL. */
+  /** `https://host/path`: the connection's model endpoint (AI Gateway or the provider). */
   modelBase: string;
+  /**
+   * The paths on the model base's host the CLI posts model requests to (sandbox-cli.ts
+   * `modelPaths`); absent for attempts begun before it, which ran Claude Code.
+   */
+  modelPaths?: string[];
 };
 /** A check sandbox: reads its project repository, nothing else. */
 export type CheckEgress = PlatformAccess & { role: 'check' };
@@ -52,11 +58,14 @@ export function outboundDecision(url: URL, method: string, props: OutboundProps)
   if (props.role !== 'check') {
     const model = new URL(props.modelBase);
     const modelPath = model.pathname.replace(/\/$/, '');
-    if (
-      url.host === model.host &&
-      (url.pathname === modelPath || url.pathname.startsWith(`${modelPath}/`))
-    )
+    const paths = props.modelPaths ?? [
+      `${modelPath}/v1/messages`,
+      `${modelPath}/v1/messages/count_tokens`,
+    ];
+    if (url.host === model.host && paths.includes(url.pathname))
       return method === 'POST' ? { route: 'model' } : { deny: 'Model requests are POSTs' };
+    if (url.host === model.host && url.pathname.startsWith(`${modelPath}/`))
+      return { deny: `${url.pathname} is not this connection's model API` };
   }
   if (url.origin === new URL(props.platformOrigin).origin) {
     const root = `/api/v1/repos/${props.platformRepo}`;

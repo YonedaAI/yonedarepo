@@ -22,6 +22,8 @@
 //          (= --only 0,sandbox: the same brief on runtime sandbox-cli-v1, Claude Code in a
 //          Cloudflare Sandbox; passes when the pushed commit is recorded, about 5 min, < $0.01;
 //          --agents 2: one compare run, GLM and MiMo each in a sandbox, both must be checked)
+//        node tools/staging-realworld.mjs --sandbox-smoke --cli claude|codex|opencode|mimo [...]
+//          (every agent runs that stock CLI; codex uses the kit account's saved OpenAI connection)
 //        node tools/staging-realworld.mjs --sandbox-smoke --team | --team-conflict [...]
 //          (an owner-written two-task team: both members land on the team branch through the
 //          platform merge and its candidate is eligible; or two tasks on one line: one resume)
@@ -63,7 +65,7 @@ const { values } = parseArgs({
     'agent-smoke': { type: 'boolean', default: false },
     // The sandbox-cli-v1 smoke alone (items 0 and sandbox).
     'sandbox-smoke': { type: 'boolean', default: false },
-    'smoke-provider': { type: 'string', default: 'zai' },
+    'smoke-provider': { type: 'string' },
     'smoke-timeout': { type: 'string' },
     // How long the sandbox smoke waits for the pushed commit's checks (default 180 s).
     'smoke-check-wait': { type: 'string' },
@@ -72,6 +74,8 @@ const { values } = parseArgs({
     // With --sandbox-smoke: a two-task team run on disjoint files, or on one line.
     team: { type: 'boolean', default: false },
     'team-conflict': { type: 'boolean', default: false },
+    // With --sandbox-smoke: the stock CLI every agent runs (default: each provider's default).
+    cli: { type: 'string' },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -142,8 +146,8 @@ await step('5', 'External agent via remote MCP', async (m) => {
 await step('smoke', 'Agent smoke: one cheap agent to a checked candidate', (m) =>
   agentSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], timeoutMs: Number(values['smoke-timeout'] ?? 360) * 1000 }, m),
 );
-await step('sandbox', 'Sandbox smoke: Claude Code in a Cloudflare Sandbox pushes a checked commit', (m) =>
-  sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], agents: Number(values.agents ?? 1), team: values['team-conflict'] ? 'conflict' : values.team ? 'disjoint' : null, timeoutMs: Number(values['smoke-timeout'] ?? (values.team || values['team-conflict'] ? 900 : 300)) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
+await step('sandbox', 'Sandbox smoke: a stock CLI in a Cloudflare Sandbox pushes a checked commit', (m) =>
+  sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], cli: values.cli ?? null, agents: Number(values.agents ?? 1), team: values['team-conflict'] ? 'conflict' : values.team ? 'disjoint' : null, timeoutMs: Number(values['smoke-timeout'] ?? (values.team || values['team-conflict'] ? 900 : 300)) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));

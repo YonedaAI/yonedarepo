@@ -1,5 +1,6 @@
 //! `sandbox-cli-v1`: each agent of a compare run (one to six) runs an unmodified coding CLI
-//! (Claude Code) in its own Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
+//! (Claude Code, Codex CLI, opencode or MiMo Code: the agent's frozen `cli`) in its own
+//! Cloudflare Sandbox, driven by the Worker's `AgentSandbox` Durable
 //! Object, and pushes to its own `attempts/<run>/<n>` branch. The ledger keeps only:
 //! - the claim, with one long lease that is a safety backstop, never a heartbeat;
 //! - the latest observed activity, for "last activity" and the idle marker;
@@ -42,14 +43,63 @@ pub(super) fn freeze(
     if delegation.enabled {
         return Err(Error::new("NOT_SUPPORTED", "Sandbox runs do not delegate"));
     }
+    freeze_clis(run)?;
     run["runtime"] = json!(TRANSPORT);
     Ok(())
 }
 
-/// Marks a sandbox execution at schedule time.
-pub(super) fn mark_execution(run: &Value, execution: &mut Value) {
+/// The stock CLIs that can drive each provider harness's API, the default first. Claude Code
+/// speaks Anthropic Messages only and Codex CLI the OpenAI Responses API only; opencode and
+/// its fork MiMo Code carry all three. Mirrors `sandboxClis` in `shared/providers.ts`.
+fn clis(harness: &str) -> &'static [&'static str] {
+    match harness {
+        "claude" => &["claude", "opencode", "mimo"],
+        "codex" => &["codex", "opencode", "mimo"],
+        "gemini" => &["opencode", "mimo"],
+        _ => &[],
+    }
+}
+
+/// Freezes each agent's CLI: the owner's choice when it can drive the agent's provider, the
+/// provider's default when none was chosen. An impossible pair is refused before any start.
+pub(super) fn freeze_clis(run: &mut Value) -> Result<()> {
+    let agents = run["agents"]
+        .as_array_mut()
+        .ok_or_else(|| bad("Missing agents"))?;
+    for agent in agents {
+        let provider = string(agent, "provider")?;
+        let fits = clis(&yoneda_agents_core::providers::provider(&provider)?.harness);
+        let cli = match agent.get("cli").filter(|v| !v.is_null()) {
+            None => *fits
+                .first()
+                .ok_or_else(|| harness(&format!("No sandbox CLI runs {provider} models")))?,
+            Some(value) => {
+                let cli = value.as_str().unwrap_or_default();
+                if !["claude", "codex", "opencode", "mimo"].contains(&cli) {
+                    return Err(bad(
+                        "The sandbox CLI is one of claude, codex, opencode or mimo",
+                    ));
+                }
+                *fits
+                    .iter()
+                    .find(|fit| **fit == cli)
+                    .ok_or_else(|| harness(&format!("{cli} cannot run {provider} models")))?
+            }
+        };
+        agent["cli"] = json!(cli);
+    }
+    Ok(())
+}
+
+fn harness(message: &str) -> Error {
+    Error::new("SANDBOX_HARNESS", message)
+}
+
+/// Marks a sandbox execution at schedule time with its frozen agent's (`slot`) CLI.
+pub(super) fn mark_execution(run: &Value, slot: usize, execution: &mut Value) {
     if run["runtime"] == TRANSPORT {
         execution["runtime"] = json!(TRANSPORT);
+        execution["cli"] = run["agents"][slot]["cli"].clone();
     }
 }
 

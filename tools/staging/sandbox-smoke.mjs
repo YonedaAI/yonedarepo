@@ -1,5 +1,8 @@
-// Sandbox smoke: the agent smoke's brief and policy on runtime `sandbox-cli-v1` (Claude Code in
-// a Cloudflare Sandbox, cheap managed GLM or MiMo). It passes when the run records the pushed
+// Sandbox smoke: the agent smoke's brief and policy on runtime `sandbox-cli-v1` (a stock coding
+// CLI in a Cloudflare Sandbox, cheap managed GLM or MiMo). `cli` (`--cli`) picks the CLI every
+// agent runs: claude (default), opencode, mimo (MiMo Code, on the managed MiMo model unless a
+// provider is given) or codex (Codex CLI, on the kit account's own saved OpenAI connection:
+// managed keys cover Z.ai and MiMo only). It passes when the run records the pushed
 // commit as its candidate within the time limit, and fails when the checks reject that commit.
 // It reports the same timing table as the agent smoke plus the sandbox's own milestones, the
 // tokens the CLI reported and their cost at the registry's conservative rates, and always
@@ -13,15 +16,19 @@
 // same line; it passes when exactly one member was resumed once after the conflict, both
 // members then landed, and the team branch README.md starts with "# ".
 import { readFileSync } from 'node:fs';
-import { SMOKE_BRIEF, SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
+import { SMOKE_BRIEF, SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, timeline } from './agent-smoke.mjs';
 import { sleep } from './client.mjs';
 import { CHEAP, bindManagedProviders, createProject, deleteProject, ensureAllowance, runFailure } from './project-flow.mjs';
 
 const FAILED = ['failed', 'cancelled', 'needs_attention', 'awaiting_intent'];
+const CLIS = ['claude', 'codex', 'opencode', 'mimo'];
 const seconds = (ms) => (ms / 1000).toFixed(1);
 const registry = JSON.parse(readFileSync(new URL('../../backend/crates/yoneda-agents-core/src/providers.json', import.meta.url), 'utf8'));
 
-/** The CLI's own token report (the `result` activity line) priced at the registry's rates. */
+/**
+ * The CLI's own token report (the `result` activity line) priced at the registry's rates.
+ * opencode and MiMo Code report their last model step only, so their spend reads low.
+ */
 export function tokenSpend(provider, model, text) {
   const match = /(\d+) input \/ (\d+) output tokens/.exec(text ?? '');
   if (!match) return null;
@@ -74,7 +81,7 @@ const TEAMS = {
 };
 
 /** Starts an owner-written two-task team run on the sandbox runtime; returns its id. */
-async function startTeam(account, repo, provider, model, team) {
+async function startTeam(account, repo, agent, team, cli) {
   const id = `run-${crypto.randomUUID()}`;
   await account.post(`/api/repos/${repo}/start_run`, {
     id,
@@ -83,7 +90,7 @@ async function startTeam(account, repo, provider, model, team) {
     criteria: team.criteria,
     context: [],
     runtime: 'sandbox-cli-v1',
-    agents: [{ connection: `managed-${provider}`, provider, model, strategy: 'Team member' }],
+    agents: [{ connection: agent.connection, provider: agent.provider, model: agent.model, strategy: 'Team member', ...(cli ? { cli } : {}) }],
     team: {
       version: 1,
       contract: team.intent,
@@ -111,12 +118,27 @@ function teamVerdict(detail, mode) {
   return { lines, problem, landed, resumed };
 }
 
-/** One compare run on the sandbox: one managed GLM and one MiMo agent, no reviewer. */
-async function startCompare(account, repo) {
+/** One run on the sandbox: one agent per connection, each on `cli`, no reviewer. */
+async function startAgents(account, repo, agents, cli) {
   const id = `run-${crypto.randomUUID()}`;
-  const requested = ['zai', 'mimo'].map((provider) => ({ connection: `managed-${provider}`, role: 'builder' }));
+  const requested = agents.map(({ connection }) => ({ connection, role: 'builder', ...(cli ? { cli } : {}) }));
   await account.post(`/api/repos/${repo}/start_run`, { id, mode: 'compare', ...SMOKE_BRIEF, context: [], adaptive_team: { version: 1, requested_agents: requested }, runtime: 'sandbox-cli-v1' });
   return id;
+}
+
+/**
+ * The smoke's agents: the managed cheap models, or (Codex CLI) the kit account's own saved
+ * OpenAI connection, since Codex speaks only the OpenAI Responses API.
+ */
+async function smokeAgents(account, provider, agents, cli) {
+  if (cli === 'codex') {
+    const { providers = [] } = await account.get('/api/settings');
+    const openai = providers.find((p) => p.provider === 'codex');
+    if (!openai) throw new Error('--cli codex needs an OpenAI connection saved on the kit account (managed keys cover Z.ai and MiMo only)');
+    return Array.from({ length: agents }, () => ({ connection: openai.id, provider: 'codex', model: openai.model }));
+  }
+  const models = agents === 2 ? CHEAP.filter((c) => ['zai', 'mimo'].includes(c.provider)) : [CHEAP.find((c) => c.provider === provider)];
+  return models.map((m) => ({ ...m, connection: `managed-${m.provider}` }));
 }
 
 /**
@@ -159,26 +181,24 @@ function sandboxLines(entries, startedAt) {
   ];
 }
 
-export async function sandboxSmoke({ account, owner, username, provider = 'zai', agents = 1, team: mode = null, timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
-  const cheap = CHEAP.find((c) => c.provider === provider);
-  if (!cheap) throw new Error(`Smoke provider must be one of ${CHEAP.map((c) => c.provider).join(', ')}`);
+export async function sandboxSmoke({ account, owner, username, provider, agents = 1, team: mode = null, cli = null, timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
+  if (cli && !CLIS.includes(cli)) throw new Error(`The sandbox smoke's --cli is one of ${CLIS.join(', ')}`);
+  // MiMo Code smokes the MiMo model unless told otherwise; Codex CLI runs only OpenAI models.
+  provider ??= cli === 'mimo' ? 'mimo' : 'zai';
+  if (cli !== 'codex' && !CHEAP.some((c) => c.provider === provider)) throw new Error(`Smoke provider must be one of ${CHEAP.map((c) => c.provider).join(', ')}`);
   if (![1, 2].includes(agents)) throw new Error('The sandbox smoke takes --agents 1 or 2');
   const team = mode ? TEAMS[mode] : null;
   if (mode && !team) throw new Error(`Team smoke must be one of ${Object.keys(TEAMS).join(', ')}`);
   if (team && agents !== 1) throw new Error('A team smoke runs two tasks on one agent model: drop --agents');
-  const models = agents === 2 ? CHEAP.filter((c) => ['zai', 'mimo'].includes(c.provider)) : [cheap];
-  Object.assign(metrics, { runtime: 'sandbox-cli-v1', agents, model: models.map((m) => `${m.provider}/${m.model}`).join(' + '), ...(mode ? { team: mode } : {}) });
+  const models = await smokeAgents(account, provider, team ? 1 : agents, cli);
+  Object.assign(metrics, { runtime: 'sandbox-cli-v1', cli: cli ?? 'default', agents, model: models.map((m) => `${m.provider}/${m.model}`).join(' + '), ...(mode ? { team: mode } : {}) });
   const project = await createProject(account, `sandbox-smoke-${Date.now()}`, metrics, team?.policy ?? SMOKE_POLICY);
   let failure;
   try {
     await bindManagedProviders(owner, username);
     await ensureAllowance(account, owner, username);
     const startedAt = Date.now();
-    const runId = team
-      ? await startTeam(account, project.id, provider, cheap.model, team)
-      : agents === 2
-        ? await startCompare(account, project.id)
-        : await startSingle(account, project.id, provider, 'sandbox-cli-v1');
+    const runId = team ? await startTeam(account, project.id, models[0], team, cli) : await startAgents(account, project.id, models, cli);
     metrics.run = runId;
     // Each agent's own timing (its sandbox milestones), then the run's shared timeline.
     const report = async (detail) => {
@@ -190,7 +210,7 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
         if (tokens) metrics[`tokens_${execution.provider}`] = `${tokens.input}/${tokens.output}`;
         usd += tokens?.usd ?? 0;
         const candidate = (detail.candidates ?? []).find((c) => c.execution === execution.id);
-        lines.push(`${execution.id} ${execution.provider}/${execution.model}: ${execution.status}${candidate ? `, candidate ${candidate.status}${candidate.created_at ? ` at +${seconds(candidate.created_at - startedAt)} s` : ''}` : ''}`, ...sandboxLines(log.entries, startedAt));
+        lines.push(`${execution.id} ${execution.cli ?? 'claude'} ${execution.provider}/${execution.model}: ${execution.status}${candidate ? `, candidate ${candidate.status}${candidate.created_at ? ` at +${seconds(candidate.created_at - startedAt)} s` : ''}` : ''}`, ...sandboxLines(log.entries, startedAt));
       }
       metrics.spend_usd = usd.toFixed(4);
       metrics.spend_target = usd < SMOKE_TARGET_USD * agents ? 'met' : `over $${SMOKE_TARGET_USD * agents}`;

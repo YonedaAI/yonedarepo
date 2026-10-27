@@ -295,17 +295,18 @@ describe('sandbox runtime', () => {
     expect(body.adaptive_team.requested_agents).toHaveLength(3);
     expect(body).toMatchObject({ mode: 'compare', runtime: 'sandbox-cli-v1' });
   });
-  it('disables the sandbox with a reason when a chosen model needs another CLI', async () => {
+  it('runs an OpenAI model in the sandbox with the coding CLI the owner chose', async () => {
     await connect([{ id: 'codex', provider: 'codex', model: 'gpt-5.6-luna', label: 'Codex' }]);
-    find(view(), (el) => el.type === AgentRoster)?.props.onChange([
-      { id: 'a', connection: 'codex', role: 'auto', strategy: 'a' },
-    ]);
+    const agents = [{ id: 'a', connection: 'codex', role: 'auto', strategy: 'a', cli: 'opencode' }];
+    find(view(), (el) => el.type === AgentRoster)?.props.onChange(agents);
     const picker = find(view(), (el) => el.type === RunRuntimePicker);
-    expect(picker?.props).toMatchObject({ sandbox: false });
-    expect(picker?.props.blocker).toContain("Codex can't run in the sandbox");
-    const body = await startRun([]);
-    expect(body).not.toHaveProperty('runtime');
-    expect(body.mode).toBe('collaborate');
+    expect(picker?.props).toMatchObject({ sandbox: true, blocker: undefined });
+    expect(find(view(), (el) => el.type === AgentRoster)?.props.sandbox).toBe(true);
+    const body = await startRun(agents);
+    expect(body).toMatchObject({ runtime: 'sandbox-cli-v1' });
+    expect(body.adaptive_team.requested_agents).toEqual([
+      { connection: 'codex', role: 'auto', cli: 'opencode' },
+    ]);
   });
   it('keeps Classic exactly as before when chosen', async () => {
     find(view(), (el) => el.type === RunRuntimePicker)?.props.onChange('classic');
