@@ -5,7 +5,9 @@
 // refs move: working branches by compare-and-swap (one batch for `--atomic`), protected
 // branches by landing, with the server's merge when they moved meanwhile, and new
 // lightweight tags by creation (tags never move or disappear). A push that fails or dies
-// before that leaves every ref and the log as they were.
+// before that leaves every ref and the log as they were. `-o yoneda.reads=…` declares the
+// files the pushed work relied on: they are recorded with each pushed tip, and landing
+// refuses the push as a read conflict when one of them changed after its base.
 
 import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
@@ -50,7 +52,7 @@ export async function receivePack(
         failure = reason(e);
       }
     }
-    const { commands, capabilities } = session.call({ op: 'commands' });
+    const { commands, capabilities, reads } = session.call({ op: 'commands' });
     // An empty command list is Git's probe before a large push.
     if (!failure && commands.length === 0) return new Response(null, { headers: RESULT });
     const sideBand = capabilities.includes('side-band-64k') || capabilities.includes('side-band');
@@ -68,7 +70,9 @@ export async function receivePack(
     let fresh = new Set<string>();
     try {
       if (tips.length > 0)
-        fresh = await timed('git.store', () => store(ctx, objects, session, tips, secretAllow));
+        fresh = await timed('git.store', () =>
+          store(ctx, objects, session, tips, secretAllow, reads ?? []),
+        );
     } catch (e) {
       // Nothing moved: report why for every ref still going.
       // A credential refuses the whole push by path and line (never its text); the pack
@@ -118,7 +122,8 @@ function refuseAll(outcomes: Outcome, why: string) {
 }
 
 /** Verifies the pack against the repository, stores its new objects and records the new
- * commits (parents first). Moves no ref. A small push sends its objects with the record,
+ * commits (parents first), each tip with the push's declared `reads`. Moves no ref. A
+ * small push sends its objects with the record,
  * so the authority stages them in the same transaction (R2 writes are a subrequest each,
  * a few at a time, and take most of a push's time); the projector writes them to R2 after
  * the answer, as for commits built here. A larger one is written to R2 first. */
@@ -128,6 +133,7 @@ async function store(
   session: ReceiveSession,
   tips: string[],
   secretAllow: Json[],
+  reads: string[],
 ) {
   let input: Json = { op: 'verify', tips, secret_allow: secretAllow };
   let verified: Json | null = null;
@@ -160,6 +166,7 @@ async function store(
       ? { objects: (c.objects as Json[]).map((o) => ({ ...o, data_b64: data.get(o.id) })) }
       : {}),
     check: tips.includes(c.commit),
+    ...(tips.includes(c.commit) && reads.length > 0 ? { read_set: reads } : {}),
   }));
   const runs: Json[] = [];
   let drain = false;

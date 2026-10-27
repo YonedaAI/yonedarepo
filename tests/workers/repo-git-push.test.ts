@@ -128,3 +128,47 @@ it('sends a webhook for a branch a stock Git push creates', async () => {
   expect(got[0].signature).toBe(`sha256=${await hmacHex(hook.secret, got[0].body)}`);
   expect(JSON.parse(got[0].body)).toMatchObject({ event: 'branch', action: 'created', ref: 'refs/heads/feature', after: commit.id, before: null, repo });
 });
+
+/** `body` (a receive-pack request) sent with `git push -o <option>…`: the client asks for
+ * `push-options` on its first command and sends the options after the command list. */
+function withOptions(body: Uint8Array, options: string[]) {
+  const pkt = (line: string) => text.encode(`${(line.length + 4).toString(16).padStart(4, '0')}${line}`);
+  const length = Number.parseInt(new TextDecoder().decode(body.subarray(0, 4)), 16);
+  const first = new TextDecoder().decode(body.subarray(4, length)).replace(/\n$/, ' push-options\n');
+  // One command: its line, then the list's flush, then the pack.
+  const parts = [pkt(first), body.subarray(length, length + 4), ...options.map(pkt), text.encode('0000'), body.subarray(length + 4)];
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  parts.reduce((at, p) => (out.set(p, at), at + p.length), 0);
+  return out;
+}
+
+it('records the reads a push declares and refuses a stale one as a read conflict', async () => {
+  const { repo, cookie, token, refs, main } = await setup('push_reads');
+  // A teammate adds b.md on main after the push's base.
+  const theirs = await api(`/repos/${repo}/commits`, { cookie }, { body: { ref: 'main', changes: [file('b.md', 'b\n')], message: 'b', author } });
+  expect((await api(`/repos/${repo}/land`, { cookie }, { body: { ref: 'main', commit: theirs.body.commit } })).body.landed).toBe(true);
+  const head = (await refs())['refs/heads/main'];
+  const { commit, objects } = await commitOf(main, 1, 'relied on b');
+  const { push_b64 } = compute({
+    op: 'branch_push',
+    refname: 'refs/heads/main',
+    old: null,
+    new: commit.id,
+    objects: objects.map((o) => ({ id: o.id, kind: o.kind, data_b64: btoa(String.fromCharCode(...o.data)) })),
+  });
+  const send = async (options: string[]) => {
+    const body = withOptions(Uint8Array.from(atob(push_b64), (c) => c.charCodeAt(0)), options);
+    const response = await platformFetch(
+      new Request(`https://yoneda/git/${repo}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${token}`)}` }, body }),
+      scoped,
+    );
+    return new TextDecoder().decode(await response.arrayBuffer());
+  };
+  // A misspelt yoneda option refuses the push before anything is stored.
+  expect(await send(['yoneda.read=b.md'])).toContain('Unknown push option');
+  const report = await send(['ci.skip', 'yoneda.reads=b.md,src/']);
+  expect(report).toContain('ng refs/heads/main read conflict on b.md: run git pull');
+  expect((await refs())['refs/heads/main']).toBe(head);
+  const shown = await api(`/repos/${repo}/commits/${commit.id}`, { token });
+  expect(shown.body.read_set).toEqual(['b.md', 'src/']);
+});

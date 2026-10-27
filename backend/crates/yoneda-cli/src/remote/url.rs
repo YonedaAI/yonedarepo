@@ -34,6 +34,7 @@ pub fn parse(url: &str) -> Result<RemoteUrl> {
     let path = path.strip_suffix(".git").unwrap_or(path);
     let repo = path
         .strip_prefix("/api/v1/repos/")
+        .or_else(|| path.strip_prefix("/git/"))
         .or_else(|| path.strip_prefix('/'))
         .filter(|r| valid_repo_id(r))
         .ok_or_else(refused)?;
@@ -41,6 +42,14 @@ pub fn parse(url: &str) -> Result<RemoteUrl> {
         origin: normalize_origin(origin)?,
         repo: repo.to_owned(),
     })
+}
+
+/// Whether `url` (a remote's configured URL) is the platform's: a `yoneda:` remote for the
+/// helper, or stock Git over its smart HTTP.
+pub fn is_platform(url: &str) -> bool {
+    let url = url.trim();
+    url.starts_with("yoneda:")
+        || (url.starts_with("http") && url.contains("/git/") && parse(url).is_ok())
 }
 
 impl RemoteUrl {
@@ -67,9 +76,20 @@ mod tests {
             format!("yoneda::https://api.dev.yonedarepo.com/{REPO}/"),
             format!("yoneda://api.dev.yonedarepo.com/{REPO}.git"),
             format!("https://api.dev.yonedarepo.com/api/v1/repos/{REPO}"),
+            format!("https://api.dev.yonedarepo.com/git/{REPO}.git"),
         ] {
             assert_eq!(parse(&url)?, want, "{url}");
         }
+        assert!(is_platform(&format!(
+            "https://api.dev.yonedarepo.com/git/{REPO}.git"
+        )));
+        assert!(is_platform(&format!(
+            "yoneda::https://api.dev.yonedarepo.com/{REPO}"
+        )));
+        assert!(!is_platform("https://github.com/git/example.git"));
+        assert!(!is_platform(&format!(
+            "https://api.dev.yonedarepo.com/{REPO}"
+        )));
         let local = parse(&format!("http://127.0.0.1:8787/{REPO}"))?;
         assert_eq!(local.origin, "http://127.0.0.1:8787");
         assert_eq!(

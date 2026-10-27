@@ -49,19 +49,27 @@ impl Platform {
         let scratch = tempfile::tempdir().map_err(|e| e.to_string())?;
         let persist = scratch.path().join("state");
         let config = "tests/platform/wrangler.jsonc";
-        let schema = Command::new(&wrangler)
-            .current_dir(&root)
-            .args(["d1", "execute", "INDEX", "--local", "-c", config, "--file"])
-            .arg("cloudflare/migrations/0003_platform_repos.sql")
-            .arg("--persist-to")
-            .arg(&persist)
-            .output()
-            .map_err(|e| e.to_string())?;
-        if !schema.status.success() {
-            return Err(format!(
-                "D1 schema: {}",
-                String::from_utf8_lossy(&schema.stderr)
-            ));
+        // The platform's D1 schema, as the workerd fixture applies it: the repository
+        // listing, personal-token lookup and membership index.
+        for migration in [
+            "0003_platform_repos.sql",
+            "0004_platform_tokens.sql",
+            "0005_platform_members.sql",
+        ] {
+            let schema = Command::new(&wrangler)
+                .current_dir(&root)
+                .args(["d1", "execute", "INDEX", "--local", "-c", config, "--file"])
+                .arg(format!("cloudflare/migrations/{migration}"))
+                .arg("--persist-to")
+                .arg(&persist)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !schema.status.success() {
+                return Err(format!(
+                    "D1 schema {migration}: {}",
+                    String::from_utf8_lossy(&schema.stderr)
+                ));
+            }
         }
         let (port, inspector) = (free_port()?, free_port()?);
         let owner = uuid::Uuid::new_v4().simple().to_string();

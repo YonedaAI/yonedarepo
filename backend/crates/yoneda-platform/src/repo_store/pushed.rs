@@ -5,7 +5,8 @@
 //! written to R2 by the projector afterwards, as for commits built here. This store checks
 //! what it can itself: each commit's bytes hash to its id, and its parents are recorded
 //! (earlier in the same call counts). The base version is derived here, never taken from
-//! the client. Recording moves no ref and writes no log entry.
+//! the client. Recording moves no ref and writes no log entry. A pushed tip carries the
+//! read set the push declared (`-o yoneda.reads=…`), which landing validates.
 use super::auth::Actor;
 use super::rows::{self, CommitRow, Settings, object_id};
 use crate::storage::{SqlStore, bad, number};
@@ -23,7 +24,8 @@ const TOUCHES: usize = 100_000;
 const BASE_WALK: usize = 10_000;
 
 /// `repo_record_pushed`: `commits` parents first, each `{commit, data_b64, touches,
-/// objects: [{id, kind}], check}`; `check` starts platform checks (the pushed tips). With
+/// objects: [{id, kind}], check, read_set?}`; `check` starts platform checks (the pushed
+/// tips), which carry the push's declared reads. With
 /// `staged`, every object also carries its `data_b64` and is staged with its commit;
 /// `dispatch_objects` then says whether the adapter must ask for the drain to R2.
 pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
@@ -40,12 +42,21 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     let mut runs = Vec::new();
     for item in commits {
         let id = object_id(item, "commit")?;
-        if rows::commit_row(db, &id)?.is_none() {
-            record_one(db, item, &actor.principal, now)?;
-            if staged {
-                dispatch |= stage(db, &id, item, now)?;
+        let reads = crate::platform_push_reads::read_set(
+            serde_json::from_value::<Option<Vec<String>>>(item["read_set"].clone())
+                .map_err(|_| bad("read_set must be a list of paths"))?
+                .unwrap_or_default(),
+        )?;
+        match rows::commit_row(db, &id)? {
+            None => {
+                record_one(db, item, &actor.principal, &reads, now)?;
+                if staged {
+                    dispatch |= stage(db, &id, item, now)?;
+                }
+                recorded += 1;
             }
-            recorded += 1;
+            Some(_) if !reads.is_empty() => add_reads(db, &id, &actor.principal, &reads)?,
+            Some(_) => {}
         }
         if item["check"] == true {
             runs.extend(super::checks::request(
@@ -100,7 +111,36 @@ fn stage<S: SqlStore>(db: &S, id: &ObjectId, item: &Value, now: i64) -> Result<b
     super::staging::accept(db, id, now)
 }
 
-fn record_one<S: SqlStore>(db: &S, item: &Value, principal: &str, now: i64) -> Result<()> {
+/// A commit pushed again with declared reads keeps the union of its reads: declaring more
+/// only makes landing stricter. Only its own pusher may add to them (anyone else could
+/// block it from landing), and never once it has landed (its log entry is written).
+fn add_reads<S: SqlStore>(db: &S, id: &ObjectId, principal: &str, reads: &[String]) -> Result<()> {
+    let row = db
+        .query(
+            "SELECT read_set FROM commits WHERE id=? AND origin='push' AND principal=? \
+             AND NOT EXISTS (SELECT 1 FROM landings WHERE commit_id=commits.id)",
+            &[json!(id.hex()), json!(principal)],
+        )?
+        .into_iter()
+        .next();
+    let Some(row) = row else { return Ok(()) };
+    let held: Vec<String> = serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
+        .map_err(|_| rows::corrupt("read set"))?;
+    let merged = crate::platform_push_reads::read_set(held.into_iter().chain(reads.to_vec()))?;
+    db.query(
+        "UPDATE commits SET read_set=? WHERE id=?",
+        &[json!(json!(merged).to_string()), json!(id.hex())],
+    )?;
+    Ok(())
+}
+
+fn record_one<S: SqlStore>(
+    db: &S,
+    item: &Value,
+    principal: &str,
+    reads: &[String],
+    now: i64,
+) -> Result<()> {
     let id = object_id(item, "commit")?;
     let data = STANDARD
         .decode(item["data_b64"].as_str().unwrap_or_default())
@@ -134,9 +174,9 @@ fn record_one<S: SqlStore>(db: &S, item: &Value, principal: &str, now: i64) -> R
     db.query(
         // The objects are in R2 (or staged here, below); Artifacts gets them with the first
         // protected ref that includes this commit (commit_objects lists them until then).
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,'[]',?,'push',0,NULL)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,'push',0,NULL)",
         &[json!(id.hex()), json!(commit.tree()?.hex()), json!(json!(parents).to_string()), json!(generation),
-          json!(base_version), json!(principal), json!(message), json!(now)],
+          json!(base_version), json!(principal), json!(message), json!(json!(reads).to_string()), json!(now)],
     )?;
     for chunk in touches.chunks(16) {
         let mut params = Vec::with_capacity(chunk.len() * 6);

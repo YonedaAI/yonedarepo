@@ -885,6 +885,64 @@
     }
   },
   {
+    "name": "git_session_record",
+    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, and an optional transcript_ref (a URL or opaque id; transcripts are never uploaded). Posting the same record again answers the first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "cli": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "prompt_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "transcript_ref": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "read_set_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "commit",
+        "cli",
+        "summary"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_sessions",
+    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, who recorded each and when.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      },
+      "required": [
+        "commit"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_bisect",
     "description": "Find the first commit on a branch that breaks a policy check: start with good, bad and check (a policy runner name); the platform runs the check on midpoints and narrows the range as results arrive. Pass id to read progress.",
     "inputSchema": {

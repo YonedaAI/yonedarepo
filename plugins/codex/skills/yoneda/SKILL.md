@@ -30,6 +30,14 @@ yoneda status --brief    # one line, no network: repository, branch, commits not
    3. `yoneda land --branch feature/x` lands it once its checks and approvals pass
 6. `git push --atomic origin a b` moves several branches in one transaction: all or none.
 
+## Declared reads: a push says what it relied on
+
+Landing checks more than overlapping writes. A push may declare the files its change **read**; if any of them changed on main after your base, the landing is refused as a read conflict (`read conflict on <path>: run git pull`), even when your own edits touch other files. Then `git pull`, check your change still holds against the new file, and push again.
+
+1. The session's reads live in `.git/yoneda/reads` (never committed). In Claude Code the yoneda plugin records every Read and Grep result there. Elsewhere, declare the files your change relies on: `yoneda reads add <path>` (a directory as `dir/`). `yoneda reads list` shows them, `yoneda reads clear` drops them.
+2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
+3. Record the session. The Claude Code plugin does it at the end of each turn that pushed: the CLI, model and your last message, truncated, never the transcript. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m>` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
+
 ## Read on the server instead of opening many files
 
 The server answers these from its index, with no checkout. Prefer them to reading file after file:

@@ -126,6 +126,10 @@ pub fn parse(args: &[String]) -> Result<Command> {
             Command::Pull
         }
         "sync" => sub::sync(rest)?,
+        "reads" => sub::declared_reads(rest)?,
+        "push" => Command::Push(rest.to_vec()),
+        "session" => sub::session(rest)?,
+        "hook" => sub::hook(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
             return Err(Error::usage(format!(
@@ -173,6 +177,37 @@ mod tests {
         assert_eq!(
             parsed("status --brief").ok(),
             Some(Command::Status { brief: true })
+        );
+        assert_eq!(
+            parsed("push --force origin main").ok(),
+            Some(Command::Push(vec![
+                "--force".into(),
+                "origin".into(),
+                "main".into()
+            ]))
+        );
+        assert_eq!(
+            parsed("reads add src/a.rs docs/").ok(),
+            Some(Command::Reads(ReadsCommand::Add {
+                paths: vec!["src/a.rs".into(), "docs/".into()]
+            }))
+        );
+        assert_eq!(
+            parsed("hook claude-stop").ok(),
+            Some(Command::Hook(HookEvent::ClaudeStop))
+        );
+        assert_eq!(
+            parsed("session record abc --cli codex --summary done").ok(),
+            Some(Command::Session {
+                target: Target::default(),
+                command: SessionCommand::Record {
+                    commit: Some("abc".into()),
+                    cli: "codex".into(),
+                    summary: "done".into(),
+                    model: None,
+                    transcript_ref: None
+                }
+            })
         );
     }
 
@@ -269,7 +304,10 @@ mod tests {
             "sync --land --attempt a",
             "clone",
             "status extra",
-            "push",
+            "reads",
+            "reads add",
+            "session record abc --cli x",
+            "hook vim",
             "repo delete r1",
             "repo",
             "review maybe abc",

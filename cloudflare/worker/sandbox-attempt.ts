@@ -8,7 +8,7 @@ import {
   type SandboxCli,
   sandboxCliFits,
 } from '../../shared/providers';
-import { repositoryPlatform, revisionProject } from './agents-platform';
+import { type ProjectPlatform, repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
 import { modelPaths } from './sandbox-cli';
@@ -201,6 +201,27 @@ export async function sandboxActivity(env: Env, repo: string, execution: string,
 }
 
 /** Reads the pushed branch from the platform and makes its commit the run's candidate. */
+/** The platform's session record for the pushed commit: the CLI, model, the agent's final
+ * summary and a digest of its prompt. Posted with the project token, the commit's pusher,
+ * from the Worker (never the sandbox). A refused or lost record never fails the run. */
+async function recordSession(
+  platform: ProjectPlatform,
+  attempt: SandboxAttempt,
+  commit: string,
+  summary: string,
+) {
+  const cli = attempt.cli ?? 'claude';
+  await platform
+    .call('POST', `/commits/${commit}/sessions`, {
+      cli: cli === 'claude' ? 'claude-code' : cli,
+      model: attempt.model,
+      summary: summary.trim().slice(0, 4096) || 'Sandbox agent change',
+      prompt_digest: await sha(attempt.prompt),
+      transcript_ref: `sandbox:${attempt.execution_id}`,
+    })
+    .catch((e: any) => console.warn(`session record for ${commit} failed: ${e?.message ?? e}`));
+}
+
 export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, summary: string) {
   const platform = await repositoryPlatform(env, attempt.repo);
   const source = platformSource(platform);
@@ -213,6 +234,7 @@ export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, 
   if (revisionProject(repository) !== attempt.repo)
     return fail('SOURCE_SCOPE', 'The attempt base is outside this project');
   const facts = await commitFacts(env, platform, attempt.base.commit, commit);
+  await recordSession(platform, attempt, commit.hash, summary);
   return ledger(env, attempt.repo, {
     op: 'sandbox_finish',
     job_id: attempt.job_id,
