@@ -1,10 +1,12 @@
 // Platform check runs: queue messages carry only (repo, run id). The consumer claims the
-// run from the SourceRepository authority with a fenced epoch, ships the exact commit's
-// files to a fresh CheckContainer, keeps the output tail in R2 and completes the run.
+// run from the SourceRepository authority with a fenced epoch, then either ships the exact
+// commit's files to a fresh CheckContainer (keeping the output tail in R2) or, for a model
+// runner, makes one review call on the commit's diff, and completes the run.
 import type { CheckJob } from './check-container';
 import { replay } from './repo-commit';
+import { modelCheck } from './repo-model-check';
 import { parseStore, RepoObjects } from './repo-objects';
-import { caller, type Json, RepoContext } from './repo-ops';
+import { type Call, caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
 import type { Env, Envelope } from './types';
 
@@ -64,6 +66,53 @@ async function proposeRepairs(env: Env, repo: string, run: Json, refs: string[])
   }
 }
 
+/** Runs a claimed command check in a fresh CheckContainer on the commit's exact files. */
+async function containerCheck(env: Env, repo: string, call: Call, run: Json) {
+  const status = await call({ op: 'repo_status' });
+  const objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
+  const shipped = await checkFiles(env, repo, objects, run.tree);
+  const job: CheckJob = {
+    command: run.command,
+    timeout_seconds: run.timeout_seconds,
+    files: shipped.files,
+  };
+  const executor = env.CHECK_RUNNERS.get(
+    env.CHECK_RUNNERS.idFromName(`${run.run_id}:${run.epoch}`),
+  );
+  // The epoch ends itself well before its lease (timeout + 5 min) would: a stalled
+  // container or consumer otherwise holds the run "running" until the lease lapses.
+  const result = (await withDeadline(
+    executor.run(job),
+    executorDeadlineMs(run.timeout_seconds),
+    () => (executor as unknown as { destroy(): Promise<void> }).destroy().catch(() => {}),
+  )) as Json;
+  const log = `platform/v1/${repo}/checks/${run.run_id}/${run.epoch}.log`;
+  await env.OBJECTS.put(log, String(result.output_tail ?? ''), {
+    customMetadata: { sha256: String(result.output_sha256 ?? ''), commit: run.commit },
+  });
+  const evidence: Json = {
+    exit_code: result.exit_code ?? null,
+    timed_out: result.timed_out === true,
+    duration_ms: result.duration_ms,
+    queued_ms: run.queued_ms,
+    start_ms: result.start_ms,
+    output_bytes: result.output_bytes,
+    output_sha256: result.output_sha256,
+    log,
+    // Files came from the branch's warm-start seed plus this many fetched blobs.
+    ...(shipped.seed ? { seed: shipped.seed } : {}),
+    // Per-tier counts for S12: files served by the seed (the executor's warm tier; its
+    // containers are single-use, so nothing is cached inside them), then object reads
+    // served by the edge Cache API, R2 and the object store.
+    tiers: {
+      seed: shipped.seed ? shipped.files.length - shipped.seed.fetched : 0,
+      files: shipped.files.length,
+      ...objects.hits,
+    },
+  };
+  return { outcome: result.outcome === 'pass' ? 'pass' : 'fail', evidence };
+}
+
 /** Returns `retry` with a delay when another executor still holds the run's lease. */
 export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ retry?: number }> {
   const repo = envelope.repo_id;
@@ -74,48 +123,11 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<{ r
   const complete = (outcome: string, evidence: Json) =>
     call({ op: 'repo_check_complete', run_id: run.run_id, epoch: run.epoch, outcome, evidence });
   try {
-    const status = await call({ op: 'repo_status' });
-    const objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
-    const shipped = await checkFiles(env, repo, objects, run.tree);
-    const job: CheckJob = {
-      command: run.command,
-      timeout_seconds: run.timeout_seconds,
-      files: shipped.files,
-    };
-    const executor = env.CHECK_RUNNERS.get(
-      env.CHECK_RUNNERS.idFromName(`${run.run_id}:${run.epoch}`),
-    );
-    // The epoch ends itself well before its lease (timeout + 5 min) would: a stalled
-    // container or consumer otherwise holds the run "running" until the lease lapses.
-    const result = (await withDeadline(
-      executor.run(job),
-      executorDeadlineMs(run.timeout_seconds),
-      () => (executor as unknown as { destroy(): Promise<void> }).destroy().catch(() => {}),
-    )) as Json;
-    const log = `platform/v1/${repo}/checks/${run.run_id}/${run.epoch}.log`;
-    await env.OBJECTS.put(log, String(result.output_tail ?? ''), {
-      customMetadata: { sha256: String(result.output_sha256 ?? ''), commit: run.commit },
-    });
-    const completed = await complete(result.outcome === 'pass' ? 'pass' : 'fail', {
-      exit_code: result.exit_code ?? null,
-      timed_out: result.timed_out === true,
-      duration_ms: result.duration_ms,
-      queued_ms: run.queued_ms,
-      start_ms: result.start_ms,
-      output_bytes: result.output_bytes,
-      output_sha256: result.output_sha256,
-      log,
-      // Files came from the branch's warm-start seed plus this many fetched blobs.
-      ...(shipped.seed ? { seed: shipped.seed } : {}),
-      // Per-tier counts for S12: files served by the seed (the executor's warm tier; its
-      // containers are single-use, so nothing is cached inside them), then object reads
-      // served by the edge Cache API, R2 and the object store.
-      tiers: {
-        seed: shipped.seed ? shipped.files.length - shipped.seed.fetched : 0,
-        files: shipped.files.length,
-        ...objects.hits,
-      },
-    });
+    const { outcome, evidence } =
+      run.kind === 'model'
+        ? await modelCheck(env, new RepoContext(env, repo, call), run)
+        : await containerCheck(env, repo, call, run);
+    const completed = await complete(outcome, evidence);
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     // Advance bisects that were waiting on this result (and queue their next run).
     for (const id of (completed.bisects ?? []) as string[]) {

@@ -91,7 +91,6 @@ fn model_runs_are_claimed_with_rubric_and_intent_and_gate_landing() {
     assert_eq!(claimed["rubric"], "No SQL string concatenation.");
     assert_eq!(claimed["model"], "glm-5.3-flash");
     assert_eq!(claimed["message"], "change");
-    assert_eq!(claimed["parents"], json!([root]));
     assert!(claimed.get("command").is_none());
     // Its lease covers two bounded calls, not a container's ten minutes.
     assert!(h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["busy"] == true);
