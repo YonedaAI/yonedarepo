@@ -154,7 +154,7 @@ export const fakeCombiners = {
     head: (repo: string, minVersion: number, since?: number, accessVersion?: string) =>
       holderOf(name).head(repo, minVersion, since, accessVersion),
     access: (repo: string) => holderOf(name).access(repo),
-    refresh: async (repo: string, wait?: boolean) => holderOf(name).refresh(repo, wait),
+    refresh: async (repo: string, access?: boolean) => holderOf(name).refresh(repo, access),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */

@@ -49,6 +49,40 @@ export class ApiError extends Error {
   }
 }
 
+/** Commands that never move a ref (reads, and commits before they land). Any other
+ * command a caller in this isolate sends may, so refs snapshots taken before it are not
+ * served to this isolate (repo-snapshots.ts). */
+const KEEPS_REFS = new Set([
+  'repo_prepare_commit',
+  'repo_begin_commit',
+  'repo_record_commit',
+  'repo_adopt_commit',
+  'repo_check_request',
+  'repo_session_record',
+  'repo_status',
+  'repo_refs',
+  'repo_snapshot',
+  'repo_log',
+  'repo_txlog',
+  'repo_commit',
+  'repo_merge_base',
+  'repo_path_history',
+  'repo_contracts',
+  'repo_head',
+  'repo_staged_objects',
+  'repo_tokens',
+  'repo_members',
+  'repo_land_status',
+  'repo_git_access',
+  'repo_git_walk',
+  'repo_clone_access',
+]);
+const writes = new Map<string, number>();
+/** How many commands that may move refs this isolate has sent to `repo`. */
+export const writesTo = (repo: string) => writes.get(repo) ?? 0;
+/** Notes one (a landing or merge settled elsewhere for this isolate counts too). */
+export const noteWrite = (repo: string) => void writes.set(repo, writesTo(repo) + 1);
+
 export type Call = ((command: Json) => Promise<Json>) & {
   /** The command as this caller sends it (credentials attached), for `batch`. */
   sign(command: Json): Json;
@@ -68,7 +102,10 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   const once = async (command: Json) => {
     const value = await timed(`do.${command.op}`, () =>
       durableJson<Json>(stub, 'https://source-repository/', JSON.stringify(sign(command))),
-    );
+    ).finally(() => {
+      // Counted when it settles (it may have committed even if its answer was lost).
+      if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
+    });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
     return value;
   };
@@ -99,7 +136,9 @@ export async function batch(env: Env, repo: string, commands: Json[]): Promise<J
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
   return timed(`do.${commands.map((c) => c.op).join('+')}`, () =>
     durableJson<Json[]>(stub, 'https://source-repository/batch', JSON.stringify(commands)),
-  );
+  ).finally(() => {
+    if (commands.some((c) => !KEEPS_REFS.has(c.op))) noteWrite(repo);
+  });
 }
 
 /** One repository, as seen by one authenticated caller. */
@@ -121,6 +160,11 @@ export class RepoContext {
   /** Serves this request's access and main's head from the published head. */
   publish(head: Json, access: Json) {
     this.published = head;
+    this.authorize(head, access);
+  }
+  /** Serves this request's access (grant and object store) from the published head's
+   * access snapshot; reads elsewhere than main's head use it too. */
+  authorize(head: Json, access: Json) {
     this.statusOnce = Promise.resolve({ object_store: head.object_store, ...access });
   }
   async objects() {

@@ -252,9 +252,11 @@ async function batchRefs(ctx: RepoContext, body: Json) {
   return { version: result.version, refs: result.refs };
 }
 
+/** Runs an access or policy change, then republishes main's head before answering (see
+ * `refreshHead`): a token minted or revoked, or runners a commit must queue, hold at once. */
 async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
   const done = await change;
-  await refreshHead(env, repo);
+  await refreshHead(env, repo, true);
   return done;
 }
 
