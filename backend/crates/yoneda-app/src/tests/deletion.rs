@@ -12,7 +12,7 @@ fn delete(db: &NativeStore) -> Value {
 fn deletion_fences_active_work_and_remains_idempotent() {
     let db = repo();
     start(&db);
-    let job = call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    let job = call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     let result = delete(&db);
     assert_eq!(result["status"], "deleted");
     assert_eq!(result["cleanup_pending"], true);
@@ -25,7 +25,7 @@ fn deletion_fences_active_work_and_remains_idempotent() {
         json!({"op":"graph","id":"repo-test"}),
         json!({"op":"heartbeat","job_id":job["id"],"epoch":1}),
         json!({"op":"finish","job_id":job["id"],"epoch":1,"result":{}}),
-        json!({"op":"start_run","id":"late-run","intent":"Try to revive"}),
+        json!({"op":"start_run","id":"late-run","intent":"Try to revive","agents":one_agent()}),
         json!({"op":"init"}),
     ] {
         assert_eq!(call(&db, command).unwrap_err().code, "REPOSITORY_DELETED");

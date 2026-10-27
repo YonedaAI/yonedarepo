@@ -270,11 +270,8 @@ it('allows issued children to finish after their parent completes while retainin
   expect((await state()).repository.published_commit).toBe(commit);
 });
 
-it('denies research and external contribution attempts the hosted delegation capability', async () => {
+it('denies external contribution attempts the hosted delegation capability', async () => {
   await initialize({ policy: { version: 'retry-v1', suite: 'retry-contract-v1', environment: 'rust-1.94-evaluator-v1', required_checks: ['build', 'behavior'] } });
-  await call({ op: 'start_run', id: 'research', intent: 'Research a retry policy' });
-  const research = await claim('job:research:research');
-  await expect(delegate(research)).rejects.toMatchObject({ code: 'FORBIDDEN' });
   const external = await call({ op: 'external_begin', id: 'external-test', _grant: 'grant-test', intent: 'Contribute locally', branch: 'contributions/external-test' });
   await expect(delegate(external)).rejects.toMatchObject({ code: 'FORBIDDEN' });
 });

@@ -4,7 +4,7 @@ use super::*;
 fn logs_derive_identity_drop_private_fields_and_fence_expired_attempts() {
     let db = repo();
     start(&db);
-    let claim = call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    let claim = call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     let command = json!({"op":"record_execution_log","job_id":claim["id"],"epoch":claim["epoch"],
         "event_id":"fixture-log","stage":"model.rejected","error_code":"PROVIDER_CONFIGURATION",
         "execution_id":"spoofed","provider":"spoofed","headers":{"authorization":"secret"},"message":"secret"});
@@ -12,13 +12,13 @@ fn logs_derive_identity_drop_private_fields_and_fence_expired_attempts() {
     assert_eq!(call(&db, command.clone()).unwrap(), first);
     let logs = call(
         &db,
-        json!({"op":"execution_logs","execution_id":"run-one:research"}),
+        json!({"op":"execution_logs","execution_id":"run-one:agent-1"}),
     )
     .unwrap();
     assert_eq!(logs["entries"].as_array().unwrap().len(), 1);
     let data = &logs["entries"][0]["data"];
-    assert_eq!(data["execution_id"], "run-one:research");
-    assert_eq!(data["provider"], claim["payload"]["execution"]["harness"]);
+    assert_eq!(data["execution_id"], "run-one:agent-1");
+    assert_eq!(data["provider"], claim["payload"]["execution"]["provider"]);
     assert!(!logs.to_string().contains("secret"));
     assert!(!logs.to_string().contains("spoofed"));
     let mut conflict = command.clone();
@@ -52,7 +52,7 @@ fn log_migration_upgrades_v5_without_changing_graph_history() {
     assert_eq!(
         call(
             &db,
-            json!({"op":"execution_logs","execution_id":"run-one:research"})
+            json!({"op":"execution_logs","execution_id":"run-one:agent-1"})
         )
         .unwrap()["entries"],
         json!([])
@@ -63,25 +63,25 @@ fn log_migration_upgrades_v5_without_changing_graph_history() {
 fn log_cursor_pages_without_skipping_or_repeating_entries() {
     let db = repo();
     start(&db);
-    call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     for index in 0..105 {
         call(
             &db,
-            json!({"op":"record_execution_log","job_id":"job:run-one:research","epoch":1,
+            json!({"op":"record_execution_log","job_id":"job:run-one:agent-1","epoch":1,
             "event_id":format!("page-{index}"),"stage":"model.request_started"}),
         )
         .unwrap();
     }
     let first = call(
         &db,
-        json!({"op":"execution_logs","execution_id":"run-one:research"}),
+        json!({"op":"execution_logs","execution_id":"run-one:agent-1"}),
     )
     .unwrap();
     assert_eq!(first["entries"].as_array().unwrap().len(), 100);
     assert_eq!(first["has_more"], true);
     let second = call(
         &db,
-        json!({"op":"execution_logs","execution_id":"run-one:research","after":first["next"]}),
+        json!({"op":"execution_logs","execution_id":"run-one:agent-1","after":first["next"]}),
     )
     .unwrap();
     assert_eq!(second["entries"].as_array().unwrap().len(), 5);

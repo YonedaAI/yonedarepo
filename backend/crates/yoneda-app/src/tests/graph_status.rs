@@ -8,7 +8,7 @@ fn execution_node(db: &NativeStore, id: &str) -> Value {
 fn capture_and_evaluation_keep_execution_graph_in_sync() {
     let db = repo();
     captured(&db);
-    let id = "run-one:codex-minimal";
+    let id = "run-one:agent-1";
     assert_eq!(execution_node(&db, id)["data"]["status"], "evaluating");
     let job = "evaluate:candidate-a";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
@@ -38,10 +38,10 @@ fn capture_and_evaluation_keep_execution_graph_in_sync() {
 fn cancellation_updates_the_execution_graph() {
     let db = repo();
     start(&db);
-    call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     call(&db, json!({"op":"cancel_run","run_id":"run-one"})).unwrap();
     assert_eq!(
-        execution_node(&db, "run-one:research")["data"]["status"],
+        execution_node(&db, "run-one:agent-1")["data"]["status"],
         "cancelled"
     );
 }
@@ -51,19 +51,16 @@ fn cancellation_during_evaluation_updates_execution_and_graph() {
     let db = repo();
     captured(&db);
     call(&db, json!({"op":"cancel_run","run_id":"run-one"})).unwrap();
-    let execution = crate::storage::get(&db, "executions", "run-one:codex-minimal").unwrap();
+    let execution = crate::storage::get(&db, "executions", "run-one:agent-1").unwrap();
     assert_eq!(execution["status"], "cancelled");
-    assert_eq!(
-        execution_node(&db, "run-one:codex-minimal")["data"],
-        execution
-    );
+    assert_eq!(execution_node(&db, "run-one:agent-1")["data"], execution);
 }
 
 #[test]
 fn migration_repairs_old_execution_nodes_without_changing_evidence() {
     let db = repo();
     ready(&db);
-    let id = "run-one:codex-minimal";
+    let id = "run-one:agent-1";
     let before = call(&db, json!({"op":"snapshot"})).unwrap();
     let mut stale = execution_node(&db, id);
     stale["data"]["status"] = json!("capturing");

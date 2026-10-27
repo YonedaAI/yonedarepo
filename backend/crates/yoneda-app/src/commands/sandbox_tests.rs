@@ -80,7 +80,6 @@ fn team_delegation_and_reviewer_runs_are_refused() {
     let mut run = json!({});
     let reviewed = freeze(
         &json!({"agents":two(),"comparison":{"version":1}}),
-        true,
         false,
         &DelegationPolicy::disabled(2),
         &mut run,

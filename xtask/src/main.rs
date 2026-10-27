@@ -19,7 +19,6 @@ mod layout;
 mod live;
 mod local_config;
 mod process;
-mod verification;
 use std::path::PathBuf;
 
 #[tokio::main]

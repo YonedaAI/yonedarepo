@@ -24,7 +24,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             let working_branch = super::branches::freeze(db, &c)?;
             let id = string(&c, "id")?;
             let intent = string(&c, "intent")?;
-            let general = !r["policy"]["build"].is_null();
+            if r["policy"]["build"].is_null() {
+                return Err(Error::new(
+                    "FORBIDDEN",
+                    "Runs need a build policy; research-first runs were retired",
+                ));
+            }
             let criteria = c.get("criteria").cloned().unwrap_or(json!([]));
             let criteria_array = criteria
                 .as_array()
@@ -54,10 +59,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                         .ok_or_else(|| bad("Invalid context ID"))?,
                 )?);
             }
-            if general {
-                super::scheduling::validate_agents(&c)?;
-            }
-            let team = super::team::freeze(&c, general)?;
+            super::scheduling::validate_agents(&c)?;
+            let team = super::team::freeze(&c)?;
             let collaborate = c["mode"] == "collaborate";
             let automatic = collaborate && team.is_none();
             if collaborate && r.get("context_study").is_some() {
@@ -66,12 +69,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "Controlled context trials do not support team mode",
                 ));
             }
-            let model_budgets = super::model_budgets::freeze(&c, general)?;
-            let root_count = if general {
-                c["agents"].as_array().map_or(0, Vec::len)
-            } else {
-                1
-            };
+            let model_budgets = super::model_budgets::freeze(&c)?;
+            let root_count = c["agents"].as_array().map_or(0, Vec::len);
             let delegation = c
                 .get("delegation")
                 .map(|value| {
@@ -81,12 +80,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .transpose()?
                 .unwrap_or_else(|| DelegationPolicy::disabled(root_count));
             delegation.validate(root_count)?;
-            if !general && delegation.enabled {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "Only hosted coding runs may delegate",
-                ));
-            }
             if active_run_count(db)? >= MAX_ACTIVE_WORK_RUNS {
                 return Err(Error::new(
                     "ACTIVE_RUN_LIMIT",
@@ -98,13 +91,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if automatic {"planning"} else if general {"exploring"} else {"researching"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if automatic {"planning"} else {"exploring"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
             if collaborate {
                 run["approved_policy"] = run["policy"].clone();
             }
-            if general {
-                run["agents"] = c["agents"].clone();
-            }
+            run["agents"] = c["agents"].clone();
             // Every attempt works on platform source; the adapter approves its frozen base.
             // A sandbox run carries its own tag (runs before it carried api-source-v1).
             let sandbox = super::sandbox::requested(&c);
@@ -119,9 +110,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 "api-source-v1"
             });
             if sandbox && collaborate {
-                super::sandbox_team::freeze(&c, general, team.as_ref(), &delegation, &mut run)?;
+                super::sandbox_team::freeze(&c, team.as_ref(), &delegation, &mut run)?;
             } else if sandbox {
-                super::sandbox::freeze(&c, general, team.is_some(), &delegation, &mut run)?;
+                super::sandbox::freeze(&c, team.is_some(), &delegation, &mut run)?;
             }
             if automatic {
                 run["team_planning"] = json!("automatic");
@@ -207,18 +198,14 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "owner-approved update from the published decision",
                 )?;
             }
-            if general {
-                if automatic {
-                    super::team::start_planner(db, &run, now)?;
-                } else if team.is_some() && sandbox {
-                    super::sandbox_team::start(db, &run, now)?;
-                } else if team.is_some() {
-                    super::team::start(db, &run, now)?;
-                } else {
-                    super::scheduling::schedule(db, &run, &c["agents"], now)?;
-                }
+            if automatic {
+                super::team::start_planner(db, &run, now)?;
+            } else if team.is_some() && sandbox {
+                super::sandbox_team::start(db, &run, now)?;
+            } else if team.is_some() {
+                super::team::start(db, &run, now)?;
             } else {
-                execution(db, &run, "claude", "research", "research", json!([]), now)?;
+                super::scheduling::schedule(db, &run, &c["agents"], now)?;
             }
             event(db, "run.created", now, run.clone())?;
             Ok(run)

@@ -2,18 +2,10 @@
 use super::*;
 
 fn checked_step(db: &NativeStore, run: &str, candidate: &str, commit: &str) {
-    let research = format!("job:{run}:research");
-    call(db, json!({"op":"claim","job_id":research})).unwrap();
-    call(db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":format!("research-{run}"),"digest":"b".repeat(64),"label":"Constraints","kind":"research","metadata":{"assumptions":[{"statement":"Registration latency stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/booking.rs"}]}})).unwrap();
-    call(
-        db,
-        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let coding = format!("job:{run}:codex-minimal");
+    let coding = format!("job:{run}:agent-1");
     let claimed = call(db, json!({"op":"claim","job_id":coding})).unwrap();
     let registration = source_kit::finish_agent(db, &claimed, 1000);
-    let capture = format!("capture:{run}:codex-minimal");
+    let capture = format!("capture:{run}:agent-1");
     call(db, json!({"op":"claim","job_id":capture})).unwrap();
     call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":candidate,"revision":{"repository":"yoneda-dev/fork-a","commit":commit},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Checked step"}))})).unwrap();
     let evaluate = format!("evaluate:{candidate}");
@@ -26,10 +18,12 @@ fn checked_step(db: &NativeStore, run: &str, candidate: &str, commit: &str) {
 fn two_step_branch() -> NativeStore {
     let db = repo();
     call(&db, json!({"op":"create_working_branch","id":"development","expected_commit":"a".repeat(40),"expected_version":0})).unwrap();
-    call(&db,json!({"op":"start_run","id":"run-one","intent":"Implement registration","working_branch_id":"development","expected_working_commit":"a".repeat(40),"expected_working_version":0})).unwrap();
+    call(&db,json!({"op":"start_run","id":"run-one","intent":"Implement registration","working_branch_id":"development","expected_working_commit":"a".repeat(40),"expected_working_version":0,"agents":one_agent()})).unwrap();
     checked_step(&db, "run-one", "candidate-a", &"c".repeat(40));
-    call(&db,json!({"op":"start_run","id":"run-two","intent":"Add a waitlist","working_branch_id":"development","expected_working_commit":"c".repeat(40),"expected_working_version":1})).unwrap();
+    select_on_branch(&db, "run-one", "candidate-a", &"a".repeat(40), 0);
+    call(&db,json!({"op":"start_run","id":"run-two","intent":"Add a waitlist","working_branch_id":"development","expected_working_commit":"c".repeat(40),"expected_working_version":1,"agents":one_agent()})).unwrap();
     checked_step(&db, "run-two", "candidate-b", &"f".repeat(40));
+    select_on_branch(&db, "run-two", "candidate-b", &"c".repeat(40), 1);
     assert_eq!(
         crate::storage::get(&db, "candidates", "candidate-b").unwrap()["base"]["commit"],
         "c".repeat(40)
@@ -109,7 +103,7 @@ fn rejection_guards_stale_heads_agents_and_selected_candidates() {
     stale["expected_version"] = json!(3);
     assert_eq!(call(&db, stale).unwrap_err().code, "HEAD_MOVED");
     let mut agent = rejection("Agent cannot reject");
-    agent["job_id"] = json!("job:run-two:research");
+    agent["job_id"] = json!("job:run-two:agent-1");
     agent["epoch"] = json!(1);
     assert_eq!(call(&db, agent).unwrap_err().code, "FORBIDDEN");
     accept(&db);
@@ -123,7 +117,7 @@ fn rejection_guards_stale_heads_agents_and_selected_candidates() {
 /// explicit override, which the decision records.
 fn failed_result() -> NativeStore {
     let db = repo();
-    call(&db,json!({"op":"start_run","id":"run-failed","intent":"Implement registration","expected_commit":"a".repeat(40),"expected_version":0})).unwrap();
+    call(&db,json!({"op":"start_run","id":"run-failed","intent":"Implement registration","expected_commit":"a".repeat(40),"expected_version":0,"agents":one_agent()})).unwrap();
     checked_step(&db, "run-failed", "candidate-f", &"c".repeat(40));
     db.query(
         "UPDATE evaluations SET payload=json_set(payload,'$.checks[1].status','fail')",

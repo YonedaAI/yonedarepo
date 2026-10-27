@@ -96,7 +96,7 @@ describe('scoped snapshot refresh', () => {
           { id: 'exploring', status: 'exploring' },
         ],
         [
-          { id: 'remembered-active', status: 'researching' },
+          { id: 'remembered-active', status: 'exploring' },
           { id: 'done', status: 'accepted' },
         ],
       ),

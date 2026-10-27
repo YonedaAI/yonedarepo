@@ -27,7 +27,6 @@ pub(super) fn member(job: &Value) -> bool {
 /// An owner-written plan of parallel tasks, nothing that needs an orchestrating agent.
 pub(super) fn freeze(
     c: &Value,
-    general: bool,
     plan: Option<&TeamPlan>,
     delegation: &DelegationPolicy,
     run: &mut Value,
@@ -36,8 +35,8 @@ pub(super) fn freeze(
     let Some(plan) = plan else {
         return refuse("Sandbox team runs take an owner-written task list, not automatic planning");
     };
-    if !general || !c["comparison"].is_null() {
-        return refuse("Sandbox team runs need a coding policy and no comparison review");
+    if !c["comparison"].is_null() {
+        return refuse("Sandbox team runs take no comparison review");
     }
     if delegation.enabled {
         return refuse("Sandbox runs do not delegate");

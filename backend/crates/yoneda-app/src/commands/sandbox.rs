@@ -35,12 +35,11 @@ pub(super) fn requested(c: &Value) -> bool {
 /// delegation and the comparison reviewer are not sandbox work.
 pub(super) fn freeze(
     c: &Value,
-    general: bool,
     team: bool,
     delegation: &DelegationPolicy,
     run: &mut Value,
 ) -> Result<()> {
-    if !general || team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
+    if team || c["mode"] == "collaborate" || !c["comparison"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
             "Sandbox runs take independent coding agents, without team or comparison review",
