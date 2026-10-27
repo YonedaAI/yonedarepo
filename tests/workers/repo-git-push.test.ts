@@ -2,7 +2,9 @@
 // authority with its commits (no object store write while Git waits; the drain writes R2
 // afterwards), a larger one is written to R2 first, and a failed write moves nothing.
 import { expect, it, vi } from 'vitest';
+import { hmacHex } from '../../cloudflare/worker/hmac';
 import { compute } from '../../cloudflare/worker/repo-compute';
+import { deliverHook, hookJob } from '../../cloudflare/worker/repo-hooks';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { api, author, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -58,7 +60,7 @@ async function setup(name: string) {
   const repo = created.body.id as string;
   const minted = await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read', 'write', 'land'] } });
   const refs = async () => (await api(`/repos/${repo}/refs`, { cookie })).body.refs;
-  return { repo, token: minted.body.token as string, refs, main: (await refs())['refs/heads/main'] as string };
+  return { repo, cookie, token: minted.body.token as string, refs, main: (await refs())['refs/heads/main'] as string };
 }
 
 const rawKey = (repo: string, id: string) => `platform/v1/${repo}/git/${id}`;
@@ -104,4 +106,25 @@ it('writes a large push to R2 before recording it, and a failed write moves no r
   expect(pushed).toContain('ok refs/heads/bulk');
   expect((await refs())['refs/heads/bulk']).toBe(commit.id);
   expect(await scoped.OBJECTS.head(rawKey(repo, objects[299].id))).not.toBeNull();
+});
+
+it('sends a webhook for a branch a stock Git push creates', async () => {
+  const { repo, cookie, token, main } = await setup('push_hooked');
+  const hook = (await api(`/repos/${repo}/hooks`, { cookie }, { body: { url: 'https://ci.example.com/hook', events: ['branch'] } })).body;
+  const { commit, objects } = await commitOf(main, 1, 'hooked');
+  queued.length = 0;
+  expect(await push(repo, token, 'refs/heads/feature', objects)).toContain('ok refs/heads/feature');
+  // The push asks for a fan-out; the fan-out queues this hook's delivery job.
+  const fanout = queued.filter((m) => m.kind === 'platform_hooks' && m.repo_id === repo);
+  expect(fanout.map((m) => m.job_id)).toEqual(['fanout']);
+  await hookJob(scoped, fanout[0]);
+  expect(queued.filter((m) => m.kind === 'platform_hooks').map((m) => m.job_id)).toContain(`hook:${hook.id}`);
+  const got: { body: string; signature: string | null }[] = [];
+  await deliverHook(scoped, repo, hook.id, async (req) => {
+    got.push({ body: await req.text(), signature: req.headers.get('x-yoneda-signature') });
+    return new Response('ok');
+  });
+  expect(got).toHaveLength(1);
+  expect(got[0].signature).toBe(`sha256=${await hmacHex(hook.secret, got[0].body)}`);
+  expect(JSON.parse(got[0].body)).toMatchObject({ event: 'branch', action: 'created', ref: 'refs/heads/feature', after: commit.id, before: null, repo });
 });
