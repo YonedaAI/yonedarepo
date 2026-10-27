@@ -11,11 +11,11 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 - `backend/crates/yoneda-app`: agent-layer commands and its transactional ledger, with native SQLite and DO adapters. Domain operations must be shared by local and deployed execution.
 - `backend/crates/yoneda-cloudflare`: binding interoperability; no product policy.
 - `backend/crates/yoneda-worker`: Rust Durable Objects and Worker integration.
-- `backend/crates/yoneda-runtime`: native supervisor, harnesses, scoped MCP, Git capture, clean evaluation and publication.
+- `backend/crates/yoneda-runtime`: the platform check server (`check-server`) that runs inside the CheckContainer image.
 - `cloudflare/worker`: focused TypeScript SDK adapters, authentication and transport.
 - `frontend`: browser features and components; no secrets or authoritative decisions.
 - `cloudflare/migrations`: append-only D1 discovery migrations. DO schema migrations live with `yoneda-platform` (platform) and `yoneda-app` (agent layer).
-- `cloudflare/sites` and `cloudflare/containers`: isolated website serving and the pinned native runtime image. Wrangler environment configuration lives in `cloudflare/wrangler*.jsonc`.
+- `cloudflare/sites` and `cloudflare/containers`: isolated website serving and the pinned CheckContainer image. Wrangler environment configuration lives in `cloudflare/wrangler*.jsonc`.
 - `shared`: browser/adapter contracts derived from the Rust provider registry; no secrets or authoritative state.
 - `xtask`: reproducible developer and deployment commands. `fixtures`: small demo repositories. `docs`: architecture, operations and verification evidence. `context`: original design material.
 

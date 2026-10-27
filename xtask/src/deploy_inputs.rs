@@ -2,10 +2,9 @@
 //! what the Dockerfile copies into the shipped image: the Dockerfile and entrypoint,
 //! `.dockerignore`, the root Cargo manifest, the pnpm manifests and lockfile, every local crate
 //! `yoneda-runtime` builds from, and the `Cargo.lock` entries reachable from `yoneda-runtime`
-//! (dev dependencies included). The other workspace members, their lock entries, `fixtures`
-//! and `tools/context-study` are copied only so the in-image `cargo test` and workspace
-//! resolution work; they never reach the shipped binary, so changing them (say, an xtask
-//! dependency) reuses the image.
+//! (dev dependencies included). The other workspace members and their lock entries are copied
+//! only so the in-image `cargo test` and workspace resolution work; they never reach the
+//! shipped binary, so changing them (say, an xtask dependency) reuses the image.
 use crate::process::Result;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
