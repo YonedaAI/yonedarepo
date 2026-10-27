@@ -1,6 +1,9 @@
-//! Subcommand families: repo, token, reads, check and sync.
+//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, hooks.
 use super::parser::{Parsed, list, split_sub, with};
-use crate::command::{CheckCommand, Command, ReadCommand, RepoCommand, SyncMode, TokenCommand};
+use crate::command::{
+    CheckCommand, Command, HookEvent, ReadCommand, ReadsCommand, RepoCommand, SessionCommand,
+    SyncMode, TokenCommand,
+};
 use crate::error::{Error, Result};
 
 pub fn repo(rest: &[String]) -> Result<Command> {
@@ -145,4 +148,66 @@ pub fn sync(rest: &[String]) -> Result<Command> {
         (false, None) => SyncMode::Push,
     };
     Ok(Command::Sync(mode))
+}
+
+pub fn declared_reads(rest: &[String]) -> Result<Command> {
+    let (sub, rest) = split_sub(rest, "reads")?;
+    let p = Parsed::new(&rest, &[], &[])?;
+    Ok(Command::Reads(match sub.as_str() {
+        "add" if !p.positional.is_empty() => ReadsCommand::Add {
+            paths: p.positional.clone(),
+        },
+        "add" => return Err(Error::usage("expected reads add <path>...")),
+        "list" => {
+            p.at_most(0)?;
+            ReadsCommand::List
+        }
+        "clear" => {
+            p.at_most(0)?;
+            ReadsCommand::Clear
+        }
+        other => return Err(Error::usage(format!("unknown reads command {other:?}"))),
+    }))
+}
+
+pub fn session(rest: &[String]) -> Result<Command> {
+    let (sub, rest) = split_sub(rest, "session")?;
+    let p = Parsed::new(
+        &rest,
+        &with(&["cli", "summary", "model", "transcript-ref"]),
+        &[],
+    )?;
+    p.at_most(1)?;
+    let commit = p.positional.first().cloned();
+    let command = match sub.as_str() {
+        "record" => SessionCommand::Record {
+            commit,
+            cli: p
+                .flag("cli")
+                .ok_or_else(|| Error::usage("session record needs --cli <name>"))?,
+            summary: p
+                .flag("summary")
+                .ok_or_else(|| Error::usage("session record needs --summary <text>"))?,
+            model: p.flag("model"),
+            transcript_ref: p.flag("transcript-ref"),
+        },
+        "list" => SessionCommand::List { commit },
+        other => return Err(Error::usage(format!("unknown session command {other:?}"))),
+    };
+    Ok(Command::Session {
+        target: p.target(),
+        command,
+    })
+}
+
+pub fn hook(rest: &[String]) -> Result<Command> {
+    let p = Parsed::new(rest, &[], &[])?;
+    Ok(Command::Hook(
+        match p.exactly(1, "hook claude-read|claude-bash|claude-stop")?[0].as_str() {
+            "claude-read" => HookEvent::ClaudeRead,
+            "claude-bash" => HookEvent::ClaudeBash,
+            "claude-stop" => HookEvent::ClaudeStop,
+            other => return Err(Error::usage(format!("unknown hook {other:?}"))),
+        },
+    ))
 }

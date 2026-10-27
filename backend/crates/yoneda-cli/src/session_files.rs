@@ -97,6 +97,11 @@ impl SessionFiles {
         self.append("pushed", &lines)
     }
 
+    /// Notes one pushed commit again (its session record is retried later).
+    pub fn note_pushed_digest(&self, commit: &str, digest: &str) -> Result<()> {
+        self.append("pushed", &[format!("{commit} {digest}")])
+    }
+
     /// The pushed commits not recorded yet (`(commit, reads digest)`), removed from the
     /// file: a session record is posted at most once per push.
     pub fn take_pushed(&self) -> Result<Vec<(String, String)>> {
