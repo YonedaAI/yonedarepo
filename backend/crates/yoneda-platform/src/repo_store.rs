@@ -168,7 +168,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_clone_access" => actor.require_human_reader(),
         _ => actor.require("read"),
     }?;
-    if !actor.owner && break_glass::PAUSED_OPS.contains(&op.as_str()) {
+    // Only the owner's own account keeps working while automation is paused (not admins).
+    if !actor.repo_owner() && break_glass::PAUSED_OPS.contains(&op.as_str()) {
         break_glass::refuse_if_paused(db)?;
     }
     grants::precheck(db, &op, c, &actor.grant)?;
