@@ -2,6 +2,7 @@
 //! Worker, the R2 object store and batched landing, as deployed; no provider keys), an
 //! owner client acting as the other writer, and a runner for the `yoneda` binary.
 pub mod proxy;
+pub mod team;
 
 use base64::Engine;
 use serde_json::{Value, json};

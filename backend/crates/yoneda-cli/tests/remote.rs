@@ -951,6 +951,15 @@ fn setup_installs_the_agent_files(c: &Client, origin: &str) -> TestResult {
     )
 }
 
+/// The sandbox team flow through the helper (see `support::team`).
+fn resumed_team_merge_lands(w: &World) -> TestResult {
+    let (repo, token) = w
+        .platform
+        .repo(&[("README.md", "# Base\n"), ("a.txt", "a\n")])?;
+    let (a, b) = (w.client("team-a", &token)?, w.client("team-b", &token)?);
+    support::team::resumed_merge_lands(&w.platform, &repo, &w.url(&repo), &a, &b)
+}
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli -- --include-ignored"]
 fn git_works_through_the_remote_helper() -> TestResult {
@@ -961,6 +970,7 @@ fn git_works_through_the_remote_helper() -> TestResult {
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
     first_push_into_an_empty_repository(&w).map_err(|e| format!("empty: {e}"))?;
     same_line_overlap_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
+    resumed_team_merge_lands(&w).map_err(|e| format!("team merge: {e}"))?;
     declared_reads_through_the_helper(&w).map_err(|e| format!("reads: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     #[cfg(unix)]

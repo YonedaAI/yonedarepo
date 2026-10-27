@@ -802,6 +802,15 @@ fn hundred_files_push_and_fresh_clone(w: &World) -> TestResult {
     )
 }
 
+/// The sandbox team flow with stock Git (see `support::team`).
+fn resumed_team_merge_lands(w: &World) -> TestResult {
+    let (repo, token) = w
+        .platform
+        .repo(&[("README.md", "# Base\n"), ("a.txt", "a\n")])?;
+    let (a, b) = (w.client("team-a", &token)?, w.client("team-b", &token)?);
+    support::team::resumed_merge_lands(&w.platform, &repo, &w.url(&repo), &a, &b)
+}
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli --test smart_http -- --include-ignored"]
 fn stock_git_over_https() -> TestResult {
@@ -812,6 +821,7 @@ fn stock_git_over_https() -> TestResult {
     tags_push_and_clone(&w).map_err(|e| format!("tags: {e}"))?;
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
     same_line_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
+    resumed_team_merge_lands(&w).map_err(|e| format!("team merge: {e}"))?;
     declared_reads_refuse_a_stale_read(&w).map_err(|e| format!("reads: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     cut_off_push_moves_nothing(&w).map_err(|e| format!("cut off: {e}"))?;
