@@ -58,6 +58,10 @@ pub fn option(options: &mut Options, name: &str, value: &str) -> &'static str {
             options.dry_run = on;
             "ok"
         }
+        "push-option" => {
+            options.push_options.push(value.to_owned());
+            "ok"
+        }
         // Accepted without effect: progress goes to stderr either way, and tags are
         // lightweight, so `list` already names every one.
         "progress" | "followtags" | "cloning" => "ok",
@@ -161,6 +165,11 @@ mod tests {
         assert_eq!(option(&mut options, "atomic", "true"), "ok");
         assert_eq!(option(&mut options, "verbosity", "2"), "ok");
         assert_eq!(option(&mut options, "depth", "1"), "unsupported");
+        assert_eq!(
+            option(&mut options, "push-option", "yoneda.reads=a,b"),
+            "ok"
+        );
         assert!(options.atomic && options.verbosity == 2 && !options.dry_run);
+        assert_eq!(options.push_options, ["yoneda.reads=a,b"]);
     }
 }
