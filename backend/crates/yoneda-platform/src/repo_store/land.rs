@@ -48,10 +48,7 @@ pub fn gates<S: SqlStore>(db: &S, id: &ObjectId, settings: &Settings) -> Result<
         "SELECT decision FROM reviews WHERE commit_id=?",
         &[json!(id.hex())],
     )?;
-    let approvals = reviews
-        .iter()
-        .filter(|r| r["decision"] == "approve")
-        .count();
+    let approvals = super::reviewers::approvals(db, id)?;
     let rejected = reviews.iter().any(|r| r["decision"] == "reject");
     let checks = db.query(
         "SELECT name,status FROM checks WHERE commit_id=? AND policy_digest=?",

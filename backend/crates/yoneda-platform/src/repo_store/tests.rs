@@ -55,6 +55,10 @@ impl Harness {
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
+            None if principal.starts_with("member:") => {
+                let account = &principal["member:".len()..];
+                c["_session"] = json!({"workspace": account, "principal": format!("user:{account}"), "human": true})
+            }
             None if principal == "token:public" => {
                 c["_token"] = json!("public-secret-0123456789abcdef0123456789")
             }
@@ -687,7 +691,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        25
+        super::migration::MIGRATIONS.len()
     );
     // Upgraded repositories start live (not tombstoned).
     assert!(
@@ -1583,6 +1587,7 @@ mod checkpoints;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod members;
 mod pushed;
 mod secrets;
 mod shards;
