@@ -37,24 +37,3 @@ pub(super) fn attach(record: &mut Value, target: &Value) {
         record["working_branch_id"] = id.clone();
     }
 }
-
-pub(super) fn evaluated_matches<S: SqlStore>(
-    db: &S,
-    record: &Value,
-    candidate_id: &str,
-) -> Result<bool> {
-    if matches(db, record)? {
-        return Ok(true);
-    }
-    let Some(id) = record["working_branch_id"].as_str() else {
-        return Ok(false);
-    };
-    let branch = get(db, "working_branches", id)?;
-    let candidate = get(db, "candidates", candidate_id)?;
-    Ok(branch["latest_candidate_id"] == candidate_id
-        && branch["working_revision"] == candidate["revision"]
-        && number(&branch, "version")?
-            == number(record, "expected_version")?
-                .checked_add(1)
-                .ok_or_else(|| bad("Branch version overflow"))?)
-}

@@ -3,7 +3,7 @@
 use tracing_subscriber::{filter::LevelFilter, prelude::*};
 
 /// Install once from the executable; libraries never replace a host subscriber.
-/// Diagnostics use stderr so scoped MCP stdout remains a protocol stream.
+/// Diagnostics use stderr; stdout carries nothing.
 pub fn init_telemetry() {
     let level = std::env::var("YONEDA_LOG_LEVEL")
         .ok()

@@ -120,19 +120,22 @@ async function conflictPaths(env: Env, repo: string, owner: string, record: Json
 }
 
 /**
- * Starts the sandbox resolver run for an owner's resolve request, or returns null where runs do
- * not take sandboxes (the caller then uses the ledger's harness resolver). A retried request
- * finds the same run.
+ * Starts the sandbox resolver run for an owner's resolve request. Conflicts resolve only in a
+ * sandbox: a deployment without one refuses. A retried request finds the same run.
  */
 export async function resolveInSandbox(
   env: Env,
   principal: Principal,
   repo: string,
   input: Json,
-): Promise<Json | null> {
+): Promise<Json> {
   const owner = principal.workspace;
   const repository = await ledger(env, repo, { op: 'repository_status', _workspace: owner });
-  if (!env.AGENT_SANDBOX || !((repository.capabilities?.sandbox_cli ?? 0) >= 1)) return null;
+  if (!env.AGENT_SANDBOX || !((repository.capabilities?.sandbox_cli ?? 0) >= 1))
+    fail(
+      'SANDBOX_REQUIRED',
+      'Conflicts are resolved in a sandbox, which this deployment does not run',
+    );
   const id = typeof input.conflict_id === 'string' ? input.conflict_id : '';
   const request = typeof input.request_id === 'string' ? input.request_id : '';
   if (!id || !request || request.length > 128)

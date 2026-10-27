@@ -2,8 +2,6 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
-#[path = "tests/attempt_progress.rs"]
-mod attempt_progress;
 #[path = "tests/comparison_branch_gate.rs"]
 mod comparison_branch_gate;
 #[path = "tests/context_intent.rs"]
@@ -39,12 +37,12 @@ mod single_agent;
 #[path = "tests/working_branches.rs"]
 mod working_branches;
 
-use crate::commands::source_kit;
+use crate::commands::run_kit;
 fn call(db: &NativeStore, mut c: Value) -> Result<Value> {
     if c.get("now").is_none() {
         c["now"] = json!(1000);
     }
-    source_kit::approve_start(db, &mut c);
+    run_kit::approve_start(db, &mut c);
     execute(db, c)
 }
 /// Runs need a build policy; `ready` passes both of its required checks.
@@ -140,13 +138,16 @@ fn duplicate_claims_and_late_completions_are_fenced() {
             .code,
         "LEASE_HELD"
     );
-    call(&db, json!({"op":"recover","now":122000})).unwrap();
-    let second = call(&db, json!({"op":"claim","job_id":job,"now":122000})).unwrap();
-    assert_eq!(second["epoch"], 2);
+    // A sandbox attempt's lease is a two-hour backstop; recovery fails it once it lapses.
+    call(&db, json!({"op":"recover","now":8_200_000})).unwrap();
+    assert_eq!(
+        crate::storage::get(&db, "jobs", job).unwrap()["status"],
+        "failed"
+    );
     assert_eq!(
         call(
             &db,
-            json!({"op":"finish","job_id":job,"epoch":1,"now":122001,"result":{}})
+            json!({"op":"finish","job_id":job,"epoch":1,"now":8_200_001,"result":{}})
         )
         .unwrap_err()
         .code,
@@ -163,18 +164,20 @@ fn failed_mutations_rollback_the_event_log() {
 }
 fn captured(db: &NativeStore) {
     start(db);
-    let coding = call(db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
-    let registration = source_kit::finish_agent(db, &coding, 1000);
-    let capture = "capture:run-one:agent-1";
-    call(db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}))})).unwrap();
+    call(db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
+    run_kit::land(
+        db,
+        "job:run-one:agent-1",
+        1000,
+        json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/retry","commit":"cccccccccccccccccccccccccccccccccccccccc"},"tree":"dddddddddddddddddddddddddddddddddddddddd","paths":["src/retry.rs"],"diff":"diff --git a/src/retry.rs b/src/retry.rs\n","summary":"Bounded retry"}),
+    );
 }
 fn ready(db: &NativeStore) -> Value {
     captured(db);
     let eval = "evaluate:candidate-a";
     call(db, json!({"op":"claim","job_id":eval})).unwrap();
     let policy = crate::storage::repo(db).unwrap()["policy"].clone();
-    let evaluation = json!({"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"cccccccccccccccccccccccccccccccccccccccc"},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]});
+    let evaluation = json!({"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/retry","commit":"cccccccccccccccccccccccccccccccccccccccc"},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]});
     call(
         db,
         json!({"op":"finish","job_id":eval,"epoch":1,"result":evaluation}),
@@ -251,7 +254,8 @@ fn cancellation_revokes_running_attempts() {
     assert_eq!(
         call(
             &db,
-            json!({"op":"heartbeat","job_id":"job:run-one:agent-1","epoch":1})
+            json!({"op":"sandbox_progress","job_id":"job:run-one:agent-1","epoch":1,
+                "activity":{"phase":"running","last_activity_at":1000}})
         )
         .unwrap_err()
         .code,
@@ -329,29 +333,9 @@ fn expired_attempt_recovery_updates_execution_status() {
     start(&db);
     let job = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":job})).unwrap();
-    call(&db, json!({"op":"recover","now":122000})).unwrap();
-    call(&db, json!({"op":"claim","job_id":job,"now":122000})).unwrap();
-    call(&db, json!({"op":"recover","now":244000})).unwrap();
+    call(&db, json!({"op":"recover","now":8_200_000})).unwrap();
     let snapshot = call(&db, json!({"op":"snapshot"})).unwrap();
     assert_eq!(snapshot["executions"][0]["status"], "failed");
-}
-
-#[test]
-fn configured_model_and_transcript_remain_attached_to_execution() {
-    let db = repo();
-    start(&db);
-    let id = "job:run-one:agent-1";
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    assert_eq!(s["executions"][0]["model"], "mimo-v2.6-flash");
-    source_kit::finish_job(
-        &db,
-        id,
-        1000,
-        json!({"transcript":"c".repeat(64),"model":"mimo-v2.6-flash"}),
-    );
-    let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    assert_eq!(s["executions"][0]["transcript"], "c".repeat(64));
 }
 
 #[test]
@@ -478,20 +462,6 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
         call(&db, selection).unwrap()["status"],
         "publication_pending"
     );
-}
-
-#[test]
-fn cold_container_boot_has_time_to_start_before_runtime_lease_begins() {
-    let db = repo();
-    start(&db);
-    let id = "job:run-one:agent-1";
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(&db,json!({"op":"progress","job_id":id,"epoch":1,"now":100000,"progress":{"stage":"container_ready"}})).unwrap();
-    call(
-        &db,
-        json!({"op":"heartbeat","job_id":id,"epoch":1,"now":120000}),
-    )
-    .unwrap();
 }
 
 #[test]

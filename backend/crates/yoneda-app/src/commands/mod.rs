@@ -5,7 +5,6 @@ mod acceptance;
 mod archive;
 mod branches;
 mod capture_completion;
-mod capture_source;
 mod comparison;
 mod completion;
 pub(crate) mod conflicts;
@@ -24,13 +23,13 @@ mod history;
 mod leases;
 mod mcp;
 mod model_budgets;
-mod model_reservations;
 mod policy;
 mod publication;
 mod recovery;
 mod repository;
-mod resources;
 mod restarts;
+#[cfg(test)]
+pub(crate) mod run_kit;
 mod run_visibility;
 mod runs;
 mod sandbox;
@@ -38,11 +37,8 @@ mod sandbox_team;
 mod sandbox_usage;
 mod scheduling;
 mod sites;
-#[cfg(any(test, feature = "test-kit"))]
-pub mod source_kit;
 mod source_refresh;
 mod source_transport;
-mod transcripts;
 mod typed_context;
 pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     let now = c["now"].as_i64().unwrap_or_default();
@@ -82,12 +78,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "source_refresh_context" => source_refresh::context(db, &c, now),
         "source_refresh_paths" => source_refresh::paths(db, &c, now),
-        "source_read_context"
-        | "source_bind"
-        | "source_register_changeset"
-        | "source_registered"
-        | "source_resume_grant"
-        | "source_capture_context" => crate::source_binding::handle(db, &c, now),
         "select_comparison_candidate" => comparison::owner_select(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "candidate_paths" => crate::path_lists::page(db, &c),
@@ -131,9 +121,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "context_session_begin" | "context_session_get" | "context_session_end" => {
             context_sessions::handle(db, c, now)
         }
-        "claim" | "check_attempt" | "heartbeat" | "progress" | "fail" | "recover" => {
-            leases::handle(db, c, now)
-        }
+        "claim" | "fail" | "recover" => leases::handle(db, c, now),
         "context" | "publish_artifact" | "authorize_artifact" | "get_artifact"
         | "hint_complete" => mcp::handle(db, c, now),
         "outbox" | "outbox_sent" | "outbox_prune" | "events" => events::handle(db, c, now),
@@ -145,11 +133,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "accept" => acceptance::handle(db, c, now),
         "reject_candidate" | "publication_readback" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
-        "record_transcript" => transcripts::record(db, c, now),
         "record_execution_log" => execution_logs::record(db, c, now),
         "execution_logs" => execution_logs::read(db, c),
-        "reserve_request" => resources::reserve(db, c),
-        "settle_model_request" => model_reservations::settle(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown repository operation")),
     }
 }

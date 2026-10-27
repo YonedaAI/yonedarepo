@@ -2,7 +2,6 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
 mod agent;
-mod source;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "finish" => finish(db, &c, now),
@@ -69,11 +68,7 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     match j["kind"].as_str().unwrap_or_default() {
         "agent" => agent::complete(db, &j, result, now)?,
         "capture" => {
-            if j["payload"]["source_resolution"] == true {
-                super::conflicts::complete_resolver_capture(db, &j, result, now)?;
-            } else {
-                super::capture_completion::complete(db, &j, result, now)?;
-            }
+            super::capture_completion::complete(db, &j, result, now)?;
         }
         "evaluate" => {
             let candidate_id = string(&j["payload"]["candidate"], "id")?;
@@ -173,7 +168,6 @@ fn finish<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
                 run["status"] = json!("ready");
             }
             save(db, "runs", &rid, &run)?;
-            super::conflicts::resolver_evaluated(db, &candidate_id, validation.is_ok(), now)?;
         }
         _ => return Err(bad("Unknown execution job type")),
     }
@@ -225,5 +219,3 @@ pub(super) fn record_publication<S: SqlStore>(
     }
     Ok(())
 }
-#[cfg(test)]
-pub(super) mod source_tests;

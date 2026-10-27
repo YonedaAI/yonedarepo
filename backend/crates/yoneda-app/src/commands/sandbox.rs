@@ -136,7 +136,7 @@ pub(super) fn checkable_start(run: &Value, policy: &Value) -> Result<()> {
     if !policy["build"]["app"].is_null() {
         return Err(Error::new(
             "NOT_SUPPORTED",
-            "Sandbox runs cannot check app bundles yet: this project's policy builds an app. Remove the app from the policy or start the run without the sandbox",
+            "Sandbox runs cannot check app bundles yet: this project's policy builds an app. Remove the app from the policy to start runs",
         ));
     }
     Ok(())

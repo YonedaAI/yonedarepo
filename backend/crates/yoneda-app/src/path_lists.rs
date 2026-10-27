@@ -6,7 +6,7 @@ pub(crate) mod access;
 pub(crate) mod integrity;
 #[cfg(test)]
 mod tests;
-pub(crate) const MAX_PATHS: usize = 2 * yoneda_agents_core::source_workspace::MAX_FILES;
+pub(crate) const MAX_PATHS: usize = 2 * yoneda_agents_core::source_revision::MAX_FILES;
 fn paths(value: &Value) -> Result<Vec<String>> {
     let values = value.as_array().ok_or_else(|| bad("Missing path array"))?;
     if values.len() > MAX_PATHS {

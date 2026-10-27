@@ -17,7 +17,7 @@ fn capture_and_evaluation_keep_execution_graph_in_sync() {
         &db,
         json!({"op":"finish","job_id":job,"epoch":1,"result":{
             "id":"evaluation-a","candidate":"candidate-a",
-            "revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},
+            "revision":{"repository":"yoneda-dev/retry","commit":"c".repeat(40)},
             "policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],
             "evidence":"e".repeat(64),"checks":[
                 {"name":"build","status":"pass","detail":"compiled"},

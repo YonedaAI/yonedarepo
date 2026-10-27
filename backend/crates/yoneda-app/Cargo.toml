@@ -6,8 +6,6 @@ license.workspace = true
 
 [features]
 native = ["dep:rusqlite", "yoneda-store/native"]
-# The source test kit for crates that drive the ledger in their own tests.
-test-kit = ["native"]
 
 [dependencies]
 yoneda-core.workspace = true
@@ -23,4 +21,5 @@ base64 = "0.23.1"
 rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 
 [dev-dependencies]
+yoneda-store = { workspace = true, features = ["native"] }
 rusqlite = { version = "0.40", features = ["bundled"] }

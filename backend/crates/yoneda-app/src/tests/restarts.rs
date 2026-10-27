@@ -56,8 +56,6 @@ fn restart_run_preserves_old_records_and_uses_current_canonical_source_and_polic
         {"provider":"zai","model":"flash","max_requests":40,"max_output_tokens":512,"max_execution_ms":60000,"spend_limit_microusd":null,"pricing":null}]);
     call(&db, original.clone()).unwrap();
     call(&db, json!({"op":"claim","job_id":"job:original:agent-1"})).unwrap();
-    call(&db,json!({"op":"reserve_request","kind":"model","job_id":"job:original:agent-1","epoch":1,"input_bytes":10,"output_tokens":512})).unwrap();
-    call(&db,json!({"op":"record_transcript","job_id":"job:original:agent-1","epoch":1,"digest":"e".repeat(64)})).unwrap();
     call(&db, json!({"op":"cancel_run","run_id":"original"})).unwrap();
     let before = call(&db, json!({"op":"snapshot"})).unwrap();
     // Fixture represents an independently verified canonical publication after the old run.
