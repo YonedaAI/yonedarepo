@@ -6,6 +6,7 @@ import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import {
+  agentEgress,
   recordSandboxCandidate,
   type SandboxAttempt,
   sandboxName,
@@ -69,6 +70,8 @@ it('claims once, starts one sandbox and records the pushed commit as the candida
     owner,
     base: { repository: base.repository, commit: base.commit },
   });
+  // Its egress may move this branch and nothing else.
+  expect(agentEgress(attempt).ref).toBe('refs/heads/attempts/sandbox-run/1');
   expect(attempt.prompt).toContain('Add function add(a,b)');
   expect(attempt.prompt).toContain('node --test passes');
   const job = await ledger(bindings, repo, { op: 'job_status', id: jobId });
