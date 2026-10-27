@@ -112,3 +112,20 @@ it('blocks on a main moved elsewhere and resynchronizes from the platform head, 
   expect(resync.status).toBe(200);
   expect(await resync.json()).toMatchObject({ status: 'ready', head_commit: other.commit, published_commit: other.commit });
 });
+
+it('binds the agent token to its check on a repository created before policies bound posters', async () => {
+  const f = await fixture();
+  const legacy = { required_checks: ['yoneda-checks'], approvals: 1 };
+  const reset = await bindings.SELF.fetch(`https://yoneda/api/v1/repos/${f.repo}/policy`, {
+    method: 'PUT', headers: { cookie: f.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ policy: legacy }) });
+  expect(reset.status).toBe(200);
+  const candidate = await checkedCandidate(f, 'first', 'export const app = 1;\n');
+  // The agent token alone is refused; the owner's accept binds it, then records the check.
+  await expect(f.platform.call('POST', `/commits/${candidate.commit}/checks`, { name: 'yoneda-checks', status: 'pass' }))
+    .rejects.toMatchObject({ status: 403 });
+  await accept(f, candidate.id, 'legacy-choice');
+  const status = await f.owned('');
+  expect(status.body.policy).toEqual({ ...legacy, check_posters: { 'yoneda-checks': ['token:yoneda-agents'] } });
+  const gated = await f.owned(`/commits/${candidate.commit}`);
+  expect(gated.body.gates.missing_checks).toEqual([]);
+});

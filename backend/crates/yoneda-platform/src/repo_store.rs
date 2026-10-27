@@ -176,7 +176,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_record_commit" => record::record(db, c, principal, &settings),
         "repo_begin_commit" => adopt::begin(db, c, principal, &settings),
         "repo_adopt_commit" => adopt::adopt(db, c, &settings),
-        "repo_check" => record::check(db, c, principal, &settings),
+        "repo_check" => record::check(db, c, &actor, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_check_claim" => checks::claim(db, c),
         "repo_check_run" => checks::run_op(db, c),

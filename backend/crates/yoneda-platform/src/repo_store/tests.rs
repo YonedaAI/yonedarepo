@@ -34,7 +34,7 @@ impl Harness {
             shard: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
         };
-        h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1}})).unwrap();
+        h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1,"check_posters":{"unit":["owner","token:ci"]}}})).unwrap();
         for (name, scopes) in [
             ("agent", json!(["read", "write"])),
             ("ci", json!(["read", "check"])),
@@ -1576,6 +1576,7 @@ mod branches;
 mod break_glass;
 mod change_records;
 mod changesets;
+mod check_posters;
 mod land_cas;
 mod land_shapes;
 mod shards;
