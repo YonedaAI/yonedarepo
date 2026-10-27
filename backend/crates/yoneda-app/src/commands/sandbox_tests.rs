@@ -48,8 +48,8 @@ fn a_compare_run_takes_one_sandbox_per_agent() {
     let run = call(&db, start(two(), json!({}))).unwrap();
     assert_eq!(run["runtime"], TRANSPORT);
     assert_eq!(run["mode"], "compare");
-    // Evaluation and readers keep the run's lazy-source transport.
-    assert_eq!(run["workspace_transport"], "api-source-v1");
+    // A sandbox run carries its own transport tag, not the lazy-source one.
+    assert_eq!(run["workspace_transport"], TRANSPORT);
     assert!(
         run["comparison"].is_null(),
         "no reviewer: the owner chooses"
@@ -219,7 +219,7 @@ fn the_pushed_commit_becomes_the_candidate_and_is_evaluated_exactly() {
         evaluator["payload"]["candidate"]["revision"]["commit"],
         "c".repeat(40)
     );
-    assert_eq!(evaluator["payload"]["workspace_transport"], "api-source-v1");
+    assert_eq!(evaluator["payload"]["workspace_transport"], TRANSPORT);
     let done = get(&db, "jobs", "job:run-s:agent-1").unwrap();
     assert_eq!(done["status"], "done");
     assert!(
@@ -469,4 +469,20 @@ fn a_cli_that_cannot_drive_the_provider_is_refused_before_the_run_starts() {
     );
     assert_ne!(refused("zai", "glm-5.3-flash", "aider"), "SANDBOX_HARNESS");
     assert!(get(&db, "runs", "run-s").is_err(), "nothing was created");
+}
+
+#[test]
+fn a_sandbox_run_started_under_the_old_tag_still_runs_and_is_checked() {
+    let db = repository();
+    call(&db, start(glm(), json!({}))).unwrap();
+    // What a sandbox run recorded before it had its own tag.
+    let mut run = get(&db, "runs", "run-s").unwrap();
+    run["workspace_transport"] = json!("api-source-v1");
+    save(&db, "runs", "run-s", &run).unwrap();
+    let job = call(&db, json!({"op":"claim","job_id":"job:run-s:agent-1"})).unwrap();
+    assert_eq!(job["sandbox"], true);
+    assert!(platform_source(&run["workspace_transport"]));
+    let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
+    claimed_check(&db, &mut evaluator, 1000).unwrap();
+    assert_eq!(evaluator["sandbox_check"], true);
 }

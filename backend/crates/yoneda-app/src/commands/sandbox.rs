@@ -19,6 +19,12 @@ pub(crate) const TRANSPORT: &str = "sandbox-cli-v1";
 const LEASE_MS: i64 = 2 * 3_600_000 + 15 * 60_000;
 const SUMMARY_LIMIT: usize = 200;
 
+/// Whether a run (or job payload) transport works on platform source: lazy API source, or a
+/// sandbox run. Sandbox runs started before their own tag carry `api-source-v1` and `runtime`.
+pub(crate) fn platform_source(transport: &Value) -> bool {
+    transport == "api-source-v1" || transport == TRANSPORT
+}
+
 /// Whether `start_run` asks for a sandbox attempt (set only by the authenticated adapter).
 pub(super) fn requested(c: &Value) -> bool {
     c["workspace_transport"] == TRANSPORT

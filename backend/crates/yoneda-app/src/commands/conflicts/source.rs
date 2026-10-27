@@ -27,7 +27,7 @@ pub(super) fn hydrate<S: SqlStore>(db: &S, record: &Value) -> Result<Value> {
 }
 pub(super) fn compact<S: SqlStore>(db: &S, record: &mut Value) -> Result<()> {
     let run = get(db, "runs", &string(&record["candidate"], "run_id")?)?;
-    if run["workspace_transport"] != "api-source-v1" {
+    if !crate::commands::sandbox::platform_source(&run["workspace_transport"]) {
         return Ok(());
     }
     for key in ["declared_paths", "conflict_paths", "merged_paths"] {

@@ -105,15 +105,19 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if general {
                 run["agents"] = c["agents"].clone();
             }
-            // Every attempt works on lazy API source; the adapter approves its frozen base.
-            // A sandbox attempt keeps that run transport for evaluation and readers.
+            // Every attempt works on platform source; the adapter approves its frozen base.
+            // A sandbox run carries its own tag (runs before it carried api-source-v1).
             let sandbox = super::sandbox::requested(&c);
             if c["workspace_transport"] != "api-source-v1" && !sandbox {
                 return Err(bad(
                     "Runs use the approved api-source-v1 workspace transport",
                 ));
             }
-            run["workspace_transport"] = json!("api-source-v1");
+            run["workspace_transport"] = json!(if sandbox {
+                super::sandbox::TRANSPORT
+            } else {
+                "api-source-v1"
+            });
             if sandbox && collaborate {
                 super::sandbox_team::freeze(&c, general, team.as_ref(), &delegation, &mut run)?;
             } else if sandbox {
