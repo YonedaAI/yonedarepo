@@ -54,6 +54,13 @@ export async function testBundle(env: Env, scope: Scope, expected: string) {
   const approved = scope.job.payload?.policy?.build?.test_bundle;
   if (approved?.digest !== expected)
     throw new Error('Test bundle differs from frozen owner policy');
+  const { digest, files } = await approvedBundle(env, expected);
+  return { digest, files };
+}
+
+/** The digest-addressed bundle, read back and checked against its digest. */
+export async function approvedBundle(env: Env, expected: string) {
+  if (!/^[a-f0-9]{64}$/.test(expected)) throw new Error('Invalid test bundle digest');
   const object = await env.OBJECTS.get(`sha256/${expected}`);
   if (!object || object.size > 100 * 1024 * 1024)
     throw new Error('Approved test bundle is missing or too large');
@@ -68,7 +75,7 @@ export async function testBundle(env: Env, scope: Scope, expected: string) {
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
   if (digest !== expected) throw new Error('Approved test bundle digest mismatch');
-  return { digest, files: canonical.files as unknown as Json };
+  return { digest, files: canonical.files as unknown as Json, encoded: canonical.encoded };
 }
 
 function compareBytes(left: Uint8Array, right: Uint8Array) {

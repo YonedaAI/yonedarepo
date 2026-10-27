@@ -60,6 +60,7 @@ class FakeCheckSandbox implements CheckPort {
   error: string | null = null;
   deferred = 0;
   deferFails = false;
+  installedDigest: string | null = null;
   onTick?: (sandbox: FakeCheckSandbox) => void;
 
   private guard(name: string) {
@@ -76,6 +77,10 @@ class FakeCheckSandbox implements CheckPort {
   revision = async () => {
     this.guard('revision');
     return this.revisionValue;
+  };
+  installBundle = async (digest: string) => {
+    this.guard('bundle');
+    return this.installedDigest ?? digest;
   };
   run = async (spec: CommandSpec) => {
     this.guard(`run:${spec.name}`);
@@ -135,6 +140,32 @@ describe('check sandbox steps', () => {
     });
     expect(sandbox.failed).toBeNull();
     expect(sandbox.destroyed).toBe(true);
+  });
+
+  it('installs the immutable test bundle before setup and reports it as the evaluator does', async () => {
+    const sandbox = new FakeCheckSandbox();
+    const digest = 'b'.repeat(64);
+    const bundled = check({
+      setup: [{ name: 'deps', argv: ['npm', 'ci'], timeout_seconds: 60 }],
+      test_bundle: { digest, protected_changes: ['tests'] },
+    });
+    await drive(sandbox, bundled);
+    expect(sandbox.calls).toEqual(['prepare', 'clone', 'revision', 'bundle', 'run:deps', 'run:math', 'run:test', 'report']);
+    // A candidate that changed a protected path is reported so the ledger rejects it.
+    expect(sandbox.reported).toMatchObject({
+      test_bundle_digest: digest,
+      protected_changes: ['tests'],
+      test_bundle_policy_digest: digest,
+    });
+  });
+
+  it('fails closed when the installed bundle is not the approved one', async () => {
+    const sandbox = new FakeCheckSandbox();
+    sandbox.installedDigest = 'e'.repeat(64);
+    await drive(sandbox, check({ test_bundle: { digest: 'b'.repeat(64), protected_changes: [] } }));
+    expect(sandbox.failed).toMatch(/^Installed test bundle e+ differs from the approved b+/);
+    expect(sandbox.calls).not.toContain('run:math');
+    expect(sandbox.reported).toBeNull();
   });
 
   it('reports a failing check with its exit code and output, and runs the rest', async () => {
