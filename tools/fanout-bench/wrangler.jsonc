@@ -9,5 +9,8 @@
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": true,
   "preview_urls": false,
-  "placement": { "mode": "targeted", "region": "aws:us-east-1" }
+  "placement": { "mode": "targeted", "region": "aws:us-east-1" },
+  // Webhook receiver boxes (worker.js, POST /hooks/<box>), one object per box.
+  "durable_objects": { "bindings": [{ "name": "HOOK_BOXES", "class_name": "HookBox" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HookBox"] }]
 }
