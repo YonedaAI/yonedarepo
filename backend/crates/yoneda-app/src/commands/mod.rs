@@ -45,6 +45,7 @@ mod run_visibility;
 mod runs;
 mod sandbox;
 mod sandbox_team;
+mod sandbox_usage;
 mod scheduling;
 mod sites;
 mod source_capture_retry;
@@ -179,6 +180,8 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         "why" | "graph" | "observe" | "decision" => history::handle(db, c, now),
         "finish" | "verify_finish" => completion::handle(db, c, now),
         "sandbox_progress" | "sandbox_finish" | "sandbox_land" => sandbox::handle(db, c, now),
+        "sandbox_budget" => sandbox_usage::budget(db, &c, now),
+        "sandbox_usage" => sandbox_usage::record(db, &c, now),
         "accept" => acceptance::handle(db, c, now),
         "reject_candidate" | "publication_readback" => publication::handle(db, &c, now),
         "register_site" => sites::register(db, c, now),
