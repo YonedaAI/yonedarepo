@@ -14,6 +14,7 @@ import { HeadHolder, refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
+import { RefsHolder } from './repo-snapshots';
 import type { Env } from './types';
 
 const SETTLED_KEPT = 10_000;
@@ -228,6 +229,7 @@ export class LandCombiner extends DurableObject<Env> {
   }
   #projection = new ProjectionRunner(this.env);
   #head = new HeadHolder(this.env);
+  #refs = new RefsHolder(this.env);
 
   async wait(repo: string, ref: string, ticket: number, timeoutMs: number) {
     await this.ctx.storage.put('target', { repo, ref });
@@ -249,9 +251,17 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#head.access(repo);
   }
 
-  /** Head role: the head is stale (a landing, projection or access change). */
-  refresh(repo: string) {
-    this.#head.refresh(repo);
+  /** Head role: every ref, read from the authority at most `REFS_MS` ago and at least at
+   * `minVersion` (repo-snapshots.ts). */
+  refs(repo: string, minVersion: number) {
+    return this.#refs.refs(repo, minVersion);
+  }
+
+  /** Head role: the head is stale (a landing, projection or access change; after an access
+   * change it answers once the held head is dropped and reloaded). */
+  refresh(repo: string, access = false) {
+    this.#refs.forget();
+    return this.#head.refresh(repo, access);
   }
 
   /** Projector role: waits until this repository's changesets are projected. */

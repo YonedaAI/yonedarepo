@@ -6,7 +6,7 @@
 // reader that passes the version it landed at waits until the head reaches it.
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
-import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
+import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -25,7 +25,7 @@ const loading = new Map<string, Promise<Json>>();
 type Holder = {
   head(repo: string, minVersion: number, since?: number): Promise<Json>;
   access(repo: string): Promise<Json>;
-  refresh(repo: string): Promise<void>;
+  refresh(repo: string, access?: boolean): Promise<void>;
 };
 
 function holder(env: Env, repo: string): Holder | null {
@@ -153,15 +153,19 @@ export async function publishedHead(
 /** After this isolate landed at `version`, its reads and begins need at least that
  * version; without one, its copy of the head is dropped. */
 export function forgetHead(repo: string, version?: number) {
+  noteWrite(repo);
   if (version === undefined) heads.delete(repo);
   else floors.set(repo, Math.max(version, floors.get(repo) ?? 0));
 }
 
-/** Marks the published head stale after a landing, projection or access change. */
-export async function refreshHead(env: Env, repo: string) {
+/** Marks the published head stale after a landing, projection or access change. After an
+ * access change (`access`) it returns once the holder dropped the head it held, so no
+ * reader is admitted by the access snapshot that change replaced. */
+export async function refreshHead(env: Env, repo: string, access = false) {
+  noteWrite(repo);
   heads.delete(repo);
   await holder(env, repo)
-    ?.refresh(repo)
+    ?.refresh(repo, access)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
 }
 
@@ -222,6 +226,8 @@ export class HeadHolder {
   #head: Json | null = null;
   #stale = true;
   #loading: Promise<Json> | null = null;
+  /** Bumped by an access change: loads started before it never set the head. */
+  #generation = 0;
 
   constructor(private readonly env: Env) {}
 
@@ -246,30 +252,46 @@ export class HeadHolder {
     return accessOf(this.#head ?? (await this.#load(repo, 0)));
   }
 
-  refresh(repo: string) {
+  async refresh(repo: string, access = false) {
     this.#stale = true;
+    if (access) {
+      // The held head's access snapshot may admit what the change refused: drop it, and
+      // let no earlier load set it again.
+      this.#generation++;
+      this.#head = null;
+      this.#loading = null;
+    }
     // Loads in the background; readers that need it sooner wait for the same load.
-    void this.#load(repo, 0).catch(() => {});
+    const load = this.#load(repo, 0);
+    if (access) await load;
+    else void load.catch(() => {});
   }
 
   async #load(repo: string, minVersion: number): Promise<Json> {
     for (let attempt = 0; attempt < 2; attempt++) {
       // A load already running may have started before the version this caller needs.
-      this.#loading ??= (async () => {
-        this.#stale = false;
-        const head = await fetchHead(this.env, repo).catch((e) => {
-          // A deleted repository's head is never served again.
-          if (e?.code === 'GONE') this.#head = null;
-          throw e;
-        });
-        this.#head = head;
-        return head;
-      })().finally(() => {
-        this.#loading = null;
-      });
+      this.#loading ??= this.#fetch(repo);
       const head = await this.#loading;
       if (head.version >= minVersion) return head;
     }
     return this.#head as Json;
+  }
+
+  #fetch(repo: string): Promise<Json> {
+    const generation = this.#generation;
+    const current = () => generation === this.#generation;
+    const loading: Promise<Json> = (async () => {
+      this.#stale = false;
+      const head = await fetchHead(this.env, repo).catch((e) => {
+        // A deleted repository's head is never served again.
+        if (e?.code === 'GONE' && current()) this.#head = null;
+        throw e;
+      });
+      if (current()) this.#head = head;
+      return head;
+    })().finally(() => {
+      if (this.#loading === loading) this.#loading = null;
+    });
+    return loading;
   }
 }

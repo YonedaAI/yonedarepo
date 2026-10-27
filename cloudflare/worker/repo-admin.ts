@@ -50,7 +50,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
   ]);
   forgetHead(repo);
-  await refreshHead(env, repo);
+  await refreshHead(env, repo, true);
   await env.PLATFORM_QUEUE.send({
     v: 1,
     repo_id: repo,
