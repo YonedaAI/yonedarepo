@@ -5,7 +5,8 @@
 //! in the pack (and of the right kind) or held by the repository: trees the walk needs are
 //! read through the adapter (which proves they exist), and files outside the pack are
 //! confirmed by the adapter one by one. The same diff yields each commit's path touches.
-use crate::platform_objects::entry_type;
+use crate::platform_objects::{entry_type, new_trees};
+use crate::secret_scan::{SecretAllow, scan};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
@@ -30,6 +31,9 @@ pub struct Verifier {
     present: HashSet<ObjectId>,
     /// Recorded commits outside the pack that new commits name as parents: their trees.
     external: HashMap<ObjectId, ObjectId>,
+    /// The repository policy's accepted false positives, and the (path, blob) pairs scanned.
+    pub secret_allow: Vec<SecretAllow>,
+    scanned: HashSet<(String, ObjectId)>,
 }
 
 /// A verified new commit, ready to record.
@@ -136,6 +140,12 @@ impl Verifier {
                     continue;
                 }
                 if claim(pack, &mut assigned, &mut objects, blob, ObjectKind::Blob)? {
+                    // Every file the push carries is scanned at each path it lands on.
+                    if self.scanned.insert((change.path.clone(), blob)) {
+                        let content = pack.content(&blob)?;
+                        scan(&change.path, &content, &self.secret_allow)
+                            .map_err(|e| secret_found(&change.path, e))?;
+                    }
                     continue;
                 }
                 // Equal to another parent's file at this path: held with that parent.
@@ -163,6 +173,17 @@ impl Verifier {
         }
         Ok(Step::Done(verified))
     }
+}
+
+/// `SECRET_DETECTED` naming only the path and line (the scanner's message names the rule
+/// and how to allow it, never the secret).
+fn secret_found(path: &str, e: Error) -> Error {
+    let line = e
+        .message
+        .strip_prefix(&format!("{path} line "))
+        .and_then(|rest| rest.split(' ').next())
+        .unwrap_or("?");
+    Error::new(&e.code, format!("secret detected in {path}:{line}"))
 }
 
 fn invalid_object(id: &ObjectId) -> Error {
@@ -246,34 +267,6 @@ fn new_commits(
         }
     }
     Ok((order, parsed))
-}
-
-/// The trees on the paths to `changes` in `root` (the directories a commit rewrote).
-fn new_trees(
-    root: ObjectId,
-    changes: &[TreeChange],
-    trees: &HashMap<ObjectId, Vec<TreeEntry>>,
-) -> Vec<ObjectId> {
-    let mut found = Vec::new();
-    let mut seen = HashSet::new();
-    if !changes.is_empty() && seen.insert(root) {
-        found.push(root);
-    }
-    for change in changes {
-        let mut at = root;
-        let parts: Vec<&str> = change.path.split('/').collect();
-        for dir in &parts[..parts.len() - 1] {
-            let next = trees
-                .get(&at)
-                .and_then(|entries| entries.iter().find(|e| e.name == *dir && e.mode.is_tree()));
-            let Some(entry) = next else { break };
-            at = entry.id;
-            if seen.insert(at) {
-                found.push(at);
-            }
-        }
-    }
-    found
 }
 
 fn touch(change: &TreeChange) -> PathTouch {

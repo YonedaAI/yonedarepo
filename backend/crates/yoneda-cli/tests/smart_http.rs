@@ -199,6 +199,47 @@ fn pack_missing_a_file_moves_nothing(w: &World) -> TestResult {
     check(shown.is_err(), &format!("{base}..{tip} was not recorded"))
 }
 
+/// A pushed file holding a credential refuses the whole push by path and line, without
+/// echoing it; no ref moves. The fake token is assembled at runtime.
+fn pushed_secret_is_refused(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("secret", &token)?;
+    let dir = w.clone(&c, &repo, "w")?;
+    let fake = ["gh", "p_"].concat()
+        + &"aB3dE5gH7jK9mN1pQ"
+            .chars()
+            .cycle()
+            .take(36)
+            .collect::<String>();
+    c.commit(&dir, "clean", &[("ok.txt", "fine\n")])?;
+    c.commit(
+        &dir,
+        "leak",
+        &[(
+            "src/env.ts",
+            &format!("const a = 1;\nconst t = \"{fake}\";\n"),
+        )],
+    )?;
+    let before = (w.refs(&repo)?, w.platform.main(&repo)?);
+    for refs in [
+        &["origin", "main"][..],
+        &["origin", "HEAD:refs/heads/leak", "HEAD:refs/heads/other"],
+    ] {
+        let out = push(&c, &dir, refs)?;
+        let said = text(&out);
+        check(
+            !out.status.success()
+                && said.contains("secret detected in src/env.ts:2")
+                && !said.contains(&fake),
+            &said,
+        )?;
+    }
+    check(
+        (w.refs(&repo)?, w.platform.main(&repo)?) == before,
+        "no ref and no log entry moved",
+    )
+}
+
 fn clone_push_branch_and_main(w: &World) -> TestResult {
     let (repo, token) = w.platform.repo(&[("a.txt", "a\n"), ("f.txt", LINES)])?;
     let c = w.client("basics", &token)?;
@@ -623,5 +664,6 @@ fn stock_git_over_https() -> TestResult {
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     cut_off_push_moves_nothing(&w).map_err(|e| format!("cut off: {e}"))?;
     pack_missing_a_file_moves_nothing(&w).map_err(|e| format!("missing: {e}"))?;
+    pushed_secret_is_refused(&w).map_err(|e| format!("secret: {e}"))?;
     hundred_files_push_and_fresh_clone(&w).map_err(|e| format!("hundred: {e}"))
 }

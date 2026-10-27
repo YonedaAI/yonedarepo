@@ -24,7 +24,11 @@ pub fn access(actor: &Actor, c: &Value, settings: &Settings) -> Result<Value> {
         _ => return Err(bad("service must be git-upload-pack or git-receive-pack")),
     }
     whole_repository(actor)?;
-    Ok(json!({ "object_store": settings.object_store, "principal": actor.principal }))
+    // A push's files are scanned for credentials, excusing what the owner allowed.
+    Ok(json!({
+        "object_store": settings.object_store, "principal": actor.principal,
+        "secret_allow": settings.policy.secret_allow,
+    }))
 }
 
 pub fn whole_repository(actor: &Actor) -> Result<()> {

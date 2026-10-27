@@ -69,7 +69,7 @@ export async function gitHttp(req: Request, env: Env): Promise<Response> {
     const body = requestBody(req);
     return service === 'git-upload-pack'
       ? await uploadPack(ctx, objects, body)
-      : await receivePack(ctx, objects, body);
+      : await receivePack(ctx, objects, body, access.secret_allow ?? []);
   } catch (e: any) {
     const code = e instanceof ApiError ? e.code : (e?.code ?? 'ERROR');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);

@@ -4,7 +4,7 @@
 //! introduced are sent, the whole tree only for a root. Trees the walk reads are kept and
 //! re-encoded for the pack; blobs and commits come from the adapter, checked against their
 //! ids. The pack is undeltified and written entry by entry, so it streams out.
-use crate::platform_objects::supplied_tree;
+use crate::platform_objects::{new_trees, supplied_tree};
 use crate::storage::{bad, string};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -81,18 +81,10 @@ impl UploadSession {
                     if sent.base != Some(sent.tree) {
                         add(sent.tree, ObjectKind::Tree, &mut objects);
                     }
+                    for tree in new_trees(sent.tree, &changes, &self.trees) {
+                        add(tree, ObjectKind::Tree, &mut objects);
+                    }
                     for change in &changes {
-                        let mut at = sent.tree;
-                        let parts: Vec<&str> = change.path.split('/').collect();
-                        for dir in &parts[..parts.len() - 1] {
-                            let Some(entry) = self.trees.get(&at).and_then(|entries| {
-                                entries.iter().find(|e| e.name == *dir && e.mode.is_tree())
-                            }) else {
-                                break;
-                            };
-                            at = entry.id;
-                            add(at, ObjectKind::Tree, &mut objects);
-                        }
                         if let Some((mode, id)) = change.new
                             && mode != FileMode::Gitlink
                         {

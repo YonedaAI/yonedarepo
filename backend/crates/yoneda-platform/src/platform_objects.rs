@@ -3,7 +3,7 @@
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use yoneda_core::{Error, Result, git_object::*};
 
 pub fn mode(kind: &str) -> Result<FileMode> {
@@ -108,4 +108,32 @@ pub fn object_json(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value>
         }
         _ => json!({"id": id, "kind": kind.name(), "data_b64": STANDARD.encode(data)}),
     })
+}
+
+/// The trees on the paths to `changes` in `root` (the directories a commit rewrote).
+pub fn new_trees(
+    root: ObjectId,
+    changes: &[TreeChange],
+    trees: &HashMap<ObjectId, Vec<TreeEntry>>,
+) -> Vec<ObjectId> {
+    let mut found = Vec::new();
+    let mut seen = HashSet::new();
+    if !changes.is_empty() && seen.insert(root) {
+        found.push(root);
+    }
+    for change in changes {
+        let mut at = root;
+        let parts: Vec<&str> = change.path.split('/').collect();
+        for dir in &parts[..parts.len() - 1] {
+            let next = trees
+                .get(&at)
+                .and_then(|entries| entries.iter().find(|e| e.name == *dir && e.mode.is_tree()));
+            let Some(entry) = next else { break };
+            at = entry.id;
+            if seen.insert(at) {
+                found.push(at);
+            }
+        }
+    }
+    found
 }
