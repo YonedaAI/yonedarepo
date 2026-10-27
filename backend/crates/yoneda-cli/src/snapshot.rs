@@ -126,7 +126,7 @@ async fn request(
         let mut after = 0u64;
         loop {
             let page = api
-                .post(
+                .post_read(
                     "/objects",
                     &json!({ "objects": ids, "after": after, "raw": raw }),
                 )
