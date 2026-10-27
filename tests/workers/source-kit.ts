@@ -6,12 +6,11 @@ import type { Env, Json } from '../../cloudflare/worker/types';
 const approve = (run: Json, base: Json) =>
   run.workspace_transport !== undefined
     ? run
-    : { ...run, workspace_transport: 'api-source-v1', _source_transport_approved: true,
-        _source_base: { repository: base.repository, commit: base.commit, tree: 'b'.repeat(40) } };
+    : { ...run, ...sandboxStart({ repository: base.repository, commit: base.commit, tree: 'b'.repeat(40) }) };
 
 /**
- * What the Worker adds to a run approval after reading the platform: lazy source at the frozen
- * base (the working branch head, else the published commit).
+ * What the Worker adds to a run approval after reading the platform: a sandbox run at the
+ * frozen base (the working branch head, else the published commit).
  */
 export async function approvedStart(env: Env, repo: string, command: Json): Promise<Json> {
   if (command.op !== 'start_run') return command;

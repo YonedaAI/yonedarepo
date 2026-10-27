@@ -2,8 +2,6 @@ use super::*;
 use crate::native::NativeStore;
 use serde_json::json;
 
-#[path = "tests/attempt_progress.rs"]
-mod attempt_progress;
 #[path = "tests/comparison_branch_gate.rs"]
 mod comparison_branch_gate;
 #[path = "tests/context_intent.rs"]
@@ -256,7 +254,8 @@ fn cancellation_revokes_running_attempts() {
     assert_eq!(
         call(
             &db,
-            json!({"op":"heartbeat","job_id":"job:run-one:agent-1","epoch":1})
+            json!({"op":"sandbox_progress","job_id":"job:run-one:agent-1","epoch":1,
+                "activity":{"phase":"running","last_activity_at":1000}})
         )
         .unwrap_err()
         .code,
@@ -463,20 +462,6 @@ fn policy_upgrade_preserves_old_evidence_and_requires_fresh_checks() {
         call(&db, selection).unwrap()["status"],
         "publication_pending"
     );
-}
-
-#[test]
-fn cold_container_boot_has_time_to_start_before_runtime_lease_begins() {
-    let db = repo();
-    start(&db);
-    let id = "job:run-one:agent-1";
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    call(&db,json!({"op":"progress","job_id":id,"epoch":1,"now":100000,"progress":{"stage":"container_ready"}})).unwrap();
-    call(
-        &db,
-        json!({"op":"heartbeat","job_id":id,"epoch":1,"now":120000}),
-    )
-    .unwrap();
 }
 
 #[test]

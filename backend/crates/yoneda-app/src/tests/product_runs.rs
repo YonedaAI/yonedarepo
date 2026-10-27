@@ -6,25 +6,6 @@ fn product_policy() -> Value {
 fn run_command() -> Value {
     json!({"op":"start_run","id":"site","intent":"Build a portfolio website","criteria":["Works on a phone"],"agents":[{"provider":"mimo","model":"mimo-v2-flash","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","strategy":"accessible"}],"context":[]})
 }
-#[test]
-fn failed_harness_retains_scoped_transcript_and_rejects_late_replacement() {
-    let db = repo_with_policy(product_policy());
-    call(&db, run_command()).unwrap();
-    call(&db, json!({"op":"claim","job_id":"job:site:agent-1"})).unwrap();
-    let record = json!({"op":"record_transcript","job_id":"job:site:agent-1","epoch":1,"digest":"e".repeat(64)});
-    call(&db, record.clone()).unwrap();
-    call(&db,json!({"op":"fail","job_id":"job:site:agent-1","epoch":1,"error":"Provider account has no balance","retryable":false})).unwrap();
-    let s = call(&db, json!({"op":"snapshot"})).unwrap();
-    let e = s["executions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|e| e["id"] == "site:agent-1")
-        .unwrap();
-    assert_eq!(e["status"], "failed");
-    assert_eq!(e["transcript"], "e".repeat(64));
-    assert_eq!(call(&db, record).unwrap_err().code, "FENCED");
-}
 fn context(id: &str, kind: &str, statement: &str) -> Value {
     json!({"op":"context_publish","record":{"id":id,"kind":kind,"statement":statement,"purpose":"Explain the approach","intent_id":"intent:site","links":[]}})
 }
@@ -231,46 +212,6 @@ fn repository_commands_enforce_the_trusted_workspace_scope() {
         call(&db, json!({"op":"snapshot","_workspace":"alice"})).unwrap()["runs"],
         json!([])
     );
-}
-
-#[test]
-fn attempt_request_limits_are_durable_fenced_and_capability_specific() {
-    let db = repo_with_policy(product_policy());
-    call(&db, run_command()).unwrap();
-    // Historical runs without explicit budget configuration retain their original limits.
-    db.query(
-        "UPDATE runs SET payload=json_remove(payload,'$.model_budgets','$.request_limits')",
-        &[],
-    )
-    .unwrap();
-    let id = "job:site:agent-1";
-    call(&db, json!({"op":"claim","job_id":id})).unwrap();
-    for n in 1..=24 {
-        let value = call(
-            &db,
-            json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"model"}),
-        )
-        .unwrap();
-        assert_eq!(value["number"], n);
-    }
-    assert_eq!(
-        call(
-            &db.clone(),
-            json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"model"})
-        )
-        .unwrap_err()
-        .code,
-        "RESOURCE_LIMIT"
-    );
-    assert!(
-        call(
-            &db,
-            json!({"op":"reserve_request","job_id":id,"epoch":2,"kind":"dependency","bytes":1024})
-        )
-        .is_err()
-    );
-    call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":16*1024*1024})).unwrap();
-    assert!(call(&db,json!({"op":"reserve_request","job_id":id,"epoch":1,"kind":"dependency","bytes":129*1024*1024})).is_err());
 }
 
 #[test]
