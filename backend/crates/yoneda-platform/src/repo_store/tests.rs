@@ -1583,6 +1583,7 @@ mod break_glass;
 mod change_records;
 mod changesets;
 mod check_posters;
+mod check_release;
 mod checkpoints;
 mod hooks;
 mod land_cas;

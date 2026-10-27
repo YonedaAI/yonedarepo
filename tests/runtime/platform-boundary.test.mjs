@@ -15,6 +15,8 @@ const neutral = new Set([
   './background',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
+  // Container SDK errors proving no instance was allocated (capacity); imports nothing.
+  './container-capacity',
   // HMAC-SHA256 helpers (session cookies, webhook signatures); imports nothing.
   './hmac',
   // The account authority's command call (accounts, personal tokens); imports only types.
