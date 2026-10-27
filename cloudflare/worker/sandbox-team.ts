@@ -11,7 +11,7 @@ import type { SandboxAttempt } from './sandbox-attempt';
 import type { SandboxHost } from './sandbox-check';
 import { agentCli } from './sandbox-cli';
 import type { LandOutcome, SandboxPort } from './sandbox-driver';
-import { fetchScript, repositoryDirectory, trustEnv } from './sandbox-shell';
+import { mergeScript, repositoryDirectory, trustEnv } from './sandbox-shell';
 import { platformSource } from './source-objects';
 import { ledger, sha } from './storage';
 import type { Env, Json, Scope } from './types';
@@ -26,10 +26,15 @@ export async function runSegment(runId: string): Promise<string> {
 }
 export const teamBranch = async (runId: string) => `attempts/${await runSegment(runId)}/team`;
 
-/** What a member is told after its first conflict. */
-export const resumePrompt = (branch: string, paths: string[]) =>
-  `Your change conflicts with the team branch on ${paths.join(', ')}. Merge origin/${branch}, ` +
-  'resolve the conflicts, and stop. Your work is committed, pushed and landed for you.';
+/** What a member is told after its first conflict, once the sandbox started the merge. */
+export const resumePrompt = (branch: string, paths: string[], clean: boolean) =>
+  (clean
+    ? `Your change conflicted with the team branch on ${paths.join(', ')}. origin/${branch} is ` +
+      'now merged into your work without conflicts here: check the result and fix it if needed, '
+    : `Your change conflicts with the team branch on ${paths.join(', ')}. A merge of ` +
+      `origin/${branch} into your work is in progress: resolve the conflicts in those files, ` +
+      'keeping both changes where they fit; do not abort the merge, ') +
+  'and stop. Your work is committed, pushed and landed for you.';
 
 /**
  * Creates the team branch at the frozen base by landing the base on it (a repeated landing
@@ -115,15 +120,20 @@ export function teamPort(
     resumeAgent: async (session, paths) => {
       const branch = attempt.team?.branch ?? fail('INVALID_INPUT', 'Not a team member');
       if (!session) fail('SANDBOX_RESUME', 'The agent session id is unknown');
-      const fetched = await host.run(
-        ['/bin/sh', '-c', fetchScript, 'fetch', repositoryDirectory, branch],
+      // A repeated step finds the merge already started (or done): nothing to start again.
+      const merging = await host.run(
+        ['/bin/sh', '-c', mergeScript, 'merge', repositoryDirectory, branch],
         repositoryDirectory,
         { ...trustEnv, YONEDA_TOKEN: 'provided-by-worker' },
       );
-      if (fetched.exitCode !== 0)
-        fail('SANDBOX_RESUME', `git fetch failed: ${fetched.stderr.trim().slice(-500)}`);
+      const state = merging.stdout.trim().split('\n').at(-1);
+      if (merging.exitCode !== 0 || (state !== 'merged' && state !== 'conflict'))
+        fail('SANDBOX_RESUME', `Merging ${branch} failed: ${merging.stderr.trim().slice(-500)}`);
       const cli = agentCli(attempt);
-      await host.startTask(cli.resume(session, resumePrompt(branch, paths)), cli.env);
+      await host.startTask(
+        cli.resume(session, resumePrompt(branch, paths, state === 'merged')),
+        cli.env,
+      );
     },
   };
 }
