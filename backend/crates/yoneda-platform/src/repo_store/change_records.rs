@@ -200,7 +200,7 @@ fn commit_facts<S: SqlStore>(
 
 /// Failed queued landings after `after`, and the next ticket watermark. A ticket above the
 /// lowest still-pending one can be read again later; consumers dedupe on the ticket.
-fn refusals<S: SqlStore>(db: &S, after: i64, limit: u64) -> Result<(Vec<Value>, i64)> {
+pub(super) fn refusals<S: SqlStore>(db: &S, after: i64, limit: u64) -> Result<(Vec<Value>, i64)> {
     let rows = db.query(
         "SELECT ticket,refname,commit_id,principal,requested_at,finished_at,result FROM land_queue WHERE status='failed' AND ticket>? ORDER BY ticket LIMIT ?",
         &[json!(after), json!(limit)],
