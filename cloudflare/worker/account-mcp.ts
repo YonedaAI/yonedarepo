@@ -26,7 +26,8 @@ const file = {
 const managementTools: Json[] = [
   {
     name: 'repo_list',
-    description: 'Repositories this credential can use, newest first: id, name and created_at.',
+    description:
+      'Repositories this credential can use (its own and those it is a member of), newest first: id, name, created_at, owner and role.',
     inputSchema: { type: 'object', properties: {}, required: [], additionalProperties: false },
   },
   {
