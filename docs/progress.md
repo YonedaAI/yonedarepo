@@ -125,7 +125,7 @@ Repository deletion and editable 1–6-agent run rosters are implemented and dep
 | Member removal refused | 577 ms | 605 ms |
 
 - Trees fix (hosted, dev `7f3c558`): commits read trees from isolate memory and the head holder. 20 repos × 10 writers, 3 runs: commit p95 0.62–1.22 s (2 of 3 at or under 1 s); phases p95 trees 45–96 ms (was 875–1348), shard.record 527–1145 ms (now the largest), head.fetch 42–71 ms. 1000-writer burst: 1000/1000, 406 lands/s, commit p95 1.05 s. Git projection for a clone: 4.9–5.7 s alone, 59 s right after three bursts (projection backlog).
-- Next commit-latency driver: `shard.record`.
+- Shard timing (hosted, dev `2a6e756`): `shard.record` now times only the shard round trip, with sub-phases. 20 repos × 10 writers, 6 runs: commit p95 338–646 ms, **gate < 1 s met in 6 of 6**. Server phases p95: shard.sync (the SQLite durability wait) 110–493 ms is the tail, shard.in 58–88 ms, trees 41–127 ms, head.fetch 36–117 ms; no shard cold starts seen. This build adds only timing and an explicit `storage.sync()` before the reply (which the output gate waited for anyway), so the gain over the previous build (0.62–1.22 s) is not attributed to a code change.
 
 ## Feature backlog
 
