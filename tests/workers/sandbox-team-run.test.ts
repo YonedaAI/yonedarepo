@@ -77,20 +77,31 @@ async function teamRun(owner: string, run: string, paths: [string, string]) {
  * pinned like the CLI pins it, to the version at which the base was main's head as the push
  * reads it (main does not move during a team run), so possibly after a teammate landed.
  */
-async function push(platform: any, attempt: SandboxAttempt, files: Record<string, string>) {
+async function push(
+  platform: any,
+  attempt: SandboxAttempt,
+  files: Record<string, string>,
+  // A resumed member's merge of the team branch: its own commit, then the team head.
+  merge?: { parent: string; team: string },
+) {
   const { version } = await platform.call('GET', '/');
   const changes = Object.entries(files).map(([path, content]) => ({
     path,
     content_b64: btoa(content),
   }));
   const pushed = await platform.call('POST', '/commits', {
-    parent: attempt.base.commit,
+    parent: merge?.parent ?? attempt.base.commit,
+    ...(merge ? { merge_parents: [merge.team] } : {}),
     base_version: version,
     changes,
-    message: 'Member change',
+    message: merge ? 'Merge the team branch' : 'Member change',
     author: { name: 'Member', email: 'member@example.com' },
   });
-  await platform.call('POST', '/branches', { ref: attempt.branch, commit: pushed.commit, expected: null });
+  await platform.call('POST', '/branches', {
+    ref: attempt.branch,
+    commit: pushed.commit,
+    expected: merge?.parent ?? null,
+  });
   return pushed.commit;
 }
 
@@ -143,6 +154,38 @@ it('lands two disjoint members through the platform merge; the team branch is th
     status: 'evaluating',
     summary: 'Team branch: 2 of 2 tasks landed',
   });
+});
+
+it('a resumed member that merges the team branch lands: one resume, both members landed', async () => {
+  const { repo, attempts, platform } = await teamRun('team_resolve', 'resolve-run', [
+    'README.md',
+    'README.md',
+  ]);
+  const [first, second] = attempts;
+  const title = (text: string) => ({ 'README.md': `# ${text}\n` });
+  const one = await push(platform, first, title('Alpha'));
+  const landedOne = await landOnTeam(bindings, first);
+  await report(first)(landedOne, 0);
+  const own = await push(platform, second, title('Beta'));
+  const clash = await landOnTeam(bindings, second);
+  expect(clash).toEqual({ landed: false, paths: ['README.md'] });
+  expect(await report(second)(clash, 0)).toEqual({ resume: true });
+  // The resumed session resolves the merge the sandbox started; its push keeps both parents.
+  const merged = await push(platform, second, title('Alpha and Beta'), { parent: own, team: one });
+  const landedTwo = await landOnTeam(bindings, second);
+  expect(landedTwo).toMatchObject({ landed: true, commit: merged, teamCommit: merged });
+  expect(await report(second)(landedTwo, 1)).toEqual({ resume: false });
+  const candidate = await captureTeam(repo, 'resolve-run');
+  expect(candidate).toMatchObject({
+    revision: { commit: merged },
+    summary: 'Team branch: 2 of 2 tasks landed',
+  });
+  const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
+  const members = snapshot.executions.filter((e: any) => e.sandbox_task);
+  expect(members.map((e: any) => [e.landing.status, e.landing.resumed])).toEqual([
+    ['landed', false],
+    ['landed', true],
+  ]);
 });
 
 it('resumes a conflicting member once; a second conflict fails it and what landed is the candidate', async () => {
