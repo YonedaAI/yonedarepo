@@ -323,16 +323,13 @@ fn upgrades_from_the_checkpoint_digest_schema_and_stamps_rfc3339_times() {
         db.query("SELECT owner FROM repo_settings", &[]).unwrap()[0]["owner"],
         "user:owner"
     );
+    assert_eq!(super::super::hooks::iso(0), "1970-01-01T00:00:00.000Z");
     assert_eq!(
-        super::super::hook_events::iso(0),
-        "1970-01-01T00:00:00.000Z"
-    );
-    assert_eq!(
-        super::super::hook_events::iso(1_700_000_123_456),
+        super::super::hooks::iso(1_700_000_123_456),
         "2023-11-14T22:15:23.456Z"
     );
     assert_eq!(
-        super::super::hook_events::iso(951_782_400_000),
+        super::super::hooks::iso(951_782_400_000),
         "2000-02-29T00:00:00.000Z"
     );
 }
