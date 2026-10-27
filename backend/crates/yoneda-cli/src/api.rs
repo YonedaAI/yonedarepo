@@ -11,6 +11,8 @@ pub struct Failure {
     pub code: String,
     pub message: String,
     pub details: Value,
+    /// Seconds the platform asked the client to wait (`Retry-After` on a 503 OVERLOADED).
+    pub retry_after: Option<u64>,
 }
 
 impl fmt::Display for Failure {
@@ -19,9 +21,26 @@ impl fmt::Display for Failure {
     }
 }
 
-/// No answer, an unreadable one, or a gateway error: worth retrying when nothing changes.
+/// No answer, an unreadable one, a gateway error or an overloaded platform (503
+/// OVERLOADED): worth retrying a call that is safe to repeat.
 fn transient(failure: &Failure) -> bool {
     matches!(failure.status, 0 | 502 | 503 | 504)
+}
+
+/// Retries after the first attempt, and the longest `Retry-After` honoured.
+const RETRIES: u64 = 3;
+const MAX_RETRY_AFTER_SECONDS: u64 = 10;
+
+/// The wait before retry `attempt` (1-based): the platform's `Retry-After` when it gave one,
+/// else a linear backoff, plus up to 250 ms of jitter so retrying clients spread out.
+fn backoff(failure: &Failure, attempt: u64) -> std::time::Duration {
+    let base = failure
+        .retry_after
+        .map_or(1000 * attempt, |s| 1000 * s.min(MAX_RETRY_AFTER_SECONDS));
+    let jitter = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| u64::from(d.subsec_nanos()) % 250);
+    std::time::Duration::from_millis(base + jitter)
 }
 
 impl From<Failure> for Error {
@@ -65,6 +84,7 @@ fn malformed(what: &str) -> Failure {
         code: "MALFORMED_RESPONSE".into(),
         message: format!("Unexpected platform response: {what}"),
         details: Value::Null,
+        retry_after: None,
     }
 }
 
@@ -139,9 +159,15 @@ impl Api {
             // reqwest errors carry the URL, never request headers.
             message: format!("cannot reach the platform: {e}"),
             details: Value::Null,
+            retry_after: None,
         };
         let response = request.send().await.map_err(unreachable)?;
         let status = response.status().as_u16();
+        let retry_after = response
+            .headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.trim().parse::<u64>().ok());
         let bytes = response.bytes().await.map_err(unreachable)?;
         let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         if (200..300).contains(&status) {
@@ -156,21 +182,36 @@ impl Api {
                 .map(str::to_owned)
                 .unwrap_or_else(|| format!("HTTP {status}")),
             details: error["details"].clone(),
+            retry_after,
         })
     }
 
     pub async fn get(&self, path: &str) -> std::result::Result<Value, Failure> {
-        self.read(reqwest::Method::GET, path, None).await
+        self.retrying(reqwest::Method::GET, path, None).await
     }
 
     /// A POST that only reads (the batch object read), retried like a GET.
     pub async fn post_read(&self, path: &str, body: &Value) -> std::result::Result<Value, Failure> {
-        self.read(reqwest::Method::POST, path, Some(body)).await
+        self.retrying(reqwest::Method::POST, path, Some(body)).await
     }
 
-    /// Reads change nothing, so a dropped connection, a body cut off mid-stream or a gateway
-    /// error is retried (three attempts in about 4 s) instead of failing a whole clone.
-    async fn read(
+    /// A write the platform applies at most once however often it is sent, retried like a
+    /// read. Only for writes whose repeat is a no-op on the server: recording a commit
+    /// (content-addressed, moves no ref), a compare-and-swap branch move (a repeat finds the
+    /// branch at the commit and answers `already`) and a landing (`already` once landed).
+    pub async fn post_idempotent(
+        &self,
+        path: &str,
+        body: &Value,
+    ) -> std::result::Result<Value, Failure> {
+        self.retrying(reqwest::Method::POST, path, Some(body)).await
+    }
+
+    /// Calls that are safe to repeat: a dropped connection, a body cut off mid-stream, a
+    /// gateway error or an overloaded platform is retried (four attempts, waiting the
+    /// platform's `Retry-After` or 1, 2, 3 s) instead of failing a whole clone or push. An
+    /// overload can follow a call that already took effect, so other writes never retry.
+    async fn retrying(
         &self,
         method: reqwest::Method,
         path: &str,
@@ -179,9 +220,9 @@ impl Api {
         let mut attempt = 0;
         loop {
             match self.send(method.clone(), path, body).await {
-                Err(failure) if attempt < 2 && transient(&failure) => {
+                Err(failure) if attempt < RETRIES && transient(&failure) => {
                     attempt += 1;
-                    tokio::time::sleep(std::time::Duration::from_millis(1000 * attempt)).await;
+                    tokio::time::sleep(backoff(&failure, attempt)).await;
                 }
                 result => return result,
             }
@@ -255,7 +296,7 @@ impl Api {
         if !read_set.is_empty() {
             body["read_set"] = json!(read_set);
         }
-        commit_info(&self.post("/commits", &body).await?)
+        commit_info(&self.post_idempotent("/commits", &body).await?)
     }
 
     /// Repository status: log version, refs table and projections (no projection wait).
@@ -306,7 +347,7 @@ impl Api {
         expected: Option<&str>,
     ) -> std::result::Result<(), Failure> {
         let body = json!({ "ref": branch, "commit": commit, "expected": expected });
-        self.post("/branches", &body).await.map(|_| ())
+        self.post_idempotent("/branches", &body).await.map(|_| ())
     }
 
     /// Lands `commit` on `branch`; a landing still settling is submitted again.
@@ -314,7 +355,7 @@ impl Api {
         let body = json!({ "ref": branch, "commit": commit });
         let mut attempt = 0;
         loop {
-            match self.post("/land", &body).await {
+            match self.post_idempotent("/land", &body).await {
                 Err(f) if f.code == "TIMEOUT" && attempt < 3 => attempt += 1,
                 other => return other,
             }
@@ -405,6 +446,55 @@ mod tests {
         assert_eq!(read, json!({ "ok": true }));
         let write = api.post("/repos", &json!({})).await;
         assert!(matches!(write, Err(Failure { status: 0, .. })), "{write:?}");
+        server.abort();
+        Ok(())
+    }
+
+    /// An overloaded platform (503 OVERLOADED, Retry-After) is waited out for reads and for
+    /// writes whose repeat is a no-op; any other write fails at once with the code.
+    #[tokio::test]
+    async fn retries_an_overload_for_reads_and_idempotent_writes_only() -> Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        let origin = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|e| Error::new(e.to_string()))?
+        );
+        // Every other request is refused as overloaded, starting with the first.
+        let server = tokio::spawn(async move {
+            let mut served = 0;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                served += 1;
+                let reply: &[u8] = if served % 2 == 1 {
+                    b"HTTP/1.1 503 Service Unavailable\r\ncontent-type: application/json\r\nretry-after: 0\r\ncontent-length: 48\r\nconnection: close\r\n\r\n{\"error\":{\"code\":\"OVERLOADED\",\"message\":\"busy\"}}"
+                } else {
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}"
+                };
+                let _ = socket.write_all(reply).await;
+                drop(socket);
+            }
+        });
+        let api = Api::account(&origin, None)?;
+        let ok = json!({ "ok": true });
+        assert_eq!(api.get("/repos").await.map_err(Error::from)?, ok);
+        let body = json!({ "ref": "main", "commit": "c" });
+        assert_eq!(
+            api.post_idempotent("/land", &body)
+                .await
+                .map_err(Error::from)?,
+            ok
+        );
+        let write = api.post("/repos", &json!({})).await;
+        assert!(
+            matches!(&write, Err(Failure { status: 503, code, retry_after: Some(0), .. }) if code == "OVERLOADED"),
+            "{write:?}"
+        );
         server.abort();
         Ok(())
     }

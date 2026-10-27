@@ -13,9 +13,8 @@ import type { Env, Envelope } from './types';
 export async function platformJob(env: Env, message: Message<Envelope>) {
   const envelope = message.body;
   if (envelope.kind === 'platform_check') {
-    const outcome = await executeCheckRun(env, envelope);
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
+    await executeCheckRun(env, envelope);
+    message.ack();
   } else if (envelope.kind === 'platform_project') {
     const outcome = await projectRefs(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });

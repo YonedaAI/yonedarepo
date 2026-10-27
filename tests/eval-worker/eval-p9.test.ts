@@ -5,7 +5,7 @@ import { expect, it } from 'vitest';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, file, queued, scoped, signup, usePlatformFixture } from '../workers/repo-fixture';
+import { api, author, file, queued, runners, scoped, signup, usePlatformFixture } from '../workers/repo-fixture';
 import { call, evalEnv, fakeModel, message, use } from './fixture';
 
 usePlatformFixture();
@@ -22,13 +22,14 @@ function arityCheck(job: any) {
   const ok = calls.every((n) => n === declared);
   return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 1, output_bytes: 0, output_sha256: '0'.repeat(64), output_tail: '' };
 }
-/** Executor failures to inject before checks run (like a container capacity error). */
+/** Executor failures to inject before checks run (like a container that died; a full
+ * container pool only delays a run, it never errors it). */
 const capacity = { failures: 0 };
 const runner = async (job: any) => {
-  if (capacity.failures > 0 && capacity.failures--) throw new Error('Maximum number of running container instances exceeded');
+  if (capacity.failures > 0 && capacity.failures--) throw new Error('Container exited with unexpected exit code: 137');
   return arityCheck(job);
 };
-const checks = { ...scoped, CHECK_RUNNERS: { idFromName: (n: string) => n, get: () => ({ run: runner }) } } as unknown as Env;
+const checks = { ...scoped, CHECK_RUNNERS: runners(runner) } as unknown as Env;
 // The platform's queue consumer, in-process: post-land checks run after each API request.
 const platform = {
   fetch: async (request: Request) => {

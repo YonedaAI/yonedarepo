@@ -138,6 +138,8 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let recorded = rows::recorded(db, &commit)?;
     let mut claimed = json!({
         "run_id": id, "epoch": epoch, "commit": commit, "tree": recorded.tree, "name": row["name"],
+        // When another executor may take the run over (the adapter's watchdog waits for it).
+        "lease_until": lease_until,
         // How long the run waited for an executor (the check queue).
         "queued_ms": now - row["created_at"].as_i64().unwrap_or(now),
     });
@@ -148,6 +150,24 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         out.extend(fields);
     }
     Ok(claimed)
+}
+
+/// Gives back a claim whose executor never started (no container capacity): the run is
+/// queued again and the attempt does not count toward `MAX_ATTEMPTS`, so waiting for
+/// capacity never errors a run. Reusing the epoch is safe because nothing ran under it;
+/// only the claiming epoch, still running, can release.
+pub fn release<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let id = string(c, "run_id")?;
+    let epoch = c["epoch"].as_u64().ok_or_else(|| bad("Missing epoch"))?;
+    let row = run_row(db, &id)?;
+    if row["epoch"].as_u64() != Some(epoch) || row["status"] != "running" {
+        return Ok(json!({ "run_id": id, "released": false }));
+    }
+    db.query(
+        "UPDATE check_runs SET status='queued',epoch=?,lease_until=NULL WHERE id=?",
+        &[json!(epoch.saturating_sub(1)), json!(id)],
+    )?;
+    Ok(json!({ "run_id": id, "released": true }))
 }
 
 /// Records the executor's outcome. `pass`/`fail` become the commit's check result under
