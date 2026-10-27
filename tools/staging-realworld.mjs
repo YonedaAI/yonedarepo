@@ -30,6 +30,9 @@
 //        node tools/staging-realworld.mjs --webhooks --receiver <origin>
 //          (= --only 0,hooks: a hook's signed deliveries to the bench Worker's /hooks/<box>,
 //          one scripted failure retried, log order, refusal of an unsafe target, delete)
+//        node tools/staging-realworld.mjs --members
+//          (= --only 0,members: a second kit account reads, pushes and lands by role with
+//          stock Git and REST, and is refused at once when removed)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -44,6 +47,7 @@ import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-fl
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
+import { membersFlow } from './staging/members-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 import { BRIEFS, bindManagedProviders, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
@@ -84,6 +88,8 @@ const { values } = parseArgs({
     // /hooks/<box> (tools/fanout-bench/worker.js) that the platform may call.
     webhooks: { type: 'boolean', default: false },
     receiver: { type: 'string' },
+    // The members gate alone (items 0 and members).
+    members: { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -93,12 +99,14 @@ const only = values['agent-smoke']
     ? new Set(['0', 'sandbox'])
     : values.webhooks
       ? new Set(['0', 'hooks'])
+      : values.members
+      ? new Set(['0', 'members'])
       : values.only
       ? new Set(values.only.split(','))
       : null;
 // The smokes repeat item 2's coverage, so a full kit run leaves them out unless named; the
-// webhook gate needs a receiver, so it runs only when named too.
-const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'hooks'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+// webhook gate needs a receiver and the members gate a second account, so they run only when named too.
+const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'hooks', 'members'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 const { OWNER_TOKEN } = readEnvFile('staging.env');
 if (values.fund) {
@@ -162,6 +170,9 @@ await step('sandbox', 'Sandbox smoke: a stock CLI in a Cloudflare Sandbox pushes
 );
 await step('hooks', 'Webhooks: signed, ordered, retried deliveries to a receiver', (m) =>
   webhookFlow(platformAccount, { receiver: values.receiver?.replace(/\/$/, ''), key: BENCH_KEY }, m),
+);
+await step('members', 'Members: a second account reads, pushes and lands by role, removal refuses at once', (m) =>
+  membersFlow({ origin: values.origin, api: values.api, kit, platform: platformAccount }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));

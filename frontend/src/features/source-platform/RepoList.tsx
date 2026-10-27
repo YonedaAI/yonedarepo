@@ -4,7 +4,8 @@ import { sourceApi } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
-type Repo = { id: string; name: string; created_at: number };
+/** `role` is `owner` for the account's own repositories, else its membership role. */
+type Repo = { id: string; name: string; created_at: number; owner?: string; role?: string };
 
 export function RepoList({
   selected,
@@ -60,6 +61,12 @@ export function RepoList({
             >
               {repo.name}
             </a>
+            {repo.role && repo.role !== 'owner' && (
+              <span className="source-meta">
+                {' '}
+                {repo.owner} · {repo.role}
+              </span>
+            )}
           </li>
         ))}
       </ul>
