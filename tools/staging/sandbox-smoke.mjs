@@ -4,8 +4,13 @@
 // It reports the same timing table as the agent smoke plus the sandbox's own milestones, the
 // tokens the CLI reported and their cost at the registry's conservative rates, and always
 // deletes the project.
+// `--team`: an owner-written two-task team run whose tasks touch different files, so both
+// members' commits must land on the team branch through the platform's merge. It passes only
+// when both members landed, the team branch candidate holds both changes and its checks make
+// it eligible. `--team-conflict`: two tasks rewrite the same line; it passes when exactly one
+// member was resumed once after a conflict and the run still formed its team candidate.
 import { readFileSync } from 'node:fs';
-import { SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
+import { SMOKE_BRIEF, SMOKE_POLICY, SMOKE_TARGET_USD, failedCheckOutput, startSingle, timeline } from './agent-smoke.mjs';
 import { sleep } from './client.mjs';
 import { CHEAP, bindManagedProviders, createProject, deleteProject, ensureAllowance, runFailure } from './project-flow.mjs';
 
@@ -33,6 +38,74 @@ async function activity(account, repo, executionId) {
     if (!page.has_more || !page.entries?.length) return { entries, phase: page.phase };
     after = page.next;
   }
+}
+
+// Each task names the shared interface, since members never talk to each other.
+const TEAMS = {
+  disjoint: {
+    intent: SMOKE_BRIEF.intent,
+    criteria: SMOKE_BRIEF.criteria,
+    policy: SMOKE_POLICY,
+    paths: ['src/math.js', 'test/math.test.js'],
+    tasks: [
+      ['math', 'Write src/math.js', 'Create src/math.js in CommonJS: module.exports = { add }, where add(a, b) returns a + b. Another agent writes the test. Create or change no other file.'],
+      ['test', 'Write test/math.test.js', "Create test/math.test.js using node:test and node:assert that loads const { add } = require('../src/math.js') and checks add(2, 3) === 5 and add(-1, 1) === 0. Another agent writes src/math.js: do not create it. Create or change no other file."],
+    ],
+  },
+  conflict: {
+    intent: 'Retitle the project: the first line of README.md is its title.',
+    criteria: ['README.md starts with a level-one heading'],
+    policy: {
+      version: 'sandbox-team-conflict-v1',
+      suite: 'commands-v1',
+      environment: SMOKE_POLICY.environment,
+      required_checks: ['readme'],
+      build: { setup: [], checks: [{ name: 'readme', argv: ['node', '-e', "if(!/^# /.test(require('fs').readFileSync('README.md','utf8')))process.exit(1)"], timeout_seconds: 10 }], static_dir: 'public' },
+    },
+    paths: ['README.md'],
+    tasks: [
+      ['alpha', 'Title Alpha', "Replace the first line of README.md with '# Alpha'. Change no other line or file."],
+      ['beta', 'Title Beta', "Replace the first line of README.md with '# Beta'. Change no other line or file."],
+    ],
+  },
+};
+
+/** Starts an owner-written two-task team run on the sandbox runtime; returns its id. */
+async function startTeam(account, repo, provider, model, team) {
+  const id = `run-${crypto.randomUUID()}`;
+  await account.post(`/api/repos/${repo}/start_run`, {
+    id,
+    mode: 'collaborate',
+    intent: team.intent,
+    criteria: team.criteria,
+    context: [],
+    runtime: 'sandbox-cli-v1',
+    agents: [{ connection: `managed-${provider}`, provider, model, strategy: 'Team member' }],
+    team: {
+      version: 1,
+      contract: team.intent,
+      integrator_agent: 0,
+      integration_paths: ['scopes/'],
+      // The plan format wants disjoint scopes; a sandbox does not enforce them.
+      tasks: team.tasks.map(([task, title, instructions]) => ({ id: task, title, instructions, agent: 0, depends_on: [], write_paths: [`scopes/${task}`] })),
+    },
+  });
+  return id;
+}
+
+/** Each member's landing, and the problem with them when the team smoke cannot pass. */
+function teamVerdict(detail, mode) {
+  const members = (detail.executions ?? []).filter((e) => e.sandbox_task);
+  const lines = members.map((e) => `  ${e.sandbox_task.title}: ${e.status} ${e.landing ? `${e.landing.status}${e.landing.paths ? ` on ${e.landing.paths.join(', ')}` : ''}${e.landing.resumed ? ' (resumed once)' : ''}` : 'not landed'}${e.error ? ` · ${e.error}` : ''}`);
+  const resumed = members.filter((e) => e.landing?.resumed).length;
+  const landed = members.filter((e) => e.landing?.status === 'landed').length;
+  const problem =
+    members.length !== 2
+      ? `expected 2 members, found ${members.length}`
+      : mode === 'conflict'
+        ? resumed !== 1 && `expected exactly one resumed member, found ${resumed}`
+        : landed !== 2 && `expected both members landed, found ${landed}`;
+  return { lines, problem, landed, resumed };
 }
 
 /** Polls until the run records a candidate (the pushed commit) or cannot (throws). */
@@ -69,26 +142,31 @@ function sandboxLines(entries, startedAt) {
   ];
 }
 
-export async function sandboxSmoke({ account, owner, username, provider = 'zai', timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
+export async function sandboxSmoke({ account, owner, username, provider = 'zai', team: mode = null, timeoutMs = 300_000, checkWaitMs = 180_000 }, metrics) {
   const cheap = CHEAP.find((c) => c.provider === provider);
   if (!cheap) throw new Error(`Smoke provider must be one of ${CHEAP.map((c) => c.provider).join(', ')}`);
-  Object.assign(metrics, { runtime: 'sandbox-cli-v1', model: `${provider}/${cheap.model}` });
-  const project = await createProject(account, `sandbox-smoke-${Date.now()}`, metrics, SMOKE_POLICY);
+  const team = mode ? TEAMS[mode] : null;
+  if (mode && !team) throw new Error(`Team smoke must be one of ${Object.keys(TEAMS).join(', ')}`);
+  Object.assign(metrics, { runtime: 'sandbox-cli-v1', model: `${provider}/${cheap.model}`, ...(mode ? { team: mode } : {}) });
+  const project = await createProject(account, `sandbox-smoke-${Date.now()}`, metrics, team?.policy ?? SMOKE_POLICY);
   let failure;
   try {
     await bindManagedProviders(owner, username);
     await ensureAllowance(account, owner, username);
     const startedAt = Date.now();
-    const runId = await startSingle(account, project.id, provider, 'sandbox-cli-v1');
+    const runId = team
+      ? await startTeam(account, project.id, provider, cheap.model, team)
+      : await startSingle(account, project.id, provider, 'sandbox-cli-v1');
     metrics.run = runId;
     const report = async (detail) => {
-      const execution = detail?.executions?.[0];
+      const execution = detail?.executions?.find((e) => e.runtime === 'sandbox-cli-v1');
       const log = execution ? await activity(account, project.id, execution.id).catch(() => ({ entries: [] })) : { entries: [] };
       const tokens = tokenSpend(provider, cheap.model, log.entries.find((e) => e.kind === 'result')?.text);
       if (tokens) metrics.tokens = `${tokens.input}/${tokens.output}`;
       if (tokens?.usd != null) metrics.spend_usd = tokens.usd.toFixed(4);
       if (tokens?.usd != null) metrics.spend_target = tokens.usd < SMOKE_TARGET_USD ? 'met' : `over $${SMOKE_TARGET_USD}`;
-      return [await timeline(account, project.id, detail, startedAt, { verbose: false }), ...sandboxLines(log.entries, startedAt)].join('\n');
+      const members = team && detail ? ['team members:', ...teamVerdict(detail, mode).lines] : [];
+      return [await timeline(account, project.id, detail, startedAt, { verbose: false }), ...sandboxLines(log.entries, startedAt), ...members].join('\n');
     };
     try {
       const { candidate } = await waitPushed(account, project.id, runId, timeoutMs);
@@ -97,6 +175,16 @@ export async function sandboxSmoke({ account, owner, username, provider = 'zai',
       metrics.checked = checked.status ?? `pending after ${seconds(checkWaitMs)} s`;
       metrics.wall_s = seconds(Date.now() - startedAt);
       console.log(`Sandbox smoke timeline (run ${runId}):\n${await report(checked.detail)}`);
+      if (team) {
+        // The team candidate is the team branch: it must hold every member's change.
+        const verdict = teamVerdict(checked.detail, mode);
+        Object.assign(metrics, { landed: verdict.landed, resumed: verdict.resumed });
+        if (verdict.problem) throw new Error(`Team smoke: ${verdict.problem}`);
+        const { diff = '' } = await account.get(`/api/repos/${project.id}/candidate?id=${encodeURIComponent(candidate.id)}`);
+        const missing = team.paths.filter((path) => !diff.includes(`diff --git a/${path} b/${path}`));
+        if (missing.length) throw new Error(`The team branch lacks ${missing.join(', ')}`);
+        if (mode === 'disjoint' && checked.status !== 'eligible') throw new Error(`The team branch was ${checked.status ?? 'not checked in time'}`);
+      }
       if (checked.status && checked.status !== 'eligible') throw new Error(`The pushed commit was ${checked.status} by its checks`);
     } catch (error) {
       failure = error;
