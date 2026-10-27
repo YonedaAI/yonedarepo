@@ -31,7 +31,7 @@ describe('sandbox CLIs', () => {
     );
     // The prompt is one argument after `--`, even when it looks like a flag.
     expect(cli.command.slice(-2)).toEqual(['--', '-Add add(a,b)']);
-    expect(cli.env).toEqual({ YONEDA_MODEL_KEY: 'provided-by-worker' });
+    expect(cli.env).toMatchObject({ YONEDA_MODEL_KEY: 'provided-by-worker' });
     const resume = agentCli({ ...codex, team: { branch: 'attempts/r/team' } }).resume('t-1234567', 'fix');
     expect(resume.slice(0, 3)).toEqual(['codex', 'exec', 'resume']);
     expect(resume).not.toContain('--ephemeral');
@@ -130,6 +130,23 @@ describe('sandbox CLIs', () => {
       );
     for (const cli of ['claude', 'opencode', 'mimo'] as const)
       expect(env(attempt({ cli }))).not.toMatch(/sk-|tp-|yrp_|ypat_/);
+  });
+
+  // Live: a resumed team member's own `git commit` failed with "Author identity unknown".
+  it('gives every CLI a git identity, so its own commits work', () => {
+    const runs = [
+      attempt({ cli: 'claude' }),
+      attempt({ cli: 'opencode' }),
+      attempt({ cli: 'mimo', provider: 'mimo', model: 'mimo-v2.6-flash' }),
+      attempt({ cli: 'codex', provider: 'codex', model: 'gpt-5.6-luna', model_base: 'https://api.openai.com' }),
+    ];
+    for (const run of runs)
+      expect(agentCli(run).env).toMatchObject({
+        GIT_AUTHOR_NAME: 'YonedaRepo agent',
+        GIT_AUTHOR_EMAIL: 'agent@yonedarepo.invalid',
+        GIT_COMMITTER_NAME: 'YonedaRepo agent',
+        GIT_COMMITTER_EMAIL: 'agent@yonedarepo.invalid',
+      });
   });
 });
 
