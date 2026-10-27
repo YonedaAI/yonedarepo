@@ -434,7 +434,7 @@ fn upgrades_from_the_hooks_schema_with_no_members() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        26
+        super::super::migration::MIGRATIONS.len()
     );
     assert!(
         db.query("SELECT account FROM members", &[])
