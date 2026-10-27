@@ -1250,5 +1250,58 @@
       ],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "git_member_list",
+    "description": "Members of this repository: account, role (read, write, land or admin), added_by and added_at. The owner is not listed. Needs the owner or an admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_member_add",
+    "description": "Add an existing account as a member, or change its role. Roles: read (read and clone); write (also commit, push branches, post checks); land (also review and land on protected refs); admin (also act as the owner, except deleting the repository and managing admins). A member's personal token holds only what both its scopes and the role allow. Only the owner grants, changes or removes admin. Needs the owner or an admin.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string",
+          "description": "The account's username"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "read",
+            "write",
+            "land",
+            "admin"
+          ]
+        }
+      },
+      "required": [
+        "account",
+        "role"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_member_remove",
+    "description": "Remove a member; its access ends at once. The owner cannot be removed. Needs the owner or an admin (only the owner removes an admin).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "account": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account"
+      ],
+      "additionalProperties": false
+    }
   }
 ]
