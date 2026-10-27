@@ -1,4 +1,10 @@
-import { type ProviderDefinition, providerDefinition, runsInSandbox } from '../../shared/providers';
+import {
+  type ProviderDefinition,
+  providerDefinition,
+  runsInSandbox,
+  sandboxCliFits,
+  sandboxCliNames,
+} from '../../shared/providers';
 import { ownsTask, parseModelMix, resolveModelMix } from './model-mix';
 import { normalizeReasoningEffort } from './model-reasoning';
 import type { Json } from './types';
@@ -51,10 +57,9 @@ export function resolveAdaptiveApproval(
     }
     if (sandbox && !runsInSandbox(definition.id)) {
       if (explicitConnections.has(connection.id))
-        throw Object.assign(
-          new Error(`Sandbox runs use Claude Code; ${definition.name} needs another CLI.`),
-          { code: 'SANDBOX_HARNESS' },
-        );
+        throw Object.assign(new Error(`No sandbox CLI runs ${definition.name} models.`), {
+          code: 'SANDBOX_HARNESS',
+        });
       return [];
     }
     const model = definition.models.find((model) => model.id === connection.model);
@@ -113,9 +118,21 @@ export function resolveAdaptiveApproval(
       selected.model,
       preference.reasoning_effort,
     );
+    // A sandbox agent's stock CLI; unchosen, the ledger freezes the provider's default.
+    const cli = preference.cli ?? undefined;
+    if (cli !== undefined && !sandbox)
+      throw invalid('A coding CLI is chosen for sandbox runs only.');
+    if (cli !== undefined && !sandboxCliFits(selected.provider, cli))
+      throw Object.assign(
+        new Error(
+          `${sandboxCliNames[cli as keyof typeof sandboxCliNames] ?? 'That CLI'} cannot run ${providerDefinition(selected.provider).name} models.`,
+        ),
+        { code: 'SANDBOX_HARNESS' },
+      );
     return {
       ...agentIdentity,
       ...(effort === undefined ? {} : { reasoning_effort: effort }),
+      ...(cli === undefined ? {} : { cli }),
       role_hint: preference.role,
       strategy: `${preference.role} ${input.mode === 'compare' ? 'approach' : 'team participant'} ${index + 1}`,
     };

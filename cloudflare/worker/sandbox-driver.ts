@@ -9,7 +9,7 @@
 import {
   type Activity,
   type CliOutcome,
-  parseActivity,
+  parseActivityLines,
   resultOutcome,
   sessionId,
 } from './sandbox-activity';
@@ -74,7 +74,7 @@ export type DriverState = {
   lastActivityAt: number;
   offset: number;
   summary: string;
-  /** The agent's own last activity line; phase summaries never replace it. */
+  /** The agent's last text (else activity) line; phase summaries never replace it. */
   agentSummary?: string;
   outcome?: CliOutcome;
   /** The CLI session to resume after a team conflict. */
@@ -169,7 +169,7 @@ async function drain(state: DriverState, port: SandboxPort) {
   const { consumed, lines } = await port.readOutput(state.offset);
   if (consumed === 0) return;
   const now = port.now();
-  const entries = lines.flatMap(parseActivity);
+  const entries = parseActivityLines(lines);
   for (const line of lines) {
     state.outcome = resultOutcome(line) ?? state.outcome;
     state.sessionId ??= sessionId(line) ?? undefined;
@@ -177,14 +177,18 @@ async function drain(state: DriverState, port: SandboxPort) {
   if (entries.length) {
     await port.appendActivity(now, entries);
     state.summary = entries[entries.length - 1].text;
-    state.agentSummary = state.summary;
+    // Codex and opencode end on a usage line, not a result text: keep what the agent said.
+    state.agentSummary =
+      entries.findLast((entry) => entry.kind === 'text')?.text ??
+      state.agentSummary ??
+      state.summary;
   }
   state.offset += consumed;
   state.lastActivityAt = now;
 }
 
 const agentResult = (state: DriverState) =>
-  (state.outcome?.ok ? state.outcome.result : state.agentSummary) ?? 'Agent change';
+  (state.outcome?.ok && state.outcome.result) || state.agentSummary || 'Agent change';
 
 async function advance(state: DriverState, port: SandboxPort): Promise<number | null> {
   const now = port.now();
@@ -302,7 +306,7 @@ async function running(state: DriverState, port: SandboxPort): Promise<number | 
     const reason = outcome
       ? outcome.error
       : `exited with ${task.exitCode}: ${(await port.stderrTail()).trim().slice(-800) || 'no output'}`;
-    await port.fail(`Claude Code failed: ${reason}`);
+    await port.fail(`The agent CLI failed: ${reason}`);
     await finish(state, port);
     return null;
   }

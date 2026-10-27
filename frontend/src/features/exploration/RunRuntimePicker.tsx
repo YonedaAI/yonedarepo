@@ -8,7 +8,7 @@ export type RunRuntime = 'sandbox' | 'classic';
 
 /**
  * Where a new run's agents work. The sandbox is offered only where the Worker advertises it
- * with the snapshot, and only for models its coding CLI can run (Auto picks one); otherwise
+ * with the snapshot, and only for models a sandbox CLI can run (Auto picks one); otherwise
  * the run is Classic. Presentation only: the Worker and ledger refuse anything else.
  */
 export function runtimeChoice(
@@ -22,7 +22,7 @@ export function runtimeChoice(
     .map((agent) => providers.find((provider) => provider.id === agent.connection))
     .find((connection) => connection && !runsInSandbox(connection.provider));
   const blocker = unsupported
-    ? `${unsupported.label} can't run in the sandbox: it runs Claude Code only.`
+    ? `${unsupported.label} can't run in the sandbox: no sandbox CLI supports its API.`
     : undefined;
   const sandbox = offered && preferred === 'sandbox' && !blocker;
   // A sandbox run is independent compare attempts (1–6) the owner chooses among, no reviewer,
@@ -54,8 +54,11 @@ export function RunRuntimePicker({
           onChange={() => onChange('sandbox')}
         />
         <span>
-          <strong>Sandbox (Claude Code)</strong>
-          <small>Each agent works in its own sandbox and branch. You choose what to publish.</small>
+          <strong>Sandbox (stock coding CLIs)</strong>
+          <small>
+            Each agent runs Claude Code, Codex CLI, opencode or MiMo Code in its own sandbox and
+            branch. You choose what to publish.
+          </small>
         </span>
       </label>
       <label>
