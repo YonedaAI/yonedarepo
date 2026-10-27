@@ -1,12 +1,3 @@
-.compare-approval {
-  padding: 14px 16px;
-  background: #f6f8fb;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.compare-approval p {
-  margin: 6px 0 0;
-}
 .comparison-results {
   display: grid;
   gap: 18px;

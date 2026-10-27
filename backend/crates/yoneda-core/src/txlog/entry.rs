@@ -83,6 +83,11 @@ pub struct TxEntry {
     pub actor: String,
     pub intent_digest: String,
     pub committed_at_ms: i64,
+    /// The ref-map digest of the checkpoint written at `version - 1`, when one was: the
+    /// chain then binds that checkpoint's refs, not only its position (Delta's version
+    /// checksum). Absent otherwise and on entries written before it, so their digests hold.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checkpoint_refs: Option<String>,
     /// Hash of the previous entry's chain digest and this entry; makes the log tamper-evident.
     pub chain: String,
 }

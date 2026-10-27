@@ -74,17 +74,18 @@ pub(super) fn schedule<S: SqlStore>(db: &S, run: &Value, agents: &Value, now: i6
             e["routing"] = routing.clone();
         }
         let slot = super::sandbox_team::mark_member(run, index, &mut e);
-        super::adaptive_team::configure_execution(run, agent, slot, &mut e)?;
-        super::sandbox::mark_execution(run, &mut e);
-        if run["comparison"]["approval"].is_object() {
-            e["agent_index"] = json!(index);
-            e["comparison_role"] = json!("builder");
-            e["comparison_round"] = json!(0);
-            e["comparison_approval_id"] = run["comparison"]["approval"]["id"].clone();
-            if let Some(version) = agent.get("version") {
-                e["version"] = version.clone();
+        // An explicitly chosen reasoning effort travels with its agent's execution.
+        if run["agents"]
+            .as_array()
+            .is_some_and(|agents| agents.iter().any(|a| !a["reasoning_effort"].is_null()))
+        {
+            e["agent_index"] = json!(slot);
+            if let Some(effort) = agent.get("reasoning_effort").filter(|v| !v.is_null()) {
+                e["reasoning_effort"] = effort.clone();
             }
+            yoneda_agents_core::adaptive_team::execution_effort(run, &e)?;
         }
+        super::sandbox::mark_execution(run, slot, &mut e);
         if run.get("model_budgets").is_some() {
             e["budget"] = json!({"provider":provider,"model":agent["model"]});
         }

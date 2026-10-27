@@ -1,10 +1,11 @@
 //! Stock `git` (no remote helper) against the local platform's smart HTTP at
 //! `/git/<repo>.git`, with tokens from Git's own credential store: clone, push a branch,
 //! push main (exact ids on a fast-forward, the server's merge otherwise), conflicts,
-//! `--atomic` with a stale ref, a push cut off mid-body, deltified pushes and a fresh clone
-//! that matches the platform byte for byte. Run with `cargo test -p yoneda-cli --test
-//! smart_http -- --include-ignored --nocapture`; it needs the workspace's node modules
-//! (wrangler) and the Rust Wasm worker build.
+//! `--atomic` with a stale ref, lightweight tags, a push cut off mid-body, deltified
+//! pushes, a fresh clone that matches the platform byte for byte, and declared reads
+//! (`-o yoneda.reads=…`, `yoneda push`) refusing a stale read. Run with `cargo test
+//! -p yoneda-cli --test smart_http -- --include-ignored --nocapture`; it needs the
+//! workspace's node modules (wrangler) and the Rust Wasm worker build.
 #[allow(dead_code)] // shared with the remote helper tests
 mod support;
 
@@ -335,13 +336,73 @@ fn clone_push_branch_and_main(w: &World) -> TestResult {
         w.refs(&repo)?.get("refs/heads/feature").is_none(),
         "feature deleted",
     )?;
-    let tag = push(&c, &dir, &["origin", "HEAD:refs/tags/v1"])?;
-    check(
-        !tag.status.success() && text(&tag).contains("tags are not supported yet"),
-        &text(&tag),
-    )?;
     check(
         w.refs(&repo)?["refs/heads/main"] == merged.as_str(),
+        "refusals moved nothing",
+    )
+}
+
+/// Lightweight tags: `git push origin v1` creates one, a fresh clone has it, and it never
+/// moves or disappears; an annotated tag is refused.
+fn tags_push_and_clone(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("tags", &token)?;
+    let dir = w.clone(&c, &repo, "work")?;
+    let first = c.commit(&dir, "release", &[("r.txt", "r\n")])?;
+    check(
+        push(&c, &dir, &["origin", "main"])?.status.success(),
+        "push main",
+    )?;
+    c.git(&dir, &["tag", "v1"])?;
+    let pushed = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        pushed.status.success(),
+        &format!("push tag: {}", text(&pushed)),
+    )?;
+    check(
+        w.refs(&repo)?["refs/tags/v1"] == first.as_str(),
+        "the tag names the pushed commit",
+    )?;
+    let again = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+
+    let other = w.client("tags-fresh", &token)?;
+    let copy = w.clone(&other, &repo, "copy")?;
+    check(
+        other.git(&copy, &["tag", "--list"])? == "v1",
+        "a fresh clone lists the tag",
+    )?;
+    check(
+        other.git(&copy, &["rev-parse", "v1"])? == first,
+        "the cloned tag names the commit",
+    )?;
+
+    // Moving or deleting it is refused; the tag stays where it was.
+    c.commit(&dir, "later", &[("l.txt", "l\n")])?;
+    c.git(&dir, &["tag", "-f", "v1"])?;
+    let moved = push(&c, &dir, &["--force", "origin", "v1"])?;
+    check(
+        !moved.status.success() && text(&moved).contains("tags are immutable"),
+        &text(&moved),
+    )?;
+    let deleted = push(&c, &dir, &["origin", "--delete", "v1"])?;
+    check(
+        !deleted.status.success() && text(&deleted).contains("cannot be deleted"),
+        &text(&deleted),
+    )?;
+    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
+    let annotated = push(&c, &dir, &["origin", "v2"])?;
+    check(
+        !annotated.status.success()
+            && text(&annotated).contains("annotated tags are not supported"),
+        &text(&annotated),
+    )?;
+    let refs = w.refs(&repo)?;
+    check(
+        refs["refs/tags/v1"] == first.as_str() && refs.get("refs/tags/v2").is_none(),
         "refusals moved nothing",
     )
 }
@@ -430,6 +491,95 @@ fn same_line_conflicts_then_resolves(w: &World) -> TestResult {
         w.blob(&repo, "f.txt") == LINES.replace("l4", "both"),
         "resolution landed",
     )
+}
+
+/// Declared reads (C1): clone A relies on config.json and edits app.js while clone B edits
+/// config.json and lands first. A's push declaring the read is refused as a read conflict,
+/// and stays refused without the option (the reads are the commit's). After `git pull`,
+/// `yoneda push` declares the session's recorded reads, lands and clears them, and the
+/// pushed commit takes a session record. The same work without a declaration lands by
+/// server merge.
+fn declared_reads_refuse_a_stale_read(w: &World) -> TestResult {
+    let files = [("config.json", "{\"v\":1}\n"), ("app.js", "a\n")];
+    for declare in [true, false] {
+        let (repo, token) = w.platform.repo(&files)?;
+        let mut a = w.client(&format!("reads-a-{declare}"), &token)?;
+        a.token = token.clone();
+        let b = w.client(&format!("reads-b-{declare}"), &token)?;
+        let (da, db) = (w.clone(&a, &repo, "w")?, w.clone(&b, &repo, "w")?);
+        let mine = a.commit(&da, "app", &[("app.js", "a2\n")])?;
+        b.commit(&db, "config", &[("config.json", "{\"v\":2}\n")])?;
+        check(
+            push(&b, &db, &["origin", "main"])?.status.success(),
+            "B lands first",
+        )?;
+        let theirs = w.platform.main(&repo)?.1;
+        if !declare {
+            let landed = push(&a, &da, &["origin", "main"])?;
+            check(
+                landed.status.success() && text(&landed).contains("landed with server merge"),
+                &format!("undeclared: {}", text(&landed)),
+            )?;
+            continue;
+        }
+        let refused = push(
+            &a,
+            &da,
+            &["-o", "yoneda.reads=config.json", "origin", "main"],
+        )?;
+        check(
+            !refused.status.success()
+                && text(&refused).contains("read conflict on config.json: run git pull"),
+            &format!("declared: {}", text(&refused)),
+        )?;
+        check(w.platform.main(&repo)?.1 == theirs, "main kept B's")?;
+        let shown = w
+            .platform
+            .owner_call("GET", &format!("/repos/{repo}/commits/{mine}"), None)?;
+        check(
+            shown["read_set"] == json!(["config.json"]),
+            &shown["read_set"].to_string(),
+        )?;
+        let again = push(&a, &da, &["origin", "main"])?;
+        check(
+            !again.status.success() && text(&again).contains("read conflict on config.json"),
+            &format!("undeclared retry: {}", text(&again)),
+        )?;
+        // The session's recorded reads, declared by `yoneda push` after a pull.
+        a.ok(&da, &["reads", "add", "config.json"])?;
+        let pulled = a.git_output(&da, &["pull", "-q", "--no-rebase", "origin", "main"])?;
+        check(pulled.status.success(), &format!("pull: {}", text(&pulled)))?;
+        let merged = a.git(&da, &["rev-parse", "HEAD"])?;
+        let out = a.yoneda(&da, &["push", "origin", "main"])?;
+        check(
+            out.status.success(),
+            &format!("yoneda push: {}", text(&out)),
+        )?;
+        check(w.platform.main(&repo)?.1 == merged, "the merge landed")?;
+        check(
+            a.ok(&da, &["reads", "list"])?.trim().is_empty(),
+            "reads cleared",
+        )?;
+        let pushed = std::fs::read_to_string(da.join(".git/yoneda/pushed")).unwrap_or_default();
+        check(pushed.starts_with(&merged), &format!("pushed: {pushed}"))?;
+        a.ok(
+            &da,
+            &[
+                "session",
+                "record",
+                "--cli",
+                "claude-code",
+                "--summary",
+                "Merged config v2 under app.js",
+            ],
+        )?;
+        let listed = a.ok(&da, &["session", "list"])?;
+        check(
+            listed.contains("claude-code") && listed.contains("Merged config v2"),
+            &listed,
+        )?;
+    }
+    Ok(())
 }
 
 /// `--atomic` through Git, then a request whose b1 expectation went stale after Git
@@ -652,6 +802,15 @@ fn hundred_files_push_and_fresh_clone(w: &World) -> TestResult {
     )
 }
 
+/// The sandbox team flow with stock Git (see `support::team`).
+fn resumed_team_merge_lands(w: &World) -> TestResult {
+    let (repo, token) = w
+        .platform
+        .repo(&[("README.md", "# Base\n"), ("a.txt", "a\n")])?;
+    let (a, b) = (w.client("team-a", &token)?, w.client("team-b", &token)?);
+    support::team::resumed_merge_lands(&w.platform, &repo, &w.url(&repo), &a, &b)
+}
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli --test smart_http -- --include-ignored"]
 fn stock_git_over_https() -> TestResult {
@@ -659,8 +818,11 @@ fn stock_git_over_https() -> TestResult {
         platform: Platform::start()?,
     };
     clone_push_branch_and_main(&w).map_err(|e| format!("basics: {e}"))?;
+    tags_push_and_clone(&w).map_err(|e| format!("tags: {e}"))?;
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
     same_line_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
+    resumed_team_merge_lands(&w).map_err(|e| format!("team merge: {e}"))?;
+    declared_reads_refuse_a_stale_read(&w).map_err(|e| format!("reads: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     cut_off_push_moves_nothing(&w).map_err(|e| format!("cut off: {e}"))?;
     pack_missing_a_file_moves_nothing(&w).map_err(|e| format!("missing: {e}"))?;

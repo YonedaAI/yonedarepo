@@ -25,6 +25,9 @@ export interface Env {
   /** Check runs on their own queue (minutes each), so they never hold derive and
    * projection jobs' consumer slots; absent where not deployed (PLATFORM_QUEUE then). */
   PLATFORM_CHECKS?: Queue<Envelope>;
+  /** This account's workers.dev subdomain: its Workers are never webhook targets (without
+   * it, no workers.dev host is). */
+  WORKERS_SUBDOMAIN?: string;
   /** Basin Pipelines stream for change-log analytics (platform-dev only; optional). */
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */

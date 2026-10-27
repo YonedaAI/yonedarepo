@@ -8,10 +8,6 @@ import { HistoryTools } from '../history/HistoryTools';
 import { WorkspacePanels } from './WorkspacePanels';
 
 vi.mock('../../hooks/useRepository', () => ({ useRepository: vi.fn() }));
-// Private-key login must use the ordinary workspace rather than a separate trial UI.
-vi.mock('./ReviewerTrial', () => ({
-  ReviewerTrial: () => createElement('button', { type: 'button' }, 'Funded trial'),
-}));
 const exploration = vi.hoisted(() => vi.fn());
 vi.mock('../exploration/Exploration', () => ({ Exploration: exploration }));
 const snapshot: Snapshot = {
@@ -79,7 +75,6 @@ describe('reviewer workspace permissions', () => {
     vi.mocked(useRepository).mockReturnValue(state(true));
     const html = renderToStaticMarkup(createElement(App));
     expect(exploration.mock.calls[0][0].reviewer).toBe(false);
-    expect(html).not.toContain('Funded trial');
     expect(html).toContain('Recover repository');
     for (const label of ['New repository', 'Connect Agents', 'Delete repository'])
       expect(html).toContain(label);

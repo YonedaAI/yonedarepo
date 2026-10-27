@@ -48,7 +48,8 @@ pub struct Clone {
     pub git: Git,
     pub git_dir: PathBuf,
     pub remote: Option<RemoteUrl>,
-    /// The Git remote with the `yoneda::` URL (none for an offline checkout).
+    /// The Git remote with the platform's URL, `yoneda::` or smart HTTP (none for an
+    /// offline checkout).
     pub remote_name: Option<String>,
 }
 
@@ -65,7 +66,7 @@ pub fn current_clone() -> Option<Clone> {
         .lines()
         .filter_map(|line| {
             let (key, value) = line.split_once(' ')?;
-            value.starts_with("yoneda:").then_some(())?;
+            url::is_platform(value).then_some(())?;
             let name = key
                 .strip_prefix("remote.")?
                 .strip_suffix(".url")?

@@ -1,16 +1,5 @@
-import { comparisonReviewAttempt } from './comparison-scope';
 import type { Json } from './types';
 export function checkLedger(snapshot: Json, request?: Json) {
-  if (
-    (request?.comparison != null ||
-      request?.op === 'approve_comparison_review' ||
-      request?.op === 'select_comparison_candidate') &&
-    snapshot?.capabilities?.comparison_review !== 1
-  )
-    throw Object.assign(
-      new Error('Comparison review support is updating; refresh before continuing.'),
-      { code: 'LEDGER_UPDATING' },
-    );
   const requestedEffort = [
     ...(request?.adaptive_team?.requested_agents ?? []),
     ...(request?.agents ?? []),
@@ -21,19 +10,6 @@ export function checkLedger(snapshot: Json, request?: Json) {
       {
         code: 'LEDGER_UPDATING',
       },
-    );
-  if (request?.adaptive_team !== undefined && snapshot?.capabilities?.adaptive_teams !== 1)
-    throw Object.assign(
-      new Error('Automatic team planning is updating; refresh before starting.'),
-      { code: 'LEDGER_UPDATING' },
-    );
-  if (
-    request?.adaptive_team?.specialist_connection != null &&
-    snapshot?.capabilities?.adaptive_specialists !== 1
-  )
-    throw Object.assign(
-      new Error('Specialist model assignment is updating; refresh before starting.'),
-      { code: 'LEDGER_UPDATING' },
     );
   const limits = snapshot?.capabilities?.agent_limits;
   const roots = request?.agents?.length ?? 0;
@@ -48,12 +24,7 @@ export function checkLedger(snapshot: Json, request?: Json) {
     ((request?.model_budgets !== undefined || request?.restart_of !== undefined) &&
       snapshot?.capabilities?.model_budgets !== 1) ||
     (request?.mode === 'collaborate' && snapshot?.capabilities?.collaborative_runs !== 1) ||
-    (request?.autonomy_policy != null && snapshot?.capabilities?.autonomous_repair !== 1) ||
     (request?.working_branch_id != null && snapshot?.capabilities?.working_branches !== 1) ||
-    (request?.campaign != null && snapshot?.capabilities?.campaign_budget !== 1) ||
-    (request?.mode === 'collaborate' &&
-      request?.team == null &&
-      snapshot?.capabilities?.team_planning !== 1) ||
     (request?.continuation_of !== undefined &&
       snapshot?.capabilities?.published_continuation !== 1) ||
     (request?.model_budgets?.some((budget: Json) => budget.max_requests == null) &&
@@ -89,46 +60,19 @@ function compatibleRuntime(health: Json, job: Json) {
   if (job.kind === 'capture' && health?.capabilities?.platform_capture !== 1)
     throw new Error('Container image still pushes captures to Git; wait for rollout completion');
   if (
-    (comparisonReviewAttempt(job) || job.payload?.execution?.comparison_approval_id != null) &&
-    health?.capabilities?.comparison_review !== 1
-  )
-    throw new Error(
-      'Container image does not support comparison review; wait for rollout completion',
-    );
-  if (
     job.payload?.execution?.reasoning_effort != null &&
     health?.capabilities?.reasoning_efforts !== 1
   )
     throw new Error(
       'Container image does not support the approved reasoning effort; wait for rollout completion',
     );
-  if (job.payload?.run?.adaptive_team !== undefined && health?.capabilities?.adaptive_teams !== 1)
-    throw new Error(
-      'Container image does not support automatic team selection; wait for rollout completion',
-    );
   if (health?.protocol !== 2)
     throw new Error('Previous container protocol is still serving; wait for rollout completion');
   if (job.payload?.policy?.build?.app != null && health.capabilities?.app_bundle !== 1)
     throw new Error('Container image cannot capture checked apps; wait for rollout completion');
-  if (
-    job.payload?.team_planning === true &&
-    job.payload?.policy?.build?.app != null &&
-    health.capabilities?.app_planning !== 1
-  )
-    throw new Error('Container image lacks managed app planning; wait for rollout completion');
-  if (job.payload?.run?.autonomy_policy != null && health.capabilities?.agent_coordination !== 1)
-    throw new Error(
-      'Container image cannot coordinate autonomous repairs; wait for rollout completion',
-    );
   if (job.payload?.policy?.build?.test_bundle != null && health.capabilities?.test_bundle !== 1)
     throw new Error(
       'Container image does not support the frozen test bundle; wait for rollout completion',
-    );
-  if (job.payload?.team_planning === true && health.capabilities?.team_planning !== 1)
-    throw new Error('Container image does not support team planning; wait for rollout completion');
-  if (job.payload?.execution?.team_task && health.capabilities?.collaborative_runs !== 1)
-    throw new Error(
-      'Container image does not support collaborative source assembly; wait for rollout completion',
     );
   if (
     job.kind === 'agent' &&

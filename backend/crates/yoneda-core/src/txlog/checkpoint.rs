@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Ref state after `version`, written to R2 so a snapshot is checkpoint + log tail.
+/// Ref state after `version`, stored so a snapshot is checkpoint + log tail.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Checkpoint {
@@ -13,6 +13,38 @@ pub struct Checkpoint {
     pub refs: BTreeMap<String, ObjectId>,
     /// Chain digest of the entry at `version` (empty for version 0).
     pub chain: String,
+}
+
+impl Checkpoint {
+    /// Digest of the full ref map (Delta's version checksum): the chain digest binds a
+    /// checkpoint to its log position, this binds it to its refs.
+    pub fn refs_digest(&self) -> Result<String> {
+        crate::fingerprint(&serde_json::json!(self.refs))
+    }
+
+    /// Accepts a stored checkpoint only when its ref map still hashes to the digest stored
+    /// with it and, once the log has moved past it, to the digest the next entry carries
+    /// (checked against this checkpoint's chain so the entry cannot be swapped either).
+    pub fn verify(&self, stored_digest: &str, next: Option<&TxEntry>) -> Result<()> {
+        let refuse = |why: &str| {
+            Err(invalid(format!(
+                "Checkpoint at version {} {why}",
+                self.version
+            )))
+        };
+        if self.refs_digest()? != stored_digest {
+            return refuse("has a ref map that disagrees with its digest");
+        }
+        let Some(next) = next else { return Ok(()) };
+        if next.version != self.version + 1 {
+            return refuse("is not followed by the next log version");
+        }
+        next.validate(&self.chain)?;
+        if next.checkpoint_refs.as_deref() != Some(stored_digest) {
+            return refuse("has a ref map digest that the next log entry does not record");
+        }
+        Ok(())
+    }
 }
 
 /// Applies `tail` to `from`, verifying contiguity, the hash chain and each ref's old value.

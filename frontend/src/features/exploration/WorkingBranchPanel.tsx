@@ -33,8 +33,6 @@ export function WorkingBranchPanel({
       (other.id === run.id || other.working_branch_id === run.working_branch_id) &&
       runHasActiveAttempts(snapshot, other),
   );
-  // The guided demo owns its next steps; a free-form continuation would race the guide.
-  const guided = !!run.guided;
   return (
     <aside className="working-branch-panel" aria-label="Working branch">
       <h3>{branch.latest_candidate_id ? 'Checked working branch' : 'Working branch'}</h3>
@@ -56,7 +54,7 @@ export function WorkingBranchPanel({
         )}
       </p>
       {!branch.latest_candidate_id && <p>No checked candidate has advanced this branch yet.</p>}
-      {!reviewer && onContinue && !guided && (
+      {!reviewer && onContinue && (
         <button
           type="button"
           className={branch.latest_candidate_id ? 'primary' : 'quiet'}
@@ -66,14 +64,11 @@ export function WorkingBranchPanel({
           {branch.latest_candidate_id ? 'Continue checked work' : 'Open working brief'}
         </button>
       )}
-      {active && !guided && (
-        <p>Finish or cancel the active work on this branch before continuing.</p>
-      )}
+      {active && <p>Finish or cancel the active work on this branch before continuing.</p>}
       {branch.status !== 'active' && <p>Recorded branch status: {branch.status}.</p>}
       <p className="subtle">
-        {guided
-          ? 'The guided demo continues this branch through its next step.'
-          : 'Continuation opens an editable brief with this working-head lease. Review and approve it before agents start.'}
+        Continuation opens an editable brief with this working-head lease. Review and approve it
+        before agents start.
       </p>
     </aside>
   );

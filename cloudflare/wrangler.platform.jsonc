@@ -43,7 +43,9 @@
     "ARTIFACTS_NAMESPACE": "yoneda-platform-dev",
     // Benchmarks may pick the landing mode per request (x-yoneda-land-mode).
     "LAND_MODE": "batch",
-    "LAND_MODE_OVERRIDE": "true"
+    "LAND_MODE_OVERRIDE": "true",
+    // This account's Workers are never webhook targets (repo-hooks.ts).
+    "WORKERS_SUBDOMAIN": "mlong-f01"
   },
   "artifacts": [
     {

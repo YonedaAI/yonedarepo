@@ -5,10 +5,10 @@ import type { Env, Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
 import { assertWorkspaceQuiescent } from '../../cloudflare/worker/workspace-transition';
 import { bindings, signup } from './reviewer-fixture';
-import { approvedLedger } from './source-kit';
+import { approvedLedger, buildPolicy, oneAgent } from './source-kit';
 
 afterEach(reset);
-const policy = { version: 'retry-v2', suite: 'retry-contract-v2', environment: 'rust-1.94.0-evaluator-v2', required_checks: ['build', 'behavior'] };
+const policy = buildPolicy;
 async function project(owner: string, id: string, status = 'ready') {
   await workspace(bindings, owner, { op: 'project_reserve', id, name: id, policy });
   if (status !== 'provisioning')
@@ -22,7 +22,7 @@ it('accepts an empty workspace or terminal visible history without changing any 
   const owner = 'transition_idle'; await signup(owner);
   await expect(assertWorkspaceQuiescent(bindings, owner)).resolves.toBeUndefined();
   await project(owner, 'idle-project');
-  await approvedLedger(bindings, 'idle-project')({ op: 'start_run', id: 'old', intent: 'Old legacy run' });
+  await approvedLedger(bindings, 'idle-project')({ op: 'start_run', id: 'old', intent: 'Old legacy run', agents: oneAgent });
   await ledger(bindings, 'idle-project', { op: 'cancel_run', run_id: 'old' });
   const before = await ledger(bindings, 'idle-project', { op: 'run_detail', run_id: 'old' });
   const inventory = await workspace(bindings, owner, { op: 'projects' });
@@ -37,7 +37,7 @@ it('accepts an empty workspace or terminal visible history without changing any 
 it('rejects one active legacy run among otherwise idle ready projects without cancellation', async () => {
   const owner = 'transition_active'; await signup(owner);
   await project(owner, 'idle-first'); await project(owner, 'active-second');
-  await approvedLedger(bindings, 'active-second')({ op: 'start_run', id: 'active', intent: 'Active legacy run' });
+  await approvedLedger(bindings, 'active-second')({ op: 'start_run', id: 'active', intent: 'Active legacy run', agents: oneAgent });
   const before = await ledger(bindings, 'active-second', { op: 'run_detail', run_id: 'active' });
   await expect(assertWorkspaceQuiescent(bindings, owner)).rejects.toMatchObject({ code: 'WORKSPACE_TRANSITION_BUSY' });
   expect(await ledger(bindings, 'active-second', { op: 'run_detail', run_id: 'active' })).toEqual(before);
@@ -83,6 +83,6 @@ it('includes hidden projects and rejects work started through their retained dir
     hidden: true, expected_hidden: false, reason: 'Synthetic hidden idle project', _visibility: receipt });
   expect((await workspace(bindings, owner, { op: 'projects' })).projects).toEqual([]);
   await expect(assertWorkspaceQuiescent(bindings, owner)).resolves.toBeUndefined();
-  await approvedLedger(bindings, 'hidden-project')({ op: 'start_run', id: 'hidden-active', intent: 'Retained direct legacy authority' });
+  await approvedLedger(bindings, 'hidden-project')({ op: 'start_run', id: 'hidden-active', intent: 'Retained direct legacy authority', agents: oneAgent });
   await expect(assertWorkspaceQuiescent(bindings, owner)).rejects.toMatchObject({ code: 'WORKSPACE_TRANSITION_BUSY' });
 });

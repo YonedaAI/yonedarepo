@@ -2,14 +2,11 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
 import { RunSourceProgress } from '../source-workspace/RunSourceProgress';
-import { TeamWorkflow } from '../team/TeamWorkflow';
-import { runCandidates } from '../team/teamView';
+import { SandboxTeam } from '../team/SandboxTeam';
 import { AgentActivityTimeline } from './AgentActivityTimeline';
-import { AgentConversation } from './AgentConversation';
 import { AgentWorkSummary } from './AgentWorkSummary';
 import { comparisonState } from './comparisonView';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
-import { IntentQuestion } from './IntentQuestion';
 import { PublishingDecision } from './PublishingDecision';
 import { RejectDialog } from './RejectDialog';
 import { RunAttention } from './RunAttention';
@@ -18,8 +15,10 @@ import { RunDetailsPanel } from './RunDetailsPanel';
 import { RunOverviewHeader } from './RunOverviewHeader';
 import { type RunTab, RunTabs } from './RunTabs';
 import { canCancelRun, runHasActiveAttempts } from './runControlState';
+import { runCandidates } from './runResults';
 import { selectionBlocker } from './runReviewState';
 import { StaleCandidateRepair } from './StaleCandidateRepair';
+import { isSandboxTeam } from './sandboxActivityView';
 import '../../styles/review-work.css';
 import { WorkingBranchPanel } from './WorkingBranchPanel';
 import type { WorkingBranch } from './workingBranchView';
@@ -39,19 +38,13 @@ export function RunDetail({
   onSelectRun,
   onRestart,
   onCancel,
-  onRetry,
-  onRepairTask,
   onAccept,
   onProviders,
   onContext,
   onContinueBranch,
-  onAnswerIntent,
   onComparisonAction,
   onRefresh,
-  onGuidedContinue,
   onReject,
-  focusRequest = 0,
-  focusCandidate,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -61,8 +54,6 @@ export function RunDetail({
   onSelectRun: (id: string) => void;
   onRestart: () => void;
   onCancel: () => void;
-  onRetry: (task: Record<string, any>) => void;
-  onRepairTask: (request: Record<string, unknown>) => Promise<boolean>;
   onAccept: (
     candidate: string,
     rationale: string,
@@ -71,14 +62,9 @@ export function RunDetail({
   onProviders?: () => void;
   onContext: () => void;
   onContinueBranch?: (branch: WorkingBranch) => void;
-  onAnswerIntent?: (question: string, answer: string) => Promise<boolean>;
   onComparisonAction?: ComparisonAction;
   onRefresh?: () => Promise<void>;
-  onGuidedContinue?: () => void;
   onReject?: (candidate: string, reason: string) => Promise<boolean>;
-  focusRequest?: number;
-  /** A result to reveal when `focusRequest` changes, e.g. from the guided demo. */
-  focusCandidate?: string;
 }) {
   const [tab, setTab] = useState<RunTab>('results');
   const [focusTarget, setFocusTarget] = useState('');
@@ -88,11 +74,8 @@ export function RunDetail({
   const [resultFocus, setResultFocus] = useState<{ candidate: string; request: number }>();
   const team = run.mode === 'collaborate';
   const activeAttempts = runHasActiveAttempts(snapshot, run);
-  const coding = snapshot.executions.filter(
+  const roots = snapshot.executions.filter(
     (execution) => execution.run_id === run.id && execution.role === 'coding',
-  );
-  const roots = coding.filter(
-    (execution) => !execution.parent_execution && execution.comparison_role !== 'repair',
   ).length;
   const previousRun =
     run.restart_of ??
@@ -120,10 +103,6 @@ export function RunDetail({
     setTab('results');
     setResultFocus((current) => ({ candidate, request: (current?.request ?? 0) + 1 }));
   }
-  // biome-ignore lint/correctness/useExhaustiveDependencies: each request reveals the result again.
-  useEffect(() => {
-    if (focusRequest && focusCandidate) openResult(focusCandidate);
-  }, [focusRequest, focusCandidate]);
   useEffect(() => {
     if (!focusTarget) return;
     const element = document.getElementById(focusTarget);
@@ -134,26 +113,16 @@ export function RunDetail({
   return (
     <>
       <RunOverviewHeader
-        focusRequest={focusRequest}
         run={run}
         roots={roots}
-        subagents={coding.length - roots}
         previousRun={previousRun}
         onSelectRun={onSelectRun}
       />
       <RunSourceProgress snapshot={snapshot} run={run} busy={busy} onRefresh={onRefresh} />
-      <IntentQuestion
-        key={`${run.intent_question?.id}:${run.intent_question?.status}`}
-        run={run}
-        reviewer={reviewer}
-        busy={busy}
-        onAnswer={onAnswerIntent}
-      />
       <RunAttention
         snapshot={snapshot}
         run={run}
         busy={busy}
-        onGuidedContinue={onGuidedContinue}
         onCancel={canCancelRun(run, activeAttempts) ? onCancel : undefined}
         onAction={(action, candidate) => {
           if ((action === 'review' || action === 'results') && candidate) openResult(candidate);
@@ -196,7 +165,6 @@ export function RunDetail({
                 onCompare={() => setComparing(!comparing)}
                 onSelect={review}
                 onProviders={reviewer ? undefined : onProviders}
-                onInspectTask={(id) => openEvidence('activity', `team-task-${id}`)}
                 onContext={() => openEvidence('context')}
                 onGraph={onContext}
                 onComparisonAction={onComparisonAction}
@@ -212,23 +180,16 @@ export function RunDetail({
             </>
           ) : panel === 'activity' ? (
             <>
-              <AgentConversation
-                key={run.id}
-                snapshot={snapshot}
-                run={run}
-                onContext={() => openEvidence('context')}
-              />
               <AgentActivityTimeline snapshot={snapshot} run={run} />
-              {team ? (
-                <TeamWorkflow
-                  reviewer={reviewer}
-                  snapshot={snapshot}
-                  run={run}
-                  busy={busy}
-                  onProviders={reviewer ? undefined : onProviders}
-                  onRetry={onRetry}
-                  onRepair={onRepairTask}
-                />
+              {isSandboxTeam(run) ? (
+                <section className="team-workflow" aria-labelledby="team-workflow-heading">
+                  <h2 id="team-workflow-heading">Build together</h2>
+                  <SandboxTeam
+                    snapshot={snapshot}
+                    run={run}
+                    onProviders={reviewer ? undefined : onProviders}
+                  />
+                </section>
               ) : (
                 <ExecutionHierarchy
                   snapshot={snapshot}

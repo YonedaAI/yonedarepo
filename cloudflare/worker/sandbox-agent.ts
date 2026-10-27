@@ -83,7 +83,7 @@ export class AgentSandbox extends DurableObject<Env> {
   async alarm(): Promise<void> {
     const host: TeamHost = {
       ensure: (props, start) => this.ensureSandbox(props, start),
-      run: (command, cwd, env) => this.run(command, cwd, env),
+      run: (command, cwd, env, stdin) => this.run(command, cwd, env, stdin),
       destroy: () => this.destroyContainer(),
       startTask: (command, env) => this.startTask(command, env),
     };
@@ -288,8 +288,10 @@ export class AgentSandbox extends DurableObject<Env> {
     command: string[],
     cwd: string,
     env: Record<string, string>,
+    stdin?: string,
   ): Promise<CommandResult> {
-    const output = await (await this.container.exec(command, { cwd, env })).output();
+    const input = stdin === undefined ? {} : { stdin: new Response(stdin).body as ReadableStream };
+    const output = await (await this.container.exec(command, { cwd, env, ...input })).output();
     const decoder = new TextDecoder();
     return {
       exitCode: output.exitCode,

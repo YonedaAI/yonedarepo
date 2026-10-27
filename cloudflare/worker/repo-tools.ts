@@ -8,10 +8,13 @@ import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { listTree, readFile } from './repo-files';
+import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
+import { memberOperations } from './repo-members';
 import { explicitMerge } from './repo-merge';
 import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
+import { dispatchProjection } from './repo-projection';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { agentView } from './repo-views';
 
@@ -57,19 +60,34 @@ export const operations: Record<string, Operation> = {
   git_diff: diff,
   // A client's commit on main begins from the published head (no authority call).
   git_commit: (ctx, a) => commit(ctx, null, { ...a, begin_from_head: true }),
-  git_check: (ctx, a) =>
-    ctx.call({
+  git_check: async (ctx, a) => {
+    const posted = await ctx.call({
       op: 'repo_check',
       commit: a.commit,
       name: a.name,
       status: a.status,
       evidence: a.evidence,
-    }),
+    });
+    if (posted.hooks) await notifyHooks(ctx.env, ctx.repo);
+    return posted;
+  },
   git_check_run: async (ctx, a) => {
     const requested = await ctx.call({ op: 'repo_check_request', commit: a.commit, name: a.name });
     await dispatchRuns(ctx.env, ctx.repo, requested.runs);
     return requested;
   },
+  git_session_record: (ctx, a) =>
+    ctx.call({
+      op: 'repo_session_record',
+      commit: a.commit,
+      cli: a.cli,
+      summary: a.summary,
+      model: a.model ?? null,
+      prompt_digest: a.prompt_digest ?? null,
+      transcript_ref: a.transcript_ref ?? null,
+      read_set_digest: a.read_set_digest ?? null,
+    }),
+  git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
   git_bisect: async (ctx, a) => {
     const step = a.id
       ? await ctx.call({ op: 'repo_bisect_step', id: a.id })
@@ -90,8 +108,25 @@ export const operations: Record<string, Operation> = {
   git_merge: explicitMerge,
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
-  git_branch: (ctx, a) =>
-    ctx.call({ op: 'repo_branch_set', ref: a.ref, commit: a.commit, expected: a.expected ?? null }),
+  git_branch: async (ctx, a) => {
+    const moved = await ctx.call({
+      op: 'repo_branch_set',
+      ref: a.ref,
+      commit: a.commit,
+      expected: a.expected ?? null,
+    });
+    await notifyHooks(ctx.env, ctx.repo);
+    return moved;
+  },
+  // A new tag is mirrored to the object store like a protected branch.
+  git_tag: async (ctx, a) => {
+    const created = await ctx.call({ op: 'repo_tag_create', name: a.name, commit: a.commit });
+    if (!created.already)
+      await Promise.all([dispatchProjection(ctx.env, ctx.repo), notifyHooks(ctx.env, ctx.repo)]);
+    return created;
+  },
+  ...hookOperations,
+  ...memberOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))
       throw new ApiError('INVALID_INPUT', 'commit must be a 40-character commit id');

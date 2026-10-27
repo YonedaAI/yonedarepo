@@ -115,6 +115,11 @@
 .source-note {
   color: var(--muted);
 }
+.source-session-summary {
+  margin: 4px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .source-note {
   background: #fff8e6;
   border: 1px solid #f0dca8;

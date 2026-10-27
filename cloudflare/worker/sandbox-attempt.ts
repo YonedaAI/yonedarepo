@@ -1,10 +1,17 @@
 // The agent layer's side of a `sandbox-cli-v1` attempt: which runs take the sandbox, what an
 // attempt needs to start, where its model requests go, and recording the pushed commit.
 // The ledger owns the run; the AgentSandbox Durable Object owns the sandbox.
-import { providerDefinition, runsInSandbox } from '../../shared/providers';
-import { repositoryPlatform, revisionProject } from './agents-platform';
+import {
+  defaultSandboxCli,
+  providerDefinition,
+  runsInSandbox,
+  type SandboxCli,
+  sandboxCliFits,
+} from '../../shared/providers';
+import { type ProjectPlatform, repositoryPlatform, revisionProject } from './agents-platform';
 import { commitFacts } from './contribution-capture';
 import { mimoUpstream } from './mimo-routing';
+import { modelPaths } from './sandbox-cli';
 import type { AgentEgress } from './sandbox-outbound';
 import { ensureTeamBranch, runSegment, teamBranch } from './sandbox-team';
 import { platformSource } from './source-objects';
@@ -28,6 +35,11 @@ export type SandboxAttempt = {
   /** A team member: its pushed commit lands on `attempts/<run>/team` (sandbox-team.ts). */
   team?: { branch: string };
   harness: string;
+  /**
+   * The stock CLI the agent runs (sandbox-cli.ts), frozen with the run's agent; absent on
+   * attempts begun before the choice existed, which ran Claude Code.
+   */
+  cli?: SandboxCli;
   provider: string;
   connection?: string;
   model: string;
@@ -64,6 +76,9 @@ export const agentEgress = (attempt: SandboxAttempt): AgentEgress => ({
   model: attempt.model,
   routing: attempt.routing,
   modelBase: attempt.model_base,
+  modelPaths: modelPaths(attempt),
+  job_id: attempt.job_id,
+  epoch: attempt.epoch,
 });
 
 /** One sandbox per execution; the name also finds its activity log later. */
@@ -75,8 +90,7 @@ export const sandboxName = (repo: string, execution: string) => `${repo}/${execu
  * set and the gateway has a custom provider for that upstream (`custom-<provider>`).
  */
 export function modelBase(env: Env, provider: string, routing?: Json | null): string {
-  if (!runsInSandbox(provider))
-    fail('SANDBOX_HARNESS', `Sandbox runs use Claude Code; ${provider} needs another CLI`);
+  if (!runsInSandbox(provider)) fail('SANDBOX_HARNESS', `No sandbox CLI runs ${provider} models`);
   const definition = providerDefinition(provider);
   const upstream = provider === 'mimo' ? mimoUpstream(routing) : definition.api_base;
   const gateway = env.SANDBOX_AI_GATEWAY;
@@ -89,7 +103,19 @@ export function modelBase(env: Env, provider: string, routing?: Json | null): st
 }
 
 /**
- * The task as Claude Code receives it: the owner's brief and criteria, then (a team member)
+ * The run's frozen CLI for the execution; executions frozen before the choice existed get
+ * the provider's default (Claude Code for the Anthropic-format connections they all used).
+ */
+export function executionCli(execution: Json): SandboxCli {
+  const provider = String(execution.provider);
+  const cli = execution.cli ?? defaultSandboxCli(provider);
+  if (!sandboxCliFits(provider, cli))
+    return fail('SANDBOX_HARNESS', `${String(cli)} cannot run ${provider} models`);
+  return cli;
+}
+
+/**
+ * The task as the CLI receives it: the owner's brief and criteria, then (a team member)
  * its own task and that the other tasks run in parallel, nothing else.
  */
 export function agentPrompt(run: Json, task?: Json): string {
@@ -134,6 +160,7 @@ export async function sandboxAttempt(env: Env, repo: string, job: Json): Promise
     branch: `attempts/${await runSegment(String(run.id))}/${index}`,
     ...(execution.sandbox_task ? { team: { branch: await teamBranch(String(run.id)) } } : {}),
     harness: String(execution.harness),
+    cli: executionCli(execution),
     provider: String(execution.provider),
     connection: execution.connection ?? undefined,
     model: String(execution.model),
@@ -174,6 +201,27 @@ export async function sandboxActivity(env: Env, repo: string, execution: string,
 }
 
 /** Reads the pushed branch from the platform and makes its commit the run's candidate. */
+/** The platform's session record for the pushed commit: the CLI, model, the agent's final
+ * summary and a digest of its prompt. Posted with the project token, the commit's pusher,
+ * from the Worker (never the sandbox). A refused or lost record never fails the run. */
+async function recordSession(
+  platform: ProjectPlatform,
+  attempt: SandboxAttempt,
+  commit: string,
+  summary: string,
+) {
+  const cli = attempt.cli ?? 'claude';
+  await platform
+    .call('POST', `/commits/${commit}/sessions`, {
+      cli: cli === 'claude' ? 'claude-code' : cli,
+      model: attempt.model,
+      summary: summary.trim().slice(0, 4096) || 'Sandbox agent change',
+      prompt_digest: await sha(attempt.prompt),
+      transcript_ref: `sandbox:${attempt.execution_id}`,
+    })
+    .catch((e: any) => console.warn(`session record for ${commit} failed: ${e?.message ?? e}`));
+}
+
 export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, summary: string) {
   const platform = await repositoryPlatform(env, attempt.repo);
   const source = platformSource(platform);
@@ -186,6 +234,7 @@ export async function recordSandboxCandidate(env: Env, attempt: SandboxAttempt, 
   if (revisionProject(repository) !== attempt.repo)
     return fail('SOURCE_SCOPE', 'The attempt base is outside this project');
   const facts = await commitFacts(env, platform, attempt.base.commit, commit);
+  await recordSession(platform, attempt, commit.hash, summary);
   return ledger(env, attempt.repo, {
     op: 'sandbox_finish',
     job_id: attempt.job_id,

@@ -98,7 +98,7 @@ export function ContextGraph({
       <div className="graph-empty">
         <span className="branch-symbol">⤷</span>
         <h3>History begins with intent.</h3>
-        <p>Start an exploration to connect research, source and decisions.</p>
+        <p>Start an exploration to connect context, source and decisions.</p>
       </div>
     );
   return (

@@ -169,7 +169,7 @@ export function HistoryTools({
               <button type="submit">Record simulated observation</button>
             </form>
           ) : (
-            <p className="empty-note">Research has not recorded a bounded assumption yet.</p>
+            <p className="empty-note">No agent has recorded a bounded assumption yet.</p>
           )}
         </section>
       )}

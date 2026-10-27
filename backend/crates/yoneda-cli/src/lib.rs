@@ -2,6 +2,7 @@
 //! Locally it is plain Git; the platform's value (server-side merges on landing, one
 //! transaction per push, server-side reads) is reached through the public HTTP API.
 pub mod account;
+mod agent_hook;
 pub mod api;
 pub mod args;
 mod attempt;
@@ -25,6 +26,8 @@ pub mod remote;
 mod replay;
 mod repo_ops;
 mod run;
+pub mod session_cmd;
+pub mod session_files;
 pub mod setup;
 mod snapshot;
 mod state;

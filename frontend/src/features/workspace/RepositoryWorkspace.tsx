@@ -1,17 +1,10 @@
-import { ArrowLeft, GitBranch, GitCompareArrows, LoaderCircle, Network } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import {
-  type GuidedSession,
-  type GuidedStepId,
-  isGuidedProfileVersion,
-} from '../../../../shared/guided-runs';
+import { GitBranch, GitCompareArrows, Network } from 'lucide-react';
+import { useState } from 'react';
 import { short } from '../../lib/api';
 import type { Graph, Snapshot } from '../../lib/types';
 import { Exploration } from '../exploration/Exploration';
 import { SiteLink } from '../exploration/SiteLink';
 import { GraphWorkspace } from '../graph/GraphWorkspace';
-import { GuidedWorkspace } from '../guided-demo/GuidedWorkspace';
-import { useGuidedRun } from '../guided-demo/useGuidedRun';
 import { ConflictStatusPanel } from '../history/ConflictStatusPanel';
 import { HistoryTools } from '../history/HistoryTools';
 import type { WorkspacePanel } from './WorkspacePanels';
@@ -25,9 +18,6 @@ export function RepositoryWorkspace({
   onError,
   onPanel,
   onProviders,
-  onGuidedDemo,
-  guidedSessionId,
-  onGuidedSession,
 }: {
   reviewer?: boolean;
   snapshot: Snapshot;
@@ -37,49 +27,8 @@ export function RepositoryWorkspace({
   onError: (message: string) => void;
   onPanel: (panel: WorkspacePanel) => void;
   onProviders?: (refresh?: () => void) => void;
-  onGuidedDemo?: () => void;
-  guidedSessionId?: string;
-  onGuidedSession?: (repo: string, session: string) => void;
 }) {
-  const nativeGuide =
-    snapshot.repository.guided_project?.profile_id === 'task-board-v1' &&
-    isGuidedProfileVersion(snapshot.repository.guided_project.version);
-  const guideSession = guidedSessionId ?? (nativeGuide ? '' : undefined);
-  const [view, setView] = useState(guideSession === undefined ? 'runs' : 'guided');
-  const [guideState, setGuideState] = useState<GuidedSession>();
-  const [guidedRunId, setGuidedRunId] = useState('');
-  const [guidedCandidate, setGuidedCandidate] = useState<string>();
-  const guidedRun = useGuidedRun(snapshot, guidedRunId);
-  const visible = { ...(guidedRunId ? guidedRun.snapshot : snapshot), guided_session: guideState };
-  useEffect(() => {
-    if (guidedSessionId !== undefined || !onGuidedSession) return;
-    if (nativeGuide) {
-      onGuidedSession(snapshot.repository.id, '');
-      return;
-    }
-    const bound = snapshot.runs.find(
-      (run) =>
-        isGuidedProfileVersion(run.guided?.version) && run.guided?.profile_id === 'task-board-v1',
-    );
-    if (typeof bound?.guided?.session_id === 'string')
-      onGuidedSession(snapshot.repository.id, bound.guided.session_id);
-  }, [snapshot.runs, snapshot.repository.id, guidedSessionId, onGuidedSession, nativeGuide]);
-  // Each request to open a run, even the same run again, scrolls to and focuses its heading.
-  const [runFocus, setRunFocus] = useState(0);
-  function inspectGuideRun(runId: string, _step: GuidedStepId, candidate?: string, kind?: string) {
-    // Review names only its candidate; open the run that recorded it, not the default run.
-    const target = runId || snapshot.candidates.find((item) => item.id === candidate)?.run_id || '';
-    setGuidedRunId(target);
-    setGuidedCandidate(candidate);
-    setEvidenceRun(target);
-    const next = kind?.includes('conflict')
-      ? 'history'
-      : kind?.includes('context')
-        ? 'graph'
-        : 'runs';
-    if (next === 'runs') setRunFocus((count) => count + 1);
-    setView(next);
-  }
+  const [view, setView] = useState('runs');
   const [evidenceRun, setEvidenceRun] = useState('');
   const [history, setHistory] = useState<Graph | null>(null);
   const repo = snapshot.repository;
@@ -87,9 +36,6 @@ export function RepositoryWorkspace({
     <>
       <nav className="workspace-tabs" aria-label="Repository views">
         {[
-          ...(guidedSessionId === undefined
-            ? []
-            : [{ id: 'guided', label: 'Guided demo', Icon: GitBranch }]),
           { id: 'runs', label: 'Runs', Icon: GitCompareArrows },
           { id: 'graph', label: 'Evidence trail', Icon: Network },
           { id: 'history', label: 'Source history', Icon: GitBranch },
@@ -105,13 +51,6 @@ export function RepositoryWorkspace({
             {label}
           </button>
         ))}
-        {(guidedRun.refreshing || guidedRun.refreshError) && (
-          <span className="live-updating" role="status">
-            {guidedRun.refreshError
-              ? 'Could not update; showing the last loaded state'
-              : 'Updating…'}
-          </span>
-        )}
         {repo.site && (
           <div className="tab-site">
             <SiteLink repo={repo.id} publishedCommit={repo.site.commit} />
@@ -134,51 +73,10 @@ export function RepositoryWorkspace({
           onError={onError}
         />
       )}
-      {view === 'guided' && guideSession !== undefined && onGuidedSession && (
-        <GuidedWorkspace
-          snapshot={snapshot}
-          sessionId={guideSession}
-          onSession={onGuidedSession}
-          onState={setGuideState}
-          onInspect={inspectGuideRun}
-          onProviders={() => onPanel('agents')}
-          onRefreshSnapshot={onChange}
-        />
-      )}
-      {/* The Runs toolbar carries its own back link beside its actions. */}
-      {guideSession !== undefined && !['guided', 'runs'].includes(view) && (
-        <p className="guided-reference">
-          <button
-            type="button"
-            className="text-button guided-back"
-            onClick={() => setView('guided')}
-          >
-            <ArrowLeft size={15} aria-hidden="true" />
-            Back to guided demo
-          </button>
-        </p>
-      )}
-      {/* Only the first read of a selected run replaces its view; live updates keep it rendered. */}
-      {view === 'runs' && guidedRun.loading && (
-        <p className="workspace-inline-status" role="status">
-          <LoaderCircle size={16} className="spin" aria-hidden="true" />
-          Loading this run’s current source and checks…
-        </p>
-      )}
-      {view === 'runs' && guidedRun.error && (
-        <p className="workspace-inline-status" role="alert">
-          {guidedRun.error}
-        </p>
-      )}
-      {view === 'runs' && !guidedRun.loading && !guidedRun.error && (
+      {view === 'runs' && (
         <Exploration
           reviewer={reviewer}
-          snapshot={visible}
-          focusedRunId={guidedRunId || undefined}
-          focusRequest={runFocus}
-          focusedCandidateId={guidedCandidate}
-          onGuidedDemo={onGuidedDemo}
-          onGuidedContinue={guideSession === undefined ? undefined : () => setView('guided')}
+          snapshot={snapshot}
           onChange={onChange}
           onError={onError}
           onProviders={(refresh) => (onProviders ? onProviders(refresh) : onPanel('providers'))}
@@ -192,17 +90,17 @@ export function RepositoryWorkspace({
           }}
         />
       )}
-      {view === 'graph' && <GraphWorkspace snapshot={visible} runId={evidenceRun || undefined} />}
+      {view === 'graph' && <GraphWorkspace snapshot={snapshot} runId={evidenceRun || undefined} />}
       {view === 'history' && (
         <>
           <HistoryTools
             reviewer={reviewer}
-            snapshot={visible}
+            snapshot={snapshot}
             onGraph={setHistory}
             onError={onError}
           />
           {history && (
-            <GraphWorkspace snapshot={visible} initialGraph={history} title="Revision context" />
+            <GraphWorkspace snapshot={snapshot} initialGraph={history} title="Revision context" />
           )}
         </>
       )}

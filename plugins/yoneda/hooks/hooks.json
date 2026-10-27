@@ -1,5 +1,5 @@
 {
-  "description": "Show the yoneda status at session start, only in a repository with a yoneda:: remote.",
+  "description": "YonedaRepo: the status line at session start, and in a clone with a YonedaRepo remote the files read become the next push's declared reads, a plain git push over smart HTTP is sent to yoneda push while reads are recorded, and each pushed commit gets a session record at the end of the turn.",
   "hooks": {
     "SessionStart": [
       {
@@ -9,6 +9,41 @@
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-status.sh\"",
             "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-read",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-bash",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-stop",
+            "timeout": 30
           }
         ]
       }

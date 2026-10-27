@@ -43,31 +43,6 @@ pub fn approve_start(db: &NativeStore, c: &mut Value) {
     if c["op"] == "start_run" {
         let base = working(db, c["working_branch_id"].as_str()).unwrap_or_else(|| published(db));
         approve(c, &base);
-    } else if c["op"] == "start_guided_step" {
-        let session = c["session_id"].as_str().unwrap_or_default();
-        let branch = crate::storage::get(db, "nodes", session)
-            .ok()
-            .and_then(|n| n["data"]["working_branch_id"].as_str().map(str::to_owned));
-        let mut base = working(db, branch.as_deref()).unwrap_or_else(|| published(db));
-        // A concurrent retry restarts from the checked extend checkpoint, not the branch head.
-        if c["retry"] == true && c["step_id"] == "concurrent" {
-            let view = crate::execute(
-                db,
-                json!({"op":"guided_session","_workspace":c["_workspace"],"id":session,"now":c["now"]}),
-            )
-            .unwrap_or(Value::Null);
-            if let Some(extend) = view["steps"].as_array().and_then(|steps| {
-                steps
-                    .iter()
-                    .find(|step| step["id"] == "extend")
-                    .map(|step| step["revision"].clone())
-            }) {
-                base = extend;
-            }
-        }
-        for run in c["_guided_runs"].as_array_mut().into_iter().flatten() {
-            approve(run, &base);
-        }
     }
 }
 

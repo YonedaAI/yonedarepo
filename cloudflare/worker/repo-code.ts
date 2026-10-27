@@ -163,7 +163,12 @@ export async function codemod(ctx: RepoContext, args: Json) {
     segments.map(async (entry) => {
       if (entry.too_large)
         return { partition: entry.partition.prefix, skipped: true, changes: [] as Json[] };
-      const { candidates } = compute({ op: 'search_segment', segment: entry.segment, query: find });
+      const { candidates } = compute({
+        op: 'search_segment',
+        segment: entry.segment,
+        prefix: entry.partition.prefix,
+        query: find,
+      });
       const changes: Json[] = [];
       for (const file of await keepAllowed(ctx, candidates as Json[])) {
         if (!file.indexed || (prefix && !String(file.path).startsWith(prefix))) continue;

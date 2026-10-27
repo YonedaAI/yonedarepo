@@ -3,7 +3,6 @@ import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
-import { startCampaignTrial } from '../../cloudflare/worker/reviewer-campaign-trial';
 import { reserveWorkspaceSpend, settleWorkspaceSpend, validateWorkspaceSpendRun,
   workspaceSpendConfigure, workspaceSpendRun, workspaceSpendStatus } from '../../cloudflare/worker/workspace-spend';
 import { signup } from './reviewer-fixture';
@@ -41,7 +40,6 @@ it('requires server run markers and pricing for every distinct pool group', () =
   expect(()=>validateWorkspaceSpendRun(run)).not.toThrow();
   for(const budgets of [[],[{...budget,pricing:null}],[budget,budget]])
     expect(()=>validateWorkspaceSpendRun({...run,model_budgets:budgets})).toThrowError(expect.objectContaining({code:'WORKSPACE_SPEND_SCOPE'}));
-  expect(()=>validateWorkspaceSpendRun({...run,campaign:{id:'old'}})).toThrow('legacy');
 });
 it('observes legacy workspace reservations once without changing their counters or limit', async () => {
   const owner='retained_allowance';await signup(owner);
@@ -66,13 +64,4 @@ it('serializes competing provider groups against one allowance rather than one c
   expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
   expect(results.find(r=>r.status==='rejected')).toMatchObject({reason:{code:'WORKSPACE_SPEND_EXHAUSTED'}});
   expect(await workspaceSpendStatus(bindings,owner)).toMatchObject({reserved_microusd:700,remaining_microusd:300});
-});
-it('denies legacy campaign trial creation before any historical campaign allocation after transition', async () => {
-  const owner='transitioned_campaign';await signup(owner);
-  const status=await workspaceSpendConfigure(bindings,owner,0,50000000);
-  await expect(startCampaignTrial(bindings,owner,'forbidden-new-trial'))
-    .rejects.toMatchObject({code:'WORKSPACE_LEGACY_INFERENCE_BLOCKED'});
-  expect(await workspaceSpendStatus(bindings,owner)).toEqual(status);
-  await expect(workspace(bindings,owner,{op:'campaign_status',id:'reviewer-event-booking-20261012-v1'}))
-    .rejects.toMatchObject({code:'NOT_FOUND'});
 });

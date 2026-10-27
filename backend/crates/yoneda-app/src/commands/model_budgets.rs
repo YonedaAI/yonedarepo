@@ -3,28 +3,8 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 use yoneda_agents_core::{Error, Result, model_budget::ModelBudget};
 
-pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>>> {
-    if !general {
-        if c.get("model_budgets").is_none() {
-            return Ok(None);
-        }
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Model budgets require a hosted coding run",
-        ));
-    }
-    let mut approved_agents = if c["adaptive_team"].is_object() {
-        c["_approved_model_pool"].clone()
-    } else {
-        c["agents"].clone()
-    };
-    if c["comparison"].is_object() {
-        approved_agents
-            .as_array_mut()
-            .ok_or_else(|| bad("Missing comparison builders"))?
-            .push(c["_comparison_reviewer"].clone());
-    }
-    let agents = approved_agents
+pub(super) fn freeze(c: &Value) -> Result<Option<Vec<ModelBudget>>> {
+    let agents = c["agents"]
         .as_array()
         .ok_or_else(|| bad("Missing scheduled agents"))?;
     let defaults = agents
@@ -49,7 +29,7 @@ pub(super) fn freeze(c: &Value, general: bool) -> Result<Option<Vec<ModelBudget>
             return Err(bad("Duplicate provider/model budget"));
         }
     }
-    let agents = approved_agents
+    let agents = c["agents"]
         .as_array()
         .ok_or_else(|| bad("Missing scheduled agents"))?;
     let scheduled: BTreeSet<_> = agents
@@ -68,9 +48,8 @@ pub(super) fn group(run: &Value, execution: &Value) -> Result<Option<(usize, Mod
     if run.get("model_budgets").is_none() {
         return Ok(None);
     }
-    let value = super::comparison::budget_values(run, Some(execution))?;
     let budgets: Vec<ModelBudget> =
-        serde_json::from_value(value.clone()).map_err(|e| bad(&e.to_string()))?;
+        serde_json::from_value(run["model_budgets"].clone()).map_err(|e| bad(&e.to_string()))?;
     let provider = string(execution, "provider")?;
     let model = string(execution, "model")?;
     if execution["budget"]["provider"] != provider || execution["budget"]["model"] != model {

@@ -1,12 +1,6 @@
 import { expect, it } from 'vitest';
 import { checkLedger, checkRuntime } from '../../cloudflare/worker/runtime';
 
-it('refuses a static-only planner image for an approved managed app before paid work', () => {
-  const job = { kind: 'agent', payload: { team_planning: true, policy: { build: { app: { version: 1 } } } } };
-  const health = { protocol: 2, suites: ['commands-v1'], capabilities: { app_bundle: 1, team_planning: 1 } };
-  expect(() => checkRuntime(health, job)).toThrow('app planning');
-  expect(() => checkRuntime({ ...health, capabilities: { ...health.capabilities, app_planning: 1 } }, job)).not.toThrow();
-});
 
 const checkFailureCode = (health: any, job: any) => {
   let failure: unknown;
@@ -74,9 +68,3 @@ it('refuses a runtime that would silently ignore a frozen explicit reasoning eff
   expect(() => checkRuntime({ protocol: 2, capabilities: {} }, { kind: 'agent', payload: { execution: {} } })).not.toThrow();
 });
 
-it('refuses a frozen specialist connection until the ledger can normalize it', () => {
-  const snapshot = { capabilities: { artifact_reads: 2, adaptive_teams: 1, agent_limits: { min_root_agents: 1 } } };
-  const request = { adaptive_team: { version: 1, requested_agents: [{ connection: null, role: 'backend' }], specialist_connection: 'codex' } };
-  expect(() => checkLedger(snapshot, request)).toThrow('updating');
-  expect(() => checkLedger({ capabilities: { ...snapshot.capabilities, adaptive_specialists: 1 } }, request)).not.toThrow();
-});

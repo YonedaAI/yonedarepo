@@ -1,4 +1,5 @@
-//! `list` and `list for-push`: the platform's branches, by the platform's commit ids.
+//! `list` and `list for-push`: the platform's branches and lightweight tags, by the
+//! platform's commit ids.
 use super::Session;
 use super::fetch::Fetcher;
 use crate::error::{Error, Result};
@@ -6,7 +7,7 @@ use std::collections::BTreeMap;
 
 pub const MAIN: &str = "refs/heads/main";
 
-/// The platform's branches at its latest version: (version, refname → commit).
+/// The platform's branches and tags at its latest version: (version, refname → commit).
 pub async fn branches(session: &Session) -> Result<(u64, BTreeMap<String, String>)> {
     let refs = session.api.get("/refs").await?;
     let version = refs["version"]
@@ -16,7 +17,7 @@ pub async fn branches(session: &Session) -> Result<(u64, BTreeMap<String, String
         .as_object()
         .into_iter()
         .flatten()
-        .filter(|(name, _)| name.starts_with("refs/heads/"))
+        .filter(|(name, _)| name.starts_with("refs/heads/") || name.starts_with("refs/tags/"))
         .filter_map(|(name, sha)| Some((name.clone(), sha.as_str()?.to_owned())))
         .collect();
     Ok((version, heads))
@@ -42,9 +43,10 @@ pub async fn list(session: &mut Session, for_push: bool) -> Result<String> {
             // with any remote that moved.
             session.held(server).unwrap_or_else(|| server.clone())
         } else {
-            let branch = name.trim_start_matches("refs/heads/");
+            // A tag names no branch whose log could list its history in one request.
+            let branch = name.strip_prefix("refs/heads/");
             Fetcher::new(&session.api, &session.git, &mut session.map)
-                .local(server, Some(branch))
+                .local(server, branch)
                 .await?
         };
         out.push_str(&format!("{local} {name}\n"));

@@ -6,6 +6,7 @@ import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
+import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
@@ -166,7 +167,7 @@ afterEach(async () => {
 });
 beforeEach(async () => {
   // Every config running these tests gets the D1 schema (listing and personal-token lookup).
-  for (const migration of [listing, tokens])
+  for (const migration of [listing, tokens, members])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await bindings.INDEX.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
   misses.length = 0;

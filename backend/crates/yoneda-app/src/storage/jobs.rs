@@ -24,7 +24,8 @@ pub(crate) fn job<S: SqlStore>(
     mut payload: Value,
 ) -> Result<()> {
     if ["agent", "capture", "evaluate"].contains(&kind) {
-        // Guide check selection is derived from stored approval, never a job caller's payload.
+        // Guided runs are retired, but the evaluator image still acts on a `guided` binding:
+        // no job payload may carry one.
         if let Some(object) = payload.as_object_mut() {
             object.remove("guided");
         }
@@ -38,16 +39,6 @@ pub(crate) fn job<S: SqlStore>(
             Some(Err(error)) => return Err(error),
             None => None,
         };
-        if let Some(run) = run.as_ref().filter(|run| run["guided"].is_object()) {
-            let binding = if kind == "evaluate" {
-                crate::commands::guided::evaluation_binding(db, &payload["candidate"])?
-            } else {
-                Some(run["guided"].clone())
-            };
-            if let Some(binding) = binding {
-                payload["guided"] = binding;
-            }
-        }
         if (payload["comparison_review"] != true
             || run
                 .as_ref()

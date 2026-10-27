@@ -4,10 +4,12 @@
 //! - list/fetch write the platform's commits byte for byte (see `fetch`);
 //! - a push uploads every new commit first, each rebuilt by the platform as the same
 //!   object (see `crate::replay`), then makes one compare-and-swap (or one batch for
-//!   `--atomic`, or one landing for main), so nothing is visible before it.
+//!   `--atomic`, one landing for main, or one creation for a new lightweight tag), so
+//!   nothing is visible before it.
 //!
 //! The commit map (`map`) keeps only the cases where ids cannot match.
 pub mod convert;
+mod declared;
 mod fetch;
 pub mod heads;
 mod land;
@@ -15,6 +17,7 @@ mod list;
 pub mod map;
 mod protocol;
 mod push;
+mod tags;
 mod upload;
 pub mod url;
 
@@ -35,6 +38,8 @@ pub struct Options {
     pub verbosity: u32,
     pub atomic: bool,
     pub dry_run: bool,
+    /// `git push -o <option>` values (`yoneda.reads=…` declares the push's read set).
+    pub push_options: Vec<String>,
 }
 
 /// One helper process: the repository, its platform remote, the commit map and main's

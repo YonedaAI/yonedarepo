@@ -11,10 +11,10 @@ import { ledger, sha } from '../../cloudflare/worker/storage';
 import { workspace } from '../../cloudflare/worker/workspace';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { bindNewPlatformRepo } from './platform-fixture';
-import { approvedLedger } from './source-kit';
+import { approvedLedger, buildPolicy, oneAgent } from './source-kit';
 
 const bindings = env as unknown as Env;
-const policy = {version:'retry-v1',suite:'retry-contract-v1',environment:'rust-1.94-evaluator-v1',required_checks:['build','behavior']};
+const policy = buildPolicy;
 afterEach(reset);
 async function setup(id='delete-me', name='Delete me', ready=true) {
   await workspace(bindings,'alice',{op:'signup',username:'alice',password:'a long test password',salt:'01'.repeat(16),recovery_hash:'b'.repeat(64),session_hash:await sha('a'.repeat(64))});
@@ -45,8 +45,8 @@ it('deletes through the authenticated API, fences retries and preserves other re
   await setup();
   await workspace(bindings,'alice',{op:'project_reserve',id:'keep-me',name:'Keep me',policy});
   await workspace(bindings,'alice',{op:'provider_put',provider:'mimo',model:'mimo-v2.6-flash',sealed:{iv:'fixture',ciphertext:'fixture'}});
-  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'delete-run',intent:'Disposable deletion fixture'});
-  const active=await ledger(bindings,'delete-me',{op:'claim',job_id:'job:delete-run:research'});
+  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'delete-run',intent:'Disposable deletion fixture',agents:oneAgent});
+  const active=await ledger(bindings,'delete-me',{op:'claim',job_id:'job:delete-run:agent-1'});
   await workspace(bindings,'alice',{op:'grant_issue',id:'grant-deletion-fixture',repo:'delete-me',scope:'contribute',label:'Disposable grant',expires:Date.now()+60000,token_hash:'b'.repeat(64)});
   await remove();
   expect((await workspace(bindings,'alice',{op:'projects'})).projects.map((p:Json)=>p.id)).toEqual(['keep-me']);
@@ -123,15 +123,15 @@ it('drains Artifacts cleanup recorded before projects moved to the platform',asy
 
 it('continues independent deletion cleanup after a container stop fails and only acknowledges successes',async()=>{
   await setup();
-  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'active-run',intent:'Disposable stop failure fixture'});
-  await ledger(bindings,'delete-me',{op:'claim',job_id:'job:active-run:research'});
+  await approvedLedger(bindings,'delete-me')({op:'start_run',id:'active-run',intent:'Disposable stop failure fixture',agents:oneAgent});
+  await ledger(bindings,'delete-me',{op:'claim',job_id:'job:active-run:agent-1'});
   await remove();
   await bindings.INDEX.exec('CREATE TABLE repositories(id TEXT PRIMARY KEY,payload TEXT NOT NULL,seq INTEGER NOT NULL)');
   const sdk={...bindings,EXECUTIONS:{idFromName:(name:string)=>name,get:()=>({stop:async()=>{throw new Error('Stop unavailable fixture');}})}} as unknown as Env;
   const pending=(await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>({...entry,repository_deleted:true}));
   const delivered=await deliverOutbox(sdk,'delete-me',pending);
   expect(delivered).toContain('delete:workspace');
-  expect(delivered).not.toContain('stop:job:active-run:research:1');
+  expect(delivered).not.toContain('stop:job:active-run:agent-1:1');
   for(const id of delivered) await ledger(bindings,'delete-me',{op:'outbox_sent',id});
   expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>entry.kind)).toEqual(['stop']);
 });

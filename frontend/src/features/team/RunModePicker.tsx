@@ -24,7 +24,7 @@ export function RunModePicker({
         />
         <span>
           <strong>Compare approaches</strong>
-          <small>Two independent builders, then automatic review.</small>
+          <small>Independent attempts at the same brief. You choose what to publish.</small>
         </span>
       </label>
       <label>
@@ -38,13 +38,11 @@ export function RunModePicker({
         />
         <span>
           <strong>Build together</strong>
-          <small>Agents plan complementary work from your brief. One integrated result.</small>
+          <small>Each agent takes tasks you write. One merged team result.</small>
         </span>
       </label>
       {!supported && (
-        <p className="subtle">
-          Build together requires an updated team-capable backend and runtime.
-        </p>
+        <p className="subtle">Build together runs in the sandbox, on a task list you write.</p>
       )}
     </fieldset>
   );

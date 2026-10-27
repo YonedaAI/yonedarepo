@@ -18,13 +18,13 @@ export const runSamples: RunSample[] = [
     summary: 'Two agents contribute complementary changes to one checked result.',
     starter: 'feature',
     intent:
-      'Inspect this project and implement one useful feature with complementary agent contributions. Use the existing source and checks. Use at least two agents and identify independent work that can run concurrently, coordinate the shared interfaces, integrate the captured contributions and explain the result. Do not replace the project with a new example.',
+      'Inspect this project and implement one useful feature as complementary tasks, one per agent, that can run concurrently on the same base. Use the existing source and checks. Each agent lands its task on the team branch; the merge is the result to check. Do not replace the project with a new example.',
     criteria: [
       'Preserve existing behavior and checks',
-      'Coordinate complementary contributions into one result',
-      'Record independent verification of the integrated revision',
+      'Each task changes only its own files, so the landings merge cleanly',
+      'Record independent verification of the merged revision',
     ],
-    evidence_targets: ['concurrent_contributions', 'peer_coordination', 'checked_integration'],
+    evidence_targets: ['concurrent_contributions', 'team_branch_merge', 'checked_integration'],
   },
   {
     id: 'context-continuation',

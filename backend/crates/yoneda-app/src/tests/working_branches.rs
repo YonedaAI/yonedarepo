@@ -8,25 +8,18 @@ fn branch(db: &NativeStore) -> Value {
 fn checked_branch_can_continue_without_canonical_publication() {
     let db = repo();
     branch(&db);
-    let run = call(&db,json!({"op":"start_run","id":"run-one","intent":"Implement registration","working_branch_id":"development","expected_working_commit":"a".repeat(40),"expected_working_version":0})).unwrap();
+    let run = call(&db,json!({"op":"start_run","id":"run-one","intent":"Implement registration","working_branch_id":"development","expected_working_commit":"a".repeat(40),"expected_working_version":0,"agents":one_agent()})).unwrap();
     assert_eq!(run["working_branch_id"], "development");
-    let research = "job:run-one:research";
-    call(&db, json!({"op":"claim","job_id":research})).unwrap();
-    call(&db,json!({"op":"publish_artifact","job_id":research,"epoch":1,"id":"research-branch","digest":"b".repeat(64),"label":"Registration constraints","kind":"research","metadata":{"assumptions":[{"statement":"Registration latency stays within 100 ms","metric":"upstream_p99_ms","limit":100,"path":"src/booking.rs"}]}})).unwrap();
-    call(
-        &db,
-        json!({"op":"finish","job_id":research,"epoch":1,"result":{}}),
-    )
-    .unwrap();
-    let coding = "job:run-one:codex-minimal";
+    let coding = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":coding})).unwrap();
     let registration = source_kit::finish_job(&db, coding, 1000, json!({}));
-    let capture = "capture:run-one:codex-minimal";
+    let capture = "capture:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":capture})).unwrap();
     call(&db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Registration implemented"}))})).unwrap();
     call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
     let policy = crate::storage::repo(&db).unwrap()["policy"].clone();
     call(&db,json!({"op":"finish","job_id":"evaluate:candidate-a","epoch":1,"result":{"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();
+    select_on_branch(&db, "run-one", "candidate-a", &"a".repeat(40), 0);
     let branch = call(&db, json!({"op":"working_branch","id":"development"})).unwrap();
     assert_eq!(branch["working_commit"], "c".repeat(40));
     assert_eq!(
@@ -37,7 +30,7 @@ fn checked_branch_can_continue_without_canonical_publication() {
         crate::storage::repo(&db).unwrap()["published_commit"],
         "a".repeat(40)
     );
-    let update = call(&db,json!({"op":"start_run","id":"feature","intent":"Add a waitlist","working_branch_id":"development","expected_working_commit":"c".repeat(40),"expected_working_version":1})).unwrap();
+    let update = call(&db,json!({"op":"start_run","id":"feature","intent":"Add a waitlist","working_branch_id":"development","expected_working_commit":"c".repeat(40),"expected_working_version":1,"agents":one_agent()})).unwrap();
     assert_eq!(update["base"]["commit"], "c".repeat(40));
     assert_eq!(update["base"]["repository"], "yoneda-dev/fork-a");
     assert!(
@@ -47,6 +40,8 @@ fn checked_branch_can_continue_without_canonical_publication() {
             .iter()
             .any(|r| r["id"] == "intent:run-one")
     );
+    // A compare result publishes only once no live work builds on it.
+    call(&db, json!({"op":"cancel_run","run_id":"feature"})).unwrap();
     let decision = call(&db,json!({"op":"accept","request_id":"publish-branch","candidate":"candidate-a","expected_commit":"a".repeat(40),"expected_version":0,"rationale":"Registration behavior is independently checked","alternatives":[]})).unwrap();
     call(
         &db,
@@ -93,7 +88,7 @@ fn stale_branch_start_does_not_create_run_or_dispatch() {
     let db = repo();
     branch(&db);
     let before = call(&db, json!({"op":"events"})).unwrap();
-    let error = call(&db,json!({"op":"start_run","id":"stale","intent":"Update","working_branch_id":"development","expected_working_commit":"b".repeat(40),"expected_working_version":0})).unwrap_err();
+    let error = call(&db,json!({"op":"start_run","id":"stale","intent":"Update","working_branch_id":"development","expected_working_commit":"b".repeat(40),"expected_working_version":0,"agents":one_agent()})).unwrap_err();
     assert_eq!(error.code, "WORKING_HEAD_MOVED");
     assert!(crate::storage::get(&db, "runs", "stale").is_err());
     assert_eq!(before, call(&db, json!({"op":"events"})).unwrap());

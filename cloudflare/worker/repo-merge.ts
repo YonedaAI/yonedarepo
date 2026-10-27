@@ -2,11 +2,12 @@
 // plan, has Rust compute merge trees and blobs, records a platform merge commit and lands
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
+import { deferred } from './background';
 import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
 import { keepAllowed, outside } from './repo-grants';
-import { refreshHead } from './repo-head';
+import { forgetHead, refreshHead } from './repo-head';
 import { type CachedObject, fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
@@ -216,12 +217,17 @@ async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObje
  * stale. */
 export async function moved(ctx: RepoContext, ref: string) {
   // The landing already happened: a lost message delays projection and derived data (the
-  // next move or a projector retry catches up), it does not undo or fail the landing.
-  await Promise.all([
-    dispatchProjection(ctx.env, ctx.repo),
-    dispatchDerive(ctx.env, ctx.repo, ref),
-    refreshHead(ctx.env, ctx.repo),
-  ]).catch((e) => console.warn(`dispatch after landing failed: ${e?.message ?? e}`));
+  // next move or a projector retry catches up), it does not undo or fail the landing, so
+  // the messages leave after the answer when the request allows it. This isolate's own
+  // copy of the head goes now; other isolates serve a stale head safely meanwhile.
+  forgetHead(ctx.repo);
+  const send = () =>
+    Promise.all([
+      dispatchProjection(ctx.env, ctx.repo),
+      dispatchDerive(ctx.env, ctx.repo, ref),
+      refreshHead(ctx.env, ctx.repo),
+    ]).catch((e) => console.warn(`dispatch after landing failed: ${e?.message ?? e}`));
+  if (!deferred(send)) await send();
 }
 
 /** Conflict details, refused outright if any conflict lies outside the caller's grant. */

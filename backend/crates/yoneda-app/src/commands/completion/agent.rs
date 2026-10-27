@@ -3,41 +3,16 @@ use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
-    if super::super::comparison::complete_review(db, j, result, now)? {
-        return Ok(());
-    }
     let eid = string(&j["payload"]["execution"], "id")?;
     let mut e = get(db, "executions", &eid)?;
     let run_id = string(&e, "run_id")?;
-    let mut run = get(db, "runs", &run_id)?;
+    let run = get(db, "runs", &run_id)?;
     e["status"] = json!("completed");
     e["finished_at"] = json!(now);
     if result.get("transcript").is_some() {
         e["transcript"] = json!(hash(result, "transcript", &[64])?);
     }
-    if super::super::team::finish_planner(db, j, result, &mut run, now)? {
-        // A successful read-only planner freezes a validated DAG; it creates no source capture.
-    } else if e["role"] == "research" {
-        let context: Vec<_> = all(db, "artifacts")?
-            .iter()
-            .filter(|a| a["producer"] == eid)
-            .map(|a| a["id"].clone())
-            .collect();
-        if context.is_empty() {
-            return Err(Error::new(
-                "MISSING_CONTEXT",
-                "Research must publish an artifact through MCP",
-            ));
-        }
-        for (h, s) in [
-            ("codex", "minimal"),
-            ("claude", "defensive"),
-            ("codex", "maintainable"),
-        ] {
-            execution(db, &run, h, s, "coding", json!(context), now)?;
-        }
-        run["status"] = json!("exploring");
-    } else {
+    {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
         match j["payload"]["workspace_transport"].as_str() {
             Some("api-source-v1") => payload = super::source::payload(db, j, result, now)?,
@@ -72,13 +47,7 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
             payload["conflict_paths"] = e["conflict_paths"].clone();
             payload["resolver_protected_paths"] = e["resolver_protected_paths"].clone();
         }
-        super::super::team::capture_payload(db, j, &mut payload, now)?;
-        let capture_id = if e["team_task_revision"].as_i64().is_some_and(|r| r > 1) {
-            format!("capture:{eid}:r{}", number(&e, "team_task_revision")?)
-        } else {
-            format!("capture:{eid}")
-        };
-        job(db, &capture_id, "capture", now, payload)?;
+        job(db, &format!("capture:{eid}"), "capture", now, payload)?;
         e["status"] = json!("capturing");
     }
     save(db, "runs", &run_id, &run)?;

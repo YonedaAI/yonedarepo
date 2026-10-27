@@ -22,6 +22,9 @@ fn committed(file: &str) -> Value {
         "wrangler.staging-sites.jsonc" => {
             include_str!("../../../cloudflare/wrangler.staging-sites.jsonc")
         }
+        "wrangler.staging-bench.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.staging-bench.jsonc")
+        }
         "wrangler.prod.jsonc" => include_str!("../../../cloudflare/wrangler.prod.jsonc"),
         "wrangler.sites.jsonc" => include_str!("../../../cloudflare/wrangler.sites.jsonc"),
         "wrangler.apps.jsonc" => include_str!("../../../cloudflare/wrangler.apps.jsonc"),
@@ -51,9 +54,10 @@ fn dev_spec_regenerates_the_committed_staging_configs() {
             "wrangler.staging-superfan.jsonc",
             "wrangler.staging-platform.jsonc",
             "wrangler.staging-agents.jsonc",
-            "wrangler.staging-sites.jsonc"
+            "wrangler.staging-sites.jsonc",
+            "wrangler.staging-bench.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, agents, sites"
+        "the platform's tail consumer first, then cutover order: platform, agents, sites; the bench client last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(
@@ -492,13 +496,13 @@ mod plan_diff {
     fn undeclared_resources_under_the_prefix_are_extra() {
         let (spec, lock, workers, mut live) = matching();
         live.workers
-            .insert("yonedarepo-staging-bench".into(), LiveWorker::default());
+            .insert("yonedarepo-staging-scratch".into(), LiveWorker::default());
         live.workers
             .insert("yonedarepo-platform-dev".into(), LiveWorker::default());
         live.r2.insert("yonedarepo-staging-leftover".into());
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-staging-bench"),
+            action(&rows, "worker", "yonedarepo-staging-scratch"),
             Action::Extra
         );
         assert_eq!(

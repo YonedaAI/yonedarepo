@@ -38,21 +38,6 @@ fn record(j: &mut Value, reason: &str) {
     }
 }
 
-/// Interrupted work (timeouts, stopped harnesses, expired leases), as opposed to work that
-/// failed on its merits. Owner retries of interruptions resume and do not consume the retry cap.
-pub(in crate::commands) fn interrupted_error(error: &Value) -> bool {
-    code(error).is_some_and(|code| RESUMABLE.contains(&code))
-        || error.as_str() == Some("Execution deadline exceeded")
-}
-
-/// Record a checkpoint for an interrupted attempt that failed before checkpoints existed (its
-/// bindings stay on the job until the next claim). An existing checkpoint is never replaced.
-pub(in crate::commands) fn backfill(j: &mut Value) {
-    if j["resume_from"].is_null() && j["status"] == "failed" {
-        failed(j);
-    }
-}
-
 pub(super) fn failed(j: &mut Value) {
     match code(&j["error"]).map(str::to_owned) {
         Some(reason) if RESUMABLE.contains(&reason.as_str()) => record(j, &reason),

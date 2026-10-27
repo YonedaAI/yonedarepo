@@ -28,6 +28,8 @@ pub struct ReceiveSession {
     head: Vec<u8>,
     commands: Option<Vec<RefCommand>>,
     capabilities: Vec<String>,
+    /// The read set the push options declare (validated as they arrive).
+    reads: Vec<String>,
     pack: Option<PackReader>,
     verifier: Verifier,
     /// Verified objects to store, in order, and how many were handed out.
@@ -47,6 +49,7 @@ impl ReceiveSession {
             head: Vec::new(),
             commands: None,
             capabilities: Vec::new(),
+            reads: Vec::new(),
             pack: None,
             verifier: Verifier::default(),
             writes: Vec::new(),
@@ -78,11 +81,13 @@ impl ReceiveSession {
         let Some(CommandList {
             commands,
             capabilities,
+            push_options,
             used,
         }) = command_list(&self.head)?
         else {
             return Ok(());
         };
+        self.reads = crate::platform_push_reads::from_push_options(&push_options)?;
         let rest = self.head.split_off(used);
         self.head = Vec::new();
         // Only a push that creates or moves a ref sends a pack.
@@ -98,19 +103,25 @@ impl ReceiveSession {
         Ok(())
     }
 
-    /// The commands parsed so far (each marked when its ref is protected) and the
-    /// capabilities the client asked for; none before the command list is complete.
+    /// The commands parsed so far (each marked when its ref is protected, and once the pack
+    /// is read, when its new value is an annotated tag object), the capabilities the
+    /// client asked for and the read set its push options declare; none before the
+    /// command list is complete.
     pub fn commands(&self) -> Value {
+        let annotated = |id: &Option<ObjectId>| {
+            id.and_then(|id| self.pack.as_ref()?.kind(&id)) == Some(ObjectKind::Tag)
+        };
         let listed: Vec<Value> = self
             .commands
             .iter()
             .flatten()
             .map(|c| {
                 json!({ "ref": c.refname, "old": c.old, "new": c.new,
-                        "protected": crate::repo_store::protected_ref(&c.refname) })
+                        "protected": crate::repo_store::protected_ref(&c.refname),
+                        "annotated": annotated(&c.new) })
             })
             .collect();
-        json!({ "commands": listed, "capabilities": self.capabilities })
+        json!({ "commands": listed, "capabilities": self.capabilities, "reads": self.reads })
     }
 
     /// Once the body has ended: `commands`, with the pack checked whole. An empty command

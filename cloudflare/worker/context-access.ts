@@ -1,4 +1,3 @@
-import { sanitizeContextResponse } from './context-policy';
 import { ledger, sha } from './storage';
 import type { Env, Json } from './types';
 
@@ -10,19 +9,16 @@ const tracked = new Set([
   'why',
   'decision',
   'artifact_get',
-  'team_context',
-  'integration_request',
 ]);
 
-/** Record only records actually present in the sanitized successful response. */
+/** Record only records actually present in the successful response. */
 export async function contextResponse(
   env: Env,
   repo: string,
   identity: Json,
   tool: string,
-  value: Json,
+  result: Json,
 ) {
-  const result = await sanitizeContextResponse(env, repo, identity, tool, value);
   if (!tracked.has(tool)) return result;
   const targets = new Map<string, { id: string; digest?: string }>();
   const add = (record: unknown) => {
@@ -41,7 +37,6 @@ export async function contextResponse(
     'nodes',
     'context',
     'context_records',
-    'plain_notes',
     'decisions',
     'runs',
     'handoffs',

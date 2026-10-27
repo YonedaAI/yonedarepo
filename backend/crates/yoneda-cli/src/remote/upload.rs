@@ -2,7 +2,9 @@
 //! become platform commits (chained by parent, none moving a ref). Each is replayed with
 //! its own author, committer and message, so the platform's commit is the local commit
 //! (same id); the rest are mapped. A local merge keeps its other parents when the
-//! platform has them, so landing it later sees the merge.
+//! platform has them, so landing it later sees the merge (also a merge that changes
+//! nothing against its first parent). The tip carries the push's
+//! declared reads, which landing validates.
 use super::Session;
 use super::map::CommitMap;
 use crate::chunk;
@@ -107,13 +109,18 @@ pub struct Uploaded {
     pub made: Vec<(String, String)>,
 }
 
-/// Uploads `plan` (nothing moves a ref); returns the tip and (server, local) pairs.
-pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
+/// Uploads `plan` (nothing moves a ref), its last commit declaring `reads`; returns the
+/// tip and (server, local) pairs.
+pub async fn upload(session: &Session, plan: Plan, reads: &[String]) -> Result<Uploaded> {
     // A root commit (empty start) is based on nothing: version 0.
     let base_version = session.heads.version(&plan.start);
+    let steps = with_merges(session, plan.steps).await?;
     let mut parent = plan.start.clone();
     let mut made = Vec::new();
-    for step in plan.steps {
+    let last = steps
+        .iter()
+        .rposition(|(s, _)| matches!(s, Step::Commit { .. }));
+    for (index, (step, merges)) in steps.into_iter().enumerate() {
         let Step::Commit {
             local,
             part,
@@ -130,11 +137,6 @@ pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
             }
             continue;
         };
-        let merges = if part == parts {
-            merge_parents(session, &local).await?
-        } else {
-            Vec::new()
-        };
         let body = changes.iter().map(|c| c.api_json()).collect();
         let created = session
             .api
@@ -146,6 +148,7 @@ pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
                 &author,
                 committer.as_ref(),
                 &merges,
+                if Some(index) == last { reads } else { &[] },
             )
             .await
             .map_err(|f| Error::new(format!("uploading {local} (part {part} of {parts}): {f}")))?;
@@ -161,6 +164,29 @@ pub async fn upload(session: &Session, plan: Plan) -> Result<Uploaded> {
         parent = created.commit;
     }
     Ok(Uploaded { tip: parent, made })
+}
+
+/// Each step with the platform parents it merges: a commit's last part carries its other
+/// parents. A merge that changes nothing against its first parent (a conflict resolved to
+/// its own side) is still uploaded as a merge when the platform has another parent;
+/// mapping it to its first parent would drop the merge, and landing would conflict again.
+async fn with_merges(session: &Session, steps: Vec<Step>) -> Result<Vec<(Step, Vec<String>)>> {
+    let mut out = Vec::with_capacity(steps.len());
+    for step in steps {
+        let merges = match &step {
+            Step::Commit {
+                local, part, parts, ..
+            } if part == parts => merge_parents(session, local).await?,
+            Step::Empty { local } => merge_parents(session, local).await?,
+            Step::Commit { .. } => Vec::new(),
+        };
+        let step = match step {
+            Step::Empty { local } if !merges.is_empty() => plan::merge_step(&session.git, &local)?,
+            step => step,
+        };
+        out.push((step, merges));
+    }
+    Ok(out)
 }
 
 /// The platform commits for a local merge's other parents (those the platform has).

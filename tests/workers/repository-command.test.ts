@@ -4,10 +4,10 @@ import { ownerCommandInput, repositoryOperationAllowed } from '../../cloudflare/
 it('exposes owner reads and repairs but keeps archive commits and trusted refresh completion internal', () => {
   for (const action of ['repository_overview', 'runs_page', 'run_detail', 'conflict_status', 'why'])
     expect(repositoryOperationAllowed('GET', action)).toBe(true);
-  expect(repositoryOperationAllowed('POST', 'repair_team')).toBe(true);
+  expect(repositoryOperationAllowed('POST', 'resolve_conflict')).toBe(true);
   for (const action of ['archive_commit', 'finish', 'verify_finish', 'record_file_provenance'])
     expect(repositoryOperationAllowed('POST', action)).toBe(false);
-  expect(repositoryOperationAllowed('DELETE', 'repair_team')).toBe(false);
+  expect(repositoryOperationAllowed('DELETE', 'resolve_conflict')).toBe(false);
 });
 
 it('exposes owner rejection generically but keeps publication readback on its observing route', () => {
@@ -18,22 +18,6 @@ it('exposes owner rejection generically but keeps publication readback on its ob
     expect(repositoryOperationAllowed('POST', action)).toBe(false);
 });
 
-it('allows bounded owner capture recovery while preserving guards and stripping caller authority', async () => {
-  expect(repositoryOperationAllowed('POST', 'retry_capture')).toBe(true);
-  expect(repositoryOperationAllowed('GET', 'retry_capture')).toBe(false);
-  const body = { request_id: 'one-recovery', capture_job_id: 'capture:producer',
-    expected_producer_epoch: 3, expected_registration_id: 'registered-seal',
-    expected_commit: 'a'.repeat(40), expected_version: 0,
-    expected_policy_digest: 'b'.repeat(64),
-    _workspace: 'victim', _source_signing_key: 'forged', source_registered: { forged: true },
-    job_id: 'forged', epoch: 99, actor: 'supervisor', _grant: 'forged' };
-  expect(await ownerCommandInput(new Request('https://example.com/api/repos/a/retry_capture', {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
-  }), 'retry_capture')).toEqual({ request_id: body.request_id, capture_job_id: body.capture_job_id,
-    expected_producer_epoch: 3, expected_registration_id: body.expected_registration_id,
-    expected_commit: body.expected_commit, expected_version: 0,
-    expected_policy_digest: body.expected_policy_digest });
-});
 
 it('strips caller authority while preserving expected revisions and owner repair intent', async () => {
   const input = await ownerCommandInput(new Request('https://example.com/api/repos/a/repair_team', {
@@ -78,12 +62,10 @@ it('rejects invalid numeric cursors instead of silently resetting the requested 
       .rejects.toMatchObject({ code: 'INVALID_INPUT' });
 });
 
-it('allows explicit owner comparison approval and choice, keeping reviewer submissions internal', () => {
-  for (const action of ['approve_comparison_review', 'select_comparison_candidate']) {
-    expect(repositoryOperationAllowed('POST', action)).toBe(true);
-    expect(repositoryOperationAllowed('GET', action)).toBe(false);
-  }
-  for (const action of ['comparison_submit', 'comparison_approval', 'comparison_context'])
+it('allows the owner comparison choice and nothing of the retired reviewer', () => {
+  expect(repositoryOperationAllowed('POST', 'select_comparison_candidate')).toBe(true);
+  expect(repositoryOperationAllowed('GET', 'select_comparison_candidate')).toBe(false);
+  for (const action of ['approve_comparison_review', 'comparison_submit', 'comparison_approval', 'comparison_context'])
     expect(repositoryOperationAllowed('POST', action)).toBe(false);
 });
 

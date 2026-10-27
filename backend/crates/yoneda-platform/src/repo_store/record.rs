@@ -128,19 +128,17 @@ pub fn check<S: SqlStore>(
          ON CONFLICT(commit_id,name,policy_digest) DO UPDATE SET status=excluded.status,evidence=excluded.evidence,principal=excluded.principal,recorded_at=excluded.recorded_at",
         &[json!(id.hex()), json!(name), json!(settings.policy_digest), json!(status), json!(evidence), json!(principal), json!(number(c, "now")?)],
     )?;
-    Ok(json!({ "commit": id, "check": name, "status": status }))
+    let now = number(c, "now")?;
+    let hooks = super::hook_events::check(db, &id.hex(), &name, &status, principal, now, None)?;
+    Ok(json!({ "commit": id, "check": name, "status": status, "hooks": hooks }))
 }
 
-/// Reviews are immutable and independent: the commit's author cannot review it.
+/// Reviews are immutable and independent: the commit's author cannot review it, not even
+/// through a token they created (`reviewers`).
 pub fn review<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let id: ObjectId = object_id(c, "commit")?;
     let commit = rows::recorded(db, &id)?;
-    if commit.principal == principal {
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Authors cannot review their own commit",
-        ));
-    }
+    super::reviewers::require_not_author(db, &commit.principal, principal)?;
     let decision = string(c, "decision")?;
     let reason = c["reason"]
         .as_str()

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Snapshot } from '../../lib/types';
+import { runCandidates } from '../exploration/runResults';
 import { landingText, sandboxMembers, teamHead } from './sandboxTeamView';
-import { runCandidates } from './teamView';
 
 const run = { id: 'run-t', mode: 'collaborate', runtime: 'sandbox-cli-v1' };
 const member = (n: number, extra: Record<string, unknown>) => ({

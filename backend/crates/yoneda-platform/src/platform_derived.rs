@@ -31,7 +31,7 @@ pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>>
 }
 
 /// Partitions of a commit's root tree: one per top-level directory (keyed by its tree id,
-/// so identical subtrees share an index) plus one for top-level files.
+/// so identical subtrees share an index wherever they sit) plus one for top-level files.
 pub fn plan(c: &Value) -> Result<Value> {
     let trees = supplied_trees(c)?;
     let root = ObjectId::parse(&string(c, "root")?)?;
@@ -60,16 +60,15 @@ pub fn plan(c: &Value) -> Result<Value> {
     Ok(json!({ "partitions": partitions }))
 }
 
-/// Files under a partition, or the trees still needed to list them.
+/// Files under a partition, relative to its root, or the trees still needed to list them.
 fn files(
     tree: ObjectId,
-    prefix: &str,
     shallow: bool,
     trees: &HashMap<ObjectId, Vec<TreeEntry>>,
 ) -> std::result::Result<Vec<(String, ObjectId)>, BTreeSet<ObjectId>> {
     let mut out = Vec::new();
     let mut need = BTreeSet::new();
-    let mut stack = vec![(prefix.to_owned(), tree)];
+    let mut stack = vec![(String::new(), tree)];
     while let Some((dir, id)) = stack.pop() {
         let Some(entries) = trees.get(&id) else {
             need.insert(id);
@@ -91,11 +90,12 @@ fn files(
     if need.is_empty() { Ok(out) } else { Err(need) }
 }
 
+/// A partition's segment, with paths relative to the partition root: the key is the tree
+/// id alone, so the segment must not depend on the directory the tree sits at.
 pub fn index_partition(c: &Value) -> Result<Value> {
     let trees = supplied_trees(c)?;
     let tree = ObjectId::parse(&string(c, "tree")?)?;
-    let prefix = c["prefix"].as_str().unwrap_or_default();
-    let listed = match files(tree, prefix, c["shallow"] == true, &trees) {
+    let listed = match files(tree, c["shallow"] == true, &trees) {
         Ok(listed) => listed,
         Err(need) => return Ok(json!({ "need_trees": need })),
     };
@@ -121,7 +121,8 @@ pub fn index_partition(c: &Value) -> Result<Value> {
 pub fn search_segment(c: &Value) -> Result<Value> {
     let segment: Segment =
         serde_json::from_value(c["segment"].clone()).map_err(|_| bad("Invalid segment"))?;
-    Ok(json!({ "candidates": segment.candidates(&string(c, "query")?) }))
+    let prefix = c["prefix"].as_str().unwrap_or_default();
+    Ok(json!({ "candidates": segment.candidates(prefix, &string(c, "query")?) }))
 }
 
 pub fn grep_blob(c: &Value) -> Result<Value> {
@@ -153,3 +154,7 @@ pub fn blame_versions(c: &Value) -> Result<Value> {
     }
     Ok(json!({ "lines": blame(&history) }))
 }
+
+#[cfg(test)]
+#[path = "platform_derived_tests.rs"]
+mod tests;
