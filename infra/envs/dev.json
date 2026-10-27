@@ -148,7 +148,8 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
-          "WEB_ORIGIN": "{origin}"
+          "WEB_ORIGIN": "{origin}",
+          "WORKERS_SUBDOMAIN": "{subdomain}"
         },
         "artifacts": [
           {

@@ -179,11 +179,12 @@ fn land_one<S: SqlStore>(
                 &actor.principal,
             )?;
             db.query(
-                "INSERT INTO changesets(version,refname,commit_id,landed_at,batch,tree,generation,parents,writer,recorded_at) \
-                 VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO changesets(version,refname,commit_id,landed_at,batch,tree,generation,parents,writer,recorded_at,message) \
+                 VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 &[json!(entry.version), json!(refname), json!(commit.id.hex()), json!(entry.committed_at_ms),
                   json!(batch_id), json!(commit.tree.hex()), json!(commit.generation),
-                  json!(json!(commit.parents).to_string()), json!(commit.principal), record["commit"]["recorded_at"].clone()],
+                  json!(json!(commit.parents).to_string()), json!(commit.principal), record["commit"]["recorded_at"].clone(),
+                  record["commit"]["message"].clone()],
             )?;
             batch.accept(writes);
             Ok(json!({ "status": "landed", "version": entry.version }))

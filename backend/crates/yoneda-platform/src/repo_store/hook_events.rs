@@ -280,10 +280,13 @@ fn refusal(record: Value) -> Event {
     }
 }
 
-/// The commit's message (capped), when the authority recorded it.
+/// The commit's message (capped), from its record or the changeset that landed it.
 fn message<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<String>> {
     Ok(db
-        .query("SELECT message FROM commits WHERE id=?", &[json!(id.hex())])?
+        .query(
+            "SELECT message FROM commits WHERE id=?1 UNION ALL SELECT message FROM changesets WHERE commit_id=?1 AND message IS NOT NULL LIMIT 1",
+            &[json!(id.hex())],
+        )?
         .first()
         .and_then(|r| r["message"].as_str())
         .map(|text| {
