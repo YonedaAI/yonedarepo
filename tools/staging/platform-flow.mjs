@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { phases } from '../fanout-bench/stats.mjs';
 import { latency } from '../load-metrics.mjs';
 import { b64, until } from './client.mjs';
 
@@ -171,6 +172,8 @@ export async function manyRepoBurst(platform, { client, key, target, repos = 20,
     lands_per_s: (lands.length / (elapsed / 1000)).toFixed(1),
     land_p95_ms: latency(lands.map((l) => l.ms)).p95_ms,
     commit_p95_ms: latency(writes.filter((w) => ok(w.commit)).map((w) => w.commit.ms)).p95_ms,
+    // Where commit time goes: each Server-Timing phase's p50/p95 across the writers.
+    commit_phases: Object.fromEntries(Object.entries(phases(writes.map((w) => w.commit))).map(([k, v]) => [k, `${v.p50_ms}/${v.p95_ms}`])),
   });
   assert.equal(metrics.lands_ok, repos * writers, 'Not every writer landed');
   assert.equal(metrics.reads_ok, repos * writers, `Not every file read back: ${readFailures.slice(0, 5).join('; ')}`);
