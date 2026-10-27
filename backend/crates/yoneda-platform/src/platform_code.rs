@@ -115,7 +115,8 @@ pub fn review_classes(c: &Value) -> Result<Value> {
         };
         let (old, new) = (side("old")?, side("new")?);
         if let (Some(old), Some(new)) = (old, new) {
-            let class = classify(&path, old.as_deref(), new.as_deref());
+            let mode = change["mode"].as_str();
+            let class = classify(&path, mode, old.as_deref(), new.as_deref());
             files.push(json!({ "path": path, "class": class }));
         }
     }
@@ -130,6 +131,7 @@ pub fn review_classes(c: &Value) -> Result<Value> {
             "formatting" => ReviewClass::Formatting,
             "comment_only" => ReviewClass::CommentOnly,
             "logic" => ReviewClass::Logic,
+            "instructions" => ReviewClass::Instructions,
             _ => ReviewClass::Unknown,
         })
         .max()
