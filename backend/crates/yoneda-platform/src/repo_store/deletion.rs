@@ -19,9 +19,10 @@ pub fn allowed_when_deleted(op: &str) -> bool {
     matches!(op, "repo_delete" | "repo_purge_target")
 }
 
-/// `repo_delete {confirm}`: owners only, with the repository's exact name.
+/// `repo_delete {confirm}`: the owner only (never an admin member), with the repository's
+/// exact name.
 pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
-    actor.require_owner()?;
+    actor.require_repo_owner()?;
     if string(c, "confirm")? != settings.name {
         return Err(Error::new(
             "INVALID_INPUT",

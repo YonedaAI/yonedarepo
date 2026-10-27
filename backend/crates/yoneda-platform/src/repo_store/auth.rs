@@ -1,16 +1,19 @@
 //! Who is calling. Workspace sessions are owners with every scope; repository tokens are
 //! API principals (agents, CI, scripts) with explicit scopes. The platform never sees
-//! *what kind* of client a token belongs to, only its name and scopes.
+//! *what kind* of client a token belongs to, only its name and scopes. Another account's
+//! session or personal token acts by its membership role (`members`), capped by the token.
+use super::members::Role;
 use super::rows::Settings;
-use crate::storage::{SqlStore, bad, number, string};
+use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
-pub const SCOPES: [&str; 5] = ["read", "write", "check", "review", "land"];
-
 pub struct Actor {
     pub principal: String,
+    /// The owner, or an admin member acting as the owner (see `require_repo_owner`).
     pub owner: bool,
+    /// The caller's membership role when it is not the owner's account.
+    pub member: Option<Role>,
     /// A person signed in to their own account (never a token, platform role or script).
     human: bool,
     /// An account's personal access token: whole-repository Git reads with `read`.
@@ -68,6 +71,18 @@ impl Actor {
             Err(super::break_glass::refusal())
         }
     }
+    /// The owner's account itself: deleting the repository and managing admins.
+    pub fn require_repo_owner(&self) -> Result<()> {
+        if self.owner && self.member.is_none() {
+            Ok(())
+        } else {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the repository owner can do this",
+            ))
+        }
+    }
+    /// The owner or an admin member.
     pub fn require_owner(&self) -> Result<()> {
         if self.owner {
             Ok(())
@@ -80,7 +95,7 @@ impl Actor {
     }
 }
 
-fn token_digest(secret: &str) -> String {
+pub(super) fn token_digest(secret: &str) -> String {
     yoneda_core::digest(format!("yonedarepo:repo-token:v1:{secret}").as_bytes())
 }
 
@@ -88,23 +103,30 @@ fn token_digest(secret: &str) -> String {
 /// callers. `_session.human` marks a personal account session (not an admin bearer). `_system` names a platform role (check executor, ref projector, importer,
 /// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
-    actor_with(c, &settings.workspace, |digest| {
-        Ok(db
-            .query(
-                "SELECT name,scopes,paths FROM tokens WHERE digest=? AND revoked_at IS NULL",
-                &[json!(digest)],
-            )?
-            .into_iter()
-            .next())
-    })
+    actor_with(
+        c,
+        &settings.workspace,
+        |digest| {
+            Ok(db
+                .query(
+                    "SELECT name,scopes,paths FROM tokens WHERE digest=? AND revoked_at IS NULL",
+                    &[json!(digest)],
+                )?
+                .into_iter()
+                .next())
+        },
+        |account| super::members::role_of(db, account),
+    )
 }
 
 /// The actor for credentials `c`, with live tokens looked up by digest through `token`
-/// (the authority's table, or a published snapshot of it).
+/// and members' roles by account through `member` (the authority's tables, or a
+/// published snapshot of them).
 pub fn actor_with(
     c: &Value,
     workspace: &str,
     token: impl Fn(&str) -> Result<Option<Value>>,
+    member: impl Fn(&str) -> Result<Option<Role>>,
 ) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
@@ -122,6 +144,7 @@ pub fn actor_with(
         return Ok(Actor {
             principal: format!("platform:{system}"),
             owner: false,
+            member: None,
             human: false,
             account_token: false,
             grant: None,
@@ -132,23 +155,37 @@ pub fn actor_with(
         });
     }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {
-        if string(session, "workspace")? != workspace {
-            return Err(Error::new(
-                "FORBIDDEN",
-                "Repository belongs to another workspace",
-            ));
+        let account = string(session, "workspace")?;
+        let principal = string(session, "principal")?;
+        let human = session["human"] == true;
+        if account == workspace {
+            return Ok(Actor {
+                principal,
+                owner: true,
+                member: None,
+                human,
+                account_token: false,
+                scopes: Vec::new(),
+                grant: None,
+            });
         }
+        // Only an account's own session is a member (never an admin bearer for it).
+        if principal != format!("user:{account}") {
+            return Err(not_member());
+        }
+        let role = member(&account)?.ok_or_else(not_member)?;
         return Ok(Actor {
-            principal: string(session, "principal")?,
-            owner: true,
-            human: session["human"] == true,
+            principal,
+            owner: role == Role::Admin,
+            member: Some(role),
+            human,
             account_token: false,
-            scopes: Vec::new(),
+            scopes: role.scopes().iter().map(|s| (*s).to_owned()).collect(),
             grant: None,
         });
     }
     if let Some(pat) = c.get("_pat").filter(|s| s.is_object()) {
-        return account_token(pat, workspace);
+        return account_token(pat, workspace, member);
     }
     let secret =
         string(c, "_token").map_err(|_| Error::new("UNAUTHORIZED", "Missing credentials"))?;
@@ -157,6 +194,7 @@ pub fn actor_with(
     Ok(Actor {
         principal: format!("token:{}", row["name"].as_str().unwrap_or_default()),
         owner: false,
+        member: None,
         human: false,
         account_token: false,
         scopes: serde_json::from_str(row["scopes"].as_str().unwrap_or("[]"))
@@ -168,33 +206,51 @@ pub fn actor_with(
     })
 }
 
+fn not_member() -> Error {
+    Error::new("FORBIDDEN", "Repository belongs to another workspace")
+}
+
 /// A personal access token the adapter verified against its account: the account's
 /// principal (never human, so break-glass stays out of reach), `repo:admin` as the owner,
-/// and the other account scopes as the repository scopes of the same name. The adapter
-/// enforces the token's repository allowlist before calling.
-fn account_token(pat: &Value, workspace: &str) -> Result<Actor> {
-    if string(pat, "workspace")? != workspace {
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Repository belongs to another workspace",
-        ));
-    }
+/// and the other account scopes as the repository scopes of the same name. On another
+/// account's repository the token holds only what both it and the membership role allow
+/// (`repo:admin` counting as every scope). The adapter enforces the token's repository
+/// allowlist before calling.
+fn account_token(
+    pat: &Value,
+    workspace: &str,
+    member: impl Fn(&str) -> Result<Option<Role>>,
+) -> Result<Actor> {
+    let account = string(pat, "workspace")?;
     let held: Vec<String> =
         serde_json::from_value(pat["scopes"].clone()).map_err(|_| bad("Corrupt token scopes"))?;
     let mut scopes = Vec::new();
-    let mut owner = false;
+    let mut admin = false;
     for scope in &held {
         match scope.as_str() {
-            "repo:admin" => owner = true,
+            "repo:admin" => admin = true,
             "repo:read" | "repo:write" | "repo:land" | "repo:review" => {
                 scopes.push(scope["repo:".len()..].to_owned())
             }
             _ => return Err(Error::new("FORBIDDEN", "Unknown token scope")),
         }
     }
+    let role = if account == workspace {
+        None
+    } else {
+        let role = member(&account)?.ok_or_else(not_member)?;
+        scopes = role
+            .scopes()
+            .iter()
+            .filter(|s| admin || scopes.iter().any(|held| held == *s))
+            .map(|s| (*s).to_owned())
+            .collect();
+        Some(role)
+    };
     Ok(Actor {
         principal: string(pat, "principal")?,
-        owner,
+        owner: admin && role.is_none_or(|r| r == Role::Admin),
+        member: role,
         human: false,
         account_token: true,
         scopes,
@@ -207,63 +263,5 @@ pub fn live_tokens<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
     db.query(
         "SELECT digest,name,scopes,paths FROM tokens WHERE revoked_at IS NULL ORDER BY name",
         &[],
-    )
-}
-
-pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
-    actor.require_owner()?;
-    let name = string(c, "name")?;
-    super::rows::check_name(&name)?;
-    let secret = string(c, "_secret")?;
-    if secret.len() < 32 {
-        return Err(bad("Token secret is too short"));
-    }
-    let scopes: Vec<String> =
-        serde_json::from_value(c["scopes"].clone()).map_err(|_| bad("scopes must be a list"))?;
-    let grant = super::grants::parse(&c["paths"])?;
-    if scopes.is_empty() || scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
-        return Err(bad(
-            "Scopes must be some of read, write, check, review, land",
-        ));
-    }
-    if !db
-        .query("SELECT name FROM tokens WHERE name=?", &[json!(name)])?
-        .is_empty()
-    {
-        return Err(Error::new(
-            "ALREADY_EXISTS",
-            "A token with this name exists",
-        ));
-    }
-    db.query(
-        "INSERT INTO tokens(name,digest,scopes,created_by,created_at,paths) VALUES(?,?,?,?,?,?)",
-        &[
-            json!(name),
-            json!(token_digest(&secret)),
-            json!(json!(scopes).to_string()),
-            json!(actor.principal),
-            json!(number(c, "now")?),
-            json!(grant.as_ref().map(|g| json!(g).to_string())),
-        ],
-    )?;
-    Ok(
-        json!({ "name": name, "principal": format!("token:{name}"), "scopes": scopes, "paths": grant }),
-    )
-}
-
-pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
-    actor.require_owner()?;
-    let name = string(c, "name")?;
-    db.query(
-        "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL",
-        &[json!(number(c, "now")?), json!(name)],
-    )?;
-    Ok(json!({ "name": name, "revoked": true }))
-}
-
-pub fn list_tokens<S: SqlStore>(db: &S, actor: &Actor) -> Result<Value> {
-    actor.require_owner()?;
-    Ok(
-        json!({ "tokens": db.query("SELECT name,scopes,paths,created_by,created_at,revoked_at FROM tokens ORDER BY name", &[])? }),
     )
 }
