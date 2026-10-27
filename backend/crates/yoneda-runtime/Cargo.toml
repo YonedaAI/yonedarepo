@@ -5,25 +5,17 @@ edition.workspace = true
 license.workspace = true
 [dependencies]
 yoneda-core.workspace = true
-yoneda-agents-core.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 sha2.workspace = true
 base64 = "0.23.1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.13", default-features = false, features = ["json", "query", "rustls", "stream"] }
 axum = "0.8"
 walkdir = "2"
 tempfile = "3"
 libc = "0.2"
-ignore = "0.4.33"
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "std", "registry"] }
 
-[target.'cfg(target_os = "linux")'.dependencies]
-fuser = "=0.18.0"
-
 [dev-dependencies]
-yoneda-app = { workspace = true, features = ["native", "test-kit"] }
-# Paused virtual time for watchdog tests; no extra crates.
-tokio = { version = "1", features = ["full", "test-util"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }

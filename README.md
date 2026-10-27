@@ -102,11 +102,11 @@ backend/crates/
   yoneda-app/        Agent-layer commands, graph and DO migrations
   yoneda-cloudflare/ Rust binding interoperability
   yoneda-worker/     Rust Durable Objects
-  yoneda-runtime/    Native supervisor, MCP, capture and evaluation
+  yoneda-runtime/    Check server for the CheckContainer
 cloudflare/          Worker adapters, sites, container image, D1 migrations, Wrangler config
 shared/              Contracts shared with TypeScript
 xtask/               Developer and deployment commands
-tests/               Cross-boundary workerd, runtime and container tests
+tests/               Cross-boundary workerd and runtime tests
 fixtures/            Small demo repositories
 docs/                Architecture, operations and verification evidence
 ```
