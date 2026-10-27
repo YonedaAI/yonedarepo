@@ -17,27 +17,38 @@ export function accountOf(auth: Credentials): string {
   throw new ApiError('FORBIDDEN', 'Repository tokens are scoped to one repository');
 }
 
-/** `GET /repos`: the account's repositories (a token's allowlist narrows them). */
+type Listed = { id: string; name: string; created_at: number; owner: string; role: string };
+
+/** `GET /repos`: the account's own repositories and those it is a member of, newest first,
+ * each with its owner and the account's role (a token's allowlist narrows them). */
 export async function listRepositories(env: Env, auth: Credentials) {
   const account = accountOf(auth);
   const listed = await env.INDEX.prepare(
-    'SELECT id,name,created_at FROM platform_repos WHERE workspace=? ORDER BY created_at DESC LIMIT 200',
+    `SELECT id,name,created_at,workspace AS owner,'owner' AS role FROM platform_repos WHERE workspace=?1
+     UNION ALL
+     SELECT r.id,r.name,r.created_at,r.workspace AS owner,m.role FROM platform_members m
+       JOIN platform_repos r ON r.id=m.repo WHERE m.account=?1
+     ORDER BY created_at DESC LIMIT 200`,
   )
     .bind(account)
-    .all<{ id: string; name: string; created_at: number }>();
+    .all<Listed>();
   const allowed = '_pat' in auth ? auth._pat.repos : null;
   return {
     repos: allowed ? listed.results.filter((r) => allowed.includes(r.id)) : listed.results,
   };
 }
 
-/** `DELETE /repos/:id?confirm=<name>`: the owner (session or repo:admin token) only. */
+/** `DELETE /repos/:id?confirm=<name>`: the owner (session or repo:admin token) only, never
+ * an admin member. */
 export async function deleteRepository(env: Env, auth: Credentials, repo: string, confirm: string) {
   requirePatScope(auth, 'repo:admin');
   if (!confirm) throw new ApiError('INVALID_INPUT', "confirm must be the repository's name");
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   await ctx.call({ op: 'repo_delete', confirm });
-  await env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo).run();
+  await env.INDEX.batch([
+    env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
+    env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
+  ]);
   forgetHead(repo);
   await refreshHead(env, repo);
   await env.PLATFORM_QUEUE.send({

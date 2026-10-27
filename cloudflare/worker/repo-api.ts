@@ -15,6 +15,7 @@ import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
 import { repoMcp } from './repo-mcp';
+import { membersRoute } from './repo-members';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
@@ -195,6 +196,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
+  if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });

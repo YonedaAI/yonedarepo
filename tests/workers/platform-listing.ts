@@ -5,10 +5,11 @@ import { env } from 'cloudflare:workers';
 import { beforeEach } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
+import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 
 beforeEach(async () => {
   const db = (env as unknown as { INDEX: D1Database }).INDEX;
-  for (const migration of [listing, tokens])
+  for (const migration of [listing, tokens, members])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await db.exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim());
 });

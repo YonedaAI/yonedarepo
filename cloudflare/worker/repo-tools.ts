@@ -10,6 +10,7 @@ import { blame, pathHistory, search } from './repo-derived';
 import { listTree, readFile } from './repo-files';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
+import { memberOperations } from './repo-members';
 import { explicitMerge } from './repo-merge';
 import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
@@ -113,6 +114,7 @@ export const operations: Record<string, Operation> = {
     return created;
   },
   ...hookOperations,
+  ...memberOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))
       throw new ApiError('INVALID_INPUT', 'commit must be a 40-character commit id');

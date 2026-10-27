@@ -14,8 +14,8 @@ const ISOLATE_MS = 1000;
 /** An isolate never serves a head older than this without fetching first. */
 const STALE_MS = 10_000;
 /** Per repository: main's head (small, changes per landing) and the access snapshot
- * (live token digests; changes only with access, versioned), each fetched once per
- * isolate at a time. */
+ * (live token digests and members' roles; changes only with access, versioned), each
+ * fetched once per isolate at a time. */
 const heads = new Map<string, { head: Json; at: number }>();
 /** The least version this isolate's reads and begins need: its own latest landing. */
 const floors = new Map<string, number>();
@@ -39,9 +39,19 @@ function holder(env: Env, repo: string): Holder | null {
 export const fetchHead = (env: Env, repo: string) =>
   caller(env, repo, { _system: 'projection' })({ op: 'repo_head', ref: 'main' });
 
-/** `head` without its token snapshot, and the snapshot alone. */
-const withoutTokens = ({ tokens: _, ...head }: Json) => head;
-const accessOf = (head: Json) => ({ version: head.access_version, tokens: head.tokens });
+/** `head` without its access snapshot, and the snapshot alone. */
+const withoutTokens = ({ tokens: _, members: __, ...head }: Json) => head;
+const accessOf = (head: Json) => ({
+  version: head.access_version,
+  tokens: head.tokens,
+  members: head.members ?? [],
+});
+
+/** The account a session or personal token acts for (a member, if not the owner). */
+function accountOf(credentials: Json): string | null {
+  const account = credentials._session?.workspace ?? credentials._pat?.workspace;
+  return typeof account === 'string' ? account : null;
+}
 
 /** The digest the authority files a repository token under (as `auth.rs` computes it). */
 async function tokenDigest(credentials: Json): Promise<string | null> {
@@ -121,8 +131,8 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   return access;
 }
 
-/** Main's published head for `credentials` (carrying only their token row), at least at
- * `minVersion` (a reader's own landing). */
+/** Main's published head for `credentials` (carrying only their token or member row), at
+ * least at `minVersion` (a reader's own landing). */
 export async function publishedHead(
   env: Env,
   repo: string,
@@ -135,7 +145,9 @@ export async function publishedHead(
   ]);
   const access = await accessFor(env, repo, head);
   const token = digest && (access.tokens as Json[]).find((t) => t.digest === digest);
-  return { ...head, tokens: token ? [token] : [] };
+  const account = accountOf(credentials);
+  const member = account && ((access.members ?? []) as Json[]).find((m) => m.account === account);
+  return { ...head, tokens: token ? [token] : [], members: member ? [member] : [] };
 }
 
 /** After this isolate landed at `version`, its reads and begins need at least that

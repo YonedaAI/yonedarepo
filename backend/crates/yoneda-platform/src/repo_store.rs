@@ -29,6 +29,7 @@ mod hooks;
 mod land;
 mod land_queue;
 mod land_tickets;
+pub(crate) mod members;
 mod merging;
 pub(crate) mod migration;
 mod policy;
@@ -38,12 +39,14 @@ mod projection_plan;
 mod pushed;
 mod reads;
 mod record;
+mod reviewers;
 mod rows;
 pub(crate) mod staging;
 mod store_lineage;
 mod submitted;
 mod symbols;
 mod tags;
+mod tokens;
 mod tree_cache;
 mod vacuum;
 mod version_projection;
@@ -151,6 +154,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             ))
         }
         "repo_set_policy" => actor.require_owner(),
+        // Admins manage other members; only the owner manages admins (`members`).
+        "repo_members" | "repo_member_put" | "repo_member_remove" => actor.require_owner(),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
         "repo_hook_create" | "repo_hooks" | "repo_hook_delete" | "repo_hook_deliveries" => {
             actor.require_owner()
@@ -163,13 +168,18 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_clone_access" => actor.require_human_reader(),
         _ => actor.require("read"),
     }?;
-    if !actor.owner && break_glass::PAUSED_OPS.contains(&op.as_str()) {
+    // Only the owner's own account keeps working while automation is paused (not admins).
+    if !actor.repo_owner() && break_glass::PAUSED_OPS.contains(&op.as_str()) {
         break_glass::refuse_if_paused(db)?;
     }
     grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
-        "repo_status" => reads::status(db, &settings),
+        "repo_status" => reads::status(db, &settings).map(|mut status| {
+            status["viewer"] = json!({ "principal": principal, "owner": actor.owner,
+                "role": actor.member.map(members::Role::as_str) });
+            status
+        }),
         "repo_clone_access" => Ok(json!({ "object_store": settings.object_store })),
         "repo_refs" => reads::refs(db, c),
         "repo_snapshot" => reads::snapshot(db, c),
@@ -257,9 +267,12 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_hooks_fanout" => hook_events::fanout(db),
         "repo_hook_claim" => hook_delivery::claim(db, c),
         "repo_hook_settle" => hook_delivery::settle(db, c),
-        "repo_token_create" => auth::create_token(db, c, &actor),
-        "repo_token_revoke" => auth::revoke_token(db, c, &actor),
-        "repo_tokens" => auth::list_tokens(db, &actor),
+        "repo_token_create" => tokens::create_token(db, c, &actor),
+        "repo_token_revoke" => tokens::revoke_token(db, c, &actor),
+        "repo_tokens" => tokens::list_tokens(db, &actor),
+        "repo_members" => members::list(db),
+        "repo_member_put" => members::put(db, c, &actor, &settings),
+        "repo_member_remove" => members::remove(db, c, &actor, &settings),
         _ => Err(Error::new(
             "UNKNOWN_OP",
             format!("Unknown platform op {op}"),
