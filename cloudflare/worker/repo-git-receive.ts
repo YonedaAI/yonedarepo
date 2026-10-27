@@ -7,21 +7,26 @@
 // lightweight tags by creation (tags never move or disappear). A push that fails or dies
 // before that leaves every ref and the log as they were.
 
+import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
 import { type Command, moveAll, moveOne, type Outcome, reason, refusal } from './repo-git-moves';
 import { inBatches, rawObject, treeFor } from './repo-git-objects';
 import { ReceiveSession } from './repo-git-sessions';
-import { fromBase64, type RepoObjects } from './repo-objects';
+import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
+import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { putRawBytes } from './repo-stores';
+import { record, timed } from './repo-timing';
 
 const RESULT = {
   'content-type': 'application/x-git-receive-pack-result',
   'cache-control': 'no-cache',
 };
 const VERIFY_ROUNDS = 64;
+// As much as the authority stages for one commit (staging.rs STAGE_OBJECTS, STAGE_LIMIT).
+const STAGE_OBJECTS = 256;
+const STAGE_BYTES = 1024 * 1024;
 const WRITE_BUDGET = 4 * 1024 * 1024;
 const RECORD_COMMITS = 100;
 const READS = 16;
@@ -35,7 +40,7 @@ export async function receivePack(
 ): Promise<Response> {
   const session = ReceiveSession.open();
   try {
-    let failure = await unpack(session, body);
+    let failure = await timed('git.unpack', () => unpack(session, body));
     if (!failure) {
       // A body that ended early (a truncated pack) fails here.
       try {
@@ -61,7 +66,8 @@ export async function receivePack(
     const tips = going.flatMap((c) => (c.new ? [c.new] : []));
     let fresh = new Set<string>();
     try {
-      if (tips.length > 0) fresh = await store(ctx, objects, session, tips, secretAllow);
+      if (tips.length > 0)
+        fresh = await timed('git.store', () => store(ctx, objects, session, tips, secretAllow));
     } catch (e) {
       // Nothing moved: report why for every ref still going.
       // A credential refuses the whole push by path and line (never its text); the pack
@@ -71,12 +77,14 @@ export async function receivePack(
       for (const c of going) outcomes.set(c.ref, why);
       return report(commands, outcomes, secret ? null : why, sideBand, messages);
     }
-    if (atomic) await moveAll(ctx, going, outcomes);
-    else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
+    await timed('git.move', async () => {
+      if (atomic) await moveAll(ctx, going, outcomes);
+      else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
+    });
     // New tags are mirrored to the object store like protected branches (a lost message
     // only delays that).
     if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))
-      await dispatchProjection(ctx.env, ctx.repo).catch(() => {});
+      await timed('git.projection', () => dispatchProjection(ctx.env, ctx.repo).catch(() => {}));
     return report(commands, outcomes, null, sideBand, messages);
   } finally {
     session.close();
@@ -106,8 +114,11 @@ function refuseAll(outcomes: Outcome, why: string) {
   return outcomes;
 }
 
-/** Verifies the pack against the repository, writes its new objects to R2 and records
- * the new commits (parents first). Moves no ref. */
+/** Verifies the pack against the repository, stores its new objects and records the new
+ * commits (parents first). Moves no ref. A small push sends its objects with the record,
+ * so the authority stages them in the same transaction (R2 writes are a subrequest each,
+ * a few at a time, and take most of a push's time); the projector writes them to R2 after
+ * the answer, as for commits built here. A larger one is written to R2 first. */
 async function store(
   ctx: RepoContext,
   objects: RepoObjects,
@@ -119,31 +130,54 @@ async function store(
   let verified: Json | null = null;
   for (let round = 0; round < VERIFY_ROUNDS && !verified; round++) {
     const step = session.call(input);
-    if (step.need) input = { op: 'verify', tips, ...(await supply(ctx, objects, step.need)) };
-    else verified = step;
+    if (step.need) {
+      const kind = Object.keys(step.need)[0] ?? 'none';
+      const asked = (step.need[kind] as unknown[] | undefined)?.length ?? 0;
+      const started = performance.now();
+      input = { op: 'verify', tips, ...(await supply(ctx, objects, step.need)) };
+      record(`git.verify.${kind}`, performance.now() - started, asked);
+    } else verified = step;
   }
   if (!verified) throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-  for (;;) {
-    const frames = session.objects(WRITE_BUDGET);
-    if (frames.length === 0) break;
-    const parsed = framed(frames);
-    for (let i = 0; i < parsed.length; i += WRITES)
-      await putRawBytes(ctx.env, (id) => objects.rawKey(id), parsed.slice(i, i + WRITES));
+  let batch = framed(session.objects(WRITE_BUDGET));
+  const bytes = batch.reduce((n, o) => n + o.data.length, 0);
+  const staged =
+    batch.length === verified.objects && batch.length <= STAGE_OBJECTS && bytes <= STAGE_BYTES;
+  const data = new Map(staged ? batch.map((o) => [o.id, toBase64(o.data)]) : []);
+  while (!staged && batch.length > 0) {
+    const started = performance.now();
+    for (let i = 0; i < batch.length; i += WRITES)
+      await putRawBytes(ctx.env, (id) => objects.rawKey(id), batch.slice(i, i + WRITES));
+    record('git.write', performance.now() - started, batch.length);
+    batch = framed(session.objects(WRITE_BUDGET));
   }
   const commits: Json[] = (verified.commits as Json[]).map((c) => ({
     ...c,
+    ...(staged
+      ? { objects: (c.objects as Json[]).map((o) => ({ ...o, data_b64: data.get(o.id) })) }
+      : {}),
     check: tips.includes(c.commit),
   }));
   const runs: Json[] = [];
+  let drain = false;
   for (let i = 0; i < commits.length; i += RECORD_COMMITS) {
-    const recorded = await ctx.call({
-      op: 'repo_record_pushed',
-      commits: commits.slice(i, i + RECORD_COMMITS),
-    });
+    const recorded = await timed('git.record', () =>
+      ctx.call({
+        op: 'repo_record_pushed',
+        commits: commits.slice(i, i + RECORD_COMMITS),
+        ...(staged ? { staged: true } : {}),
+      }),
+    );
     runs.push(...(recorded.check_runs ?? []));
+    drain ||= recorded.dispatch_objects === true;
   }
+  if (staged) record('git.staged', 0, batch.length);
+  // The objects are durable in the authority: the drain request can leave after the
+  // answer (a lost one is resent with the next accepted commit).
+  const send = () => dispatchObjects(ctx.env, ctx.repo).catch(() => {});
+  if (drain && !deferred(send)) await timed('git.drain', send);
   // Undispatched runs stay queued in the authority and are sent again on request.
-  await dispatchRuns(ctx.env, ctx.repo, runs).catch(() => {});
+  await timed('git.runs', () => dispatchRuns(ctx.env, ctx.repo, runs).catch(() => {}));
   return new Set(commits.map((c) => c.commit as string));
 }
 

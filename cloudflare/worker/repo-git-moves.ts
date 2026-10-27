@@ -104,7 +104,15 @@ async function land(
     }
   }
   try {
-    const landed: Json = await landWithMerge(ctx, c.ref, sha, false, landMode(ctx.env));
+    // A commit this push recorded is in the authority, never in a commit shard.
+    const landed: Json = await landWithMerge(
+      ctx,
+      c.ref,
+      sha,
+      false,
+      landMode(ctx.env),
+      fresh.has(sha),
+    );
     // A merge commit, or a changeset whose Git commit the server builds: not `sha` itself.
     const head = landed.merge ?? ('git_commit' in landed ? landed.git_commit : sha);
     if (head !== sha) messages.push(`${branch}: landed with server merge, run git pull`);

@@ -139,3 +139,69 @@ fn git_access_follows_the_service_scope_and_refuses_path_grants() {
     );
     assert_eq!(code(walk), "FORBIDDEN");
 }
+
+#[test]
+fn a_small_push_is_staged_with_its_commits_and_drained_to_the_store_afterwards() {
+    const PROJECTOR: &str = "platform:projection";
+    let (h, root) = seeded();
+    let tree = h.ok(
+        OWNER,
+        json!({"op":"repo_commit","commit":root,"brief":true}),
+    )["tree"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (first, mut item) = pushed(&root, &tree, "staged push");
+    item["objects"][0]["data_b64"] = item["data_b64"].clone();
+    let blob = b"pushed file\n";
+    let blob_id = hash_object(ObjectKind::Blob, blob).hex();
+    item["objects"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "id": blob_id, "kind": "blob", "data_b64": STANDARD.encode(blob) }));
+    let staged = |item: &Value| {
+        h.run(
+            AGENT,
+            json!({ "op": "repo_record_pushed", "commits": [item], "staged": true }),
+        )
+    };
+
+    // Bytes that do not hash to their listed id refuse the push, and nothing is recorded.
+    let mut forged = item.clone();
+    forged["objects"][1]["data_b64"] = json!(STANDARD.encode(b"other bytes\n"));
+    assert_eq!(code(staged(&forged)), "GIT_OBJECT_INVALID");
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_commit","commit":first}))),
+        "NOT_FOUND"
+    );
+
+    let recorded = staged(&item).unwrap();
+    assert_eq!(recorded["recorded"], 1);
+    assert_eq!(recorded["dispatch_objects"], true);
+    // Readable by id before the store holds them; the outbox lists them for the drain.
+    let read = h.ok(
+        PROJECTOR,
+        json!({"op":"repo_staged_objects","ids":[first, blob_id],"raw":true}),
+    );
+    assert_eq!(read["objects"].as_array().unwrap().len(), 2);
+    let pending = h.ok(PROJECTOR, json!({"op":"repo_objects_pending"}));
+    assert_eq!(pending["commits"][0]["commit"], first);
+    assert_eq!(
+        pending["commits"][0]["objects"].as_array().unwrap().len(),
+        2
+    );
+    // A repeated push records and stages nothing again.
+    let again = staged(&item).unwrap();
+    assert_eq!(again["recorded"], 0);
+    assert_eq!(again["dispatch_objects"], false);
+    // Confirmed in the store: the staged copies go.
+    h.ok(
+        PROJECTOR,
+        json!({"op":"repo_objects_projected","results":[{"commit":first,"outcome":"ok"}]}),
+    );
+    let gone = h.ok(
+        PROJECTOR,
+        json!({"op":"repo_staged_objects","ids":[first, blob_id]}),
+    );
+    assert_eq!(gone["objects"], json!([]));
+}
