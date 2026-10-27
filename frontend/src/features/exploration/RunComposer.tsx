@@ -135,7 +135,7 @@ export function RunComposer({
         throw new Error('Load and review the selected model connections before starting.');
       if (agents.some((agent) => agentConnectionIssue(agent, providers)))
         throw new Error('Review changed model connections before starting this run.');
-      const preferences = requestedAgents(agents, providers);
+      const preferences = requestedAgents(agents, providers, sandbox);
       let current: Repository = snapshot.repository;
       const build = JSON.parse(policy);
       if (JSON.stringify(build) !== JSON.stringify(current.policy?.build)) {
@@ -222,6 +222,7 @@ export function RunComposer({
         />
       )}
       <AgentRoster
+        sandbox={sandbox}
         team={runMode === 'collaborate'}
         compare={runMode === 'compare' && !sandbox}
         agents={agents}
