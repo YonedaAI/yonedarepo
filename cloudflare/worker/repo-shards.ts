@@ -4,6 +4,7 @@
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
 import { durableJson } from './durable';
 import type { CachedObject, RawObject } from './repo-stores';
+import { record, timed } from './repo-timing';
 import type { Env } from './types';
 
 type Json = Record<string, any>;
@@ -36,6 +37,39 @@ export async function shardCall(env: Env, repo: string, shard: number, command: 
   );
   if (value.error) throw fail(value.error);
   return value;
+}
+
+/**
+ * Records a built commit in shard `shard`, timing where the round trip goes (Server-Timing):
+ * `shard.prep` is this request's work since its last I/O plus whatever else this isolate
+ * ran meanwhile (the clock moves only across I/O, so a zero timer closes it; without it,
+ * that work would be billed to the record). Of `shard.record`, the shard reports its body
+ * read, its SQL (with whatever its isolate ran meanwhile) and its durability wait; `in` and
+ * `out` are the legs between the two clocks, so their split carries any clock skew (each
+ * is clamped at zero), not their sum. `shard.fresh` marks a shard instance that had just
+ * started; `shard.inflight` counts the requests the shard was already serving (a count,
+ * not milliseconds).
+ */
+export async function recordInShard(env: Env, repo: string, shard: number, command: Json) {
+  await timed('shard.prep', () => new Promise((resolve) => setTimeout(resolve, 0)));
+  const sent = Date.now();
+  let back = sent;
+  const recorded = await timed('shard.record', async () => {
+    const value = await shardCall(env, repo, shard, { ...command, timing: true });
+    back = Date.now();
+    return value;
+  });
+  const t = recorded.timing;
+  if (t) {
+    record('shard.in', Math.max(0, t.received_at - sent));
+    record('shard.body', t.body_ms);
+    record('shard.sql', t.sql_ms);
+    record('shard.sync', t.sync_ms);
+    record('shard.out', Math.max(0, back - t.replied_at));
+    if (t.fresh) record('shard.fresh', back - sent);
+    if (t.inflight > 0) record('shard.inflight', t.inflight);
+  }
+  return recorded;
 }
 
 async function authority(env: Env, repo: string, command: Json) {

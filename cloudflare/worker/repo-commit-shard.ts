@@ -11,7 +11,7 @@ import { beginFromHead, headTrees, noteBuilt } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
-import { shardCall, shardOf, shardRecord } from './repo-shards';
+import { recordInShard, shardOf, shardRecord } from './repo-shards';
 import { timed } from './repo-timing';
 
 const STAGE_OBJECTS = 256;
@@ -142,23 +142,21 @@ export async function commitInShard(
   );
   const shard = shardOf(built.commit);
   const [recorded] = await Promise.all([
-    timed('shard.record', () =>
-      shardCall(ctx.env, ctx.repo, shard, {
-        op: 'store_record',
-        commit: built.commit,
-        tree: built.tree,
-        parents: built.parents,
-        generation: built.generation,
-        base_version: begun.base_version,
-        principal: begun.principal,
-        message: body.message,
-        read_set: built.read_set,
-        touches: built.touches,
-        objects: raw,
-        classes: classes && { overall: classes.overall, files: classes.files },
-        symbols: symbols?.touches ?? [],
-      }),
-    ),
+    recordInShard(ctx.env, ctx.repo, shard, {
+      op: 'store_record',
+      commit: built.commit,
+      tree: built.tree,
+      parents: built.parents,
+      generation: built.generation,
+      base_version: begun.base_version,
+      principal: begun.principal,
+      message: body.message,
+      read_set: built.read_set,
+      touches: built.touches,
+      objects: raw,
+      classes: classes && { overall: classes.overall, files: classes.files },
+      symbols: symbols?.touches ?? [],
+    }),
     edge,
   ]);
   // Platform checks start on every recorded commit: with runners, the authority adopts it
