@@ -23,6 +23,8 @@ pub fn compute(c: Value) -> Result<Value> {
         "replay_changes" => replay_changes(&c),
         "merge_trees" => merge(&c),
         "grant_check" => grant_check(&c),
+        "model_check_request" => crate::platform_model_check::request(&c),
+        "model_check_verdict" => crate::platform_model_verdict::verdict(&c),
         "search_plan" => crate::platform_derived::plan(&c),
         "index_partition" => crate::platform_derived::index_partition(&c),
         "search_segment" => crate::platform_derived::search_segment(&c),
