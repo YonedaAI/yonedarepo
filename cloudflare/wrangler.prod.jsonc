@@ -4,6 +4,8 @@
 // class and the api-source-v1 transport vars. cloudflare/wrangler.jsonc is the next, unreleased
 // version of this Worker; the N8 cutover replaces this whole spec with the platform/agents/sites
 // layout of infra/envs/dev.json.
+// In source only (not deployed): migration v4 deletes the old harness classes ExecutionContainer
+// and SourceWorkspaceAuthority. Agent attempts run only in AgentSandbox, which this spec does not bind.
 // api.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
@@ -25,17 +27,6 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
-  "containers": [
-    {
-      "class_name": "ExecutionContainer",
-      "image": "registry.cloudflare.com/f011d0ee02b23cad26b4b38151b204ad/yoneda-runtime-guided-r24@sha256:9376f412a2488a6a1da9e3b88090d821e2d7b1d6be46e6cfa009c16ce8c0aae2",
-      "instance_type": "standard-1",
-      "max_instances": 16,
-      "rollout_step_percentage": [
-        100
-      ]
-    }
-  ],
   "d1_databases": [
     {
       "binding": "INDEX",
@@ -55,16 +46,8 @@
         "name": "LIVE"
       },
       {
-        "class_name": "ExecutionContainer",
-        "name": "EXECUTIONS"
-      },
-      {
         "class_name": "WorkspaceAuthority",
         "name": "WORKSPACES"
-      },
-      {
-        "class_name": "SourceWorkspaceAuthority",
-        "name": "SOURCES"
       }
     ]
   },
@@ -92,6 +75,13 @@
         "SourceWorkspaceAuthority"
       ],
       "tag": "v3"
+    },
+    {
+      "deleted_classes": [
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ],
+      "tag": "v4"
     }
   ],
   "name": "yonedarepo-dev",

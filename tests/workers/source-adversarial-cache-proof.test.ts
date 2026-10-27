@@ -1,20 +1,51 @@
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { cacheSourceBlob, sourceCacheKey } from '../../cloudflare/worker/source-cache';
-import { boundSourceFixture } from '../../tools/source-benchmark/workerd-bound-source-fixture';
+import { preparedSourceView, sourceIndexBounded } from '../../cloudflare/worker/source-index';
+import { openSource } from '../../cloudflare/worker/source-objects';
+import { bindings } from '../../tools/source-benchmark/workerd-source-fixture';
+import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
 
+/** One indexed file of a synthetic platform revision, its body cached with a real R2 proof. */
 async function cachedFixture() {
-  const f = await boundSourceFixture('cache-proof-boundary');
-  const base = f.context.binding.base;
-  const file = f.context.view!.files[0];
+  const name = 'cache-proof-boundary';
+  const base = { repository: `platform/${name}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) };
+  const bytes = new TextEncoder().encode('source fixture');
+  const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const object = new Uint8Array(header.length + bytes.length);
+  object.set(header);
+  object.set(bytes, header.length);
+  const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-1', object))]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  const synthetic = {
+    [Symbol.dispose]() {},
+    readCommit: async (commit: string) => {
+      if (commit !== base.commit) throw new Error('Unapproved commit');
+      return { hash: base.commit, treeHash: base.tree };
+    },
+    readTree: async (tree: string) => {
+      if (tree !== base.tree) throw new Error('Unapproved tree');
+      return [{ name: 'app.js', hash, mode: '100644', type: 'blob' }];
+    },
+    readBlob: async (blob: string) => {
+      if (blob !== hash) throw new Error('Unapproved blob');
+      return new Blob([bytes]);
+    },
+  };
+  const env = await syntheticPlatform(bindings, { [name]: synthetic }, 'source_owner');
+  if ((await sourceIndexBounded(env, base)).state !== 'prepared')
+    throw new Error('Fixture source is not ready');
+  const file = (await preparedSourceView(env, base)).files[0];
   if (file.content.kind !== 'git') throw new Error('Expected indexed Git fixture');
+  const repo = await openSource(env, base.repository);
   const key = await sourceCacheKey(base, file.content.blob);
-  const object = await f.env.OBJECTS.get(`${key}.proof`);
-  if (!object) throw new Error('Missing real R2 cache proof');
-  const proof = await object.json<Record<string, any>>();
-  return { ...f, base, file, key, proof, oid: file.content.blob };
+  const proofObject = await env.OBJECTS.get(`${key}.proof`);
+  if (!proofObject) throw new Error('Missing real R2 cache proof');
+  const proof = await proofObject.json<Record<string, any>>();
+  return { env, repo, base, file, key, proof, oid: file.content.blob };
 }
 
 for (const field of ['sha256', 'size', 'git_oid', 'etag', 'version', 'signature']) {

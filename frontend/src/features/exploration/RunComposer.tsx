@@ -11,11 +11,11 @@ import { AgentRoster } from './AgentRoster';
 import { type AdaptiveAgentDraft, requestedAgents } from './adaptiveDraft';
 import { runAgentLimits } from './agentLimits';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
-import { type RunRuntime, RunRuntimePicker, runtimeChoice } from './RunRuntimePicker';
 import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
 import { defaultConnections, runDraft } from './runDraft';
+import { runtimeChoice } from './runtimeChoice';
 import { SampleBriefSummary, briefStarters as starters } from './sampleBrief';
 import { WorkspaceAllowance } from './WorkspaceAllowance';
 import { workingBranchRequest } from './workingBranchView';
@@ -52,7 +52,6 @@ export function RunComposer({
   const limits = runAgentLimits(snapshot);
   const [agents, setAgents] = useState<AdaptiveAgentDraft[]>(draft.agents);
   const [mode, setMode] = useState<RunMode>(draft.mode);
-  const [runtime, setRuntime] = useState<RunRuntime>('sandbox');
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
   const [context, setContext] = useState<string[]>(draft.context);
@@ -60,10 +59,10 @@ export function RunComposer({
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
-  const choice = runtimeChoice(snapshot, runtime, agents, providers);
-  const { offered, blocker, sandbox } = choice;
-  // A team runs only in the sandbox, on the owner's task list; a Classic run always compares.
-  const runMode: RunMode = sandbox && teamSupport ? mode : 'compare';
+  const choice = runtimeChoice(snapshot, agents, providers);
+  const { blocker, sandbox } = choice;
+  // A team runs on the owner's task list; without ledger support a run compares.
+  const runMode: RunMode = teamSupport ? mode : 'compare';
   function changeAgents(next: AdaptiveAgentDraft[]) {
     setAgents(next);
     setTeam((current) => reconcileTeam(current, next));
@@ -99,6 +98,7 @@ export function RunComposer({
         return;
       }
       if (!intent.trim()) throw new Error('Describe the change you want to make.');
+      if (blocker) throw new Error(blocker);
       const teamBody = runMode === 'collaborate' ? { team: serializeTeam(team, agents) } : {};
       if (
         agents.length < (runMode === 'collaborate' ? 1 : limits.min_root_agents) ||
@@ -195,14 +195,7 @@ export function RunComposer({
           </button>
         ))}
       </div>
-      {offered && (
-        <RunRuntimePicker
-          sandbox={sandbox}
-          blocker={blocker}
-          locked={draftLocked}
-          onChange={setRuntime}
-        />
-      )}
+      {blocker && <p className="subtle">{blocker}</p>}
       <AgentRoster
         sandbox={sandbox}
         agents={agents}
@@ -228,7 +221,7 @@ export function RunComposer({
         </label>
         <RunModePicker
           value={runMode}
-          supported={teamSupport && sandbox}
+          supported={teamSupport}
           locked={draftLocked}
           onChange={setMode}
         />
@@ -265,7 +258,7 @@ export function RunComposer({
       )}
       {error && <p role="alert">{error}</p>}
       <div className="run-actions">
-        <button type="submit" disabled={locked || !intent.trim()}>
+        <button type="submit" disabled={locked || !intent.trim() || !sandbox}>
           {locked ? 'Starting…' : startUncertain ? 'Check and retry start' : 'Start a Run'}
         </button>
         <button type="button" className="quiet" disabled={locked} onClick={onClose}>

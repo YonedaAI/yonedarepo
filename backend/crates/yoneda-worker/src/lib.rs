@@ -8,10 +8,8 @@ mod commit_shard;
 mod compute;
 mod git_http;
 mod source_repository;
-mod source_workspace;
 pub use commit_shard::CommitShard;
 pub use source_repository::SourceRepository;
-pub use source_workspace::SourceWorkspaceAuthority;
 
 fn now() -> i64 {
     Date::now().as_millis() as i64

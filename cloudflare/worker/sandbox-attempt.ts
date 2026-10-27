@@ -53,10 +53,10 @@ const fail = (code: string, message: string): never => {
   throw Object.assign(new Error(message), { code });
 };
 
-/** The run transport the adapter approves: a sandbox only when asked and deployed. */
+/** The run transport the adapter approves: every run works in sandboxes, where deployed. */
 export function approvedTransport(env: Env, runtime: unknown): string {
-  if (runtime === undefined || runtime === null) return 'api-source-v1';
-  if (runtime !== SANDBOX_TRANSPORT) return fail('INVALID_INPUT', 'Unknown run runtime');
+  if (runtime !== undefined && runtime !== null && runtime !== SANDBOX_TRANSPORT)
+    return fail('INVALID_INPUT', 'Unknown run runtime');
   if (!env.AGENT_SANDBOX) return fail('SANDBOX_UNAVAILABLE', 'Sandbox runs are not deployed here');
   return SANDBOX_TRANSPORT;
 }

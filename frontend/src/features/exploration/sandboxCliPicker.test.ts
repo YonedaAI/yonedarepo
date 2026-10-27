@@ -5,7 +5,7 @@ import type { Snapshot } from '../../lib/types';
 import type { Provider } from '../workspace/ProviderSettings';
 import { AgentRoster } from './AgentRoster';
 import { type AdaptiveAgentDraft, requestedAgents } from './adaptiveDraft';
-import { runtimeChoice } from './RunRuntimePicker';
+import { runtimeChoice } from './runtimeChoice';
 
 const providers: Provider[] = [
   { id: 'glm', label: 'Z.ai', provider: 'zai', model: 'glm-5.3-flash' },
@@ -61,7 +61,7 @@ describe('sandbox coding CLI choice', () => {
       expect(options(select)).toEqual(clis);
       expect(select?.props.value).toBe(chosen);
     }
-    // Classic runs and Auto models show no choice.
+    // A run without a sandbox and Auto models show no choice.
     expect(
       renderToStaticMarkup(roster({ id: 'a', connection: 'glm', strategy: '' }, false)),
     ).not.toContain('Coding CLI');
@@ -105,7 +105,7 @@ describe('sandbox coding CLI choice', () => {
   it('offers the sandbox for OpenAI and Google models now that a CLI runs them', () => {
     const snapshot = { capabilities: { sandbox_runtime: 'sandbox-cli-v1' } } as unknown as Snapshot;
     const agents = providers.map((p) => ({ id: p.id, connection: p.id, strategy: '' }));
-    expect(runtimeChoice(snapshot, 'sandbox', agents, providers)).toMatchObject({
+    expect(runtimeChoice(snapshot, agents, providers)).toMatchObject({
       sandbox: true,
       blocker: undefined,
     });

@@ -44,21 +44,6 @@
   ],
   "containers": [
     {
-      "class_name": "ExecutionContainer",
-      "constraints": {
-        "regions": [
-          "ENAM"
-        ]
-      },
-      "image": "./containers/Dockerfile",
-      "image_build_context": "..",
-      "instance_type": "standard-1",
-      "max_instances": 6,
-      "rollout_step_percentage": [
-        100
-      ]
-    },
-    {
       "class_name": "AgentSandbox",
       "images": {
         "agent": {
@@ -86,14 +71,6 @@
       {
         "class_name": "LiveRoom",
         "name": "LIVE"
-      },
-      {
-        "class_name": "ExecutionContainer",
-        "name": "EXECUTIONS"
-      },
-      {
-        "class_name": "SourceWorkspaceAuthority",
-        "name": "SOURCES"
       },
       {
         "class_name": "WorkspaceAuthority",
@@ -125,6 +102,13 @@
         "AgentSandbox"
       ],
       "tag": "v2"
+    },
+    {
+      "deleted_classes": [
+        "ExecutionContainer",
+        "SourceWorkspaceAuthority"
+      ],
+      "tag": "v3"
     }
   ],
   "name": "yonedarepo-staging-agents",

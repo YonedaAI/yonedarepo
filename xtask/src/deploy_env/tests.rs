@@ -237,7 +237,11 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 
 #[test]
 fn prod_checks_active_runs_right_before_each_container_rollout() {
-    let plan = steps(&Env::Prod, &prod_workers(), false, &Source::Dockerfile);
+    // The prod spec binds no container since the harness was retired; one that does is gated.
+    let mut workers = prod_workers();
+    assert!(!workers.iter().any(|w| w.has_containers));
+    workers[0].has_containers = true;
+    let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
     let gate = plan
         .iter()
         .position(|s| *s == Step::ActiveGate { worker: 0 })

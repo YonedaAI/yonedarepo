@@ -7,18 +7,13 @@ import { attemptLog, failureCode, writeLog } from './logging';
 import { deliverOutbox } from './outbox-delivery';
 import { enqueueProjects, provisionMessage } from './project-provisioning';
 import { fetchRequest } from './routes';
-import { modelForJob } from './runtime';
 import { beginSandbox } from './sandbox-attempt';
 import { beginCheck } from './sandbox-check';
 import { captureTeamBranch } from './sandbox-team';
 import { authorizePreview } from './sites';
-import type { SourceGcDue, SourceIndexEnvelope } from './source-contract';
-import { prepareSourceDispatch } from './source-dispatch';
-import { sourceIndex } from './source-index-queue';
-import { sourceCleanup } from './source-storage';
-import { ledger, sha } from './storage';
+import { ledger } from './storage';
 import type { Env, Envelope, Json, Scope } from './types';
-/** The agent layer's Worker entrypoint: runs, harness containers and their queues. It reaches
+/** The agent layer's Worker entrypoint: runs, their sandboxes and queues. It reaches
  * the source platform only through its public HTTP API (`routes.ts`). */
 export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(req: Request): Promise<Response> {
@@ -50,9 +45,6 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
   async enqueueProjects(owner: string, projects: Json[]) {
     return enqueueProjects(this.env, owner, projects);
   }
-  async sourceCleanup(due: SourceGcDue) {
-    return sourceCleanup(this.env, due);
-  }
 
   /** Platform jobs belong to the platform Worker; a combined deployment overrides this. */
   protected async platformMessage(message: Message<Envelope>) {
@@ -63,16 +55,13 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
     message.ack();
   }
 
-  protected async launchExecution(name: string, scope: Scope) {
-    await this.env.EXECUTIONS.get(this.env.EXECUTIONS.idFromName(name)).launch(scope);
-  }
-
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
       batch.messages.map(async (message) => {
         const envelope = message.body;
         let claimed: { id: string; epoch: number } | undefined;
-        let launchRequested = false;
+        // Set once a sandbox has started: a lost acknowledgment must not fail its running job.
+        let started = false;
         try {
           if (envelope.v !== 1) {
             message.ack();
@@ -84,13 +73,6 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
           }
           if (envelope.kind === 'provision') {
             await provisionMessage(this.env, message);
-            return;
-          }
-          if (envelope.kind === 'source_index') {
-            const indexed = await sourceIndex(this.env, envelope as SourceIndexEnvelope);
-            if (indexed.state === 'preparing')
-              await this.env.AGENT_QUEUE.send(envelope, { delaySeconds: 1 });
-            message.ack();
             return;
           }
           const job = await ledger(this.env, envelope.repo_id, {
@@ -109,28 +91,20 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             return;
           }
           claimed = { id: String(job.id), epoch: Number(job.epoch) };
-          job.model = modelForJob(job, {
-            codex: this.env.CODEX_MODEL,
-            claude: this.env.CLAUDE_MODEL,
-          });
-          const scope: Scope = {
-            repo_id: envelope.repo_id,
-            job,
-            supervisor: crypto.randomUUID() + crypto.randomUUID(),
-            model_calls: 0,
-            created_at: now(),
-          };
+          const scope: Scope = { repo_id: envelope.repo_id, job };
           await attemptLog(this.env, scope, 'execution.started');
-          // A sandbox attempt is driven by its own Durable Object: no harness container. A
-          // refused start fails the job below (begin is idempotent, so a lost reply is safe).
+          // A sandbox attempt is driven by its own Durable Object. A refused start fails the job
+          // below (begin is idempotent, so a lost reply is safe).
           if (job.sandbox === true) {
             await beginSandbox(this.env, envelope.repo_id, job);
+            started = true;
             message.ack();
             return;
           }
           // A sandbox run's candidate is checked in a fresh check sandbox, not the evaluator.
           if (job.sandbox_check === true) {
             await beginCheck(this.env, envelope.repo_id, job);
+            started = true;
             message.ack();
             return;
           }
@@ -148,19 +122,8 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             message.ack();
             return;
           }
-          if (job.payload?.workspace_transport === 'api-source-v1') {
-            if ((await prepareSourceDispatch(this.env, scope)) === 'deferred') {
-              message.ack();
-              return;
-            }
-          } else
-            throw Object.assign(new Error('Only lazy-source attempts run'), {
-              code: 'NOT_SUPPORTED',
-            });
-          const name = await sha(`${envelope.repo_id}:${job.id}:${job.epoch}`);
-          launchRequested = true;
-          await this.launchExecution(name, scope);
-          message.ack();
+          // Agents run only in sandboxes: a job for the retired harness container fails.
+          throw Object.assign(new Error('Only sandbox attempts run'), { code: 'NOT_SUPPORTED' });
         } catch (e: any) {
           const code = failureCode(e);
           writeLog('queue.dispatch_failed', {
@@ -168,7 +131,7 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
             job_id: envelope.job_id,
             error_code: code,
           });
-          if (claimed && !launchRequested) {
+          if (claimed && !started) {
             try {
               await ledger(this.env, envelope.repo_id, {
                 op: 'fail',

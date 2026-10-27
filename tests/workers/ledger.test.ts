@@ -82,13 +82,6 @@ it('failed initialization does not leave a repeating alarm',async()=>{
  expect(await runInDurableObject(stub,(_instance,state)=>state.storage.getAlarm())).toBeNull();
 });
 
-it('refuses old container protocols and evaluator environments before executing a job', async () => {
- const { checkRuntime } = await import('../../cloudflare/worker/runtime');
- expect(() => checkRuntime('ready' as any,{kind:'agent'})).toThrow();
- expect(() => checkRuntime({protocol:2,environment:'old',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).toThrow();
- expect(() => checkRuntime({protocol:2,environment:'new',suites:['retry-contract-v2']},{kind:'evaluate',payload:{policy:{environment:'new',suite:'retry-contract-v2'}}})).not.toThrow();
-});
-
 it('refuses old ledger read protocols before starting paid explorations', async () => {
  const { checkLedger } = await import('../../cloudflare/worker/runtime');
  expect(() => checkLedger({v:1})).toThrow();
