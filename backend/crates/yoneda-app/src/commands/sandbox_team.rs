@@ -216,9 +216,11 @@ fn settle<S: SqlStore>(db: &S, rid: &str, now: i64) -> Result<()> {
             now,
         );
     }
+    // A record of the merged result, not an agent: no job and no attempt of its own (epoch 0).
     let eid = format!("{rid}:team");
     let e = json!({"id":eid,"run_id":rid,"role":"team_branch","team_role":"team_branch",
-        "strategy":"Team branch","status":"capturing","base":run["base"],"started_at":now,"depth":0});
+        "strategy":"Team branch","status":"capturing","base":run["base"],"started_at":now,
+        "depth":0,"epoch":0});
     create(db, "executions", &eid, &e)?;
     node(
         db,
