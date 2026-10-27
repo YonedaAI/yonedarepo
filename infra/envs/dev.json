@@ -108,7 +108,8 @@
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
-        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device)."
+        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).",
+        "Model checks call the review model with REVIEW_MODEL_KEY, the platform's own Z.ai key (Secrets Store secret PlatformReviewZAI), never an agent-layer key."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -150,6 +151,13 @@
           "LAND_MODE": "batch",
           "WEB_ORIGIN": "{origin}"
         },
+        "secrets_store_secrets": [
+          {
+            "binding": "REVIEW_MODEL_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "PlatformReviewZAI"
+          }
+        ],
         "artifacts": [
           {
             "binding": "ARTIFACTS",

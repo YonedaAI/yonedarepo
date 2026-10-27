@@ -29,6 +29,12 @@ A push lists working branches as usual but never protected ones (`main`, `releas
 
 Working branches move by compare-and-swap on the value Git saw (`--force` works there; a branch that moved meanwhile is `fetch first`); `--atomic` moves all of them in one transaction or none, and cannot include a protected branch. Every object is verified before anything is recorded and refs move only after the commits are recorded under their own ids, so a push that fails or is cut off leaves refs and the log unchanged. A file carrying a credential refuses the whole push with `secret detected in <path>:<line>` (owner exceptions: policy `secret_allow`). Limits per push: 64 MiB of pack, 40,000 objects, 16 MiB per object; larger pushes use `git-remote-yoneda`. Not served yet: tags, push options, protocol v2 features (partial clone, `--filter`), shallow clones, and fetching history imported into Artifacts (use the helper). The platform Worker sets `limits.subrequests=50000` because each Git object sent or received is one R2 read or write.
 
+## Model checks
+
+A policy runner `{"kind": "model", "rubric": "...", "model": "glm-5.3-flash", "allow_truncated": false}` (model and truncation optional) makes the platform grade each recorded commit with one model call: the diff against its first parent (as `GET /diff?patch=1`), the commit message as the stated intent, and the rubric. The call has no tools and no loop. The answer must be the JSON `{verdict, score, findings}`, and is recorded as the runner's check result with the findings, tokens and cost as evidence; list the runner in `required_checks` to gate landing. A diff over 60,000 characters, or with a file whose patch is unavailable, fails with "diff too large for model review" unless `allow_truncated` is set. A malformed answer, HTTP error or 45 s timeout is retried once and then errors: the run records no result, so the check stays missing and landing stays blocked (re-request it with `POST /commits/<sha>/check-runs`). Only the platform's own run may post a runner's check.
+
+The call uses the platform Worker's own Secrets Store binding `REVIEW_MODEL_KEY` (store `3d9115d4fe864c54a792bcb790a763e3`, secret `PlatformReviewZAI`, a Z.ai API key), never an agent-layer key. Create that secret before deploying a config that binds it (staging: `infra/envs/dev.json`). Without it, model checks error and block. Live gate: `node tools/staging-realworld.mjs --model-check`.
+
 ## History, archives and Git conflicts
 
 Every run works in a lazy source workspace (`api-source-v1`); agents never clone or push.
