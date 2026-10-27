@@ -1,7 +1,6 @@
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { modelHandler } from '../../cloudflare/worker/models';
-import { campaignModelBudgets } from '../../cloudflare/worker/reviewer-campaign';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -10,8 +9,9 @@ import { bindings, containerBindings, readyReviewer } from './reviewer-fixture';
 import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
-const budget = { ...campaignModelBudgets[1], max_requests: 4, max_output_tokens: 256,
-  max_execution_ms: 120000, spend_limit_microusd: 50000 };
+const budget = { provider: 'codex', model: 'gpt-5.6-luna', max_requests: 4, max_output_tokens: 256,
+  max_execution_ms: 120000, spend_limit_microusd: 50000, pricing: { input_microusd_per_million: 250000,
+    output_microusd_per_million: 1200000, source: 'owner-approved conservative rates' } };
 async function setup(marked = true, limit = 50000, approved: Json = budget, adaptive = false) {
   const f = await readyReviewer();
   await workspaceSpendConfigure(bindings, f.owner, 0, limit);

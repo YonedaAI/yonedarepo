@@ -1,6 +1,5 @@
 import { accountRoute } from './accounts';
 import { authenticate } from './auth';
-import { campaignRoute } from './campaign-route';
 import {
   candidateDetail,
   candidateSource,
@@ -23,7 +22,6 @@ import { ownerCommandInput, repositoryOperationAllowed } from './repository-comm
 import { deleteRepository } from './repository-deletion';
 import { publicationReadback, recordPublicationChecks, resynchronize } from './repository-recovery';
 import { reviewerGuard, reviewerRoute } from './reviewer';
-import { reviewerCampaignRoute } from './reviewer-campaign';
 import { advertiseSandbox, sandboxActivity } from './sandbox-attempt';
 import { resolveInSandbox } from './sandbox-resolve';
 import { ownerSession } from './session';
@@ -66,10 +64,6 @@ export async function fetchRequest(
       return error('FORBIDDEN', 'Use the scoped MCP and Git endpoints', 403);
     const restricted = await reviewerGuard(req, env, principal);
     if (restricted) return restricted;
-    const campaign = await campaignRoute(req, env, principal);
-    if (campaign) return campaign;
-    const campaignReviewer = await reviewerCampaignRoute(req, env, principal);
-    if (campaignReviewer) return campaignReviewer;
     const reviewer = await reviewerRoute(req, env, principal);
     if (reviewer) return reviewer;
     const managed = await managedProviderRoute(req, env, principal);

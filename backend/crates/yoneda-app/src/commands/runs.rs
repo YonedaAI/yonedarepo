@@ -144,7 +144,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             super::adaptive_team::freeze(&c, &mut run)?;
             super::autonomy::freeze(&c, &mut run)?;
             super::sandbox::checkable_start(&run, &r["policy"])?;
-            super::campaign::freeze(db, &c, &mut run, now)?;
             if run["autonomy_approval"].is_object() {
                 run["autonomy_approval"]["model_budgets"] = run["model_budgets"].clone();
                 if !run["repair_escalation"].is_null() {
@@ -164,7 +163,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["continuation_of"] = json!(decision);
             }
             super::study::apply(&mut run, super::study::freeze(db, &r)?);
-            super::study::select(&c, &r, &mut run)?;
             super::comparison::freeze(&c, &mut run)?;
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");

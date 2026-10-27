@@ -33,7 +33,6 @@ export function approveComparisonStart(input: Json, connections: Json[], limit: 
     input.agents?.length !== 2 ||
     input.adaptive_team != null ||
     input.team != null ||
-    input.campaign != null ||
     input.delegation?.enabled === true
   )
     throw invalid('Comparison requires two independent builders and version 1 review approval.');

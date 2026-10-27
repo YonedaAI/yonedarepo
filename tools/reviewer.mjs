@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { campaignEntry, comparisonSummary, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from './reviewer-client.mjs';
+import { comparisonSummary, findCheckedRun, readRun, workspaceAllowance, workspaceEntry } from './reviewer-client.mjs';
 
 const origin = 'https://yonedarepo.com';
 function keyPrompt() {
@@ -42,10 +42,10 @@ Options:
   --checked          Open the latest recorded checked run; never start/resume a trial.
   --no-open          Print the review URL without launching a browser.
   --new              Legacy only: approve a funded trial (up to $5); shared accounts open Start a Run.
-  --resume           Legacy only: resume a campaign trial; shared accounts open Start a Run.
+  --resume           Legacy only: resume a reviewer trial; shared accounts open Start a Run.
 
 Default: open the latest checked owned-project result without starting inference.
-Legacy accounts retain checked campaign discovery. Shared accounts approve new work in the browser.`;
+Shared accounts approve new work in the browser.`;
 }
 function parseArgs(args) {
   const options = { help: false, newTrial: false, resume: false, checkedOnly: false, openBrowser: true, keyFile: '' };
@@ -111,15 +111,10 @@ async function main() {
     console.log(trial.message);
   } else {
     const policy=await api('reviewer');
-    const campaign=policy.campaign;
-    const remaining=campaign ? campaign.budget.limit_microusd-campaign.budget.charged_microusd : policy.budget.limit-policy.budget.charged;
+    const remaining=policy.budget.limit-policy.budget.charged;
     console.log(`Signed in. Funded allowance remaining: $${(remaining/1000000).toFixed(2)}.`);
-    if(campaign) {
-      trial=await campaignEntry(api,campaign,options.newTrial,randomUUID(),options.resume);
-      console.log(options.newTrial ? 'Opening the bounded campaign trial.' : 'Read-only review: opening the latest independently checked app.');
-    } else if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
-    if (!campaign && options.resume) throw new Error('No configured campaign trial is available to resume.');
-    if (!campaign && !options.newTrial) {
+    if (policy.project.status !== 'ready') throw new Error('Reviewer sandbox is still preparing. Open the hosted app and retry when setup is ready.');
+    if (!options.newTrial) {
       const recorded=await findCheckedRun(api,policy.repo_id);
       if(recorded) {
         trial={repo_id:policy.repo_id,run_id:recorded.id,

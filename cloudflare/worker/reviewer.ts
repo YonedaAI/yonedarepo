@@ -3,7 +3,6 @@ import { error, readJson, response } from './http';
 import { ensureProjectPlatform } from './project-platform';
 import { scheduleProject } from './project-provisioning';
 import { ownerCommandInput } from './repository-command';
-import { reviewerCampaignStatus } from './reviewer-campaign';
 import { reviewerManagedMiMo } from './reviewer-managed-mimo';
 import { reviewerPolicy } from './reviewer-policy';
 import {
@@ -106,7 +105,6 @@ export async function reviewerRoute(req: Request, env: Env, principal: Principal
       ...(await reviewerTrialStatus(env, principal.workspace)),
       budget: await workspace(env, principal.workspace, { op: 'budget_status' }),
       project: await workspace(env, principal.workspace, { op: 'project_get', id: policy.repo_id }),
-      campaign: await reviewerCampaignStatus(env, principal.workspace),
     });
   }
   if (path === '/api/reviewer/trial' && req.method === 'POST') {

@@ -11,10 +11,9 @@ pub(in crate::commands) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
         || run["delegation"]["enabled"] == true
         || run["adaptive_team"].is_object()
         || run["team_plan"].is_object()
-        || run["campaign"].is_object()
     {
         return Err(bad(
-            "Comparison v1 requires two fixed builders without delegation, team or campaign",
+            "Comparison v1 requires two fixed builders without delegation or team",
         ));
     }
     let request = c["request_id"]
@@ -182,7 +181,6 @@ pub(in crate::commands) fn approve<S: SqlStore>(db: &S, c: &Value, now: i64) -> 
     }
     if !hosted(&run)
         || run["comparison"]["approval"].is_object()
-        || run["campaign"].is_object()
         || !legacy_roots_only(db, &run)?
         || ["cancelled", "accepted"]
             .iter()

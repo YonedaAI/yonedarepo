@@ -17,7 +17,6 @@ pub(super) fn freeze(c: &Value, run: &mut Value) -> Result<()> {
         || c.get("_grant").is_some()
         || run["mode"] != "collaborate"
         || run["team_planning"] != "automatic"
-        || c.get("campaign").is_some()
     {
         return Err(Error::new(
             "FORBIDDEN",
