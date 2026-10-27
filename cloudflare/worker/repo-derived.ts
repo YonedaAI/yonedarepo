@@ -2,6 +2,8 @@
 // segments are keyed by partition (subtree) id in R2, so a segment is built once and
 // reused by every commit and branch containing that subtree; only changed partitions
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
+// A segment's paths are relative to its partition, and each read passes the partition's
+// prefix, so a renamed or duplicated directory reuses the segment under its own path.
 import { emitChangeLog } from './repo-changelog';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
@@ -43,7 +45,9 @@ export async function withObjects(ctx: RepoContext, input: Json, known: CachedOb
   throw new ApiError('INVALID_INPUT', 'Too many object rounds');
 }
 
-const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/${key}`;
+// `search/v2`: segments hold partition-relative paths. v1 segments named the directory
+// they were first built for, so they are never read again.
+const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/v2/${key}`;
 
 /** Segments for a root tree, building missing ones. Returns how many were built. */
 export async function searchSegments(ctx: RepoContext, root: string) {
@@ -57,7 +61,6 @@ export async function searchSegments(ctx: RepoContext, root: string) {
       const result = await withObjects(ctx, {
         op: 'index_partition',
         tree: p.tree,
-        prefix: p.prefix,
         shallow: p.shallow,
       });
       if (result.too_large) return { partition: p, too_large: true };
@@ -85,7 +88,12 @@ export async function search(ctx: RepoContext, args: Json) {
       skipped.push(entry.partition.prefix || '/');
       continue;
     }
-    const { candidates } = compute({ op: 'search_segment', segment: entry.segment, query });
+    const { candidates } = compute({
+      op: 'search_segment',
+      segment: entry.segment,
+      prefix: entry.partition.prefix,
+      query,
+    });
     // Grants filter candidates before any content is read or counted.
     for (const file of await keepAllowed(ctx, candidates as Json[])) {
       if (prefix && !String(file.path).startsWith(prefix)) continue;
