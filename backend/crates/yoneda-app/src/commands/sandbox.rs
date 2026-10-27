@@ -127,18 +127,39 @@ pub(super) fn claimed(job: &mut Value, now: i64) {
 const CHECK_CAP_MS: i64 = 15 * 60_000;
 const CHECK_LEASE_MS: i64 = CHECK_CAP_MS + 5 * 60_000;
 
+/// Refuses, at run start, a sandbox run whose candidates the check sandbox cannot check: a
+/// guided run, or a project policy with an app bundle (its digest-exact app encoding exists
+/// only in the evaluator container). Immutable test bundles are checked in the sandbox.
+pub(super) fn checkable_start(run: &Value, policy: &Value) -> Result<()> {
+    if run["runtime"] != TRANSPORT {
+        return Ok(());
+    }
+    if run["guided"].is_object() {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Guided runs do not run in a sandbox",
+        ));
+    }
+    if !policy["build"]["app"].is_null() {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Sandbox runs cannot check app bundles yet: this project's policy builds an app. Remove the app from the policy or start the run without the sandbox",
+        ));
+    }
+    Ok(())
+}
+
 /// Marks a claimed evaluation of a sandbox run's candidate as one check-sandbox attempt,
 /// never re-dispatched: the report still arrives through `verify_finish` with the same
-/// validation. Checks the sandbox does not run (guided steps, immutable test bundles and app
-/// bundles) stay with the evaluator container.
+/// validation. The check sandbox installs an immutable test bundle as the evaluator does;
+/// guided steps and app bundles stay with the evaluator container.
 pub(super) fn claimed_check<S: SqlStore>(db: &S, job: &mut Value, now: i64) -> Result<()> {
     let payload = &job["payload"];
     let build = &payload["policy"]["build"];
     let checkable = job["kind"] == "evaluate"
         && payload["guided"].is_null()
         && build.is_object()
-        && build["app"].is_null()
-        && build["test_bundle"].is_null();
+        && build["app"].is_null();
     let Some(run_id) = payload["run_id"].as_str().filter(|_| checkable) else {
         return Ok(());
     };

@@ -122,3 +122,26 @@ if git -c core.hooksPath=/dev/null -c user.name="YonedaRepo agent" -c user.email
 	merge --quiet --no-edit --no-ff "origin/$2" >/dev/null 2>&1; then echo merged
 elif [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then echo conflict
 else exit 1; fi`;
+
+/** Where a check sandbox installs the policy's immutable test bundle (the evaluator's path). */
+export const testBundleDirectory = '/opt/yoneda/test-bundle';
+/**
+ * `node -e bundleInstallScript <dir>`, the canonical bundle JSON on stdin: replaces `dir` and
+ * writes each file read-only (0444, executables 0555) and every directory 0555, as the evaluator container
+ * installs it, and prints the SHA-256 of the bytes it received (the bundle digest).
+ */
+export const bundleInstallScript = `const fs=require('node:fs'),crypto=require('node:crypto');
+const root=process.argv[1];const input=fs.readFileSync(0);
+const digest=crypto.createHash('sha256').update(input).digest('hex');
+const files=JSON.parse(input.toString('utf8'));
+const safe=(p)=>p.length>0&&p.length<=512&&!p.startsWith('/')&&![92,0,58].some((c)=>p.includes(String.fromCharCode(c)))&&p.split('/').every((s)=>s.length>0&&s!=='.'&&s!=='..'&&s.toLowerCase()!=='.git');
+const open=(d)=>{fs.chmodSync(d,0o755);for(const e of fs.readdirSync(d,{withFileTypes:true}))if(e.isDirectory())open(d+'/'+e.name);};
+if(fs.existsSync(root))open(root);fs.rmSync(root,{recursive:true,force:true});fs.mkdirSync(root,{recursive:true});
+const dirs=new Set([root]);
+for(const [path,file] of Object.entries(files)){if(!safe(path))throw new Error('Unsafe test bundle path');
+const target=root+'/'+path;const parent=target.slice(0,target.lastIndexOf('/'));
+fs.mkdirSync(parent,{recursive:true});for(let d=parent;d.length>root.length;d=d.slice(0,d.lastIndexOf('/')))dirs.add(d);
+fs.writeFileSync(target,Buffer.from(file.content,file.encoding==='base64'?'base64':'utf8'));
+fs.chmodSync(target,file.executable?0o555:0o444);}
+for(const d of dirs)fs.chmodSync(d,0o555);
+process.stdout.write(digest);`;

@@ -7,7 +7,7 @@ import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
 import { projectPlatform } from '../../cloudflare/worker/agents-platform';
 import { recordSandboxCandidate, type SandboxAttempt, sandboxName } from '../../cloudflare/worker/sandbox-attempt';
-import { checkName, checkPort, type SandboxHost } from '../../cloudflare/worker/sandbox-check';
+import { checkAttempt, checkName, checkPort, type SandboxHost } from '../../cloudflare/worker/sandbox-check';
 import {
   type CheckAttempt,
   checkStep,
@@ -16,6 +16,7 @@ import {
 import type { OutboundProps } from '../../cloudflare/worker/sandbox-outbound';
 import { checkScript, cloneScript, revisionScript } from '../../cloudflare/worker/sandbox-shell';
 import { ledger } from '../../cloudflare/worker/storage';
+import { canonicalBundle } from '../../cloudflare/worker/test-bundle';
 import type { Env, Envelope, Json } from '../../cloudflare/worker/types';
 import { platformCommit } from './platform-fixture';
 import { api, readyReviewer } from './reviewer-fixture';
@@ -142,4 +143,53 @@ it('fails the evaluation closed when the checkout is not the candidate tree', as
   expect(String(job.error)).toMatch(/^Check checkout differs from the candidate/);
   const snapshot = await ledger(bindings, repo, { op: 'snapshot' });
   expect(snapshot.candidates.find((c: Json) => c.id === candidate.id).status).not.toBe('eligible');
+});
+
+it('takes a test-bundle policy into the check sandbox and pipes it the digest-checked bundle', async () => {
+  const fixture = await readyReviewer('check_bundle');
+  const files = { 'run.mjs': { content: 'process.exit(0)\n', executable: false } };
+  const { encoded } = canonicalBundle(files);
+  const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encoded)))]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  await bindings.OBJECTS.put(`sha256/${digest}`, JSON.stringify({ files }));
+  const commit = 'c'.repeat(40);
+  const job = {
+    id: 'evaluate:bundled',
+    epoch: 1,
+    payload: {
+      candidate: { id: 'bundled', revision: { repository: `platform/${fixture.repo}`, commit }, tree: 'd'.repeat(40) },
+      policy: {
+        suite: 'commands-v1',
+        environment: 'linux-node24-rust1.94-v1',
+        build: {
+          checks: [{ name: 'tests', argv: ['node', '/opt/yoneda/test-bundle/run.mjs'], timeout_seconds: 30 }],
+          test_bundle: { digest, protected_paths: ['tests'] },
+        },
+      },
+      source_integrity: { candidate_id: 'bundled', revision: { commit }, protected_changes: ['tests'] },
+    },
+  };
+  const check = await checkAttempt(bindings, fixture.repo, job);
+  expect(check.test_bundle).toEqual({ digest, protected_changes: ['tests'] });
+  let input: string | undefined;
+  const host: SandboxHost = {
+    ensure: async () => {},
+    run: async (command, _cwd, _env, stdin) => {
+      input = stdin;
+      expect(command.slice(0, 2)).toEqual(['node', '-e']);
+      expect(command[3]).toBe('/opt/yoneda/test-bundle');
+      const sum = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(stdin)))]
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+      return { exitCode: 0, stdout: sum, stderr: '' };
+    },
+    destroy: async () => {},
+  };
+  expect(await checkPort(bindings, host, check).installBundle(digest)).toBe(digest);
+  expect(input).toBe(encoded);
+  // An app policy still stays with the evaluator container.
+  const app = structuredClone(job);
+  (app.payload.policy.build as Json).app = { version: 1 };
+  await expect(checkAttempt(bindings, fixture.repo, app)).rejects.toMatchObject({ code: 'NOT_SUPPORTED' });
 });

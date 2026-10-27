@@ -394,25 +394,50 @@ fn an_invalid_check_report_is_refused() {
     assert_eq!(candidate["status"], "rejected");
 }
 
-#[test]
-fn checks_the_sandbox_cannot_run_stay_with_the_evaluator_container() {
-    // An immutable test bundle is installed only in the evaluator container.
+fn bundle_repository(app: bool) -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    let policy = json!({"version":"sandbox-bundle","suite":"commands-v1",
+    let mut policy = json!({"version":"sandbox-bundle","suite":"commands-v1",
         "environment":"linux-node24-rust1.94-v1","required_checks":["build"],
         "build":{"checks":[{"name":"build","argv":["node","/opt/yoneda/test-bundle/run.mjs"],"timeout_seconds":30}],
         "test_bundle":{"digest":"a".repeat(64),"protected_paths":["tests"]}}});
+    if app {
+        policy["build"]["app"] = json!({"version":1,"entrypoint":"dist/worker.js",
+            "export_name":"App","migrations":[{"version":1,
+            "sql":["CREATE TABLE bookings (id TEXT PRIMARY KEY)"]}],"seed":[]});
+    }
     call(&db, json!({"op":"init","id":"sandbox","name":"Sandbox","remote":{"namespace":"yoneda-dev","name":"sandbox"},"commit":"a".repeat(40),"policy":policy})).unwrap();
+    db
+}
+
+#[test]
+fn an_immutable_test_bundle_is_checked_in_the_check_sandbox() {
+    let db = bundle_repository(false);
     let job = checked(&db);
-    assert!(job.get("sandbox_check").is_none());
-    // Ordinary runs keep the evaluator container.
-    let db = repository();
+    assert_eq!(job["sandbox_check"], true);
+    assert_eq!(
+        job["payload"]["policy"]["build"]["test_bundle"]["digest"],
+        "a".repeat(64)
+    );
+}
+
+#[test]
+fn app_bundle_and_guided_sandbox_runs_are_refused_at_start() {
+    let db = bundle_repository(true);
+    let refused = call(&db, start(glm(), json!({}))).unwrap_err();
+    assert_eq!(refused.code, "NOT_SUPPORTED");
+    assert!(refused.message.contains("app bundles"));
+    // The same project still starts ordinary runs (their checks keep the evaluator container).
     let mut c = start(glm(), json!({}));
     c["workspace_transport"] = json!("api-source-v1");
     call(&db, c).unwrap();
     let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
     claimed_check(&db, &mut evaluator, 1000).unwrap();
     assert!(evaluator.get("sandbox_check").is_none());
+    let guided = json!({"runtime":TRANSPORT,"guided":{"session_id":"s"}});
+    assert_eq!(
+        checkable_start(&guided, &json!({})).unwrap_err().code,
+        "NOT_SUPPORTED"
+    );
 }
 
 #[test]
