@@ -1,7 +1,8 @@
 //! Platform-executed checks. A run is bound to (exact commit, check name, policy digest);
 //! the adapter's queue consumer claims it with a fenced epoch and lease, executes the
-//! policy's runner in a Container, and completes it. Only completions from the current
-//! epoch count, so a stale or duplicated executor can never record a result.
+//! policy's runner (a command in a Container, or one model review call), and completes
+//! it. Only completions from the current epoch count, so a stale or duplicated executor
+//! can never record a result.
 use super::rows::{self, Policy, Runner, Settings, check_name, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -128,19 +129,26 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let runner: Runner = serde_json::from_str(row["runner"].as_str().unwrap_or_default())
         .map_err(|_| rows::corrupt("runner"))?;
-    let lease_until = now + i64::from(runner.timeout_seconds) * 1000 + LEASE_SLACK_MS;
+    let lease_until = now + i64::from(runner.timeout_seconds()) * 1000 + LEASE_SLACK_MS;
     db.query(
         "UPDATE check_runs SET status='running',epoch=?,lease_until=? WHERE id=?",
         &[json!(epoch), json!(lease_until), json!(id)],
     )?;
     let commit = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
-    let tree = rows::recorded(db, &commit)?.tree;
-    Ok(json!({
-        "run_id": id, "epoch": epoch, "commit": commit, "tree": tree, "name": row["name"],
-        "command": runner.command, "timeout_seconds": runner.timeout_seconds,
+    let recorded = rows::recorded(db, &commit)?;
+    let mut claimed = json!({
+        "run_id": id, "epoch": epoch, "commit": commit, "tree": recorded.tree,
+        "parents": recorded.parents, "name": row["name"],
         // How long the run waited for an executor (the check queue).
         "queued_ms": now - row["created_at"].as_i64().unwrap_or(now),
-    }))
+    });
+    if let (Some(out), Value::Object(fields)) = (
+        claimed.as_object_mut(),
+        runner.claim_fields(&recorded.message),
+    ) {
+        out.extend(fields);
+    }
+    Ok(claimed)
 }
 
 /// Records the executor's outcome. `pass`/`fail` become the commit's check result under

@@ -19,6 +19,8 @@ mod platform_git_verify;
 mod platform_graph;
 mod platform_head;
 mod platform_instructions;
+pub(crate) mod platform_model_check;
+mod platform_model_verdict;
 mod platform_narrative;
 mod platform_objects;
 mod platform_project;

@@ -35,6 +35,7 @@ mod pushed;
 mod reads;
 mod record;
 mod rows;
+mod runner;
 pub(crate) mod staging;
 mod store_lineage;
 mod submitted;

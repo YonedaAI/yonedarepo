@@ -1580,6 +1580,7 @@ mod changesets;
 mod check_posters;
 mod land_cas;
 mod land_shapes;
+mod model_runner;
 mod pushed;
 mod secrets;
 mod shards;
