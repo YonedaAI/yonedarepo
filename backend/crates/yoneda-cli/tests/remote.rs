@@ -408,6 +408,70 @@ fn same_line_overlap_conflicts_then_resolves(w: &World) -> TestResult {
     )
 }
 
+/// Declared reads through the helper (C1): `git push -o yoneda.reads=…` sends the read set
+/// with the uploaded tip, and landing refuses it as a read conflict once B changed the read
+/// file; the session's recorded reads (`yoneda reads add`) go with a plain `git push` after
+/// `git pull`, which lands and clears them. Without a declaration the same work merges.
+fn declared_reads_through_the_helper(w: &World) -> TestResult {
+    let files = [("config.json", "{\"v\":1}\n"), ("app.js", "a\n")];
+    for declare in [true, false] {
+        let (repo, token) = w.platform.repo(&files)?;
+        let (a, b) = (
+            w.client(&format!("reads-a-{declare}"), &token)?,
+            w.client(&format!("reads-b-{declare}"), &token)?,
+        );
+        let (da, db) = (w.clone(&a, &repo, "w")?, w.clone(&b, &repo, "w")?);
+        let mine = commit(&a, &da, "app", &[("app.js", "a2\n")])?;
+        commit(&b, &db, "config", &[("config.json", "{\"v\":2}\n")])?;
+        check(
+            push(&b, &db, &["origin", "main"])?.status.success(),
+            "B lands first",
+        )?;
+        if !declare {
+            let landed = push(&a, &da, &["origin", "main"])?;
+            check(
+                landed.status.success()
+                    && text(&landed).contains("server merged concurrent changes"),
+                &format!("undeclared: {}", text(&landed)),
+            )?;
+            continue;
+        }
+        let refused = push(
+            &a,
+            &da,
+            &["-o", "yoneda.reads=config.json", "origin", "main"],
+        )?;
+        check(
+            !refused.status.success()
+                && text(&refused).contains("read conflict on config.json: run git pull"),
+            &format!("declared: {}", text(&refused)),
+        )?;
+        let shown = w
+            .platform
+            .owner_call("GET", &format!("/repos/{repo}/commits/{mine}"), None)?;
+        check(
+            shown["read_set"] == json!(["config.json"]),
+            &shown["read_set"].to_string(),
+        )?;
+        a.ok(&da, &["reads", "add", "config.json"])?;
+        let pulled = a.git_output(&da, &["pull", "-q", "--no-rebase", "origin", "main"])?;
+        check(pulled.status.success(), &format!("pull: {}", text(&pulled)))?;
+        let landed = push(&a, &da, &["origin", "main"])?;
+        check(
+            landed.status.success(),
+            &format!("after pull: {}", text(&landed)),
+        )?;
+        check(w.blob(&repo, "app.js") == "a2\n", "A's change landed")?;
+        check(
+            a.ok(&da, &["reads", "list"])?.trim().is_empty(),
+            "reads cleared",
+        )?;
+        let pushed = std::fs::read_to_string(da.join(".git/yoneda/pushed")).unwrap_or_default();
+        check(pushed.lines().count() == 1, &format!("pushed: {pushed}"))?;
+    }
+    Ok(())
+}
+
 fn atomic_push_with_a_stale_ref_moves_nothing(w: &World) -> TestResult {
     let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
     let c = w.client("atomic", &token)?;
@@ -897,6 +961,7 @@ fn git_works_through_the_remote_helper() -> TestResult {
     disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
     first_push_into_an_empty_repository(&w).map_err(|e| format!("empty: {e}"))?;
     same_line_overlap_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
+    declared_reads_through_the_helper(&w).map_err(|e| format!("reads: {e}"))?;
     atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
     #[cfg(unix)]
     killed_push_leaves_refs_unchanged(&w).map_err(|e| format!("killed: {e}"))?;

@@ -3,7 +3,8 @@ use crate::args::{self, Command, SyncMode};
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
-    account, attempt, brief, clone, login, pull, reads, repo_ops, setup, status, sync, target,
+    account, agent_hook, attempt, brief, clone, login, pull, reads, repo_ops, session_cmd, setup,
+    status, sync, target,
 };
 
 async fn sync_checkout(mode: SyncMode) -> Result<()> {
@@ -104,6 +105,10 @@ async fn run(command: Command) -> Result<()> {
         Command::Status { brief } => show_status(brief).await,
         Command::Pull => pull::pull(&mut Checkout::open()?).await,
         Command::Sync(mode) => sync_checkout(mode).await,
+        Command::Reads(command) => session_cmd::reads(command),
+        Command::Push(args) => session_cmd::push(args),
+        Command::Session { target, command } => session_cmd::session(&target, command).await,
+        Command::Hook(event) => agent_hook::run(event).await,
     }
 }
 
