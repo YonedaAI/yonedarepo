@@ -109,7 +109,7 @@ fn freeze_refuses_automatic_planning_delegation_peers_and_dependencies() {
     // both earlier, for want of an approved model pool or a hosted team.
     let c = start(json!({"adaptive_team":{"version":1}}));
     let plan: TeamPlan = serde_json::from_value(c["team"].clone()).unwrap();
-    let mut run = json!({});
+    let mut run = json!({"agents":c["agents"]});
     let disabled = DelegationPolicy::disabled(1);
     let refused = freeze(&c, true, Some(&plan), &disabled, &mut run);
     assert_eq!(refused.unwrap_err().code, "NOT_SUPPORTED");
@@ -120,6 +120,7 @@ fn freeze_refuses_automatic_planning_delegation_peers_and_dependencies() {
     assert!(run["runtime"].is_null());
     freeze(&start(json!({})), true, Some(&plan), &disabled, &mut run).unwrap();
     assert_eq!(run["runtime"], TRANSPORT);
+    assert_eq!(run["agents"][0]["cli"], "claude");
 }
 
 #[test]
@@ -227,4 +228,19 @@ fn landings_are_validated() {
         report(&db, &stale, landed('c', 'c')).unwrap_err().code,
         "FENCED"
     );
+}
+
+#[test]
+fn team_members_run_the_cli_of_their_frozen_agent() {
+    let db = repository();
+    let mut request = start(json!({}));
+    request["agents"][0]["cli"] = json!("opencode");
+    call(&db, request).unwrap();
+    for n in 1..=2 {
+        let execution = get(&db, "executions", &format!("run-t:agent-{n}")).unwrap();
+        assert_eq!(execution["cli"], "opencode");
+    }
+    let mut refused = start(json!({"id":"run-u"}));
+    refused["agents"][0]["cli"] = json!("codex");
+    assert_eq!(call(&db, refused).unwrap_err().code, "SANDBOX_HARNESS");
 }

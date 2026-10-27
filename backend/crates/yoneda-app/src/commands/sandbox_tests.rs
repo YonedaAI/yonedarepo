@@ -414,3 +414,59 @@ fn checks_the_sandbox_cannot_run_stay_with_the_evaluator_container() {
     claimed_check(&db, &mut evaluator, 1000).unwrap();
     assert!(evaluator.get("sandbox_check").is_none());
 }
+
+#[test]
+fn each_agent_runs_a_stock_cli_its_provider_supports() {
+    let db = repository();
+    let agents = json!([
+        {"provider":"zai","model":"glm-5.3-flash","strategy":"default"},
+        {"provider":"codex","model":"gpt-5.6-luna","strategy":"codex"},
+        {"provider":"zai","model":"glm-5.3-flash","strategy":"opencode","cli":"opencode"},
+        {"provider":"mimo","model":"mimo-v2.6-flash","strategy":"mimo","cli":"mimo"},
+        {"provider":"gemini","model":"gemini-3.8-flash","strategy":"gemini"},
+    ]);
+    let run = call(&db, start(agents, json!({}))).unwrap();
+    let frozen: Vec<_> = run["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|agent| agent["cli"].clone())
+        .collect();
+    // Unchosen CLIs default by provider: Claude Code, Codex CLI, opencode for Gemini.
+    assert_eq!(
+        frozen,
+        ["claude", "codex", "opencode", "mimo", "opencode"].map(|cli| json!(cli))
+    );
+    for (n, cli) in frozen.iter().enumerate() {
+        let execution = get(&db, "executions", &format!("run-s:agent-{}", n + 1)).unwrap();
+        assert_eq!(&execution["cli"], cli);
+    }
+}
+
+#[test]
+fn a_cli_that_cannot_drive_the_provider_is_refused_before_the_run_starts() {
+    let db = repository();
+    let refused = |provider: &str, model: &str, cli: &str| {
+        call(
+            &db,
+            start(
+                json!([{"provider":provider,"model":model,"strategy":"one","cli":cli}]),
+                json!({}),
+            ),
+        )
+        .unwrap_err()
+        .code
+    };
+    // Claude Code speaks Anthropic Messages only; Codex CLI the OpenAI Responses API only.
+    assert_eq!(
+        refused("codex", "gpt-5.6-luna", "claude"),
+        "SANDBOX_HARNESS"
+    );
+    assert_eq!(refused("zai", "glm-5.3-flash", "codex"), "SANDBOX_HARNESS");
+    assert_eq!(
+        refused("gemini", "gemini-3.8-flash", "claude"),
+        "SANDBOX_HARNESS"
+    );
+    assert_ne!(refused("zai", "glm-5.3-flash", "aider"), "SANDBOX_HARNESS");
+    assert!(get(&db, "runs", "run-s").is_err(), "nothing was created");
+}
