@@ -78,7 +78,23 @@ export function modelPaths(attempt: SandboxAttempt): string[] {
   return api.endpoints.map((endpoint) => `${base}${endpoint}`);
 }
 
+/**
+ * Every CLI's own `git commit` (a resumed team member resolving a merge, say) needs an
+ * identity: the image has none, and an agent that hits "Author identity unknown" may give up.
+ */
+const GIT_IDENTITY = {
+  GIT_AUTHOR_NAME: 'YonedaRepo agent',
+  GIT_AUTHOR_EMAIL: 'agent@yonedarepo.invalid',
+  GIT_COMMITTER_NAME: 'YonedaRepo agent',
+  GIT_COMMITTER_EMAIL: 'agent@yonedarepo.invalid',
+};
+
 export function agentCli(attempt: SandboxAttempt): AgentCli {
+  const cli = cliFor(attempt);
+  return { ...cli, env: { ...GIT_IDENTITY, ...cli.env } };
+}
+
+function cliFor(attempt: SandboxAttempt): AgentCli {
   const cli = cliOf(attempt);
   switch (cli) {
     case 'claude':
