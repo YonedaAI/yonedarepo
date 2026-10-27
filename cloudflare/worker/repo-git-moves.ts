@@ -4,6 +4,7 @@
 // landing, with the server's merge when they moved meanwhile, and new lightweight tags by
 // creation (tags never move or disappear).
 
+import { transient } from './durable';
 import { landMode } from './repo-changesets';
 import { landWithMerge } from './repo-landing';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -18,11 +19,10 @@ export type Command = {
 };
 export type Outcome = Map<string, string | null>;
 
-export const reason = (e: any) =>
-  `${e instanceof ApiError ? e.code : (e?.code ?? 'ERROR')}: ${String(e?.message ?? e)}`.slice(
-    0,
-    300,
-  );
+export const reason = (e: any) => {
+  const code = e instanceof ApiError ? e.code : transient(e) ? 'OVERLOADED' : (e?.code ?? 'ERROR');
+  return `${code}: ${String(e?.message ?? e)}`.slice(0, 300);
+};
 const short = (ref: string) => ref.replace(/^refs\/heads\//, '');
 
 /** Why a ref is refused before anything is stored (`null`: it goes ahead). */

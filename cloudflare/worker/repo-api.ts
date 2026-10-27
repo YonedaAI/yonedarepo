@@ -6,6 +6,7 @@
 
 import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
+import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
@@ -46,6 +47,8 @@ const STATUS: Record<string, number> = {
   SECRET_DETECTED: 422,
   GONE: 404,
   RATE_LIMITED: 429,
+  OVERLOADED: 503,
+  INTERNAL: 500,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -259,7 +262,8 @@ async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
 }
 
 export async function repoApi(req: Request, env: Env): Promise<Response> {
-  const { value, header } = await withTimings(() => handle(req, env));
+  // Failures outside a route (authentication, MCP framing) are mapped like a route's.
+  const { value, header } = await withTimings(() => handle(req, env).catch(failure));
   if (header) value.headers.set('server-timing', header);
   return value;
 }
@@ -286,15 +290,18 @@ async function handle(req: Request, env: Env): Promise<Response> {
 }
 
 /** A JSON answer, or the API error a failure maps to. */
-async function answer(run: () => Promise<Json>): Promise<Response> {
-  try {
-    return response(await run());
-  } catch (e: any) {
-    const code = e instanceof ApiError ? e.code : (e?.code ?? 'INVALID_INPUT');
-    const message = String(e?.message ?? e).slice(0, 500);
-    const status = statusOf(code, e instanceof ApiError || !!e?.code);
-    if (e instanceof ApiError && e.details)
-      return response({ error: { code, message, details: e.details } }, status);
-    return error(code, message, status);
-  }
+const answer = (run: () => Promise<Json>) => run().then(response, failure);
+
+/** The API error a failure maps to: an overloaded or unreachable Durable Object is 503
+ * OVERLOADED with Retry-After (clients retry it), anything unexpected 500 INTERNAL. */
+function failure(e: any): Response {
+  const code = failureCode(e);
+  const message = String(e?.message ?? e).slice(0, 500);
+  const status = statusOf(code, e instanceof ApiError || typeof e?.code === 'string');
+  const refused =
+    e instanceof ApiError && e.details
+      ? response({ error: { code, message, details: e.details } }, status)
+      : error(code, message, status);
+  if (code === 'OVERLOADED') refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
+  return refused;
 }

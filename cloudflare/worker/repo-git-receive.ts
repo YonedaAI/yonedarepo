@@ -10,6 +10,7 @@
 // refuses the push as a read conflict when one of them changed after its base.
 
 import { deferred } from './background';
+import { transient } from './durable';
 import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
 import { type Command, moveAll, moveOne, type Outcome, reason, refusal } from './repo-git-moves';
@@ -74,7 +75,9 @@ export async function receivePack(
           store(ctx, objects, session, tips, secretAllow, reads ?? []),
         );
     } catch (e) {
-      // Nothing moved: report why for every ref still going.
+      // Nothing moved: an overloaded authority is an HTTP 503 Git can retry; otherwise
+      // report why for every ref still going.
+      if (transient(e)) throw e;
       // A credential refuses the whole push by path and line (never its text); the pack
       // itself unpacked fine.
       const secret = (e as any)?.code === 'SECRET_DETECTED';
@@ -86,6 +89,12 @@ export async function receivePack(
       if (atomic) await moveAll(ctx, going, outcomes);
       else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
     });
+    // Every ref refused only because the authority was overloaded: nothing moved, so the
+    // push as a whole is retryable.
+    if (going.length > 0 && going.every((c) => outcomes.get(c.ref)?.startsWith('OVERLOADED:')))
+      throw Object.assign(new Error('The repository is overloaded; nothing moved'), {
+        overloaded: true,
+      });
     // New tags are mirrored to the object store like protected branches (a lost message
     // only delays that).
     if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))
