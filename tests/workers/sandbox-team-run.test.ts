@@ -3,10 +3,14 @@
 // attempt branch. The trusted side lands every member on the team branch with the platform's
 // land operation, the configured path a concurrent landing takes (the branch's queue and
 // combiner once it moved), and the team branch head becomes the run's only candidate.
-import { env } from 'cloudflare:workers';
+import { env, exports } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { type SandboxAttempt, sandboxName } from '../../cloudflare/worker/sandbox-attempt';
+import {
+  agentEgress,
+  type SandboxAttempt,
+  sandboxName,
+} from '../../cloudflare/worker/sandbox-attempt';
 import { landOnTeam, teamPort } from '../../cloudflare/worker/sandbox-team';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
@@ -160,4 +164,33 @@ it('resumes a conflicting member once; a second conflict fails it and what lande
     revision: { repository: base.repository, commit: one },
     summary: 'Team branch: 1 of 2 tasks landed',
   });
+});
+
+it('member sandboxes can neither land nor push the team branch: only the trusted side lands', async () => {
+  const { attempts, platform } = await teamRun('team_egress', 'egress-run', [
+    'notes/one.md',
+    'notes/two.md',
+  ]);
+  const [member] = attempts;
+  const team = String(member.team?.branch);
+  const commit = await push(platform, member, { 'notes/one.md': 'one\n' });
+  // The member's own egress handler, exactly as its sandbox reaches the platform.
+  const outbound = (exports as any).SandboxOutbound({ props: agentEgress(member) }) as Fetcher;
+  const root = `${member.platform_origin}/api/v1/repos/${member.platform_repo}`;
+  const post = (path: string, body: unknown) =>
+    outbound.fetch(
+      new Request(`${root}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+  for (const ref of [team, member.branch])
+    expect((await post('/land', { ref, commit })).status, `land ${ref}`).toBe(403);
+  expect((await post('/branches', { ref: team, commit, expected: null })).status).toBe(403);
+  const update = { ref: `refs/heads/${team}`, commit, expected: null };
+  expect((await post('/refs/batch', { updates: [update] })).status).toBe(403);
+  // Nothing moved the team branch: it is still at the frozen base.
+  const refs = (await platform.call('GET', '/refs')).refs;
+  expect(refs[`refs/heads/${team}`]).toBe(member.base.commit);
 });
