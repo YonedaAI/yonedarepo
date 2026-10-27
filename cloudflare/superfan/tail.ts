@@ -39,7 +39,7 @@ const OBJECT_CLASSES: Record<string, TailComponent> = {
   CheckContainer: 'check_runs',
 };
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
-/** Logged by RepoObjects.pushCommit when Artifacts refuses a push and it retries. */
+/** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries. */
 const PUSH_RETRY = /^object store push attempt \d+/;
 /** Wall-time histogram: bucket i holds times up to 5 ms x 1.5^i (the last is unbounded). */
 const BUCKETS = 28;

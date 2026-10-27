@@ -140,6 +140,20 @@ export async function stagedInShards(env: Env, repo: string, ids: string[], raw 
   return [...byId.values()];
 }
 
+/** Staged objects among `ids` held with `commit` (its shard; none once R2 holds them). */
+export async function stagedInShardOf(env: Env, repo: string, commit: string, ids: string[]) {
+  if (!env.COMMIT_SHARDS) return [];
+  for (const shard of shardsOf(commit)) {
+    // A shard that cannot answer leaves the object to the slower tiers.
+    const { objects } = await shardCall(env, repo, shard, {
+      op: 'store_staged_objects',
+      ids,
+    }).catch(() => ({ objects: [] }));
+    if (objects.length) return objects as CachedObject[];
+  }
+  return [];
+}
+
 /** Every shard's object outbox (for repository status). */
 export function shardOutboxes(env: Env, repo: string): Promise<Json[]> {
   if (!env.COMMIT_SHARDS) return Promise.resolve([]);

@@ -4,6 +4,7 @@
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { commitInShard, shardable } from './repo-commit-shard';
+import { pushCommit } from './repo-object-push';
 import {
   type CachedObject,
   fromBase64,
@@ -103,7 +104,7 @@ export async function commit(
         Promise.all([store.cache(written), putRaw(ctx.env, (id) => store.rawKey(id), [raw])]),
       );
       const { report, readback } = await timed('push', () =>
-        store.pushCommit(fromBase64(prepared.push_b64), prepared.commit, cached),
+        pushCommit(store, fromBase64(prepared.push_b64), prepared.commit, cached),
       );
       record = {
         op: 'repo_record_commit',
