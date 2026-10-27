@@ -27,6 +27,9 @@
 //        node tools/staging-realworld.mjs --sandbox-smoke --team | --team-conflict [...]
 //          (an owner-written two-task team: both members land on the team branch through the
 //          platform merge and its candidate is eligible; or two tasks on one line: one resume)
+//        node tools/staging-realworld.mjs --webhooks --receiver <origin>
+//          (= --only 0,hooks: a hook's signed deliveries to the bench Worker's /hooks/<box>,
+//          one scripted failure retried, log order, refusal of an unsafe target, delete)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -41,6 +44,7 @@ import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-fl
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { externalAgent } from './staging/mcp-flow.mjs';
+import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 import { BRIEFS, bindManagedProviders, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
 
@@ -76,6 +80,10 @@ const { values } = parseArgs({
     'team-conflict': { type: 'boolean', default: false },
     // With --sandbox-smoke: the stock CLI every agent runs (default: each provider's default).
     cli: { type: 'string' },
+    // The webhook gate alone (items 0 and hooks), against a receiver origin serving
+    // /hooks/<box> (tools/fanout-bench/worker.js) that the platform may call.
+    webhooks: { type: 'boolean', default: false },
+    receiver: { type: 'string' },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -83,11 +91,14 @@ const only = values['agent-smoke']
   ? new Set(['0', 'smoke'])
   : values['sandbox-smoke']
     ? new Set(['0', 'sandbox'])
-    : values.only
+    : values.webhooks
+      ? new Set(['0', 'hooks'])
+      : values.only
       ? new Set(values.only.split(','))
       : null;
-// The smokes repeat item 2's coverage, so a full kit run leaves them out unless named.
-const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+// The smokes repeat item 2's coverage, so a full kit run leaves them out unless named; the
+// webhook gate needs a receiver, so it runs only when named too.
+const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'hooks'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 const { OWNER_TOKEN } = readEnvFile('staging.env');
 if (values.fund) {
@@ -149,6 +160,9 @@ await step('smoke', 'Agent smoke: one cheap agent to a checked candidate', (m) =
 await step('sandbox', 'Sandbox smoke: a stock CLI in a Cloudflare Sandbox pushes a checked commit', (m) =>
   sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], cli: values.cli ?? null, agents: Number(values.agents ?? 1), team: values['team-conflict'] ? 'conflict' : values.team ? 'disjoint' : null, timeoutMs: Number(values['smoke-timeout'] ?? (values.team || values['team-conflict'] ? 900 : 300)) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
 );
+await step('hooks', 'Webhooks: signed, ordered, retried deliveries to a receiver', (m) =>
+  webhookFlow(platformAccount, { receiver: values.receiver?.replace(/\/$/, ''), key: BENCH_KEY }, m),
+);
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
 
@@ -206,8 +220,9 @@ const modelSpend = (state.spend ?? itemSpend('2')) + itemSpend('smoke') + itemSp
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['smoke', 'sandbox'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const file = resolve(root, `.local/staging/${smoke === 'smoke' ? 'agent-smoke' : smoke === 'sandbox' ? 'sandbox-smoke' : 'realworld'}-${Date.now()}.json`);
+const smoke = ['smoke', 'sandbox', 'hooks'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const prefix = { smoke: 'agent-smoke', sandbox: 'sandbox-smoke', hooks: 'webhook-gate' }[smoke] ?? 'realworld';
+const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nModel spend: $${modelSpend.toFixed(4)}. Evidence: ${file}`);
 process.exitCode = rec.items.some((i) => i.status === 'fail') ? 1 : 0;

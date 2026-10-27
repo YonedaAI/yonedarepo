@@ -7,6 +7,7 @@
 import { emitChangeLog } from './repo-changelog';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
+import { fanoutHooks } from './repo-hooks';
 import { type CachedObject, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { writeSeed } from './repo-seed';
@@ -152,8 +153,10 @@ export function pathHistory(ctx: RepoContext, args: Json) {
 
 /** Eager derived builds after a landing: the new head's search segments. */
 export async function deriveAfterLanding(env: Env, envelope: Envelope) {
-  // Change-log analytics first and independent of the builds below; it never throws.
+  // Change-log analytics and webhooks first and independent of the builds below; neither
+  // throws.
   await emitChangeLog(env, envelope.repo_id);
+  await fanoutHooks(env, envelope.repo_id);
   const ctx = new RepoContext(
     env,
     envelope.repo_id,

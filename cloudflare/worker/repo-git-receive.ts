@@ -13,6 +13,7 @@ import { compute } from './repo-compute';
 import { type Command, moveAll, moveOne, type Outcome, reason, refusal } from './repo-git-moves';
 import { inBatches, rawObject, treeFor } from './repo-git-objects';
 import { ReceiveSession } from './repo-git-sessions';
+import { notifyHooks } from './repo-hooks';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
@@ -85,6 +86,8 @@ export async function receivePack(
     // only delays that).
     if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))
       await timed('git.projection', () => dispatchProjection(ctx.env, ctx.repo).catch(() => {}));
+    // Webhooks for every ref the push moved (branch moves never reach the derive job).
+    if (going.some((c) => !outcomes.get(c.ref))) await notifyHooks(ctx.env, ctx.repo);
     return report(commands, outcomes, null, sideBand, messages);
   } finally {
     session.close();

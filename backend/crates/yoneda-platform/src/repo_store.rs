@@ -22,6 +22,10 @@ pub(crate) mod grants;
 mod head;
 mod history;
 mod history_import;
+mod hook_delivery;
+mod hook_events;
+mod hook_url;
+mod hooks;
 mod land;
 mod land_queue;
 mod land_tickets;
@@ -147,6 +151,14 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             ))
         }
         "repo_set_policy" => actor.require_owner(),
+        // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
+        "repo_hook_create" | "repo_hooks" | "repo_hook_delete" | "repo_hook_deliveries" => {
+            actor.require_owner()
+        }
+        // Only the platform's hook job fans out, reads secrets and settles deliveries.
+        "repo_hooks_fanout" | "repo_hook_claim" | "repo_hook_settle" if !actor.can("hooks") => {
+            Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
+        }
         "repo_break_glass" => actor.require_human_owner(),
         "repo_clone_access" => actor.require_human_reader(),
         _ => actor.require("read"),
@@ -238,6 +250,13 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             }
             land::import(db, c, principal)
         }
+        "repo_hook_create" => hooks::create(db, c, &actor),
+        "repo_hooks" => hooks::list(db),
+        "repo_hook_delete" => hooks::delete(db, c),
+        "repo_hook_deliveries" => hooks::deliveries(db, c),
+        "repo_hooks_fanout" => hook_events::fanout(db),
+        "repo_hook_claim" => hook_delivery::claim(db, c),
+        "repo_hook_settle" => hook_delivery::settle(db, c),
         "repo_token_create" => auth::create_token(db, c, &actor),
         "repo_token_revoke" => auth::revoke_token(db, c, &actor),
         "repo_tokens" => auth::list_tokens(db, &actor),

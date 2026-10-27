@@ -128,7 +128,9 @@ pub fn check<S: SqlStore>(
          ON CONFLICT(commit_id,name,policy_digest) DO UPDATE SET status=excluded.status,evidence=excluded.evidence,principal=excluded.principal,recorded_at=excluded.recorded_at",
         &[json!(id.hex()), json!(name), json!(settings.policy_digest), json!(status), json!(evidence), json!(principal), json!(number(c, "now")?)],
     )?;
-    Ok(json!({ "commit": id, "check": name, "status": status }))
+    let now = number(c, "now")?;
+    let hooks = super::hook_events::check(db, &id.hex(), &name, &status, principal, now, None)?;
+    Ok(json!({ "commit": id, "check": name, "status": status, "hooks": hooks }))
 }
 
 /// Reviews are immutable and independent: the commit's author cannot review it.
