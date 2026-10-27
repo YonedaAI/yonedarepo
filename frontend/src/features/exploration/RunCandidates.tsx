@@ -2,12 +2,12 @@ import { GitCompareArrows } from 'lucide-react';
 import type { ComparisonAction } from '../../lib/comparison';
 import type { Snapshot } from '../../lib/types';
 import { IntegrationInputs } from '../team/IntegrationInputs';
-import { integratedExecutions } from '../team/teamView';
 import { AgentsRationale } from './AgentsRationale';
 import { activeDecision, rejectionOf, supersededResults } from './agentsPick';
 import { CandidateCard } from './CandidateCard';
 import { CandidateComparison } from './CandidateComparison';
 import { ComparisonResults } from './ComparisonResults';
+import { integratedExecutions } from './runResults';
 import { selectionBlocker } from './runReviewState';
 import { SupersededResults } from './SupersededResults';
 
