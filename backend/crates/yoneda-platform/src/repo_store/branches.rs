@@ -116,6 +116,7 @@ fn log_move<S: SqlStore>(
         actor: principal.into(),
         intent_digest: yoneda_core::digest(intent.as_bytes()),
         committed_at_ms: number(c, "now")?,
+        checkpoint_refs: rows::refs_digest_at(db, version - 1)?,
         chain: String::new(),
     };
     entry.chain = chain_digest(&previous, &entry)?;

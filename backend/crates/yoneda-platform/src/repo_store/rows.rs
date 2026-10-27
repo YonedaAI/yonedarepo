@@ -1,5 +1,5 @@
 //! Typed access to platform tables.
-pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint};
+pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
