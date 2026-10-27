@@ -93,6 +93,27 @@ Repository deletion and editable 1–6-agent run rosters are implemented and dep
 - Open: TODO (lead) — full guided canary (context continuation, conflict reconciliation, final checks) on Git-native and lazy-source transports; unfamiliar-human rehearsal of the guided demo.
 - Docs: README leads with the agent-first positioning and a Try it section; [submission](submission.md) rewritten to current state with the Delta-Lake-style source roadmap labeled as not built; dated README status paragraphs relocated to [release evidence](release-evidence.md).
 
+## 2026-10-27: Harness retired; proof wave on dev
+
+- Deployment (hosted, dev): A6 steps 6a and 6b at `19d58ad` (about 72.8k nonblank lines retired with steps 1–4; `yoneda-runtime` 15,998 → 516 lines; CheckContainer image 3.51 → 2.19 GB). Live gates after the rollout: container check, model check (seeded SQL injection fails and cannot land; the fix lands), webhooks (5 signed deliveries to `hook-receiver.yonedaai.org`, one retry, order kept), single and team sandbox runs.
+- Proof runs (hosted, dev, `19d58ad`; evidence in `.local/platform-live/` and `.local/staging/`). Ranges are over 3 runs unless n is given.
+
+| Item | Result |
+|---|---|
+| B4/C2 commit p95, 20 repos × 10 writers | 3.6–4.3 s (gate < 1 s): **not met** |
+| Bursts | 100 writers: land p95 477–666 ms, 100/100. 1000 writers: land p95 2.7–3.0 s, 1000/1000, 259–303 lands/s |
+| C5 Git projection lag p95 (n=1) | 0.58 s at 100 writers, 4.9 s at 1000 |
+| C4 sustained open-loop landing, one repo (n=1, 2 min steps) | 100/s held (99.6/s, p95 2.6 s, 0.02% refused); 200/s missed (123/s, 17% refused, bench client also saturated): knee between 100 and 200/s |
+| C3 1000 concurrent reads per source (n=1) | published blob, pinned blob, log, txlog 1000/1000; commit blob 482, version blob 157, tree 529, refs 105 (rest: Durable Object overloaded): **not met** |
+| C9 write skew, 200 writers | 0 serializability violations (6,441–8,001 log entries examined); 114–127 landed with declared reads; the plain arm landed 177–200 of 200 (cause of the misses not examined) |
+| C11 tier hit rates (n=1) | cold check R2 98.4%, warm check seed 99.2%, API reads at the edge 100% (edge already warm) |
+| Check queue wait after the bursts | 185–322 s before a check started; the container itself started in under 1 s (cause not verified) |
+| B10a CLI kit 12–14, 17 | pass |
+| B10b four sandbox agents, one repo | opencode: 4/4 landed, one conflict resolved by one resume. Claude Code with GLM: 2/4 (two agents reported having no file tools) |
+| B10c tokens, same task, opencode | with `yoneda` read tools: 121.6k input tokens mean (65–159k); plain clone: 52.7k (47–56k). No saving on this small fixture; the whole-file-read counter reads 0 in both arms and is wrong |
+
+- Open from these runs: overload is reported as `500 INVALID_INPUT` instead of a retryable status; C3 reads served by the authority instead of a published snapshot; commit latency; check queue wait under load; Claude Code with GLM sometimes ignores its file tools.
+
 ## Feature backlog
 
 - **Harness recovery (requested 2026-10-14).** Today a stopped agent harness (rollout, eviction, SIGTERM) is retried once from scratch in a fresh container (`HARNESS_INTERRUPTED`, r20), so the agent loses its in-progress work and conversation. Goal: resume a stopped harness from its last checkpoint: recover the uncaptured workspace edits, replay the transcript/session into the restarted harness, and re-attach to the same task revision without a duplicate capture or a second budget reservation. Also: graceful drain on planned rollouts (finish or checkpoint running attempts before replacing instances).
