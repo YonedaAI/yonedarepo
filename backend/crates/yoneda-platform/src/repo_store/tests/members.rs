@@ -224,6 +224,33 @@ fn admins_act_as_the_owner_except_for_admins_and_deletion() {
 }
 
 #[test]
+fn a_break_glass_pause_holds_admins_like_everyone_but_the_owner() {
+    let (h, root) = seeded();
+    add(&h, "ada", "admin");
+    let owner = |c: Value| member(&h, "ws-1", c);
+    let pause = |action: &str| json!({"op":"repo_break_glass","action":action,"reason":"agents misbehaving"});
+    assert_eq!(owner(pause("pause_automation")).unwrap()["paused"], true);
+    let check = json!({"op":"repo_check","commit":root,"name":"lint","status":"pass"});
+    let branch = json!({"op":"repo_land","ref":"ada","commit":root});
+    for op in [&check, &branch] {
+        assert_eq!(
+            code(member(&h, "ada", op.clone())),
+            "AUTOMATION_PAUSED",
+            "{op}"
+        );
+        assert_eq!(
+            code(member_pat(&h, "ada", json!(["repo:admin"]), op.clone())),
+            "AUTOMATION_PAUSED",
+            "{op}"
+        );
+    }
+    // The owner's own session still works, and the admin again once automation resumes.
+    assert_eq!(code(owner(check.clone())), "OK");
+    owner(pause("resume_automation")).unwrap();
+    assert_eq!(code(member(&h, "ada", check)), "OK");
+}
+
+#[test]
 fn personal_tokens_hold_what_both_token_and_role_allow() {
     let (h, root) = seeded();
     add(&h, "lana", "land");

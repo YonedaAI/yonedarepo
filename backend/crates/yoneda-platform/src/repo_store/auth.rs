@@ -72,9 +72,13 @@ impl Actor {
             Err(super::break_glass::refusal())
         }
     }
+    /// The owner's account itself (never an admin member).
+    pub fn repo_owner(&self) -> bool {
+        self.owner && self.member.is_none()
+    }
     /// The owner's account itself: deleting the repository and managing admins.
     pub fn require_repo_owner(&self) -> Result<()> {
-        if self.owner && self.member.is_none() {
+        if self.repo_owner() {
             Ok(())
         } else {
             Err(Error::new(

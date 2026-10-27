@@ -121,7 +121,7 @@ fn land_one<S: SqlStore>(
     if let Err(e) = actor.require(super::land::scope(refname)) {
         return Ok(refused(e));
     }
-    if !actor.owner
+    if !actor.repo_owner()
         && let Err(e) = super::break_glass::refuse_if_paused(db)
     {
         return Ok(refused(e));
