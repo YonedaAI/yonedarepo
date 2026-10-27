@@ -17,6 +17,7 @@
 // Check runs take minutes (container start, the check): one per invocation, up to
 // the container limit (4) at once, apart from the derive and projection jobs above.
 // api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
+// Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the agent Worker's managed connections use), bound to the platform Worker itself; it never reads an agent-layer connection.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -184,6 +185,13 @@
     {
       "pattern": "https://api.dev.yonedarepo.com/*",
       "zone_name": "yonedarepo.com"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "REVIEW_MODEL_KEY",
+      "secret_name": "ZAI",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
     }
   ],
   "services": [

@@ -108,7 +108,8 @@
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
-        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device)."
+        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).",
+        "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the agent Worker's managed connections use), bound to the platform Worker itself; it never reads an agent-layer connection."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -151,6 +152,13 @@
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}"
         },
+        "secrets_store_secrets": [
+          {
+            "binding": "REVIEW_MODEL_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
         "artifacts": [
           {
             "binding": "ARTIFACTS",
@@ -578,11 +586,9 @@
         "(tools/staging/webhook-flow.mjs). No bindings to platform state. BENCH_KEY is set once from",
         "stdin (wrangler secret put BENCH_KEY) and kept across deploys; the kit reads it from",
         "~/.config/yonedarepo/staging-bench.env.",
-        "The platform never calls this account's workers.dev, so the receiver needs a Custom Domain on",
-        "a zone without a wildcard Worker route (yonedarepo.com has the apps Worker's). Once the owner",
-        "approves it, add to this Worker's config in infra/envs/dev.json:",
-        "  \"routes\": [{ \"pattern\": \"hook-receiver.yonedaai.org\", \"custom_domain\": true }]",
-        "then run cargo xtask infra gen --env dev and deploy."
+        "The platform never calls this account's workers.dev, so the receiver has a Custom Domain,",
+        "hook-receiver.yonedaai.org (owner approved 2026-10-27), on a zone without a wildcard Worker",
+        "route (yonedarepo.com has the apps Worker's)."
       ],
       "secrets": [],
       "ephemeral": false,
@@ -595,6 +601,12 @@
         ],
         "workers_dev": true,
         "preview_urls": false,
+        "routes": [
+          {
+            "pattern": "hook-receiver.yonedaai.org",
+            "custom_domain": true
+          }
+        ],
         "placement": {
           "mode": "targeted",
           "region": "aws:us-east-1"
