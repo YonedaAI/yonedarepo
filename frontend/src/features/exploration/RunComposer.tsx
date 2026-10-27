@@ -12,6 +12,7 @@ import { type AdaptiveAgentDraft, compareBuilders, requestedAgents } from './ada
 import { runAgentLimits } from './agentLimits';
 import { CompareApprovalNotice } from './CompareApprovalNotice';
 import { RunAdvancedOptions } from './RunAdvancedOptions';
+import { type RunRuntime, RunRuntimePicker, runtimeChoice } from './RunRuntimePicker';
 import { RunSourceNotice } from './RunSourceNotice';
 import { agentConnectionIssue, type InitialRun } from './restartRun';
 import { hasPublishedWork } from './runDefaults';
@@ -54,6 +55,7 @@ export function RunComposer({
     draft.mode === 'compare' ? compareBuilders(draft.agents) : draft.agents,
   );
   const [mode, setMode] = useState<RunMode>(draft.mode);
+  const [runtime, setRuntime] = useState<RunRuntime>('sandbox');
   const [team, setTeam] = useState(draft.team ?? seedTeam(draft.agents));
   const [manualTeam, setManualTeam] = useState(!!draft.team);
   const teamSupport = snapshot.capabilities?.collaborative_runs === 1;
@@ -63,9 +65,16 @@ export function RunComposer({
   const [error, setError] = useState('');
   const [approving, setApproving] = useState(false);
   const updating = !draft.restartOf && !draft.workingBranch && hasPublishedWork(snapshot);
+  const choice = runtimeChoice(snapshot, runtime, agents, providers);
+  const { offered, blocker, sandbox } = choice;
+  const runMode: RunMode = sandbox ? 'compare' : mode;
   function changeAgents(next: AdaptiveAgentDraft[]) {
-    setAgents(mode === 'compare' ? compareBuilders(next) : next);
+    setAgents(!sandbox && mode === 'compare' ? compareBuilders(next) : next);
     setTeam((current) => reconcileTeam(current, next));
+  }
+  function changeRuntime(next: RunRuntime) {
+    if (next === 'classic' && mode === 'compare') setAgents(compareBuilders(agents));
+    setRuntime(next);
   }
   function changeMode(next: RunMode) {
     if (next === 'compare') changeAgents(compareBuilders(agents));
@@ -102,11 +111,11 @@ export function RunComposer({
         return;
       }
       if (!intent.trim()) throw new Error('Describe the change you want to make.');
-      if (mode === 'collaborate' && !teamSupport)
+      if (runMode === 'collaborate' && !teamSupport)
         throw new Error('This deployment does not support team runs yet.');
-      const teamBody = teamSubmission(mode, manualTeam, team, agents, automaticSupport);
+      const teamBody = teamSubmission(runMode, manualTeam, team, agents, automaticSupport);
       if (
-        agents.length < (mode === 'collaborate' ? 1 : limits.min_root_agents) ||
+        agents.length < (runMode === 'collaborate' ? 1 : limits.min_root_agents) ||
         agents.length > limits.max_root_agents
       )
         throw new Error('The number of agents exceeds this deployment’s current limits.');
@@ -141,7 +150,7 @@ export function RunComposer({
         });
       }
       submitted.current = {
-        mode,
+        mode: runMode,
         ...teamBody,
         intent: intent.trim(),
         criteria: criteria
@@ -154,7 +163,7 @@ export function RunComposer({
         ...(draft.publication ? { continuation_of: draft.publication.decision.id } : {}),
         ...(sampleProfileId ? { sample_profile_id: sampleProfileId } : {}),
         adaptive_team: { version: 1, requested_agents: preferences },
-        ...(mode === 'compare' ? { comparison: { version: 1 } } : {}),
+        ...(choice.request ?? (mode === 'compare' ? { comparison: { version: 1 } } : {})),
       };
       await onStart(submitted.current);
     } catch (error) {
@@ -200,9 +209,17 @@ export function RunComposer({
           </button>
         ))}
       </div>
+      {offered && (
+        <RunRuntimePicker
+          sandbox={sandbox}
+          blocker={blocker}
+          locked={draftLocked}
+          onChange={changeRuntime}
+        />
+      )}
       <AgentRoster
-        team={mode === 'collaborate'}
-        compare={mode === 'compare'}
+        team={runMode === 'collaborate'}
+        compare={runMode === 'compare' && !sandbox}
         agents={agents}
         providers={providers}
         loading={providersLoading}
@@ -213,7 +230,7 @@ export function RunComposer({
         onProviders={() => onProviders(() => setProvidersRequest((request) => request + 1))}
         onRetry={() => setProvidersRequest((request) => request + 1)}
       />
-      {mode === 'compare' && <CompareApprovalNotice />}
+      {runMode === 'compare' && !sandbox && <CompareApprovalNotice />}
       <details className="run-advanced">
         <summary>Advanced</summary>
         <label>
@@ -225,13 +242,15 @@ export function RunComposer({
             disabled={draftLocked}
           />
         </label>
-        <RunModePicker
-          value={mode}
-          supported={teamSupport}
-          locked={draftLocked}
-          onChange={changeMode}
-        />
-        {mode === 'collaborate' ? (
+        {!sandbox && (
+          <RunModePicker
+            value={mode}
+            supported={teamSupport}
+            locked={draftLocked}
+            onChange={changeMode}
+          />
+        )}
+        {runMode === 'collaborate' ? (
           <TeamPlanOptions
             manual={manualTeam}
             onManualChange={setManualTeam}
@@ -256,7 +275,7 @@ export function RunComposer({
           snapshot={snapshot}
           draft={draft}
           updating={updating}
-          mode={mode}
+          mode={runMode}
           agents={agents.length}
         />
       </details>
