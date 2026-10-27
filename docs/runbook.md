@@ -16,6 +16,19 @@ The refreshed video is a six-minute (360-second), 12-chapter edit with 48 captio
 
 Human reviewer rehearsal remains pending after the final handoff; the key sheet is prepared. The separate [no-paid hosted fixture](platform-acceptance.json) is bounded evidence for refunded capacity deferrals, publication acknowledgment-loss recovery and disjoint refresh, not broad capacity or semantic merge quality.
 
+## Stock Git over HTTPS
+
+Plain `git` clones, fetches and pushes at `https://<platform>/git/<repo-id>.git` (smart HTTP v0; Git 2.26+ asks for v2 and falls back). Credentials are a repository token (`yrp_`) or personal token (`ypat_`) as the password, any user name; Git's credential helper supplies it after the server's `401` with `WWW-Authenticate: Basic`. Fetching needs `read`, pushing `write`, landing a protected branch what `POST /land` needs; path-restricted tokens are refused.
+
+A push lists working branches as usual but never protected ones (`main`, `release`, `release/*`): their recent first-parent heads are sent as `.have` lines instead. Git therefore treats every push to `main` as a creation and never refuses it as non-fast-forward, so a push based on an older `main` reaches the server and lands with its merge (or is refused as a conflict), while sending only the client's own objects. What users see:
+
+- `git push origin main` always prints `* [new branch]      main -> main`, never "Everything up-to-date"; pushing a commit `main` already holds lands nothing and succeeds.
+- When the server merged, Git prints `remote: main: landed with server merge, run git pull`; `git pull --ff-only` then fast-forwards.
+- An overlap on the same lines prints `remote: conflict in <path>` and `! [remote rejected] main -> main (conflict in <path>: run git pull)`; pull, resolve, commit and push again.
+- `git push --force origin main` lands like any other push (merge or conflict): it never rewrites or deletes `main`. Deleting a protected branch is refused.
+
+Working branches move by compare-and-swap on the value Git saw (`--force` works there; a branch that moved meanwhile is `fetch first`); `--atomic` moves all of them in one transaction or none, and cannot include a protected branch. Every object is verified before anything is recorded and refs move only after the commits are recorded under their own ids, so a push that fails or is cut off leaves refs and the log unchanged. A file carrying a credential refuses the whole push with `secret detected in <path>:<line>` (owner exceptions: policy `secret_allow`). Limits per push: 64 MiB of pack, 40,000 objects, 16 MiB per object; larger pushes use `git-remote-yoneda`. Not served yet: tags, push options, protocol v2 features (partial clone, `--filter`), shallow clones, and fetching history imported into Artifacts (use the helper). The platform Worker sets `limits.subrequests=50000` because each Git object sent or received is one R2 read or write.
+
 ## History, archives and Git conflicts
 
 Every run works in a lazy source workspace (`api-source-v1`); agents never clone or push.
