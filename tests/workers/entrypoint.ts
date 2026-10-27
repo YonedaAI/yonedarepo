@@ -1,20 +1,13 @@
-export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceWorkspaceAuthority,SourceRepository,CommitShard } from '../../backend/crates/yoneda-worker/build/index.js';
+export { RepositoryAuthority,LiveRoom,WorkspaceAuthority,SourceRepository,CommitShard } from '../../backend/crates/yoneda-worker/build/index.js';
 import { YonedaEntrypoint } from '../../cloudflare/worker/entrypoint';
 export { ObjectPushQueue } from '../../cloudflare/worker/repo-push-queue';
-import type { Envelope, Scope } from '../../cloudflare/worker/types';
+import type { Envelope } from '../../cloudflare/worker/types';
 export default class TestEntrypoint extends YonedaEntrypoint {
   // Intentionally withhold dispatch: tests inspect the real durable outbox,
-  // without launching inference or containers.
+  // without starting sandboxes or inference.
   override async deliver(_repo:string,_entries:Record<string,unknown>[]) {return [] as string[];}
   override async enqueueProjects(_owner:string,_entries:Record<string,unknown>[]) {return [] as string[];}
-  private launchRequestedForTest = false;
-
-  override async launchExecution(_name: string, _scope: Scope) {
-    this.launchRequestedForTest = true;
-  }
-
   async dispatchOneForTest(body: Envelope, loseAck = false) {
-    this.launchRequestedForTest = false;
     const result = { acked: false, retries: [] as number[] };
     await this.queue({ messages: [{
       body,
@@ -24,7 +17,7 @@ export default class TestEntrypoint extends YonedaEntrypoint {
       },
       retry: (options?: { delaySeconds?: number }) => { result.retries.push(options?.delaySeconds ?? 0); },
     }] } as unknown as MessageBatch<Envelope>);
-    return { ...result, launchRequested: this.launchRequestedForTest };
+    return result;
   }
 }
 export { LandCombiner } from '../../cloudflare/worker/repo-land-combiner';

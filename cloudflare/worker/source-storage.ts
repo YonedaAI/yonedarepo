@@ -11,8 +11,6 @@ import {
 import { sourceLink, sourceRepo } from './source-path';
 import type { Env } from './types';
 
-export { sourceCleanup } from './source-cleanup';
-
 export async function verifyTicketObject(env: Env, workspaceId: string, content: R2Content) {
   const expected = `source/v1/${workspaceId}/uploads/${content.ticket_id}/${content.sha256}`;
   if (
@@ -165,10 +163,3 @@ export async function immutableSourceFile(
     },
   );
 }
-
-export const sourceStorage = {
-  sourceContentKey,
-  sourceReadResponse,
-  verifyTicketObject,
-  immutableSourceFile,
-};

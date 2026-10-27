@@ -8,9 +8,7 @@ import { ensureSourceIndex, preparedSourceView, sourceIndexBounded } from '../..
 import { sourcePath } from '../../cloudflare/worker/source-path';
 import { sourceContentKey } from '../../cloudflare/worker/source-storage';
 import { streamProof } from '../../cloudflare/worker/source-stream';
-import { verifySourceView } from '../../cloudflare/worker/source-view-proof';
 import type { Env } from '../../cloudflare/worker/types';
-import { sourceFixture } from '../../tools/source-benchmark/workerd-source-fixture';
 import { syntheticPlatform } from './platform-fixture';
 
 afterEach(reset);
@@ -103,30 +101,6 @@ it('concurrent index progress converges with CAS and never duplicates file count
   const view = await preparedSourceView(f.env, revision);
   expect(view.files).toHaveLength(18);
   expect(new Set(view.files.map(file => file.path)).size).toBe(18);
-});
-
-it('indexes supplementary Unicode filenames in the ordering accepted by the actual native SourceDO', async () => {
-  const f = await fixture(2);
-  f.entries[0].name = '\ue000.bin';
-  f.entries[1].name = '\u{1f680}.bin';
-  expect((await sourceIndexBounded(f.env, revision)).state).toBe('prepared');
-  const view = await preparedSourceView(f.env, revision);
-  const authority = await sourceFixture('unicode-index', { files: view.files, base: revision, protected_paths: [] });
-  expect((await authority.rpc({ op: 'source_stat', path: '\u{1f680}.bin' })).exists).toBe(true);
-});
-
-it('activation checks completeness and origin links against the immutable root instead of trusting rebuildable metadata', async () => {
-  const f = await fixture(2);
-  expect((await sourceIndexBounded(f.env, revision)).state).toBe('prepared');
-  const view = await preparedSourceView(f.env, revision);
-  await expect(verifySourceView(f.env, view)).resolves.toBeUndefined();
-  expect(f.readBlob).toHaveBeenCalledTimes(1);
-  await expect(verifySourceView(f.env, { ...view, files: view.files.slice(1) })).rejects.toMatchObject({ code: 'SOURCE_INDEX' });
-  const extra = { ...view.files[0], path: 'unapproved.bin' };
-  await expect(verifySourceView(f.env, { ...view, files: [...view.files, extra] })).rejects.toMatchObject({ code: 'SOURCE_INDEX' });
-  const forged = structuredClone(view);
-  if (forged.files[0].content.kind === 'git') forged.files[0].content.path = 'other-origin.bin';
-  await expect(verifySourceView(f.env, forged)).rejects.toMatchObject({ code: 'SOURCE_INDEX' });
 });
 
 it('a transient SDK failure does not permanently poison an immutable source index and retries retain cached progress', async () => {

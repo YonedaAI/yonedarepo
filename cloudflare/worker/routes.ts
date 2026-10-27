@@ -26,7 +26,7 @@ import { resolveInSandbox } from './sandbox-resolve';
 import { ownerSession } from './session';
 import { siteRoute } from './sites';
 import { sourceRoute } from './source-route';
-import { ledger, sha } from './storage';
+import { ledger } from './storage';
 import { approveTestPolicy } from './test-policy';
 import type { Env } from './types';
 import { websiteAssets } from './website-metadata';
@@ -233,11 +233,6 @@ export async function fetchRequest(
     const value = await ledger(env, repo, command);
     if (action === 'snapshot' || action === 'repository_overview') advertiseSandbox(env, value);
     if (action === 'accept') await recordPublicationChecks(env, repo, value, req);
-    if (action === 'cancel_run')
-      for (const stop of value.stop) {
-        const name = await sha(`${repo}:${stop.job_id}:${stop.epoch}`);
-        await env.EXECUTIONS.get(env.EXECUTIONS.idFromName(name)).stop();
-      }
     return response(action === 'snapshot' ? await hydrateOwnerSnapshot(env, value) : value);
   } catch (e: any) {
     const repo = url.pathname.split('/')[3];

@@ -44,7 +44,8 @@ it('public source markers are replaced by canonical readback and cannot change a
   });
   expect(response.status).toBe(200);
   const run = await response.json<Json>();
-  expect(run.workspace_transport).toBe('api-source-v1');
+  // A forged lazy-source marker cannot choose the retired harness: every run is a sandbox run.
+  expect(run.workspace_transport).toBe('sandbox-cli-v1');
   expect(run.source_base).toEqual({ repository: `platform/${f.repo}`, commit: f.head, tree: f.tree });
   expect(run.source_mounts).toBeUndefined();
   const before = await snapshots(f);
@@ -126,7 +127,7 @@ it('approval derives source only from canonical readback and keeps earlier runs 
   });
   expect(response.status).toBe(200);
   expect(await response.json<Json>()).toMatchObject({
-    workspace_transport: 'api-source-v1',
+    workspace_transport: 'sandbox-cli-v1',
     source_base: { repository: `platform/${f.repo}`, commit: f.head, tree: f.tree },
   });
   expect(
@@ -137,5 +138,5 @@ it('approval derives source only from canonical readback and keeps earlier runs 
   expect(
     (await workspace(f.scoped, f.owner, { op: 'workspace_spend_status' })).limit_microusd,
   ).toBe(50000000);
-  expect(f.send).toHaveBeenCalled(); // Queue fixture only; no container/model executes.
+  expect(f.send).toHaveBeenCalled(); // Queue fixture only; no sandbox or model executes.
 });

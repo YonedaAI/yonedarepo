@@ -5,12 +5,12 @@ import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { api, reviewerFixture, signup } from './reviewer-fixture';
 import { reviewerPolicy } from '../../cloudflare/worker/reviewer-policy';
-import { approvedLedger, finishSealed } from './source-kit';
+import { approvedLedger, sandboxStart } from './source-kit';
 
 const bindings = env as unknown as Env;
 afterEach(reset);
 
-it('reads the real frozen capture payload projection by public id for its owner only', async () => {
+it('reads the real frozen attempt projection by public id for its owner only', async () => {
   const owner = await reviewerFixture('job_status_owner');
   const otherCookie = await signup('job_status_other');
   await ledger(bindings, owner.repo, {
@@ -25,15 +25,15 @@ it('reads the real frozen capture payload projection by public id for its owner 
   await approvedLedger(bindings, owner.repo)({
     op: 'start_run',
     id: 'job-status-run',
-    intent: 'Inspect bounded capture diagnostics',
-    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Synthetic capture fixture' }],
+    intent: 'Inspect bounded attempt diagnostics',
+    ...sandboxStart({ repository: `yoneda-test/${owner.repo}`, commit: 'a'.repeat(40), tree: 'b'.repeat(40) }),
+    agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'Synthetic sandbox fixture' }],
   });
   const agent = await ledger(bindings, owner.repo, {
     op: 'claim', job_id: 'job:job-status-run:agent-1',
     models: { codex: 'gpt-5.6-luna', claude: 'claude-sonnet-5-5' },
   });
-  await finishSealed(bindings, owner.repo, agent);
-  const capture = await ledger(bindings, owner.repo, { op: 'claim', job_id: 'capture:job-status-run:agent-1' });
+  const capture = agent;
 
   const response = await api(
     owner.scoped,
@@ -44,7 +44,7 @@ it('reads the real frozen capture payload projection by public id for its owner 
   const status = await response.json<Json>();
   expect(status).toMatchObject({
     id: capture.id,
-    kind: 'capture',
+    kind: 'agent',
     status: 'running',
     epoch: capture.epoch,
     execution: {

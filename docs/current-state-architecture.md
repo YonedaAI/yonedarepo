@@ -67,8 +67,6 @@ flowchart TD
     Worker --> Workspace["Workspace DO: accounts, connections, access"]
     Worker --> Repo["Repository DO: authoritative state and graph"]
     Worker --> Live["Live DO: WebSocket notifications"]
-    Worker --> Source["Source DO: per-attempt lazy source views"]
-    Source --> R2
     Workspace --> Setup["Background project setup via agent queue"]
     Setup --> Platform
     Setup --> Repo
@@ -79,15 +77,13 @@ flowchart TD
     Outbox --> D1["D1: repository discovery index"]
     Outbox --> Live
 
-    Queues --> Execution["Execution DO: attempt lifecycle"]
-    Execution --> Containers["Containers: native Rust runtime"]
-    Containers --> Broker["Worker capability brokers"]
-    Broker --> Providers["External model APIs"]
-    Broker --> Platform["Source platform public API: one repository per project"]
+    Queues --> Sandbox["Sandbox DO: one sandbox per attempt, stock coding CLI"]
+    Sandbox --> Egress["Sandbox egress: provider key and project token"]
+    Egress --> Providers["External model APIs"]
+    Egress --> Platform["Source platform public API: one repository per project"]
     Worker --> Platform
-    Broker --> R2["R2: content-addressed objects and static assets"]
-    Broker --> Repo
-    Broker --> Workspace
+    Worker --> R2["R2: content-addressed objects and static assets"]
+    Sandbox --> Repo
 
     Visitors["Website visitors"] --> Sites["Separate Sites Worker"]
     Sites --> R2
@@ -112,11 +108,10 @@ The Apps Worker (`yonedarepo-apps-dev`) serves checked apps on `apps.yonedarepo.
 |---|---|
 | Workspace DO (`WorkspaceAuthority`) | Accounts, hashed sessions, recovery, encrypted provider connections, access grants, project setup leases/stages, durable dispatch intent and workspace allowances. |
 | Repository DO (`RepositoryAuthority`) | Runs, executions, jobs, graph nodes/edges, evaluations, decisions, logical HEAD and publication state. SQLite is authoritative. |
-| Source DO (`SourceWorkspaceAuthority`) | One Rust SQLite authority per approved lazy-source attempt and immutable view: metadata, uploads, compare-and-swap file mutations with per-file receipts, checkpoints and seals. |
 | Live DO (`LiveRoom`) | Hibernating WebSocket connections and payload-free refresh signals. Clients reauthenticate when fetching data. |
-| Execution DO (`ExecutionContainer`) | Stores one attempt's scope and manages its container, watchdog, startup and cancellation. This adapter uses the TypeScript Container SDK. |
-| Queues | Separate dispatch queues for agent, capture and evaluate work. The agent queue also carries `provision` (project setup) and `source_index` (lazy-source indexing) jobs; neither starts a model or container. All three consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
-| Containers | Run the native Rust supervisor and agent CLIs. Coding, capture and evaluation run with separate capabilities; containers never publish. The current configuration allows 16 instances. |
+| Sandbox DO (`AgentSandbox`) | One Cloudflare Sandbox per agent attempt: it runs a stock coding CLI on a clone of the platform repository and pushes to the attempt's own `attempts/<run>/<n>` branch. |
+| Queues | Separate dispatch queues for agent, capture and evaluate work. The agent queue also carries `provision` (project setup) jobs, which start no model or container. All three consumers route exhausted retries to a dead-letter queue, which currently has no consumer; durable recovery comes from outbox and alarm retries. |
+| Containers | `CheckContainer` runs the platform's checks on the native runtime image; agent attempts run in `AgentSandbox` sandboxes. Containers never publish. |
 | Source platform | Each project's source is one platform repository reached only through its public `/api/v1`: the agent layer commits candidates onto its own branches with a read/write/check token sealed in the workspace, and only the owner's own session reviews and lands. Artifacts holds only the operator-published starter templates. |
 | R2 | Immutable context objects, workspace snapshots, transcripts, verification evidence and static asset manifests. |
 | D1 | Rebuildable repository discovery projection. It does not authorize selection or publication. |
@@ -145,33 +140,12 @@ migration histories with stable resource identities.
 
 ## Development workflow
 
-The new, operator-selected `api-source-v1` transport adds a separate Rust SQLite
-`SourceWorkspaceAuthority` for each approved attempt and immutable view. Workers serve
-scoped source APIs, R2 stores verified immutable content, and Linux builders use a lazy
-FUSE working tree. Builders receive no Git clone or Git credential. Metadata, uploads,
-file mutations, checkpoints and seals use server-authorized identities and version checks;
-staged changesets do not confer checked or published authority.
-
-Trusted capture reads the sealed delta and commits it through the platform API onto the
-attempt's own candidate branch (`agents/capture-*`), retaining unread base files and approved
-dependency overlays. A fresh evaluator reads the exact captured revision with local disposable
-build scratch. Refresh is a server-side platform merge that retains both parents; a conflicting
-merge yields a workspace commit, and a resolver receives a writable conflict scope plus read-only
-views of both inputs. Human selection and publication remain separate. Every run uses this
-transport; the earlier Git-native transport and its evidence files were removed.
-
-Capture handoffs retain the trusted producer epoch separately from the capture job epoch;
-file provenance verifies both identities. The owner can request one same-seal capture/check
-recovery for an exhausted original Compare capture under unchanged policy and branch guards.
-Recovery retains spending and the original agent assertions, creates no new builder or
-automatic-review inference, and leaves checked results for human choice. Ordinary comparison
-review also requires at least one independently eligible checked result.
-
-Source history lives in the platform repository; this transport is not a distributed
-replacement for it. Source views are bounded to 10,000 regular files, 100 MiB total and 32 MiB per
-file. Links and submodules are unsupported. Local filesystem, ledger and platform tests are
-separate from hosted acceptance; consult release evidence before treating this new transport
-as deployed or validated at scale.
+Agent attempts run only in Cloudflare Sandboxes (`sandbox-cli-v1`). The earlier lazy-source
+transport, with its per-attempt source workspace authority and harness container, was retired;
+a Durable Object class migration deletes both classes. A sandbox's pushed commit becomes its
+candidate, and a fresh check sandbox checks that exact commit. Refresh is a server-side platform
+merge that retains both parents; a conflicting merge yields a workspace commit for a sandbox
+resolver. Human selection and publication remain separate.
 
 Signup and login create an opaque session backed by Workspace DO SQLite. Project creation
 reserves a stable ID there and, in the owner's own request, creates the project's platform

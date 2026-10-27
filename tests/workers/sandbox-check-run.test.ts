@@ -25,7 +25,7 @@ const bindings = env as unknown as Env;
 afterEach(reset);
 
 type Queue = {
-  dispatchOneForTest(envelope: Envelope, loseAck: boolean): Promise<{ acked: boolean; launchRequested: boolean }>;
+  dispatchOneForTest(envelope: Envelope, loseAck: boolean): Promise<{ acked: boolean }>;
 };
 type Fake = {
   begun(): Promise<{ attempt: SandboxAttempt }>;
@@ -61,8 +61,8 @@ async function candidateChecked(owner: string) {
   const envelope: Envelope = { v: 1, kind: 'evaluate', repo_id: repo, job_id: jobId };
   // The evaluation starts a check sandbox, never the evaluator container; a duplicate delivery
   // starts nothing more.
-  expect(await queue().dispatchOneForTest(envelope, false)).toMatchObject({ acked: true, launchRequested: false });
-  expect(await queue().dispatchOneForTest(envelope, false)).toMatchObject({ acked: true, launchRequested: false });
+  expect(await queue().dispatchOneForTest(envelope, false)).toMatchObject({ acked: true });
+  expect(await queue().dispatchOneForTest(envelope, false)).toMatchObject({ acked: true });
   const sandbox = (bindings.AGENT_SANDBOX as any).getByName(checkName(repo, jobId, 1)) as Fake;
   const { check, count } = await sandbox.checkBegun();
   expect(count).toBe(1);

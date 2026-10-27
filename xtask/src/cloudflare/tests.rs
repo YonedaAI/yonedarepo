@@ -33,7 +33,7 @@ fn portable_configuration_replaces_foreign_identities_and_preserves_history_with
     );
     assert_eq!(platform["containers"][0]["image_build_context"], "../../..");
     assert_eq!(
-        platform["containers"][2]["images"]["agent"],
+        platform["containers"][1]["images"]["agent"],
         json!({"dockerfile":"../../../cloudflare/sandbox/Dockerfile","build_context":"../../.."})
     );
     assert_eq!(

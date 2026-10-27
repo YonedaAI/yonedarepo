@@ -36,9 +36,6 @@ export async function approveTestPolicy(
   policy.build.test_bundle = { digest, protected_paths: body.protected_paths ?? [] };
   const validationScope: Scope = {
     repo_id: repo,
-    supervisor: '',
-    model_calls: 0,
-    created_at: Date.now(),
     job: { kind: 'evaluate', payload: { policy } },
   };
   await testBundle(env, validationScope, digest);

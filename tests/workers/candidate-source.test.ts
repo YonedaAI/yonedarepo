@@ -7,7 +7,7 @@ import { workspace } from '../../cloudflare/worker/workspace';
 import { sitePolicy } from '../../cloudflare/worker/site-policy';
 import type { Env } from '../../cloudflare/worker/types';
 import { platformCommit, platformProject } from './platform-fixture';
-import { approvedLedger, finishSealed, withLineage } from './source-kit';
+import { approvedLedger, finishSandbox, sandboxStart } from './source-kit';
 
 const bindings = env as unknown as Env;
 const repo = 'candidate-inspection';
@@ -24,14 +24,12 @@ async function signup(username: string) {
 async function fixture() {
   const cookie = await signup('alice');
   const project = await platformProject(bindings, 'alice', repo, { 'public/index.html': 'starter' }, sitePolicy);
-  // The capture is an actual commit of the project's platform repository.
+  // The candidate is the actual commit its sandbox agent pushed to the project's platform repository.
   const made = await platformCommit(project.platform, project.base.commit, { 'public/index.html': html });
   const revision = { repository: project.base.repository, commit: made.commit };
-  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'run-source', intent: 'Candidate fixture', agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'minimal' }] });
+  await approvedLedger(bindings, repo)({ op: 'start_run', id: 'run-source', intent: 'Candidate fixture', ...sandboxStart(project.base), agents: [{ provider: 'codex', model: 'gpt-5.6-luna', strategy: 'minimal' }] });
   const job = await ledger(bindings, repo, { op: 'claim', job_id: 'job:run-source:agent-1' });
-  const registration = await finishSealed(bindings, repo, job);
-  const capture = await ledger(bindings, repo, { op: 'claim', job_id: 'capture:run-source:agent-1' });
-  await ledger(bindings, repo, { op: 'finish', job_id: capture.id, epoch: capture.epoch, result: withLineage(registration, { id: 'captured-candidate', revision, tree: made.tree, paths: ['public/index.html'], diff: 'Synthetic captured source', summary: 'Synthetic capture fixture' }) });
+  await finishSandbox(bindings, repo, job, project.base, made, { id: 'captured-candidate', paths: ['public/index.html'], summary: 'Synthetic sandbox fixture' });
   // Every platform read is recorded: which repository, and which commits were requested.
   const reads: string[] = [];
   const scoped = { ...bindings, PLATFORM: { async fetch(input: RequestInfo, init?: RequestInit) {

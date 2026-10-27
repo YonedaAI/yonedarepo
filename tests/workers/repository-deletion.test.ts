@@ -121,17 +121,17 @@ it('drains Artifacts cleanup recorded before projects moved to the platform',asy
   expect(deleted).toEqual(['legacy-fork']);
 });
 
-it('continues independent deletion cleanup after a container stop fails and only acknowledges successes',async()=>{
+it('acknowledges a stop with nothing to stop alongside deletion cleanup',async()=>{
   await setup();
   await approvedLedger(bindings,'delete-me')({op:'start_run',id:'active-run',intent:'Disposable stop failure fixture',agents:oneAgent});
   await ledger(bindings,'delete-me',{op:'claim',job_id:'job:active-run:agent-1'});
   await remove();
   await bindings.INDEX.exec('CREATE TABLE repositories(id TEXT PRIMARY KEY,payload TEXT NOT NULL,seq INTEGER NOT NULL)');
-  const sdk={...bindings,EXECUTIONS:{idFromName:(name:string)=>name,get:()=>({stop:async()=>{throw new Error('Stop unavailable fixture');}})}} as unknown as Env;
   const pending=(await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>({...entry,repository_deleted:true}));
-  const delivered=await deliverOutbox(sdk,'delete-me',pending);
+  // Only sandboxes run, and each stops itself once the ledger fences its attempt.
+  const delivered=await deliverOutbox(bindings,'delete-me',pending);
   expect(delivered).toContain('delete:workspace');
-  expect(delivered).not.toContain('stop:job:active-run:agent-1:1');
+  expect(delivered).toContain('stop:job:active-run:agent-1:1');
   for(const id of delivered) await ledger(bindings,'delete-me',{op:'outbox_sent',id});
-  expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs.map((entry:Json)=>entry.kind)).toEqual(['stop']);
+  expect((await ledger(bindings,'delete-me',{op:'outbox'})).jobs).toEqual([]);
 });
