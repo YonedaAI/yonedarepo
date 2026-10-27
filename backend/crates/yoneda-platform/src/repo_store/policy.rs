@@ -3,7 +3,7 @@ use crate::storage::bad;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
-use yoneda_core::Result;
+use yoneda_core::{Error, Result};
 
 /// Landing policy: which checks must pass and how many independent approvals are needed.
 /// `runners` are owner-defined commands the platform executes itself; definitions come
@@ -19,6 +19,12 @@ pub struct Policy {
     /// approval). Only `docs`, `formatting` and `comment_only` may be listed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub auto_approve: Vec<String>,
+    /// Who may post each required check by hand: `owner` or `token:<name>` (token names are
+    /// never reused). A required check named by a runner comes only from the platform's run;
+    /// any other required check defaults to the owner alone. Omitted when empty, so policies
+    /// that never bind posters keep their digest.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub check_posters: BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,9 +69,60 @@ impl Policy {
                 "Review class {class} cannot be auto-approved (only docs, formatting, comment_only)"
             )));
         }
+        policy.check_bound_posters()?;
         let json = serde_json::to_value(&policy).map_err(|e| bad(&e.to_string()))?;
         let digest = yoneda_core::fingerprint(&json)?;
         Ok((policy, json, digest))
+    }
+
+    fn check_bound_posters(&self) -> Result<()> {
+        if self.check_posters.len() > 32 {
+            return Err(bad("At most 32 checks can bind posters"));
+        }
+        for (name, posters) in &self.check_posters {
+            if !self.required_checks.contains(name) || self.runners.contains_key(name) {
+                return Err(bad(&format!(
+                    "Posters bind only required checks without a runner ({name})"
+                )));
+            }
+            let valid = |p: &String| {
+                p == "owner"
+                    || p.strip_prefix("token:")
+                        .is_some_and(|t| check_name(t).is_ok())
+            };
+            if posters.is_empty() || posters.len() > 16 || !posters.iter().all(valid) {
+                return Err(bad(
+                    "Check posters are 1-16 entries of owner or token:<name>",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Whether `principal` may record `name` by hand. A runner's result comes only from the
+    /// platform's fenced run, so posting it would overwrite that run; informational checks
+    /// (neither required nor a runner) are open to any `check` scope.
+    pub fn may_post(&self, name: &str, principal: &str, owner: bool) -> Result<()> {
+        let allowed = if self.runners.contains_key(name) {
+            false
+        } else if !self.required_checks.iter().any(|c| c == name) {
+            true
+        } else {
+            match self.check_posters.get(name) {
+                Some(posters) => posters
+                    .iter()
+                    .any(|p| p == principal || (owner && p == "owner")),
+                None => owner,
+            }
+        };
+        if allowed {
+            Ok(())
+        } else {
+            Err(Error::new(
+                "FORBIDDEN",
+                format!("Policy does not let this caller post the {name} check"),
+            ))
+        }
     }
 }
 
