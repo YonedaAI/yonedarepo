@@ -32,6 +32,26 @@ it('freezes only the SDK readback of the exact published source, replacing forge
   expect(read).toHaveBeenCalledWith('a'.repeat(40));
 });
 
+it('takes a sandbox compare run only from a ledger that runs one sandbox per agent', async () => {
+  const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
+  const env = { SOURCES: {}, AGENT_SANDBOX: {}, PLATFORM: { fetch: get } } as unknown as Env;
+  const v1 = { ...repository, capabilities: { source_api: 1, sandbox_cli: 1 } };
+  const two = [{ connection: 'glm', role: 'builder' }, { connection: 'mimo', role: 'builder' }];
+  const input = { runtime: 'sandbox-cli-v1', adaptive_team: { version: 1, requested_agents: two } };
+  await expect(freezeSourceApproval(env, 'owner', 'repo-fresh', input, v1)).rejects.toMatchObject({ code: 'LEDGER_UPDATING' });
+  expect(get).not.toHaveBeenCalled();
+  const read = readCommit();
+  const platform = await syntheticPlatform(workerEnv as unknown as Env, { 'repo-fresh': { readCommit: read } });
+  const sandboxEnv = { ...platform, AGENT_SANDBOX: {} } as unknown as Env;
+  const one = { runtime: 'sandbox-cli-v1', agents: [{ provider: 'zai' }] };
+  await freezeSourceApproval(sandboxEnv, 'owner', 'repo-fresh', one, v1);
+  expect(one).toMatchObject({ workspace_transport: 'sandbox-cli-v1' });
+  const v2 = { ...repository, capabilities: { source_api: 1, sandbox_cli: 2 } };
+  const compare = { runtime: 'sandbox-cli-v1', adaptive_team: { version: 1, requested_agents: two } };
+  await freezeSourceApproval(sandboxEnv, 'owner', 'repo-fresh', compare, v2);
+  expect(compare).toMatchObject({ workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true });
+});
+
 it('rejects a source identity outside this namespace before any read', async () => {
   const get = vi.fn(async () => { throw new Error('Source must never be opened'); });
   const env = { SOURCES: {}, PLATFORM: { fetch: get } } as unknown as Env;
