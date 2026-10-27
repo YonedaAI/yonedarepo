@@ -128,6 +128,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "conflict_paths"
         | "refresh_candidate"
         | "resolve_conflict"
+        | "conflict_resolver_run"
         | "conflict_refresh_complete" => conflicts::handle(db, &c, now),
         "deletion_status" => deletion::status(db),
         "external_begin" | "external_check" | "external_status" | "external_freeze"
