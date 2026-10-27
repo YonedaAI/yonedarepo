@@ -4,11 +4,9 @@
 // (tools/staging/webhook-flow.mjs). No bindings to platform state. BENCH_KEY is set once from
 // stdin (wrangler secret put BENCH_KEY) and kept across deploys; the kit reads it from
 // ~/.config/yonedarepo/staging-bench.env.
-// The platform never calls this account's workers.dev, so the receiver needs a Custom Domain on
-// a zone without a wildcard Worker route (yonedarepo.com has the apps Worker's). Once the owner
-// approves it, add to this Worker's config in infra/envs/dev.json:
-//   "routes": [{ "pattern": "hook-receiver.yonedaai.org", "custom_domain": true }]
-// then run cargo xtask infra gen --env dev and deploy.
+// The platform never calls this account's workers.dev, so the receiver has a Custom Domain,
+// hook-receiver.yonedaai.org (owner approved 2026-10-27), on a zone without a wildcard Worker
+// route (yonedarepo.com has the apps Worker's).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -39,5 +37,11 @@
     "region": "aws:us-east-1"
   },
   "preview_urls": false,
+  "routes": [
+    {
+      "custom_domain": true,
+      "pattern": "hook-receiver.yonedaai.org"
+    }
+  ],
   "workers_dev": true
 }

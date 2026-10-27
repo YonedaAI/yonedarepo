@@ -49,6 +49,8 @@ export interface Env {
   MIMO_KEY?: { get(): Promise<string> };
   ZAI_KEY?: { get(): Promise<string> };
   GEMINI_KEY?: { get(): Promise<string> };
+  /** The platform's own review-model key (model checks); never an agent-layer key. */
+  REVIEW_MODEL_KEY?: { get(): Promise<string> };
   VAULT_KEY?: string;
   AUTH_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;

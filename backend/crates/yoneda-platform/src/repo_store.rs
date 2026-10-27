@@ -41,6 +41,7 @@ mod reads;
 mod record;
 mod reviewers;
 mod rows;
+mod runner;
 mod sessions;
 pub(crate) mod staging;
 mod store_lineage;
