@@ -248,6 +248,11 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#head.head(repo, minVersion, since, accessVersion);
   }
 
+  /** Head role: the trees along `paths` from root tree `root` (see HeadHolder.trees). */
+  trees(repo: string, root: string, paths: string[], commit?: string) {
+    return this.#head.trees(repo, root, paths, commit);
+  }
+
   /** Head role: the access snapshot (live token digests), versioned by `access_version`. */
   access(repo: string) {
     return this.#head.access(repo);

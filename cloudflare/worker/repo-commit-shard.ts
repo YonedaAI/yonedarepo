@@ -7,7 +7,7 @@ import { deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
-import { beginFromHead, noteBuilt } from './repo-head';
+import { beginFromHead, headTrees, noteBuilt } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
@@ -71,6 +71,7 @@ export async function commitInShard(
     };
   }
   const trees: Record<string, TreeEntry[]> = {};
+  let asked = false;
   let built: Json | null = null;
   for (let round = 0; round < 64 && !built; round++) {
     let step: Json;
@@ -91,15 +92,35 @@ export async function commitInShard(
       if (e?.code === 'SECRET_DETECTED') return null;
       throw e;
     }
-    if (!step.need_trees) built = step;
-    else
-      await timed('trees', () =>
-        Promise.all(
-          (step.need_trees as string[]).map(async (id) => {
-            trees[id] = await store.tree(id);
-          }),
-        ),
-      );
+    if (!step.need_trees) {
+      built = step;
+      continue;
+    }
+    // The parent's trees: this isolate's memory, then the head holder (every level along
+    // the paths in one call), then the tiers, one level per round.
+    const missing = (step.need_trees as string[]).filter((id) => {
+      const entries = store.remembered(id);
+      if (entries) trees[id] = entries;
+      return !entries;
+    });
+    if (missing.length)
+      await timed('trees', async () => {
+        if (!asked && parent) {
+          asked = true;
+          const served = await headTrees(ctx.env, ctx.repo, parent.tree, paths, parent.id);
+          if (served) {
+            store.remember(served);
+            Object.assign(trees, served);
+          }
+        }
+        await Promise.all(
+          missing
+            .filter((id) => !trees[id])
+            .map(async (id) => {
+              trees[id] = await store.tree(id, parent?.id);
+            }),
+        );
+      });
   }
   if (!built)
     throw Object.assign(new Error('Paths are nested too deeply'), { code: 'INVALID_INPUT' });
