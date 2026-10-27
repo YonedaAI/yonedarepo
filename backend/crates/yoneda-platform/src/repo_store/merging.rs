@@ -31,15 +31,37 @@ pub fn occ_writing<S: SqlStore>(
     refname: &str,
     write_set: BTreeSet<String>,
 ) -> Result<OccOutcome> {
+    let since = branch_since(db, commit, refname)?;
     let proposal = Proposal {
         refname: refname.into(),
-        base_version: commit.base_version,
+        base_version: since,
         expected_old: commit.parents.first().copied(),
         write_set,
         read_set: commit.read_set.iter().cloned().collect(),
     };
-    let later = rows::entries(db, commit.base_version, current_version(db)?, Some(refname))?;
+    let later = rows::entries(db, since, current_version(db)?, Some(refname))?;
     Ok(proposal.check(&later, &super::symbols::refinements(db, &later)?))
+}
+
+/// The version after which `refname`'s landings are concurrent with `commit`. A base version
+/// is pinned to main's head (what the author read), so on an unprotected branch it can
+/// postdate another landing there that the commit does not contain (a pushed commit on the
+/// base after a teammate landed): that branch's landings count from its parent's landing on
+/// it. Protected refs keep the base version.
+fn branch_since<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<u64> {
+    let Some(parent) = commit.parents.first().filter(|_| !rows::protected(refname)) else {
+        return Ok(commit.base_version);
+    };
+    let landed = db.query(
+        "SELECT MIN(version) AS version FROM landings WHERE commit_id=? AND refname=?",
+        &[json!(parent.hex()), json!(refname)],
+    )?;
+    Ok(landed
+        .first()
+        .and_then(|row| row["version"].as_u64())
+        .map_or(commit.base_version, |version| {
+            version.min(commit.base_version)
+        }))
 }
 
 pub fn outcome_error(refname: &str, head: &ObjectId, outcome: OccOutcome) -> Error {
