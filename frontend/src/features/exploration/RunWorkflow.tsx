@@ -1,14 +1,11 @@
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
-import { isSandboxTeam, sandboxMembers } from '../team/sandboxTeamView';
+import { sandboxMembers } from '../team/sandboxTeamView';
 import { activeDecision } from './agentsPick';
-import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { RecordedDecisionStory } from './RecordedDecisionStory';
 import { reviewableCandidates } from './runReviewState';
 
 export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record<string, any> }) {
-  if (run.comparison?.version === 1 && run.comparison.approval)
-    return <ComparisonWorkflow snapshot={snapshot} run={run} />;
   const executions = snapshot.executions.filter((e) => e.run_id === run.id);
   const coding = executions.filter((e) => e.role === 'coding');
   const candidates = snapshot.candidates.filter((c) => c.run_id === run.id);
@@ -22,63 +19,39 @@ export function RunWorkflow({ snapshot, run }: { snapshot: Snapshot; run: Record
   const historical = ['accepted', 'cancelled', 'failed'].includes(run.status);
   const reviewable = reviewableCandidates(snapshot, run);
   const reviewReady = !decision && run.status === 'ready' && reviewable.length > 0;
-  const team = run.mode === 'collaborate';
-  const tasks = (snapshot.team_tasks ?? []).filter((task) => task.run_id === run.id);
-  const specialists = tasks.filter((task) => task.role !== 'integrator');
-  const integrator = tasks.find((task) => task.role === 'integrator');
-  const planner = executions.find((execution) => execution.team_role === 'planner');
-  // A sandbox team: members land on the team branch, which the platform's merge integrates.
-  const members = isSandboxTeam(run) ? sandboxMembers(snapshot, run) : null;
+  // A team: members land on the team branch, which the platform's merge integrates.
+  const members = run.mode === 'collaborate' ? sandboxMembers(snapshot, run) : null;
   const landed = members?.filter((execution) => execution.landing?.status === 'landed').length;
   const stages = [
     {
-      name: team && run.team_planning === 'automatic' ? 'Brief and planning' : 'Shared brief',
-      value:
-        team && run.team_planning === 'automatic'
-          ? run.team_plan
-            ? 'plan validated'
-            : (planner?.status ?? run.status)
-          : run.external
-            ? 'agent requested'
-            : 'approved',
+      name: 'Shared brief',
+      value: run.external ? 'agent requested' : 'approved',
       detail: `${run.context?.length ?? 0} context references`,
     },
     {
-      name: team ? 'Specialist tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
+      name: members ? 'Team tasks' : coding.length === 1 ? 'Build approach' : 'Build approaches',
       value: members
         ? `${landed} / ${members.length} landed`
-        : team
-          ? specialists.length
-            ? `${specialists.filter((task) => task.status === 'complete').length} / ${specialists.length} captured`
-            : 'waiting for plan'
-          : `${done} / ${coding.length} finished`,
+        : `${done} / ${coding.length} finished`,
       detail: members
         ? 'One sandbox per task on the same base'
-        : team
-          ? 'Complementary source scopes'
-          : queued > 0
-            ? `${queued} queued · capacity limited`
-            : historical
-              ? 'Recorded execution history'
-              : coding.length > 0 && done === coding.length
-                ? 'All agents finished'
-                : coding.length > 0
-                  ? 'Execution in progress'
-                  : 'Waiting for agents',
+        : queued > 0
+          ? `${queued} queued · capacity limited`
+          : historical
+            ? 'Recorded execution history'
+            : coding.length > 0 && done === coding.length
+              ? 'All agents finished'
+              : coding.length > 0
+                ? 'Execution in progress'
+                : 'Waiting for agents',
     },
     {
-      name: team ? 'Integration' : 'Capture source',
+      name: members ? 'Integration' : 'Capture source',
       value: members
         ? (executions.find((execution) => execution.team_role === 'team_branch')?.status ??
           'waiting for landings')
-        : team
-          ? (integrator?.status ?? 'waiting for task inputs')
-          : `${candidates.length} / ${coding.length} captured`,
-      detail: members
-        ? 'Platform merge on the team branch'
-        : team
-          ? 'One combined source revision'
-          : 'Exact fork commits',
+        : `${candidates.length} / ${coding.length} captured`,
+      detail: members ? 'Platform merge on the team branch' : 'Exact fork commits',
     },
     {
       name: 'Independent checks',

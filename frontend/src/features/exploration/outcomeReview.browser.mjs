@@ -187,16 +187,7 @@ async function verifyOutcomeReview(page) {
       'Continuation must keep canonical publication separate',
     );
     await page.keyboard.press('Escape');
-    run.status = 'coordinating';
-    run.autonomy_policy = {
-      version: 1,
-      enabled: true,
-      max_repair_rounds: 2,
-      max_concurrent_agents: 3,
-      max_executions: 20,
-      source_scope: 'project',
-      allow_intent_questions: true,
-    };
+    run.status = 'exploring';
     snapshot.executions = ['Access contract', 'Calendar behavior', 'App integration'].map(
       (strategy, index) => ({ ...execution, id: `ongoing-${index}`, strategy, status: 'running' }),
     );
@@ -204,23 +195,15 @@ async function verifyOutcomeReview(page) {
     snapshot.evaluations = [];
     await page.reload();
     const agents = page.getByRole('region', { name: 'Agent work', exact: true });
-    await agents.getByRole('heading', { name: 'Frozen work approval', exact: true }).waitFor();
+    await agents.getByRole('heading', { name: 'Agent work', exact: true }).waitFor();
     assert((await agents.locator('li').count()) === 3, 'All three ongoing agents must be visible');
     assert(
       (await agents.getByText('Working', { exact: true }).count()) === 3,
       'All three active agents must show Working',
     );
-    const approval = await agents.innerText();
-    for (const bound of [
-      '3 agents concurrently',
-      '20 executions total',
-      '2 repair rounds',
-      'Publication requires a separate owner decision.',
-    ])
-      assert(approval.includes(bound), `Frozen approval missing ${bound}`);
     assert(
       await page.getByRole('button', { name: 'Continue checked work', exact: true }).isDisabled(),
-      'Active coordination must block overlapping continuation',
+      'Active agents must block overlapping continuation',
     );
     assert(
       await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),

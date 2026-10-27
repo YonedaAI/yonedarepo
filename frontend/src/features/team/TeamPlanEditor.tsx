@@ -33,7 +33,6 @@ export function TeamPlanEditor({
                   title: '',
                   instructions: '',
                   agentId: '',
-                  dependsOn: [],
                   writePaths: '',
                 },
               ],
@@ -44,8 +43,8 @@ export function TeamPlanEditor({
         </button>
       </div>
       <p className="subtle">
-        Define tasks, interfaces and source ownership yourself. Ready tasks can run concurrently.
-        One agent can handle multiple tasks and final integration in sequence.
+        Define tasks, interfaces and source ownership yourself. Every task runs at once in its own
+        sandbox on the same base. One agent can handle several tasks in sequence.
       </p>
       <label>
         Shared interface contract
@@ -62,7 +61,6 @@ export function TeamPlanEditor({
           <TeamTaskEditor
             key={task.id}
             task={task}
-            tasks={value.tasks}
             agents={agents}
             locked={locked}
             onChange={update}
@@ -71,10 +69,7 @@ export function TeamPlanEditor({
         ))}
       </div>
       {!value.tasks.length && (
-        <p className="inline-empty">
-          No tasks in this draft. Add a task, or turn off Advanced task plan to let an agent plan
-          the work.
-        </p>
+        <p className="inline-empty">No tasks in this draft. Add a task to start a team.</p>
       )}
       <fieldset className="team-integration-editor">
         <legend>Final integration</legend>
@@ -105,8 +100,8 @@ export function TeamPlanEditor({
           />
         </label>
         <p className="subtle">
-          The integrator receives every captured worker output and may edit only these paths.
-          Include worker files here if integration needs to repair them. One combined candidate
+          No agent integrates: the platform merges every landing on the team branch. A conflict
+          resolution may edit only task paths and these paths. The team branch is one candidate that
           receives independent checks and your shipping decision.
         </p>
       </fieldset>

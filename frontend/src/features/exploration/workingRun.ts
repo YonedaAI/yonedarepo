@@ -18,10 +18,8 @@ export function workingRun(
     agents: draft.agents,
     policy: draft.policy,
     budgets: draft.budgets,
-    delegation: draft.delegation,
     mode: draft.mode,
     team: draft.previousTeamPlan,
-    teamPlanning: draft.previousAutomatic ? 'automatic' : undefined,
     workingBranch: branch,
   };
 }

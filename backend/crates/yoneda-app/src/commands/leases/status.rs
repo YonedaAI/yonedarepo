@@ -49,19 +49,6 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
             e["failure_job_epoch"] = job["epoch"].clone();
         }
         save_execution(db, &e, now)?;
-        if (!e["team_task"].is_null()
-            || e["team_role"] == "planner"
-            || e["team_role"] == "coordinator")
-            && (job["kind"] == "agent" || job["status"] == "failed")
-        {
-            super::super::team::reflect(
-                db,
-                &e,
-                job["status"].as_str().unwrap_or("failed"),
-                e["epoch"].clone(),
-                now,
-            )?;
-        }
         if job["kind"] == "agent" || job["status"] == "failed" {
             fence_descendants(db, job, now)?;
         }
@@ -100,12 +87,6 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
                 }
             }
         }
-    }
-    if let Some(rid) = job["payload"]["execution"]["run_id"]
-        .as_str()
-        .or_else(|| job["payload"]["candidate"]["run_id"].as_str())
-    {
-        super::super::comparison::wake_after_attempt(db, rid, now)?;
     }
     Ok(())
 }

@@ -17,13 +17,7 @@ pub(super) fn budget(provider: &str, model: &str) -> Value {
     json!({"provider":provider,"model":model,"max_requests":144,"max_output_tokens":4096,"max_execution_ms":600000,"spend_limit_microusd":50000000,"pricing":{"input_microusd_per_million":100000,"output_microusd_per_million":200000,"source":"owner-approved conservative rates"}})
 }
 pub(super) fn input() -> Value {
-    json!({"op":"start_run","id":"compare","intent":"Compare safe booking implementations","criteria":["No double booking"],"mode":"compare","comparison":{"version":1},"agents":[{"provider":"zai","model":"glm-5.3-flash","connection":"zai","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","connection":"zai","strategy":"defensive"}],"_comparison_reviewer":{"provider":"zai","model":"glm-5.3-flash","connection":"zai"},"_comparison_reviewer_budget":budget("zai","glm-5.3-flash"),"model_budgets":[budget("zai","glm-5.3-flash"),budget("zai","glm-4.7-flash")]})
-}
-pub(super) fn start(db: &NativeStore) -> Value {
-    call(db, input()).unwrap()
-}
-pub(super) fn approval() -> Value {
-    json!({"op":"approve_comparison_review","run_id":"compare","request_id":"approve-fixture","expected_commit":"a".repeat(40),"expected_version":0,"expected_policy_version":"compare-v1","_comparison_reviewer":input()["_comparison_reviewer"],"_comparison_reviewer_budget":budget("zai","glm-5.3-flash")})
+    json!({"op":"start_run","id":"compare","intent":"Compare safe booking implementations","criteria":["No double booking"],"mode":"compare","agents":[{"provider":"zai","model":"glm-5.3-flash","connection":"zai","strategy":"minimal"},{"provider":"zai","model":"glm-4.7-flash","connection":"zai","strategy":"defensive"}],"model_budgets":[budget("zai","glm-5.3-flash"),budget("zai","glm-4.7-flash")]})
 }
 pub(super) fn candidate(db: &NativeStore, index: usize, commit: &str) -> String {
     let eid = format!("compare:agent-{index}");

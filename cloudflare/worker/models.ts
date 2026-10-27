@@ -58,23 +58,6 @@ export const modelHandler =
         'model_budgets',
       ])
         delete prepared.body[key];
-      const trialPolicy =
-        owner === '_admin' ? null : await workspace(env, owner, { op: 'reviewer_status' });
-      const legacyTrial =
-        !sharedContext &&
-        trialPolicy?.repo_id === scope.repo_id &&
-        (trialPolicy?.active_trial === job.payload.execution.run_id ||
-          job.payload.execution.run_id?.startsWith('reviewer-'));
-      const reviewer = !sharedContext && Boolean(trialPolicy?.repo_id) && legacyTrial;
-      if (
-        reviewer &&
-        (trialPolicy?.revoked ||
-          trialPolicy?.expires <= Date.now() ||
-          trialPolicy?.repo_id !== scope.repo_id)
-      )
-        throw Object.assign(new Error('Reviewer inference access expired or outside sandbox'), {
-          code: 'REVIEWER_EXPIRED',
-        });
       const { key } = await providerCredentials(
         env,
         owner,
@@ -82,18 +65,12 @@ export const modelHandler =
         job.payload.execution.connection,
         job.model,
         job.payload.execution.routing,
-        job.payload.execution.comparison_approval_id != null
-          ? job.payload.execution.version
-          : undefined,
       );
       const counted = await ledger(env, scope.repo_id, {
         op: 'reserve_request',
         job_id: job.id,
         epoch: job.epoch,
         kind: 'model',
-        ...(sharedContext?.comparison_approval_id
-          ? { comparison_approval_id: sharedContext.comparison_approval_id }
-          : {}),
         ...requestUsage(prepared.body, provider),
         count_only: path.endsWith('/count_tokens') || path.endsWith(':countTokens'),
       });
@@ -103,13 +80,10 @@ export const modelHandler =
       if (Number.isSafeInteger(counted.output_tokens))
         prepared.body = grantOutputAllowance(prepared.body, provider, counted.output_tokens);
       const budgetOwner = owner === '_admin' ? '_budget_claude' : owner;
-      const reservationId = await sha(
-        `${sharedContext?.comparison_approval_id ? `${sharedContext.comparison_approval_id}:` : ''}${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`,
-      );
-      const ceiling =
-        sharedContext || reviewer ? counted.reservation_microusd : prepared.reservation;
-      if ((sharedContext || reviewer) && !Number.isSafeInteger(ceiling))
-        throw new Error('Reviewer inference requires a priced run reservation');
+      const reservationId = await sha(`${scope.repo_id}:${job.id}:${job.epoch}:${counted.number}`);
+      const ceiling = sharedContext ? counted.reservation_microusd : prepared.reservation;
+      if (sharedContext && !Number.isSafeInteger(ceiling))
+        throw new Error('Workspace inference requires a priced run reservation');
       if (ceiling !== undefined) {
         try {
           if (sharedContext) {
@@ -132,9 +106,6 @@ export const modelHandler =
             try {
               await ledger(env, scope.repo_id, {
                 op: 'settle_model_request',
-                ...(sharedContext?.comparison_approval_id
-                  ? { comparison_approval_id: sharedContext.comparison_approval_id }
-                  : {}),
                 job_id: job.id,
                 epoch: job.epoch,
                 reservation_id: counted.reservation_id,
@@ -169,7 +140,7 @@ export const modelHandler =
         error_code: providerStatusCode(result.status),
       });
       const tracked =
-        prepared.reservation && !sharedContext && !reviewer
+        prepared.reservation && !sharedContext
           ? trackClaudeUsage(
               result,
               env,
@@ -183,9 +154,6 @@ export const modelHandler =
         ? trackProviderUsage(tracked, provider, async (usage) => {
             const settled = await ledger(env, scope.repo_id, {
               op: 'settle_model_request',
-              ...(sharedContext?.comparison_approval_id
-                ? { comparison_approval_id: sharedContext.comparison_approval_id }
-                : {}),
               job_id: job.id,
               epoch: job.epoch,
               reservation_id: counted.reservation_id,
@@ -199,12 +167,6 @@ export const modelHandler =
                 settled.charged_microusd,
                 usage,
               );
-            else if (reviewer)
-              await workspace(env, owner, {
-                op: 'budget_settle',
-                id: reservationId,
-                amount: settled.charged_microusd,
-              });
             return settled;
           })
         : tracked;
@@ -213,9 +175,6 @@ export const modelHandler =
         try {
           const unused = await ledger(env, attempt.repo_id, {
             op: 'settle_model_request',
-            ...(sharedContext?.comparison_approval_id
-              ? { comparison_approval_id: sharedContext.comparison_approval_id }
-              : {}),
             job_id: attempt.job.id,
             epoch: attempt.job.epoch,
             reservation_id: countedReservation.reservation_id,

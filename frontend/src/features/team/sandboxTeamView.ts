@@ -3,8 +3,6 @@
 // the members; nothing here decides anything.
 import type { Snapshot } from '../../lib/types';
 
-export { isSandboxTeam } from '../exploration/sandboxActivityView';
-
 type Record_ = Record<string, any>;
 
 /** The run's members (one per task), in plan order. */

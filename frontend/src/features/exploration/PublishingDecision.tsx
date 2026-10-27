@@ -27,15 +27,8 @@ export function PublishingDecision({
   ) => Promise<boolean>;
 }) {
   const [error, setError] = useState('');
-  const missingReview =
-    !!comparison?.latest_review_id && !comparison.latest_review && !comparison.selection_reason;
-  const blockedReason =
-    blocker ??
-    (missingReview
-      ? 'The recorded reviewer assessment is unavailable. Refresh before publishing.'
-      : undefined);
   async function accept(rationale: string, alternatives: { candidate: string; reason: string }[]) {
-    if (blockedReason || !chosen) return;
+    if (blocker || !chosen) return;
     setError('');
     try {
       if (await onAccept(chosen.id, rationale, alternatives)) onClose();
@@ -55,31 +48,29 @@ export function PublishingDecision({
         <br />
         Exact revision <code>{short(chosen?.revision?.commit)}</code>
       </p>
-      {(error || blockedReason) && (
+      {(error || blocker) && (
         <p role="alert" className="form-error">
-          {error || blockedReason}
+          {error || blocker}
         </p>
       )}
-      {comparison?.latest_review || comparison?.selection_reason ? (
+      {comparison?.selection_reason ? (
         <ReviewedDecisionForm
           comparison={comparison}
-          candidate={chosen?.id ?? ''}
           confirmationKey={JSON.stringify([
             chosen?.id,
             chosen?.revision,
             chosen?.evaluation,
             comparison.selection_version,
-            comparison.latest_review_id,
           ])}
           busy={busy}
-          blocked={!!blockedReason}
+          blocked={!!blocker}
           onAccept={accept}
           onClose={onClose}
         />
       ) : (
         <DecisionForm
           busy={busy}
-          blocked={!!blockedReason}
+          blocked={!!blocker}
           alternatives={candidates.filter((candidate) => candidate.id !== chosen?.id)}
           onClose={onClose}
           onAccept={accept}

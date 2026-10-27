@@ -8,13 +8,8 @@ fn team(budgets: Option<Value>) -> NativeStore {
         "environment":"linux-node24-rust1.94-v1","required_checks":["build"],
         "build":{"setup":[],"checks":[{"name":"build","argv":["node","--check","public/app.js"],"timeout_seconds":30}]}}));
     let mut request = json!({"op":"start_run","id":"laundry","now":0,
-        "intent":"Build a laundry pickup order site","mode":"collaborate","agents":[
-        {"provider":"zai","model":"glm-5.3-flash","strategy":"specialist"},
-        {"provider":"zai","model":"glm-5.3-flash","strategy":"integrator"}],
-        "team":{"version":1,"contract":"public/order.js exports total; tests cover it.",
-        "integrator_agent":1,"integration_paths":["public/app.js"],"tasks":[
-        {"id":"site","title":"Order site","instructions":"Build the order site","agent":0,"depends_on":[],"write_paths":["public/order.js"]},
-        {"id":"tests","title":"Order tests","instructions":"Add Node tests","agent":0,"depends_on":["site"],"write_paths":["tests/order.test.js"]}]}});
+        "intent":"Build a laundry pickup order site",
+        "agents":[{"provider":"zai","model":"glm-5.3-flash","strategy":"builder"}]});
     if let Some(budgets) = budgets {
         request["model_budgets"] = budgets;
     }
@@ -25,10 +20,7 @@ fn at(db: &NativeStore, mut c: Value, now: i64) -> Result<Value> {
     c["now"] = json!(now);
     execute(db, c)
 }
-fn task(db: &NativeStore, local: &str) -> Value {
-    crate::storage::get(db, "team_tasks", &format!("laundry:task:{local}")).unwrap()
-}
-const JOB: &str = "job:laundry:task:site";
+const JOB: &str = "job:laundry:agent-1";
 fn started(db: &NativeStore, now: i64) -> Value {
     let job = at(db, json!({"op":"claim","job_id":JOB}), now).unwrap();
     at(
@@ -154,174 +146,6 @@ fn a_provider_wait_counts_as_progress_up_to_the_per_request_cap() {
     );
 }
 
-fn bind_source(db: &NativeStore, workspace: &str, epoch: i64) {
-    db.query("UPDATE jobs SET payload=json_set(payload,'$.payload.workspace_transport','api-source-v1','$.source_bindings',json(?)) WHERE id=?",
-        &[json!(json!({"view":{"binding":{"workspace_id":workspace,"view_digest":"d".repeat(64),
-            "access":"read_write","write_paths":["public/order.js"]},"producer_epoch":epoch}}).to_string()), json!(JOB)]).unwrap();
-}
-
-#[test]
-fn a_timed_out_task_retries_from_its_staged_checkpoint() {
-    let db = team(None);
-    let job = started(&db, 1000);
-    bind_source(
-        &db,
-        "source-workspace:first",
-        job["epoch"].as_i64().unwrap(),
-    );
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
-        "error":"EXECUTION_TIMEOUT: No agent progress for 5 minutes"}),
-        50_000,
-    )
-    .unwrap();
-    let failed = task(&db, "site");
-    assert_eq!(failed["status"], "failed");
-    assert_eq!(task(&db, "tests")["status"], "blocked");
-    let retried = at(
-        &db,
-        json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
-        "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
-        500_000,
-    )
-    .unwrap();
-    assert_eq!(retried["status"], "queued");
-    let next = at(&db, json!({"op":"claim","job_id":JOB}), 510_000).unwrap();
-    assert_eq!(next["resume"]["workspace_id"], "source-workspace:first");
-    assert_eq!(next["resume"]["reason"], "EXECUTION_TIMEOUT");
-    assert_eq!(next["resume"]["epoch"], job["epoch"]);
-    // A retry that times out again before binding keeps the original checkpoint.
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":next["epoch"],"retryable":true,
-        "error":"EXECUTION_TIMEOUT: Attempt reached the 30 minute ceiling"}),
-        520_000,
-    )
-    .unwrap();
-    let again = at(&db, json!({"op":"claim","job_id":JOB}), 530_000).unwrap();
-    assert_eq!(again["resume"]["workspace_id"], "source-workspace:first");
-    // The resumed attempt's own workspace becomes the newest checkpoint.
-    bind_source(
-        &db,
-        "source-workspace:second",
-        again["epoch"].as_i64().unwrap(),
-    );
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":again["epoch"],"retryable":false,
-        "error":"HARNESS_INTERRUPTED: runtime stopped"}),
-        540_000,
-    )
-    .unwrap();
-    assert_eq!(
-        crate::storage::get(&db, "jobs", JOB).unwrap()["resume_from"]["workspace_id"],
-        "source-workspace:second"
-    );
-}
-
-#[test]
-fn a_task_that_timed_out_before_this_change_still_resumes_on_retry() {
-    // The laundry task failed under the old wall clock: no checkpoint was recorded, but the
-    // failed job still holds its epoch's source binding until the next claim.
-    let db = team(None);
-    let job = started(&db, 1000);
-    bind_source(
-        &db,
-        "source-workspace:laundry",
-        job["epoch"].as_i64().unwrap(),
-    );
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
-        "error":"EXECUTION_TIMEOUT: Execution deadline exceeded"}),
-        50_000,
-    )
-    .unwrap();
-    db.query(
-        "UPDATE jobs SET payload=json_remove(payload,'$.resume_from') WHERE id=?",
-        &[json!(JOB)],
-    )
-    .unwrap();
-    let failed = task(&db, "site");
-    at(
-        &db,
-        json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
-        "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
-        60_000,
-    )
-    .unwrap();
-    let next = at(&db, json!({"op":"claim","job_id":JOB}), 70_000).unwrap();
-    assert_eq!(next["resume"]["workspace_id"], "source-workspace:laundry");
-}
-
-#[test]
-fn a_failure_on_its_merits_is_never_replayed_into_the_retry() {
-    let db = team(None);
-    let job = started(&db, 1000);
-    bind_source(&db, "source-workspace:bad", job["epoch"].as_i64().unwrap());
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
-        "error":"WRITE_SCOPE: Agent wrote outside its paths"}),
-        60_000,
-    )
-    .unwrap();
-    let failed = task(&db, "site");
-    at(
-        &db,
-        json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
-        "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
-        70_000,
-    )
-    .unwrap();
-    let next = at(&db, json!({"op":"claim","job_id":JOB}), 80_000).unwrap();
-    assert!(next["resume"].is_null());
-}
-
-#[test]
-fn a_successful_retry_after_timeout_unblocks_dependent_tasks() {
-    let db = team(None);
-    let job = started(&db, 1000);
-    at(
-        &db,
-        json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
-        "error":"EXECUTION_TIMEOUT: No agent progress for 5 minutes"}),
-        50_000,
-    )
-    .unwrap();
-    let failed = task(&db, "site");
-    at(
-        &db,
-        json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
-        "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
-        500_000,
-    )
-    .unwrap();
-    let next = at(&db, json!({"op":"claim","job_id":JOB}), 510_000).unwrap();
-    // Coding completes only through an independently registered source seal.
-    let registration = source_kit::finish_agent(&db, &next, 520_000);
-    let capture = at(
-        &db,
-        json!({"op":"claim","job_id":"capture:laundry:task:site:r2"}),
-        530_000,
-    )
-    .unwrap();
-    let result = source_kit::with_lineage(
-        &registration,
-        json!({"id":"captured-site","revision":{"repository":"test/site","commit":"e".repeat(40)},
-        "tree":"c".repeat(40),"paths":["public/order.js"],"summary":"site","diff":"d"}),
-    );
-    at(
-        &db,
-        json!({"op":"finish","job_id":capture["id"],"epoch":capture["epoch"],"result":result}),
-        540_000,
-    )
-    .unwrap();
-    assert_eq!(task(&db, "site")["status"], "complete");
-    assert_eq!(task(&db, "tests")["status"], "queued");
-}
-
 #[test]
 fn spend_fit_grants_a_smaller_response_instead_of_refusing_and_never_passes_the_limit() {
     // 1 µ$ per input token, 4 µ$ per output token, 20 000 µ$ limit.
@@ -368,39 +192,4 @@ fn spend_fit_grants_a_smaller_response_instead_of_refusing_and_never_passes_the_
         "{}",
         refused.message
     );
-}
-
-#[test]
-fn timeouts_do_not_consume_the_three_attempt_retry_cap_but_real_failures_do() {
-    let db = team(None);
-    let mut now = 1000;
-    for round in 0..4 {
-        let job = started(&db, now);
-        let error = if round < 3 {
-            "EXECUTION_TIMEOUT: No agent progress for 5 minutes"
-        } else {
-            "WRITE_SCOPE: Agent wrote outside its paths"
-        };
-        at(
-            &db,
-            json!({"op":"fail","job_id":JOB,"epoch":job["epoch"],"retryable":false,
-            "error":error}),
-            now + 30_000,
-        )
-        .unwrap();
-        let failed = task(&db, "site");
-        assert_eq!(failed["error"], error);
-        let retry = at(
-            &db,
-            json!({"op":"retry_team_task","run_id":"laundry","task_id":"site",
-            "expected_epoch":failed["epoch"],"expected_revision":failed["revision"]}),
-            now + 40_000,
-        );
-        if round < 3 {
-            assert_eq!(retry.unwrap()["revision"], round + 2);
-        } else {
-            assert_eq!(retry.unwrap_err().code, "ATTEMPTS_EXHAUSTED");
-        }
-        now += 60_000;
-    }
 }

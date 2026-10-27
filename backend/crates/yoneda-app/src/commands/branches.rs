@@ -74,24 +74,6 @@ pub(super) fn freeze<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Value>> {
     Ok(Some(branch))
 }
 
-pub(super) fn validate_run_head<S: SqlStore>(db: &S, run: &Value) -> Result<()> {
-    let r = repo(db)?;
-    let valid = if let Some(id) = run["working_branch_id"].as_str() {
-        let branch = get(db, "working_branches", id)?;
-        branch["working_commit"] == run["base"]["commit"]
-            && branch["version"] == run["working_branch_version"]
-    } else {
-        r["head_commit"] == run["base"]["commit"] && r["version"] == run["base_version"]
-    };
-    if r["status"] != "ready" || !r["pending"].is_null() || !valid {
-        return Err(Error::new(
-            "HEAD_MOVED",
-            "The approved working head changed",
-        ));
-    }
-    Ok(())
-}
-
 pub(super) fn promote<S: SqlStore>(
     db: &S,
     run: &mut Value,
@@ -100,10 +82,6 @@ pub(super) fn promote<S: SqlStore>(
 ) -> Result<()> {
     // Compare checks establish evidence for alternatives; selection is a separate decision.
     if run["mode"] == "compare" {
-        return Ok(());
-    }
-    if super::autonomy::hold_candidate(db, run, candidate)? {
-        save(db, "candidates", &string(candidate, "id")?, candidate)?;
         return Ok(());
     }
     let Some(id) = run["working_branch_id"].as_str().map(str::to_owned) else {
@@ -129,13 +107,6 @@ pub(super) fn promote<S: SqlStore>(
         || branch["working_revision"] != candidate["base"]
     {
         candidate["working_branch_state"] = json!("stale");
-        let coordinate = run["mode"] == "collaborate" && run["autonomy_policy"]["enabled"] == true;
-        if coordinate {
-            candidate["coordination_signal"] = json!(yoneda_agents_core::fingerprint(&json!({
-                "branch_id":id,"version":branch["version"],
-                "target":branch["working_revision"],"candidate":candidate["id"]
-            }))?);
-        }
         save(db, "candidates", &string(candidate, "id")?, candidate)?;
         event(
             db,
@@ -143,14 +114,6 @@ pub(super) fn promote<S: SqlStore>(
             now,
             json!({"run_id":run["id"],"branch_id":id,"candidate_id":candidate["id"],"working_revision":branch["working_revision"]}),
         )?;
-        if coordinate {
-            let rid = string(run, "id")?;
-            // The caller retains this mutable run for its later evaluation save.
-            // Persist its current state first, then retain the recovery transition.
-            save(db, "runs", &rid, run)?;
-            super::team::evaluated(db, run, candidate, true, now)?;
-            *run = get(db, "runs", &rid)?;
-        }
         return Ok(());
     }
     branch["working_revision"] = candidate["revision"].clone();
@@ -193,7 +156,6 @@ pub(super) fn published<S: SqlStore>(db: &S, repository: &Value, now: i64) -> Re
 
 pub(super) fn publishable<S: SqlStore>(db: &S, candidate: &Value, r: &Value) -> Result<bool> {
     let run = get(db, "runs", &string(candidate, "run_id")?)?;
-    super::autonomy::validate_candidate(&run, candidate)?;
     let Some(id) = run["working_branch_id"].as_str().map(str::to_owned) else {
         return Ok(false);
     };

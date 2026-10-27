@@ -14,7 +14,7 @@ fn start(db: &NativeStore, id: &str) {
     f::call(db, input).unwrap();
 }
 
-/// Both builders check, the reviewer selects agent 1's result, and trusted completion records it.
+/// Both builders check and the owner selects agent 1's result.
 fn select_first(db: &NativeStore, rid: &str, commits: [&str; 2]) -> String {
     for (index, commit) in commits.iter().enumerate() {
         f::finish_candidate(
@@ -24,39 +24,11 @@ fn select_first(db: &NativeStore, rid: &str, commits: [&str; 2]) -> String {
             commit,
         );
     }
-    let job = run_jobs(db, rid)
-        .unwrap()
-        .into_iter()
-        .find(|j| j["payload"]["comparison_review"] == true && j["status"] == "queued")
-        .unwrap();
-    let job = f::call(db, json!({"op":"claim","job_id":job["id"]})).unwrap();
-    let context = f::call(
-        db,
-        json!({"op":"comparison_context","job_id":job["id"],"epoch":job["epoch"]}),
-    )
-    .unwrap();
-    let alternatives: Vec<Value> = context["manifest"]["alternatives"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|a| {
-            json!({"candidate_id":a["candidate_id"],"execution_id":a["execution_id"],
-            "reason":"This independently checked booking approach preserves capacity"})
-        })
-        .collect();
-    let chosen = context["manifest"]["alternatives"][0]["candidate_id"].clone();
-    f::call(db, json!({"op":"comparison_submit","job_id":job["id"],"epoch":job["epoch"],
-        "request_id":format!("review-{rid}"),"manifest_digest":context["manifest_digest"],
-        "outcome":"selected","candidate_id":chosen,
-        "rationale":"Prefer capacity-safe transaction boundaries to preserve booking integrity",
-        "alternatives":alternatives,"risks":[],"evidence_refs":[],
-        "repair_instructions":"Tighten cancellation transaction boundaries within the approved booking goal"})).unwrap();
-    f::call(
-        db,
-        json!({"op":"finish","job_id":job["id"],"epoch":job["epoch"],
-        "result":{"review_only":true,"source_unchanged":true,"transcript":"e".repeat(64)}}),
-    )
-    .unwrap();
+    let r = repo(db).unwrap();
+    f::call(db, json!({"op":"select_comparison_candidate","run_id":rid,"request_id":format!("select-{rid}"),
+        "candidate_id":format!("{rid}-candidate-1"),"reason":"Prefer capacity-safe transaction boundaries",
+        "expected_commit":r["head_commit"],"expected_version":r["version"],
+        "expected_policy_version":r["policy"]["version"],"expected_selection_version":0})).unwrap();
     let run = get(db, "runs", rid).unwrap();
     assert_eq!(run["comparison"]["status"], "selected", "{rid}");
     run["comparison"]["selected_candidate_id"]
@@ -219,50 +191,4 @@ fn refresh_of_an_unselected_alternative_cannot_publish() {
         publish(&db, "alternative-b", &cid).unwrap_err().code,
         "COMPARISON_NOT_SELECTED"
     );
-}
-
-#[test]
-fn fenced_refresh_evaluation_ends_failed_with_a_visible_reason() {
-    let (db, _, cid) = refreshed();
-    // Lineage that no longer verifies, observed by a comparison that must recompute its manifest.
-    let mut c = get(&db, "candidates", &cid).unwrap();
-    c["approved_parents"] = json!([A1, "9".repeat(40)]);
-    save(&db, "candidates", &cid, &c).unwrap();
-    let mut run = get(&db, "runs", "run-b").unwrap();
-    run["comparison"]["status"] = json!("checking");
-    save(&db, "runs", "run-b", &run).unwrap();
-    let jid = format!("evaluate:{cid}");
-    let mut job = claim_evaluator(&db, &cid);
-    for attempt in 1..=2 {
-        assert_eq!(
-            evaluate_claimed(&db, &cid, &job).unwrap_err().code,
-            "FENCED"
-        );
-        // The runtime reports a rejected completion through the failure path.
-        let failed = f::call(
-            &db,
-            json!({"op":"fail","job_id":jid,"epoch":job["epoch"],"now":7000,
-            "retryable":true,"error":"FENCED: Refreshed candidate lineage changed"}),
-        )
-        .unwrap();
-        if attempt == 1 {
-            assert_eq!(failed["status"], "queued");
-            job = f::call(&db, json!({"op":"claim","job_id":jid,"now":8000})).unwrap();
-        } else {
-            assert_eq!(failed["status"], "failed");
-        }
-    }
-    let candidate = get(&db, "candidates", &cid).unwrap();
-    assert_eq!(candidate["status"], "failed");
-    assert!(candidate["error"].to_string().contains("FENCED"));
-    let inventory = f::call(&db, json!({"op":"conflict_status"})).unwrap();
-    assert_eq!(inventory["conflicts"][0]["status"], "failed");
-    assert!(
-        inventory["conflicts"][0]["error"]
-            .to_string()
-            .contains("FENCED")
-    );
-    let run = get(&db, "runs", "run-b").unwrap();
-    assert_eq!(run["comparison"]["status"], "needs_attention");
-    assert_eq!(run["comparison"]["terminal_reason"]["code"], "FENCED");
 }

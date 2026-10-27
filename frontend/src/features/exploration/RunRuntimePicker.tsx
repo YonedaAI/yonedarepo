@@ -25,8 +25,8 @@ export function runtimeChoice(
     ? `${unsupported.label} can't run in the sandbox: no sandbox CLI supports its API.`
     : undefined;
   const sandbox = offered && preferred === 'sandbox' && !blocker;
-  // A sandbox run is independent compare attempts (1–6) the owner chooses among, no reviewer,
-  // or a team on the owner's task plan whose members land on one team branch.
+  // A sandbox run is independent compare attempts (1–6) the owner chooses among, or a team on
+  // the owner's task plan whose members land on one team branch.
   return { offered, blocker, sandbox, request: sandbox ? { runtime: SANDBOX_RUNTIME } : undefined };
 }
 
@@ -72,7 +72,7 @@ export function RunRuntimePicker({
         />
         <span>
           <strong>Classic</strong>
-          <small>Hosted agents, with team runs and automatic review.</small>
+          <small>Hosted agents compare approaches. You choose what to publish.</small>
         </span>
       </label>
       {blocker && <p className="subtle">{blocker}</p>}

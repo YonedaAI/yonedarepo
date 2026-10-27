@@ -153,8 +153,7 @@ fn begin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     // their history. The run's candidates are then read and evaluated as lazy source.
     let transport = "platform-branch-v1";
     let base = json!({"repository":format!("{}/{}",string(&r["remote"],"namespace")?,string(&r["remote"],"name")?),"commit":r["published_commit"]});
-    let mut run = json!({"id":rid,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":base,"base_version":r["version"],"status":"exploring","created_at":now,"external":true,"workspace_transport":"api-source-v1","context_usage_version":1});
-    super::study::apply(&mut run, super::study::freeze(db, &r)?);
+    let run = json!({"id":rid,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":base,"base_version":r["version"],"status":"exploring","created_at":now,"external":true,"workspace_transport":"api-source-v1","context_usage_version":1});
     create(db, "runs", &rid, &run)?;
     node(
         db,

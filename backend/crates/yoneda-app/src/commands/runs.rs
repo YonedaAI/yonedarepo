@@ -60,15 +60,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 )?);
             }
             super::scheduling::validate_agents(&c)?;
-            let team = super::team::freeze(&c)?;
+            let team = super::sandbox_team::plan(&c)?;
             let collaborate = c["mode"] == "collaborate";
-            let automatic = collaborate && team.is_none();
-            if collaborate && r.get("context_study").is_some() {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    "Controlled context trials do not support team mode",
-                ));
-            }
+            retired(&c)?;
             let model_budgets = super::model_budgets::freeze(&c)?;
             let root_count = c["agents"].as_array().map_or(0, Vec::len);
             let delegation = c
@@ -80,6 +74,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 .transpose()?
                 .unwrap_or_else(|| DelegationPolicy::disabled(root_count));
             delegation.validate(root_count)?;
+            if delegation.enabled {
+                return Err(Error::new("NOT_SUPPORTED", "Delegation was retired"));
+            }
             if active_run_count(db)? >= MAX_ACTIVE_WORK_RUNS {
                 return Err(Error::new(
                     "ACTIVE_RUN_LIMIT",
@@ -91,7 +88,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 string(&r["remote"], "namespace")?,
                 string(&r["remote"], "name")?
             );
-            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":if automatic {"planning"} else {"exploring"},"created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
+            let mut run = json!({"id":id,"intent":intent,"criteria":criteria,"context":context,"context_records":records,"policy":r["policy"],"base":{"repository":remote,"commit":r["published_commit"]},"base_version":r["version"],"status":"exploring","created_at":now,"delegation":delegation,"execution_count":root_count,"model_requests":0,"context_usage_version":1,"mode":if collaborate {"collaborate"} else {"compare"}});
             if collaborate {
                 run["approved_policy"] = run["policy"].clone();
             }
@@ -109,21 +106,22 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             } else {
                 "api-source-v1"
             });
+            if collaborate && !sandbox {
+                return Err(Error::new(
+                    "NOT_SUPPORTED",
+                    "Team runs run in sandboxes, with an owner-written task list",
+                ));
+            }
             if sandbox && collaborate {
                 super::sandbox_team::freeze(&c, team.as_ref(), &delegation, &mut run)?;
             } else if sandbox {
                 super::sandbox::freeze(&c, team.is_some(), &delegation, &mut run)?;
             }
-            if automatic {
-                run["team_planning"] = json!("automatic");
-                run["execution_count"] = json!(1);
-            }
             if let Some(plan) = &team {
-                super::team::validate_plan_scopes(&run, plan)?;
+                super::sandbox_team::validate_plan_scopes(&run, plan)?;
                 run["team_plan"] = json!(plan);
                 run["team_plan_revision"] = json!(1);
-                // The old team adds an integrator; a sandbox team integrates by landing.
-                run["execution_count"] = json!(plan.tasks.len() + usize::from(!sandbox));
+                run["execution_count"] = json!(plan.tasks.len());
             }
             if let Some(budgets) = model_budgets {
                 run["model_budgets"] = json!(budgets);
@@ -141,19 +139,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["base"] = branch["working_revision"].clone();
             }
             super::source_transport::freeze(&c, &mut run)?;
-            super::adaptive_team::freeze(&c, &mut run)?;
-            super::autonomy::freeze(&c, &mut run)?;
             super::sandbox::checkable_start(&run, &r["policy"])?;
-            if run["autonomy_approval"].is_object() {
-                run["autonomy_approval"]["model_budgets"] = run["model_budgets"].clone();
-                if !run["repair_escalation"].is_null() {
-                    run["autonomy_approval"]["repair_escalation"] =
-                        run["repair_escalation"].clone();
-                }
-            }
-            if r.get("context_study").is_none()
-                && (working_branch.is_some() || run["autonomy_policy"]["enabled"] == true)
-            {
+            if working_branch.is_some() {
                 super::context_packet::freeze(db, &mut run, working_branch.as_ref())?;
             }
             if let Some(previous) = &restart_of {
@@ -162,8 +149,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             if let Some(decision) = &continuation_of {
                 run["continuation_of"] = json!(decision);
             }
-            super::study::apply(&mut run, super::study::freeze(db, &r)?);
-            super::comparison::freeze(&c, &mut run)?;
             create(db, "runs", &id, &run)?;
             let intent_id = format!("intent:{id}");
             node(
@@ -195,12 +180,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     "owner-approved update from the published decision",
                 )?;
             }
-            if automatic {
-                super::team::start_planner(db, &run, now)?;
-            } else if team.is_some() && sandbox {
+            if team.is_some() {
                 super::sandbox_team::start(db, &run, now)?;
-            } else if team.is_some() {
-                super::team::start(db, &run, now)?;
             } else {
                 super::scheduling::schedule(db, &run, &c["agents"], now)?;
             }
@@ -257,12 +238,25 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 candidate["status"] = json!("cancelled");
                 save(db, "candidates", &string(&candidate, "id")?, &candidate)?;
             }
-            if r["mode"] == "collaborate" {
-                super::team::cancelled(db, &id, now)?;
-            }
             event(db, "run.cancelled", now, json!({"id":id}))?;
             Ok(json!({"status":"cancelled","stop":stops}))
         }
         _ => Err(Error::new("NOT_FOUND", "Unknown operation")),
     }
+}
+
+/// Requests for retired run kinds: automatic or adaptive teams, autonomy, the comparison
+/// reviewer and context studies.
+fn retired(c: &Value) -> Result<()> {
+    if c.get("adaptive_team").is_some_and(|v| !v.is_null())
+        || c["autonomy_policy"]["enabled"] == true
+        || c.get("comparison").is_some_and(|v| !v.is_null())
+        || c.get("current_context_ids").is_some()
+    {
+        return Err(Error::new(
+            "NOT_SUPPORTED",
+            "Adaptive teams, autonomy, comparison review and context studies were retired",
+        ));
+    }
+    Ok(())
 }

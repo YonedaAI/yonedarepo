@@ -34,18 +34,6 @@ fn idle_ms(job: &Value, budget: Option<&ModelBudget>) -> Option<i64> {
         .map(ModelBudget::idle_timeout_ms)
 }
 
-/// Total job deadline from a dispatch deadline: dispatch wait, boot and the attempt ceiling.
-pub(in crate::commands) fn job_deadline(
-    dispatch: i64,
-    job: &Value,
-    budget: Option<&ModelBudget>,
-) -> Result<i64> {
-    dispatch
-        .checked_add(ceiling_ms(job, budget))
-        .and_then(|value| value.checked_add(BOOT_MS))
-        .ok_or_else(|| bad("Attempt deadline overflow"))
-}
-
 pub(in crate::commands) fn claimed(
     j: &mut Value,
     budget: Option<&ModelBudget>,

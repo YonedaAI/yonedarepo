@@ -46,19 +46,6 @@
 .team-plan-options {
   margin: 22px 0;
 }
-.run-composer .team-plan-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  margin: 16px 0 8px;
-}
-.team-plan-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  flex-shrink: 0;
-}
 .team-task-editors {
   display: grid;
   gap: 18px;
@@ -83,30 +70,6 @@
 .team-integration-editor {
   margin-top: 20px;
   background: #f7f9fc;
-}
-.team-dependencies {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 0;
-  border: 0;
-}
-.team-dependencies legend {
-  padding: 0;
-  margin-bottom: 10px;
-  font-size: 12px;
-}
-.run-composer .team-dependencies label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin: 0;
-  font-size: 12px;
-}
-.team-dependencies input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
 }
 .team-workflow {
   margin: 24px 0;
@@ -135,10 +98,6 @@
   border: 1px solid var(--line);
   border-radius: 8px;
 }
-.team-task-card.integrator {
-  background: #f7f9ff;
-  border-color: #cbd6f6;
-}
 .team-task-summary {
   display: flex;
   justify-content: space-between;
@@ -159,21 +118,6 @@
   margin-top: 12px;
   font-size: 12px;
 }
-.team-task-repair-form {
-  display: grid;
-  justify-items: start;
-  gap: 10px;
-}
-.team-task-card .team-task-repair-form > label {
-  display: grid;
-  gap: 6px;
-  width: 100%;
-}
-.team-task-card .team-task-repair-form textarea {
-  width: 100%;
-  min-height: 6em;
-  line-height: 1.5;
-}
 .team-task-card summary {
   cursor: pointer;
   color: var(--blue);
@@ -184,9 +128,6 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-size: 11px;
-}
-.team-task-card .team-task-error {
-  color: #9b4848;
 }
 .team-task-card a {
   color: var(--blue);
@@ -201,21 +142,6 @@
   padding: 12px 0;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-}
-.team-planning-progress {
-  padding: 16px;
-  margin: 18px 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f7f9fc;
-}
-.team-planning-progress p {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.6;
-}
-.team-planning-progress .team-task-error {
-  color: #9b4848;
 }
 .team-contract summary {
   cursor: pointer;

@@ -75,32 +75,3 @@ fn legacy_single_builder_working_choice_keeps_owner_selection_available() {
     assert_eq!(run_jobs(&db, "compare").unwrap().len(), 3);
     assert_eq!(repo(&db).unwrap()["published_commit"], "a".repeat(40));
 }
-#[test]
-fn legacy_owner_can_choose_a_checked_child_with_frozen_original_delegation_lineage() {
-    let db = f::db();
-    f::call(&db,json!({"op":"create_working_branch","id":"development","expected_commit":"a".repeat(40),"expected_version":0})).unwrap();
-    let mut input = f::input();
-    input.as_object_mut().unwrap().remove("comparison");
-    input["delegation"] = json!({"enabled":true,"max_depth":1,"max_executions":3});
-    input["working_branch_id"] = json!("development");
-    input["expected_working_commit"] = json!("a".repeat(40));
-    input["expected_working_version"] = json!(0);
-    f::call(&db, input).unwrap();
-    f::call(&db, json!({"op":"claim","job_id":"job:compare:agent-1"})).unwrap();
-    let delegated=f::call(&db,json!({"op":"delegate_agent","job_id":"job:compare:agent-1","epoch":1,"request_id":"booking-child","task":"Explore a bounded booking transaction alternative","strategy":"transaction"})).unwrap();
-    f::finish_candidate(
-        &db,
-        delegated["execution"]["id"].as_str().unwrap(),
-        "child-candidate",
-        &"d".repeat(40),
-    );
-    f::candidate(&db, 1, &"b".repeat(40));
-    f::candidate(&db, 2, &"c".repeat(40));
-    let receipt = f::call(&db, select("child-candidate", 0, &"a".repeat(40), 0)).unwrap();
-    assert_eq!(
-        receipt["comparison"]["selected_candidate_id"],
-        "child-candidate"
-    );
-    assert_eq!(repo(&db).unwrap()["published_commit"], "a".repeat(40));
-    assert!(get(&db, "runs", "compare").unwrap()["comparison"]["approval"].is_null());
-}

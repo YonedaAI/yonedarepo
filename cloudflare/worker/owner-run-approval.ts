@@ -1,10 +1,8 @@
 import { runSamples } from '../../shared/run-samples';
-import { resolveAdaptiveApproval } from './adaptive-approval';
 import { freezeSourceApproval } from './api-source-approval';
-import { approveComparisonStart } from './comparison-approval';
 import { resolveFixedApproval } from './fixed-run-approval';
+import { resolveRunRoster } from './run-roster';
 import { checkLedger } from './runtime';
-import { SANDBOX_TRANSPORT } from './sandbox-attempt';
 import { ledger } from './storage';
 import type { Env, Json, Principal } from './types';
 import { providerCredentials } from './vault';
@@ -59,27 +57,15 @@ export async function approveOwnerRun(
     throw Object.assign(new Error('The workspace allowance is exhausted'), {
       code: 'WORKSPACE_SPEND_LIMIT',
     });
-  // A sandbox team has no coordinator: the platform's merge integrates its members' work.
-  const sandbox = input.runtime === SANDBOX_TRANSPORT;
-  const resolve = (limit: number) => {
-    const approved = approveComparisonStart(
-      input.adaptive_team !== undefined
-        ? resolveAdaptiveApproval(input, settings.providers, limit)
-        : resolveFixedApproval(input, settings.providers, limit),
-      settings.providers,
-      limit,
-    );
-    if (sandbox) delete approved.autonomy_policy;
-    return approved;
-  };
+  const resolve = (limit: number) =>
+    input.adaptive_team !== undefined
+      ? resolveRunRoster(input, settings.providers, limit)
+      : resolveFixedApproval(input, settings.providers, limit);
   let approved = resolve(allowance.limit_microusd);
   validateWorkspaceSpendRun(approved);
   checkLedger(repository, approved);
   const checked = new Set<string>();
-  for (const agent of [
-    ...(approved._approved_model_pool ?? approved.agents),
-    ...(approved._comparison_reviewer ? [approved._comparison_reviewer] : []),
-  ]) {
+  for (const agent of approved.agents) {
     const id = agent.connection ?? agent.provider;
     const connection = settings.providers.find(
       (entry: Json) =>

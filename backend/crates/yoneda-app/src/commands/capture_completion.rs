@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 use yoneda_agents_core::Result;
 pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64) -> Result<()> {
     let source_lineage = super::capture_source::validate(db, j, result, now)?;
-    super::comparison::validate_capture(db, j, result)?;
     let cid = string(result, "id")?;
     let execution = &j["payload"]["execution"];
     let eid = string(execution, "id")?;
@@ -45,9 +44,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     if result.get("file_provenance").is_some() {
         super::history::capture_file_provenance(db, j, result, now)?;
     }
-    if super::team::captured(db, j, result, now)? {
-        return Ok(());
-    }
     let mut candidate = json!({"id":cid,"execution":eid,"run_id":run_id,"base":j["payload"]["base"],"revision":result["revision"],"tree":result["tree"],"paths":paths,"summary":result["summary"],"status":"evaluating","capture_job":j["id"]});
     if let Some(lineage) = source_lineage {
         candidate["source_lineage"] = lineage;
@@ -56,10 +52,6 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     // native completion fixtures may omit it; inline source never enters the candidate/job.
     if result.get("diff_digest").is_some() {
         candidate["diff_digest"] = json!(hash(result, "diff_digest", &[64])?.to_ascii_lowercase());
-    }
-    if let Some(manifest) = j["payload"].get("integration_manifest") {
-        candidate["integration_manifest"] = manifest.clone();
-        candidate["integration_digest"] = j["payload"]["integration_digest"].clone();
     }
     crate::path_lists::compact(db, &mut candidate, "paths")?;
     create(db, "candidates", &cid, &candidate)?;

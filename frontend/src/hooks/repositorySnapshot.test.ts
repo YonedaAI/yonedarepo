@@ -159,8 +159,6 @@ describe('scoped snapshot refresh', () => {
       evaluations: [],
       decisions: [],
       artifacts: [],
-      team_tasks: [],
-      team_handoffs: [],
       nodes: [],
       edges: [],
       graph_paged: true,

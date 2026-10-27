@@ -3,7 +3,6 @@ import { type RunSample, runSamples } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
-import { comparisonBusy } from './comparisonView';
 import { actionErrorMessage, sendOwnerAction } from './ownerAction';
 import { acceptRequest, publishOnPlatform } from './platformPublication';
 import { PendingReviews } from './RunAttention';
@@ -12,6 +11,7 @@ import { RunHistory } from './RunHistory';
 import { RunSamples } from './RunSamples';
 import { RunToolbar } from './RunToolbar';
 import { type InitialRun, initialRun } from './restartRun';
+import { runHasActiveAttempts } from './runControlState';
 import { createRunStart } from './runStart';
 import { sampleBrief } from './sampleBrief';
 import { supportsWorkingBranches, type WorkingBranch, workingBranches } from './workingBranchView';
@@ -67,7 +67,7 @@ export function Exploration({
     !busy &&
     !repo.pending &&
     repo.status === 'ready' &&
-    !(run?.mode === 'compare' && comparisonBusy(snapshot, run));
+    !(run?.mode === 'compare' && runHasActiveAttempts(snapshot, run));
   function openBrief(branch?: WorkingBranch, sample?: RunSample) {
     const base = branch ? workingRun(snapshot, branch) : undefined;
     setBranchSource(sample ? sampleBrief(snapshot, base, sample) : base);
@@ -131,14 +131,7 @@ export function Exploration({
       return true;
     } catch (error) {
       if (
-        [
-          'start_run',
-          'accept',
-          'reject_candidate',
-          'answer_intent',
-          'approve_comparison_review',
-          'select_comparison_candidate',
-        ].includes(action)
+        ['start_run', 'accept', 'reject_candidate', 'select_comparison_candidate'].includes(action)
       )
         throw error;
       // App renders this in its role="alert" banner; never pass it an empty message.
@@ -227,15 +220,6 @@ export function Exploration({
                   setComposing(true);
                 }}
                 onCancel={() => void act('cancel_run', { run_id: run.id })}
-                onRetry={(task) =>
-                  void act('retry_team_task', {
-                    run_id: run.id,
-                    task_id: task.task_id,
-                    expected_epoch: task.epoch,
-                    expected_revision: task.revision,
-                  })
-                }
-                onRepairTask={(request) => act('repair_team', request)}
                 onComparisonAction={act}
                 onRefresh={onChange}
                 onAccept={(candidate, rationale, alternatives) =>
@@ -257,9 +241,6 @@ export function Exploration({
                 onProviders={onProviders}
                 onContext={() => onContext(run.id)}
                 onContinueBranch={continueBranch}
-                onAnswerIntent={(question, answer) =>
-                  act('answer_intent', { run_id: run.id, question_id: question, answer })
-                }
               />
             </Suspense>
           </RunEvidenceBoundary>
