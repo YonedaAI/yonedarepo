@@ -126,8 +126,9 @@ impl ReceiveSession {
     }
 
     /// One verification round. `input` adds what the adapter fetched since the last
-    /// (`commits: {id: tree}`, `trees: [{id, data_b64} | {id, entries}]`, `present: [id]`)
-    /// to verify `tips`; answers `{need: ...}` or the verified commits to record.
+    /// (`commits: {id: tree}`, `trees: [{id, data_b64} | {id, entries}]`, `present: [id]`,
+    /// and once the policy's `secret_allow`) to verify `tips`; answers `{need: ...}` or the
+    /// verified commits to record. A carried file holding a credential refuses the push.
     pub fn verify(&mut self, input: &Value) -> Result<Value> {
         for (id, tree) in input["commits"].as_object().into_iter().flatten() {
             let tree = ObjectId::parse(tree.as_str().unwrap_or_default())?;
@@ -136,6 +137,10 @@ impl ReceiveSession {
         for tree in input["trees"].as_array().into_iter().flatten() {
             let id = ObjectId::parse(&string(tree, "id")?)?;
             self.verifier.add_tree(id, supplied_tree(&id, tree)?);
+        }
+        if let Some(allow) = input.get("secret_allow").filter(|a| !a.is_null()) {
+            self.verifier.secret_allow = serde_json::from_value(allow.clone())
+                .map_err(|_| bad("secret_allow must list {path, rule}"))?;
         }
         for id in input["present"].as_array().into_iter().flatten() {
             self.verifier

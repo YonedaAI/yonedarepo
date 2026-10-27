@@ -40,6 +40,7 @@ export async function receivePack(
   ctx: RepoContext,
   objects: RepoObjects,
   body: ReadableStream<Uint8Array>,
+  secretAllow: Json[],
 ): Promise<Response> {
   const session = ReceiveSession.open();
   try {
@@ -69,11 +70,15 @@ export async function receivePack(
     const tips = going.flatMap((c) => (c.new ? [c.new] : []));
     let fresh = new Set<string>();
     try {
-      if (tips.length > 0) fresh = await store(ctx, objects, session, tips);
+      if (tips.length > 0) fresh = await store(ctx, objects, session, tips, secretAllow);
     } catch (e) {
       // Nothing moved: report why for every ref still going.
-      for (const c of going) outcomes.set(c.ref, reason(e));
-      return report(commands, outcomes, reason(e), sideBand, messages);
+      // A credential refuses the whole push by path and line (never its text); the pack
+      // itself unpacked fine.
+      const secret = (e as any)?.code === 'SECRET_DETECTED';
+      const why = secret ? String((e as any).message) : reason(e);
+      for (const c of going) outcomes.set(c.ref, why);
+      return report(commands, outcomes, secret ? null : why, sideBand, messages);
     }
     if (atomic) await moveAll(ctx, going, outcomes);
     else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
@@ -124,8 +129,9 @@ async function store(
   objects: RepoObjects,
   session: ReceiveSession,
   tips: string[],
+  secretAllow: Json[],
 ) {
-  let input: Json = { op: 'verify', tips };
+  let input: Json = { op: 'verify', tips, secret_allow: secretAllow };
   let verified: Json | null = null;
   for (let round = 0; round < VERIFY_ROUNDS && !verified; round++) {
     const step = session.call(input);
