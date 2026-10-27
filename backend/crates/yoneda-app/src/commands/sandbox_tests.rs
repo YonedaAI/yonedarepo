@@ -33,27 +33,112 @@ fn glm() -> Value {
     json!([{"provider":"zai","model":"glm-5.3-flash","strategy":"minimal"}])
 }
 
+fn two() -> Value {
+    json!([glm()[0], {"provider":"mimo","model":"mimo-v2.6-flash","strategy":"other"}])
+}
+
 fn claimed(db: &NativeStore) -> Value {
     call(db, start(glm(), json!({}))).unwrap();
     call(db, json!({"op":"claim","job_id":"job:run-s:agent-1"})).unwrap()
 }
 
 #[test]
-fn only_single_agent_runs_take_the_sandbox() {
+fn a_compare_run_takes_one_sandbox_per_agent() {
     let db = repository();
-    let two = json!([glm()[0], {"provider":"mimo","model":"mimo-v2.6-flash","strategy":"other"}]);
-    assert_eq!(
-        call(&db, start(two, json!({}))).unwrap_err().code,
-        "NOT_SUPPORTED"
-    );
-    let team = start(glm(), json!({"mode":"collaborate"}));
-    assert_eq!(call(&db, team).unwrap_err().code, "NOT_SUPPORTED");
-    let run = call(&db, start(glm(), json!({}))).unwrap();
+    let run = call(&db, start(two(), json!({}))).unwrap();
     assert_eq!(run["runtime"], TRANSPORT);
+    assert_eq!(run["mode"], "compare");
     // Evaluation and readers keep the run's lazy-source transport.
     assert_eq!(run["workspace_transport"], "api-source-v1");
-    let execution = get(&db, "executions", "run-s:agent-1").unwrap();
-    assert_eq!(execution["runtime"], TRANSPORT);
+    assert!(
+        run["comparison"].is_null(),
+        "no reviewer: the owner chooses"
+    );
+    for n in 1..=2 {
+        let execution = get(&db, "executions", &format!("run-s:agent-{n}")).unwrap();
+        assert_eq!(execution["runtime"], TRANSPORT);
+        let job = call(
+            &db,
+            json!({"op":"claim","job_id":format!("job:run-s:agent-{n}")}),
+        )
+        .unwrap();
+        assert_eq!(job["sandbox"], true);
+        assert_eq!(job["lease_until"], 1000 + LEASE_MS);
+    }
+}
+
+#[test]
+fn team_delegation_and_reviewer_runs_are_refused() {
+    let db = repository();
+    let refused = |agents: Value, extra: Value| call(&db, start(agents, extra)).unwrap_err().code;
+    assert_eq!(
+        refused(glm(), json!({"mode":"collaborate"})),
+        "NOT_SUPPORTED"
+    );
+    // A reviewer request is refused before it reaches the guard; the guard refuses it too.
+    assert!(call(&db, start(two(), json!({"comparison":{"version":1}}))).is_err());
+    let mut run = json!({});
+    let reviewed = freeze(
+        &json!({"agents":two(),"comparison":{"version":1}}),
+        true,
+        false,
+        &DelegationPolicy::disabled(2),
+        &mut run,
+    );
+    assert_eq!(reviewed.unwrap_err().code, "NOT_SUPPORTED");
+    assert!(run["runtime"].is_null());
+    let delegation = json!({"enabled":true,"max_depth":1,"max_executions":3});
+    assert_eq!(
+        refused(two(), json!({"delegation":delegation})),
+        "NOT_SUPPORTED"
+    );
+    let seven: Vec<Value> = (0..7)
+        .map(|n| json!({"provider":"zai","model":"glm-5.3-flash","strategy":format!("s{n}")}))
+        .collect();
+    assert_eq!(refused(json!(seven), json!({})), "INVALID_INPUT");
+}
+
+/// Records agent `n`'s pushed commit and passes its check; returns the candidate id.
+fn eligible(db: &NativeStore, n: usize, commit: char) -> String {
+    let job = call(
+        db,
+        json!({"op":"claim","job_id":format!("job:run-s:agent-{n}")}),
+    )
+    .unwrap();
+    let id = format!("sandbox-candidate-{n}");
+    call(
+        db,
+        json!({"op":"sandbox_finish","job_id":job["id"],"epoch":job["epoch"],
+        "result":{"id":id,"revision":{"repository":BASE,"commit":commit.to_string().repeat(40)},
+        "parents":["a".repeat(40)],"tree":"d".repeat(40),"paths":["src/math.js"],
+        "summary":"Added add(a,b)","diff_digest":"e".repeat(64)}}),
+    )
+    .unwrap();
+    let check = call(db, json!({"op":"claim","job_id":format!("evaluate:{id}")})).unwrap();
+    assert_eq!(check["sandbox_check"], true);
+    verify(db, &check, check_report(json!(0))).unwrap();
+    id
+}
+
+#[test]
+fn the_owner_publishes_one_of_several_checked_sandbox_candidates() {
+    let db = repository();
+    call(&db, start(two(), json!({}))).unwrap();
+    let first = eligible(&db, 1, 'b');
+    let second = eligible(&db, 2, 'c');
+    for id in [&first, &second] {
+        assert_eq!(get(&db, "candidates", id).unwrap()["status"], "eligible");
+    }
+    // The existing owner decision: no reviewer pick is needed among sandbox candidates.
+    let receipt = call(
+        &db,
+        json!({"op":"accept","request_id":"pick-second","candidate":second,
+        "expected_commit":"a".repeat(40),"expected_version":0,
+        "rationale":"Smaller change","alternatives":[first]}),
+    )
+    .unwrap();
+    assert_eq!(receipt["status"], "publication_pending");
+    assert_eq!(receipt["commit"], "c".repeat(40));
 }
 
 #[test]
@@ -226,6 +311,33 @@ fn a_sandbox_candidate_is_checked_by_one_fresh_sandbox_attempt() {
     let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":policy}});
     claimed_check(&db, &mut evaluator, 1000).unwrap();
     assert_eq!(evaluator["sandbox_check"], true);
+}
+
+#[test]
+fn a_check_without_sandbox_capacity_is_retried_and_never_fails_the_candidate() {
+    let db = repository();
+    let job = checked(&db);
+    let deferred = call(
+        &db,
+        json!({"op":"defer_job","job_id":job["id"],"epoch":job["epoch"],
+        "reason":"container_capacity","now":1500}),
+    )
+    .unwrap();
+    assert_eq!(deferred["status"], "queued");
+    let candidate = get(&db, "candidates", "sandbox-candidate").unwrap();
+    assert_eq!(candidate["status"], "evaluating");
+    // After its backoff: a fresh check sandbox under the next epoch, with a fresh lease.
+    let again = call(
+        &db,
+        json!({"op":"claim","job_id":"evaluate:sandbox-candidate","now":10_000}),
+    )
+    .unwrap();
+    assert_eq!(again["sandbox_check"], true);
+    assert!(again["epoch"].as_i64() > job["epoch"].as_i64());
+    assert_eq!(again["lease_until"], 10_000 + CHECK_LEASE_MS);
+    verify(&db, &again, check_report(json!(0))).unwrap();
+    let candidate = get(&db, "candidates", "sandbox-candidate").unwrap();
+    assert_eq!(candidate["status"], "eligible");
 }
 
 #[test]
