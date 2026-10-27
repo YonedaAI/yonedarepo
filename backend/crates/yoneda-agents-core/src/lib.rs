@@ -1,5 +1,5 @@
-//! Agent-layer contracts: runs, teams, providers, budgets, guided demo, evaluation and the
-//! per-attempt source workspace. The source platform (`yoneda-platform`) never depends on
+//! Agent-layer contracts: runs, teams, providers, budgets, evaluation and the frozen source a
+//! run starts from. The source platform (`yoneda-platform`) never depends on
 //! this crate; it sees agents only as API principals.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -7,26 +7,19 @@ pub use yoneda_core::{Error, Result, digest, fingerprint, hex, validate_path};
 
 pub mod adaptive_team;
 pub mod agents;
-pub mod autonomy;
 pub mod build;
 pub mod comparison;
 pub mod conflict;
 pub mod conflict_capture;
 pub mod context;
-pub mod context_study;
 pub mod context_usage;
-pub mod guided;
 pub mod model_budget;
 pub mod provider_routing;
 pub mod providers;
-pub mod resolver_scope;
 pub mod retry;
 mod source;
-pub mod source_changeset;
-pub mod source_workspace;
+pub mod source_revision;
 pub mod team;
-/// Remote MCP tool contracts shared with the Worker transport.
-pub const REMOTE_MCP_TOOLS: &str = include_str!("mcp_remote_tools.json");
 pub use source::{FileEntry, Workspace};
 pub const MAX_WORKSPACE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_FILES: usize = 500;

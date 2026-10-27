@@ -12,27 +12,26 @@ fn checked_branch_can_continue_without_canonical_publication() {
     assert_eq!(run["working_branch_id"], "development");
     let coding = "job:run-one:agent-1";
     call(&db, json!({"op":"claim","job_id":coding})).unwrap();
-    let registration = source_kit::finish_job(&db, coding, 1000, json!({}));
-    let capture = "capture:run-one:agent-1";
-    call(&db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(&db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Registration implemented"}))})).unwrap();
+    run_kit::land(
+        &db,
+        coding,
+        1000,
+        json!({"id":"candidate-a","revision":{"repository":"yoneda-dev/retry","commit":"c".repeat(40)},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Registration implemented"}),
+    );
     call(&db, json!({"op":"claim","job_id":"evaluate:candidate-a"})).unwrap();
     let policy = crate::storage::repo(&db).unwrap()["policy"].clone();
-    call(&db,json!({"op":"finish","job_id":"evaluate:candidate-a","epoch":1,"result":{"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/fork-a","commit":"c".repeat(40)},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();
+    call(&db,json!({"op":"finish","job_id":"evaluate:candidate-a","epoch":1,"result":{"id":"evaluation-a","candidate":"candidate-a","revision":{"repository":"yoneda-dev/retry","commit":"c".repeat(40)},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();
     select_on_branch(&db, "run-one", "candidate-a", &"a".repeat(40), 0);
     let branch = call(&db, json!({"op":"working_branch","id":"development"})).unwrap();
     assert_eq!(branch["working_commit"], "c".repeat(40));
-    assert_eq!(
-        branch["working_revision"]["repository"],
-        "yoneda-dev/fork-a"
-    );
+    assert_eq!(branch["working_revision"]["repository"], "yoneda-dev/retry");
     assert_eq!(
         crate::storage::repo(&db).unwrap()["published_commit"],
         "a".repeat(40)
     );
     let update = call(&db,json!({"op":"start_run","id":"feature","intent":"Add a waitlist","working_branch_id":"development","expected_working_commit":"c".repeat(40),"expected_working_version":1,"agents":one_agent()})).unwrap();
     assert_eq!(update["base"]["commit"], "c".repeat(40));
-    assert_eq!(update["base"]["repository"], "yoneda-dev/fork-a");
+    assert_eq!(update["base"]["repository"], "yoneda-dev/retry");
     assert!(
         update["context_records"]
             .as_array()

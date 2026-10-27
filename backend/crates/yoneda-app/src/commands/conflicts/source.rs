@@ -51,34 +51,6 @@ pub(super) fn compact<S: SqlStore>(db: &S, record: &mut Value) -> Result<()> {
     }
     Ok(())
 }
-pub(super) fn validate_capture<S: SqlStore>(
-    db: &S,
-    job: &Value,
-    result: &Value,
-    now: i64,
-) -> Result<()> {
-    super::super::capture_source::validate(db, job, result, now)?;
-    // The enclosing finish already checks the active lease; this path validates SDK readback.
-    let readback = &result["readback"];
-    let expected = json!([
-        job["payload"]["expected_head"],
-        job["payload"]["candidate"]["revision"]["commit"]
-    ]);
-    if readback["parents"] != expected
-        || result["parents"] != expected
-        || readback["observed_head"] != job["payload"]["expected_head"]
-        || readback["version"] != job["payload"]["expected_version"]
-        || readback["candidate_commit"] != result["revision"]["commit"]
-        || readback["captured_paths"] != result["paths"]
-        || readback["resolver_delta_paths"] != result["resolver_delta_paths"]
-    {
-        return Err(Error::new(
-            "INVALID_CONFLICT_RESULT",
-            "API resolver differs from trusted Git readback",
-        ));
-    }
-    Ok(())
-}
 pub(super) fn paths<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     super::support::owner(c)?;
     let id = string(c, "conflict_id")?;

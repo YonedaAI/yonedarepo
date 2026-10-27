@@ -1,32 +1,13 @@
-//! Owner conflict inventory, refresh and scoped resolver operations.
+//! Owner conflict inventory, refresh and the link to a sandbox resolver run.
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
 mod inventory;
 mod refresh;
-mod repair_authority;
-mod resolver;
-mod resolver_capture;
 mod sandbox_resolver;
 mod source;
 mod support;
 mod target;
-pub(super) fn complete_resolver_capture<S: SqlStore>(
-    db: &S,
-    job: &Value,
-    result: &Value,
-    now: i64,
-) -> Result<Value> {
-    resolver_capture::complete_resolver_capture(db, job, result, now)
-}
-pub(super) fn resolver_evaluated<S: SqlStore>(
-    db: &S,
-    candidate: &str,
-    eligible: bool,
-    now: i64,
-) -> Result<()> {
-    resolver_capture::resolver_evaluated(db, candidate, eligible, now)
-}
 #[cfg(test)]
 #[path = "tests/conflicts.rs"]
 mod tests;
@@ -36,7 +17,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         "conflict_status" => inventory::status(db, c),
         "conflict_paths" => source::paths(db, c),
         "refresh_candidate" => refresh::refresh(db, c, now),
-        "resolve_conflict" => resolver::resolve(db, c, now),
+        // Conflicts resolve in a sandbox run the adapter starts and links below.
+        "resolve_conflict" => Err(Error::new(
+            "SANDBOX_REQUIRED",
+            "Conflicts are resolved in a sandbox run",
+        )),
         "conflict_resolver_run" => sandbox_resolver::link(db, c, now),
         "conflict_refresh_complete" => refresh::complete(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown conflict operation")),

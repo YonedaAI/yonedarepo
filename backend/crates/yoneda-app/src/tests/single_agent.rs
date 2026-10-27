@@ -14,13 +14,15 @@ pub(super) fn eligible(db: &NativeStore, run: &str, index: usize, commit: &str) 
     let execution = format!("{run}:agent-{index}");
     let agent = format!("job:{execution}");
     let claimed = call(db, json!({"op":"claim","job_id":agent})).unwrap();
-    let registration = source_kit::finish_agent(db, &claimed, 1000);
-    let capture = format!("capture:{execution}");
-    call(db, json!({"op":"claim","job_id":capture})).unwrap();
     let candidate = format!("candidate-{run}-{index}");
-    call(db, json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({
-        "id":candidate,"revision":{"repository":"yoneda-dev/fixture-fork","commit":commit},
-        "tree":"f".repeat(40),"paths":["public/index.html"],"diff":"fixture diff","summary":"Website fixture"}))})).unwrap();
+    run_kit::land(
+        db,
+        claimed["id"].as_str().unwrap(),
+        1000,
+        json!({
+        "id":candidate,"revision":{"repository":"yoneda-dev/retry","commit":commit},
+        "tree":"f".repeat(40),"paths":["public/index.html"],"diff":"fixture diff","summary":"Website fixture"}),
+    );
     let evaluator = format!("evaluate:{candidate}");
     call(db, json!({"op":"claim","job_id":evaluator})).unwrap();
     call(db, json!({"op":"register_site","job_id":evaluator,"epoch":1,

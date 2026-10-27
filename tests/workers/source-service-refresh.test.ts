@@ -23,7 +23,7 @@ async function reservedRefresh() {
   await call({ op: 'init', id: repo, name: 'Synthetic recorded refresh', workspace: 'source_owner',
     remote: { namespace: 'platform', name: repo, branch: 'main' }, commit: base.commit, policy: reviewerPolicy });
   await call({ op: 'start_run', id: 'native-refresh-run', intent: 'Local sparse refresh fixture',
-    workspace_transport: 'api-source-v1', _source_transport_approved: true,
+    workspace_transport: 'sandbox-cli-v1', _source_transport_approved: true,
     _source_base: { ...base, tree: 'b'.repeat(40) },
     agents: [{ provider: 'zai', model: 'glm-5.3-flash', strategy: 'Synthetic refresh scope' }] });
   const stub = bindings.REPOSITORIES.get(bindings.REPOSITORIES.idFromName(repo));
@@ -47,7 +47,7 @@ async function reservedRefresh() {
 
 it('serves a compact frozen header whose declared scope is a path reference, never an empty list', async () => {
   const f = await reservedRefresh();
-  expect(f.job.payload).toMatchObject({ workspace_transport: 'api-source-v1', capture_subtype: 'refresh_candidate' });
+  expect(f.job.payload).toMatchObject({ workspace_transport: 'sandbox-cli-v1', capture_subtype: 'refresh_candidate' });
   const header = await f.call({ op: 'source_refresh_context', ...f.identity });
   expect(header).toMatchObject({ version: 1, base: f.base, head: f.head, candidate: f.candidate, expected_version: 1 });
   expect(header.declared_paths).toBeUndefined();

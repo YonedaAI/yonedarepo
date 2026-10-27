@@ -1,11 +1,11 @@
 use super::*;
-use crate::commands::source_kit;
+use crate::commands::run_kit;
 use crate::native::NativeStore;
 pub(super) fn call(db: &NativeStore, mut input: Value) -> Result<Value> {
     if input.get("now").is_none() {
         input["now"] = json!(1000);
     }
-    source_kit::approve_start(db, &mut input);
+    run_kit::approve_start(db, &mut input);
     crate::execute(db, input)
 }
 pub(super) fn db() -> NativeStore {
@@ -28,11 +28,14 @@ pub(super) fn finish_candidate(db: &NativeStore, eid: &str, cid: &str, commit: &
         call(db, json!({"op":"claim","job_id":format!("job:{eid}")})).unwrap();
     }
     let job = get(db, "jobs", &format!("job:{eid}")).unwrap();
-    let registration = source_kit::finish_agent(db, &job, 1000);
-    call(db, json!({"op":"claim","job_id":format!("capture:{eid}")})).unwrap();
-    call(db,json!({"op":"finish","job_id":format!("capture:{eid}"),"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":cid,"revision":{"repository":"test/fork","commit":commit},"tree":"f".repeat(40),"paths":["src/booking.rs"],"summary":"Booking implementation","diff_digest":"d".repeat(64)}))})).unwrap();
+    run_kit::land(
+        db,
+        job["id"].as_str().unwrap(),
+        1000,
+        json!({"id":cid,"revision":{"repository":"test/compare","commit":commit},"tree":"f".repeat(40),"paths":["src/booking.rs"],"summary":"Booking implementation","diff_digest":"d".repeat(64)}),
+    );
     call(db, json!({"op":"claim","job_id":format!("evaluate:{cid}")})).unwrap();
     let p = repo(db).unwrap()["policy"].clone();
-    call(db,json!({"op":"finish","job_id":format!("evaluate:{cid}"),"epoch":1,"result":{"id":format!("evaluation-{cid}"),"candidate":cid,"revision":{"repository":"test/fork","commit":commit},"policy":p["version"],"suite":p["suite"],"environment":p["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"Synthetic native fixture"}]}})).unwrap();
+    call(db,json!({"op":"finish","job_id":format!("evaluate:{cid}"),"epoch":1,"result":{"id":format!("evaluation-{cid}"),"candidate":cid,"revision":{"repository":"test/compare","commit":commit},"policy":p["version"],"suite":p["suite"],"environment":p["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"Synthetic native fixture"}]}})).unwrap();
     cid.to_owned()
 }

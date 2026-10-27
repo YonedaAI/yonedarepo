@@ -4,14 +4,16 @@ use super::*;
 fn checked_step(db: &NativeStore, run: &str, candidate: &str, commit: &str) {
     let coding = format!("job:{run}:agent-1");
     let claimed = call(db, json!({"op":"claim","job_id":coding})).unwrap();
-    let registration = source_kit::finish_agent(db, &claimed, 1000);
-    let capture = format!("capture:{run}:agent-1");
-    call(db, json!({"op":"claim","job_id":capture})).unwrap();
-    call(db,json!({"op":"finish","job_id":capture,"epoch":1,"result":source_kit::with_lineage(&registration,json!({"id":candidate,"revision":{"repository":"yoneda-dev/fork-a","commit":commit},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Checked step"}))})).unwrap();
+    run_kit::land(
+        db,
+        claimed["id"].as_str().unwrap(),
+        1000,
+        json!({"id":candidate,"revision":{"repository":"yoneda-dev/retry","commit":commit},"tree":"d".repeat(40),"paths":["src/booking.rs"],"summary":"Checked step"}),
+    );
     let evaluate = format!("evaluate:{candidate}");
     call(db, json!({"op":"claim","job_id":evaluate})).unwrap();
     let policy = crate::storage::repo(db).unwrap()["policy"].clone();
-    call(db,json!({"op":"finish","job_id":evaluate,"epoch":1,"result":{"id":format!("evaluation-{candidate}"),"candidate":candidate,"revision":{"repository":"yoneda-dev/fork-a","commit":commit},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();
+    call(db,json!({"op":"finish","job_id":evaluate,"epoch":1,"result":{"id":format!("evaluation-{candidate}"),"candidate":candidate,"revision":{"repository":"yoneda-dev/retry","commit":commit},"policy":policy["version"],"suite":policy["suite"],"environment":policy["environment"],"evidence":"e".repeat(64),"checks":[{"name":"build","status":"pass","detail":"compiled"},{"name":"behavior","status":"pass","detail":"verified"}]}})).unwrap();
 }
 
 /// Two checked steps: the publishable head's base is the intermediate commit `c`, not canonical `a`.

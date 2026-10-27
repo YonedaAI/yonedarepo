@@ -57,13 +57,6 @@ fn hashed_capture_lifecycle_events_identify_the_saved_execution() {
     let capture = fixture::call(&db, json!({"op":"claim","job_id":id}), 1000).unwrap();
     fixture::call(
         &db,
-        json!({"op":"progress","job_id":id,"epoch":capture["epoch"],
-        "progress":{"stage":"capture","run_id":"forged","execution_id":"neighbor"}}),
-        1001,
-    )
-    .unwrap();
-    fixture::call(
-        &db,
         json!({"op":"fail","job_id":id,"epoch":capture["epoch"],
         "retryable":false,"error":"Capture unavailable"}),
         1002,
@@ -71,7 +64,7 @@ fn hashed_capture_lifecycle_events_identify_the_saved_execution() {
     .unwrap();
     let response = fixture::call(&db, json!({"op":"events"}), 1002).unwrap();
     let events = response["events"].as_array().unwrap();
-    for kind in ["job.started", "job.progress", "job.failed"] {
+    for kind in ["job.started", "job.failed"] {
         let record = events
             .iter()
             .find(|event| event["kind"] == kind && event["data"]["id"] == id)

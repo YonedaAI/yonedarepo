@@ -1,4 +1,4 @@
-//! Agent completion freezes source transport before trusted capture.
+//! A contribution's completion queues the trusted platform capture of its submission.
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
@@ -14,39 +14,17 @@ pub(super) fn complete<S: SqlStore>(db: &S, j: &Value, result: &Value, now: i64)
     }
     {
         let mut payload = json!({"execution":e,"run_id":run_id,"base":e["base"]});
-        match j["payload"]["workspace_transport"].as_str() {
-            Some("api-source-v1") => payload = super::source::payload(db, j, result, now)?,
-            Some("platform-branch-v1") => {
-                // The bound submission, never a commit named by the contributor's finish.
-                payload["capture_subtype"] = json!("platform_commit");
-                payload["contribution"] = j["submitted_revision"].clone();
-            }
-            _ => {
-                return Err(Error::new(
-                    "INVALID_CAPTURE",
-                    "Attempts submit a sealed API source workspace or a platform contribution",
-                ));
-            }
+        // Sandbox attempts finish through `sandbox_finish`; only a platform contribution
+        // (an external agent's bound submission) completes here and is captured.
+        if j["payload"]["workspace_transport"] != "platform-branch-v1" {
+            return Err(Error::new(
+                "INVALID_CAPTURE",
+                "Attempts submit a platform contribution",
+            ));
         }
-        if let Some(resolver) = j["payload"].get("conflict_resolver") {
-            if payload["capture_subtype"] != "source_changeset" {
-                return Err(Error::new(
-                    "INVALID_CAPTURE",
-                    "Conflict resolution needs a sealed source workspace",
-                ));
-            }
-            payload["conflict_resolver"] = resolver.clone();
-            payload["source_resolution"] = json!(true);
-            payload["conflict_id"] = resolver["conflict_id"].clone();
-            payload["candidate"] = resolver["candidate"].clone();
-            payload["expected_head"] = resolver["expected_head"].clone();
-            payload["expected_version"] = resolver["expected_version"].clone();
-            payload["merge_workspace_revision"] = resolver["merge_workspace_revision"].clone();
-            // The resolver may edit any valid path except these; `conflict_paths`
-            // records only the actually conflicting paths.
-            payload["conflict_paths"] = e["conflict_paths"].clone();
-            payload["resolver_protected_paths"] = e["resolver_protected_paths"].clone();
-        }
+        // The bound submission, never a commit named by the contributor's finish.
+        payload["capture_subtype"] = json!("platform_commit");
+        payload["contribution"] = j["submitted_revision"].clone();
         job(db, &format!("capture:{eid}"), "capture", now, payload)?;
         e["status"] = json!("capturing");
     }

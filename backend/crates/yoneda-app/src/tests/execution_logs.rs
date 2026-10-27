@@ -34,7 +34,7 @@ fn logs_derive_identity_drop_private_fields_and_fence_expired_attempts() {
         "NOT_FOUND"
     );
     let mut expired = command;
-    expired["now"] = json!(999999);
+    expired["now"] = json!(9_000_000);
     assert_eq!(call(&db, expired).unwrap_err().code, "FENCED");
 }
 

@@ -1,4 +1,4 @@
-//! Binary-safe source manifest shared by Artifacts, capture and clean execution.
+//! Binary-safe file manifest (site files a check registers).
 use crate::{Error, Result};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use schemars::JsonSchema;
@@ -15,20 +15,6 @@ pub struct FileEntry {
     pub encoding: Option<String>,
 }
 impl FileEntry {
-    pub fn from_bytes(bytes: Vec<u8>, executable: bool) -> Self {
-        match String::from_utf8(bytes) {
-            Ok(content) => Self {
-                content,
-                executable,
-                encoding: None,
-            },
-            Err(error) => Self {
-                content: STANDARD.encode(error.as_bytes()),
-                executable,
-                encoding: Some("base64".into()),
-            },
-        }
-    }
     pub fn bytes(&self) -> Result<Vec<u8>> {
         if self.content.len() > crate::MAX_WORKSPACE_BYTES * 4 / 3 + 4 {
             return Err(Error::new(
