@@ -174,6 +174,9 @@ export async function manyRepoBurst(platform, { client, key, target, repos = 20,
     commit_p95_ms: latency(writes.filter((w) => ok(w.commit)).map((w) => w.commit.ms)).p95_ms,
     // Where commit time goes: each Server-Timing phase's p50/p95 across the writers.
     commit_phases: Object.fromEntries(Object.entries(phases(writes.map((w) => w.commit))).map(([k, v]) => [k, `${v.p50_ms}/${v.p95_ms}`])),
+    // Phases only some commits report (a shard instance that had just started, a shard
+    // already serving others): how many commits reported each.
+    commit_phase_samples: Object.fromEntries(Object.entries(phases(writes.map((w) => w.commit))).filter(([, v]) => v.samples < writes.filter((w) => ok(w.commit)).length).map(([k, v]) => [k, v.samples])),
   });
   assert.equal(metrics.lands_ok, repos * writers, 'Not every writer landed');
   assert.equal(metrics.reads_ok, repos * writers, `Not every file read back: ${readFailures.slice(0, 5).join('; ')}`);
