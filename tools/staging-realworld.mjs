@@ -27,7 +27,7 @@
 //        node tools/staging-realworld.mjs --sandbox-smoke --team | --team-conflict [...]
 //          (an owner-written two-task team: both members land on the team branch through the
 //          platform merge and its candidate is eligible; or two tasks on one line: one resume)
-//        node tools/staging-realworld.mjs --webhooks --hook-receiver <origin>
+//        node tools/staging-realworld.mjs --webhooks --receiver <origin>
 //          (= --only 0,hooks: a hook's signed deliveries to the bench Worker's /hooks/<box>,
 //          one scripted failure retried, log order, refusal of an unsafe target, delete)
 //        node tools/staging-realworld.mjs --fund <username>
@@ -83,7 +83,7 @@ const { values } = parseArgs({
     // The webhook gate alone (items 0 and hooks), against a receiver origin serving
     // /hooks/<box> (tools/fanout-bench/worker.js) that the platform may call.
     webhooks: { type: 'boolean', default: false },
-    'hook-receiver': { type: 'string' },
+    receiver: { type: 'string' },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -161,7 +161,7 @@ await step('sandbox', 'Sandbox smoke: a stock CLI in a Cloudflare Sandbox pushes
   sandboxSmoke({ account, owner, username: kit.KIT_USERNAME, provider: values['smoke-provider'], cli: values.cli ?? null, agents: Number(values.agents ?? 1), team: values['team-conflict'] ? 'conflict' : values.team ? 'disjoint' : null, timeoutMs: Number(values['smoke-timeout'] ?? (values.team || values['team-conflict'] ? 900 : 300)) * 1000, checkWaitMs: Number(values['smoke-check-wait'] ?? 180) * 1000 }, m),
 );
 await step('hooks', 'Webhooks: signed, ordered, retried deliveries to a receiver', (m) =>
-  webhookFlow(platformAccount, { receiver: values['hook-receiver']?.replace(/\/$/, ''), key: BENCH_KEY }, m),
+  webhookFlow(platformAccount, { receiver: values.receiver?.replace(/\/$/, ''), key: BENCH_KEY }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));

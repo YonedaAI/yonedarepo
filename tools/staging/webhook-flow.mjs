@@ -24,7 +24,7 @@ async function box(receiver, key, name, method = 'GET', body) {
 
 /** `receiver`: the bench Worker origin serving `/hooks/<box>`; `key`: its BENCH_KEY. */
 export async function webhookFlow(platform, { receiver, key }, metrics) {
-  if (!receiver) return { skip: 'No --hook-receiver (a host the platform may call)' };
+  if (!receiver) return { skip: 'No --receiver (a host the platform may call)' };
   if (!key) return { skip: 'BENCH_KEY not in staging-bench.env' };
   const name = `kit-hooks-${Date.now()}`;
   const repo = await platform.post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files: [{ path: 'README.md', content_b64: b64('# Hooks\n') }], author });
