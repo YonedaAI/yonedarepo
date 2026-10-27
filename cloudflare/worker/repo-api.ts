@@ -227,7 +227,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return { ...created, token: secret };
   }
   if (resource === 'tokens' && sha && req.method === 'DELETE')
-    return withHeadRefresh(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha }));
+    return withHeadRefresh(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha }), true);
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
@@ -252,9 +252,11 @@ async function batchRefs(ctx: RepoContext, body: Json) {
   return { version: result.version, refs: result.refs };
 }
 
-async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
+/** Runs an access change, then republishes main's head (after a revocation, `revoked`,
+ * before answering: see `refreshHead`). */
+async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>, revoked = false) {
   const done = await change;
-  await refreshHead(env, repo);
+  await refreshHead(env, repo, revoked);
   return done;
 }
 

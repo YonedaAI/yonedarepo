@@ -16,6 +16,7 @@ import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-
 import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
+import { readRefs } from './repo-snapshots';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -30,7 +31,7 @@ export const operations: Record<string, Operation> = {
     ]);
     return { ...status, objects: mergeOutboxes([status.objects, ...shards]) };
   },
-  git_refs: (ctx, a) => ctx.call({ op: 'repo_refs', ...version(a) }),
+  git_refs: readRefs,
   git_log: (ctx, a) =>
     a.path
       ? pathHistory(ctx, a)

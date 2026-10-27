@@ -1,10 +1,11 @@
 // Reading files and directories: at a commit, at a branch and version, or (the default for
 // main) at main's published head, which serves landed changesets before their Git commit
-// is projected. Every read is checked against the caller's directory grant first.
+// is projected. Every read is checked against the caller's directory grant first, and
+// resolved without the authority where published or immutable data answers (repo-snapshots).
 import { decide, outside, requirePath } from './repo-grants';
-import { readFromHead } from './repo-head';
 import type { RepoObjects } from './repo-objects';
-import { ApiError, type Json, type RepoContext, target, walk } from './repo-ops';
+import { ApiError, type Json, type RepoContext, walk } from './repo-ops';
+import { authorizeRead, headAccess, readTarget } from './repo-snapshots';
 import { type TreeEntry, toBase64 } from './repo-stores';
 
 function text(bytes: Uint8Array) {
@@ -20,9 +21,11 @@ function text(bytes: Uint8Array) {
 
 export async function listTree(ctx: RepoContext, args: Json) {
   const path = String(args.path ?? '').replace(/\/$/, '');
+  // Main's latest tree is the published head's (read at least at `min_version`).
+  const head = await authorizeRead(ctx, Number(args.min_version ?? 0));
   const view = await decide(ctx, [path], [path]);
   if (!view.paths[0] && !view.dirs[0]) throw outside();
-  const where = await target(ctx, args.commit ?? args.ref, args.at);
+  const where = await readTarget(ctx, head, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
   const entry = await walk(objects, where.tree, path);
   if (entry.type !== 'tree') throw new ApiError('NOT_FOUND', `${path} is not a directory`);
@@ -60,11 +63,12 @@ export async function readFile(ctx: RepoContext, args: Json) {
     (args.at === undefined || args.at === null || args.at === '') &&
     [undefined, null, '', 'main', 'refs/heads/main'].includes(args.ref);
   // Main's published head, unless its access snapshot refused the caller (the authority
-  // then decides, on the read below).
-  const fromHead = main ? await readFromHead(ctx, Number(args.min_version ?? 0)) : null;
-  if (fromHead) ctx.publish(fromHead.head, fromHead.access);
+  // then decides, on the read below). Other reads take only their access from it.
+  const fromHead = await headAccess(ctx, main ? Number(args.min_version ?? 0) : 0);
+  if (fromHead && main) ctx.publish(fromHead.head, fromHead.access);
+  else if (fromHead) ctx.authorize(fromHead.head, fromHead.access);
   await requirePath(ctx, path);
-  if (fromHead) {
+  if (fromHead && main) {
     const objects = await ctx.objects();
     const entry = await publishedEntry(objects, ctx.published as Json, path);
     if (!['blob', 'exec'].includes(entry.type))
@@ -82,7 +86,7 @@ export async function readFile(ctx: RepoContext, args: Json) {
       ...text(bytes),
     };
   }
-  const where = await target(ctx, args.commit ?? args.ref, args.at);
+  const where = await readTarget(ctx, fromHead?.head ?? null, args.commit ?? args.ref, args.at);
   const objects = await ctx.objects();
   const entry = await walk(objects, where.tree, path);
   if (!['blob', 'exec'].includes(entry.type))
