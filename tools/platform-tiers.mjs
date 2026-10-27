@@ -59,8 +59,11 @@ const repo = `/repos/${created.id}`;
 /** Commits one change, waits for its hosted Container check run, returns evidence tiers. */
 async function checked(path, text) {
   const made = await call(`${repo}/commits`, { ref: 'main', changes: [file(path, text)], message: `tiers ${path}`, author });
+  // A commit queues its required checks only when the platform starts them itself; ask
+  // for the run explicitly otherwise (as the kit's container check does).
+  if (!made.check_runs?.some((r) => r.name === 'unit')) await call(`${repo}/commits/${made.commit}/check-runs`, { name: 'unit' });
   for (let waited = 0; ; waited += 3000) {
-    assert.ok(waited < 300_000, `check run for ${made.commit} did not finish`);
+    assert.ok(waited < 600_000, `check run for ${made.commit} did not finish`);
     const detail = await call(`${repo}/commits/${made.commit}`);
     const check = detail.checks.find((c) => c.name === 'unit');
     if (check) {
