@@ -9,7 +9,7 @@
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
-import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -33,7 +33,7 @@ const loading = new Map<string, Promise<Json>>();
 type Holder = {
   head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
   access(repo: string): Promise<Json>;
-  refresh(repo: string, wait?: boolean): Promise<void>;
+  refresh(repo: string, access?: boolean): Promise<void>;
 };
 
 function holder(env: Env, repo: string): Holder | null {
@@ -154,6 +154,7 @@ export function noteBuilt(commit: string, paths: string[]) {
  * and its begins too when they write a path the commit wrote; without a version, its copy
  * of the head is dropped. */
 export function forgetHead(repo: string, version?: number, commit?: string) {
+  noteWrite(repo);
   if (version === undefined) {
     heads.delete(repo);
     return;
@@ -174,12 +175,14 @@ function beginFloor(repo: string, paths: string[]) {
   return floor;
 }
 
-/** Marks the published head stale. After an access change (the default) the holder
- * reloads before this returns; after a landing or projection it reloads in the background. */
-export async function refreshHead(env: Env, repo: string, change: 'access' | 'landing' = 'access') {
+/** Marks the published head stale after a landing, projection or access change. After an
+ * access change (`access`) it returns once the holder reloaded from a read that started
+ * after the change, so no reader is admitted by the access snapshot that change replaced. */
+export async function refreshHead(env: Env, repo: string, access = false) {
+  noteWrite(repo);
   heads.delete(repo);
   await holder(env, repo)
-    ?.refresh(repo, change === 'access')
+    ?.refresh(repo, access)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
 }
 

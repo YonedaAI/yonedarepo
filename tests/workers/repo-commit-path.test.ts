@@ -116,7 +116,7 @@ async function changedElsewhere(id: string, owner: { cookie: string }, command: 
   const auth = await credentials(new Request('https://yoneda/api/v1/repos', { headers: { cookie: owner.cookie } }), scoped);
   if (!auth) throw new Error('owner session expected');
   await caller(scoped, id, auth)(command);
-  await (fakeCombiners.get(`${id}#head`) as { refresh(repo: string, wait: boolean): Promise<void> }).refresh(id, true);
+  await (fakeCombiners.get(`${id}#head`) as { refresh(repo: string, access: boolean): Promise<void> }).refresh(id, true);
 }
 const later = () => vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 1001);
 

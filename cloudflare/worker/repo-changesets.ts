@@ -136,7 +136,7 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
         dispatchProjection(env, repo),
         ...[...refs].map((ref) => dispatchDerive(env, repo, ref)),
       ]).catch((e) => console.warn(`dispatch after projection failed: ${e?.message ?? e}`)),
-      refreshHead(env, repo, 'landing'),
+      refreshHead(env, repo),
     ]);
   return projected;
 }
@@ -213,7 +213,7 @@ export async function landChangesets(merger: RepoContext, ref: string): Promise<
       kickProjection(merger.env, merger.repo).catch((e) =>
         console.warn(`projection kick failed: ${e?.message ?? e}`),
       ),
-      refreshHead(merger.env, merger.repo, 'landing'),
+      refreshHead(merger.env, merger.repo),
     ]);
   return { settled: [...out.landed, ...out.failed], more: out.more, slow: out.slow.length > 0 };
 }

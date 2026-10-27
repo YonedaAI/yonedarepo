@@ -23,6 +23,8 @@ export class HeadHolder {
   #head: Json | null = null;
   #stale = true;
   #loading: Promise<Json> | null = null;
+  /** Bumped by an access change: loads started before it never set the head. */
+  #generation = 0;
 
   constructor(private readonly env: Env) {}
 
@@ -58,24 +60,23 @@ export class HeadHolder {
     return accessOf(this.#head ?? (await this.#load(repo, 0)));
   }
 
-  /** Marks the head stale. After a landing or projection (`wait` false) it reloads in the
-   * background; after an access change it reloads before answering, from a read that
-   * starts after the change. If that reload fails, nothing is served until one succeeds. */
-  async refresh(repo: string, wait = false) {
+  /** Marks the head stale. After a landing or projection it reloads in the background.
+   * After an access change (`access`) it drops the head it held, lets no load started
+   * before the change set it again, and answers once a fresh load has it; if that load
+   * fails, nothing is served until one succeeds. */
+  async refresh(repo: string, access = false) {
     this.#stale = true;
-    if (!wait) {
+    if (!access) {
       void this.#load(repo, 0).catch(() => {});
       return;
     }
-    // A load already running may have read the authority before the change.
-    await this.#loading?.catch(() => {});
-    try {
-      await this.#load(repo, 0);
-    } catch (e: any) {
-      this.#head = null;
-      // A deleted repository has no head to serve; that is the refresh it needed.
+    this.#generation++;
+    this.#head = null;
+    this.#loading = null;
+    // A deleted repository has no head to serve; that is the refresh it needed.
+    await this.#load(repo, 0).catch((e) => {
       if (e?.code !== 'GONE') throw e;
-    }
+    });
   }
 
   /** Settles once no load is running (tests stop in-process holders with it). */
@@ -86,21 +87,28 @@ export class HeadHolder {
   async #load(repo: string, minVersion: number): Promise<Json> {
     for (let attempt = 0; attempt < 2; attempt++) {
       // A load already running may have started before the version this caller needs.
-      this.#loading ??= (async () => {
-        this.#stale = false;
-        const head = await fetchHead(this.env, repo).catch((e) => {
-          // A deleted repository's head is never served again.
-          if (e?.code === 'GONE') this.#head = null;
-          throw e;
-        });
-        this.#head = head;
-        return head;
-      })().finally(() => {
-        this.#loading = null;
-      });
+      this.#loading ??= this.#fetch(repo);
       const head = await this.#loading;
       if (head.version >= minVersion) return head;
     }
     return this.#head as Json;
+  }
+
+  #fetch(repo: string): Promise<Json> {
+    const generation = this.#generation;
+    const current = () => generation === this.#generation;
+    const loading: Promise<Json> = (async () => {
+      this.#stale = false;
+      const head = await fetchHead(this.env, repo).catch((e) => {
+        // A deleted repository's head is never served again.
+        if (e?.code === 'GONE' && current()) this.#head = null;
+        throw e;
+      });
+      if (current()) this.#head = head;
+      return head;
+    })().finally(() => {
+      if (this.#loading === loading) this.#loading = null;
+    });
+    return loading;
   }
 }
