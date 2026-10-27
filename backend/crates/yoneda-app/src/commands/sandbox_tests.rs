@@ -48,8 +48,8 @@ fn a_compare_run_takes_one_sandbox_per_agent() {
     let run = call(&db, start(two(), json!({}))).unwrap();
     assert_eq!(run["runtime"], TRANSPORT);
     assert_eq!(run["mode"], "compare");
-    // Evaluation and readers keep the run's lazy-source transport.
-    assert_eq!(run["workspace_transport"], "api-source-v1");
+    // A sandbox run carries its own transport tag, not the lazy-source one.
+    assert_eq!(run["workspace_transport"], TRANSPORT);
     assert!(
         run["comparison"].is_null(),
         "no reviewer: the owner chooses"
@@ -219,7 +219,7 @@ fn the_pushed_commit_becomes_the_candidate_and_is_evaluated_exactly() {
         evaluator["payload"]["candidate"]["revision"]["commit"],
         "c".repeat(40)
     );
-    assert_eq!(evaluator["payload"]["workspace_transport"], "api-source-v1");
+    assert_eq!(evaluator["payload"]["workspace_transport"], TRANSPORT);
     let done = get(&db, "jobs", "job:run-s:agent-1").unwrap();
     assert_eq!(done["status"], "done");
     assert!(
@@ -394,25 +394,50 @@ fn an_invalid_check_report_is_refused() {
     assert_eq!(candidate["status"], "rejected");
 }
 
-#[test]
-fn checks_the_sandbox_cannot_run_stay_with_the_evaluator_container() {
-    // An immutable test bundle is installed only in the evaluator container.
+fn bundle_repository(app: bool) -> NativeStore {
     let db = NativeStore::memory().unwrap();
-    let policy = json!({"version":"sandbox-bundle","suite":"commands-v1",
+    let mut policy = json!({"version":"sandbox-bundle","suite":"commands-v1",
         "environment":"linux-node24-rust1.94-v1","required_checks":["build"],
         "build":{"checks":[{"name":"build","argv":["node","/opt/yoneda/test-bundle/run.mjs"],"timeout_seconds":30}],
         "test_bundle":{"digest":"a".repeat(64),"protected_paths":["tests"]}}});
+    if app {
+        policy["build"]["app"] = json!({"version":1,"entrypoint":"dist/worker.js",
+            "export_name":"App","migrations":[{"version":1,
+            "sql":["CREATE TABLE bookings (id TEXT PRIMARY KEY)"]}],"seed":[]});
+    }
     call(&db, json!({"op":"init","id":"sandbox","name":"Sandbox","remote":{"namespace":"yoneda-dev","name":"sandbox"},"commit":"a".repeat(40),"policy":policy})).unwrap();
+    db
+}
+
+#[test]
+fn an_immutable_test_bundle_is_checked_in_the_check_sandbox() {
+    let db = bundle_repository(false);
     let job = checked(&db);
-    assert!(job.get("sandbox_check").is_none());
-    // Ordinary runs keep the evaluator container.
-    let db = repository();
+    assert_eq!(job["sandbox_check"], true);
+    assert_eq!(
+        job["payload"]["policy"]["build"]["test_bundle"]["digest"],
+        "a".repeat(64)
+    );
+}
+
+#[test]
+fn app_bundle_and_guided_sandbox_runs_are_refused_at_start() {
+    let db = bundle_repository(true);
+    let refused = call(&db, start(glm(), json!({}))).unwrap_err();
+    assert_eq!(refused.code, "NOT_SUPPORTED");
+    assert!(refused.message.contains("app bundles"));
+    // The same project still starts ordinary runs (their checks keep the evaluator container).
     let mut c = start(glm(), json!({}));
     c["workspace_transport"] = json!("api-source-v1");
     call(&db, c).unwrap();
     let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
     claimed_check(&db, &mut evaluator, 1000).unwrap();
     assert!(evaluator.get("sandbox_check").is_none());
+    let guided = json!({"runtime":TRANSPORT,"guided":{"session_id":"s"}});
+    assert_eq!(
+        checkable_start(&guided, &json!({})).unwrap_err().code,
+        "NOT_SUPPORTED"
+    );
 }
 
 #[test]
@@ -469,4 +494,20 @@ fn a_cli_that_cannot_drive_the_provider_is_refused_before_the_run_starts() {
     );
     assert_ne!(refused("zai", "glm-5.3-flash", "aider"), "SANDBOX_HARNESS");
     assert!(get(&db, "runs", "run-s").is_err(), "nothing was created");
+}
+
+#[test]
+fn a_sandbox_run_started_under_the_old_tag_still_runs_and_is_checked() {
+    let db = repository();
+    call(&db, start(glm(), json!({}))).unwrap();
+    // What a sandbox run recorded before it had its own tag.
+    let mut run = get(&db, "runs", "run-s").unwrap();
+    run["workspace_transport"] = json!("api-source-v1");
+    save(&db, "runs", "run-s", &run).unwrap();
+    let job = call(&db, json!({"op":"claim","job_id":"job:run-s:agent-1"})).unwrap();
+    assert_eq!(job["sandbox"], true);
+    assert!(platform_source(&run["workspace_transport"]));
+    let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
+    claimed_check(&db, &mut evaluator, 1000).unwrap();
+    assert_eq!(evaluator["sandbox_check"], true);
 }

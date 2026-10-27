@@ -1,8 +1,9 @@
 // The policy checks of a sandbox run's candidate, in a fresh check sandbox on a real disk, as
 // plain steps (one per Durable Object alarm):
-//   starting → cloning → setup → checks → site → reporting → done.
+//   starting → cloning → [bundle] → setup → checks → site → reporting → done.
 // The clone is verified against the candidate's exact commit and tree before anything runs,
-// and a mismatch fails closed. Each command runs as the evaluator container runs it (same argv,
+// and a mismatch fails closed. An owner-approved immutable test bundle is installed, read-only,
+// at /opt/yoneda/test-bundle outside the checkout, as the evaluator container installs it. Each command runs as the evaluator container runs it (same argv,
 // repository-root cwd, timeout and cleared environment) and its observation keeps the
 // evaluator's report format, so ledger validation, evidence and publish gating are unchanged.
 // No wall-clock kill beyond each command's own timeout, plus one generous overall cap. This
@@ -32,11 +33,17 @@ export type CheckAttempt = {
   setup: CommandSpec[];
   checks: CommandSpec[];
   static_dir: string | null;
+  /**
+   * The policy's immutable test bundle and the protected paths the candidate changed (the
+   * ledger's source integrity record); absent for checks begun before bundles were checked here.
+   */
+  test_bundle?: { digest: string; protected_changes: string[] } | null;
 };
 
 export type CheckPhase =
   | 'starting'
   | 'cloning'
+  | 'bundle'
   | 'setup'
   | 'checks'
   | 'site'
@@ -48,6 +55,8 @@ export type CheckState = {
   setup: Observation[];
   commands: Observation[];
   site?: SiteCapture;
+  /** The digest of the test bundle installed in the sandbox. */
+  bundle?: string;
   errors: number;
 };
 
@@ -60,6 +69,8 @@ export interface CheckPort {
   clone(): Promise<CommandResult>;
   /** The checkout's HEAD commit and its tree. */
   revision(): Promise<{ head: string; tree: string }>;
+  /** Installs the digest's approved test bundle read-only; returns the digest it installed. */
+  installBundle(digest: string): Promise<string>;
   run(spec: CommandSpec): Promise<CommandOutput>;
   captureSite(directory: string): Promise<SiteCapture>;
   report(report: Record<string, unknown>): Promise<void>;
@@ -126,10 +137,10 @@ export function checkReport(check: CheckAttempt, state: CheckState): Record<stri
     commands: state.commands,
     environment: check.environment,
     suite: check.suite,
-    // No immutable test bundle (those policies stay with the evaluator container).
-    test_bundle_digest: null,
-    protected_changes: [],
-    test_bundle_policy_digest: null,
+    // As the evaluator reports them: the installed bundle and the protected paths changed.
+    test_bundle_digest: check.test_bundle ? (state.bundle ?? null) : null,
+    protected_changes: check.test_bundle?.protected_changes ?? [],
+    test_bundle_policy_digest: check.test_bundle?.digest ?? null,
   };
   if (state.site && !state.site.captured) {
     report.static_error = 'Static output missing, unsafe or exceeds limits';
@@ -210,6 +221,17 @@ async function advance(state: CheckState, check: CheckAttempt, port: CheckPort):
         );
         return true;
       }
+      state.phase = check.test_bundle ? 'bundle' : 'setup';
+      return false;
+    }
+    case 'bundle': {
+      const expected = String(check.test_bundle?.digest);
+      const installed = await port.installBundle(expected);
+      if (installed !== expected) {
+        await port.fail(`Installed test bundle ${installed} differs from the approved ${expected}`);
+        return true;
+      }
+      state.bundle = installed;
       state.phase = 'setup';
       return false;
     }

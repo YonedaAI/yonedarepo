@@ -16,6 +16,7 @@ import {
 import type { CommandResult } from './sandbox-driver';
 import type { CheckEgress, OutboundProps } from './sandbox-outbound';
 import {
+  bundleInstallScript,
   checkDirectory,
   checkOutputDirectory,
   checkScript,
@@ -23,15 +24,23 @@ import {
   cloneScript,
   revisionScript,
   siteScript,
+  testBundleDirectory,
   trustEnv,
 } from './sandbox-shell';
 import { ledger, object } from './storage';
+import { approvedBundle } from './test-bundle';
 import type { Env, Json } from './types';
 
 /** What the check port needs from the Durable Object that owns the container. */
 export interface SandboxHost {
   ensure(props: OutboundProps, start: boolean): Promise<void>;
-  run(command: string[], cwd: string, env: Record<string, string>): Promise<CommandResult>;
+  /** `stdin`, when given, is the command's whole input. */
+  run(
+    command: string[],
+    cwd: string,
+    env: Record<string, string>,
+    stdin?: string,
+  ): Promise<CommandResult>;
   destroy(): Promise<void>;
 }
 
@@ -96,8 +105,11 @@ export async function checkAttempt(env: Env, repo: string, job: Json): Promise<C
   const policy = payload.policy ?? {};
   const build = policy.build ?? {};
   const integrity = payload.source_integrity ?? {};
-  if (payload.guided || build.app || build.test_bundle)
+  if (payload.guided || build.app)
     fail('NOT_SUPPORTED', 'These checks run in the evaluator container');
+  const bundle = build.test_bundle ?? null;
+  if (bundle !== null && !/^[a-f0-9]{64}$/.test(String(bundle.digest)))
+    fail('INVALID_INPUT', 'Invalid test bundle digest');
   if (
     typeof candidate.id !== 'string' ||
     !hex(candidate.revision?.commit) ||
@@ -106,7 +118,9 @@ export async function checkAttempt(env: Env, repo: string, job: Json): Promise<C
     integrity.candidate_id !== candidate.id ||
     integrity.revision?.commit !== candidate.revision.commit ||
     !Array.isArray(integrity.protected_changes) ||
-    integrity.protected_changes.length !== 0
+    !integrity.protected_changes.every((path: unknown) => typeof path === 'string') ||
+    // Only a bundle protects paths; the report carries what the candidate changed in them.
+    (bundle === null && integrity.protected_changes.length !== 0)
   )
     fail('INVALID_INPUT', 'Check candidate differs from its source integrity record');
   const repository = await ledger(env, repo, { op: 'repository_status' });
@@ -130,6 +144,10 @@ export async function checkAttempt(env: Env, repo: string, job: Json): Promise<C
     setup: commands(build.setup ?? []),
     checks: commands(build.checks),
     static_dir: typeof build.static_dir === 'string' ? build.static_dir : null,
+    test_bundle: bundle && {
+      digest: String(bundle.digest),
+      protected_changes: integrity.protected_changes,
+    },
   };
 }
 
@@ -162,9 +180,14 @@ const tail = (path: string) => [
 export function checkPort(env: Env, host: SandboxHost, check: CheckAttempt): CheckPort {
   const egress = checkEgress(check);
   const identity = { job_id: check.job_id, epoch: check.epoch };
-  const run = async (command: string[], cwd = '/', vars: Record<string, string> = {}) => {
+  const run = async (
+    command: string[],
+    cwd = '/',
+    vars: Record<string, string> = {},
+    stdin?: string,
+  ) => {
     await host.ensure(egress, false);
-    return host.run(command, cwd, vars);
+    return host.run(command, cwd, vars, stdin);
   };
   return {
     now: () => Date.now(),
@@ -194,6 +217,19 @@ export function checkPort(env: Env, host: SandboxHost, check: CheckAttempt): Che
       if (result.exitCode !== 0)
         throw new Error(`git rev-parse failed: ${result.stderr.slice(-300)}`);
       return { head, tree };
+    },
+    installBundle: async (digest) => {
+      // The digest-checked bundle, as the broker hands it to the evaluator container.
+      const { encoded } = await approvedBundle(env, digest);
+      const result = await run(
+        ['node', '-e', bundleInstallScript, testBundleDirectory],
+        '/',
+        {},
+        encoded,
+      );
+      if (result.exitCode !== 0)
+        throw new Error(`Test bundle install failed: ${result.stderr.slice(-300)}`);
+      return result.stdout.trim();
     },
     run: async (spec) => {
       const status = await run([

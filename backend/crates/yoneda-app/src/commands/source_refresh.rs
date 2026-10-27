@@ -8,7 +8,7 @@ pub(super) fn context<S: SqlStore>(db: &S, command: &Value, now: i64) -> Result<
     let payload = &job["payload"];
     if job["kind"] != "capture"
         || payload["capture_subtype"] != "refresh_candidate"
-        || payload["workspace_transport"] != "api-source-v1"
+        || !super::sandbox::platform_source(&payload["workspace_transport"])
     {
         return Err(Error::new("FORBIDDEN", "No sparse refresh capability"));
     }
@@ -23,7 +23,7 @@ pub(super) fn context<S: SqlStore>(db: &S, command: &Value, now: i64) -> Result<
                 .get("candidate")
                 .ok_or_else(|| bad("Missing frozen candidate"))?
         || candidate["revision"] != record["candidate"]["revision"]
-        || run["workspace_transport"] != "api-source-v1"
+        || !super::sandbox::platform_source(&run["workspace_transport"])
         || repository["status"] != "ready"
         || repository["policy"] != payload["policy"]
         || !repository["pending"].is_null()

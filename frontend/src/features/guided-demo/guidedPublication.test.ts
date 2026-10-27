@@ -1,8 +1,8 @@
 import { expect, it } from 'vitest';
 import { comparisonFixture } from '../../../../tests/frontend/comparisonFixture';
+import { guidedPublicationState } from '../exploration/guidedPublication';
 import { selectionBlocker } from '../exploration/runReviewState';
 import { sessionFixture } from './guidedFixture';
-import { guidedPublicationState } from './guidedPublication';
 
 it('prevents partial guided results from exposing canonical publishing while preserving ordinary runs', () => {
   const f = comparisonFixture();

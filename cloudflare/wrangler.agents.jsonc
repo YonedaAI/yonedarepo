@@ -3,6 +3,11 @@
 // public API (PLATFORM service binding, `/api/v1`) and shares the platform's accounts through
 // the WORKSPACES script binding. Its D1 index and R2 bucket are created at cutover; the
 // all-zero database_id is never deployable.
+// Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts
+// sandbox/Dockerfile with Internet off; SandboxOutbound adds the provider key and the project
+// token, and meters model spend. The sandbox clones from SANDBOX_PLATFORM_ORIGIN; model
+// requests go to the provider directly unless SANDBOX_AI_GATEWAY names a gateway. Matches
+// wrangler.staging-agents.jsonc (infra/envs/dev.json).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "yonedarepo-agents-dev",
@@ -35,7 +40,8 @@
     "MIMO_MODEL": "mimo-v2.6-flash",
     "ZAI_MODEL": "glm-5.3-flash",
     "STARTER_REPO": "yoneda-website-starter",
-    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev"
+    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev",
+    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo-platform-dev.mlong-f01.workers.dev"
   },
   "services": [
     {
@@ -102,6 +108,10 @@
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority",
         "script_name": "yonedarepo-platform-dev"
+      },
+      {
+        "name": "AGENT_SANDBOX",
+        "class_name": "AgentSandbox"
       }
     ]
   },
@@ -113,6 +123,12 @@
         "LiveRoom",
         "ExecutionContainer",
         "SourceWorkspaceAuthority"
+      ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "AgentSandbox"
       ]
     }
   ],
@@ -126,6 +142,16 @@
       "rollout_step_percentage": [
         100
       ]
+    },
+    {
+      "class_name": "AgentSandbox",
+      "images": {
+        "agent": {
+          "build_context": "..",
+          "dockerfile": "./sandbox/Dockerfile"
+        }
+      },
+      "scheduling_policy": "durable_object"
     }
   ],
   "r2_buckets": [

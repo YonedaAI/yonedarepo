@@ -1,9 +1,9 @@
 import type { Snapshot } from '../../lib/types';
-import { guidedPublicationBlocker } from '../guided-demo/guidedPublication';
-import { runCandidates } from '../team/teamView';
 import { activeDecision, rejectionOf } from './agentsPick';
+import { guidedPublicationBlocker } from './guidedPublication';
 import { refreshedSelection, refreshesSelection } from './refreshedSelection';
 import { runHasActiveAttempts } from './runControlState';
+import { runCandidates } from './runResults';
 import { branchPublishable } from './workingBranchView';
 
 type RecordValue = Record<string, any>;

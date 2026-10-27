@@ -7,6 +7,7 @@ mod refresh;
 mod repair_authority;
 mod resolver;
 mod resolver_capture;
+mod sandbox_resolver;
 mod source;
 mod support;
 mod target;
@@ -36,6 +37,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         "conflict_paths" => source::paths(db, c),
         "refresh_candidate" => refresh::refresh(db, c, now),
         "resolve_conflict" => resolver::resolve(db, c, now),
+        "conflict_resolver_run" => sandbox_resolver::link(db, c, now),
         "conflict_refresh_complete" => refresh::complete(db, c, now),
         _ => Err(Error::new("NOT_FOUND", "Unknown conflict operation")),
     }

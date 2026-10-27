@@ -5,7 +5,8 @@
 // managed keys cover Z.ai and MiMo only). It passes when the run records the pushed
 // commit as its candidate within the time limit, and fails when the checks reject that commit.
 // It reports the same timing table as the agent smoke plus the sandbox's own milestones, the
-// tokens the CLI reported and their cost at the registry's conservative rates, and always
+// tokens the CLI reported and their cost at the registry's conservative rates next to the
+// spend the Worker metered from the model responses (the run's recorded spend), and always
 // deletes the project. `agents: 2` runs one compare run instead, one managed GLM and one MiMo
 // agent, each in its own sandbox: it passes only when both candidates are recorded and checked
 // (eligible), and prints each agent's timing.
@@ -38,6 +39,18 @@ export function tokenSpend(provider, model, text) {
   if (!rates) return { input, output, usd: null };
   const usd = (input * rates.input_microusd_per_million + output * rates.output_microusd_per_million) / 1e12;
   return { input, output, usd };
+}
+
+/** The run's metered spend for one agent (`metered_usage`, recorded per model response). */
+export function meteredLine(usage) {
+  if (!usage || !Number.isSafeInteger(usage.requests)) return null;
+  const input = usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens;
+  const usd = usage.charged_microusd / 1e6;
+  return {
+    tokens: `${input}/${usage.output_tokens}`,
+    usd,
+    text: `${usage.requests} responses, ${input} in (${usage.cache_read_input_tokens} cache read, ${usage.cache_creation_input_tokens} cache write) / ${usage.output_tokens} out, $${usd.toFixed(4)}`,
+  };
 }
 
 async function activity(account, repo, executionId) {
@@ -204,15 +217,24 @@ export async function sandboxSmoke({ account, owner, username, provider, agents 
     const report = async (detail) => {
       const lines = [await timeline(account, project.id, detail, startedAt, { verbose: false })];
       let usd = 0;
+      let meteredUsd = 0;
       for (const execution of detail?.executions ?? []) {
         const log = await activity(account, project.id, execution.id).catch(() => ({ entries: [] }));
         const tokens = tokenSpend(execution.provider, execution.model, log.entries.find((e) => e.kind === 'result')?.text);
         if (tokens) metrics[`tokens_${execution.provider}`] = `${tokens.input}/${tokens.output}`;
         usd += tokens?.usd ?? 0;
+        const metered = meteredLine(execution.metered_usage);
+        if (metered) metrics[`metered_${execution.provider}`] = metered.tokens;
+        meteredUsd += metered?.usd ?? 0;
         const candidate = (detail.candidates ?? []).find((c) => c.execution === execution.id);
-        lines.push(`${execution.id} ${execution.cli ?? 'claude'} ${execution.provider}/${execution.model}: ${execution.status}${candidate ? `, candidate ${candidate.status}${candidate.created_at ? ` at +${seconds(candidate.created_at - startedAt)} s` : ''}` : ''}`, ...sandboxLines(log.entries, startedAt));
+        lines.push(
+          `${execution.id} ${execution.cli ?? 'claude'} ${execution.provider}/${execution.model}: ${execution.status}${candidate ? `, candidate ${candidate.status}${candidate.created_at ? ` at +${seconds(candidate.created_at - startedAt)} s` : ''}` : ''}`,
+          `  CLI reported ${tokens ? `${tokens.input} in / ${tokens.output} out` : 'no tokens'}; Worker metered ${metered?.text ?? 'nothing'}`,
+          ...sandboxLines(log.entries, startedAt),
+        );
       }
       metrics.spend_usd = usd.toFixed(4);
+      metrics.metered_usd = meteredUsd.toFixed(4);
       metrics.spend_target = usd < SMOKE_TARGET_USD * agents ? 'met' : `over $${SMOKE_TARGET_USD * agents}`;
       if (team && detail) lines.push('team members:', ...teamVerdict(detail, mode).lines);
       return lines.join('\n');

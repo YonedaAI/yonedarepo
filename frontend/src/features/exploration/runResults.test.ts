@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Snapshot } from '../../lib/types';
-import { runCandidates } from './teamView';
+import { runCandidates } from './runResults';
 
 describe('team run results', () => {
   it('shows only the latest recorded conflict resolution once the run is reconciled', () => {

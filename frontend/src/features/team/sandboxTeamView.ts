@@ -2,12 +2,10 @@
 // on the team branch, and the branch head the landings left. The platform's merge integrates
 // the members; nothing here decides anything.
 import type { Snapshot } from '../../lib/types';
-import { SANDBOX_RUNTIME } from '../exploration/sandboxActivityView';
+
+export { isSandboxTeam } from '../exploration/sandboxActivityView';
 
 type Record_ = Record<string, any>;
-
-export const isSandboxTeam = (run?: Record_) =>
-  run?.mode === 'collaborate' && run?.runtime === SANDBOX_RUNTIME;
 
 /** The run's members (one per task), in plan order. */
 export function sandboxMembers(snapshot: Snapshot, run: Record_): Record_[] {

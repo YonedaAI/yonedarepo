@@ -1,12 +1,12 @@
 import { CircleAlert, CircleCheck, ClipboardCheck, LoaderCircle } from 'lucide-react';
 import { short } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
+import { activeDecision } from './agentsPick';
 import {
   type GuidedBlockerKind,
   guidedBlockerTitle,
   guidedPublicationState,
-} from '../guided-demo/guidedPublication';
-import { activeDecision } from './agentsPick';
+} from './guidedPublication';
 import { runAttention } from './runReviewState';
 import { runTitle } from './runTitle';
 import { SiteLink } from './SiteLink';
