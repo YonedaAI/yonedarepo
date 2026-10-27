@@ -535,6 +535,72 @@ fn killed_push_leaves_refs_unchanged(w: &World) -> TestResult {
     check(w.blob(&repo, "k.txt") == "k\n", "the retried push landed")
 }
 
+/// Lightweight tags through the helper: `git push origin v1` creates one, a fresh clone
+/// lists it, and it never moves or disappears; an annotated tag is refused.
+fn tags_push_and_clone(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let c = w.client("tags", &token)?;
+    let dir = w.clone(&c, &repo, "work")?;
+    let first = commit(&c, &dir, "release", &[("r.txt", "r\n")])?;
+    check(
+        push(&c, &dir, &["origin", "main"])?.status.success(),
+        "push main",
+    )?;
+    let main = w.refs(&repo)?["refs/heads/main"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned();
+    check(main == first, "main is the pushed commit")?;
+    c.git(&dir, &["tag", "v1"])?;
+    let pushed = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        pushed.status.success(),
+        &format!("push tag: {}", text(&pushed)),
+    )?;
+    check(
+        w.refs(&repo)?["refs/tags/v1"] == first.as_str(),
+        "the tag names the pushed commit",
+    )?;
+    let again = push(&c, &dir, &["origin", "v1"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+
+    let other = w.client("tags-fresh", &token)?;
+    let copy = w.clone(&other, &repo, "copy")?;
+    check(
+        other.git(&copy, &["tag", "--list"])? == "v1"
+            && other.git(&copy, &["rev-parse", "v1"])? == first,
+        "a fresh clone has the tag at its commit",
+    )?;
+
+    commit(&c, &dir, "later", &[("l.txt", "l\n")])?;
+    c.git(&dir, &["tag", "-f", "v1"])?;
+    let moved = push(&c, &dir, &["--force", "origin", "v1"])?;
+    check(
+        !moved.status.success() && text(&moved).contains("tags are immutable"),
+        &text(&moved),
+    )?;
+    let deleted = push(&c, &dir, &["origin", "--delete", "v1"])?;
+    check(
+        !deleted.status.success() && text(&deleted).contains("cannot be deleted"),
+        &text(&deleted),
+    )?;
+    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
+    let annotated = push(&c, &dir, &["origin", "v2"])?;
+    check(
+        !annotated.status.success()
+            && text(&annotated).contains("annotated tags are not supported"),
+        &text(&annotated),
+    )?;
+    let refs = w.refs(&repo)?;
+    check(
+        refs["refs/tags/v1"] == first.as_str() && refs.get("refs/tags/v2").is_none(),
+        "refusals moved nothing",
+    )
+}
+
 fn fresh_clone_is_byte_identical(w: &World) -> TestResult {
     let (repo, token) = w
         .platform
@@ -835,6 +901,7 @@ fn git_works_through_the_remote_helper() -> TestResult {
     #[cfg(unix)]
     killed_push_leaves_refs_unchanged(&w).map_err(|e| format!("killed: {e}"))?;
     fresh_clone_is_byte_identical(&w).map_err(|e| format!("fresh clone: {e}"))?;
+    tags_push_and_clone(&w).map_err(|e| format!("tags: {e}"))?;
     unrebuildable_commit_is_mapped(&w).map_err(|e| format!("mapped: {e}"))?;
     device_login_then_clone_with_the_stored_token(&w).map_err(|e| format!("login: {e}"))?;
     import_in_batches(&w).map_err(|e| format!("import: {e}"))?;

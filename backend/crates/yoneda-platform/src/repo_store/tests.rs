@@ -1585,3 +1585,4 @@ mod pushed;
 mod secrets;
 mod shards;
 mod staging;
+mod tags;

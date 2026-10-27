@@ -212,19 +212,39 @@ pub fn branch_ref(c: &Value) -> Result<String> {
     } else {
         format!("refs/heads/{name}")
     };
-    let branch = full.strip_prefix("refs/heads/").unwrap_or_default();
-    if branch.is_empty()
-        || branch.len() > 200
-        || branch
-            .split('/')
-            .any(|p| p.is_empty() || p.starts_with('.') || p.ends_with(".lock"))
-        || branch.contains(|ch: char| ch.is_ascii_control() || " ~^:?*[\\".contains(ch))
-        || branch.contains("..")
-        || branch.contains("@{")
-    {
+    if !valid_name(full.strip_prefix("refs/heads/").unwrap_or_default()) {
         return Err(bad("Invalid branch name"));
     }
     Ok(full)
+}
+
+/// Accepts `v1` or `refs/tags/v1`: a lightweight tag (created once, never moved).
+pub fn tag_ref(name: &str) -> Result<String> {
+    let full = if name.starts_with("refs/") {
+        name.to_owned()
+    } else {
+        format!("refs/tags/{name}")
+    };
+    if !valid_name(full.strip_prefix("refs/tags/").unwrap_or_default()) {
+        return Err(bad("Invalid tag name"));
+    }
+    Ok(full)
+}
+
+pub fn is_tag(refname: &str) -> bool {
+    refname.starts_with("refs/tags/")
+}
+
+/// Git's ref-name rules for a branch or tag name below its `refs/<kind>/` prefix.
+fn valid_name(name: &str) -> bool {
+    !(name.is_empty()
+        || name.len() > 200
+        || name
+            .split('/')
+            .any(|p| p.is_empty() || p.starts_with('.') || p.ends_with(".lock"))
+        || name.contains(|ch: char| ch.is_ascii_control() || " ~^:?*[\\".contains(ch))
+        || name.contains("..")
+        || name.contains("@{"))
 }
 
 /// The recorded commit graph (parents and generations stored at record time). Parents

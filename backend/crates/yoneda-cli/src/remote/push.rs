@@ -1,8 +1,10 @@
 //! `push`: every ref's commits are uploaded first; then one compare-and-swap per branch
-//! (one batch for `--atomic`) or one landing for main publishes them. A push killed
+//! (one batch for `--atomic`), one landing for main, or one creation per new lightweight
+//! tag publishes them (tags never move or disappear). A push killed
 //! before that leaves every ref as it was: uploaded commits stay unreferenced and the
 //! platform's vacuum removes them.
 use super::list::{MAIN, branches};
+use super::tags::{TAGS, create_tag, tag_refusal};
 use super::upload::{self, Uploaded};
 use super::{Session, land, say};
 use crate::error::{Error, Result};
@@ -43,8 +45,11 @@ struct Ready {
 
 /// Why a ref is refused before anything is uploaded (`None`: nothing to do, or go).
 fn refusal(session: &Session, spec: &Spec, local: &str, current: Option<&str>) -> Option<String> {
+    if spec.dst.starts_with(TAGS) {
+        return tag_refusal(session, &spec.src, local, current);
+    }
     if !spec.dst.starts_with("refs/heads/") {
-        return Some("only branches (refs/heads/*) can be pushed".into());
+        return Some("only branches (refs/heads/*) and tags (refs/tags/*) can be pushed".into());
     }
     if spec.dst == MAIN {
         return spec
@@ -83,10 +88,12 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
     let mut ready = Vec::new();
     for spec in &specs {
         if spec.src.is_empty() {
-            outcomes.insert(
-                spec.dst.clone(),
-                Err("deleting branches is not supported".into()),
-            );
+            let why = if spec.dst.starts_with(TAGS) {
+                "tags are immutable and cannot be deleted"
+            } else {
+                "deleting branches is not supported"
+            };
+            outcomes.insert(spec.dst.clone(), Err(why.into()));
             continue;
         }
         let local = match session.git.commit_of(&spec.src) {
@@ -182,6 +189,8 @@ async fn publish(
     for (item, done) in uploaded {
         let outcome = if item.spec.dst == MAIN {
             land::land(session, &item.local, &done).await
+        } else if item.spec.dst.starts_with(TAGS) {
+            create_tag(session, &item.spec.dst, &done).await
         } else {
             set_branch(session, &item, &done).await
         };
