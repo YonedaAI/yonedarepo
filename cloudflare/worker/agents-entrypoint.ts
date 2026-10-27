@@ -10,6 +10,7 @@ import { fetchRequest } from './routes';
 import { modelForJob } from './runtime';
 import { beginSandbox } from './sandbox-attempt';
 import { beginCheck } from './sandbox-check';
+import { captureTeamBranch } from './sandbox-team';
 import { authorizePreview } from './sites';
 import type { SourceGcDue, SourceIndexEnvelope } from './source-contract';
 import { prepareSourceDispatch } from './source-dispatch';
@@ -136,9 +137,11 @@ export class AgentsEntrypoint extends WorkerEntrypoint<Env> {
           // Refreshes and contribution captures are platform commits: no container, no model.
           const platformCapture =
             job.kind === 'capture'
-              ? { refresh_candidate: refreshCandidate, platform_commit: captureContribution }[
-                  String(job.payload?.capture_subtype)
-                ]
+              ? {
+                  refresh_candidate: refreshCandidate,
+                  platform_commit: captureContribution,
+                  sandbox_team: captureTeamBranch,
+                }[String(job.payload?.capture_subtype)]
               : undefined;
           if (platformCapture) {
             await ledger(this.env, envelope.repo_id, await platformCapture(this.env, scope));

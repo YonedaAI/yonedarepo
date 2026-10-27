@@ -1,18 +1,38 @@
 // The sandbox attempt as plain steps, one per Durable Object alarm:
 //   starting → cloning → running → finalizing → recording → done.
+// A team member lands instead of recording: finalizing → landing → done; a conflict there
+// resumes the CLI's session once (landing → resolving → running → finalizing → landing).
 // No wall-clock kill: the CLI runs until it exits. Only a generous safety cap stops it, and
 // then what exists is still committed and pushed. A live but silent CLI is reported idle,
 // never stopped. This module holds no Cloudflare API: `SandboxPort` is the sandbox, the
 // platform and the ledger, so the step logic is tested with a fake.
-import { type Activity, type CliOutcome, parseActivity, resultOutcome } from './sandbox-activity';
+import {
+  type Activity,
+  type CliOutcome,
+  parseActivity,
+  resultOutcome,
+  sessionId,
+} from './sandbox-activity';
 
-export type Phase = 'starting' | 'cloning' | 'running' | 'finalizing' | 'recording' | 'done';
+export type Phase =
+  | 'starting'
+  | 'cloning'
+  | 'running'
+  | 'finalizing'
+  | 'landing'
+  | 'resolving'
+  | 'recording'
+  | 'done';
 export type TaskState =
   | { state: 'running' }
   | { state: 'exited'; exitCode: number }
   | { state: 'lost' };
 export type PushResult = { pushed: true } | { pushed: false; reason: 'unchanged' };
 export type CommandResult = { exitCode: number; stdout: string; stderr: string };
+/** A team member's commit on the team branch: landed (and the branch head), or conflicting. */
+export type LandOutcome =
+  | { landed: true; commit: string; teamCommit: string; version: number | null }
+  | { landed: false; paths: string[] };
 
 export interface SandboxPort {
   now(): number;
@@ -26,8 +46,17 @@ export interface SandboxPort {
   readOutput(offset: number): Promise<{ consumed: number; lines: string[] }>;
   stderrTail(): Promise<string>;
   stopAgent(): Promise<void>;
-  commitAndPush(message: string): Promise<PushResult>;
+  /** `keepHistory`: push HEAD as is (a resumed member's merge), not one commit on the base. */
+  commitAndPush(message: string, keepHistory: boolean): Promise<PushResult>;
   record(summary: string): Promise<void>;
+  /** A team member: its commit lands on the team branch instead of becoming a candidate. */
+  readonly team: boolean;
+  /** Lands the pushed commit on the team branch (the trusted side, never the sandbox). */
+  land(): Promise<LandOutcome>;
+  /** Records the landing; for a conflict, whether the member gets its one resume. */
+  reportLanding(outcome: LandOutcome, round: number): Promise<{ resume: boolean }>;
+  /** Fetches the team branch into the sandbox and resumes the CLI's session on `paths`. */
+  resumeAgent(sessionId: string, paths: string[]): Promise<void>;
   fail(reason: string): Promise<void>;
   progress(activity: {
     phase: Exclude<Phase, 'done'>;
@@ -48,6 +77,12 @@ export type DriverState = {
   /** The agent's own last activity line; phase summaries never replace it. */
   agentSummary?: string;
   outcome?: CliOutcome;
+  /** The CLI session to resume after a team conflict. */
+  sessionId?: string;
+  /** A team member's landing round: 1 once it was resumed after a conflict. */
+  round?: number;
+  /** The paths a resumed member resolves. */
+  conflict?: string[];
   capped?: boolean;
   errors: number;
   reportedAt?: number;
@@ -135,7 +170,10 @@ async function drain(state: DriverState, port: SandboxPort) {
   if (consumed === 0) return;
   const now = port.now();
   const entries = lines.flatMap(parseActivity);
-  for (const line of lines) state.outcome = resultOutcome(line) ?? state.outcome;
+  for (const line of lines) {
+    state.outcome = resultOutcome(line) ?? state.outcome;
+    state.sessionId ??= sessionId(line) ?? undefined;
+  }
   if (entries.length) {
     await port.appendActivity(now, entries);
     state.summary = entries[entries.length - 1].text;
@@ -176,7 +214,7 @@ async function advance(state: DriverState, port: SandboxPort): Promise<number | 
       const message = state.capped
         ? 'Agent work at the two-hour safety cap'
         : `Agent change: ${agentResult(state)}`;
-      const pushed = await port.commitAndPush(message.slice(0, 500));
+      const pushed = await port.commitAndPush(message.slice(0, 500), (state.round ?? 0) > 0);
       if (!pushed.pushed) {
         await port.fail(
           state.capped
@@ -186,9 +224,22 @@ async function advance(state: DriverState, port: SandboxPort): Promise<number | 
         await finish(state, port);
         return null;
       }
+      if (port.team) {
+        await enter(state, port, 'landing', 'Landing on the team branch');
+        return port.now();
+      }
       await enter(state, port, 'recording', 'Recording the pushed commit');
       return port.now();
     }
+    case 'landing':
+      return landing(state, port);
+    case 'resolving':
+      await port.resumeAgent(state.sessionId ?? '', state.conflict ?? []);
+      state.offset = 0;
+      state.outcome = undefined;
+      state.lastActivityAt = port.now();
+      await enter(state, port, 'running', 'Agent resumed to resolve the conflict');
+      return port.now() + LIMITS.pollMs;
     case 'recording':
       await port.record(
         state.capped ? `Stopped at the safety cap: ${agentResult(state)}` : agentResult(state),
@@ -198,6 +249,31 @@ async function advance(state: DriverState, port: SandboxPort): Promise<number | 
     default:
       return null;
   }
+}
+
+/** Lands a team member's commit; one conflict resumes it, a second fails it. */
+async function landing(state: DriverState, port: SandboxPort): Promise<number | null> {
+  const round = state.round ?? 0;
+  const outcome = await port.land();
+  const { resume } = await port.reportLanding(outcome, round);
+  if (outcome.landed) {
+    await finish(state, port);
+    return null;
+  }
+  const paths = outcome.paths.join(', ');
+  if (!resume || round > 0 || !state.sessionId) {
+    await port.fail(
+      round > 0
+        ? `Conflicts with the team branch on ${paths} after one resume`
+        : `Conflicts with the team branch on ${paths}; the agent session cannot be resumed`,
+    );
+    await finish(state, port);
+    return null;
+  }
+  state.round = 1;
+  state.conflict = outcome.paths;
+  await enter(state, port, 'resolving', `Conflict on ${paths}: resuming the agent`);
+  return port.now();
 }
 
 async function running(state: DriverState, port: SandboxPort): Promise<number | null> {

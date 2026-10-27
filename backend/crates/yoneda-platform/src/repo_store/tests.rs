@@ -1572,6 +1572,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 
 mod account_access;
 mod batches;
+mod branch_policy;
 mod branches;
 mod break_glass;
 mod change_records;

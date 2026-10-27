@@ -249,7 +249,7 @@ describe('sandbox runtime', () => {
   it('defaults to independent sandbox attempts the owner chooses among, without a reviewer', async () => {
     const tree = view();
     expect(find(tree, (el) => el.type === RunRuntimePicker)?.props.sandbox).toBe(true);
-    expect(find(tree, (el) => el.type === RunModePicker)).toBeUndefined();
+    expect(find(tree, (el) => el.type === RunModePicker)?.props.value).toBe('compare');
     expect(find(tree, (el) => el.type === AgentRoster)?.props.compare).toBe(false);
     const body = await startRun([]);
     expect(body).toMatchObject({
@@ -259,6 +259,35 @@ describe('sandbox runtime', () => {
     });
     expect(body).not.toHaveProperty('comparison');
     expect(body).not.toHaveProperty('team');
+  });
+  it('starts a sandbox team on the owner-written task plan, never automatic planning', async () => {
+    find(view(), (el) => el.type === RunModePicker)?.props.onChange('collaborate');
+    expect(find(view(), (el) => el.type === TeamPlanOptions)?.props.automaticSupported).toBe(false);
+    // Without an advanced task plan the start is refused in the browser already.
+    expect(await startRun([])).toBeUndefined();
+    const options = () => find(view(), (el) => el.type === TeamPlanOptions)?.props;
+    options()?.onManualChange(true);
+    const plan = options()?.value;
+    options()?.onChange({
+      ...plan,
+      contract: 'Each task writes its own file',
+      // The plan format still names integration paths; a sandbox team integrates by landing.
+      integrationPaths: 'notes/',
+      tasks: plan.tasks.map((task: Record<string, unknown>) => ({
+        ...task,
+        title: 'Write the note',
+        instructions: 'Create notes/one.md',
+        writePaths: 'notes/',
+      })),
+    });
+    const body = await startRun([]);
+    expect(body).toMatchObject({
+      mode: 'collaborate',
+      runtime: 'sandbox-cli-v1',
+      team: { version: 1 },
+    });
+    expect(body.team.tasks.length).toBeGreaterThan(0);
+    expect(body).not.toHaveProperty('comparison');
   });
   it('takes more than two sandbox agents', async () => {
     const three = ['a', 'b', 'c'].map((id) => ({ id, connection: '', role: 'auto', strategy: id }));

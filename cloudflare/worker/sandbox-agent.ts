@@ -8,9 +8,9 @@
 // The same class, under its own name and with the `check` role, is the fresh check sandbox
 // that runs a candidate's policy checks (sandbox-check.ts); one object never holds both.
 import { DurableObject } from 'cloudflare:workers';
-import { type Activity, completeLines } from './sandbox-activity';
+import { activityPage, completeLines, storeActivity } from './sandbox-activity';
 import { agentEgress, recordSandboxCandidate, type SandboxAttempt } from './sandbox-attempt';
-import { checkAlarm, type SandboxHost, startCheck } from './sandbox-check';
+import { checkAlarm, startCheck } from './sandbox-check';
 import type { CheckAttempt } from './sandbox-check-driver';
 import { agentCli } from './sandbox-cli';
 import {
@@ -27,6 +27,7 @@ import {
   cloneScript,
   eventsPath,
   exitCodePath,
+  historyPushScript,
   pidPath,
   pushScript,
   repositoryDirectory,
@@ -37,12 +38,12 @@ import {
   taskScript,
   trustEnv,
 } from './sandbox-shell';
+import { type TeamHost, teamPort } from './sandbox-team';
 import { ledger } from './storage';
 import type { Env } from './types';
 
 const inactivityTimeout = 30 * 60 * 1000;
 const readChunk = 256 * 1024;
-const activityRows = 2000;
 
 export class AgentSandbox extends DurableObject<Env> {
   private readonly container: Container;
@@ -80,41 +81,32 @@ export class AgentSandbox extends DurableObject<Env> {
   }
 
   async alarm(): Promise<void> {
-    const host: SandboxHost = {
+    const host: TeamHost = {
       ensure: (props, start) => this.ensureSandbox(props, start),
       run: (command, cwd, env) => this.run(command, cwd, env),
       destroy: () => this.destroyContainer(),
+      startTask: (command, env) => this.startTask(command, env),
     };
     if (await checkAlarm(this.ctx, this.env, host)) return;
     const attempt = this.ctx.storage.kv.get<SandboxAttempt>('attempt');
     const state = this.ctx.storage.kv.get<DriverState>('state');
     if (!attempt || !state) return;
-    const { state: next, next: at } = await step(state, this.port(attempt));
+    const { state: next, next: at } = await step(state, this.port(attempt, host));
     this.ctx.storage.kv.put('state', next);
     if (at !== null) await this.ctx.storage.setAlarm(at);
   }
 
   /** The activity log after `after`, oldest first, with the attempt's current phase. */
   async activity(after: number, limit: number) {
-    const rows = this.ctx.storage.sql
-      .exec<{ seq: number; at: number; kind: string; text: string }>(
-        'SELECT seq, at, kind, text FROM activity WHERE seq > ? ORDER BY seq LIMIT ?',
-        after,
-        limit + 1,
-      )
-      .toArray();
     const state = this.ctx.storage.kv.get<DriverState>('state');
-    const entries = rows.slice(0, limit);
     return {
-      entries,
-      next: entries.at(-1)?.seq ?? after,
-      has_more: rows.length > limit,
+      ...activityPage(this.ctx.storage.sql, after, limit),
       phase: state?.phase ?? null,
       last_activity_at: state?.lastActivityAt ?? null,
     };
   }
 
-  private port(attempt: SandboxAttempt): SandboxPort {
+  private port(attempt: SandboxAttempt, host: TeamHost): SandboxPort {
     const call = (command: Record<string, unknown>) =>
       ledger(this.env, attempt.repo, { ...command, job_id: attempt.job_id, epoch: attempt.epoch });
     return {
@@ -143,17 +135,8 @@ export class AgentSandbox extends DurableObject<Env> {
       },
       startAgent: async () => {
         await this.ensureSandbox(agentEgress(attempt), false);
-        await this.run(['mkdir', '-p', taskDirectory], '/', {});
         const cli = agentCli(attempt);
-        await this.container.exec(
-          ['/bin/sh', '-c', taskScript, 'agent', taskDirectory, ...cli.command],
-          {
-            cwd: repositoryDirectory,
-            env: { ...trustEnv, ...cli.env },
-            stdout: 'ignore',
-            stderr: 'ignore',
-          },
-        );
+        await this.startTask(cli.command, cli.env);
       },
       task: () => this.task(attempt),
       readOutput: async (offset) => {
@@ -184,7 +167,7 @@ export class AgentSandbox extends DurableObject<Env> {
       stopAgent: async () => {
         await this.run(['/bin/sh', '-c', stopScript, 'stop', pidPath], '/', {});
       },
-      commitAndPush: async (message) => this.push(attempt, message),
+      commitAndPush: async (message, keepHistory) => this.push(attempt, message, keepHistory),
       record: async (summary) => {
         await recordSandboxCandidate(this.env, attempt, summary);
       },
@@ -194,9 +177,25 @@ export class AgentSandbox extends DurableObject<Env> {
       progress: async (activity) => {
         await call({ op: 'sandbox_progress', activity });
       },
-      appendActivity: async (at, entries) => this.append(at, entries),
+      appendActivity: async (at, entries) => storeActivity(this.ctx.storage.sql, at, entries),
       destroy: () => this.destroyContainer(),
+      ...teamPort(this.env, attempt, host),
     };
+  }
+
+  /** Runs the CLI in the background, in a fresh task directory (a resume replaces the last). */
+  private async startTask(command: string[], env: Record<string, string>): Promise<void> {
+    await this.run(
+      ['/bin/sh', '-c', 'rm -rf "$1" && mkdir -p "$1"', 'task', taskDirectory],
+      '/',
+      {},
+    );
+    await this.container.exec(['/bin/sh', '-c', taskScript, 'agent', taskDirectory, ...command], {
+      cwd: repositoryDirectory,
+      env: { ...trustEnv, ...env },
+      stdout: 'ignore',
+      stderr: 'ignore',
+    });
   }
 
   private async destroyContainer(): Promise<void> {
@@ -250,12 +249,16 @@ export class AgentSandbox extends DurableObject<Env> {
       : { state: 'lost' };
   }
 
-  private async push(attempt: SandboxAttempt, message: string): Promise<PushResult> {
+  private async push(
+    attempt: SandboxAttempt,
+    message: string,
+    keepHistory: boolean,
+  ): Promise<PushResult> {
     const result = await this.run(
       [
         '/bin/sh',
         '-c',
-        pushScript,
+        keepHistory ? historyPushScript : pushScript,
         'push',
         repositoryDirectory,
         attempt.base.commit,
@@ -270,20 +273,6 @@ export class AgentSandbox extends DurableObject<Env> {
     return result.stdout.trim().endsWith('unchanged')
       ? { pushed: false, reason: 'unchanged' }
       : { pushed: true };
-  }
-
-  private append(at: number, entries: Activity[]) {
-    for (const entry of entries)
-      this.ctx.storage.sql.exec(
-        'INSERT INTO activity(at, kind, text) VALUES(?, ?, ?)',
-        at,
-        entry.kind,
-        entry.text,
-      );
-    this.ctx.storage.sql.exec(
-      'DELETE FROM activity WHERE seq <= (SELECT MAX(seq) FROM activity) - ?',
-      activityRows,
-    );
   }
 
   private async readText(path: string): Promise<string | undefined> {

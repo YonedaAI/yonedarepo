@@ -1,28 +1,40 @@
-// The coding CLI a sandbox runs, unmodified and headless. Only the command line and its
-// environment are CLI-specific; the sandbox, activity log, push and recording are shared.
+// The coding CLI a sandbox runs, unmodified and headless. Only the command lines (start, and
+// resume of a session) and the environment are CLI-specific; the sandbox, activity log,
+// push, landing and recording are shared.
 // Claude Code is the one implemented CLI (Z.ai GLM and MiMo speak its Anthropic protocol);
 // Codex CLI (`codex exec --json`) is added here as another `AgentCli` when a run needs it.
 import type { SandboxAttempt } from './sandbox-attempt';
 
-export type AgentCli = { command: string[]; env: Record<string, string> };
+export type AgentCli = {
+  command: string[];
+  env: Record<string, string>;
+  /** The same CLI session continued with `prompt` (a team member's one conflict resume). */
+  resume(sessionId: string, prompt: string): string[];
+};
 
 export function agentCli(attempt: SandboxAttempt): AgentCli {
   if (attempt.harness !== 'claude')
     throw Object.assign(new Error(`Sandbox runs support Claude Code, not ${attempt.harness}`), {
       code: 'SANDBOX_HARNESS',
     });
-  return { command: claudeCommand(attempt), env: claudeEnv(attempt) };
+  return {
+    command: claudeCommand(attempt, [], attempt.prompt),
+    env: claudeEnv(attempt),
+    resume: (sessionId, prompt) => claudeCommand(attempt, ['--resume', sessionId], prompt),
+  };
 }
 
-function claudeCommand(attempt: SandboxAttempt): string[] {
+function claudeCommand(attempt: SandboxAttempt, session: string[], prompt: string): string[] {
   return [
     'claude',
     '--print',
+    ...session,
     '--output-format',
     'stream-json',
     '--verbose',
     '--dangerously-skip-permissions',
-    '--no-session-persistence',
+    // A team member keeps its session on disk: a conflict resumes it once.
+    ...(attempt.team ? [] : ['--no-session-persistence']),
     '--model',
     attempt.model,
     '--effort',
@@ -31,7 +43,7 @@ function claudeCommand(attempt: SandboxAttempt): string[] {
     '--disallowedTools',
     'ScheduleWakeup,CronCreate,CronDelete,CronList,Monitor,RemoteTrigger,PushNotification',
     '--',
-    attempt.prompt,
+    prompt,
   ];
 }
 

@@ -28,6 +28,8 @@ export default class TestEntrypoint extends YonedaEntrypoint {
   }
 }
 export { LandCombiner } from '../../cloudflare/worker/repo-land-combiner';
+// The member egress handler, called with an attempt's props as its sandbox reaches it.
+export { SandboxOutbound } from '../../cloudflare/worker/sandbox-outbound';
 import { DurableObject } from 'cloudflare:workers';
 /** Stands in for AgentSandbox (which needs a container): records the attempt it was given. */
 export class FakeAgentSandbox extends DurableObject {
