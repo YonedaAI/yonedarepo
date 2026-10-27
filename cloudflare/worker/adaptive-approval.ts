@@ -1,4 +1,4 @@
-import { type ProviderDefinition, providerDefinition } from '../../shared/providers';
+import { type ProviderDefinition, providerDefinition, runsInSandbox } from '../../shared/providers';
 import { ownsTask, parseModelMix, resolveModelMix } from './model-mix';
 import { normalizeReasoningEffort } from './model-reasoning';
 import type { Json } from './types';
@@ -39,11 +39,22 @@ export function resolveAdaptiveApproval(
       .filter((id: unknown) => typeof id === 'string'),
   );
   const automaticConnections = new Set<string>();
+  // A sandbox run starts a coding CLI per agent: Auto picks only models it can run, and a
+  // chosen model it cannot run is refused before the run starts.
+  const sandbox = [input.runtime, input.workspace_transport].includes('sandbox-cli-v1');
   const pool = connections.flatMap((connection) => {
     let definition: ProviderDefinition;
     try {
       definition = providerDefinition(connection.provider);
     } catch {
+      return [];
+    }
+    if (sandbox && !runsInSandbox(definition.id)) {
+      if (explicitConnections.has(connection.id))
+        throw Object.assign(
+          new Error(`Sandbox runs use Claude Code; ${definition.name} needs another CLI.`),
+          { code: 'SANDBOX_HARNESS' },
+        );
       return [];
     }
     const model = definition.models.find((model) => model.id === connection.model);
