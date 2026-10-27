@@ -76,6 +76,18 @@ export const operations: Record<string, Operation> = {
     await dispatchRuns(ctx.env, ctx.repo, requested.runs);
     return requested;
   },
+  git_session_record: (ctx, a) =>
+    ctx.call({
+      op: 'repo_session_record',
+      commit: a.commit,
+      cli: a.cli,
+      summary: a.summary,
+      model: a.model ?? null,
+      prompt_digest: a.prompt_digest ?? null,
+      transcript_ref: a.transcript_ref ?? null,
+      read_set_digest: a.read_set_digest ?? null,
+    }),
+  git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
   git_bisect: async (ctx, a) => {
     const step = a.id
       ? await ctx.call({ op: 'repo_bisect_step', id: a.id })

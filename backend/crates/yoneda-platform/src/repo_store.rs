@@ -41,6 +41,7 @@ mod reads;
 mod record;
 mod reviewers;
 mod rows;
+mod sessions;
 pub(crate) mod staging;
 mod store_lineage;
 mod submitted;
@@ -92,6 +93,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
         }
         "repo_check" => actor.require("check"),
+        "repo_session_record" => actor.require("write"),
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
@@ -212,6 +214,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_adopt_commit" => adopt::adopt(db, c, &settings),
         "repo_check" => record::check(db, c, &actor, &settings),
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
+        "repo_session_record" => sessions::record(db, c, &actor),
+        "repo_sessions" => sessions::list(db, c, &actor),
         "repo_check_claim" => checks::claim(db, c),
         "repo_check_run" => checks::run_op(db, c),
         "repo_record_repair" => checks::record_repair(db, c),
