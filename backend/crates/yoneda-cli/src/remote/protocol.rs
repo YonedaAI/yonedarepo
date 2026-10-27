@@ -58,7 +58,8 @@ pub fn option(options: &mut Options, name: &str, value: &str) -> &'static str {
             options.dry_run = on;
             "ok"
         }
-        // Accepted without effect: progress goes to stderr either way, there are no tags.
+        // Accepted without effect: progress goes to stderr either way, and tags are
+        // lightweight, so `list` already names every one.
         "progress" | "followtags" | "cloning" => "ok",
         _ => "unsupported",
     }

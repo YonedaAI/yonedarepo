@@ -686,7 +686,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        23
+        24
     );
     // Upgraded repositories start live (not tombstoned).
     assert!(
@@ -1578,9 +1578,11 @@ mod break_glass;
 mod change_records;
 mod changesets;
 mod check_posters;
+mod checkpoints;
 mod land_cas;
 mod land_shapes;
 mod pushed;
 mod secrets;
 mod shards;
 mod staging;
+mod tags;
