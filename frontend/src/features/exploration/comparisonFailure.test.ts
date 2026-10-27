@@ -2,15 +2,12 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { comparisonFixture } from '../../../../tests/frontend/comparisonFixture';
-import { ComparisonAssessment } from './ComparisonAssessment';
-import { ComparisonResults } from './ComparisonResults';
-import { ComparisonWorkflow } from './ComparisonWorkflow';
 import { ExecutionFailure } from './ExecutionFailure';
 import { ExecutionHierarchy } from './ExecutionHierarchy';
 import { RecordedFailure } from './RecordedFailure';
 import { platformFailureNotice } from './workflowFailure';
 
-it('counts an actual historical running reviewer separately from both failed builders', () => {
+it('lists the failed builders and leaves out a historical reviewer execution', () => {
   const fixture = comparisonFixture();
   fixture.snapshot.executions = fixture.snapshot.executions.map((e) => ({
     ...e,
@@ -26,14 +23,14 @@ it('counts an actual historical running reviewer separately from both failed bui
   const html = renderToStaticMarkup(
     createElement(ExecutionHierarchy, {
       snapshot: fixture.snapshot,
-      run: { ...fixture.run, comparison: fixture.comparison },
+      run: fixture.run,
       onInspect: () => {},
     }),
   );
-  expect(html).toContain('2 builders · 1 reviewer');
-  expect(html).toContain('1 reviewer running');
-  expect(html).toContain('0 builders running');
-  expect(html).not.toContain('1 reviewers');
+  expect(html).toContain('2 agents');
+  expect(html).toContain('0 running · 0 queued');
+  expect(html.match(/<span class="status failed">/g)).toHaveLength(2);
+  expect(html).not.toContain('reviewer');
 });
 it('does not blame a provider for an unclassified platform failure or display raw runtime error data', () => {
   const html = renderToStaticMarkup(
@@ -51,78 +48,6 @@ it('does not blame a provider for an unclassified platform failure or display ra
   expect(html).not.toContain('ZAI execution failed');
   expect(html).not.toContain('PRIVATE_DIAGNOSTIC');
   expect(html).not.toContain('Review provider connections');
-});
-
-it('shows the native zero-checked skip in results and workflow without inventing a review or winner', () => {
-  const fixture = comparisonFixture();
-  fixture.snapshot.candidates = [];
-  fixture.snapshot.executions = fixture.snapshot.executions.map((e) => ({
-    ...e,
-    status: 'failed',
-  }));
-  const run = {
-    ...fixture.run,
-    status: 'failed',
-    comparison: {
-      ...fixture.comparison,
-      status: 'needs_attention',
-      selected_candidate_id: null,
-      latest_review: null,
-      latest_review_id: null,
-      reviewer_status: 'skipped',
-      review_skip_reason: {
-        code: 'NO_CHECKED_RESULTS',
-        authority: 'platform',
-        message: 'Untrusted detail is not product copy',
-      },
-    },
-  };
-  const html = renderToStaticMarkup(
-    createElement(ComparisonResults, {
-      snapshot: fixture.snapshot,
-      run,
-      busy: false,
-      onPublish: () => {},
-      onAction: async () => true,
-      onContext: () => {},
-      onGraph: () => {},
-    }),
-  );
-  expect(html).toContain('Review skipped — no checked results');
-  expect(html).not.toContain('Automatic review stopped');
-  expect(html).not.toContain('Selected output');
-  expect(html).not.toContain('Untrusted detail');
-  const workflow = renderToStaticMarkup(
-    createElement(ComparisonWorkflow, { snapshot: fixture.snapshot, run }),
-  );
-  expect(workflow).toContain('Review skipped — no checked results');
-  expect(workflow).not.toContain('Awaiting recorded review');
-});
-it('does not infer review skip from missing candidates, pending checks or an agent-authored reason', () => {
-  const fixture = comparisonFixture();
-  const base = {
-    ...fixture.comparison,
-    latest_review: null,
-    latest_review_id: null,
-    selected_candidate_id: null,
-  };
-  for (const comparison of [
-    base,
-    {
-      ...base,
-      reviewer_status: 'skipped',
-      review_skip_reason: { code: 'NO_CHECKED_RESULTS', authority: 'agent' },
-    },
-    {
-      ...base,
-      reviewer_status: 'running',
-      review_skip_reason: { code: 'NO_CHECKED_RESULTS', authority: 'platform' },
-    },
-  ]) {
-    const html = renderToStaticMarkup(createElement(ComparisonAssessment, { comparison }));
-    expect(html).not.toContain('Review skipped');
-    expect(html).toContain('No automatic review is recorded');
-  }
 });
 
 it('attributes a trusted capture failure to the platform without suggesting provider billing or credentials', () => {
@@ -193,52 +118,4 @@ it('keeps raw technical runtime data in a closed fold and attributes only truste
     }),
   ).toBeUndefined();
   expect(platformFailureNotice({ status: 'failed', failure_stage: 'capture' })).toBeUndefined();
-});
-it('preserves earlier reviewer and owner reasons as history when the platform later skips review', () => {
-  const fixture = comparisonFixture();
-  const comparison = {
-    ...fixture.comparison,
-    reviewer_status: 'skipped',
-    review_skip_reason: { code: 'NO_CHECKED_RESULTS', authority: 'platform' },
-    selected_by: 'owner' as const,
-    selection_reason: 'Earlier owner rationale.',
-  };
-  const html = renderToStaticMarkup(createElement(ComparisonAssessment, { comparison }));
-  expect(html).toContain('Earlier reviewer assessment');
-  expect(html).toContain(fixture.comparison.latest_review?.rationale);
-  expect(html).toContain('Earlier owner rationale.');
-});
-it('presents verification-only recovered checks as human choices, preserving earlier review history without a failed-run claim', () => {
-  const fixture = comparisonFixture();
-  const comparison = {
-    ...fixture.comparison,
-    status: 'needs_attention' as const,
-    selected_candidate_id: null,
-    reviewer_status: 'skipped',
-    review_skip_reason: { code: 'CAPTURE_RECOVERY_CHECK_ONLY', authority: 'platform' },
-    verification_recovery: {
-      version: 1 as const,
-      automatic_review: false as const,
-      request_id: 'recovery',
-      authority: 'owner_verification_recovery' as const,
-    },
-  };
-  const run = { ...fixture.run, status: 'ready', comparison };
-  const html = renderToStaticMarkup(
-    createElement(ComparisonResults, {
-      snapshot: fixture.snapshot,
-      run,
-      busy: false,
-      onPublish: () => {},
-      onAction: async () => true,
-      onContext: () => {},
-      onGraph: () => {},
-    }),
-  );
-  expect(html).toContain('Review skipped — capture verification only');
-  expect(html).toContain('Earlier reviewer assessment');
-  expect(html).not.toContain('No checked result is eligible');
-  expect(html).not.toContain('Automatic review stopped');
-  expect(html).not.toContain('Selected output');
-  expect(html.match(/Use this result<\/button>/g)).toHaveLength(2);
 });

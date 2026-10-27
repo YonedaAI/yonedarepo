@@ -1,7 +1,6 @@
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { modelHandler } from '../../cloudflare/worker/models';
-import { campaignModelBudgets } from '../../cloudflare/worker/reviewer-campaign';
 import { ledger } from '../../cloudflare/worker/storage';
 import type { Env, Json, Scope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -10,8 +9,9 @@ import { bindings, containerBindings, readyReviewer } from './reviewer-fixture';
 import { approvedLedger } from './source-kit';
 
 afterEach(async () => { vi.unstubAllGlobals(); await reset(); });
-const budget = { ...campaignModelBudgets[1], max_requests: 4, max_output_tokens: 256,
-  max_execution_ms: 120000, spend_limit_microusd: 50000 };
+const budget = { provider: 'codex', model: 'gpt-5.6-luna', max_requests: 4, max_output_tokens: 256,
+  max_execution_ms: 120000, spend_limit_microusd: 50000, pricing: { input_microusd_per_million: 250000,
+    output_microusd_per_million: 1200000, source: 'owner-approved conservative rates' } };
 async function setup(marked = true, limit = 50000, approved: Json = budget, adaptive = false) {
   const f = await readyReviewer();
   await workspaceSpendConfigure(bindings, f.owner, 0, limit);
@@ -116,16 +116,6 @@ it('keeps a committed workspace reservation on lost acknowledgment without upstr
   expect((await f.detail()).run.model_budgets[0]).toMatchObject({ requests: 1, charged_microusd: 0 });
 });
 
-it('prices an adaptive planner from the same shared allowance even without the fixed-run marker', async () => {
-  const f = await setup(false, 50000, budget, true);
-  const fetch = vi.fn(async () => Response.json({ status: 'completed', usage: { input_tokens: 100, output_tokens: 10 } }));
-  vi.stubGlobal('fetch', fetch);
-  expect(f.job.payload.run.workspace_spend).toBeUndefined();
-  expect(f.job.payload.run.adaptive_team.version).toBe(1);
-  const response = await f.call(); expect(response.status).toBe(200); await response.text();
-  expect(await workspaceSpendStatus(bindings, f.owner)).toMatchObject({ charged_microusd: 37, reserved_microusd: 0 });
-  expect(fetch).toHaveBeenCalledOnce();
-});
 
 it('rejects an unpriced marked run before any request count or upstream call', async () => {
   const f = await setup(true, 50000, { ...budget, pricing: null, spend_limit_microusd: null });

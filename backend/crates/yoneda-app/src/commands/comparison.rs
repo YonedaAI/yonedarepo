@@ -1,23 +1,11 @@
-//! Bounded comparison review and explicit selection, separate from publication.
+//! The owner's explicit selection among compare results, separate from publication.
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
-mod approval;
-mod budgets;
-mod lifecycle;
 mod manifest;
 mod provenance;
 mod refresh;
-mod repair;
-mod retrieval;
 mod selection;
-mod submission;
-pub(super) use approval::{freeze, validate};
-pub(super) use budgets::put as put_budget;
-pub(super) use budgets::{authorize_execution, budget_values, record_request};
-pub(super) use lifecycle::{complete_review, wake, wake_after_attempt};
-pub(super) use repair::validate_capture;
-pub(super) use retrieval::{guard as guard_tools, read as read_context};
 fn view(run: &Value) -> Value {
     let mut comparison = run["comparison"].clone();
     if let Some(m) = comparison.as_object_mut() {
@@ -26,23 +14,11 @@ fn view(run: &Value) -> Value {
     }
     comparison
 }
-pub(super) use provenance::{decision as decision_provenance, link as link_decision};
+pub(super) use provenance::decision as decision_provenance;
 pub(super) use selection::validate_publish;
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    match string(c, "op")?.as_str() {
-        "approve_comparison_review" => approval::approve(db, c, now),
-        "select_comparison_candidate" => selection::owner_select(db, c, now),
-        "comparison_context" => submission::context(db, c, now),
-        "comparison_submit" => submission::submit(db, c, now),
-        "comparison_approval" => approval::read(db, c),
-        _ => Err(bad("Unknown comparison operation")),
-    }
-}
+pub(super) use selection::owner_select;
 
-pub(super) fn hosted(run: &Value) -> bool {
-    run["mode"] == "compare" && run["agents"].as_array().is_some_and(|a| a.len() == 2)
-}
 fn manual_roster(run: &Value) -> bool {
     run["mode"] == "compare"
         && run["agents"]

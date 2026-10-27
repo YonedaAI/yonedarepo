@@ -41,7 +41,7 @@ export function RunSourceNotice({
       )}
       <p>
         {mode === 'collaborate'
-          ? 'Your agents plan and build complementary parts of the same project in isolated workspaces.'
+          ? 'Each agent builds the tasks you assigned in its own sandbox; the platform merges their work on one team branch.'
           : agents === 1
             ? 'Your agent works in an isolated workspace with the approved brief and selected context.'
             : 'Your agents share one source revision, brief and selected context. Each works in an isolated workspace as capacity becomes available.'}{' '}

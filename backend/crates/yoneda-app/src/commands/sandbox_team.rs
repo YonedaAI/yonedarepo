@@ -24,10 +24,60 @@ pub(super) fn member(job: &Value) -> bool {
     job["payload"]["execution"]["sandbox_task"].is_object()
 }
 
+/// The owner-written task list of a `collaborate` run; a compare run takes none.
+pub(super) fn plan(c: &Value) -> Result<Option<TeamPlan>> {
+    let mode = c
+        .get("mode")
+        .map(|m| m.as_str().ok_or_else(|| bad("Run mode must be a string")))
+        .transpose()?
+        .unwrap_or("compare");
+    match mode {
+        "compare" if c.get("team").is_none_or(Value::is_null) => Ok(None),
+        "compare" => Err(bad("Team configuration requires Build together mode")),
+        "collaborate" if c.get("team").is_none_or(Value::is_null) => Ok(None),
+        "collaborate" => {
+            let plan: TeamPlan =
+                serde_json::from_value(c["team"].clone()).map_err(|e| bad(&e.to_string()))?;
+            plan.validate(c["agents"].as_array().map_or(0, Vec::len))?;
+            Ok(Some(plan))
+        }
+        _ => Err(bad("Choose compare or collaborate run mode")),
+    }
+}
+
+/// Task scopes stay off protected verification paths and Git metadata.
+pub(super) fn validate_plan_scopes(run: &Value, plan: &TeamPlan) -> Result<()> {
+    let policy = run.get("approved_policy").unwrap_or(&run["policy"]);
+    let protected: Vec<&str> = policy["build"]["test_bundle"]["protected_paths"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|path| path.trim_end_matches('/'))
+        .collect();
+    let paths = plan.tasks.iter().flat_map(|task| &task.write_paths);
+    for path in plan.integration_paths.iter().chain(paths) {
+        let scope = path.trim_end_matches('/');
+        yoneda_agents_core::validate_path(scope)?;
+        if path.split('/').any(|component| component == ".git")
+            || protected.iter().any(|protected| {
+                scope == *protected
+                    || scope.starts_with(&format!("{protected}/"))
+                    || protected.starts_with(&format!("{scope}/"))
+            })
+        {
+            return Err(Error::new(
+                "FORBIDDEN",
+                "Agent plans cannot edit protected verification or Git metadata",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// An owner-written plan of parallel tasks, nothing that needs an orchestrating agent.
 pub(super) fn freeze(
     c: &Value,
-    general: bool,
     plan: Option<&TeamPlan>,
     delegation: &DelegationPolicy,
     run: &mut Value,
@@ -36,8 +86,8 @@ pub(super) fn freeze(
     let Some(plan) = plan else {
         return refuse("Sandbox team runs take an owner-written task list, not automatic planning");
     };
-    if !general || !c["comparison"].is_null() {
-        return refuse("Sandbox team runs need a coding policy and no comparison review");
+    if !c["comparison"].is_null() {
+        return refuse("Sandbox team runs take no comparison review");
     }
     if delegation.enabled {
         return refuse("Sandbox runs do not delegate");

@@ -72,10 +72,10 @@ it('rejects a source identity outside this namespace before any read', async () 
   expect(get).not.toHaveBeenCalled();
 });
 
-it('strips guided authority from ordinary browser starts including future private markers', async () => {
+it('strips source authority from ordinary browser starts including future private markers', async () => {
   const input = await ownerCommandInput(new Request('https://yoneda/api/repos/repo/start_run', { method: 'POST', body: JSON.stringify({
-    id: 'ordinary', intent: 'Normal account work', guided: { session_id: 'foreign' }, guided_session: { forged: true },
-    guided_profile_id: 'task-board-v1', _guided_runs: [{ id: 'paid-forged' }], _guided_authority: true,
+    id: 'ordinary', intent: 'Normal account work', source_view: { forged: true }, source_approval: { forged: true },
+    _source_base: { commit: 'f'.repeat(40) }, _source_future_authority: true,
   }) }), 'start_run');
   expect(input).toEqual({ id: 'ordinary', intent: 'Normal account work' });
 });

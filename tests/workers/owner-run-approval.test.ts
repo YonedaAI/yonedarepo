@@ -27,33 +27,7 @@ it('starts an explicit comparison roster with distinct identities and one shared
 const adaptive = (id: string) => ({ id, intent: 'Local route approval fixture; no model requests', adaptive_team: { version: 1, requested_agents: [{ connection: 'reviewer-codex', role: 'builder' }] } });
 const allowance = (f: Awaited<ReturnType<typeof readyReviewer>>) => workspace(bindings, f.owner, { op: 'workspace_spend_status' });
 
-it.each(['auto', 'user', 'admin'])('blocks %s first funding transition with active legacy work without cancellation or config', async (entry) => {
-  const f = await readyReviewer(`approval_busy_${entry}`);
-  await api(f.scoped, '/api/reviewer/trial', f.cookie, { request_id: 'legacy-active-route-123456' });
-  const before = await ledger(bindings, f.repo, { op: 'snapshot' });
-  const response = entry === 'auto'
-    ? await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, adaptive('new-owner-run'))
-    : entry === 'user'
-      ? await api(f.scoped, '/api/workspace/allowance', f.cookie, { expected_version: 0, limit_microusd: 40000000 })
-      : await api(f.scoped, '/api/admin/workspace/allowance', '', { username: f.owner, expected_version: 0, limit_microusd: 50000000 }, true);
-  expect(response.status).toBe(409);
-  expect(await response.json<Json>()).toMatchObject({ error: { code: 'WORKSPACE_TRANSITION_BUSY' } });
-  expect((await allowance(f)).version).toBe(0);
-  expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toEqual(before.runs);
-});
 
-it('validates credentials of the whole adaptive pool before configuring funding even when its seed key is valid', async () => {
-  const f = await readyReviewer('approval_pool_keys');
-  const stub = bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`account:${f.owner}`));
-  await runInDurableObject(stub, (_instance, state) => {
-    state.storage.sql.exec("UPDATE workspace_records SET payload=json_set(payload,'$.sealed',json('{}')) WHERE id='provider:reviewer-claude-sonnet-5-5'");
-  });
-  const response = await api(f.scoped, `/api/repos/${f.repo}/start_run`, f.cookie, adaptive('invalid-nonseed-key'));
-  expect(response.status).toBe(409);
-  expect(await response.json<Json>()).toMatchObject({ error: { code: 'PROVIDER_MISSING' } });
-  expect((await allowance(f)).version).toBe(0);
-  expect((await ledger(bindings, f.repo, { op: 'snapshot' })).runs).toEqual([]);
-});
 
 it('checks normalized fixed budgets against older ledger capabilities before configuring or creating a run', async () => {
   const f = await readyReviewer('approval_old_wasm');

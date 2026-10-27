@@ -7,7 +7,7 @@ export const sourceFingerprint = (value: unknown) =>
 export const hex = (value: ArrayBuffer) =>
   [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 
-/** Native SourceWorkspace uses a decoded 32-byte key, distinct from legacy campaign HMAC. */
+/** Native SourceWorkspace uses a decoded 32-byte key. */
 export async function sourceMac(
   vault: string | undefined,
   domain: 'source-grant' | 'source-gc' | 'source-seal' | 'source-capture',

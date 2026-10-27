@@ -71,7 +71,7 @@ export function activityLabel(event: ActivityEvent) {
     'job.recovered': 'Attempt recovered after interruption',
     'job.progress': 'Progress recorded',
     'context.published': 'Agent context recorded · assertion',
-    'artifact.published': 'Agent research artifact recorded · assertion',
+    'artifact.published': 'Agent artifact recorded · assertion',
     'team.task_captured': 'Task source captured',
     'team.task_scheduled': 'Task scheduled',
     'team.task_retried': 'Task retry approved',

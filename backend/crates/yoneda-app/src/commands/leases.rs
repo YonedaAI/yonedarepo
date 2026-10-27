@@ -101,7 +101,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     save(db, "jobs", &id, &j)?;
                 }
                 save_execution(db, &e, now)?;
-                super::team::reflect(db, &e, "running", j["epoch"].clone(), now)?;
             }
             event(db, "job.started", now, job_event(&j))?;
             Ok(j)

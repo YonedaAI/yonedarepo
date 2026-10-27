@@ -1,9 +1,5 @@
-use crate::process::{Result, token};
-use serde_json::{Value, json};
-use yoneda_agents_core::Policy;
-pub(crate) async fn api(url: &str, path: &str, body: Option<Value>) -> Result<Value> {
-    api_authenticated(url, path, body, &token()?).await
-}
+use crate::process::Result;
+use serde_json::Value;
 pub(crate) async fn api_authenticated(
     url: &str,
     path: &str,
@@ -30,76 +26,4 @@ pub(crate) async fn api_authenticated(
         return Err(value.to_string().into());
     }
     Ok(value)
-}
-pub async fn start(url: &str, repo: &str) -> Result<()> {
-    let run=api(url,&format!("repos/{repo}/start_run"),Some(json!({"id":format!("run-{}",uuid::Uuid::new_v4()),"intent":"Add safe retries for transient upstream failures within a bounded total deadline.","criteria":["Retry GET only","Respect total deadline","Read README.md before publishing guidance; preserve its CLI contract, including repeating the final supplied status when the status list is exhausted","Preserve explicit assumptions and tradeoffs"]}))).await?;
-    println!(
-        "Started real agent exploration {} at {url}. Review and select a candidate in the browser.",
-        run["id"]
-    );
-    Ok(())
-}
-pub async fn verify(url: &str, repo: &str) -> Result<()> {
-    let snapshot = api(url, &format!("repos/{repo}/snapshot"), None).await?;
-    let mut events = Vec::new();
-    let mut after = 0;
-    loop {
-        let page = api(url, &format!("repos/{repo}/events?after={after}"), None).await?;
-        let page = page["events"].as_array().ok_or("No event replay")?;
-        if page.is_empty() {
-            break;
-        }
-        after = page
-            .last()
-            .and_then(|e| e["seq"].as_u64())
-            .ok_or("Invalid event sequence")?;
-        events.extend(page.iter().cloned());
-        if after >= snapshot["seq"].as_u64().unwrap_or(0) {
-            break;
-        }
-    }
-    let mut why = json!({"coverage":"unknown","nodes":[],"edges":[]});
-    if let Ok((_, candidate)) = crate::verification::selected(&snapshot)
-        && let (Some(commit), Some(path)) = (
-            candidate["revision"]["commit"].as_str(),
-            candidate["paths"]
-                .as_array()
-                .and_then(|v| v.first())
-                .and_then(Value::as_str),
-        )
-    {
-        let query = reqwest::Url::parse_with_params(
-            "https://query.invalid/",
-            [("commit", commit), ("path", path)],
-        )?;
-        why = api(
-            url,
-            &format!("repos/{repo}/why?{}", query.query().unwrap_or_default()),
-            None,
-        )
-        .await?;
-    }
-    let result = crate::verification::check(&snapshot, &events, &why);
-    std::fs::create_dir_all("artifacts")?;
-    std::fs::write(
-        "artifacts/live-verification.json",
-        serde_json::to_vec_pretty(
-            &json!({"verification":{"complete":result.is_ok(),"error":result.as_ref().err().map(ToString::to_string)},"snapshot":snapshot,"events":events,"why":why}),
-        )?,
-    )?;
-    result?;
-    println!(
-        "Verified one complete run: research, three overlapping coding harnesses, shared context, exact captured/evaluated revisions, canonical publication and simulated incident history. Recorded owner selection is not a claim of user approval. Evidence: artifacts/live-verification.json"
-    );
-    Ok(())
-}
-
-pub async fn upgrade_policy(url: &str, repo: &str) -> Result<()> {
-    let snapshot = api(url, &format!("repos/{repo}/snapshot"), None).await?;
-    let repo = &snapshot["repository"];
-    api(url,&format!("repos/{repo}/update_policy"),Some(json!({"expected_commit":repo["head_commit"],"expected_version":repo["version"],"expected_policy":repo["policy"]["version"],"policy":Policy::default()}))).await?;
-    println!(
-        "Installed current versioned policy; captured candidates will be evaluated again. Historical evidence is retained."
-    );
-    Ok(())
 }

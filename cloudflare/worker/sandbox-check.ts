@@ -105,8 +105,7 @@ export async function checkAttempt(env: Env, repo: string, job: Json): Promise<C
   const policy = payload.policy ?? {};
   const build = policy.build ?? {};
   const integrity = payload.source_integrity ?? {};
-  if (payload.guided || build.app)
-    fail('NOT_SUPPORTED', 'These checks run in the evaluator container');
+  if (build.app) fail('NOT_SUPPORTED', 'These checks run in the evaluator container');
   const bundle = build.test_bundle ?? null;
   if (bundle !== null && !/^[a-f0-9]{64}$/.test(String(bundle.digest)))
     fail('INVALID_INPUT', 'Invalid test bundle digest');

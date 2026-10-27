@@ -30,9 +30,7 @@ export function RunSourceProgress({
           <li
             key={stage}
             aria-current={
-              progress.stage === stage ||
-              (stage === 'working' && progress.stage === 'waiting') ||
-              (stage === 'review' && progress.stage === 'choice')
+              progress.stage === stage || (stage === 'working' && progress.stage === 'waiting')
                 ? 'step'
                 : undefined
             }

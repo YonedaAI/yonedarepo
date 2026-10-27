@@ -1,4 +1,4 @@
-const REPOSITORY_LINK_PARAMS = ['repo', 'run', 'guided', 'session'];
+const REPOSITORY_LINK_PARAMS = ['repo', 'run'];
 
 export interface RepositorySelectionInput {
   /** Repository named by the page's original `?repo=` link, if any. */

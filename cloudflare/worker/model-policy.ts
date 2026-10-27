@@ -47,12 +47,7 @@ export function prepareModelRequest(
     if (workspaceApproval) {
       if (!workspaceSpendApprovesJob(workspaceApproval, job))
         throw new Error('Opus workspace approval differs from the frozen attempt');
-    } else if (
-      job.payload?.execution?.campaign_opus !== true ||
-      job.payload?.execution?.repair_round !== 2 ||
-      job.payload?.run?.repair_escalation?.model !== model
-    )
-      throw new Error('Opus 5.5 requires the preapproved second repair execution');
+    } else throw new Error('Opus 5.5 requires a workspace-approved Opus budget');
   }
   const body = structuredClone(input);
   enforceFrozenReasoning(job, body, harness);

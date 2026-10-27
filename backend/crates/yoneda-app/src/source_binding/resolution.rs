@@ -22,7 +22,6 @@ pub(super) fn record<S: SqlStore>(db: &S, job: &Value, e: &Value) -> Result<Opti
         ));
     }
     validate_target(db, &record)?;
-    crate::commands::conflicts::validate_source_resolution(db, &record)?;
     Ok(Some(record))
 }
 pub(super) fn validate_target<S: SqlStore>(db: &S, record: &Value) -> Result<()> {

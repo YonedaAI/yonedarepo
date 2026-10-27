@@ -13,26 +13,29 @@ const approve = (run: Json, base: Json) =>
 
 /**
  * What the Worker adds to a run approval after reading the platform: lazy source at the frozen
- * base (the working branch head, else the published commit). A guided concurrent retry starts
- * from the extend checkpoint the ledger restores.
+ * base (the working branch head, else the published commit).
  */
 export async function approvedStart(env: Env, repo: string, command: Json): Promise<Json> {
+  if (command.op !== 'start_run') return command;
   const call = (input: Json) => ledger(env, repo, input);
-  const published = async () => {
-    const status = await call({ op: 'repository_status' });
-    return { repository: `${status.remote.namespace}/${status.remote.name}`, commit: status.published_commit };
-  };
-  const working = async (id: unknown) => (id == null ? null : (await call({ op: 'working_branch', id })).working_revision);
-  if (command.op === 'start_run')
-    return approve(command, (await working(command.working_branch_id)) ?? (await published()));
-  if (command.op !== 'start_guided_step' || !Array.isArray(command._guided_runs)) return command;
-  const session = await call({ op: 'guided_session', id: command.session_id, _workspace: command._workspace })
-    .catch(() => null);
-  let base = (await working(session?.working_branch_id).catch(() => null)) ?? (await published());
-  if (command.retry === true && command.step_id === 'concurrent')
-    base = session?.steps?.find((step: Json) => step.id === 'extend')?.revision ?? base;
-  return { ...command, _guided_runs: command._guided_runs.map((run: Json) => approve(run, base)) };
+  const working =
+    command.working_branch_id == null
+      ? null
+      : (await call({ op: 'working_branch', id: command.working_branch_id })).working_revision;
+  if (working) return approve(command, working);
+  const status = await call({ op: 'repository_status' });
+  return approve(command, {
+    repository: `${status.remote.namespace}/${status.remote.name}`,
+    commit: status.published_commit,
+  });
 }
+
+/** A build policy, which every run needs, and a one-agent roster for it. */
+export const buildPolicy = {
+  version: 'build-v1', suite: 'commands-v1', environment: 'linux-node24-rust1.94-v1', required_checks: ['build'],
+  build: { checks: [{ name: 'build', argv: ['node', '--check', 'app.js'], timeout_seconds: 30 }] },
+};
+export const oneAgent = [{ provider: 'mimo', model: 'mimo-v2.6-flash', strategy: 'minimal' }];
 
 /** `ledger` with the start approval applied, for fixtures that issue raw commands. */
 export const approvedLedger = (env: Env, repo: string) => async (command: Json) =>

@@ -17,7 +17,7 @@ mod archive_command {
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
 fn run(id: &str, now: i64) -> Value {
-    json!({"op":"start_run","id":id,"intent":"Inspect historical delivery","criteria":[],"now":now})
+    json!({"op":"start_run","id":id,"intent":"Inspect historical delivery","criteria":[],"now":now,"agents":one_agent()})
 }
 
 #[test]
@@ -329,7 +329,7 @@ fn run_detail_and_graph_scope_actual_evaluation_and_producer_execution_artifact_
     let db = repo();
     let created = start(&db);
     let run_id = created["id"].as_str().unwrap();
-    let execution_id = "run-one:research";
+    let execution_id = "run-one:agent-1";
     db.query("INSERT INTO candidates(id,payload) VALUES('candidate-actual',?)", &[json!(json!({"id":"candidate-actual","run_id":run_id,"execution":execution_id,"status":"evaluated"}).to_string())]).unwrap();
     let evaluation = yoneda_agents_core::Evaluation {
         id: "evaluation-actual".into(),
@@ -360,7 +360,7 @@ fn run_detail_and_graph_scope_actual_evaluation_and_producer_execution_artifact_
         evaluation,
     )
     .unwrap();
-    let claim = call(&db, json!({"op":"claim","job_id":"job:run-one:research"})).unwrap();
+    let claim = call(&db, json!({"op":"claim","job_id":"job:run-one:agent-1"})).unwrap();
     let actual_artifact = call(&db, json!({"op":"publish_artifact","job_id":claim["id"],"epoch":claim["epoch"],"id":"artifact-actual","digest":"c".repeat(64),"label":"Research note","kind":"research","metadata":{"assumptions":[{"statement":"Upstream p99 stays bounded","metric":"upstream_p99_ms","limit":100,"path":"src/main.rs"}]}})).unwrap();
     assert_eq!(actual_artifact["producer"], execution_id);
     let nested = json!({"id":"artifact-nested","producer":{"execution":execution_id},"kind":"research","label":"Legacy producer shape","digest":"d".repeat(64)});
@@ -474,7 +474,7 @@ fn hot_lineage_reads_use_run_scoped_job_indexes() {
         ),
     ] {
         let sql = format!(
-            "EXPLAIN QUERY PLAN SELECT id FROM artifacts WHERE json_extract(payload,'{path}') IN ('run-one:research')"
+            "EXPLAIN QUERY PLAN SELECT id FROM artifacts WHERE json_extract(payload,'{path}') IN ('run-one:agent-1')"
         );
         let plan = json!(db.query(&sql, &[]).unwrap()).to_string();
         assert!(plan.contains(index), "{plan}");
@@ -554,12 +554,12 @@ fn archive_interruption_replay_compacts_only_after_verified_ack_and_retains_refe
         )],
     )
     .unwrap();
-    db.query("INSERT INTO execution_logs(event_id,execution_id,at,data) VALUES('archive-log','run-one:research',9,'{\"stage\":\"execution.started\"}')", &[]).unwrap();
+    db.query("INSERT INTO execution_logs(event_id,execution_id,at,data) VALUES('archive-log','run-one:agent-1',9,'{\"stage\":\"execution.started\"}')", &[]).unwrap();
     let prepare = json!({"op":"archive_prepare","run_id":id});
     let first = archive_command::handle(&db, prepare.clone(), 40 * 24 * 60 * 60 * 1000).unwrap();
     let retried = archive_command::handle(&db, prepare, 40 * 24 * 60 * 60 * 1000).unwrap();
     assert_eq!(first["job"]["digest"], retried["job"]["digest"]);
-    db.query("INSERT INTO execution_logs(event_id,execution_id,at,data) VALUES('after-prepare-log','run-one:research',10,'{\"stage\":\"execution.finished\"}')", &[]).unwrap();
+    db.query("INSERT INTO execution_logs(event_id,execution_id,at,data) VALUES('after-prepare-log','run-one:agent-1',10,'{\"stage\":\"execution.finished\"}')", &[]).unwrap();
     let bundle: Value = serde_json::from_str(first["bundle_json"].as_str().unwrap()).unwrap();
     assert!(
         bundle["execution_logs"]
@@ -593,7 +593,7 @@ fn archive_interruption_replay_compacts_only_after_verified_ack_and_retains_refe
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(compacted["payload"]["execution"]["id"], "run-one:research");
+    assert_eq!(compacted["payload"]["execution"]["id"], "run-one:agent-1");
     assert!(compacted["payload"]["execution"].get("context").is_none());
     assert!(compacted["payload"].get("policy").is_none());
     let log = db
@@ -645,7 +645,7 @@ fn archive_blocks_running_internal_and_external_attempts_and_daily_schedule_is_i
         &[json!(run.to_string()), json!(id)],
     )
     .unwrap();
-    let job_id = format!("job:{id}:research");
+    let job_id = format!("job:{id}:agent-1");
     db.query(
         "UPDATE jobs SET payload=json_set(payload,'$.status','running','$.external',1) WHERE id=?",
         &[json!(job_id)],

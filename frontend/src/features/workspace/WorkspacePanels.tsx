@@ -1,10 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
-import { GuidedProject } from '../guided-demo/GuidedProject';
 import { AccountPanel } from './AccountPanel';
 import { ConnectAgents } from './ConnectAgents';
-import { DemoGuide } from './DemoGuide';
 import { NewProject } from './NewProject';
 import { OwnerConnection } from './OwnerConnection';
 
@@ -12,22 +10,12 @@ const ProviderSettings = lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
 
-export type WorkspacePanel =
-  | 'agents'
-  | 'providers'
-  | 'project'
-  | 'guided-project'
-  | 'owner'
-  | 'guide'
-  | 'account'
-  | null;
+export type WorkspacePanel = 'agents' | 'providers' | 'project' | 'owner' | 'account' | null;
 const titles = {
   agents: 'Connect Agents',
   providers: 'Agent providers',
   project: 'Add repository',
-  'guided-project': 'Try guided demo',
   owner: 'Administrator access',
-  guide: 'How YonedaRepo works',
   account: 'Sign in to YonedaRepo',
 };
 
@@ -37,18 +25,16 @@ export function WorkspacePanels({
   state,
   onClose,
   onPanel,
-  onGuidedCreated,
 }: {
   reviewer?: boolean;
   panel: WorkspacePanel;
   state: ReturnType<typeof useRepository>;
   onClose: () => void;
-  onGuidedCreated?: (repo: string, session?: string) => void;
   onPanel?: (panel: WorkspacePanel) => void;
 }) {
   if (!panel || (reviewer && ['agents', 'providers', 'project'].includes(panel))) return null;
   return (
-    <Dialog key={panel} title={titles[panel]} onClose={onClose} wide={panel === 'guide'}>
+    <Dialog key={panel} title={titles[panel]} onClose={onClose}>
       {panel === 'account' && !state.authenticated && (
         <AccountPanel
           initialMode="login"
@@ -80,18 +66,6 @@ export function WorkspacePanels({
           }}
         />
       )}
-      {panel === 'guided-project' && state.authenticated && (
-        <GuidedProject
-          onClose={onClose}
-          onCreated={async (id, session) => {
-            await state.discover();
-            onGuidedCreated?.(id, session);
-            state.setId(id);
-            onClose();
-          }}
-        />
-      )}
-      {panel === 'guide' && <DemoGuide onClose={onClose} />}
       {panel === 'owner' && (
         <OwnerConnection
           authenticated={state.identity?.role === 'admin'}

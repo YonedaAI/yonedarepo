@@ -86,7 +86,3 @@ pub(crate) fn limits(job: &Value) -> Result<crate::attempt_watchdog::Limits> {
     };
     Ok(crate::attempt_watchdog::Limits { idle, ceiling })
 }
-
-#[cfg(test)]
-#[path = "tests/execution_phases.rs"]
-mod tests;
