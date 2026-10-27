@@ -114,6 +114,18 @@ Repository deletion and editable 1–6-agent run rosters are implemented and dep
 
 - Open from these runs: overload is reported as `500 INVALID_INPUT` instead of a retryable status; C3 reads served by the authority instead of a published snapshot; commit latency; check queue wait under load; Claude Code with GLM sometimes ignores its file tools.
 
+- Platform fixes (hosted, dev `75e7752`): reads of commit, version, tree and refs come from published snapshots and object tiers (C3); the commit path makes no authority call in steady state (B4/C2); overload answers 503 `OVERLOADED` with `Retry-After`; check runs no longer hold the queue consumer for their whole run.
+
+| Item | Before | After |
+|---|---|---|
+| C3 1000 concurrent reads, 8 sources | 4 sources refused 471–895 | 0 refused on all 8 (commit blob p95 201 ms, refs 194 ms) |
+| B4/C2 commit p95, 20 repos × 10 writers (3 runs) | 3.6–4.3 s | 1.1–1.7 s (gate < 1 s: not met). Phases p95: auth 0, head.fetch 24–48 ms, trees 875–1348 ms, shard.record 241–566 ms, cache.r2 304–371 ms |
+| C4 200 lands/s for 60 s (n=1) | 123/s achieved, 17% refused | 193.7/s, 0 refused, p95 3.4 s |
+| Check started right after a 20-repo burst (n=1) | 185–322 s queue wait | 20.9 s end to end |
+| Member removal refused | 577 ms | 605 ms |
+
+- Next commit-latency driver: the `trees` phase (tree rewrite reading parent trees through R2).
+
 ## Feature backlog
 
 - **Harness recovery (requested 2026-10-14).** Today a stopped agent harness (rollout, eviction, SIGTERM) is retried once from scratch in a fresh container (`HARNESS_INTERRUPTED`, r20), so the agent loses its in-progress work and conversation. Goal: resume a stopped harness from its last checkpoint: recover the uncaptured workspace edits, replay the transcript/session into the restarted harness, and re-attach to the same task revision without a duplicate capture or a second budget reservation. Also: graceful drain on planned rollouts (finish or checkpoint running attempts before replacing instances).
