@@ -70,7 +70,7 @@ it('fails a seeded vulnerable change, blocking land, and passes and lands the fi
   expect(bad.body.check_runs[0]).toMatchObject({ name: 'security', status: 'queued' });
   // B2(a) holds for model runners: nobody posts the runner's check by hand.
   expect((await api(`${repo}/commits/${bad.body.commit}/checks`, bot, { body: { name: 'security', status: 'pass' } })).status).toBe(403);
-  expect(await executeCheckRun(env, runs()[0])).toEqual({});
+  expect(await executeCheckRun(env, runs()[0])).toBeUndefined();
 
   // Exactly one call, no tools, the platform's key, the diff and the intent.
   expect(calls).toHaveLength(1);
@@ -93,7 +93,7 @@ it('fails a seeded vulnerable change, blocking land, and passes and lands the fi
   expect((await land(repo, bot, bad.body.commit)).body.error.code).toBe('NOT_READY');
 
   const fixed = await commit(repo, bot, 'def find(db, name):\n    return db.execute("SELECT * FROM users WHERE name = ?", (name,))\n', 'Use a bound parameter');
-  expect(await executeCheckRun(env, runs()[1])).toEqual({});
+  expect(await executeCheckRun(env, runs()[1])).toBeUndefined();
   const passed = await api(`${repo}/commits/${fixed.body.commit}`, bot);
   expect(passed.body.checks[0]).toMatchObject({ status: 'pass' });
   expect(JSON.parse(passed.body.checks[0].evidence)).toMatchObject({ verdict: 'pass', score: 96 });
@@ -105,7 +105,7 @@ it('retries a malformed answer once, then errors and stays blocked', async () =>
   const calls = stubModel(() => 'Looks fine to me!');
   const { repo, bot } = await securedRepo('nell');
   const made = await commit(repo, bot, 'x = 1\n', 'Tidy');
-  expect(await executeCheckRun(env, runs()[0])).toEqual({});
+  expect(await executeCheckRun(env, runs()[0])).toBeUndefined();
   expect(calls).toHaveLength(2);
   const run = await api(`${repo}/check-runs/${runs()[0].job_id}`, bot);
   expect(run.body.status).toBe('errored');
@@ -120,7 +120,7 @@ it('fails an oversized diff closed without calling the model', async () => {
   const { repo, bot } = await securedRepo('opal');
   const lines = Array.from({ length: 2_000 }, (_, i) => `value_${i} = ${'1'.repeat(30)}\n`).join('');
   const made = await commit(repo, bot, lines, 'Generated table');
-  expect(await executeCheckRun(env, runs()[0])).toEqual({});
+  expect(await executeCheckRun(env, runs()[0])).toBeUndefined();
   expect(calls).toHaveLength(0);
   const detail = await api(`${repo}/commits/${made.body.commit}`, bot);
   expect(detail.body.gates.failing_checks).toEqual(['security']);
@@ -134,7 +134,7 @@ it('records an error, not a pass, when the platform key is missing', async () =>
   const calls = stubModel(reviewer);
   const { repo, bot } = await securedRepo('pia');
   const made = await commit(repo, bot, 'x = 2\n', 'Tidy');
-  expect(await executeCheckRun(scoped, runs()[0])).toEqual({});
+  expect(await executeCheckRun(scoped, runs()[0])).toBeUndefined();
   expect(calls).toHaveLength(0);
   const run = await api(`${repo}/check-runs/${runs()[0].job_id}`, bot);
   expect(run.body).toMatchObject({ status: 'errored', result: { code: 'MODEL_KEY_MISSING' } });

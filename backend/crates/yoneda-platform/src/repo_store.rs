@@ -113,6 +113,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
         ),
         "repo_check_claim"
+        | "repo_check_release"
         | "repo_check_complete"
         | "repo_projection_pending"
         | "repo_projection_result"
@@ -218,6 +219,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_session_record" => sessions::record(db, c, &actor),
         "repo_sessions" => sessions::list(db, c, &actor),
         "repo_check_claim" => checks::claim(db, c),
+        "repo_check_release" => checks::release(db, c),
         "repo_check_run" => checks::run_op(db, c),
         "repo_record_repair" => checks::record_repair(db, c),
         "repo_check_complete" => checks::complete(db, c, principal),
