@@ -152,6 +152,31 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
     Ok(Plan { start, steps })
 }
 
+/// The step for a local merge that changes nothing against its first parent (a conflict
+/// resolved to its own side): one commit with no changes, replayed exactly when it can be.
+/// [`plan`] maps such a commit to its parent; a caller that sends merge parents uses this.
+pub fn merge_step(git: &Git, local: &str) -> Result<Step> {
+    let authored = git.authored(local)?;
+    let (message, author, committer) = match replay(git, local)? {
+        Some(r) => (r.message, r.author, Some(r.committer)),
+        None => (
+            authored.message,
+            json!({ "name": authored.name, "email": authored.email }),
+            None,
+        ),
+    };
+    Ok(Step::Commit {
+        local: local.to_owned(),
+        part: 1,
+        parts: 1,
+        changes: Vec::new(),
+        tree: git.tree_of(local)?,
+        message,
+        author,
+        committer,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
