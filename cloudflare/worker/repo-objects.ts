@@ -2,8 +2,9 @@
 // repository's object store (repo-stores), and verified pushes to it. Objects are
 // immutable, so a cache entry keyed by id never needs invalidation; keys are per
 // repository so access follows repository auth.
+import { deferred } from './background';
 import { compute } from './repo-compute';
-import { stagedInShards } from './repo-shards';
+import { stagedInShardOf, stagedInShards } from './repo-shards';
 import {
   type CachedObject,
   fromBase64,
@@ -14,6 +15,7 @@ import {
   toBase64,
 } from './repo-stores';
 import { timed } from './repo-timing';
+import { isolateTrees, type TreeMemo } from './repo-tree-memo';
 import type { Env } from './types';
 
 // Stores and object forms, for callers that know this module as the object layer.
@@ -27,24 +29,9 @@ export {
   toBase64,
 } from './repo-stores';
 
-const PUSH_ATTEMPTS = 5;
 const CACHE_CHUNK = 256;
 /** Commits up to this many objects write the cache alongside their push. */
 export const OVERLAP_CACHE_OBJECTS = 64;
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-const accepted = (refname: string) =>
-  fromBase64(compute({ op: 'push_report', refname }).report_b64);
-/** Git's report-status for one ref; anything else (an unpack failure, a server error line)
- * is a refusal carrying the report's printable text. */
-function pushOutcome(report: Uint8Array, refname: string): { accepted: boolean; refused?: string } {
-  try {
-    const outcome = compute({ op: 'push_outcome', refname, report_b64: toBase64(report) });
-    return { accepted: outcome.accepted === true, refused: outcome.refused ?? undefined };
-  } catch {
-    const text = new TextDecoder().decode(report).replace(/[^\x20-\x7e]+/g, ' ');
-    return { accepted: false, refused: text.trim().slice(0, 300) || 'empty report' };
-  }
-}
 const missing = (what: string) =>
   Object.assign(new Error(`${what} is missing`), { code: 'NOT_FOUND' });
 
@@ -57,9 +44,10 @@ const inFlight = new Map<string, Promise<{ bytes: Uint8Array; tier: Tier }>>();
 const EDGE_ORIGIN = 'https://objects.yoneda.internal';
 
 /**
- * Tiered, content-addressed reads: Cache API (per colo) -> R2 (shared) -> object store.
- * Each tier only asks the next one, and a miss fills the tiers above it. Keys carry the
- * repository so cached bytes are only reachable through that repository's auth.
+ * Tiered, content-addressed reads: parsed trees in memory -> Cache API (per colo; it
+ * stores nothing on workers.dev) -> R2 (shared) -> object store. Each tier only asks the
+ * next one, and a miss fills the tiers above it. Keys carry the repository so cached bytes
+ * are only reachable through that repository's auth.
  */
 export class RepoObjects {
   readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
@@ -67,6 +55,7 @@ export class RepoObjects {
     readonly env: Env,
     private readonly repo: string,
     readonly store: ObjectStore,
+    private readonly trees: TreeMemo = isolateTrees,
   ) {}
 
   /** The store of record: raw Git content of platform-built objects, never deleted. */
@@ -95,6 +84,8 @@ export class RepoObjects {
   /** Writes both tiers (or one) in bounded chunks: unbounded fan-out stalls on large
    * imports. */
   async cache(objects: CachedObject[], tiers: 'all' | 'edge' | 'r2' = 'all') {
+    // Trees written here are the ones this isolate's next commits build on.
+    for (const o of objects) if (o.kind === 'tree') this.trees.set(this.repo, o.id, o.entries);
     for (let i = 0; i < objects.length; i += CACHE_CHUNK) {
       const chunk = objects.slice(i, i + CACHE_CHUNK);
       await Promise.all([
@@ -118,11 +109,11 @@ export class RepoObjects {
 
   /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). Concurrent
    * reads of one object in this isolate share one walk down the tiers. */
-  private async read(id: string, kind: ObjectKind): Promise<Uint8Array> {
+  private async read(id: string, kind: ObjectKind, stagedWith?: string): Promise<Uint8Array> {
     const key = `${this.repo}/${kind}/${id}`;
     let reading = inFlight.get(key);
     if (!reading) {
-      reading = this.walk(id, kind).finally(() => inFlight.delete(key));
+      reading = this.walk(id, kind, stagedWith).finally(() => inFlight.delete(key));
       inFlight.set(key, reading);
     }
     const { bytes, tier } = await reading;
@@ -130,7 +121,19 @@ export class RepoObjects {
     return bytes;
   }
 
-  private async walk(id: string, kind: ObjectKind): Promise<{ bytes: Uint8Array; tier: Tier }> {
+  /** Fills the tiers above the one that served `object`: the edge at once, R2 after the
+   * response when the request lends its waitUntil (an R2 write costs a reader ~200 ms). */
+  private async fill(object: CachedObject) {
+    const r2 = () => timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), [object]));
+    if (!deferred(r2)) await r2();
+    await this.cache([object], 'edge');
+  }
+
+  private async walk(
+    id: string,
+    kind: ObjectKind,
+    stagedWith?: string,
+  ): Promise<{ bytes: Uint8Array; tier: Tier }> {
     const edge = await caches.default.match(this.edgeKey(id)).catch(() => undefined);
     if (edge && edge.headers.get('x-kind') === kind)
       return { bytes: new Uint8Array(await edge.arrayBuffer()), tier: 'edge' };
@@ -142,8 +145,19 @@ export class RepoObjects {
     }
     const fromRaw = await this.recorded(id, kind);
     if (fromRaw) {
-      await this.cache([fromRaw]);
+      await this.fill(fromRaw);
       return { bytes: this.encode(fromRaw), tier: 'r2' };
+    }
+    // Staged with a commit the caller names (one shard), before the tiers that ask the
+    // authority, the object store or every shard.
+    if (stagedWith) {
+      const [held] = (await stagedInShardOf(this.env, this.repo, stagedWith, [
+        id,
+      ])) as CachedObject[];
+      if (held?.kind === kind) {
+        await this.fill(held);
+        return { bytes: this.encode(held), tier: 'store' };
+      }
     }
     // Accepted but not yet in R2: the authority still holds the staged copy. A staged copy
     // is dropped only after its R2 write, so a miss there means R2 has it now.
@@ -169,7 +183,7 @@ export class RepoObjects {
       object ??= await this.recorded(id, kind);
     }
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
-    await this.cache([object]);
+    await this.fill(object);
     return { bytes: this.encode(object), tier: 'store' };
   }
 
@@ -255,9 +269,25 @@ export class RepoObjects {
     return value.objects ?? [];
   }
 
-  async tree(id: string): Promise<TreeEntry[]> {
-    const bytes = await this.read(id, 'tree');
-    return (JSON.parse(new TextDecoder().decode(bytes)) as { entries: TreeEntry[] }).entries;
+  /** Tree `id`'s entries; `stagedWith` names a commit that may hold it staged in its shard
+   * (the commit that built it, before its objects drain to R2). */
+  async tree(id: string, stagedWith?: string): Promise<TreeEntry[]> {
+    const remembered = this.remembered(id);
+    if (remembered) return remembered;
+    const bytes = await this.read(id, 'tree', stagedWith);
+    const { entries } = JSON.parse(new TextDecoder().decode(bytes)) as { entries: TreeEntry[] };
+    this.trees.set(this.repo, id, entries);
+    return entries;
+  }
+
+  /** Tree `id`'s entries if this memory holds them (no I/O). */
+  remembered(id: string): TreeEntry[] | undefined {
+    return this.trees.get(this.repo, id);
+  }
+
+  /** Remembers trees another holder served (content-addressed, so safe to keep). */
+  remember(trees: Record<string, TreeEntry[]>) {
+    for (const [id, entries] of Object.entries(trees)) this.trees.set(this.repo, id, entries);
   }
 
   blob(id: string): Promise<Uint8Array> {
@@ -272,39 +302,6 @@ export class RepoObjects {
     return kind === 'tree'
       ? { id, kind, entries: parsed.entries }
       : { id, kind, tree: parsed.tree, parents: parsed.parents };
-  }
-
-  /**
-   * Pushes a commit's pack to its hidden ref and reads the commit back from the object store
-   * itself, never the cache. Artifacts can refuse or lag pushes when several land on one
-   * repository at once, so a refusal is retried with jittered backoff and a missing readback
-   * is re-read before the push counts as failed. Pushes are idempotent: same objects, same
-   * hidden ref. `ready` (the cache write running alongside) settles before the readback.
-   */
-  async pushCommit(body: Uint8Array, commit: string, ready: Promise<unknown> = Promise.resolve()) {
-    const refname = `refs/yoneda/c/${commit}`;
-    ready.catch(() => {}); // observed below; a push failure must not leave it unhandled
-    let reason = 'not readable';
-    for (let attempt = 0; attempt < PUSH_ATTEMPTS; attempt++) {
-      if (attempt) await sleep(100 * 2 ** attempt + Math.random() * 100 * 2 ** attempt);
-      const report = await timed('push.store', () => this.store.push(body));
-      const outcome = pushOutcome(report, refname);
-      if (!outcome.accepted) {
-        reason = `refused: ${outcome.refused}`;
-        console.warn(`object store push attempt ${attempt + 1} ${reason}`);
-      }
-      await ready;
-      for (let read = 0; read < 3; read++) {
-        const readback = await timed('push.readback', () => this.store.readCommit(commit));
-        // A retried push may be refused because an earlier attempt already created the ref.
-        if (readback) return { report: outcome.accepted ? report : accepted(refname), readback };
-        if (!outcome.accepted) break;
-        await sleep(50 * 2 ** read);
-      }
-    }
-    throw Object.assign(new Error(`Pushed commit is not readable (${reason})`), {
-      code: 'PUSH_FAILED',
-    });
   }
 
   push(body: Uint8Array) {

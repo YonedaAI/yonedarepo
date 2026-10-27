@@ -162,6 +162,8 @@ export const fakeCombiners = {
       holderOf(name).head(repo, minVersion, since, accessVersion),
     access: (repo: string) => holderOf(name).access(repo),
     refresh: async (repo: string, access?: boolean) => holderOf(name).refresh(repo, access),
+    trees: (repo: string, root: string, paths: string[], commit?: string) => holderOf(name).trees(repo, root, paths, commit),
+    idle: () => holderOf(name).idle(),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */
@@ -254,7 +256,7 @@ export async function api(
     }),
     target,
   );
-  return { status: response.status, body: await response.json<any>() };
+  return { status: response.status, body: await response.json<any>(), headers: response.headers };
 }
 
 export const file = (path: string, text: string) => ({ path, content_b64: btoa(text) });
