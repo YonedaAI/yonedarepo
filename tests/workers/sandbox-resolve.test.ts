@@ -60,13 +60,14 @@ it('briefs the resolver with every side of each conflicting path', async () => {
   expect(brief).toContain(`git cherry-pick --no-commit ${theirs.commit}`);
 });
 
-it('leaves the harness resolver in charge where runs take no sandbox', async () => {
+it('refuses to resolve where runs take no sandbox', async () => {
   const fixture = await readyReviewer('resolve_none');
   const { AGENT_SANDBOX: _, ...withoutSandbox } = bindings as Env & { AGENT_SANDBOX?: unknown };
   const principal = { workspace: 'resolve_none', role: 'user' } as Principal;
-  const started = await resolveInSandbox(withoutSandbox as Env, principal, fixture.repo, {
-    conflict_id: 'conflict:r1',
-    request_id: 'r1',
-  });
-  expect(started).toBeNull();
+  await expect(
+    resolveInSandbox(withoutSandbox as Env, principal, fixture.repo, {
+      conflict_id: 'conflict:r1',
+      request_id: 'r1',
+    }),
+  ).rejects.toMatchObject({ code: 'SANDBOX_REQUIRED' });
 });

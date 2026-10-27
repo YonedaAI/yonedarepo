@@ -61,7 +61,6 @@ pub(super) fn reflect_status<S: SqlStore>(db: &S, job: &Value, now: i64) -> Resu
                 candidate["status"] = json!("failed");
                 candidate["error"] = e["error"].clone();
                 save(db, "candidates", &cid, &candidate)?;
-                super::super::conflicts::resolver_evaluated(db, &cid, false, now)?;
             }
         }
         if job["status"] == "failed" {

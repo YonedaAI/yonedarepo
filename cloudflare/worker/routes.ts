@@ -221,10 +221,9 @@ export async function fetchRequest(
     }
 
     if (action === 'start_run') input = await approveOwnerRun(env, principal, repo, input);
-    if (action === 'resolve_conflict') {
-      const started = await resolveInSandbox(env, principal, repo, input);
-      if (started) return response(started);
-    }
+    // Conflicts resolve only in a sandbox run; the ledger has no resolver of its own.
+    if (action === 'resolve_conflict')
+      return response(await resolveInSandbox(env, principal, repo, input));
     const command = {
       ...input,
       op: action,

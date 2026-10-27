@@ -93,28 +93,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                 run["approved_policy"] = run["policy"].clone();
             }
             run["agents"] = c["agents"].clone();
-            // Every attempt works on platform source; the adapter approves its frozen base.
-            // A sandbox run carries its own tag (runs before it carried api-source-v1).
-            let sandbox = super::sandbox::requested(&c);
-            if c["workspace_transport"] != "api-source-v1" && !sandbox {
-                return Err(bad(
-                    "Runs use the approved api-source-v1 workspace transport",
-                ));
-            }
-            run["workspace_transport"] = json!(if sandbox {
-                super::sandbox::TRANSPORT
-            } else {
-                "api-source-v1"
-            });
-            if collaborate && !sandbox {
+            // Agents run only in sandboxes on platform source; the adapter approves the base.
+            if !super::sandbox::requested(&c) {
                 return Err(Error::new(
-                    "NOT_SUPPORTED",
-                    "Team runs run in sandboxes, with an owner-written task list",
+                    "SANDBOX_REQUIRED",
+                    "Runs take sandbox agents (the sandbox-cli-v1 transport)",
                 ));
             }
-            if sandbox && collaborate {
+            run["workspace_transport"] = json!(super::sandbox::TRANSPORT);
+            if collaborate {
                 super::sandbox_team::freeze(&c, team.as_ref(), &delegation, &mut run)?;
-            } else if sandbox {
+            } else {
                 super::sandbox::freeze(&c, team.is_some(), &delegation, &mut run)?;
             }
             if let Some(plan) = &team {

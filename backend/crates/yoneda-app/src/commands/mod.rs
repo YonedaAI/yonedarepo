@@ -5,7 +5,6 @@ mod acceptance;
 mod archive;
 mod branches;
 mod capture_completion;
-mod capture_source;
 mod comparison;
 mod completion;
 pub(crate) mod conflicts;
@@ -31,6 +30,8 @@ mod recovery;
 mod repository;
 mod resources;
 mod restarts;
+#[cfg(test)]
+pub(crate) mod run_kit;
 mod run_visibility;
 mod runs;
 mod sandbox;
@@ -38,8 +39,6 @@ mod sandbox_team;
 mod sandbox_usage;
 mod scheduling;
 mod sites;
-#[cfg(any(test, feature = "test-kit"))]
-pub mod source_kit;
 mod source_refresh;
 mod source_transport;
 mod transcripts;
@@ -82,12 +81,6 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "source_refresh_context" => source_refresh::context(db, &c, now),
         "source_refresh_paths" => source_refresh::paths(db, &c, now),
-        "source_read_context"
-        | "source_bind"
-        | "source_register_changeset"
-        | "source_registered"
-        | "source_resume_grant"
-        | "source_capture_context" => crate::source_binding::handle(db, &c, now),
         "select_comparison_candidate" => comparison::owner_select(db, &c, now),
         "run_set_visibility" | "project_visibility_check" => run_visibility::handle(db, &c, now),
         "candidate_paths" => crate::path_lists::page(db, &c),

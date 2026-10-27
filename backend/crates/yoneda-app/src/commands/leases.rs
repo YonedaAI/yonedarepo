@@ -1,8 +1,6 @@
 use crate::storage::*;
 use serde_json::{Value, json};
 use yoneda_agents_core::{Error, Result};
-pub(super) mod resume;
-pub(super) mod source;
 mod status;
 pub(super) mod timing;
 pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
@@ -67,10 +65,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             // Attempt times are observational evidence for stage durations, never authority.
             j["started_at"] = json!(now);
             j["finished_at"] = Value::Null;
-            source::claimed(&mut j, now)?;
             j["runtime_started_at"] = Value::Null;
             j["progress"] = Value::Null;
-            resume::claimed(&mut j);
             let budget = super::model_budgets::for_job(db, &j)?;
             if let Some(budget) = &budget {
                 j["model_budget"] = json!(budget);
@@ -114,7 +110,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             let id = string(&j, "id")?;
             let budget = super::model_budgets::for_job(db, &j)?;
             if c["progress"]["stage"] == "container_ready" && j["runtime_started_at"].is_null() {
-                source::runtime_ready(&mut j, now);
                 timing::runtime_ready(&mut j, budget.as_ref(), now)?;
                 j["runtime_started_at"] = json!(now);
             }
@@ -146,10 +141,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             } else {
                 "failed"
             });
-            source::terminal(&mut j, now);
             finished(&mut j, now);
             j["error"] = c["error"].clone();
-            resume::failed(&mut j);
             j["lease_until"] = json!(0);
             save(db, "jobs", &id, &j)?;
             if j["status"] == "queued" {
@@ -173,7 +166,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
             for row in rows {
                 // Recovering a parent may fence a child selected in this same pass.
                 let mut j = get(db, "jobs", &string(&row, "id")?)?;
-                let interrupted = j["status"] == "running";
                 if (j["status"] == "running" && number(&j, "lease_until")? <= now)
                     || (j["status"] == "queued"
                         && (number(&j, "deadline")? <= now || dispatch_expired(&j, now)))
@@ -187,11 +179,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: Value, now: i64) -> Result<Value> {
                     } else {
                         "failed"
                     });
-                    source::terminal(&mut j, now);
                     finished(&mut j, now);
-                    if interrupted {
-                        resume::interrupted(&mut j);
-                    }
                     save(db, "jobs", &id, &j)?;
                     reflect_status(db, &j, now)?;
                     if j["status"] == "queued" {

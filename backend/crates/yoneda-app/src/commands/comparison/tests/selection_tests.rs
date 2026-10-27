@@ -35,7 +35,8 @@ fn manual_legacy_selection_is_replay_safe_and_can_override_a_sibling_without_inf
     let run = get(&db, "runs", "compare").unwrap();
     assert_eq!(run["comparison"]["selected_candidate_id"], "candidate-2");
     assert!(run["comparison"]["approval"].is_null());
-    assert_eq!(run_jobs(&db, "compare").unwrap().len(), 6);
+    // Each sandbox agent is one attempt and one check job (no separate capture).
+    assert_eq!(run_jobs(&db, "compare").unwrap().len(), 4);
     assert_eq!(repo(&db).unwrap()["published_commit"], "a".repeat(40));
     let stale = select("candidate-1", 1, &"b".repeat(40), 1);
     assert!(f::call(&db, stale).is_err());
@@ -72,6 +73,6 @@ fn legacy_single_builder_working_choice_keeps_owner_selection_available() {
     f::candidate(&db, 1, &"b".repeat(40));
     let choice = f::call(&db, select("candidate-1", 0, &"a".repeat(40), 0)).unwrap();
     assert_eq!(choice["comparison"]["selected_candidate_id"], "candidate-1");
-    assert_eq!(run_jobs(&db, "compare").unwrap().len(), 3);
+    assert_eq!(run_jobs(&db, "compare").unwrap().len(), 2);
     assert_eq!(repo(&db).unwrap()["published_commit"], "a".repeat(40));
 }

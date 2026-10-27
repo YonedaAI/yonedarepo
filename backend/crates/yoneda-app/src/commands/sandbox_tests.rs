@@ -245,18 +245,14 @@ fn a_cli_failure_reason_reaches_the_run() {
 }
 
 #[test]
-fn ordinary_attempts_cannot_use_sandbox_operations() {
+fn runs_without_the_sandbox_transport_are_refused() {
     let db = repository();
-    let mut c = start(glm(), json!({}));
-    c["workspace_transport"] = json!("api-source-v1");
-    call(&db, c).unwrap();
-    let job = call(&db, json!({"op":"claim","job_id":"job:run-s:agent-1"})).unwrap();
-    assert!(job.get("sandbox").is_none());
-    let refused = call(
-        &db,
-        json!({"op":"sandbox_finish","job_id":job["id"],"epoch":job["epoch"],"result":{}}),
-    );
-    assert_eq!(refused.unwrap_err().code, "FORBIDDEN");
+    for transport in [json!("api-source-v1"), Value::Null] {
+        let mut c = start(glm(), json!({}));
+        c["workspace_transport"] = transport;
+        assert_eq!(call(&db, c).unwrap_err().code, "SANDBOX_REQUIRED");
+    }
+    assert!(get(&db, "runs", "run-s").is_err());
 }
 
 /// A recorded sandbox candidate and its claimed evaluation job.
@@ -425,13 +421,6 @@ fn app_bundle_sandbox_runs_are_refused_at_start() {
     let refused = call(&db, start(glm(), json!({}))).unwrap_err();
     assert_eq!(refused.code, "NOT_SUPPORTED");
     assert!(refused.message.contains("app bundles"));
-    // The same project still starts ordinary runs (their checks keep the evaluator container).
-    let mut c = start(glm(), json!({}));
-    c["workspace_transport"] = json!("api-source-v1");
-    call(&db, c).unwrap();
-    let mut evaluator = json!({"kind":"evaluate","payload":{"run_id":"run-s","policy":repo(&db).unwrap()["policy"]}});
-    claimed_check(&db, &mut evaluator, 1000).unwrap();
-    assert!(evaluator.get("sandbox_check").is_none());
 }
 
 #[test]
