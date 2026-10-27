@@ -17,6 +17,7 @@ mod checks;
 mod classes;
 mod contracts;
 mod deletion;
+mod git_http;
 pub(crate) mod grants;
 mod head;
 mod history;
@@ -30,6 +31,7 @@ mod policy;
 pub(crate) mod prepare;
 mod projection;
 mod projection_plan;
+mod pushed;
 mod reads;
 mod record;
 mod rows;
@@ -41,6 +43,7 @@ mod tree_cache;
 mod vacuum;
 mod version_projection;
 pub use migration::migrate_repo_store;
+pub(crate) use rows::protected as protected_ref;
 
 pub fn execute_repo_store<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
     migrate_repo_store(db)?;
@@ -196,6 +199,10 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
         "repo_branch_batch" => branches::batch(db, c, principal),
+        // Git over HTTPS: each checks its own scope (read to fetch, write to push).
+        "repo_git_access" => git_http::access(&actor, c, &settings),
+        "repo_git_walk" => git_http::walk(db, c, &actor),
+        "repo_record_pushed" => pushed::record(db, c, &actor, &settings),
         "repo_delete" => deletion::delete(db, c, &actor, &settings),
         "repo_purge_target" => deletion::purge_target(&actor, &settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
