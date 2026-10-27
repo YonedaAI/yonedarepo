@@ -173,6 +173,22 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
         platform["containers"][index]["image"] = json!("../../../cloudflare/containers/Dockerfile");
         platform["containers"][index]["image_build_context"] = json!("../../..");
     }
+    // Sandbox images (AgentSandbox) resolve from the generated config's directory too.
+    for container in platform["containers"].as_array_mut().into_iter().flatten() {
+        for image in container["images"]
+            .as_object_mut()
+            .into_iter()
+            .flat_map(|m| m.values_mut())
+        {
+            if let Some(path) = image["dockerfile"]
+                .as_str()
+                .map(|p| p.trim_start_matches("./").to_owned())
+            {
+                image["dockerfile"] = json!(format!("../../../cloudflare/{path}"));
+                image["build_context"] = json!("../../..");
+            }
+        }
+    }
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
     platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
     platform["workflows"][0]["name"] = json!(format!("{name}-platform-import"));

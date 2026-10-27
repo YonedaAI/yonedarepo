@@ -13,4 +13,6 @@ export {
 export { YonedaEntrypoint as default } from './entrypoint';
 export { PlatformImportWorkflow } from './repo-import-workflow';
 export { ObjectPushQueue } from './repo-push-queue';
+export { AgentSandbox } from './sandbox-agent';
+export { SandboxOutbound } from './sandbox-outbound';
 export { CheckContainer, ExecutionContainer };
