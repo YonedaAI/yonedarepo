@@ -5,9 +5,11 @@
 //! re-encoded for the pack; blobs and commits come from the adapter, checked against their
 //! ids. The pack is undeltified and written entry by entry, so it streams out. A partial
 //! clone (`omit_blobs`) sends commits and trees only, plus any blobs wanted by id
-//! (`objects`), which is how Git fetches a missing blob later.
+//! (`objects`), which is how Git fetches a missing blob later. Wanted annotated tag objects
+//! come with the walk (`tags`, from the authority) and are written from this session.
 use crate::platform_objects::{new_trees, supplied_tree};
 use crate::storage::{bad, string};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
@@ -44,6 +46,8 @@ pub struct UploadSession {
     commits: Vec<Sent>,
     omit_blobs: bool,
     wanted_blobs: Vec<ObjectId>,
+    /// Annotated tag objects to send, checked against their ids.
+    tags: Vec<(ObjectId, Vec<u8>)>,
     trees: HashMap<ObjectId, Vec<TreeEntry>>,
     objects: Vec<(ObjectId, ObjectKind)>,
     writer: Option<PackWriter>,
@@ -51,8 +55,8 @@ pub struct UploadSession {
 
 impl UploadSession {
     /// `walk` is `repo_git_walk`'s answer: the commits to send, each with its tree and its
-    /// first parent's tree, and the blobs wanted by id (`objects`); with `omit_blobs`, no
-    /// other blob is sent.
+    /// first parent's tree, the blobs wanted by id (`objects`) and the annotated tag objects
+    /// wanted (`tags: [{id, data_b64}]`); with `omit_blobs`, no other blob is sent.
     pub fn new(walk: &Value) -> Result<Self> {
         let mut commits = Vec::new();
         for c in walk["commits"].as_array().into_iter().flatten() {
@@ -71,10 +75,25 @@ impl UploadSession {
             .flatten()
             .map(|id| ObjectId::parse(id.as_str().unwrap_or_default()))
             .collect::<Result<_>>()?;
+        let mut tags = Vec::new();
+        for tag in walk["tags"].as_array().into_iter().flatten() {
+            let id = ObjectId::parse(&string(tag, "id")?)?;
+            let data = STANDARD
+                .decode(tag["data_b64"].as_str().unwrap_or_default())
+                .map_err(|_| bad("tags[].data_b64 must be base64"))?;
+            if hash_object(ObjectKind::Tag, &data) != id {
+                return Err(Error::new(
+                    "GIT_OBJECT_INVALID",
+                    format!("Stored tag does not hash to {id}"),
+                ));
+            }
+            tags.push((id, data));
+        }
         Ok(Self {
             commits,
             omit_blobs: walk["omit_blobs"] == true,
             wanted_blobs,
+            tags,
             ..Self::default()
         })
     }
@@ -124,10 +143,13 @@ impl UploadSession {
         for id in &self.wanted_blobs {
             add(*id, ObjectKind::Blob, &mut objects);
         }
+        for (id, _) in &self.tags {
+            add(*id, ObjectKind::Tag, &mut objects);
+        }
         within_limit(objects.len())?;
         let fetch: Vec<Value> = objects
             .iter()
-            .filter(|(_, kind)| *kind != ObjectKind::Tree)
+            .filter(|(_, kind)| matches!(kind, ObjectKind::Commit | ObjectKind::Blob))
             .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
             .collect();
         let trees: Vec<ObjectId> = objects
@@ -135,8 +157,9 @@ impl UploadSession {
             .filter(|(_, kind)| *kind == ObjectKind::Tree)
             .map(|(id, _)| *id)
             .collect();
+        let tags: Vec<ObjectId> = self.tags.iter().map(|(id, _)| *id).collect();
         self.objects = objects;
-        Ok(json!({ "count": self.objects.len(), "fetch": fetch, "trees": trees }))
+        Ok(json!({ "count": self.objects.len(), "fetch": fetch, "trees": trees, "tags": tags }))
     }
 
     /// The pack header (after a final `step`).
@@ -147,8 +170,8 @@ impl UploadSession {
         Ok(header)
     }
 
-    /// One pack entry: a tree from those this session read (no `data`), or a blob or
-    /// commit the adapter read, which must hash to `id`.
+    /// One pack entry: a tree this session read or a tag object the walk carried (no
+    /// `data`), or a blob or commit the adapter read, which must hash to `id`.
     pub fn pack_entry(&mut self, kind: &str, id: &str, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let id = ObjectId::parse(id)?;
         let writer = self
@@ -163,9 +186,21 @@ impl UploadSession {
                     .ok_or_else(|| bad(&format!("Tree {id} was never read")))?;
                 (ObjectKind::Tree, encode_tree(entries)?)
             }
+            ("tag", None) => {
+                let (_, data) = self
+                    .tags
+                    .iter()
+                    .find(|(tag, _)| *tag == id)
+                    .ok_or_else(|| bad(&format!("Tag {id} is not in this fetch")))?;
+                (ObjectKind::Tag, data.clone())
+            }
             ("blob", Some(data)) => (ObjectKind::Blob, data.to_vec()),
             ("commit", Some(data)) => (ObjectKind::Commit, data.to_vec()),
-            _ => return Err(bad("A pack entry is a tree, or a blob or commit with data")),
+            _ => {
+                return Err(bad(
+                    "A pack entry is a tree or tag, or a blob or commit with data",
+                ));
+            }
         };
         if hash_object(kind, &bytes) != id {
             return Err(Error::new(
@@ -189,7 +224,6 @@ impl UploadSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{Engine, engine::general_purpose::STANDARD};
 
     #[test]
     fn a_partial_fetch_sends_trees_and_only_the_blobs_wanted_by_id() {
@@ -239,5 +273,22 @@ mod tests {
         let only = lazy.step(&json!({})).unwrap();
         assert_eq!(only["fetch"], json!([{ "id": kept, "kind": "blob" }]));
         assert_eq!(only["count"], 1);
+    }
+
+    #[test]
+    fn sends_wanted_tag_objects_from_the_walk() {
+        let data = format!("object {}\ntype commit\ntag v1\n\nm\n", "c".repeat(40));
+        let id = hash_object(ObjectKind::Tag, data.as_bytes());
+        let tag = json!({ "id": id, "data_b64": STANDARD.encode(&data) });
+        let mut session = UploadSession::new(&json!({ "commits": [], "tags": [tag] })).unwrap();
+        let listed = session.step(&json!({})).unwrap();
+        assert_eq!(
+            (&listed["count"], &listed["tags"], &listed["fetch"]),
+            (&json!(1), &json!([id]), &json!([]))
+        );
+        session.pack_start().unwrap();
+        assert!(session.pack_entry("tag", &id.hex(), None).is_ok());
+        let wrong = json!({ "id": "d".repeat(40), "data_b64": STANDARD.encode(&data) });
+        assert!(UploadSession::new(&json!({ "commits": [], "tags": [wrong] })).is_err());
     }
 }

@@ -1,8 +1,8 @@
 // The ref updates of a `git push` over HTTPS (receive-pack), once its objects are stored:
 // which refs are refused outright, and how each one that goes ahead moves. Working
 // branches move by compare-and-swap (one batch for `--atomic`), protected branches by
-// landing, with the server's merge when they moved meanwhile, and new lightweight tags by
-// creation (tags never move or disappear).
+// landing, with the server's merge when they moved meanwhile, and new tags by creation
+// (tags never move or disappear; an annotated one keeps its tag object beside the ref).
 
 import { transient } from './durable';
 import { landMode } from './repo-changesets';
@@ -14,9 +14,23 @@ export type Command = {
   old: string | null;
   new: string | null;
   protected: boolean;
-  /** The new value is an annotated tag object (`git tag -a`), which is not stored. */
+  /** The new value is an annotated tag object (`git tag -a`): `tag` names the tagged
+   * commit and carries the object, or `tag_error` says why the object is refused. */
   annotated: boolean;
+  tag?: { commit: string; data_b64: string };
+  tag_error?: string;
 };
+
+/** The commit a command moves its ref to (an annotated tag's tagged commit). */
+export const target = (c: Command) => c.tag?.commit ?? c.new;
+
+/** A command as a `repo_branch_batch` update (an annotated tag carries its object). */
+const update = (c: Command) => ({
+  ref: c.ref,
+  commit: target(c),
+  expected: c.old,
+  ...(c.tag ? { tag: { data_b64: c.tag.data_b64 } } : {}),
+});
 export type Outcome = Map<string, string | null>;
 
 export const reason = (e: any) => {
@@ -29,8 +43,8 @@ const short = (ref: string) => ref.replace(/^refs\/heads\//, '');
 export function refusal(command: Command, atomic: boolean): string | null {
   if (command.ref.startsWith('refs/tags/')) {
     if (!command.new) return 'tags are immutable and cannot be deleted';
-    if (command.annotated)
-      return 'annotated tags are not supported: push a lightweight tag (git tag <name>)';
+    if (command.annotated && !command.tag)
+      return `invalid tag object: ${command.tag_error ?? 'unreadable'}`.slice(0, 300);
     if (command.old) return 'tags are immutable: this tag already exists';
     return null;
   }
@@ -51,7 +65,7 @@ export async function moveAll(
   messages: string[],
 ) {
   if (going.length === 0) return;
-  const updates = going.map((c) => ({ ref: c.ref, commit: c.new, expected: c.old }));
+  const updates = going.map(update);
   try {
     const moved = await ctx.call({ op: 'repo_branch_batch', updates });
     const stale: string[] = moved.stale ?? [];
@@ -86,7 +100,7 @@ export async function moveOne(
     if (c.protected && c.new) return await land(ctx, c, c.new, fresh, messages);
     const moved = await ctx.call({
       op: 'repo_branch_batch',
-      updates: [{ ref: c.ref, commit: c.new, expected: c.old }],
+      updates: [update(c)],
     });
     if (moved.stale) return 'fetch first';
     changeHints(moved, messages);

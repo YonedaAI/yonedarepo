@@ -12,7 +12,7 @@ pub struct Signature {
 }
 
 impl Signature {
-    fn encode(&self) -> Result<String> {
+    pub(super) fn encode(&self) -> Result<String> {
         let unsafe_text = |s: &str| s.contains(['<', '>', '\n', '\0']);
         if unsafe_text(&self.name) || unsafe_text(&self.email) || self.name.trim() != self.name {
             return Err(invalid(
@@ -31,7 +31,7 @@ impl Signature {
             self.name, self.email, self.seconds, self.offset
         ))
     }
-    fn parse(line: &str) -> Result<Self> {
+    pub(super) fn parse(line: &str) -> Result<Self> {
         let bad = || invalid("Malformed signature line");
         let (ident, when) = line.rsplit_once("> ").ok_or_else(bad)?;
         let (name, email) = ident.rsplit_once(" <").ok_or_else(bad)?;

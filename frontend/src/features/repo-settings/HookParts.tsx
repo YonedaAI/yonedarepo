@@ -4,7 +4,15 @@ import { when } from '../source-platform/sourceApi';
 import type { Loaded } from '../source-platform/useSource';
 
 /** Events a hook can subscribe to (repo_store/hooks.rs EVENTS). */
-export const HOOK_EVENTS = ['land', 'merged', 'refused', 'branch', 'tag', 'check'] as const;
+export const HOOK_EVENTS = [
+  'land',
+  'merged',
+  'refused',
+  'branch',
+  'tag',
+  'check',
+  'release',
+] as const;
 
 export type Hook = {
   id: number;

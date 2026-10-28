@@ -22,6 +22,7 @@ import { membersRoute } from './repo-members';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
+import { releaseDownload, releasesRoute } from './repo-releases';
 import { timed, withTimings } from './repo-timing';
 import { branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
@@ -213,6 +214,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'changes') return changesRoute(ctx, req, sha, sub, () => bodyOf(req));
+  if (resource === 'releases') return releasesRoute(ctx, req, parts.slice(3), () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });
@@ -297,6 +299,9 @@ async function handle(req: Request, env: Env): Promise<Response> {
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
+  // An asset download is the asset's bytes, not a JSON answer.
+  const download = releaseDownload(req, env, url, auth);
+  if (download) return download.catch(failure);
   return answer(() => route(req, env, url, auth));
 }
 

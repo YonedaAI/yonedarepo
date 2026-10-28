@@ -2,7 +2,7 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 30] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 31] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -114,6 +114,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 30] = [
         30,
         include_str!("../migrations/repo_store/0030_object_bundles.sql"),
     ),
+    (
+        32,
+        include_str!("../migrations/repo_store/0032_releases.sql"),
+    ),
 ];
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.
@@ -136,7 +140,7 @@ pub(crate) fn migrate_with<S: SqlStore>(
     )?;
     let owned = db.clone();
     db.transaction(Box::new(move || {
-        let latest = migrations.len() as i64;
+        let latest = migrations.last().map_or(0, |(version, _)| *version);
         let applied = owned.query(
             &format!("SELECT version,digest FROM {table} ORDER BY version"),
             &[],

@@ -69,11 +69,14 @@ const COMMON: u8 = 2;
 /// as `git_shallow` plans and answers its `shallow` and `unshallow` lines. With `objects`
 /// (protocol v2, where a partial clone fetches missing blobs by id), wants that are not
 /// commits are listed as `objects` for the adapter to read from this repository's store.
-/// Every want, commit or blob, must be reachable from a branch or tag (`git_wanted`).
+/// Every want, commit or blob, must be reachable from a branch or tag (`git_wanted`); a
+/// wanted annotated tag object stands for its commit and is listed in `tags`.
 pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let v2_objects = c["objects"] == true;
     let wants = ids(c, "wants", if v2_objects { OBJECT_WANTS } else { HAVES })?;
+    // A wanted annotated tag is its commit plus the tag object itself.
+    let (wants, tags) = super::annotated::peel_wants(db, wants)?;
     let haves = ids(c, "haves", HAVES)?;
     let graph = RecordedGraph(db);
     let mut marks: HashMap<ObjectId, u8> = HashMap::new();
@@ -165,7 +168,7 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         }));
     }
     Ok(json!({
-        "commits": commits, "common": common, "objects": objects,
+        "commits": commits, "common": common, "objects": objects, "tags": tags,
         "shallow": shallow.shallow, "unshallow": shallow.unshallow,
     }))
 }

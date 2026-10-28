@@ -408,7 +408,7 @@ fn upgrades_from_the_sessions_schema_with_empty_change_tables() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.len()
+        migrations.last().unwrap().0
     );
     assert_eq!(
         db.query("SELECT owner FROM repo_settings", &[]).unwrap()[0]["owner"],

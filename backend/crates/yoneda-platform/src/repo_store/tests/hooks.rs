@@ -316,7 +316,7 @@ fn upgrades_from_the_checkpoint_digest_schema_and_stamps_rfc3339_times() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        super::super::migration::MIGRATIONS.len()
+        super::super::migration::MIGRATIONS.last().unwrap().0
     );
     assert!(db.query("SELECT id FROM hooks", &[]).unwrap().is_empty());
     assert_eq!(

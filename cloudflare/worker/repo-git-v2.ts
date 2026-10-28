@@ -40,9 +40,11 @@ export async function uploadPackV2(
   try {
     const request = compute({ op: 'git_v2_request', body_b64: toBase64(bytes) });
     if (request.command === 'ls-refs') {
-      const { refs } = await ctx.call({ op: 'repo_refs' });
-      const { symrefs, prefixes } = request;
-      return answer(compute({ op: 'git_ls_refs', refs, symrefs, prefixes }).body_b64);
+      const { refs, annotated } = await ctx.call({ op: 'repo_refs' });
+      const { symrefs, peel, prefixes } = request;
+      return answer(
+        compute({ op: 'git_ls_refs', refs, annotated, symrefs, peel, prefixes }).body_b64,
+      );
     }
     return await serveFetch(ctx, objects, request);
   } catch (e: any) {
