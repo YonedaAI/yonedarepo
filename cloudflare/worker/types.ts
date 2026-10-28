@@ -1,8 +1,6 @@
-import type { AgentsEntrypoint } from './agents-entrypoint';
 export type Json = Record<string, any>;
 export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
 export interface Env {
-  REPOSITORIES: DurableObjectNamespace;
   WORKSPACES: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
   SOURCE_REPOS: DurableObjectNamespace;
@@ -17,7 +15,7 @@ export interface Env {
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
-  /** Platform jobs (check runs); independent of agent queues. */
+  /** Platform jobs (projection, derived data, webhooks, purges). */
   PLATFORM_QUEUE: Queue<Envelope>;
   /** Check runs on their own queue (minutes each), so they never hold derive and
    * projection jobs' consumer slots; absent where not deployed (PLATFORM_QUEUE then). */
@@ -29,63 +27,28 @@ export interface Env {
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
-  LIVE: DurableObjectNamespace;
-  /** One Cloudflare Sandbox per sandbox-cli-v1 attempt; absent where not deployed. */
-  AGENT_SANDBOX?: DurableObjectNamespace<import('./sandbox-agent').AgentSandbox>;
-  /** `<account id>/<gateway id>`: sandbox model requests go through this AI Gateway. */
-  SANDBOX_AI_GATEWAY?: string;
-  /** The platform origin a sandbox clones from (`yoneda::<origin>/<repo>`). */
-  SANDBOX_PLATFORM_ORIGIN?: string;
-  SELF: Service<AgentsEntrypoint>;
   OBJECTS: R2Bucket;
   INDEX: D1Database;
   ARTIFACTS: Artifacts;
   ASSETS: Fetcher;
-  AGENT_QUEUE: Queue<Envelope>;
-  CAPTURE_QUEUE: Queue<Envelope>;
-  EVALUATE_QUEUE: Queue<Envelope>;
-  OPENAI_KEY: { get(): Promise<string> };
-  ANTHROPIC_KEY: { get(): Promise<string> };
-  MIMO_KEY?: { get(): Promise<string> };
-  ZAI_KEY?: { get(): Promise<string> };
-  GEMINI_KEY?: { get(): Promise<string> };
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
-  VAULT_KEY?: string;
   AUTH_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
-  /** `secrets-store` enables owner-bound managed Z.ai/MiMo connections (staging only). */
-  MANAGED_PROVIDER_KEYS?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
   /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
   PLATFORM_OBJECT_STORE?: string;
-  CODEX_MODEL: string;
-  CLAUDE_MODEL: string;
-  MIMO_MODEL?: string;
-  ZAI_MODEL?: string;
-  STARTER_REPO?: string;
-  SITE_ORIGIN?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls
-   * back to the request origin. Not SITE_ORIGIN, which names the website-preview Worker. */
+   * back to the request origin. */
   WEB_ORIGIN?: string;
-  APP_ORIGIN?: string;
-  APPS?: Fetcher;
-  /** The source platform Worker (agents-only deployment); its public API is all we call. */
+  /** The source platform Worker (front Worker); its public API is all it calls. */
   PLATFORM?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   BUILD_REVISION?: string;
-  /** Only disposable *-acceptance namespaces can activate this controlled exercise. */
 }
 export type Principal = {
   workspace: string;
-  role: 'user' | 'admin' | 'agent';
-  reviewer?: boolean;
-  grant?: { id: string; repo: string; scope: string; expires?: number };
-};
-/** A claimed job, as its dispatch and platform captures see it. */
-export type Scope = {
-  repo_id: string;
-  job: Json;
+  role: 'user' | 'admin';
 };

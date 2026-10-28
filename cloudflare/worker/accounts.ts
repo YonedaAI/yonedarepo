@@ -46,9 +46,7 @@ export async function accountPrincipal(req: Request, env: Env): Promise<Principa
     op: 'session',
     session_hash: await sha(session.token),
   });
-  return result.authenticated
-    ? { workspace: session.name, role: 'user', reviewer: result.reviewer === true }
-    : null;
+  return result.authenticated ? { workspace: session.name, role: 'user' } : null;
 }
 export async function accountRoute(req: Request, env: Env): Promise<Response | null> {
   const path = new URL(req.url).pathname;

@@ -1,6 +1,5 @@
-// Agent-layer flows create platform repositories through the public API, whose D1 listing
-// projection (and personal-token lookup) must exist like it does after the deployed
-// migrations.
+// Tests create platform repositories through the public API, whose D1 listing projection
+// (and personal-token lookup) must exist like it does after the deployed migrations.
 import { env } from 'cloudflare:workers';
 import { beforeEach } from 'vitest';
 import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
