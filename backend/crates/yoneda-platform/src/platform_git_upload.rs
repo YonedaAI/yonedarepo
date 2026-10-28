@@ -3,7 +3,9 @@
 //! parent (which the client has, or receives too), so only the trees and files a commit
 //! introduced are sent, the whole tree only for a root. Trees the walk reads are kept and
 //! re-encoded for the pack; blobs and commits come from the adapter, checked against their
-//! ids. The pack is undeltified and written entry by entry, so it streams out.
+//! ids. The pack is undeltified and written entry by entry, so it streams out. A partial
+//! clone (`omit_blobs`) sends commits and trees only, plus any blobs wanted by id
+//! (`objects`), which is how Git fetches a missing blob later.
 use crate::platform_objects::{new_trees, supplied_tree};
 use crate::storage::{bad, string};
 use serde_json::{Value, json};
@@ -21,6 +23,16 @@ const MAX_FILES: usize = 200_000;
 /// Objects one fetch sends: each costs the adapter a read.
 pub const MAX_OBJECTS: usize = 40_000;
 
+fn within_limit(objects: usize) -> Result<()> {
+    if objects > MAX_OBJECTS {
+        return Err(Error::new(
+            "TOO_LARGE",
+            format!("A fetch over HTTPS sends at most {MAX_OBJECTS} objects"),
+        ));
+    }
+    Ok(())
+}
+
 struct Sent {
     commit: ObjectId,
     tree: ObjectId,
@@ -30,6 +42,8 @@ struct Sent {
 #[derive(Default)]
 pub struct UploadSession {
     commits: Vec<Sent>,
+    omit_blobs: bool,
+    wanted_blobs: Vec<ObjectId>,
     trees: HashMap<ObjectId, Vec<TreeEntry>>,
     objects: Vec<(ObjectId, ObjectKind)>,
     writer: Option<PackWriter>,
@@ -37,7 +51,8 @@ pub struct UploadSession {
 
 impl UploadSession {
     /// `walk` is `repo_git_walk`'s answer: the commits to send, each with its tree and its
-    /// first parent's tree.
+    /// first parent's tree, and the blobs wanted by id (`objects`); with `omit_blobs`, no
+    /// other blob is sent.
     pub fn new(walk: &Value) -> Result<Self> {
         let mut commits = Vec::new();
         for c in walk["commits"].as_array().into_iter().flatten() {
@@ -50,8 +65,16 @@ impl UploadSession {
                 },
             });
         }
+        let wanted_blobs = walk["objects"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|id| ObjectId::parse(id.as_str().unwrap_or_default()))
+            .collect::<Result<_>>()?;
         Ok(Self {
             commits,
+            omit_blobs: walk["omit_blobs"] == true,
+            wanted_blobs,
             ..Self::default()
         })
     }
@@ -84,7 +107,7 @@ impl UploadSession {
                     for tree in new_trees(sent.tree, &changes, &self.trees) {
                         add(tree, ObjectKind::Tree, &mut objects);
                     }
-                    for change in &changes {
+                    for change in changes.iter().filter(|_| !self.omit_blobs) {
                         if let Some((mode, id)) = change.new
                             && mode != FileMode::Gitlink
                         {
@@ -93,16 +116,15 @@ impl UploadSession {
                     }
                 }
             }
-            if objects.len() > MAX_OBJECTS {
-                return Err(Error::new(
-                    "TOO_LARGE",
-                    format!("A fetch over HTTPS sends at most {MAX_OBJECTS} objects"),
-                ));
-            }
+            within_limit(objects.len())?;
         }
         if !need.is_empty() {
             return Ok(json!({ "need_trees": need }));
         }
+        for id in &self.wanted_blobs {
+            add(*id, ObjectKind::Blob, &mut objects);
+        }
+        within_limit(objects.len())?;
         let fetch: Vec<Value> = objects
             .iter()
             .filter(|(_, kind)| *kind != ObjectKind::Tree)
@@ -161,5 +183,61 @@ impl UploadSession {
             .take()
             .ok_or_else(|| bad("The pack has not started"))?;
         Ok(writer.finish().to_vec())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    #[test]
+    fn a_partial_fetch_sends_trees_and_only_the_blobs_wanted_by_id() {
+        let kept = hash_object(ObjectKind::Blob, b"kept\n");
+        let other = hash_object(ObjectKind::Blob, b"other\n");
+        let entries = vec![
+            TreeEntry {
+                name: "a.txt".into(),
+                mode: FileMode::Blob,
+                id: kept,
+            },
+            TreeEntry {
+                name: "b.txt".into(),
+                mode: FileMode::Blob,
+                id: other,
+            },
+        ];
+        let data = encode_tree(&entries).unwrap();
+        let tree = hash_object(ObjectKind::Tree, &data);
+        let commit = "c".repeat(40);
+        let walk = |omit: bool, objects: Value| {
+            json!({ "commits": [{ "commit": commit, "tree": tree, "base_tree": null }],
+                    "omit_blobs": omit, "objects": objects })
+        };
+        let trees = json!({ "trees": [{ "id": tree, "data_b64": STANDARD.encode(&data) }] });
+        let listed = |walk: Value| {
+            let mut session = UploadSession::new(&walk).unwrap();
+            assert_eq!(
+                session.step(&json!({})).unwrap()["need_trees"],
+                json!([tree])
+            );
+            session.step(&trees).unwrap()
+        };
+        let full = listed(walk(false, json!([])));
+        assert_eq!(full["count"], 4);
+        assert_eq!(full["trees"], json!([tree]));
+        let partial = listed(walk(true, json!([])));
+        assert_eq!(partial["count"], 2);
+        assert_eq!(
+            partial["fetch"],
+            json!([{ "id": commit, "kind": "commit" }])
+        );
+        // A promisor fetch: the blob by id, no commit.
+        let mut lazy = UploadSession::new(&json!({ "commits": [], "omit_blobs": true,
+                                                   "objects": [kept] }))
+        .unwrap();
+        let only = lazy.step(&json!({})).unwrap();
+        assert_eq!(only["fetch"], json!([{ "id": kept, "kind": "blob" }]));
+        assert_eq!(only["count"], 1);
     }
 }

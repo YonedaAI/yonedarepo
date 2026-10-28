@@ -21,6 +21,7 @@ mod classes;
 mod contracts;
 mod deletion;
 mod git_http;
+mod git_shallow;
 pub(crate) mod grants;
 mod head;
 mod history;
