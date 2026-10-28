@@ -28,6 +28,13 @@ export interface Env {
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
   OBJECTS: R2Bucket;
+  /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
+   * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
+   * where any is missing. */
+  LFS_S3_ENDPOINT?: string;
+  LFS_S3_BUCKET?: string;
+  LFS_S3_ACCESS_KEY_ID?: string;
+  LFS_S3_SECRET_ACCESS_KEY?: string;
   INDEX: D1Database;
   ARTIFACTS: Artifacts;
   ASSETS: Fetcher;

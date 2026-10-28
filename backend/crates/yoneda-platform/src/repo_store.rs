@@ -35,6 +35,7 @@ mod hooks;
 mod land;
 mod land_queue;
 mod land_tickets;
+mod lfs;
 mod maintenance;
 pub(crate) mod members;
 mod merging;
@@ -129,6 +130,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "Only the platform reads change records",
         )),
         op if maintenance::owns(op) => maintenance::authorize(&actor, op),
+        op if lfs::owns(op) => lfs::authorize(&actor, op, c),
         "repo_check_claim"
         | "repo_check_release"
         | "repo_check_complete"
@@ -215,6 +217,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         op if maintenance::owns(op) => maintenance::run(db, c, op, principal),
+        op if lfs::owns(op) => lfs::run(db, c, op, &actor),
         // The store travels with the answer, so the adapter needs no status read first.
         "repo_prepare_commit" => {
             prepare::prepare(db, c, principal, &settings).map(|mut prepared| {
