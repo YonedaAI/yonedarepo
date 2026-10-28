@@ -7,7 +7,7 @@
 // sandbox/Dockerfile with Internet off; SandboxOutbound adds the provider key and the project
 // token, and meters model spend. The sandbox clones from SANDBOX_PLATFORM_ORIGIN; model
 // requests go to the provider directly unless SANDBOX_AI_GATEWAY names a gateway. Matches
-// wrangler.staging-agents.jsonc (infra/envs/dev.json).
+// wrangler.dev-agents.jsonc (infra/envs/dev.json).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "name": "yonedarepo-agents-dev",

@@ -152,6 +152,7 @@ Production cutover (yonedarepo.com from the Oct 14 single Worker to `prod.json`)
 3. `cargo xtask infra up --env prod --confirm` once: it creates the D1/R2/queues, records the D1 ids and regenerates the configs, then stops; commit those on dev. Only then fast-forward `main`, deploy dev and run the kit at that commit.
 4. `cargo xtask infra up --env prod --confirm` again deploys superfan, platform, agents, sites (the platform names superfan in `tail_consumers`), moving `api.`, the apex, `www.`, `apps.` and the `*.yonedarepo.com` route off the old Workers.
 5. After the prod smoke: `cargo xtask infra prune --env prod --confirm`.
+6. Dev rename (`yonedarepo-staging-*` to `yonedarepo-dev-*`, after step 5; dev data resets): create the AI Gateway `yonedarepo-dev`, run `cargo xtask infra up --env dev` once (creates, records, stops), commit, run it again (deploys and moves `dev.`, `api.dev.` and `hook-receiver.yonedaai.org`), then `cargo xtask infra prune --env dev --confirm`. The local credential files keep their `staging*.env` names.
 
 ## Sandbox runs (`sandbox-cli-v1`, staging)
 
@@ -163,12 +164,12 @@ Team runs (`mode: collaborate` with an owner-written `team` plan, no `depends_on
 
 No credential enters the sandbox. Its traffic goes through `SandboxOutbound`, which allows only the run's model endpoint (adding the saved connection's key; managed GLM and MiMo keys stay in the Secrets Store) and this project's platform repository (adding the project's agent token: reads, object and commit upload, and moving its own branch `attempts/<run>/<n>` only, never another agent's branch of the same run; never land, review, checks or tokens).
 
-One-time setup per environment, with a token that has **AI Gateway Edit** (the model requests go through the gateway named by `SANDBOX_AI_GATEWAY`, `<account>/<prefix>`: `yonedarepo-staging` for dev, `yonedarepo-prod` for prod; for its logs and analytics; the provider key is still added by the Worker, so the gateway stores no key and needs no authentication):
+One-time setup per environment, with a token that has **AI Gateway Edit** (the model requests go through the gateway named by `SANDBOX_AI_GATEWAY`, `<account>/<prefix>`: `yonedarepo-dev` for dev, `yonedarepo-prod` for prod; for its logs and analytics; the provider key is still added by the Worker, so the gateway stores no key and needs no authentication):
 
 ```sh
 A=https://api.cloudflare.com/client/v4/accounts/f011d0ee02b23cad26b4b38151b204ad/ai-gateway
 H=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-curl "${H[@]}" -X POST "$A/gateways" -d '{"id":"yonedarepo-staging","collect_logs":true,"cache_ttl":0,"cache_invalidate_on_update":false,"rate_limiting_interval":0,"rate_limiting_limit":0,"rate_limiting_technique":"fixed"}'
+curl "${H[@]}" -X POST "$A/gateways" -d '{"id":"yonedarepo-dev","collect_logs":true,"cache_ttl":0,"cache_invalidate_on_update":false,"rate_limiting_interval":0,"rate_limiting_limit":0,"rate_limiting_technique":"fixed"}'
 curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"Z.ai","slug":"zai","base_url":"https://api.z.ai","enable":true}'
 curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"MiMo","slug":"mimo","base_url":"https://api.xiaomimimo.com","enable":true}'
 # Codex CLI and opencode on OpenAI and Google connections:
@@ -176,7 +177,7 @@ curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"OpenAI","slug":"codex"
 curl "${H[@]}" -X POST "$A/custom-providers" -d '{"name":"Google","slug":"gemini","base_url":"https://generativelanguage.googleapis.com","enable":true}'
 ```
 
-The CLI then calls `https://gateway.ai.cloudflare.com/v1/<account>/yonedarepo-staging/custom-zai/api/anthropic` ([custom providers](https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/), provider-specific endpoint). MiMo Token Plan connections (regional hosts) bypass the gateway and call their region directly. Without the gateway, remove `SANDBOX_AI_GATEWAY` from `infra/envs/dev.json`: requests then go straight to the provider. Gateway dynamic routing accepts only the OpenAI chat format, so there is no GLM→MiMo fallback for Claude Code, and spend limits price only models AI Gateway knows; the smoke reports cost from the CLI's own token counts at the registry's conservative rates.
+The CLI then calls `https://gateway.ai.cloudflare.com/v1/<account>/yonedarepo-dev/custom-zai/api/anthropic` ([custom providers](https://developers.cloudflare.com/ai-gateway/configuration/custom-providers/), provider-specific endpoint). MiMo Token Plan connections (regional hosts) bypass the gateway and call their region directly. Without the gateway, remove `SANDBOX_AI_GATEWAY` from `infra/envs/dev.json`: requests then go straight to the provider. Gateway dynamic routing accepts only the OpenAI chat format, so there is no GLM→MiMo fallback for Claude Code, and spend limits price only models AI Gateway knows; the smoke reports cost from the CLI's own token counts at the registry's conservative rates.
 
 Deploy: `cargo xtask deploy --env dev` builds the sandbox image from its Dockerfile (wrangler `images.agent`; the runtime-image swap leaves it alone) and adds the `AgentSandbox` class (migration `v2`). Then `node tools/staging-realworld.mjs --sandbox-smoke [--cli claude|codex|opencode|mimo] [--smoke-provider zai|mimo] [--agents 2]` (`--cli codex` needs an OpenAI connection saved on the kit account; managed keys cover Z.ai and MiMo only): the agent smoke's brief on this runtime must record the pushed commit within 5 minutes (with `--agents 2`, one compare run with a GLM and a MiMo agent must record and check both candidates, and it prints each agent's timing); it prints the same timing table plus sandbox milestones and tokens, and fails if the checks reject the commit. Evidence: `.local/staging/sandbox-smoke-*.json`.
 

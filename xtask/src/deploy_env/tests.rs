@@ -39,7 +39,7 @@ fn good_prod() -> Facts {
         head: HEAD.into(),
         dirty: vec![],
         ref_tips: vec![HEAD.into()],
-        dev_revisions: vec![("yonedarepo-staging-platform".into(), Some(HEAD.into()))],
+        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
     }
 }
@@ -49,11 +49,11 @@ fn confirmed() -> Options {
         ..Options::default()
     }
 }
-const CHECK: &str = "yonedarepo-staging-platform-checkcontainer";
-const EXECUTION: &str = "yonedarepo-staging-agents-executioncontainer";
+const CHECK: &str = "yonedarepo-dev-platform-checkcontainer";
+const EXECUTION: &str = "yonedarepo-dev-agents-executioncontainer";
 fn reuse(rollouts: &[&str]) -> Source {
     Source::Local(ImagePlan::Reuse {
-        image: "registry.cloudflare.com/acct/yonedarepo-staging-runtime:ef9d08f6e761484c".into(),
+        image: "registry.cloudflare.com/acct/yonedarepo-dev-runtime:ef9d08f6e761484c".into(),
         rollouts: rollouts.iter().map(|a| (*a).to_owned()).collect(),
     })
 }
@@ -143,8 +143,8 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
     assert_eq!(
         migrations,
         [
-            "yonedarepo-staging-platform-index",
-            "yonedarepo-staging-agents-index"
+            "yonedarepo-dev-platform-index",
+            "yonedarepo-dev-agents-index"
         ]
     );
     let first_deploy = plan
@@ -366,12 +366,12 @@ fn prod_needs_confirm_dev_at_head_and_passing_kit_evidence() {
         "without --confirm",
     );
     let stale = Facts {
-        dev_revisions: vec![("yonedarepo-staging-agents".into(), Some(OTHER.into()))],
+        dev_revisions: vec![("yonedarepo-dev-agents".into(), Some(OTHER.into()))],
         ..good_prod()
     };
     refused(&Env::Prod, &prod, &stale, &confirmed(), "deploy --env dev");
     let down = Facts {
-        dev_revisions: vec![("yonedarepo-staging-agents".into(), None)],
+        dev_revisions: vec![("yonedarepo-dev-agents".into(), None)],
         ..good_prod()
     };
     refused(&Env::Prod, &prod, &down, &confirmed(), "nothing reachable");
@@ -463,11 +463,11 @@ fn ci_skips_its_deploy_only_when_every_worker_already_runs_the_commit() {
     let live = |platform: Option<&str>, agents: Option<&str>| {
         vec![
             (
-                "yonedarepo-staging-platform".to_owned(),
+                "yonedarepo-dev-platform".to_owned(),
                 platform.map(str::to_owned),
             ),
             (
-                "yonedarepo-staging-agents".to_owned(),
+                "yonedarepo-dev-agents".to_owned(),
                 agents.map(str::to_owned),
             ),
         ]
@@ -518,13 +518,7 @@ fn busy_containers_stop_prod_unless_allowed() {
         ..confirmed()
     };
     guard::active_gate(&Env::Prod, "yonedarepo-dev", 2, &allow).unwrap();
-    guard::active_gate(
-        &Env::Dev,
-        "yonedarepo-staging-agents",
-        2,
-        &Options::default(),
-    )
-    .unwrap();
+    guard::active_gate(&Env::Dev, "yonedarepo-dev-agents", 2, &Options::default()).unwrap();
 }
 
 #[test]
@@ -610,7 +604,7 @@ fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
 fn the_summary_shows_which_container_apps_rolled_out() {
     let workers = dev_workers();
     let platform = workers.iter().find(|w| w.role == "platform").unwrap();
-    let app = "yonedarepo-staging-platform-checkcontainer".to_string();
+    let app = "yonedarepo-dev-platform-checkcontainer".to_string();
     let before = BTreeMap::from([(app.clone(), 1)]);
     let after = BTreeMap::from([(app.clone(), 2)]);
     assert_eq!(
