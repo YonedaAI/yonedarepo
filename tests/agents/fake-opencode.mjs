@@ -81,6 +81,12 @@ for (;;) {
   }
 }
 event({ type: 'message.updated', data: { message: { id: `${sessionID}-m1`, type: 'assistant', cost: 0.0001, pushes } } });
-for (const instance of [oc, twin]) instance.emit({ type: 'session.execution.succeeded', data: { sessionID } });
+// As in opencode 2.2: the twin's record pass starts first, the first instance's a moment
+// later, and the process exits as soon as both cleanups resolve (in the sandbox the
+// container stop then kills any hook still running).
+twin.emit({ type: 'session.execution.succeeded', data: { sessionID } });
+await new Promise((r) => setTimeout(r, 20));
+oc.emit({ type: 'session.execution.succeeded', data: { sessionID } });
 await Promise.all([cleanup(), twinCleanup()]);
 event({ type: 'session.done', data: { sessionID, pushes } });
+process.exit(0);

@@ -1,9 +1,10 @@
 //! A coding session's local record, under `$GIT_DIR/yoneda/` so it is never committed:
 //! - `reads`: the repo-relative files read since the last push (agent hooks or `yoneda
 //!   reads add`), one per line. A push declares them as its read set and clears them.
-//! - `pushed`: the commits pushed since the last session record, one `<commit> <reads
-//!   digest, or - when none were declared> [<session id>]` per line. The agent's turn-end
-//!   hook posts a session record for each of its own session's (and for unattributed ones).
+//! - `pushed`: the commits pushed whose session record is not posted yet, one `<commit>
+//!   <reads digest, or - when none were declared> [<session id>]` per line. The agent's
+//!   turn-end hook posts a session record for each of its own session's (and for
+//!   unattributed ones), and only then removes the line.
 //!
 //! The session id comes from the agent's environment: `YONEDA_SESSION_ID` (the Claude
 //! Code plugin exports it at session start), else opencode's `OPENCODE_SESSION_ID`, which
@@ -164,47 +165,49 @@ impl SessionFiles {
         self.append("pushed", &lines)
     }
 
-    /// Notes pushed commits again (their session records are retried later).
-    pub fn note_again(&self, pushed: &[Pushed]) -> Result<()> {
-        let lines: Vec<String> = pushed.iter().map(Pushed::line).collect();
-        self.append("pushed", &lines)
+    /// The pushed commits of `session` (and those no session claimed) whose records are not
+    /// posted yet, once each; another session's are left for it. They stay noted until
+    /// `forget_pushed`: a hook killed mid-post loses nothing (in the agent sandbox opencode
+    /// exits, and its container stops, without waiting for every hook). Hooks running at once
+    /// may both post one; the platform answers the second as already recorded.
+    pub fn pending_pushed(&self, session: Option<&str>) -> Result<Vec<Pushed>> {
+        let mut seen = BTreeSet::new();
+        Ok(self
+            .lines("pushed")?
+            .iter()
+            .map(|l| Pushed::parse(l))
+            .filter(|p| p.session.is_none() || p.session.as_deref() == session)
+            .filter(|p| !p.commit.is_empty() && seen.insert(p.commit.clone()))
+            .collect())
     }
 
-    /// The pushed commits of `session` (and those no session claimed) not recorded yet,
-    /// once each, removed from the file; another session's stay for it. The file is claimed
-    /// by an atomic rename, so of hooks taking at the same moment (opencode 2.2 runs two
-    /// plugin instances per session) exactly one gets each push, and a push noted meanwhile
-    /// starts a new file. A session record is posted at most once per push.
-    pub fn take_pushed(&self, session: Option<&str>) -> Result<Vec<Pushed>> {
-        // Unique per taker: per process, and per thread for in-process callers.
-        let claim = format!(
-            "pushed.claim.{}.{:?}",
+    /// Removes `commits` from the pushed notes (their records are posted, or refused for
+    /// good). The file is replaced by an atomic rename, so a concurrent reader sees the old
+    /// notes or the new ones, never a partial file.
+    pub fn forget_pushed(&self, commits: &[String]) -> Result<()> {
+        if commits.is_empty() {
+            return Ok(());
+        }
+        let keep: Vec<String> = self
+            .lines("pushed")?
+            .into_iter()
+            .filter(|l| !commits.contains(&Pushed::parse(l).commit))
+            .collect();
+        if keep.is_empty() {
+            return self.remove("pushed");
+        }
+        // Unique per writer: per process, and per thread for in-process callers.
+        let tmp = format!(
+            "pushed.{}.{:?}.tmp",
             std::process::id(),
             std::thread::current().id()
         )
         .replace(['(', ')'], "");
-        match std::fs::rename(self.dir.join("pushed"), self.dir.join(&claim)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(e) => {
-                return Err(e).context(format!("claiming {}", self.dir.join("pushed").display()));
-            }
-        }
-        let all: Vec<Pushed> = self
-            .lines(&claim)?
-            .iter()
-            .map(|l| Pushed::parse(l))
-            .collect();
-        let (mine, others): (Vec<Pushed>, Vec<Pushed>) = all
-            .into_iter()
-            .partition(|p| p.session.is_none() || p.session.as_deref() == session);
-        self.note_again(&others)?;
-        self.remove(&claim)?;
-        let mut seen = BTreeSet::new();
-        Ok(mine
-            .into_iter()
-            .filter(|p| !p.commit.is_empty() && seen.insert(p.commit.clone()))
-            .collect())
+        let tmp = self.dir.join(tmp);
+        std::fs::write(&tmp, format!("{}\n", keep.join("\n")))
+            .context(format!("writing {}", tmp.display()))?;
+        std::fs::rename(&tmp, self.dir.join("pushed"))
+            .context(format!("replacing {}", self.dir.join("pushed").display()))
     }
 }
 
@@ -279,13 +282,14 @@ mod tests {
         files.note_pushed(&strings(&["c1", "c2"]), &files.reads()?, None)?;
         files.clear_reads()?;
         assert!(files.reads()?.is_empty());
-        let pushed = files.take_pushed(None)?;
+        let pushed = files.pending_pushed(None)?;
         assert_eq!(pushed.len(), 2);
         assert_eq!(
             pushed[0].reads.as_deref(),
             Some(reads_digest(&strings(&["c.rs", "a.rs", "b.rs"])).as_str())
         );
-        assert!(files.take_pushed(None)?.is_empty());
+        files.forget_pushed(&strings(&["c1", "c2"]))?;
+        assert!(files.pending_pushed(None)?.is_empty());
         Ok(())
     }
 
@@ -298,47 +302,72 @@ mod tests {
         files.note_pushed(&strings(&["u1", "a1"]), &[], None)?;
         // A line from before session ids: `<commit> <digest>`.
         files.append("pushed", &[format!("old {}", "e".repeat(64))])?;
-        let mine = files.take_pushed(Some("opencode:s1"))?;
+        let mine = files.pending_pushed(Some("opencode:s1"))?;
         let commits: Vec<&str> = mine.iter().map(|p| p.commit.as_str()).collect();
         assert_eq!(commits, ["a1", "u1", "old"]);
         assert!(mine[0].reads.is_some() && mine[1].reads.is_none());
-        let theirs = files.take_pushed(Some("opencode:s2"))?;
+        files.forget_pushed(&strings(&["a1", "u1", "old"]))?;
+        let theirs = files.pending_pushed(Some("opencode:s2"))?;
         assert_eq!(theirs.len(), 1);
         assert_eq!(theirs[0].session.as_deref(), Some("opencode:s2"));
-        assert!(files.take_pushed(Some("opencode:s2"))?.is_empty());
+        assert!(files.pending_pushed(Some("opencode:s1"))?.is_empty());
         Ok(())
     }
 
     #[test]
-    fn concurrent_takes_claim_each_pushed_commit_once() -> Result<()> {
-        // opencode 2.2 sets the plugin up twice, so two `yoneda hook opencode-stop` processes
-        // take the same session's pushes at the same moment (L3, 2026-10-28).
-        const TAKERS: usize = 8;
-        for round in 0..100 {
+    fn a_hook_killed_after_taking_loses_no_push() -> Result<()> {
+        // In the agent sandbox opencode exits as soon as its awaited hooks end, and the
+        // container stop kills a stop hook that is still posting (L3, 2026-10-28).
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let files = SessionFiles::new(dir.path());
+        files.note_pushed(&strings(&["c1"]), &[], Some("opencode:s1"))?;
+        let killed = files.pending_pushed(Some("opencode:s1"))?;
+        assert_eq!(killed.len(), 1);
+        // The killed hook never posted; the next pass must still see the push.
+        let next = files.pending_pushed(Some("opencode:s1"))?;
+        assert_eq!(
+            next.iter().map(|p| p.commit.as_str()).collect::<Vec<_>>(),
+            ["c1"]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_record_passes_each_see_the_push_and_forget_only_what_was_posted() -> Result<()> {
+        // opencode 2.2 sets the plugin up twice, so two stop hooks run at the same moment.
+        const PASSES: usize = 8;
+        for round in 0..50 {
             let dir = tempfile::tempdir().context("tempdir")?;
-            SessionFiles::new(dir.path()).note_pushed(
-                &strings(&["c1"]),
-                &[],
-                Some("opencode:s1"),
-            )?;
-            let start = std::sync::Arc::new(std::sync::Barrier::new(TAKERS));
-            let takers: Vec<_> = (0..TAKERS)
+            let files = SessionFiles::new(dir.path());
+            files.note_pushed(&strings(&["c1"]), &[], Some("opencode:s1"))?;
+            files.note_pushed(&strings(&["d1"]), &[], Some("opencode:s2"))?;
+            let start = std::sync::Arc::new(std::sync::Barrier::new(PASSES));
+            let passes: Vec<_> = (0..PASSES)
                 .map(|_| {
                     let (path, start) = (dir.path().to_owned(), start.clone());
-                    std::thread::spawn(move || {
+                    std::thread::spawn(move || -> Result<usize> {
                         start.wait();
-                        SessionFiles::new(&path).take_pushed(Some("opencode:s1"))
+                        let files = SessionFiles::new(&path);
+                        let seen = files.pending_pushed(Some("opencode:s1"))?;
+                        files.forget_pushed(&strings(&["c1"]))?;
+                        Ok(seen.len())
                     })
                 })
                 .collect();
-            let mut taken = 0;
-            for taker in takers {
-                taken += taker
-                    .join()
-                    .map_err(|_| crate::error::Error::new("taker panicked"))??
-                    .len();
+            for pass in passes {
+                pass.join()
+                    .map_err(|_| crate::error::Error::new("pass panicked"))??;
             }
-            assert_eq!(taken, 1, "round {round}: one push taken {taken} times");
+            assert!(
+                files.pending_pushed(Some("opencode:s1"))?.is_empty(),
+                "round {round}"
+            );
+            let theirs = files.pending_pushed(Some("opencode:s2"))?;
+            assert_eq!(
+                theirs.len(),
+                1,
+                "round {round}: the other session's push survives"
+            );
         }
         Ok(())
     }
