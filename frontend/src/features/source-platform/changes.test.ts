@@ -39,7 +39,7 @@ const change = {
   updated_at: 2,
   landed_version: null,
   landed_commit: null,
-  comments: 0,
+  comment_count: 0,
 };
 const gates = (ready: boolean) => ({
   ready,
@@ -147,7 +147,7 @@ describe('changes list', () => {
     expect(html(ChangeTable, { ...props, filter: 'closed', changes: empty })).toContain(
       'No closed changes',
     );
-    const landed = { ...change, number: 6, status: 'landed', landed_version: 41, comments: 2 };
+    const landed = { ...change, number: 6, status: 'landed', landed_version: 41, comment_count: 2 };
     const list = html(ChangeTable, {
       ...props,
       filter: 'all',

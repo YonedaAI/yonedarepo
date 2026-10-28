@@ -51,7 +51,8 @@ export function ChangeTable({
               ? `landed v${c.landed_version} · `
               : ''}
             updated {when(c.updated_at)}
-            {c.comments > 0 && ` · ${c.comments} comment${c.comments === 1 ? '' : 's'}`}
+            {c.comment_count > 0 &&
+              ` · ${c.comment_count} comment${c.comment_count === 1 ? '' : 's'}`}
           </span>
         </li>
       ))}

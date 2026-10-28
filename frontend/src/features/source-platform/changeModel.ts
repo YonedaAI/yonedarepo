@@ -21,7 +21,7 @@ export type Change = {
   updated_at: number;
   landed_version: number | null;
   landed_commit: string | null;
-  comments: number;
+  comment_count: number;
 };
 
 export type Side = 'old' | 'new';
