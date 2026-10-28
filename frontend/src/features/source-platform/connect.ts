@@ -31,13 +31,15 @@ export const httpsCloneCommand = (origin: string, repo: string, dir?: string) =>
 /** The yoneda remote helper. */
 export const cloneCommand = (origin: string, repo: string, dir?: string) =>
   gitClone(`yoneda::${origin}/${repo}`, dir);
+/** Signs the yoneda CLI in once; the remote helper then pulls and pushes with that login. */
+export const loginCommand = (origin: string) => `yoneda login --origin ${origin}`;
 export const mcpUrl = (origin: string) => `${origin}/api/v1/mcp`;
 
 export const installSteps = (origin: string) =>
   [
     '# from a checkout of the YonedaRepo source (installs yoneda and git-remote-yoneda)',
     'cargo install --path backend/crates/yoneda-cli',
-    `yoneda login --origin ${origin}   # approve in the browser; the token is stored with mode 0600`,
+    `${loginCommand(origin)}   # approve in the browser; the token is stored with mode 0600`,
   ].join('\n');
 
 export const claudePluginSteps = () =>

@@ -8,11 +8,43 @@ import {
   codexToml,
   httpsCloneCommand,
   installSteps,
+  loginCommand,
   mcpUrl,
 } from './connect';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
+
+/** The two clone commands, the recommended yoneda remote helper first, each with what it
+ * needs: the helper a one-time `yoneda login`, stock Git a personal token as the password. */
+export function CloneCommands({
+  repo,
+  name,
+  origin,
+}: {
+  repo: string;
+  name?: string;
+  origin: string;
+}) {
+  return (
+    <>
+      <CopyBlock
+        label="yoneda remote helper (recommended)"
+        text={cloneCommand(origin, repo, name)}
+      />
+      <p className="source-meta clone-hint">
+        Run once: <code>{loginCommand(origin)}</code> — then pull/push use your login.
+      </p>
+      <CopyBlock
+        label="HTTPS (needs a personal token as the password)"
+        text={httpsCloneCommand(origin, repo, name)}
+      />
+      <p className="source-meta clone-hint">
+        <a href="/settings#personal-tokens">Settings → Personal tokens</a>
+      </p>
+    </>
+  );
+}
 
 export function ConnectPanel({
   repo,
@@ -28,11 +60,10 @@ export function ConnectPanel({
       <section aria-labelledby="connect-git">
         <h2 id="connect-git">Clone with git</h2>
         <p className="source-meta">
-          Stock Git over HTTPS with a token as the password, or the yoneda remote helper.{' '}
+          The yoneda remote helper, or stock Git over HTTPS with a personal token as the password.{' '}
           <code>git push origin main</code> lands: the server merges disjoint concurrent changes.
         </p>
-        <CopyBlock label="HTTPS" text={httpsCloneCommand(origin, repo, name)} />
-        <CopyBlock label="clone" text={cloneCommand(origin, repo, name)} />
+        <CloneCommands repo={repo} name={name} origin={origin} />
         <p className="source-meta">
           Repository id <code>{repo}</code>
         </p>

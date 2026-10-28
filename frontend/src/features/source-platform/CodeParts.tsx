@@ -1,7 +1,7 @@
 // The Code tab's toolbar and summary: branch and tag picker, Clone, and the latest commit.
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { cloneCommand, httpsCloneCommand } from './connect';
+import { CloneCommands } from './ConnectPanel';
 import { ago, principalName } from './fileActivity';
 import { Failure } from './SourceStatus';
 import { shortSha } from './sourceApi';
@@ -85,8 +85,8 @@ function SshClone({ repo, name }: { repo: string; name?: string }) {
   return <SshCloneLine access={ssh.data?.ssh} repo={repo} name={name} />;
 }
 
-/** "Clone": whole `git clone` commands over HTTPS, SSH (when open) and the yoneda remote
- * helper, each into a directory named after the repository, with copy buttons. */
+/** "Clone": whole `git clone` commands with copy buttons, each into a directory named after
+ * the repository: the yoneda remote helper (recommended), HTTPS and SSH (when open). */
 export function CloneButton({
   repo,
   name,
@@ -113,9 +113,8 @@ export function CloneButton({
         Clone
       </summary>
       <div className="clone-dropdown">
-        <CopyBlock label="HTTPS (token as password)" text={httpsCloneCommand(origin, repo, name)} />
+        <CloneCommands repo={repo} name={name} origin={origin} />
         {open && <SshClone repo={repo} name={name} />}
-        <CopyBlock label="yoneda remote helper" text={cloneCommand(origin, repo, name)} />
       </div>
     </details>
   );
