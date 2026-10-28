@@ -4,7 +4,7 @@ use super::hosts;
 use super::inventory::{self, Deployable};
 use super::live::Live;
 use super::plan::{Action, effective_lock};
-use super::prune::{deletions, refusal};
+use super::prune::{deletions, refusal, unresolved};
 use super::retired::{Kind, declared, orphans};
 use super::spec::{Lock, PENDING_D1, Spec};
 use serde_json::json;
@@ -496,6 +496,32 @@ fn prune_deletes_in_dependency_order_and_refuses_bound_or_unread_rows() {
         refusal(&rows, &protected, &unread)
             .unwrap()
             .contains("cannot read")
+    );
+}
+
+#[test]
+fn prune_failures_count_only_while_the_resource_is_still_live() {
+    // `wrangler delete` exits 1 after deleting a Worker when its token cannot list KV
+    // namespaces; the re-read plan is the truth.
+    let (spec, _) = prod();
+    let live = cutover_account();
+    let after = orphans(&spec.retired, &every_declared(), &live)
+        .into_iter()
+        .filter(|r| r.name == "yonedarepo-dev-objects")
+        .collect::<Vec<_>>();
+    let failed = vec![
+        (
+            "Worker yonedarepo-dev".to_owned(),
+            "exit status: 1".to_owned(),
+        ),
+        (
+            "R2 yonedarepo-dev-objects (must be empty)".to_owned(),
+            "exit status: 1".to_owned(),
+        ),
+    ];
+    assert_eq!(
+        unresolved(failed, &after),
+        ["R2 yonedarepo-dev-objects (must be empty): exit status: 1"]
     );
 }
 

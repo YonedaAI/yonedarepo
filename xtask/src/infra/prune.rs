@@ -112,6 +112,20 @@ pub(crate) fn deletions(rows: &[Row], live: &Live) -> Vec<(String, Vec<String>)>
     out
 }
 
+/// The failed steps whose resource the re-read plan still lists. A step can exit non-zero
+/// after its deletion went through (`wrangler delete` then fails to list KV namespaces).
+pub(crate) fn unresolved(failed: Vec<(String, String)>, after: &[Row]) -> Vec<String> {
+    failed
+        .into_iter()
+        .filter(|(label, _)| {
+            after
+                .iter()
+                .any(|r| label.split([' ', '/']).any(|word| word == r.name))
+        })
+        .map(|(label, error)| format!("{label}: {error}"))
+        .collect()
+}
+
 async fn orphan_rows(
     spec: &Spec,
     env: &Env,
@@ -167,11 +181,12 @@ pub(crate) async fn command(args: &[String]) -> Result<()> {
     for (label, args) in &steps {
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
         if let Err(error) = wrangler::run(&spec.account_id, &args) {
-            failures.push(format!("{label}: {error}"));
+            failures.push((label.clone(), error.to_string()));
         }
     }
     let (after, live, _) = orphan_rows(&spec, &env, &token).await?;
     plan::print(&env, &after, &live);
+    let failures = unresolved(failures, &after);
     if !failures.is_empty() {
         return Err(format!(
             "{} prune step(s) failed (rerun after fixing; an R2 bucket must be emptied first):\n{}",
