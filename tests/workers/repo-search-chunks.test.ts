@@ -66,7 +66,7 @@ it('indexes a root of more than 8 MiB in chunks and names only the file over the
   expect(found.skipped_count).toBe(1);
   expect(found.partitions_built).toBe(1);
   // Stored as two chunks or more: the partition's key holds their count.
-  const keys = (await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/search/v3/` })).objects.map((o) => o.key);
+  const keys = (await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/search/v4/` })).objects.map((o) => o.key);
   const manifest = keys.find((k) => !/\/\d+$/.test(k)) as string;
   const chunks = (await (await bindings.OBJECTS.get(manifest))?.json<{ chunks: number }>())?.chunks ?? 0;
   expect(chunks).toBeGreaterThanOrEqual(2);

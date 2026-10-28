@@ -49,20 +49,19 @@ export async function search(ctx: RepoContext, args: Json) {
       skipped.push({ path: index.partition.prefix || '/', reason: index.refused });
     }
   for await (const { partition, segment } of segmentsIn(ctx, indexes)) {
-    const at = (path: string) => (partition.prefix ? `${partition.prefix}/${path}` : path);
-    const unindexed = (segment.files as Json[])
-      .filter((f) => !f.indexed && under(at(f.path)))
-      .map((f) => ({ path: at(f.path), reason: f.skipped ?? 'not indexed' }));
-    for (const file of await keepAllowed(ctx, unindexed)) {
-      skippedCount++;
-      if (skipped.length < SKIPPED_LISTED) skipped.push(file);
-    }
-    const { candidates } = compute({
+    const { candidates, unindexed } = compute({
       op: 'search_segment',
-      segment,
+      segment_b64: toBase64(segment),
       prefix: partition.prefix,
       query,
     });
+    for (const file of await keepAllowed(
+      ctx,
+      (unindexed as Json[]).filter((f) => under(f.path)),
+    )) {
+      skippedCount++;
+      if (skipped.length < SKIPPED_LISTED) skipped.push(file);
+    }
     for (const file of await keepAllowed(ctx, candidates as Json[]))
       if (under(file.path)) files.push(file);
   }
