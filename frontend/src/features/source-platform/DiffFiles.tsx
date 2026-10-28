@@ -15,7 +15,8 @@ export type DiffChange = {
 
 export type LineRow = Extract<PatchRow, { kind: 'context' | 'add' | 'delete' }>;
 
-/** Per-line hooks: a control in the line-number cell and content shown under the row. */
+/** Per-line hooks: a control in the line-number cell of the row's anchor side (old for deleted
+ * lines, new otherwise) and content shown under the row. */
 export type LineHooks = {
   control: (path: string, row: LineRow) => ReactNode;
   below: (path: string, row: LineRow) => ReactNode;
@@ -79,9 +80,15 @@ export function DiffFiles({
                     // biome-ignore lint/suspicious/noArrayIndexKey: patch rows are positional and immutable.
                     <Fragment key={i}>
                       <tr className={`source-patch-${row.kind}`}>
-                        <td className="source-line">{row.old ?? ''}</td>
                         <td className="source-line">
-                          {lines ? lines.control(change.path, row) : (row.new ?? '')}
+                          {lines && row.kind === 'delete'
+                            ? lines.control(change.path, row)
+                            : (row.old ?? '')}
+                        </td>
+                        <td className="source-line">
+                          {lines && row.kind !== 'delete'
+                            ? lines.control(change.path, row)
+                            : (row.new ?? '')}
                         </td>
                         <td>
                           <span aria-hidden>
