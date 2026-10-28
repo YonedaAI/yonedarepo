@@ -256,3 +256,46 @@ fn sessions_list_the_commits_a_head_adds_over_its_base() {
         assert_eq!(code(h.run(CI, bad)), "INVALID_INPUT");
     }
 }
+
+#[test]
+fn sessions_list_and_show_by_session_id() {
+    let (h, root) = seeded();
+    let post = |summary: &str, session_id: Value, transcript: &str| {
+        h.ok(
+            OWNER,
+            json!({ "op": "repo_session_record", "commit": root, "cli": "opencode",
+                    "summary": summary, "session_id": session_id, "transcript_ref": transcript }),
+        )["session"]
+            .as_i64()
+            .unwrap()
+    };
+    // Same transcript reference, different sessions: the session id decides.
+    let a1 = post("a one", json!("opencode:a"), "shared");
+    let b1 = post("b one", json!("opencode:b"), "shared");
+    let a2 = post("a two", json!("opencode:a"), "shared");
+    let old = post("before ids", Value::Null, "legacy");
+    let older = post("before ids too", Value::Null, "legacy");
+
+    let listed = h.ok(
+        CI,
+        json!({"op":"repo_session_list","session_id":"opencode:a"}),
+    );
+    assert_eq!(ids(&listed), [a2, a1]);
+    assert_eq!(listed["sessions"][0]["session_id"], "opencode:a");
+    let all = h.ok(CI, json!({"op":"repo_session_list"}));
+    assert_eq!(ids(&all), [older, old, a2, b1, a1]);
+    assert!(all["sessions"][0]["session_id"].is_null());
+
+    let related = |id: i64| -> Vec<i64> {
+        h.ok(CI, json!({"op":"repo_session_show","id":id}))["related"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_i64().unwrap())
+            .collect()
+    };
+    assert_eq!(related(a1), [a2]);
+    assert!(related(b1).is_empty());
+    // Records without a session id still group by their transcript reference.
+    assert_eq!(related(old), [older]);
+}

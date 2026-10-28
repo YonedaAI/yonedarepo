@@ -18,8 +18,6 @@ const MAX_PER_COMMIT: usize = 20;
 const MAX_REF: usize = 512;
 const MAX_MODEL: usize = 128;
 const MAX_SESSION_ID: usize = 128;
-/// The newest-first listing's page bound.
-const MAX_RECENT: u64 = 50;
 
 /// Session records read and post whole commits, so a path-restricted token can do neither.
 pub fn whole_repository(actor: &Actor) -> Result<()> {
@@ -140,52 +138,4 @@ pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         &[json!(id.hex())],
     )?;
     Ok(json!({ "commit": id, "sessions": sessions }))
-}
-
-/// `repo_sessions_recent {limit?, before?, session_id?}`: the repository's session records
-/// newest first (default 20, at most 50), each with its commit and the commit message's
-/// first line; `before` (a record id) pages back, `session_id` keeps one session's records.
-/// `next` is the `before` of the following page, absent on the last.
-pub fn recent<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
-    whole_repository(actor)?;
-    let limit = match &c["limit"] {
-        Value::Null => 20,
-        v => v
-            .as_u64()
-            .filter(|n| (1..=MAX_RECENT).contains(n))
-            .ok_or_else(|| bad(&format!("limit must be 1-{MAX_RECENT}")))?,
-    };
-    let before = match &c["before"] {
-        Value::Null => i64::MAX,
-        v => v
-            .as_i64()
-            .filter(|n| *n > 0)
-            .ok_or_else(|| bad("before must be a session record id"))?,
-    };
-    let session_id = optional(c, "session_id", MAX_SESSION_ID, printable)?;
-    let mut sessions = db.query(
-        "SELECT s.id,s.session_id,s.commit_id AS \"commit\",s.cli,s.model,s.summary,s.transcript_ref,\
-         s.read_set_digest,s.recorded_by,s.at,substr(m.message,1,300) AS subject \
-         FROM sessions s LEFT JOIN commits m ON m.id=s.commit_id \
-         WHERE s.id<? AND (? IS NULL OR s.session_id=?) ORDER BY s.id DESC LIMIT ?",
-        &[
-            json!(before),
-            session_id.clone(),
-            session_id,
-            json!(limit + 1),
-        ],
-    )?;
-    let more = sessions.len() as u64 > limit;
-    sessions.truncate(limit as usize);
-    for row in &mut sessions {
-        let subject = row["subject"]
-            .as_str()
-            .and_then(|m| m.lines().next())
-            .map(str::to_owned);
-        row["subject"] = json!(subject);
-    }
-    let next = more
-        .then(|| sessions.last().map(|r| r["id"].clone()))
-        .flatten();
-    Ok(json!({ "sessions": sessions, "next": next }))
 }
