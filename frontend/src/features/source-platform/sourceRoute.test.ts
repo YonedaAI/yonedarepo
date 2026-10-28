@@ -27,6 +27,9 @@ describe('source routes', () => {
       { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
       { view: 'changes', repo },
       { view: 'change', repo, number: 12 },
+      { view: 'releases', repo },
+      { view: 'release', repo, tag: 'v1.2.0' },
+      { view: 'release', repo, tag: 'team/v 2' },
       { view: 'repo-settings', repo, section: 'rules' },
       { view: 'repo-settings', repo, section: 'webhooks' },
     ];

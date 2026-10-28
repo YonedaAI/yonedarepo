@@ -18,6 +18,7 @@ import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-
 import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
 import { rebase } from './repo-rebase';
+import { releaseOperations } from './repo-releases';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { readRefs } from './repo-snapshots';
 import { agentView } from './repo-views';
@@ -126,13 +127,23 @@ export const operations: Record<string, Operation> = {
   },
   // A new tag is mirrored to the object store like a protected branch.
   git_tag: async (ctx, a) => {
-    const created = await ctx.call({ op: 'repo_tag_create', name: a.name, commit: a.commit });
+    // With a message the platform builds an annotated tag object.
+    const created = await ctx.call({
+      op: 'repo_tag_create',
+      name: a.name,
+      commit: a.commit,
+      message: a.message ?? null,
+      tagger: a.tagger ?? null,
+      // Or an annotated tag object made elsewhere (e.g. `git tag -a`), kept as is.
+      tag: a.object_b64 ? { data_b64: a.object_b64 } : null,
+    });
     if (!created.already)
       await Promise.all([dispatchProjection(ctx.env, ctx.repo), notifyHooks(ctx.env, ctx.repo)]);
     return created;
   },
   ...hookOperations,
   ...changeOperations,
+  ...releaseOperations,
   ...memberOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))

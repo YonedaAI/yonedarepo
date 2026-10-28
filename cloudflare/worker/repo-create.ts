@@ -1,6 +1,7 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
+import { orgArg, orgCaller, orgCommand } from './orgs';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
@@ -12,10 +13,33 @@ import type { Env } from './types';
 
 /**
  * Who owns a new repository: the signed-in workspace, its personal token with repo:admin
- * (acting as the account, never as a person), or, for the operator (admin bearer)
- * provisioning on someone's behalf, the named `workspace`. Never a repository token.
+ * (acting as the account, never as a person), an organization (`owner`) one of whose
+ * owners asks, or, for the operator (admin bearer) provisioning on someone's behalf, the
+ * named `workspace`. Never a repository token. Only org owners create an org's
+ * repositories (asked of the org's authority at once, never from a cached answer); members
+ * get access through teams or membership afterwards.
  */
-export function owning(auth: Credentials, body: Json): Credentials & { _session: Json } {
+export async function owning(
+  env: Env,
+  auth: Credentials,
+  body: Json,
+): Promise<Credentials & { _session: Json }> {
+  if (body.owner !== undefined && body.owner !== null) {
+    if (body.workspace !== undefined)
+      throw new ApiError('INVALID_INPUT', 'Name an owner or a workspace, not both');
+    const org = orgArg(body.owner);
+    if ('_pat' in auth) requirePatScope(auth, 'repo:admin');
+    const { account } = orgCaller(auth, true, org);
+    const access = await orgCommand(env, org, { op: 'org_access', account });
+    if (access.role !== 'owner')
+      throw new ApiError('FORBIDDEN', `Only an owner of ${org} creates its repositories`);
+    return { _session: { workspace: org, principal: `user:${account}` } };
+  }
+  if ('_pat' in auth && auth._pat.org)
+    throw new ApiError(
+      'FORBIDDEN',
+      `This token is limited to the ${auth._pat.org} organization; name it as the owner`,
+    );
   if ('_pat' in auth) {
     requirePatScope(auth, 'repo:admin');
     if (body.workspace !== undefined)
@@ -62,7 +86,7 @@ export function newRepoId() {
 }
 
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
-  const auth = owning(requester, body);
+  const auth = await owning(env, requester, body);
   const id = newRepoId();
   const store = newStore(env, `yr-${id}`);
   await store.create();
@@ -97,7 +121,7 @@ export async function createRepository(env: Env, requester: Credentials, body: J
 
 /** Starts a durable import of an external Git repository (Artifacts-backed only). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
-  const auth = owning(requester, body);
+  const auth = await owning(env, requester, body);
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
   const url = String(body.url ?? '');

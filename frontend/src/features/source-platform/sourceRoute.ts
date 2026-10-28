@@ -19,6 +19,7 @@ export type SourceRoute =
   | { view: 'home' }
   | { view: 'settings' }
   | { view: 'device'; code: string }
+  | { view: 'org'; org: string }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -27,13 +28,17 @@ export type SourceRoute =
   | { view: 'search'; repo: string; query: string }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
+  | { view: 'releases'; repo: string }
+  | { view: 'release'; repo: string; tag: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
 /** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code,
- * `change` to Changes. */
-export type RepoTab = 'code' | 'history' | 'changes' | 'search' | 'settings';
+ * `change` to Changes, `release` to Releases. */
+export type RepoTab = 'code' | 'history' | 'changes' | 'releases' | 'search' | 'settings';
 
 const REPO = /^r[0-9a-f]{20}$/;
+/** An organization's name: an account name without email (the two share one namespace). */
+export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
 const isSection = (value: string | undefined): value is RepoSettingsSection =>
   (REPO_SETTINGS_SECTIONS as readonly string[]).includes(value ?? '');
@@ -45,6 +50,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
   if (root === 'settings' && !repo) return { view: 'settings' };
+  if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
@@ -61,6 +67,11 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
       ? { view: 'change', repo, number }
       : { view: 'changes', repo };
   }
+  // A tag may hold slashes, as segments or encoded.
+  if (view === 'releases')
+    return rest.length
+      ? { view: 'release', repo, tag: rest.join('/') }
+      : { view: 'releases', repo };
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
@@ -77,6 +88,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'home') return '/';
   if (route.view === 'settings') return '/settings';
+  if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   const base = `/source/${route.repo}`;
@@ -92,6 +104,8 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   if (route.view === 'changes') return `${base}/changes`;
   if (route.view === 'change') return `${base}/changes/${route.number}`;
+  if (route.view === 'releases') return `${base}/releases`;
+  if (route.view === 'release') return `${base}/releases/${encodeURIComponent(route.tag)}`;
   const query = new URLSearchParams();
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
@@ -119,6 +133,9 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'changes':
     case 'change':
       return 'changes';
+    case 'releases':
+    case 'release':
+      return 'releases';
     case 'search':
       return 'search';
     case 'repo-settings':
@@ -133,6 +150,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'code') return { view: 'files', repo, path: '', ref: 'main' };
   if (tab === 'history') return { view: 'history', repo, ref: 'main' };
   if (tab === 'changes') return { view: 'changes', repo };
+  if (tab === 'releases') return { view: 'releases', repo };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };
 }

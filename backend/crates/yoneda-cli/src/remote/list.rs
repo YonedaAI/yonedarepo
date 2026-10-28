@@ -1,33 +1,62 @@
-//! `list` and `list for-push`: the platform's branches and lightweight tags, by the
-//! platform's commit ids.
+//! `list` and `list for-push`: the platform's branches and tags, by the platform's commit
+//! ids (an annotated tag by its tag object's id).
 use super::Session;
 use super::fetch::Fetcher;
+use super::tags;
 use crate::error::{Error, Result};
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const MAIN: &str = "refs/heads/main";
 
-/// The platform's branches and tags at its latest version: (version, refname → commit).
-pub async fn branches(session: &Session) -> Result<(u64, BTreeMap<String, String>)> {
-    let refs = session.api.get("/refs").await?;
-    let version = refs["version"]
-        .as_u64()
-        .ok_or_else(|| Error::new("the platform's refs have no version"))?;
-    let heads = refs["refs"]
+/// The platform's refs at one version.
+pub struct Listed {
+    pub version: u64,
+    /// Branches and tags: refname → commit.
+    pub heads: BTreeMap<String, String>,
+    /// Annotated tags: refname → tag object id.
+    pub annotated: BTreeMap<String, String>,
+}
+
+fn named(value: &Value) -> BTreeMap<String, String> {
+    value
         .as_object()
         .into_iter()
         .flatten()
         .filter(|(name, _)| name.starts_with("refs/heads/") || name.starts_with("refs/tags/"))
         .filter_map(|(name, sha)| Some((name.clone(), sha.as_str()?.to_owned())))
-        .collect();
-    Ok((version, heads))
+        .collect()
+}
+
+/// The platform's branches and tags at its latest version.
+pub async fn branches(session: &Session) -> Result<Listed> {
+    let refs = session.api.get("/refs").await?;
+    let version = refs["version"]
+        .as_u64()
+        .ok_or_else(|| Error::new("the platform's refs have no version"))?;
+    Ok(Listed {
+        version,
+        heads: named(&refs["refs"]),
+        annotated: named(&refs["annotated"]),
+    })
 }
 
 pub async fn list(session: &mut Session, for_push: bool) -> Result<String> {
-    let (version, heads) = branches(session).await?;
+    let Listed {
+        version,
+        heads,
+        annotated,
+    } = branches(session).await?;
     let mut out = String::new();
     for (name, server) in &heads {
-        let local = if name == MAIN {
+        let local = if let Some(tag) = annotated.get(name) {
+            // Git compares a tag push with the tag object it names.
+            if for_push {
+                tag.clone()
+            } else {
+                tags::listed(session, name, server, tag).await?
+            }
+        } else if name == MAIN {
             session.heads.record(server, version)?;
             let branch = Some("main");
             let local = Fetcher::new(&session.api, &session.git, &mut session.map)

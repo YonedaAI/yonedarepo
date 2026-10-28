@@ -126,3 +126,28 @@ it('serves inherited objects named by id, or omitted by a push, only to readers 
   const pat = (await api('/tokens', bob, { body: { name: 'git', scopes: ['repo:read', 'repo:write'] } })).body.token as string;
   expect(await push(fork, pat, 'refs/heads/b', pack)).toContain('ok refs/heads/b');
 });
+
+it('forks an org repository read through a team, and forks into an org only as its owner', async () => {
+  const alice = { cookie: await signup('forkorg_alice') };
+  const bob = { cookie: await signup('forkorg_bob') };
+  await api('/orgs', alice, { body: { name: 'forkacme' } }, local);
+  const created = await api('/repos', alice, { body: { name: 'app', owner: 'forkacme', files: [file('a.md', 'a\n')], author } }, local);
+  const parent = created.body.id as string;
+  await drainObjects(local);
+  // bob reads the org's repository only through team "devs".
+  await api('/orgs/forkacme/members', alice, { body: { account: 'forkorg_bob', role: 'member' } }, local);
+  await api('/orgs/forkacme/teams', alice, { body: { name: 'devs' } }, local);
+  expect((await api(`/repos/${parent}/fork`, bob, { body: {} }, local)).status).toBe(403);
+  await api('/orgs/forkacme/teams/devs/members', alice, { body: { account: 'forkorg_bob' } }, local);
+  expect((await api(`/repos/${parent}/members`, alice, { body: { account: 'team:forkacme/devs', role: 'read' } }, local)).status).toBe(200);
+  const mine = await api(`/repos/${parent}/fork`, bob, { body: { name: 'bobs' } }, local);
+  expect(mine.status, JSON.stringify(mine.body)).toBe(200);
+  // The team's read reaches inherited objects named by id too (the guard asks the parent).
+  const blob = await object('blob', text.encode('a\n'));
+  expect((await api(`/repos/${mine.body.id}/objects`, bob, { body: { objects: [{ id: blob.id, kind: 'blob' }] } }, local)).status).toBe(200);
+  // Into the org: its members may not, its owner may.
+  expect((await api(`/repos/${parent}/fork`, bob, { body: { name: 'org-fork', owner: 'forkacme' } }, local)).status).toBe(403);
+  const org = await api(`/repos/${parent}/fork`, alice, { body: { name: 'org-fork', owner: 'forkacme' } }, local);
+  expect(org.status, JSON.stringify(org.body)).toBe(200);
+  expect((await api('/orgs/forkacme/repos', alice, {}, local)).body.repos.map((r: any) => r.id)).toContain(org.body.id);
+});

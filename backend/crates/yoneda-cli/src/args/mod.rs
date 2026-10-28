@@ -2,6 +2,7 @@
 //! wide but each command has a handful of flags; clap would add more than it removes.
 #[cfg(test)]
 mod docs;
+mod org;
 mod parser;
 mod sub;
 
@@ -95,6 +96,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
             origin: simple(rest, &[])?.flag("origin"),
         },
         "repo" => sub::repo(rest)?,
+        "org" => org::org(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
         "log" | "grep" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
@@ -139,6 +141,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "push" => Command::Push(rest.to_vec()),
         "session" => sub::session(rest)?,
         "change" => sub::change(rest)?,
+        "release" => sub::release(rest)?,
         "hook" => sub::hook(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
@@ -229,6 +232,16 @@ mod tests {
                 origin: None,
                 with_token: false,
                 browser: false
+            })
+        );
+        assert_eq!(
+            parsed("repo create web --owner acme").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Create {
+                    name: "web".into(),
+                    owner: Some("acme".into())
+                }
             })
         );
         assert_eq!(
@@ -344,7 +357,19 @@ mod tests {
                 origin: None,
                 command: RepoCommand::Fork {
                     id: "r1".into(),
-                    name: Some("mine".into())
+                    name: Some("mine".into()),
+                    owner: None
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo fork r1 --owner acme").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Fork {
+                    id: "r1".into(),
+                    name: None,
+                    owner: Some("acme".into())
                 }
             })
         );
@@ -375,10 +400,112 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("release create v1 --title First -m notes --asset dist/app.zip").ok(),
+            Some(Command::Release {
+                target: Target::default(),
+                command: ReleaseCommand::Create {
+                    tag: "v1".into(),
+                    title: Some("First".into()),
+                    notes: Some("notes".into()),
+                    asset: Some("dist/app.zip".into())
+                }
+            })
+        );
+        assert_eq!(
+            parsed("release show v1").ok(),
+            Some(Command::Release {
+                target: Target::default(),
+                command: ReleaseCommand::Show { tag: "v1".into() }
+            })
+        );
+        assert_eq!(
             parsed("setup codex").ok(),
             Some(Command::Setup {
                 agent: Agent::Codex,
                 origin: None
+            })
+        );
+    }
+
+    #[test]
+    fn parses_the_org_commands() {
+        let org = |line: &str| match parsed(line) {
+            Ok(Command::Org { command, .. }) => Some(command),
+            _ => None,
+        };
+        assert_eq!(org("org list"), Some(OrgCommand::List));
+        assert_eq!(
+            org("org create acme --origin https://x"),
+            Some(OrgCommand::Create {
+                name: "acme".into()
+            })
+        );
+        assert_eq!(
+            org("org show acme"),
+            Some(OrgCommand::Show { org: "acme".into() })
+        );
+        assert_eq!(
+            org("org repos acme"),
+            Some(OrgCommand::Repos { org: "acme".into() })
+        );
+        assert_eq!(
+            org("org member add acme bob"),
+            Some(OrgCommand::MemberAdd {
+                org: "acme".into(),
+                account: "bob".into(),
+                role: "member".into()
+            })
+        );
+        assert_eq!(
+            org("org member add acme bob --role owner"),
+            Some(OrgCommand::MemberAdd {
+                org: "acme".into(),
+                account: "bob".into(),
+                role: "owner".into()
+            })
+        );
+        assert_eq!(
+            org("org member remove acme bob"),
+            Some(OrgCommand::MemberRemove {
+                org: "acme".into(),
+                account: "bob".into()
+            })
+        );
+        assert_eq!(
+            org("org team create acme devs"),
+            Some(OrgCommand::TeamCreate {
+                org: "acme".into(),
+                team: "devs".into()
+            })
+        );
+        assert_eq!(
+            org("org team delete acme devs"),
+            Some(OrgCommand::TeamDelete {
+                org: "acme".into(),
+                team: "devs".into()
+            })
+        );
+        assert_eq!(
+            org("org team add acme devs bob"),
+            Some(OrgCommand::TeamAdd {
+                org: "acme".into(),
+                team: "devs".into(),
+                account: "bob".into()
+            })
+        );
+        assert_eq!(
+            org("org team remove acme devs bob"),
+            Some(OrgCommand::TeamRemove {
+                org: "acme".into(),
+                team: "devs".into(),
+                account: "bob".into()
+            })
+        );
+        assert_eq!(
+            parsed("org show acme --origin https://y").ok(),
+            Some(Command::Org {
+                origin: Some("https://y".into()),
+                command: OrgCommand::Show { org: "acme".into() }
             })
         );
     }
@@ -408,6 +535,20 @@ mod tests {
             "change comment 1 -m hi --path a.rs --line 2 --side left",
             "change comment 1 --resolve",
             "change list extra",
+            "release create",
+            "release show",
+            "release list extra",
+            "release publish v1",
+            "org",
+            "org create",
+            "org show a b",
+            "org member add acme",
+            "org member add acme bob --role admin",
+            "org member remove acme bob --role owner",
+            "org team create acme",
+            "org team add acme devs",
+            "org team rename acme devs x",
+            "org delete acme",
         ] {
             assert_eq!(
                 parsed(line).map_err(|e| e.exit_code).err(),

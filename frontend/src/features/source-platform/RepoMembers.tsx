@@ -1,7 +1,9 @@
-// Repository members: other accounts that use this repository with a role. The owner and
+// Repository members: other accounts, or an organization's teams (`team:<org>/<team>`), that
+// use this repository with a role. The owner and
 // admins manage them; only the owner grants, changes or removes admin. The server decides
 // every change; the page only hides controls the viewer cannot use.
 import { type FormEvent, useState } from 'react';
+import { memberTarget, teamOf } from './orgModel';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { type Loaded, useSource } from './useSource';
@@ -58,7 +60,9 @@ export function MemberTable({
             const editable = roles.includes(m.role);
             return (
               <tr key={m.account}>
-                <td>{m.account}</td>
+                <td>
+                  <MemberName account={m.account} />
+                </td>
                 <td>
                   {editable ? (
                     <select
@@ -95,9 +99,21 @@ export function MemberTable({
   );
 }
 
+/** An account, or a team shown as `org/team` with a label. */
+export function MemberName({ account }: { account: string }) {
+  const team = teamOf(account);
+  if (!team) return <>{account}</>;
+  return (
+    <>
+      <span className="member-kind">team</span> {team.org}/{team.team}
+    </>
+  );
+}
+
 export function RepoMembers({ repo, viewer }: { repo: string; viewer?: Viewer }) {
   const manages = viewer?.owner === true;
   const members = useSource<{ members: Member[] }>(manages ? `/repos/${repo}/members` : null);
+  const [kind, setKind] = useState<'account' | 'team'>('account');
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<MemberRole>('write');
   const [busy, setBusy] = useState(false);
@@ -119,12 +135,15 @@ export function RepoMembers({ repo, viewer }: { repo: string; viewer?: Viewer })
   }
   const put = (who: string, to: MemberRole) =>
     change(() => sourceApi(`/repos/${repo}/members`, { body: { account: who, role: to } }));
+  const target = memberTarget(kind, account);
   async function add(event: FormEvent) {
     event.preventDefault();
-    if (await put(account.trim(), role)) setAccount('');
+    if (target && (await put(target, role))) setAccount('');
   }
   function remove(who: string) {
-    if (!window.confirm(`Remove ${who}? Their access ends immediately.`)) return;
+    const team = teamOf(who);
+    const label = team ? `team ${team.org}/${team.team}` : who;
+    if (!window.confirm(`Remove ${label}? Their access ends immediately.`)) return;
     void change(() =>
       sourceApi(`/repos/${repo}/members/${encodeURIComponent(who)}`, { method: 'DELETE' }),
     );
@@ -145,19 +164,32 @@ export function RepoMembers({ repo, viewer }: { repo: string; viewer?: Viewer })
     <section aria-labelledby="members-heading">
       <h2 id="members-heading">Members</h2>
       <p className="source-meta">
-        Other accounts that use this repository. A member&apos;s personal token holds only what both
-        its scopes and the role allow.
+        Other accounts and organization teams that use this repository. A member&apos;s personal
+        token holds only what both its scopes and the role allow; a team member holds the
+        team&apos;s role.
       </p>
       <MemberTable members={members} viewer={viewer} onRole={put} onRemove={remove} />
       <form onSubmit={add} className="source-token-form">
+        <label htmlFor="member-kind" className="source-field">
+          Grant to
+          <select
+            id="member-kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as 'account' | 'team')}
+          >
+            <option value="account">an account</option>
+            <option value="team">an organization team</option>
+          </select>
+        </label>
         <label htmlFor="member-account" className="source-field">
-          Account
+          {kind === 'team' ? 'Team' : 'Account'}
           <input
             id="member-account"
             value={account}
             onChange={(e) => setAccount(e.target.value)}
-            placeholder="username"
+            placeholder={kind === 'team' ? 'org/team' : 'username'}
             autoComplete="off"
+            aria-invalid={account.trim() && !target ? true : undefined}
             required
           />
         </label>
@@ -175,8 +207,8 @@ export function RepoMembers({ repo, viewer }: { repo: string; viewer?: Viewer })
             ))}
           </select>
         </label>
-        <button type="submit" disabled={busy || !account.trim()}>
-          {busy ? 'Saving…' : 'Add member'}
+        <button type="submit" disabled={busy || !target}>
+          {busy ? 'Saving…' : kind === 'team' ? 'Add team' : 'Add member'}
         </button>
       </form>
       {error && <Failure error={error} />}

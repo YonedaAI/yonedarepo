@@ -20,9 +20,10 @@ const RECEIVE_CAPABILITIES: &str =
 const MAIN: &str = "refs/heads/main";
 const MAX_HAVES: usize = 256;
 
-/// `git_advertise`: `{service, refs: {name: id}, haves}` → the `info/refs` body, branches
-/// and tags in name order behind `HEAD` (main, when it exists). Tags are lightweight, so
-/// each names its commit and needs no peeled line.
+/// `git_advertise`: `{service, refs: {name: id}, annotated: {name: tag id}, haves}` → the
+/// `info/refs` body, branches and tags in name order behind `HEAD` (main, when it exists).
+/// An annotated tag is advertised as its tag object, followed for a fetch by its peeled
+/// `<name>^{}` line naming the commit.
 ///
 /// A push lists no protected branch. They move only by landing, which merges work based on
 /// an older head instead of refusing it, so Git must not refuse that push as
@@ -37,10 +38,16 @@ pub fn advertise(c: &Value) -> Result<Value> {
     for (name, id) in c["refs"].as_object().into_iter().flatten() {
         let listed = name.starts_with("refs/heads/") || name.starts_with("refs/tags/");
         if listed && !(push && crate::repo_store::protected_ref(name)) {
-            refs.push((
-                name.clone(),
-                ObjectId::parse(id.as_str().unwrap_or_default())?,
-            ));
+            let commit = ObjectId::parse(id.as_str().unwrap_or_default())?;
+            match c["annotated"][name].as_str() {
+                Some(tag) => {
+                    refs.push((name.clone(), ObjectId::parse(tag)?));
+                    if !push {
+                        refs.push((format!("{name}^{{}}"), commit));
+                    }
+                }
+                None => refs.push((name.clone(), commit)),
+            }
         }
     }
     let mut haves = Vec::new();
@@ -50,7 +57,16 @@ pub fn advertise(c: &Value) -> Result<Value> {
             haves.push(id);
         }
     }
-    refs.sort();
+    // Each peeled line right after its tag.
+    refs.sort_by(|(a, _), (b, _)| {
+        let key = |n: &str| {
+            (
+                n.strip_suffix("^{}").unwrap_or(n).to_owned(),
+                n.ends_with("^{}"),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
     let main = refs
         .iter()
         .find(|(name, _)| name == MAIN)
@@ -205,6 +221,39 @@ mod tests {
             "a push sees tags, so Git keeps them"
         );
         assert_eq!(text.matches(&format!("{main} .have\n")).count(), 1);
+        // An annotated tag is its tag object, then (for a fetch) the peeled commit.
+        let (tag, other) = ("d".repeat(40), "e".repeat(40));
+        let refs =
+            json!({ "refs/heads/main": main, "refs/tags/v1": main, "refs/tags/v1.0": other });
+        let annotated = json!({ "refs/tags/v1": tag });
+        let fetched = advertise(
+            &json!({ "service": "git-upload-pack", "refs": refs, "annotated": annotated }),
+        )
+        .unwrap();
+        let text = String::from_utf8(
+            STANDARD
+                .decode(fetched["body_b64"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        let at = |line: String| {
+            text.find(&line)
+                .unwrap_or_else(|| panic!("{line} in {text}"))
+        };
+        let peeled = at(format!("{main} refs/tags/v1^{{}}\n"));
+        assert!(at(format!("{tag} refs/tags/v1\n")) < peeled);
+        assert!(peeled < at(format!("{other} refs/tags/v1.0\n")));
+        let pushing = advertise(
+            &json!({ "service": "git-receive-pack", "refs": refs, "annotated": annotated }),
+        )
+        .unwrap();
+        let text = String::from_utf8(
+            STANDARD
+                .decode(pushing["body_b64"].as_str().unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert!(text.contains(&format!("{tag} refs/tags/v1")) && !text.contains("^{}"));
         let report = report(&json!({
             "refs": [{ "ref": "refs/heads/main", "refused": null }],
             "side_band": true, "messages": ["landed with server merge, run git pull"],

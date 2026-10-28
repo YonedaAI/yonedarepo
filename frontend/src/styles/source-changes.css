@@ -179,3 +179,8 @@
 .source-toolbar .source-open-change {
   flex-basis: 100%;
 }
+
+/* Release notes are plain text: keep their line breaks. */
+.source-release-notes {
+  white-space: pre-wrap;
+}
