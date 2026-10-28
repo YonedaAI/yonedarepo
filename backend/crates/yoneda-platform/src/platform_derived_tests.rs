@@ -20,15 +20,33 @@ fn tree(entries: &[(&str, FileMode, ObjectId)]) -> (ObjectId, Value) {
     (id, crate::platform_objects::entries_json(&list))
 }
 
+/// A partition's segment: its files listed, then indexed as one chunk.
+fn index_partition(
+    tree: &Value,
+    shallow: &Value,
+    trees: &Value,
+    blobs: &Value,
+    sizes: Value,
+) -> Value {
+    let listed = compute(
+        json!({ "op": "partition_files", "tree": tree, "shallow": shallow,
+                                 "trees": trees }),
+    )
+    .unwrap();
+    compute(
+        json!({ "op": "index_files", "files": listed["files"], "blobs": blobs,
+                    "sizes": sizes }),
+    )
+    .unwrap()
+}
+
 /// Plans the root's partitions and answers `query` from each one's segment.
 fn search(root: ObjectId, trees: &Value, blobs: &Value, query: &str) -> (Vec<Value>, Vec<String>) {
     let plan = compute(json!({ "op": "search_plan", "root": root, "trees": trees })).unwrap();
     let partitions = plan["partitions"].as_array().unwrap().clone();
     let mut paths = Vec::new();
     for p in &partitions {
-        let built = compute(json!({ "op": "index_partition", "tree": p["tree"],
-            "shallow": p["shallow"], "trees": trees, "blobs": blobs }))
-        .unwrap();
+        let built = index_partition(&p["tree"], &p["shallow"], trees, blobs, json!({}));
         let found = compute(json!({ "op": "search_segment", "segment": built["segment"],
             "prefix": p["prefix"], "query": query }))
         .unwrap();
@@ -47,12 +65,7 @@ fn renamed_and_duplicated_directories_share_a_key_and_a_segment_but_not_paths() 
     let blobs = json!({ blob.hex(): STANDARD.encode(content) });
     let (sub, sub_json) = tree(&[("retry.rs", FileMode::Blob, blob)]);
     let index = |trees: &Value, p: &Value| {
-        compute(
-            json!({ "op": "index_partition", "tree": p["tree"], "shallow": p["shallow"],
-            "trees": trees, "blobs": blobs }),
-        )
-        .unwrap()["segment"]
-            .clone()
+        index_partition(&p["tree"], &p["shallow"], trees, &blobs, json!({}))["segment"].clone()
     };
 
     // A rename of src/ to lib/ that leaves the content alone keeps the key and the segment.
@@ -100,11 +113,7 @@ fn files_known_too_large_are_listed_unread_with_the_same_segment() {
     ]);
     let trees = json!({ root.hex(): root_json });
     let index = |blobs: Value, sizes: Value| {
-        compute(
-            json!({ "op": "index_partition", "tree": root, "shallow": true,
-                        "trees": trees, "blobs": blobs, "sizes": sizes }),
-        )
-        .unwrap()
+        index_partition(&json!(root), &json!(true), &trees, &blobs, sizes)
     };
     let read = index(
         json!({ small_id.hex(): STANDARD.encode(&small), large_id.hex(): STANDARD.encode(&large) }),
@@ -119,4 +128,5 @@ fn files_known_too_large_are_listed_unread_with_the_same_segment() {
     let unread = index(json!({ small_id.hex(): STANDARD.encode(&small) }), sized);
     assert_eq!(unread["segment"], read["segment"]);
     assert_eq!(read["segment"]["files"][0]["indexed"], false);
+    assert_eq!(read["segment"]["files"][0]["skipped"], "larger than 4 MiB");
 }
