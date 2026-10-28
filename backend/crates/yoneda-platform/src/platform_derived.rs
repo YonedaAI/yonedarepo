@@ -12,7 +12,8 @@ use yoneda_core::{
     search::{MAX_INDEXED_BYTES, Segment, build_segment, grep},
 };
 
-const MAX_PARTITION_FILES: usize = 20_000;
+/// Files one directory may list for indexing (its index is built in chunks).
+const MAX_PARTITION_FILES: usize = 200_000;
 
 pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
     let Some(encoded) = c["blobs"].get(id.hex()).and_then(Value::as_str) else {
@@ -90,11 +91,9 @@ fn files(
     if need.is_empty() { Ok(out) } else { Err(need) }
 }
 
-/// A partition's segment, with paths relative to the partition root: the key is the tree
-/// id alone, so the segment must not depend on the directory the tree sits at. `sizes`
-/// (`{id: bytes}`, what the adapter knows) spares reading files too large to index; the
-/// segment is the same either way.
-pub fn index_partition(c: &Value) -> Result<Value> {
+/// `partition_files`: a partition's files (`[{path, id}]`, paths relative to its root),
+/// or the trees still needed to list them. The adapter indexes them in chunks.
+pub fn partition_files(c: &Value) -> Result<Value> {
     let trees = supplied_trees(c)?;
     let tree = ObjectId::parse(&string(c, "tree")?)?;
     let listed = match files(tree, c["shallow"] == true, &trees) {
@@ -102,12 +101,32 @@ pub fn index_partition(c: &Value) -> Result<Value> {
         Err(need) => return Ok(json!({ "need_trees": need })),
     };
     if listed.len() > MAX_PARTITION_FILES {
-        return Ok(json!({ "too_large": true, "files": listed.len() }));
+        return Err(Error::new(
+            "TOO_LARGE",
+            format!("A directory of more than {MAX_PARTITION_FILES} files is not indexed"),
+        ));
     }
+    let files: Vec<Value> = listed
+        .into_iter()
+        .map(|(path, id)| json!({ "path": path, "id": id }))
+        .collect();
+    Ok(json!({ "files": files }))
+}
+
+/// `index_files`: the segment of a chunk of a partition's files (`files: [{path, id}]`),
+/// asking for their content. `sizes` (`{id: bytes}`, what the adapter knows) lists a file
+/// too large to index by path, unread; the segment is the same either way.
+pub fn index_files(c: &Value) -> Result<Value> {
+    let listed = c["files"]
+        .as_array()
+        .ok_or_else(|| bad("files must be a list"))?;
     let mut need = BTreeSet::new();
     let mut contents = Vec::with_capacity(listed.len());
-    for (path, id) in listed {
-        // A file the adapter knows is too large to index is listed by path, unread.
+    for file in listed {
+        let (path, id) = (
+            string(file, "path")?,
+            ObjectId::parse(&string(file, "id")?)?,
+        );
         let size = c["sizes"].get(id.hex()).and_then(Value::as_u64);
         if size.is_some_and(|n| n > MAX_INDEXED_BYTES as u64) {
             contents.push((path, id, None));

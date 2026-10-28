@@ -3,8 +3,8 @@
 // cycle and stages the rest by Eq. 1; the authority reports items whose reads went stale
 // since their base. The platform plans; it never runs the work.
 
-import { withObjects } from './repo-derived';
 import { grantOf, keepAllowed } from './repo-grants';
+import { withObjects } from './repo-object-compute';
 import { ApiError, type Json, type RepoContext, target, withTrees } from './repo-ops';
 
 export async function plan(ctx: RepoContext, args: Json) {
