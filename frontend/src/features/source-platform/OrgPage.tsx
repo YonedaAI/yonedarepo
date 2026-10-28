@@ -3,12 +3,13 @@
 import { GitBranch } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { DeleteOrganization } from './OrgDelete';
 import { OrgTeams } from './OrgTeams';
 import { ORG_ROLE_HELP, ORG_ROLES, type Org, type OrgMember, type OrgRole } from './orgModel';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { useChange } from './useChange';
-import { useSource } from './useSource';
+import { type Loaded, useSource } from './useSource';
 
 type OrgRepo = { id: string; name: string; created_at: number; owner: string };
 
@@ -75,8 +76,13 @@ function MemberRows({
   );
 }
 
-function OrgRepos({ org, navigate }: { org: string; navigate: Navigate }) {
-  const repos = useSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
+function OrgRepos({
+  repos,
+  navigate,
+}: {
+  repos: Loaded<{ repos: OrgRepo[] }>;
+  navigate: Navigate;
+}) {
   if (repos.loading && !repos.data) return <Loading what="repositories" />;
   if (repos.error) return <Failure error={repos.error} onRetry={repos.reload} />;
   const list = [...(repos.data?.repos ?? [])].sort((a, b) => a.name.localeCompare(b.name));
@@ -101,8 +107,18 @@ function OrgRepos({ org, navigate }: { org: string; navigate: Navigate }) {
   );
 }
 
-export function OrgPage({ org, navigate }: { org: string; navigate: Navigate }) {
+export function OrgPage({
+  org,
+  navigate,
+  onDeleted,
+}: {
+  org: string;
+  navigate: Navigate;
+  /** After an owner deleted it: the shell re-reads the caller's orgs and leaves the page. */
+  onDeleted?: () => void;
+}) {
   const loaded = useSource<Org>(`/orgs/${org}`);
+  const repos = useSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
   const { busy, error, run } = useChange(loaded.reload);
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
@@ -171,8 +187,11 @@ export function OrgPage({ org, navigate }: { org: string; navigate: Navigate }) 
       <OrgTeams org={org} data={data} manages={manages} onChanged={loaded.reload} />
       <section aria-labelledby="org-repos-heading">
         <h2 id="org-repos-heading">Repositories</h2>
-        <OrgRepos org={org} navigate={navigate} />
+        <OrgRepos repos={repos} navigate={navigate} />
       </section>
+      {manages && onDeleted && (
+        <DeleteOrganization org={org} repoCount={repos.data?.repos.length} onDeleted={onDeleted} />
+      )}
     </div>
   );
 }

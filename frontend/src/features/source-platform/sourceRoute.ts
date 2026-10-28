@@ -8,6 +8,7 @@ export const REPO_SETTINGS_SECTIONS = [
   'checks',
   'secrets',
   'webhooks',
+  'branches',
   'members',
   'tokens',
   'lfs',

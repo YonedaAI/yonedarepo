@@ -4,10 +4,13 @@
 /** Where a change from a fork lands: on the fork itself, or on its parent. */
 export type ChangeTarget = 'here' | 'parent';
 
-/** `POST /repos/:id/fork`: a blank name keeps the parent's. */
-export function forkRequest(repo: string, name: string) {
+/** `POST /repos/:id/fork`: a blank name keeps the parent's; a blank owner is the caller. */
+export function forkRequest(repo: string, name: string, owner = '') {
   const trimmed = name.trim();
-  return { path: `/repos/${repo}/fork`, body: trimmed ? { name: trimmed } : {} };
+  return {
+    path: `/repos/${repo}/fork`,
+    body: { ...(trimmed ? { name: trimmed } : {}), ...(owner ? { owner } : {}) },
+  };
 }
 
 /** `POST /changes` on the target repository: on the parent, the fork and its branch. */

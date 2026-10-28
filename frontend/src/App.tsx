@@ -137,7 +137,16 @@ export function App() {
             )}
             {route.view === 'device' && <DevicePage code={route.code} />}
             {route.view === 'org' && (
-              <OrgPage key={`${route.org}:${tick}`} org={route.org} navigate={navigate} />
+              <OrgPage
+                key={`${route.org}:${tick}`}
+                org={route.org}
+                navigate={navigate}
+                onDeleted={() => {
+                  orgs.reload();
+                  navigate({ view: 'settings' });
+                  setNotice('Organization deleted.');
+                }}
+              />
             )}
             {'repo' in route && (
               <RepoPage

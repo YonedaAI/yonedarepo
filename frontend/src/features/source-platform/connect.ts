@@ -77,6 +77,16 @@ export function scopeList(value: unknown): string[] {
     .filter(Boolean);
 }
 
+/** A path grant as typed (commas or new lines, a leading `/` dropped), or null for the whole
+ * repository. The server validates each entry. */
+export function pathList(text: string): string[] | null {
+  const entries = text
+    .split(/[,\n]/)
+    .map((p) => p.trim().replace(/^\/+/, ''))
+    .filter(Boolean);
+  return entries.length ? [...new Set(entries)] : null;
+}
+
 /** RFC 8628 user codes: any case, with or without the dash, shown as XXXX-XXXX. */
 export function normalizeUserCode(value: string): string {
   const letters = value

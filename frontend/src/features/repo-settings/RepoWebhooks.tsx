@@ -1,11 +1,26 @@
 // Webhooks: tell CI, chat or a waiting agent what happened (landings, refusals, branch and
-// tag moves, checks). Each payload is signed with the hook's secret, shown once at creation.
+// tag moves, checks, change requests, releases), optionally only for some paths. Each
+// payload is signed with the hook's secret, shown once at creation.
 import { type FormEvent, useState } from 'react';
+import { pathList } from '../source-platform/connect';
 import { Failure } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { CopyBlock } from '../source-platform/TokenParts';
 import { useSource } from '../source-platform/useSource';
-import { type Delivery, DeliveryTable, HOOK_EVENTS, type Hook, HookTable } from './HookParts';
+import {
+  type Delivery,
+  DeliveryTable,
+  HOOK_EVENT_HELP,
+  HOOK_EVENTS,
+  type Hook,
+  HookTable,
+} from './HookParts';
+
+/** The `POST /hooks` body: no paths means the whole repository. */
+export function hookBody(url: string, events: string[], paths: string) {
+  const grant = pathList(paths);
+  return { url: url.trim(), events, ...(grant ? { paths: grant } : {}) };
+}
 
 export function RepoWebhooks({ repo }: { repo: string }) {
   const hooks = useSource<{ hooks: Hook[] }>(`/repos/${repo}/hooks`);
@@ -15,6 +30,7 @@ export function RepoWebhooks({ repo }: { repo: string }) {
   );
   const [url, setUrl] = useState('');
   const [events, setEvents] = useState<string[]>([...HOOK_EVENTS]);
+  const [paths, setPaths] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [secret, setSecret] = useState('');
@@ -25,10 +41,11 @@ export function RepoWebhooks({ repo }: { repo: string }) {
     setError('');
     try {
       const created = await sourceApi<{ secret: string }>(`/repos/${repo}/hooks`, {
-        body: { url: url.trim(), events },
+        body: hookBody(url, events, paths),
       });
       setSecret(created.secret);
       setUrl('');
+      setPaths('');
       hooks.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -102,9 +119,25 @@ export function RepoWebhooks({ repo }: { repo: string }) {
                   }
                 />
                 {name}
+                <span className="source-meta"> ({HOOK_EVENT_HELP[name]})</span>
               </label>
             ))}
           </fieldset>
+          <label htmlFor="hook-paths" className="source-field settings-wide">
+            Paths (optional)
+            <input
+              id="hook-paths"
+              value={paths}
+              onChange={(e) => setPaths(e.target.value)}
+              placeholder="src/, docs/README.md"
+              autoComplete="off"
+              aria-describedby="hook-paths-help"
+            />
+            <span id="hook-paths-help" className="source-meta">
+              Files or directories, comma separated. Leave empty for the whole repository; otherwise
+              payloads reveal only what lies under these paths.
+            </span>
+          </label>
           <button type="submit" disabled={busy || !url.trim() || events.length === 0}>
             {busy ? 'Adding…' : 'Add webhook'}
           </button>
