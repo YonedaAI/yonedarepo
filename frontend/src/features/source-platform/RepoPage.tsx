@@ -80,7 +80,9 @@ export function RepoPage({
               <RepoFiles route={route} status={data} navigate={navigate} />
             )}
             {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
-            {(route.view === 'history' || route.view === 'transactions') && (
+            {(route.view === 'history' ||
+              route.view === 'transactions' ||
+              route.view === 'branches') && (
               <HistoryTab route={route} status={data} navigate={navigate} />
             )}
             {route.view === 'commit' && (

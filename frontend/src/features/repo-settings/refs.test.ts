@@ -1,5 +1,5 @@
-// Branches and tags in Settings, and the webhook form's events and path grant: the requests
-// they send and the tables in each state.
+// Branches and tags under History (controls for the write role and above), and the webhook
+// form's events and path grant: the requests they send and the tables in each state.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,8 +12,12 @@ const refModel = await import('./refModel');
 const { BranchTable, RepoBranches, TagTable } = await import('./RepoBranches');
 const { HOOK_EVENTS, HOOK_EVENT_HELP, HookTable } = await import('./HookParts');
 const { hookBody, RepoWebhooks } = await import('./RepoWebhooks');
-const { RepoSettings } = await import('./RepoSettings');
-const { parseSourceRoute, formatSourceRoute } = await import('../source-platform/sourceRoute');
+const { SECTION_TITLES } = await import('./RepoSettings');
+const { HistoryTab } = await import('../source-platform/HistoryTab');
+const { canMoveBranches } = await import('../source-platform/repoStatus');
+const { parseSourceRoute, formatSourceRoute, routeTab } = await import(
+  '../source-platform/sourceRoute'
+);
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
@@ -79,7 +83,7 @@ describe('branches and tags panel', () => {
   });
   it('protects main and offers delete on other branches, with create forms', () => {
     state.value = loaded({ data: { refs } });
-    const page = html(RepoBranches, { repo });
+    const page = html(RepoBranches, { repo, canWrite: true });
     expect(page).toContain('protected');
     expect(page).toContain('aria-label="Delete branch zeta"');
     expect(page).not.toContain('Delete branch main');
@@ -87,21 +91,41 @@ describe('branches and tags panel', () => {
     expect(page).toContain('aria-label="Create a tag"');
     expect(page).toContain('<td>v1</td>');
   });
-  it('is a settings section with its own address', () => {
-    const route = { view: 'repo-settings' as const, repo, section: 'branches' as const };
-    expect(parseSourceRoute(formatSourceRoute(route), '')).toEqual(route);
+  it('shows the read role the list without controls', () => {
     state.value = loaded({ data: { refs } });
-    const status = { name: 'demo', version: 1, policy: {}, viewer: { owner: true, role: null } };
-    const page = html(RepoSettings, {
-      repo,
-      section: 'branches',
-      status,
-      navigate: () => {},
-      onPolicySaved: () => {},
-      onDeleted: () => {},
+    const page = html(RepoBranches, { repo, canWrite: false });
+    expect(page).toContain('<td>zeta</td>');
+    expect(page).toContain('needs the write role');
+    expect(page).not.toContain('Delete branch');
+    expect(page).not.toContain('Create a branch');
+    expect(page).not.toContain('Create a tag');
+  });
+  it('lets the write role and above move branches', () => {
+    expect(canMoveBranches(undefined)).toBe(false);
+    expect(canMoveBranches({ owner: false, role: 'read' })).toBe(false);
+    for (const role of ['write', 'land', 'admin'] as const)
+      expect(canMoveBranches({ owner: false, role })).toBe(true);
+    expect(canMoveBranches({ owner: true, role: null })).toBe(true);
+  });
+  it('is a History view with its own address, not a settings section', () => {
+    const route = { view: 'branches' as const, repo };
+    expect(formatSourceRoute(route)).toBe(`/source/${repo}/branches`);
+    expect(parseSourceRoute(formatSourceRoute(route), '')).toEqual(route);
+    expect(parseSourceRoute(`/source/${repo}/settings/branches`, '')).toEqual(route);
+    expect(routeTab(route)).toBe('history');
+    state.value = loaded({ data: { refs } });
+    const status = (role: string) => ({
+      name: 'demo',
+      version: 1,
+      policy: {},
+      viewer: { owner: false, role },
     });
-    expect(page).toContain('Branches and tags');
-    expect(page).toContain('aria-label="Create a branch"');
+    const tab = (role: string) =>
+      html(HistoryTab, { route, status: status(role), navigate: () => {} });
+    expect(tab('write')).toContain('aria-label="Create a branch"');
+    expect(tab('write')).toMatch(/aria-pressed="true"[^>]*>Branches and tags/);
+    expect(tab('read')).not.toContain('Create a branch');
+    expect(Object.values(SECTION_TITLES)).not.toContain('Branches and tags');
   });
 });
 

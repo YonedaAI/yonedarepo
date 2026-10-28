@@ -3,6 +3,36 @@ import { recorder, type SessionRecord } from './agentModel';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
 
+type Listed = Omit<SessionRecord, 'commit' | 'subject' | 'reads'>;
+
+/** One session record: CLI and model (linking to its session page), who recorded it and
+ * when, its summary and where its transcript is. */
+export function SessionItem({
+  repo,
+  session: s,
+  navigate,
+}: {
+  repo: string;
+  session: Listed;
+  navigate: Navigate;
+}) {
+  return (
+    <li>
+      <a className="agent-session-ref" {...linkTo({ view: 'session', repo, id: s.id }, navigate)}>
+        <strong>{s.cli}</strong>
+        {s.model && ` · ${s.model}`}
+      </a>{' '}
+      · {recorder(s.recorded_by)} · {when(s.at)}
+      <p className="source-session-summary">{s.summary}</p>
+      {s.transcript_ref && (
+        <p className="source-meta">
+          Transcript: <code>{s.transcript_ref}</code>
+        </p>
+      )}
+    </li>
+  );
+}
+
 /** The coding sessions that produced a commit (CLI, model, summary), as their pushers
  * recorded them, each linking to its session page. Transcripts are not on the platform; a
  * reference names where one is. */
@@ -17,7 +47,7 @@ export function CommitSessions({
   navigate: Navigate;
   heading?: string;
 }) {
-  const loaded = useSource<{ sessions: Omit<SessionRecord, 'commit' | 'subject' | 'reads'>[] }>(
+  const loaded = useSource<{ sessions: Listed[] }>(
     `/repos/${repo}/commits/${commit}/sessions`,
   );
   return (
@@ -30,22 +60,7 @@ export function CommitSessions({
       )}
       <ul>
         {loaded.data?.sessions.map((s) => (
-          <li key={s.id}>
-            <a
-              className="agent-session-ref"
-              {...linkTo({ view: 'session', repo, id: s.id }, navigate)}
-            >
-              <strong>{s.cli}</strong>
-              {s.model && ` · ${s.model}`}
-            </a>{' '}
-            · {recorder(s.recorded_by)} · {when(s.at)}
-            <p className="source-session-summary">{s.summary}</p>
-            {s.transcript_ref && (
-              <p className="source-meta">
-                Transcript: <code>{s.transcript_ref}</code>
-              </p>
-            )}
-          </li>
+          <SessionItem key={s.id} repo={repo} session={s} navigate={navigate} />
         ))}
       </ul>
     </section>
