@@ -3,9 +3,11 @@
 //! the commit's diff (`platform_model_check`). Both record through the same fenced run.
 use crate::platform_model_check::{DEFAULT_MODEL, model_spec};
 use crate::storage::bad;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Value, json};
+use std::borrow::Cow;
 use yoneda_core::Result;
 
 /// A model check's lease: two bounded model calls (one retry) plus the diff read.
@@ -18,7 +20,7 @@ pub enum Runner {
     Model(ModelRunner),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CommandRunner {
     /// argv, executed without a shell unless the owner writes `["sh", "-c", ...]`.
@@ -32,7 +34,7 @@ fn default_timeout() -> u32 {
 
 /// `{kind: "model", rubric, model?, allow_truncated?}`. The rubric is the owner's review
 /// instruction; the model must be in the platform's review catalog (it pays for the call).
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelRunner {
     pub rubric: String,
@@ -84,6 +86,27 @@ impl<'de> Deserialize<'de> for Runner {
                 .map_err(D::Error::custom),
             Some(_) => Err(D::Error::custom("runner kind must be command or model")),
         }
+    }
+}
+
+/// The wire shape: a command runner with an optional `kind: "command"`, or a model runner
+/// with `kind: "model"`.
+impl JsonSchema for Runner {
+    fn schema_name() -> Cow<'static, str> {
+        "Runner".into()
+    }
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        let tagged = |schema: Schema, kind: &str, required: bool| {
+            let mut value = schema.to_value();
+            value["properties"]["kind"] = json!({ "const": kind });
+            if required && let Some(list) = value["required"].as_array_mut() {
+                list.push("kind".into());
+            }
+            value
+        };
+        let command = tagged(CommandRunner::json_schema(generator), "command", false);
+        let model = tagged(ModelRunner::json_schema(generator), "model", true);
+        json_schema!({ "anyOf": [command, model] })
     }
 }
 

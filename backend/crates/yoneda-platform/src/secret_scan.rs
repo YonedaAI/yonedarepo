@@ -24,7 +24,7 @@ pub const RULES: [&str; 11] = [
 
 /// A false positive the owner accepted: `rule` may match in `path`, a file or a directory
 /// ending in `/`.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SecretAllow {
     pub path: String,

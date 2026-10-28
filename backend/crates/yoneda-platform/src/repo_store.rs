@@ -61,6 +61,7 @@ mod runner;
 mod session_range;
 mod sessions;
 pub(crate) mod staging;
+pub(crate) mod status;
 mod store_lineage;
 mod submitted;
 mod symbols;
@@ -208,7 +209,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
-        "repo_status" => reads::status(db, &settings, &actor),
+        "repo_status" => serde_json::to_value(status::status(db, &settings, &actor)?)
+            .map_err(|e| Error::new("ENCODING", e.to_string())),
         "repo_clone_access" => Ok(json!({ "object_store": settings.object_store })),
         "repo_refs" => reads::refs(db, c),
         "repo_snapshot" => reads::snapshot(db, c),

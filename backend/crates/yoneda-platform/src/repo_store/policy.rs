@@ -11,7 +11,7 @@ use yoneda_core::{Error, Result};
 /// `runners` are owner-defined checks the platform executes itself (a command, or one model
 /// review call); definitions come from policy, never from the commit under test, so a
 /// change cannot weaken its own check.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
     pub required_checks: Vec<String>,
