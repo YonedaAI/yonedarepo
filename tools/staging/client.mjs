@@ -28,7 +28,7 @@ export function readEnvFile(name, { required = true } = {}) {
   return values;
 }
 
-/** The kit account (created on first use) and optional provider keys the owner placed. */
+/** The kit account, created on first use. */
 export function kitCredentials() {
   const name = 'staging-kit.env';
   const values = readEnvFile(name, { required: false });

@@ -23,18 +23,8 @@ export function AccountMenu({
     if (menu.current) menu.current.open = false;
     then();
   };
-  const label =
-    identity?.role === 'user'
-      ? identity.username
-      : identity?.role === 'admin'
-        ? 'Administrator'
-        : 'Signed in';
-  const description =
-    identity?.role === 'user'
-      ? 'Personal workspace'
-      : identity?.role === 'admin'
-        ? 'Operator workspace'
-        : 'Connected workspace';
+  const label = identity?.username ?? 'Signed in';
+  const description = 'Personal workspace';
   return (
     <details
       ref={menu}
@@ -48,7 +38,7 @@ export function AccountMenu({
     >
       <summary aria-label={`Account: ${label}`} title={`Signed in as ${label}`}>
         <span className="account-avatar" aria-hidden="true">
-          {identity?.role === 'user' ? label[0]?.toUpperCase() : <UserRound size={16} />}
+          {identity ? label[0]?.toUpperCase() : <UserRound size={16} />}
         </span>
         <span className="account-label">
           <strong>{label}</strong>

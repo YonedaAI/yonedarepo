@@ -1,39 +1,5 @@
-/* Explicit actions remain distinct from navigation tabs and inline text links. */
-button.primary,
-.site-link a,
-.source-workspace-viewer > button[aria-expanded="false"] {
-  background: var(--blue);
-  color: #fff;
-  border: 1px solid var(--blue);
-  box-shadow: 0 1px 2px #15243624;
-  font-weight: 600;
-}
-.site-link a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 9px 14px;
-  min-height: 40px;
-  border-radius: 7px;
-  text-decoration: none;
-  text-align: center;
-  overflow-wrap: anywhere;
-  max-width: 100%;
-}
-.site-link {
-  text-decoration: none;
-}
-button.primary:not(:disabled):hover,
-.site-link a:hover,
-.source-workspace-viewer > button[aria-expanded="false"]:hover {
-  background: #174ac4;
-  border-color: #174ac4;
-  filter: none;
-}
 button:disabled,
-button.quiet:disabled,
-button.primary:disabled,
-button.danger-button:disabled {
+button.quiet:disabled {
   background: #e8edf3;
   color: #657183;
   border-color: #bac4d1;

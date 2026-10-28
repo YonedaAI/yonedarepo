@@ -63,7 +63,7 @@ export function AccountPanel({
             ? 'Recover your account'
             : 'Sign in'}
       </h2>
-      <p>Your repositories, provider keys and context belong to your private workspace.</p>
+      <p>Your repositories and tokens belong to your account.</p>
       <form
         key={mode}
         onSubmit={async (e) => {

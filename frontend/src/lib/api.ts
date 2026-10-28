@@ -74,15 +74,3 @@ export async function api<T>(
     readSignal?.removeEventListener('abort', cancelRead);
   }
 }
-export const short = (commit: string) => commit?.slice(0, 9) ?? '—';
-
-export async function connectOwner(token: string) {
-  const result = await fetch('/api/session', {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!result.ok) throw new Error('Owner connection failed');
-}
-export async function disconnectOwner() {
-  await fetch('/api/session', { method: 'DELETE' });
-}
