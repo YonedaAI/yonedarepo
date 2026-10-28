@@ -316,6 +316,15 @@ a.chip:hover {
 .readme-body h2,
 .readme-body h3 {
   margin: 18px 0 8px;
+  font-weight: 600;
+}
+.readme-body h2 {
+  font-size: 22px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.readme-body h3 {
+  font-size: 17px;
 }
 .readme-body p {
   color: #152436;

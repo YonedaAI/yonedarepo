@@ -121,8 +121,9 @@ export function RepoFiles({
       {listing.empty && (
         <div className="source-empty-state">
           <p>
-            {route.path || route.ref} does not exist{' '}
-            {route.at === undefined ? 'on this branch' : 'at this version'}.
+            {route.path
+              ? `${route.path} does not exist ${route.at === undefined ? `on ${route.ref}` : 'at this version'}.`
+              : `${route.ref} has no commits${route.at === undefined ? ' yet' : ' at this version'}.`}
           </p>
           {route.path ? (
             pathLink('', 'Go to the repository root')
