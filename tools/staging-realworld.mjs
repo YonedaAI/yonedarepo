@@ -8,7 +8,9 @@
 // conflicts, atomic and killed pushes), the account MCP with a PAT, `--at` reads, a change
 // request (18: open, comment, approve, land), a server-side rebase (21: linear in a clone,
 // a conflict refused with its paths), cleanup, and log compaction (20: 20,000 versions, a
-// bounded SQL tail, `log --at 5` from the R2 segment). The CLI items need
+// bounded SQL tail, `log --at 5` from the R2 segment), and annotated tags and releases (23:
+// `git push` of a `git tag -a`, a fresh clone holding the tag object, a release asset whose
+// download matches its sha256). The CLI items need
 // `cargo build -p yoneda-cli --release` (`--cli-bin` names another directory). Prints a
 // pass/fail table and writes evidence to .local/staging/. Credentials come only from 0600
 // files in ~/.config/yonedarepo/:
@@ -57,6 +59,7 @@ import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
 import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
 import { cliRebase } from './staging/rebase-flow.mjs';
+import { releasesFlow } from './staging/releases-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 
@@ -153,6 +156,9 @@ await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), sha
 await step('model', 'Model check: vulnerable commit fails and cannot land, the fix passes and lands', (m) => modelCheck(platformAccount, m));
 await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 from R2', (m) =>
   compactionFlow(platformAccount, m, { versions: Number(values['compaction-versions']) }),
+);
+await step('23', 'Annotated tag push + fresh clone (cat-file -t = tag), release with an asset (sha256)', (m) =>
+  releasesFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
 
 const execFileAsync = promisify(execFile);

@@ -23,6 +23,7 @@ mod plan;
 mod pull;
 mod reads;
 mod reconcile;
+mod release_cmd;
 pub mod remote;
 mod replay;
 mod repo_ops;
