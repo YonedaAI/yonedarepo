@@ -59,6 +59,13 @@ pub(crate) fn token(args: &[String]) -> Result<String> {
     })
 }
 
+/// A 2xx answer with `success: true`, or with no JSON body at all: deleting a Workers custom
+/// domain answers `200` with an empty body, and treating that as a failure stopped the prod
+/// cutover after the apex had already been detached.
+pub(crate) fn succeeded(status: reqwest::StatusCode, body: &Value) -> bool {
+    status.is_success() && (body.is_null() || body["success"] == Value::Bool(true))
+}
+
 pub(crate) struct Client {
     http: reqwest::Client,
     token: String,
@@ -83,7 +90,7 @@ impl Client {
             .await?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
-        if !status.is_success() || body["success"] != Value::Bool(true) {
+        if !succeeded(status, &body) {
             let codes: Vec<String> = body["errors"]
                 .as_array()
                 .into_iter()
