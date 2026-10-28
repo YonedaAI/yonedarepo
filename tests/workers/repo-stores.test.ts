@@ -1,13 +1,15 @@
 // Content-addressed writes: concurrent commits write the same object ids, and R2 allows one
 // write per key at a time (error 10058). A shared write is joined, and a 10058 on an object
-// that is (or becomes) readable is success, never a failed commit.
+// that is (or becomes) readable is success, never a failed commit. R2's transient internal
+// error (10001) is retried.
 import { expect, it } from 'vitest';
 import { putObjects } from '../../cloudflare/worker/repo-stores';
 import type { Env } from '../../cloudflare/worker/types';
 import { bindings } from './repo-fixture';
 
 const busy = () => new Error('put: Reduce your concurrent request rate for the same object. (10058)');
-function r2(rule: (key: string, attempt: number) => 'ok' | 'busy' | 'busy-written') {
+const internal = () => new Error('put: We encountered an internal error. Please try again. (10001)');
+function r2(rule: (key: string, attempt: number) => 'ok' | 'busy' | 'busy-written' | 'internal') {
   const puts = new Map<string, number>();
   const stored = new Set<string>();
   const bucket = {
@@ -17,6 +19,7 @@ function r2(rule: (key: string, attempt: number) => 'ok' | 'busy' | 'busy-writte
       await new Promise((r) => setTimeout(r, 5));
       const outcome = rule(key, attempt);
       if (outcome === 'busy-written') stored.add(key);
+      if (outcome === 'internal') throw internal();
       if (outcome !== 'ok') throw busy();
       stored.add(key);
     },
@@ -48,4 +51,13 @@ it('treats 10058 on a readable object as written and retries an unreadable one',
 it('still fails when the object never becomes readable', async () => {
   const { env } = r2(() => 'busy');
   await expect(putObjects(env, key(`fail-${crypto.randomUUID()}`), [blob('d'.repeat(40))])).rejects.toThrow('10058');
+});
+
+it('retries an internal error and gives up after three retries', async () => {
+  const { env, stored } = r2((_, attempt) => (attempt <= 2 ? 'internal' : 'ok'));
+  const k = key(`internal-${crypto.randomUUID()}`);
+  await putObjects(env, k, [blob('e'.repeat(40))]);
+  expect(stored.has(k('e'.repeat(40)))).toBe(true);
+  const { env: down } = r2(() => 'internal');
+  await expect(putObjects(down, key(`down-${crypto.randomUUID()}`), [blob('f'.repeat(40))])).rejects.toThrow('10001');
 });
