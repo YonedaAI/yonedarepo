@@ -94,6 +94,17 @@ export async function accountSession(origin, username, password) {
   return new Session(origin, { cookie });
 }
 
+/**
+ * The second kit account (`<kit username>_m`, the same private password, signed up on first
+ * use): another person than the kit account, for members and for reviews the platform refuses
+ * to their author. Returns its name and a cookie session on the platform API.
+ */
+export async function secondAccount(origin, { KIT_USERNAME, KIT_PASSWORD }) {
+  const name = `${KIT_USERNAME}_m`;
+  const { cookie } = await accountSession(origin, name, KIT_PASSWORD);
+  return { name, session: new Session(`${origin}/api/v1`, { cookie }) };
+}
+
 /** Polls `probe` until it returns a truthy value or the deadline passes. */
 export async function until(probe, { timeoutMs, intervalMs = 3000, what }) {
   const deadline = Date.now() + timeoutMs;

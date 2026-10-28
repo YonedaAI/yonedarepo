@@ -13,15 +13,13 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Session, accountSession, b64 } from './client.mjs';
+import { b64, secondAccount } from './client.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 
 /** `kit`: the kit credentials; the member account is derived from them. */
 export async function membersFlow({ origin, api, kit, platform }, metrics) {
-  const memberName = `${kit.KIT_USERNAME}_m`;
-  const memberAccount = await accountSession(origin, memberName, kit.KIT_PASSWORD);
-  const member = new Session(`${origin}/api/v1`, { cookie: memberAccount.cookie });
+  const { name: memberName, session: member } = await secondAccount(origin, kit);
   const name = `kit-members-${Date.now()}`;
   const repo = await platform.post('/repos', { name, policy: { required_checks: [], approvals: 1 }, files: [{ path: 'README.md', content_b64: b64('# Members\n') }], author });
   const path = `/repos/${repo.id}`;
