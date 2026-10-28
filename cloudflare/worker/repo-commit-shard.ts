@@ -17,7 +17,8 @@ import { timed } from './repo-timing';
 
 const STAGE_OBJECTS = 256;
 const STAGE_BYTES = 1024 * 1024;
-/** R2 writes in flight after a commit's answer (an invocation keeps six connections open). */
+/** R2 writes in flight in a commit's blob write-through (an invocation keeps six
+ * connections open). */
 const R2_WRITES = 6;
 
 /** Whether `body` can be built statelessly here. */
@@ -132,21 +133,10 @@ export async function commitInShard(
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
   noteBuilt(built.commit, paths);
   const all = built.objects as CachedObject[];
-  // Written through at commit time, after the answer. Its blobs go to R2 first, where any
-  // isolate's first read of the file finds them: the shard's own drain to R2 waits in the
-  // queue behind a burst, and a read that misses R2 asks all 64 shards (hosted burst
-  // read-backs, 10-28: `read.shards` up to 4.6 s). Then all of it to this colo's edge, an
-  // optimization (a slow Cache API put held commits for seconds, commit p95 18.7 s, 10-28).
-  const blobs = all.filter((o) => o.kind === 'blob');
-  const edge = afterAnswer(() =>
-    timed('cache', async () => {
-      // A failure leaves the blob to the shard's drain, as before: never fails the commit.
-      await inBatches(blobs, R2_WRITES, (o) => store.cache([o], 'r2')).catch((e) =>
-        console.warn(`blob write-through failed: ${e?.message ?? e}`),
-      );
-      await store.cache(all, 'edge');
-    }),
-  );
+  // Edge copies (and this isolate's memory of the trees, which its next commits build on)
+  // start now, but the answer does not wait for them: the edge is an optimization, and a
+  // slow Cache API put held commits for seconds (commit p95 18.7 s, 10-28).
+  const edge = afterAnswer(() => timed('cache', () => store.cache(all, 'edge')));
   const [classes, symbols] = await timed('derive', () =>
     Promise.all([
       // Review classes gate semantic auto-approval; a failure leaves the commit
@@ -201,6 +191,7 @@ export async function commitInShard(
       () => false,
       () => true,
     ));
+  await writeBlobsThrough(ctx, store, all);
   return {
     commit: built.commit,
     tree: built.tree,
@@ -212,4 +203,26 @@ export async function commitInShard(
     staged: true,
     ...(unprojected ? { projection_undispatched: true } : {}),
   };
+}
+
+/**
+ * Writes a commit's blobs to R2's cache key after its own I/O, where any isolate's first
+ * read of the file finds them: the shard's drain to R2 waits in the queue behind a burst,
+ * and a read that misses R2 asks all 64 shards (hosted burst read-backs, 10-28:
+ * `read.shards` up to 4.6 s). Started only now, after the shard record, the check dispatch
+ * and the drain request: an R2 put holds one of the invocation's six connections, and
+ * R2_WRITES of them beside those calls would queue the commit behind its own cache writes.
+ * A failure leaves the blob to the drain and never fails the commit.
+ * `BLOB_WRITE_THROUGH=off` leaves every blob to the drain.
+ */
+function writeBlobsThrough(ctx: RepoContext, store: RepoObjects, all: CachedObject[]) {
+  const blobs = all.filter((o) => o.kind === 'blob');
+  if (ctx.env.BLOB_WRITE_THROUGH === 'off' || !blobs.length) return;
+  return afterAnswer(() =>
+    timed('cache.through', () =>
+      inBatches(blobs, R2_WRITES, (o) => store.cache([o], 'r2')).catch((e) =>
+        console.warn(`blob write-through failed: ${e?.message ?? e}`),
+      ),
+    ),
+  );
 }
