@@ -1592,6 +1592,7 @@ mod land_shapes;
 mod members;
 mod model_runner;
 mod pushed;
+mod rebase;
 mod secrets;
 mod sessions;
 mod shards;
