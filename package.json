@@ -11,7 +11,6 @@
     "test:runtime": "node --test tests/runtime/*.test.mjs",
     "test:platform": "vitest run --config tests/platform/vitest.config.ts",
     "test:superfan": "vitest run --config tests/superfan/vitest.config.ts",
-    "test:eval": "vitest run --config tests/eval-worker/vitest.config.ts",
     "deploy": "cargo xtask deploy",
     "test:frontend": "vitest run --config tests/frontend/vitest.config.ts",
     "test:apps": "vitest run --config tests/workers/apps-canary.config.ts && vitest run --config tests/workers/apps-runtime.config.ts"
