@@ -216,6 +216,7 @@ it('rate limits requests without credentials per address', async () => {
   expect([over.status, over.body.error.code]).toEqual([429, 'RATE_LIMITED']);
   const git = await raw(`/git/${id}.git/info/refs?service=git-upload-pack`, {}, limited);
   expect(git.status).toBe(429);
+  expect((await api('/explore', anonymous, {}, limited)).status).toBe(429);
   // Signed-in reads are not counted against it.
   expect((await api(`/repos/${id}/refs`, { cookie }, {}, limited)).status).toBe(200);
 });

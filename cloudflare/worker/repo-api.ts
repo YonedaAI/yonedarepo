@@ -320,8 +320,14 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(() => bodyOf(req).then((body) => deviceCode(req, env, body, url)));
   if (req.method === 'POST' && url.pathname === '/api/v1/device/token')
     return answer(() => bodyOf(req).then((body) => deviceToken(req, env, body)));
-  // The public listing answers everyone alike, signed in or not.
-  if (isExplore(url) && req.method === 'GET') return answer(() => explore(env, url.searchParams));
+  // The public listing answers everyone alike, signed in or not (rate limited without
+  // credentials, like every anonymous read).
+  if (isExplore(url) && req.method === 'GET')
+    return answer(async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return explore(env, url.searchParams);
+    });
   const signed = await timed('auth', () => credentials(req, env));
   // Without credentials, reads go on as anonymous (public repositories only, rate limited);
   // a token that is refused (expired, revoked, malformed) never falls back to anonymous.
