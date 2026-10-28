@@ -10,17 +10,6 @@
 .source-changes-head h2 {
   margin: 0;
 }
-.source-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.source-filter button[aria-pressed="true"] {
-  background: #edf3ff;
-  border-color: var(--blue);
-  color: var(--blue);
-  font-weight: 600;
-}
 .source-changes {
   list-style: none;
   padding: 0;
@@ -171,11 +160,6 @@
   margin: 8px 0 0;
   padding-left: 18px;
 }
-fieldset.source-filter {
-  border: 0;
-  margin: 0;
-  padding: 0;
-}
 .source-diff .source-thread {
   margin: 6px 0;
   border: 1px solid var(--line);
@@ -191,4 +175,7 @@ fieldset.source-filter {
 }
 .source-diff .source-thread > header {
   display: flex;
+}
+.source-toolbar .source-open-change {
+  flex-basis: 100%;
 }

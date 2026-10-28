@@ -68,16 +68,10 @@ export function StatusFilter({
   onChange: (f: ChangeFilter) => void;
 }) {
   return (
-    <fieldset className="source-filter">
+    <fieldset className="segmented">
       <legend className="sr-only">Status</legend>
       {CHANGE_FILTERS.map((f) => (
-        <button
-          key={f}
-          type="button"
-          className="quiet"
-          aria-pressed={value === f}
-          onClick={() => onChange(f)}
-        >
+        <button key={f} type="button" aria-pressed={value === f} onClick={() => onChange(f)}>
           {f[0].toUpperCase() + f.slice(1)}
         </button>
       ))}
