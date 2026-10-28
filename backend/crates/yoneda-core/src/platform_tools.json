@@ -1321,7 +1321,7 @@
           ],
           "pattern": "^[0-9a-f]{40}$"
         },
-        "comments": {
+        "comment_count": {
           "type": "integer",
           "description": "Number of comments"
         }
@@ -1339,7 +1339,7 @@
         "updated_at",
         "landed_version",
         "landed_commit",
-        "comments"
+        "comment_count"
       ]
     }
   },
@@ -1445,7 +1445,7 @@
               ],
               "pattern": "^[0-9a-f]{40}$"
             },
-            "comments": {
+            "comment_count": {
               "type": "integer",
               "description": "Number of comments"
             }
@@ -1463,7 +1463,7 @@
             "updated_at",
             "landed_version",
             "landed_commit",
-            "comments"
+            "comment_count"
           ]
         }
       }
@@ -1595,7 +1595,7 @@
               ],
               "pattern": "^[0-9a-f]{40}$"
             },
-            "comments": {
+            "comment_count": {
               "type": "integer",
               "description": "Number of comments"
             }
@@ -1613,7 +1613,7 @@
             "updated_at",
             "landed_version",
             "landed_commit",
-            "comments"
+            "comment_count"
           ]
         },
         "comment": {
@@ -1941,7 +1941,7 @@
           ],
           "pattern": "^[0-9a-f]{40}$"
         },
-        "comments": {
+        "comment_count": {
           "type": "integer",
           "description": "Number of comments"
         }
@@ -1959,7 +1959,7 @@
         "updated_at",
         "landed_version",
         "landed_commit",
-        "comments"
+        "comment_count"
       ]
     }
   },
@@ -2044,7 +2044,7 @@
           ],
           "pattern": "^[0-9a-f]{40}$"
         },
-        "comments": {
+        "comment_count": {
           "type": "integer",
           "description": "Number of comments"
         }
@@ -2062,7 +2062,7 @@
         "updated_at",
         "landed_version",
         "landed_commit",
-        "comments"
+        "comment_count"
       ]
     }
   },
