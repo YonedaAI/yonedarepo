@@ -20,7 +20,7 @@ import { guardInherited } from './repo-inherit';
 import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { ANONYMOUS, limitAnonymous } from './repo-public';
+import { ANONYMOUS, admitAnonymous, limitAnonymous } from './repo-public';
 import { timed, withTimings } from './repo-timing';
 import type { Env } from './types';
 
@@ -100,6 +100,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
   const anonymous = '_anonymous' in auth;
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   try {
+    if (anonymous) await admitAnonymous(env, repo);
     // Access first, so a refusal is an HTTP status Git reports, not a broken protocol.
     const access = await ctx.call({ op: 'repo_git_access', service });
     const objects = ctx.adopt(access.object_store);

@@ -18,6 +18,7 @@ import { toHex } from './hmac';
 import { readJson } from './http';
 import { inheritObjects } from './repo-lfs-inherit';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { admitAnonymous } from './repo-public';
 import { presign, type S3Credentials } from './repo-s3-presign';
 import type { Env } from './types';
 
@@ -100,6 +101,7 @@ export async function lfsHttp(
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   const post = req.method === 'POST';
   try {
+    if ('_anonymous' in auth) await admitAnonymous(env, repo);
     if (action === 'objects/batch' && post) return await batch(ctx, req, url);
     if (action === 'verify' && post) return await verify(ctx, req);
     if (action === 'locks' && req.method === 'GET') {
