@@ -9,7 +9,12 @@ import { guardInherited } from './repo-inherit';
 import { toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext, SHA, walk } from './repo-ops';
 
-const OBJECT_BUDGET = 8 * 1024 * 1024;
+/** Response bytes per page (base64 text for blobs, JSON otherwise). */
+const OBJECT_BUDGET = 4 * 1024 * 1024;
+/** Object bytes one page may read, stubs included: the page stops once past it. */
+const READ_BUDGET = 24 * 1024 * 1024;
+/** Objects read at once. */
+const READ_WIDTH = 8;
 /** Blobs above this many bytes come as stubs to a client that downloads them separately. */
 export const LARGE_BLOB = 2 * 1024 * 1024;
 const OBJECT_KINDS = ['tree', 'blob', 'commit'];
@@ -62,53 +67,93 @@ export async function getObjects(ctx: RepoContext, args: Json) {
   // that form too: a message may name paths outside their grant.
   const raw = args.raw === true && !grant.restricted;
   const large = args.large === true;
-  /** A blob as served: inline, or a stub the client downloads (never base64 of its bytes). */
-  const blob = async (id: string) => {
-    const bytes = await objects.blob(id);
-    return large && bytes.length > LARGE_BLOB
-      ? { id, kind: 'blob', size: bytes.length, large: true }
-      : { id, kind: 'blob', data_b64: toBase64(bytes) };
-  };
   const served: Json[] = [];
   const missing: string[] = [];
   let bytes = 0;
+  let read = 0;
+  let largest = 0;
   let index = start;
-  while (index < wanted.length) {
-    const batch = wanted.slice(index, index + 16);
-    const commits = raw ? batch.filter((o: Json) => o.kind === 'commit') : [];
-    const exact = new Map(
-      (commits.length ? await objects.raw(commits) : [])
-        .filter((o) => o.kind === 'commit')
-        .map((o) => [o.id, o]),
+  let phase = 'read';
+  const began = Date.now();
+  /** One line per page (and per failure) in the Worker's logs: what the page cost. */
+  const log = (event: string, extra: Json = {}) =>
+    console.log(
+      JSON.stringify({
+        event,
+        repo: ctx.repo,
+        requested: wanted.length,
+        after: start,
+        index,
+        served: served.length,
+        missing: missing.length,
+        bytes,
+        read,
+        largest,
+        large,
+        raw,
+        ms: Date.now() - began,
+        tiers: objects.hits,
+        ...extra,
+      }),
     );
-    const read = await Promise.all(
-      batch.map((o: Json) =>
-        o.kind === 'commit' && exact.has(o.id)
-          ? exact.get(o.id)
-          : (o.kind === 'blob' ? blob(o.id) : objects.object(o.id, o.kind)).catch((e) => {
-              if (e?.code === 'NOT_FOUND') return null;
-              throw e;
-            }),
-      ),
-    );
-    let stop = false;
-    for (const [offset, object] of read.entries()) {
-      if (!object) missing.push(batch[offset].id);
-      else {
-        // A blob's size is its base64 text; stringifying it would copy it once more.
-        const text = (object as Json).data_b64;
-        const size = typeof text === 'string' ? text.length + 96 : JSON.stringify(object).length;
-        if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
-          stop = true;
-          break;
+  /** A blob as served: inline, or a stub the client downloads (never base64 of its bytes). */
+  const blob = async (id: string) => {
+    const content = await objects.blob(id);
+    read += content.length;
+    largest = Math.max(largest, content.length);
+    return large && content.length > LARGE_BLOB
+      ? { id, kind: 'blob', size: content.length, large: true }
+      : { id, kind: 'blob', data_b64: toBase64(content) };
+  };
+  try {
+    // A page ends at its response budget or once it has read `READ_BUDGET` object bytes.
+    while (index < wanted.length && read < READ_BUDGET) {
+      const batch = wanted.slice(index, index + READ_WIDTH);
+      const commits = raw ? batch.filter((o: Json) => o.kind === 'commit') : [];
+      phase = commits.length ? 'raw commits' : 'read';
+      const exact = new Map(
+        (commits.length ? await objects.raw(commits) : [])
+          .filter((o) => o.kind === 'commit')
+          .map((o) => [o.id, o]),
+      );
+      phase = 'read';
+      const results = await Promise.all(
+        batch.map((o: Json) =>
+          o.kind === 'commit' && exact.has(o.id)
+            ? exact.get(o.id)
+            : (o.kind === 'blob' ? blob(o.id) : objects.object(o.id, o.kind)).catch((e) => {
+                if (e?.code === 'NOT_FOUND') return null;
+                throw e;
+              }),
+        ),
+      );
+      phase = 'serve';
+      let stop = false;
+      for (const [offset, object] of results.entries()) {
+        if (!object) missing.push(batch[offset].id);
+        else {
+          // A blob's size is its base64 text; stringifying it would copy it once more.
+          const text = (object as Json).data_b64;
+          const size = typeof text === 'string' ? text.length + 96 : JSON.stringify(object).length;
+          if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
+            stop = true;
+            break;
+          }
+          bytes += size;
+          served.push(object);
         }
-        bytes += size;
-        served.push(object);
+        index++;
       }
-      index++;
+      if (stop) break;
     }
-    if (stop) break;
+  } catch (e: any) {
+    log('objects.failed', {
+      phase,
+      error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
+    });
+    throw e;
   }
+  log('objects.page');
   return {
     objects: served,
     missing,
@@ -130,7 +175,16 @@ export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearc
       query.get('commit'),
     );
   const bytes = await objects.blob(id).catch((e) => {
-    throw e?.code === 'NOT_FOUND' ? new ApiError('NOT_FOUND', `No blob ${id}`) : e;
+    if (e?.code === 'NOT_FOUND') throw new ApiError('NOT_FOUND', `No blob ${id}`);
+    console.log(
+      JSON.stringify({
+        event: 'objects.download_failed',
+        repo: ctx.repo,
+        id,
+        error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
+      }),
+    );
+    throw e;
   });
   return new Response(bytes, {
     headers: {
