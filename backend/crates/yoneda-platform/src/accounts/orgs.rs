@@ -4,7 +4,9 @@
 //! repository access only through teams or direct repository membership. A member may leave
 //! on their own; an org always keeps one owner. `actor` is the calling account, set by the
 //! authenticating adapter. A personal account's authority keeps hints of the orgs it joined
-//! (`org_hint_*`) so the adapter knows whom to ask; hints never grant access.
+//! (`org_hint_*`) so the adapter knows whom to ask; hints never grant access. Deleting an
+//! org (its owners, once it owns no repositories: the adapter checks the listing) leaves a
+//! tombstone: the name is retired, so nothing a deleted org held can pass to a new account.
 use super::*;
 
 const MEMBER_LIMIT: i64 = 1000;
@@ -16,7 +18,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         // Whether a team exists (a repository grants roles only to existing teams).
         "team_exists" => {
             org(db)?;
-            Ok(json!({ "exists": super::teams::exists(db, c)? }))
+            let id = super::teams::id_of(db, c)?;
+            Ok(json!({ "exists": id.is_some(), "id": id }))
         }
         "org_hint_add" => {
             account(db)?;
@@ -53,6 +56,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let actor = format!("user:{actor}");
             match op {
                 "org_show" => show(db, &org, &role),
+                "org_delete" => delete(db, c, &org, now),
                 "org_member_put" => member_put(db, c, &org, &actor, now),
                 "org_member_remove" => member_remove(db, c, &org, now),
                 "team_create" | "team_delete" | "team_member_put" | "team_member_remove" => {
@@ -87,7 +91,9 @@ pub(super) fn org_name(name: &str) -> Result<String> {
 /// The org this authority holds, or NOT_FOUND (a person's account, or nothing).
 fn org<S: SqlStore>(db: &S) -> Result<String> {
     match get(db, "account") {
-        Ok(record) if record["kind"] == "org" => string(&record, "username"),
+        Ok(record) if record["kind"] == "org" && record["deleted_at"].is_null() => {
+            string(&record, "username")
+        }
         _ => Err(Error::new("NOT_FOUND", "No such organization")),
     }
 }
@@ -139,11 +145,12 @@ fn access<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let role = role_of(db, &account)?;
     let teams: Vec<Value> = if role.is_some() {
         db.query(
-            "SELECT team FROM org_team_members WHERE account=? ORDER BY team",
+            "SELECT t.name,t.id FROM org_team_members m JOIN org_teams t ON t.name=m.team \
+             WHERE m.account=? ORDER BY t.name",
             &[json!(account)],
         )?
         .into_iter()
-        .map(|r| r["team"].clone())
+        .map(|r| json!({ "name": r["name"], "id": r["id"] }))
         .collect()
     } else {
         Vec::new()
@@ -159,7 +166,7 @@ fn show<S: SqlStore>(db: &S, org: &str, role: &str) -> Result<Value> {
     )?;
     let mut teams = Vec::new();
     for team in db.query(
-        "SELECT name,created_by,created_at FROM org_teams ORDER BY name",
+        "SELECT name,id,created_by,created_at FROM org_teams ORDER BY name",
         &[],
     )? {
         let accounts: Vec<Value> = db
@@ -171,7 +178,7 @@ fn show<S: SqlStore>(db: &S, org: &str, role: &str) -> Result<Value> {
             .map(|r| r["account"].clone())
             .collect();
         teams.push(json!({
-            "name": team["name"], "created_by": team["created_by"],
+            "name": team["name"], "id": team["id"], "created_by": team["created_by"],
             "created_at": team["created_at"], "members": accounts,
         }));
     }
@@ -248,4 +255,26 @@ fn member_remove<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<
     )?;
     audit(db, "org.member_removed", now, json!({ "account": account }))?;
     Ok(json!({ "account": account, "removed": true }))
+}
+
+/// `org_delete {confirm}`: an owner retires the org. Its members and teams go; the record
+/// stays as a tombstone that holds the name (no person or org can take it again). Answers
+/// the former members, whose hints the adapter then drops.
+fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<Value> {
+    if string(c, "confirm")? != org {
+        return Err(bad("confirm must be the organization's name"));
+    }
+    let members: Vec<Value> = db
+        .query("SELECT account FROM org_members ORDER BY account", &[])?
+        .into_iter()
+        .map(|r| r["account"].clone())
+        .collect();
+    for table in ["org_members", "org_teams", "org_team_members"] {
+        db.query(&format!("DELETE FROM {table}"), &[])?;
+    }
+    let mut record = get(db, "account")?;
+    record["deleted_at"] = json!(now);
+    put(db, "account", &record)?;
+    audit(db, "org.deleted", now, json!({ "org": org }))?;
+    Ok(json!({ "org": org, "deleted": true, "members": members }))
 }

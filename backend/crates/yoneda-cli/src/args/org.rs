@@ -10,7 +10,10 @@ pub fn org(rest: &[String]) -> Result<Command> {
         "team" => return team(&rest),
         _ => {}
     }
-    let p = Parsed::new(&rest, &["origin"], &[])?;
+    let p = Parsed::new(&rest, &["origin", "confirm"], &[])?;
+    if sub != "delete" && p.flag("confirm").is_some() {
+        return Err(Error::usage("only org delete takes --confirm"));
+    }
     let one = |what: &str| Ok::<_, Error>(p.exactly(1, what)?[0].clone());
     let command = match sub.as_str() {
         "list" => {
@@ -25,6 +28,12 @@ pub fn org(rest: &[String]) -> Result<Command> {
         },
         "repos" => OrgCommand::Repos {
             org: one("org repos <org>")?,
+        },
+        "delete" => OrgCommand::Delete {
+            org: one("org delete <org> --confirm <org>")?,
+            confirm: p
+                .flag("confirm")
+                .ok_or_else(|| Error::usage("org delete needs --confirm <org>"))?,
         },
         other => return Err(Error::usage(format!("unknown org command {other:?}"))),
     };

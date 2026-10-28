@@ -142,7 +142,7 @@ fn owners_manage_members_and_teams_members_only_look() {
     assert_eq!(shown["role"], "member");
     assert_eq!(
         shown["teams"],
-        json!([{"name":"devs","created_by":"user:alice","created_at":1000,"members":["bob"]}])
+        json!([{"name":"devs","id":1,"created_by":"user:alice","created_at":1000,"members":["bob"]}])
     );
     assert_eq!(shown["members"].as_array().unwrap().len(), 2);
     assert_eq!(
@@ -153,7 +153,7 @@ fn owners_manage_members_and_teams_members_only_look() {
     let access = |account: &str| ok(&db, json!({"op":"org_access","account":account}));
     assert_eq!(
         access("bob"),
-        json!({"org":"acme","role":"member","teams":["devs"]})
+        json!({"org":"acme","role":"member","teams":[{"name":"devs","id":1}]})
     );
     assert_eq!(
         access("alice"),
@@ -289,12 +289,143 @@ fn the_org_migration_upgrades_a_version_two_store_and_keeps_its_tokens() {
             &[],
         )
         .unwrap();
-    assert_eq!(versions.len(), 3);
+    assert_eq!(versions.len(), 4);
     // Repeat application changes nothing.
     ok(&old, json!({"op":"org_hint_add","org":"acme"}));
     assert_eq!(
         old.query("SELECT COUNT(*) AS n FROM workspace_migrations", &[])
             .unwrap()[0]["n"],
-        3
+        4
+    );
+}
+
+#[test]
+fn team_ids_are_never_reused_and_a_deleted_org_retires_its_name() {
+    let db = acme();
+    let team = |op: &str| ok(&db, json!({"op":op,"actor":"alice","team":"devs"}));
+    assert_eq!(team("team_create")["id"], 1);
+    team("team_delete");
+    assert_eq!(
+        ok(&db, json!({"op":"team_exists","team":"devs"})),
+        json!({"exists":false,"id":null})
+    );
+    assert_eq!(
+        team("team_create")["id"],
+        2,
+        "a re-created team is a new team"
+    );
+    assert_eq!(ok(&db, json!({"op":"team_exists","team":"devs"}))["id"], 2);
+
+    ok(
+        &db,
+        json!({"op":"org_member_put","actor":"alice","account":"bob","role":"member"}),
+    );
+    assert_eq!(
+        code(
+            &db,
+            json!({"op":"org_delete","actor":"bob","confirm":"acme"})
+        ),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(
+            &db,
+            json!({"op":"org_delete","actor":"alice","confirm":"acm"})
+        ),
+        "INVALID_INPUT"
+    );
+    let deleted = ok(
+        &db,
+        json!({"op":"org_delete","actor":"alice","confirm":"acme"}),
+    );
+    assert_eq!(deleted["members"], json!(["alice", "bob"]));
+    // Gone for every operation, and the name stays taken.
+    assert_eq!(
+        code(&db, json!({"op":"org_access","account":"alice"})),
+        "NOT_FOUND"
+    );
+    assert_eq!(
+        code(&db, json!({"op":"org_show","actor":"alice"})),
+        "NOT_FOUND"
+    );
+    assert_eq!(
+        code(
+            &db,
+            json!({"op":"org_create","org":"acme","actor":"mallory"})
+        ),
+        "ALREADY_EXISTS"
+    );
+    let signup = json!({"op":"signup","username":"acme","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)});
+    assert_eq!(code(&db, signup), "ALREADY_EXISTS");
+    let rows = db
+        .query(
+            "SELECT (SELECT COUNT(*) FROM org_members)+(SELECT COUNT(*) FROM org_teams) AS n",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(rows[0]["n"], 0);
+}
+
+#[test]
+fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
+    let old = NativeStore::memory().unwrap();
+    old.query(
+        "CREATE TABLE workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
+        &[],
+    )
+    .unwrap();
+    for (version, sql) in [
+        (1, include_str!("migrations/0001_accounts.sql")),
+        (2, include_str!("migrations/0002_account_tokens.sql")),
+        (3, include_str!("migrations/0003_orgs.sql")),
+    ] {
+        for statement in sql.split(';').filter(|s| !s.trim().is_empty()) {
+            old.query(statement, &[]).unwrap();
+        }
+        old.query(
+            "INSERT INTO workspace_migrations(version,digest) VALUES(?,?)",
+            &[json!(version), json!(yoneda_core::digest(sql.as_bytes()))],
+        )
+        .unwrap();
+    }
+    old.query(
+        "INSERT INTO workspace_records(id,payload) VALUES('account',?)",
+        &[json!(
+            json!({"username":"acme","kind":"org","created_at":1,"created_by":"alice"}).to_string()
+        )],
+    )
+    .unwrap();
+    old.query(
+        "INSERT INTO org_members VALUES('alice','owner','user:alice',1)",
+        &[],
+    )
+    .unwrap();
+    for team in ["devs", "ops"] {
+        old.query(
+            "INSERT INTO org_teams(name,created_by,created_at) VALUES(?,'user:alice',1)",
+            &[json!(team)],
+        )
+        .unwrap();
+    }
+    let shown = ok(&old, json!({"op":"org_show","actor":"alice"}));
+    let ids: Vec<_> = shown["teams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["id"].clone())
+        .collect();
+    assert_eq!(ids, vec![json!(1), json!(2)]);
+    let created = ok(
+        &old,
+        json!({"op":"team_create","actor":"alice","team":"qa"}),
+    );
+    assert_eq!(created["id"], 3);
+    // A person's store gets no counter.
+    let fresh = person("bob");
+    assert!(
+        fresh
+            .query("SELECT id FROM workspace_records WHERE id='team_seq'", &[])
+            .unwrap()
+            .is_empty()
     );
 }

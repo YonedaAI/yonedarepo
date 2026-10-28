@@ -24,7 +24,14 @@ fn pat(h: &Harness, account: &str, extra: Value, mut c: Value) -> yoneda_core::R
     c["_pat"] = grant;
     execute_repo_store(&h.db, c)
 }
+/// acme's member, in the given teams (devs is team 7).
 fn devs(teams: Value) -> Value {
+    let teams: Vec<Value> = teams
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| json!({"name": t, "id": if t == "devs" { 7 } else { 8 }}))
+        .collect();
     json!({"acme": {"role": "member", "teams": teams}})
 }
 fn branch(at: &str, name: &str) -> Value {
@@ -49,9 +56,13 @@ fn a_team_entry_grants_its_role_and_leaving_the_team_revokes_it() {
     ] {
         assert_eq!(code(put(&h, bad, "write")), "INVALID_INPUT", "{bad}");
     }
-    put(&h, "team:acme/devs", "write").unwrap();
+    // A team is granted by id (the adapter resolves it).
+    assert_eq!(code(put(&h, "team:acme/devs", "write")), "INVALID_INPUT");
+    assert_eq!(code(put(&h, "team:acme/devs#x", "write")), "INVALID_INPUT");
+    put(&h, "team:acme/devs#7", "write").unwrap();
     let listed = h.ok(OWNER, json!({"op":"repo_members"}));
     assert_eq!(listed["members"][0]["account"], "team:acme/devs");
+    assert_eq!(listed["members"][0]["team_id"], 7);
 
     let status = json!({"op":"repo_status"});
     assert_eq!(
@@ -64,7 +75,7 @@ fn a_team_entry_grants_its_role_and_leaving_the_team_revokes_it() {
         "OK"
     );
     // Another org's team of the same name, or no team, is a stranger.
-    let other = json!({"other": {"role": "member", "teams": ["devs"]}});
+    let other = json!({"other": {"role": "member", "teams": [{"name": "devs", "id": 7}]}});
     assert_eq!(
         code(with_orgs(&h, "bob", other, status.clone())),
         "FORBIDDEN"
@@ -188,5 +199,35 @@ fn a_token_limited_to_an_org_is_refused_on_every_other_repository() {
             &json!({"head": head, "credentials": credentials})
         )),
         "FORBIDDEN"
+    );
+}
+
+#[test]
+fn a_grant_belongs_to_one_team_not_to_a_later_team_of_the_same_name() {
+    let (h, root) = seeded();
+    put(&h, "team:acme/devs#7", "write").unwrap();
+    let as_team = |id: i64, at: &str| {
+        let orgs = json!({"acme": {"role": "member", "teams": [{"name": "devs", "id": id}]}});
+        code(with_orgs(&h, "bob", orgs, branch(&root, at)))
+    };
+    assert_eq!(as_team(7, "a"), "OK");
+    // Team 7 was deleted and devs re-created as team 9: its members hold nothing here.
+    assert_eq!(as_team(9, "b"), "FORBIDDEN");
+    // Granting team 9 replaces the stale grant; removing by name clears every grant to devs.
+    let granted = put(&h, "team:acme/devs#9", "read").unwrap();
+    assert_eq!(granted["replaced"], json!(["team:acme/devs#7"]));
+    assert_eq!(granted["previous"], "write");
+    assert_eq!(as_team(7, "c"), "FORBIDDEN");
+    let removed = h.ok(
+        OWNER,
+        json!({"op":"repo_member_remove","account":"team:acme/devs"}),
+    );
+    assert_eq!(removed["keys"], json!(["team:acme/devs#9"]));
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_member_remove","account":"team:acme/devs"})
+        )),
+        "NOT_FOUND"
     );
 }
