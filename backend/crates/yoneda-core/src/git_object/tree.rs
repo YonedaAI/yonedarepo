@@ -1,20 +1,46 @@
 use super::{ObjectId, invalid};
 use crate::Result;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const MAX_TREE_ENTRIES: usize = 100_000;
 
 /// Git tree entry modes. Only canonical spellings are accepted so decode/encode is lossless.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// JSON forms use the short wire names (`tree`, `blob`, `exec`, `symlink`, `gitlink`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum FileMode {
     Tree,
     Blob,
+    #[serde(rename = "exec")]
     Executable,
     Symlink,
     Gitlink,
 }
 
 impl FileMode {
+    /// The wire spelling used by JSON trees, path touches and change records.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tree => "tree",
+            Self::Blob => "blob",
+            Self::Executable => "exec",
+            Self::Symlink => "symlink",
+            Self::Gitlink => "gitlink",
+        }
+    }
+    /// Inverse of [`Self::as_str`]; every other spelling is refused.
+    pub fn from_wire(kind: &str) -> Result<Self> {
+        match kind {
+            "tree" => Ok(Self::Tree),
+            "blob" => Ok(Self::Blob),
+            "exec" => Ok(Self::Executable),
+            "symlink" => Ok(Self::Symlink),
+            "gitlink" => Ok(Self::Gitlink),
+            _ => Err(invalid("Non-canonical or unsupported tree entry mode")),
+        }
+    }
     pub fn bits(self) -> u32 {
         match self {
             Self::Tree => 0o040000,
@@ -141,4 +167,32 @@ pub fn decode_tree(mut data: &[u8]) -> Result<Vec<TreeEntry>> {
         return Err(invalid("Tree entries are not in canonical Git order"));
     }
     Ok(entries)
+}
+
+#[cfg(test)]
+mod mode_wire_tests {
+    use super::FileMode;
+
+    #[test]
+    fn serde_uses_the_same_wire_names_as_as_str() {
+        for mode in [
+            FileMode::Tree,
+            FileMode::Blob,
+            FileMode::Executable,
+            FileMode::Symlink,
+            FileMode::Gitlink,
+        ] {
+            let json = serde_json::to_string(&mode).unwrap();
+            assert_eq!(json, format!("\"{}\"", mode.as_str()));
+            assert_eq!(serde_json::from_str::<FileMode>(&json).unwrap(), mode);
+            assert_eq!(FileMode::from_wire(mode.as_str()).unwrap(), mode);
+        }
+    }
+
+    #[test]
+    fn from_wire_refuses_non_canonical_spellings() {
+        for bad in ["", "100644", "executable", "TREE", "submodule"] {
+            assert!(FileMode::from_wire(bad).is_err(), "{bad:?} accepted");
+        }
+    }
 }
