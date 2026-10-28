@@ -21,7 +21,7 @@ import { Recorder, Session } from './client.mjs';
 import { realuserAgents } from './realuser-agents.mjs';
 import { realuserClones, realuserEveryday, Workspace } from './realuser-git.mjs';
 import { importRepo } from './realuser-import.mjs';
-import { DEFAULT_IMPORTS, leftovers, parseImports, pickRepo, scratch, scrubber } from './realuser-plan.mjs';
+import { DEFAULT_IMPORTS, leftovers, parseImports, pickRepo, protectedMoves, scratch, scrubber } from './realuser-plan.mjs';
 import { realuserChange, realuserReads } from './realuser-product.mjs';
 
 const PROTECTED = ['refs/heads/main', 'refs/heads/dev'];
@@ -104,10 +104,11 @@ export async function realuser(values, root) {
         const named = values['agent-repos']?.split(',').filter(Boolean);
         agentRepos = named ? named.map((n) => pickRepo(repos, n)) : [repo, ...DEFAULT_IMPORTS.map((d) => repos.find((r) => r.name === d.name)).filter(Boolean)];
         for (const r of [repo, ...agentRepos]) {
+          const { version } = await owner.get(`/repos/${r.id}`);
           const refs = (await owner.get(`/repos/${r.id}/refs`)).refs;
-          protectedBefore.set(r.id, Object.fromEntries(PROTECTED.map((p) => [p, refs[p] ?? null])));
+          protectedBefore.set(r.id, { version, refs: Object.fromEntries(PROTECTED.map((p) => [p, refs[p] ?? null])) });
         }
-        Object.assign(m, { repo: `${repo.name} (${repo.id})`, agent_repos: agentRepos.map((r) => r.name).join(','), main: protectedBefore.get(repo.id)['refs/heads/main'] });
+        Object.assign(m, { repo: `${repo.name} (${repo.id})`, agent_repos: agentRepos.map((r) => r.name).join(','), main: protectedBefore.get(repo.id).refs['refs/heads/main'] });
       });
     if (ctx.repo) {
       await item('30.1', 'Clones: HTTPS full, partial + checkout, shallow + deepen, yoneda::, SSH; fsck', (m) => realuserClones(ctx, m));
@@ -141,10 +142,10 @@ async function cleanup(ctx, { before, protectedBefore, revoke, root }, m) {
       problems.push(`${what}: ${ctx.ws.scrub(e?.message ?? e)}`);
     }
   };
+  // Landed and closed changes stay as they are; only a change still open is closed.
   for (const { repo, number } of ctx.changes)
     await attempt(`close change #${number} of ${repo}`, async () => {
-      const done = await owner.raw('POST', `/repos/${repo}/changes/${number}/close`);
-      if (!done.ok && !/is (closed|landed)/.test(done.body?.error?.message ?? '')) throw new Error(`${done.status} ${done.body?.error?.message ?? ''}`);
+      if ((await owner.get(`/repos/${repo}/changes/${number}`)).status === 'open') await owner.post(`/repos/${repo}/changes/${number}/close`);
     });
   m.changes = ctx.changes.map((c) => `${c.repo}#${c.number}`).join(',') || 'none';
   m.branches_deleted = 0;
@@ -157,16 +158,24 @@ async function cleanup(ctx, { before, protectedBefore, revoke, root }, m) {
     });
   await attempt('delete tokens', revoke);
   const tags = [];
+  const warnings = [];
   for (const [repo, was] of protectedBefore)
     await attempt(`check ${repo}`, async () => {
       const refs = (await owner.get(`/repos/${repo}/refs`)).refs;
+      const { entries } = await owner.get(`/repos/${repo}/txlog?after=${was.version}&limit=500`);
+      const moved = protectedMoves({ repo, refs: PROTECTED, was: was.refs, now: refs, entries, ts });
+      problems.push(...moved.problems);
+      warnings.push(...moved.warnings);
       const left = leftovers(refs, ts);
       tags.push(...left.filter((l) => l.ref.startsWith('refs/tags/')).map((l) => `${repo}:${l.ref}`));
       const branches = left.filter((l) => l.ref.startsWith('refs/heads/'));
       if (branches.length) problems.push(`scratch branches left in ${repo}: ${branches.map((l) => l.ref).join(', ')}`);
-      for (const r of PROTECTED) if (refs[r] !== was[r]) problems.push(`${repo} ${r} moved during the run: ${was[r]} -> ${refs[r]}`);
     });
   m.permanent_tags = tags.join(',') || 'none';
+  if (warnings.length) {
+    m.warnings = warnings;
+    console.warn(`Warning: ${warnings.join('; ')}`);
+  }
   m.main_dev_unchanged = problems.every((p) => !p.includes('moved during the run'));
   if (before)
     await attempt('host recheck', async () => {
