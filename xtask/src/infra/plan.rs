@@ -287,7 +287,12 @@ pub(crate) async fn command(args: &[String]) -> Result<()> {
     let mut live = super::live::read(&spec, super::live::token(args)?, &spec.worker_names()?).await;
     retired::read_artifacts(&spec, &mut live);
     let workers = inventory::deployables(&spec, &effective_lock(&spec, &lock, &live)?)?;
-    let mut rows = diff(&spec, &lock, &workers, &live);
+    let mut rows = Vec::new();
+    for row in diff(&spec, &lock, &workers, &live) {
+        if row.action != Action::Extra || !retired::retired_elsewhere(&env, &row)? {
+            rows.push(row);
+        }
+    }
     rows.extend(retired::orphans(
         &spec.retired,
         &retired::protected(&workers)?,

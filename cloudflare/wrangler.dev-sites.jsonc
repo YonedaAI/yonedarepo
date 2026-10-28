@@ -1,0 +1,31 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Dev website previews for the dev.yonedarepo.com stack: cloudflare/sites bound to the
+// dev agent Worker and its bucket. workers.dev only (a *.dev.yonedarepo.com wildcard would need an advanced certificate); the agent
+// Worker's SITE_ORIGIN points here.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "main": "sites/index.ts",
+  "name": "yonedarepo-dev-sites",
+  "observability": {
+    "enabled": true
+  },
+  "preview_urls": false,
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-dev-agents-objects"
+    }
+  ],
+  "services": [
+    {
+      "binding": "PLATFORM",
+      "service": "yonedarepo-dev-agents"
+    }
+  ],
+  "workers_dev": true
+}

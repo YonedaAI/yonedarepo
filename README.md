@@ -41,7 +41,7 @@ Rust owns the domain rules and durable state; TypeScript is a thin adapter for C
 - **Artifacts** stores the Git objects. The server pushes small packs to hidden refs and reads each commit back before recording it; branch refs are projected afterwards with expected-old leases and drift detection.
 - **Workers** serve the API, MCP and web UI, and run stateless Rust compute (diff, merge, search, symbols) next to a tiered object cache: Cache API, then R2, then Artifacts.
 - **Containers** run platform checks; **Queues** and **Workflows** run derived-data jobs, ref projection and imports; **D1** is a rebuildable repository index.
-- The agent layer (Repository, Workspace and Source-view objects, harness Containers, provider brokers) is a separate set of crates and routes. A platform-only Worker (`cloudflare/wrangler.platform.jsonc`) runs without it.
+- The agent layer (Repository, Workspace and Source-view objects, harness Containers, provider brokers) is a separate set of crates and routes. The platform Worker (`cloudflare/wrangler.{dev,prod}-platform.jsonc`, generated from `infra/envs/`) runs without it.
 
 ## Run locally
 

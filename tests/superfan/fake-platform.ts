@@ -4,7 +4,7 @@
 // here reaches the network.
 import { env } from 'cloudflare:test';
 import { vi } from 'vitest';
-import { GRAPHQL_URL } from '../../cloudflare/superfan/analytics';
+import { API_URL, GRAPHQL_URL } from '../../cloudflare/superfan/analytics';
 import type { SuperfanEnv } from '../../cloudflare/superfan/config';
 import type { SuperfanLedger } from '../../cloudflare/superfan/ledger';
 import { aggregate, type TailComponent } from '../../cloudflare/superfan/tail';
@@ -13,13 +13,50 @@ import { productionDeps, type WatchDeps } from '../../cloudflare/superfan/watch'
 export const ANALYTICS_TOKEN = 'fixture-analytics-token-not-real';
 export const MODEL_KEY = 'tp-fixture-model-key-not-real';
 export const MODEL_URL = 'https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages';
-export const SCRIPT = 'yonedarepo-platform-dev';
+export const SCRIPT = 'yonedarepo-dev-platform';
 const NS = {
   repo: '11111111111111111111111111111111',
   push: '22222222222222222222222222222222',
   check: '33333333333333333333333333333333',
 };
 const JOBS = '44444444444444444444444444444444';
+const DEAD_LETTER = '55555555555555555555555555555555';
+const APP = '66666666-6666-4666-8666-666666666666';
+const ACCOUNT = '0123456789abcdef0123456789abcdef';
+
+/** The id variables, unset: the watcher then looks the ids up by name. */
+export const NO_IDS = {
+  NS_SOURCE_REPOSITORY: undefined,
+  NS_OBJECT_PUSH_QUEUE: undefined,
+  NS_CHECK_CONTAINER: undefined,
+  QUEUE_JOBS_ID: undefined,
+  QUEUE_DEAD_LETTER_ID: undefined,
+  CHECK_CONTAINER_APP_ID: undefined,
+};
+
+/** Cloudflare REST replies naming the watched Worker's resources (the same ids as the config). */
+export function lookup(path: string): Response | null {
+  const ok = (result: unknown) => Response.json({ success: true, result });
+  if (path === `/accounts/${ACCOUNT}/workers/scripts/${SCRIPT}/settings`)
+    return ok({
+      bindings: [
+        { name: 'WORKSPACES', type: 'durable_object_namespace', class_name: 'WorkspaceAuthority', namespace_id: 'f'.repeat(32) },
+        { name: 'SOURCE_REPOS', type: 'durable_object_namespace', class_name: 'SourceRepository', namespace_id: NS.repo },
+        { name: 'OBJECT_PUSHES', type: 'durable_object_namespace', class_name: 'ObjectPushQueue', namespace_id: NS.push },
+        { name: 'CHECK_RUNNERS', type: 'durable_object_namespace', class_name: 'CheckContainer', namespace_id: NS.check },
+        { name: 'LAND_MODE', type: 'plain_text', text: 'batch' },
+      ],
+    });
+  if (path === `/accounts/${ACCOUNT}/queues?per_page=100`)
+    return ok([
+      { queue_name: `${SCRIPT}-jobs`, queue_id: JOBS },
+      { queue_name: `${SCRIPT}-checks`, queue_id: 'a'.repeat(32) },
+      { queue_name: `${SCRIPT}-dead-letter`, queue_id: DEAD_LETTER },
+    ]);
+  if (path === `/accounts/${ACCOUNT}/containers/applications`)
+    return ok([{ name: `${SCRIPT}-checkcontainer`, id: APP }]);
+  return null;
+}
 
 export interface Traffic {
   backlog?: [number, number];
@@ -82,7 +119,7 @@ export function traces(c: Calls, at: number): TraceItem[] {
           response: { status: 200 },
         }
       : c.component === 'derived_jobs'
-        ? { queue: 'yonedarepo-platform-dev-jobs', batchSize: 1 }
+        ? { queue: 'yonedarepo-dev-platform-jobs', batchSize: 1 }
         : { rpcMethod: 'fetch' };
   return Array.from({ length: c.count }, (_, i) => {
     const thrown = i < (c.errors ?? 0);
@@ -123,19 +160,23 @@ export const feed = (ledger: DurableObjectStub<SuperfanLedger>, events: TraceIte
 
 export interface FakeCalls {
   graphql: RequestInit[];
+  lookups: { path: string; headers: Headers }[];
   model: { url: string; headers: Headers; body: Record<string, any> }[];
 }
 
 /** Routes fetch to the fakes; `graphql` decides the analytics reply per call. */
-export function fakeUpstreams(graphql: () => Response | Promise<Response>): FakeCalls {
-  const calls: FakeCalls = { graphql: [], model: [] };
+export function fakeUpstreams(
+  graphql: () => Response | Promise<Response>,
+  rest: (path: string) => Response | null = lookup,
+): FakeCalls {
+  const calls: FakeCalls = { graphql: [], lookups: [], model: [] };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url === GRAPHQL_URL) {
       calls.graphql.push(init ?? {});
       return graphql();
     }
-    if (url === 'https://yonedarepo-platform-dev.example.workers.dev/health')
+    if (url === 'https://yonedarepo-dev-platform.example.workers.dev/health')
       return Response.json({ service: 'yonedarepo-platform', v: 1, revision: 'fixture' });
     if (url === MODEL_URL) {
       calls.model.push({
@@ -158,6 +199,12 @@ export function fakeUpstreams(graphql: () => Response | Promise<Response>): Fake
         ],
         usage: { input_tokens: 900, output_tokens: 120 },
       });
+    }
+    if (url.startsWith(`${API_URL}/accounts/`) && !url.endsWith('/tokens/verify')) {
+      const path = url.slice(API_URL.length);
+      calls.lookups.push({ path, headers: new Headers(init?.headers) });
+      const reply = rest(path);
+      if (reply) return reply;
     }
     if (url.endsWith('/tokens/verify'))
       return Response.json(

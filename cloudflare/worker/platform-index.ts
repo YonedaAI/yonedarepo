@@ -1,4 +1,4 @@
-// Module root of the platform-only Worker (cloudflare/wrangler.platform.jsonc).
+// Module root of the platform-only Worker (cloudflare/wrangler.{dev,prod}-platform.jsonc).
 export {
   CommitShard,
   SourceRepository,

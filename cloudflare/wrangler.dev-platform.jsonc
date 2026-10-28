@@ -1,22 +1,21 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
-// Staging platform Worker (dev.yonedarepo.com stack): the same source platform as
-// wrangler.platform.jsonc, with its own Durable Object namespaces, Artifacts namespace, R2,
+// Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own
+// Durable Object namespaces, Artifacts namespace, R2,
 // D1, queues, workflow, check containers and secrets, so it shares nothing with production
-// (yonedarepo-dev) or platform-dev. Browsers reach it through the staging agent Worker's
+// (yonedarepo-prod-*). Browsers reach it through the dev agent Worker's
 // /api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.
-// Keep this file in step with wrangler.platform.jsonc. Secrets, set from stdin:
-// OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)
-// VAULT_KEY    64 hex characters, shared with yonedarepo-staging-agents
+// OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
+// VAULT_KEY    64 hex characters, shared with yonedarepo-dev-agents
 // Run next to the data: a commit makes about ten round trips to its repository's
 // Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo
 // otherwise. New repository objects are created near the placed Worker.
-// The staging superfan (wrangler.staging-superfan.jsonc) receives this Worker's tail
+// The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail
 // events: outcomes, logs, exceptions and CPU/wall time, with no API token.
 // Batched landing, with commits beginning from and main reads served by the published
-// head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.
+// head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.
 // Check runs take minutes (container start, the check): one per invocation, up to
 // the container limit (4) at once, apart from the derive and projection jobs above.
-// api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
+// api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the prod sites Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
 // Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the agent Worker's managed connections use), bound to the platform Worker itself; it never reads an agent-layer connection.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
@@ -24,7 +23,7 @@
   "artifacts": [
     {
       "binding": "ARTIFACTS",
-      "namespace": "yonedarepo-staging",
+      "namespace": "yonedarepo-dev",
       "remote": true
     }
   ],
@@ -58,8 +57,8 @@
   "d1_databases": [
     {
       "binding": "INDEX",
-      "database_id": "2acaf105-815e-46b5-bb2f-b734192c09f0",
-      "database_name": "yonedarepo-staging-platform-index",
+      "database_id": "pending",
+      "database_name": "yonedarepo-dev-platform-index",
       "migrations_dir": "migrations"
     }
   ],
@@ -123,7 +122,7 @@
       "tag": "v4"
     }
   ],
-  "name": "yonedarepo-staging-platform",
+  "name": "yonedarepo-dev-platform",
   "observability": {
     "enabled": true
   },
@@ -135,36 +134,36 @@
   "queues": {
     "consumers": [
       {
-        "dead_letter_queue": "yonedarepo-staging-platform-dead-letter",
+        "dead_letter_queue": "yonedarepo-dev-platform-dead-letter",
         "max_batch_size": 10,
         "max_batch_timeout": 1,
         "max_concurrency": 20,
         "max_retries": 3,
-        "queue": "yonedarepo-staging-platform-jobs"
+        "queue": "yonedarepo-dev-platform-jobs"
       },
       {
-        "dead_letter_queue": "yonedarepo-staging-platform-dead-letter",
+        "dead_letter_queue": "yonedarepo-dev-platform-dead-letter",
         "max_batch_size": 1,
         "max_concurrency": 4,
         "max_retries": 3,
-        "queue": "yonedarepo-staging-platform-checks"
+        "queue": "yonedarepo-dev-platform-checks"
       }
     ],
     "producers": [
       {
         "binding": "PLATFORM_QUEUE",
-        "queue": "yonedarepo-staging-platform-jobs"
+        "queue": "yonedarepo-dev-platform-jobs"
       },
       {
         "binding": "PLATFORM_CHECKS",
-        "queue": "yonedarepo-staging-platform-checks"
+        "queue": "yonedarepo-dev-platform-checks"
       }
     ]
   },
   "r2_buckets": [
     {
       "binding": "OBJECTS",
-      "bucket_name": "yonedarepo-staging-platform-objects"
+      "bucket_name": "yonedarepo-dev-platform-objects"
     }
   ],
   "ratelimits": [
@@ -197,16 +196,16 @@
   "services": [
     {
       "binding": "SELF",
-      "service": "yonedarepo-staging-platform"
+      "service": "yonedarepo-dev-platform"
     }
   ],
   "tail_consumers": [
     {
-      "service": "yonedarepo-staging-superfan"
+      "service": "yonedarepo-dev-superfan"
     }
   ],
   "vars": {
-    "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
+    "ARTIFACTS_NAMESPACE": "yonedarepo-dev",
     "LAND_MODE": "batch",
     "WEB_ORIGIN": "https://dev.yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
@@ -216,7 +215,7 @@
     {
       "binding": "PLATFORM_IMPORT",
       "class_name": "PlatformImportWorkflow",
-      "name": "yonedarepo-staging-platform-import"
+      "name": "yonedarepo-dev-platform-import"
     }
   ]
 }

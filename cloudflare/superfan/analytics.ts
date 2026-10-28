@@ -2,9 +2,10 @@
 // lag and dead-lettering, Durable Object resource kills, and check container disk. One
 // request per run keeps within the API's query budget. Errors carry only status codes and
 // Cloudflare's error messages, never request headers.
-import type { WatchTarget } from './config';
+import type { WatchIds, WatchSite, WatchTarget } from './config';
 
-export const GRAPHQL_URL = 'https://api.cloudflare.com/client/v4/graphql';
+export const API_URL = 'https://api.cloudflare.com/client/v4';
+export const GRAPHQL_URL = `${API_URL}/graphql`;
 /** Analytics arrive a few minutes late; the window ends this long before now. */
 const INGEST_DELAY_MS = 5 * 60_000;
 export const WINDOW_MS = 60 * 60_000;
@@ -95,11 +96,76 @@ export function parseAccount(
   };
 }
 
+/**
+ * The watched Worker's ids by name: its Durable Object namespaces by class (script settings),
+ * its `<script>-jobs` and `<script>-dead-letter` queues and its `<script>-checkcontainer`
+ * application. Three read-only REST calls; a failure is a configuration finding.
+ */
+export async function resolveIds(site: WatchSite, token: string): Promise<WatchIds> {
+  const account = `/accounts/${site.account}`;
+  const get = async (path: string): Promise<Row[] | Row> => {
+    const res = await fetch(`${API_URL}${account}${path}`, {
+      headers: { authorization: `Bearer ${token}` },
+      redirect: 'manual',
+      signal: AbortSignal.timeout(10_000),
+    }).catch(() => null);
+    const body = (await res?.json().catch(() => null)) as Row | null;
+    if (!res?.ok || body?.success !== true)
+      throw new TelemetryError(
+        'config',
+        `Cannot look up watch ids: GET ${path.split('?')[0]} HTTP ${res?.status ?? 'none'} (the analytics token also needs Workers Scripts Read, Queues Read and Containers Read)`,
+      );
+    return body.result;
+  };
+  const [settings, queues, apps] = await Promise.all([
+    get(`/workers/scripts/${site.script}/settings`) as Promise<Row>,
+    get('/queues?per_page=100') as Promise<Row[]>,
+    get('/containers/applications') as Promise<Row[]>,
+  ]);
+  const namespace = (cls: string) =>
+    (settings?.bindings as Row[] | undefined)?.find(
+      (b) => b.type === 'durable_object_namespace' && b.class_name === cls && !b.script_name,
+    )?.namespace_id;
+  const queue = (name: string) => queues?.find?.((q) => q.queue_name === name)?.queue_id;
+  const found = {
+    SourceRepository: namespace('SourceRepository'),
+    ObjectPushQueue: namespace('ObjectPushQueue'),
+    CheckContainer: namespace('CheckContainer'),
+    [`${site.script}-jobs`]: queue(`${site.script}-jobs`),
+    [`${site.script}-dead-letter`]: queue(`${site.script}-dead-letter`),
+    [`${site.script}-checkcontainer`]: apps?.find?.(
+      (a) => a.name === `${site.script}-checkcontainer`,
+    )?.id,
+  };
+  const missing = Object.entries(found).filter(([, value]) => typeof value !== 'string');
+  if (missing.length)
+    throw new TelemetryError(
+      'config',
+      `Cannot look up watch ids: ${missing.map(([name]) => name).join(', ')} not found`,
+    );
+  const v = Object.values(found) as string[];
+  return {
+    namespaces: { source_repository: v[0], object_push_queue: v[1], check_runs: v[2] },
+    queues: { jobs: v[3], deadLetter: v[4] },
+    checkApp: v[5],
+  };
+}
+
 export class CloudflareAnalytics implements AnalyticsSource {
+  private resolved: WatchTarget | null = null;
   constructor(
-    private readonly target: WatchTarget,
+    private readonly site: WatchSite,
     private readonly token: string,
   ) {}
+
+  /** The configured ids, else the ones looked up by name (once per instance, so per run). */
+  async target(): Promise<WatchTarget> {
+    if (!this.resolved) {
+      const { ids, ...site } = this.site;
+      this.resolved = { ...site, ...(ids ?? (await resolveIds(this.site, this.token))) };
+    }
+    return this.resolved;
+  }
 
   async collect(now: number): Promise<Analytics> {
     const end = new Date(now - INGEST_DELAY_MS);
@@ -107,7 +173,7 @@ export class CloudflareAnalytics implements AnalyticsSource {
       start: new Date(end.getTime() - WINDOW_MS).toISOString(),
       end: end.toISOString(),
     };
-    const t = this.target;
+    const t = await this.target();
     const variables = {
       account: t.account,
       ...window,
@@ -146,7 +212,7 @@ export class CloudflareAnalytics implements AnalyticsSource {
    */
   async diagnose() {
     const verify = async (path: string) => {
-      const res = await fetch(`https://api.cloudflare.com/client/v4${path}/tokens/verify`, {
+      const res = await fetch(`${API_URL}${path}/tokens/verify`, {
         headers: { authorization: `Bearer ${this.token}` },
         redirect: 'manual',
         signal: AbortSignal.timeout(10_000),
@@ -156,7 +222,7 @@ export class CloudflareAnalytics implements AnalyticsSource {
     };
     const [user, account] = await Promise.all([
       verify('/user'),
-      verify(`/accounts/${this.target.account}`),
+      verify(`/accounts/${this.site.account}`),
     ]);
     // Named markers only, so a pasted command or header is recognisable without its value.
     const markers = Object.entries({
