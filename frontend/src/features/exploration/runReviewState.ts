@@ -24,7 +24,8 @@ export function selectionBlocker(snapshot: Snapshot, run: RecordValue, candidate
   if (run.status === 'cancelled') return 'This run was cancelled.';
   if (run.status === 'accepted') return 'This run has already been selected.';
   if (!candidate) return 'Waiting for a captured result.';
-  if (run.comparison?.version === 1) {
+  // A compare run publishes only the result the owner chose; choosing advances its branch.
+  if (run.mode === 'compare') {
     if (runHasActiveAttempts(snapshot, run)) return 'Wait for agents to finish before publishing.';
     if (!refreshesSelection(snapshot, run, candidate))
       return 'Choose this checked result before publishing it.';
@@ -128,6 +129,20 @@ export function runAttention(snapshot: Snapshot, run: RecordValue): RunAttention
             ? 'Review team result'
             : 'Review result',
       candidate: reviewable.length === 1 ? reviewable[0] : undefined,
+    };
+  const choices =
+    run.mode === 'compare' && !run.comparison?.selected_candidate_id
+      ? current.filter(
+          (candidate) => candidate.status === 'eligible' && !rejectionOf(snapshot, candidate),
+        )
+      : [];
+  if (choices.length && !runHasActiveAttempts(snapshot, run))
+    return {
+      tone: 'review',
+      title: 'Choose a result',
+      detail: `${choices.length} result${choices.length === 1 ? '' : 's'} passed the required checks. Pick one with "Use this result"; nothing from this run has been published.`,
+      action: 'results',
+      actionLabel: 'Compare results',
     };
   const eligible = runCandidates(snapshot, run).find(
     (candidate) => candidate.status === 'eligible',
