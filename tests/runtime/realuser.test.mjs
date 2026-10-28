@@ -183,3 +183,33 @@ test('a ref just moved is polled within the refs snapshot bound', async () => {
   assert.equal(await settledRef(never, 'r1', 'refs/heads/x', 'c'), undefined);
   assert.ok(Date.now() - started >= 2500, 'gave up before the bound');
 });
+
+test('cleanup deletes scratch branches at their current heads, read as of the current version', async () => {
+  const { deleteScratch } = await import('../../tools/staging/realuser-flow.mjs');
+  const branch = `refs/heads/realuser/${TS}-work`;
+  const calls = [];
+  let heads = { 'refs/heads/main': 'm', [branch]: 'old' };
+  const fake = (batch) => ({
+    get: async (path) => {
+      calls.push(path);
+      return path.endsWith('/r1') ? { version: 42 } : { refs: heads };
+    },
+    raw: async (method, path, body) => {
+      calls.push(`${method} ${path} ${JSON.stringify(body.updates)}`);
+      return batch(body);
+    },
+  });
+  // A head that moved between read and delete is read again and deleted at its new value.
+  let tries = 0;
+  const moving = fake(() => (++tries === 1 ? ((heads = { ...heads, [branch]: 'new' }), { ok: false, status: 409, body: { error: { code: 'STALE_HEAD', message: 'Stale expected heads' } } }) : { ok: true }));
+  assert.equal(await deleteScratch(moving, 'r1', TS), 1);
+  assert.ok(calls.includes('/repos/r1/refs?min_version=42'), calls.join('\n'));
+  assert.match(calls.at(-1), /"expected":"new"/);
+  assert.ok(!calls.some((c) => c.includes('refs/heads/main"')), 'main is never in a delete');
+  // Any other refusal is reported with the platform's reason.
+  heads = { [branch]: 'x' };
+  const refused = fake(() => ({ ok: false, status: 403, body: { error: { code: 'FORBIDDEN', message: 'no' } } }));
+  await assert.rejects(deleteScratch(refused, 'r1', TS), /refs\/batch refused: 403 FORBIDDEN no/);
+  heads = {};
+  assert.equal(await deleteScratch(refused, 'r1', TS), 0);
+});
