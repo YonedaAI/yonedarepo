@@ -133,6 +133,7 @@ export async function treesFor(
   ids: string[],
   read = (id: string) => treeFor(objects, id),
   seen?: SeenTrees,
+  stats?: ReadStats,
 ) {
   const known: Json[] = [];
   const asked: string[] = [];
@@ -150,7 +151,7 @@ export async function treesFor(
     objects.repo,
     asked.map((id) => ({ id, kind: 'tree' })),
     RANGE,
-    seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep } : {},
+    seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep, stats } : { stats },
   );
   const rest = await inBatches(
     asked.filter((id) => !bundled.has(id)),

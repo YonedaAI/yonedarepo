@@ -7,7 +7,7 @@
 // (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
-import type { ReadStats } from './repo-bundles';
+import { ReadStats } from './repo-bundles';
 import { compute } from './repo-compute';
 import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
@@ -94,7 +94,7 @@ export async function sendPack(
   let listed: Json;
   try {
     const started = performance.now();
-    listed = await enumerate(session, objects);
+    listed = await enumerate(session, objects, stats?.walkReads);
     if (stats) stats.walk = performance.now() - started;
   } catch (e: any) {
     session.close();
@@ -135,13 +135,13 @@ export function errLine(head: Uint8Array, e: any) {
 }
 
 /** Lists what to send, reading the trees each commit's diff needs. */
-export async function enumerate(session: UploadSession, objects: RepoObjects) {
+export async function enumerate(session: UploadSession, objects: RepoObjects, stats?: ReadStats) {
   const seen = new SeenTrees();
   let step = session.step({});
   for (let round = 0; step.need_trees; round++) {
     if (round >= WALK_ROUNDS)
       throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen);
+    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
     step = session.step({ trees });
   }
   return step;
@@ -208,7 +208,9 @@ export class PackStats {
   walk = 0;
   waited = 0;
   raw = 0;
-  readonly reads: ReadStats = { reads: 0, bytes: 0 };
+  /** The walk's ranged reads (trees) and the pack's (commits and files). */
+  readonly walkReads = new ReadStats();
+  readonly reads = new ReadStats();
   private entries = 0;
   private deltas = 0;
   private bytes = 0;
@@ -229,8 +231,8 @@ export class PackStats {
       `deltas=${this.deltas}`,
       `raw=${mib(this.raw)}MiB`,
       `sent=${mib(this.bytes)}MiB`,
-      `reads=${this.reads.reads}`,
-      `read=${mib(this.reads.bytes)}MiB`,
+      ...this.walkReads.fields('walk_'),
+      ...this.reads.fields(),
       `read_wait=${ms(this.waited)}ms`,
       `stream=${ms(performance.now() - this.started - this.walk)}ms`,
     ];

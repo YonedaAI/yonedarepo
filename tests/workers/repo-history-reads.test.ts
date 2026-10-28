@@ -122,6 +122,9 @@ it('clones a pushed history in a few bundle reads per directory level', async ()
   });
   const line = /yoneda-timing (.*)\n/.exec(new TextDecoder('latin1').decode(timed))?.[1] ?? '';
   expect(line).toMatch(/entries=59 /);
+  // Walk and pack reads each report what they read against what they wanted.
+  expect(line).toMatch(/walk_reads=\d+ walk_read=[\d.]+MiB walk_wanted=[\d.]+MiB walk_bundles=1 walk_span=/);
+  expect(line).toMatch(/ reads=\d+ read=[\d.]+MiB wanted=[\d.]+MiB bundles=1 span=/);
   expect(Number(/deltas=(\d+)/.exec(line)?.[1])).toBeGreaterThanOrEqual(4);
   // A partial clone: the same walk, and the commits (no files).
   const partial = await bundleReads(repo, async () => (count = await fetchV2(repo, token, [`want ${tip}`, 'filter blob:none', 'done'])));
