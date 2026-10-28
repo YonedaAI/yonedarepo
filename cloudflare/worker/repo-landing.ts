@@ -43,6 +43,8 @@ async function adoptAndLand(ctx: RepoContext, sha: string, land: Json) {
     await awaitProjection(ctx.env, ctx.repo);
     return ctx.call(land);
   }
+  // A concurrent window reaching archived versions: the caller fetches them and retries.
+  if (landed.error?.code === 'TXLOG_ARCHIVED') return ctx.call(land);
   if (landed.error) throw new ApiError(landed.error.code, landed.error.message);
   return landed;
 }

@@ -2,6 +2,7 @@
 //! ref transitions with the paths each one touched. Snapshots are `(version → refs)`;
 //! writers commit optimistically and are checked against entries after their base version.
 mod access;
+pub mod archive;
 mod checkpoint;
 mod entry;
 mod occ;
