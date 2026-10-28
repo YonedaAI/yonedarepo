@@ -5,9 +5,9 @@
 // Git through a personal token limited to the org. Removing it from the team must refuse
 // its next push within the access bound (ACCESS_MS, 1 s): a push may still pass only if it
 // starts inside the bound, and one started after it must be refused. The token reaches Git
-// only through the environment (http.extraHeader), never an argument; it is revoked and the
-// repository deleted at the end. Organizations have no delete operation, so the org stays
-// (named in the metrics).
+// only through the environment (http.extraHeader), never an argument; it is revoked, the
+// repository deleted and then the org (refused while it still owns the repository; its name
+// is retired for good).
 //
 // Usage: node tools/staging-realworld.mjs --orgs [--origin <front>] [--api <platform host>]
 import assert from 'node:assert/strict';
@@ -27,7 +27,6 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
   const name = `kit-orgs-${Date.now()}`;
   const status = async (session, method, url, body) => (await session.raw(method, url, body)).status;
   metrics.org = org;
-  metrics.org_left = 'organizations have no delete operation';
 
   await platform.post('/orgs', { name: org });
   await platform.post(`/orgs/${org}/teams`, { name: 'devs' });
@@ -105,6 +104,12 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
     rmSync(dir, { recursive: true, force: true });
     if (pat) await member.raw('DELETE', `/tokens/${pat.id}`);
     await platform.raw('DELETE', `/orgs/${org}/members/${memberName}`);
+    const owning = await platform.raw('DELETE', `/orgs/${org}?confirm=${org}`);
     await platform.raw('DELETE', `${path}?confirm=${encodeURIComponent(name)}`);
+    const deleted = await platform.raw('DELETE', `/orgs/${org}?confirm=${org}`);
+    metrics.org_delete = { while_owning: owning.status, after: deleted.status };
   }
+  assert.equal(metrics.org_delete.while_owning, 409, 'an org that owns a repository is not deleted');
+  assert.equal(metrics.org_delete.after, 200, `the org is deleted: ${metrics.org_delete.after}`);
+  assert.equal((await platform.raw('GET', `/orgs/${org}`)).status, 404, 'a deleted org is gone');
 }
