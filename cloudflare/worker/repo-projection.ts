@@ -4,6 +4,7 @@
 // exactly what landed: one receive-pack carries every object Artifacts lacks plus the ref
 // update, with the last projected value as an expected-old lease; a refusal is recorded
 // as drift and left for the owner, never forced.
+import { noteBundles } from './repo-bundles';
 import { compute } from './repo-compute';
 import { fromBase64, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
@@ -124,6 +125,8 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
   const { pending } = await call({ op: 'repo_projection_pending' });
   if (pending.length === 0) return { projected: 0 };
   const status = await call({ op: 'repo_status' });
+  // A repository with bundles has its objects located in bulk, not one staged read per 64.
+  if (status.bundled) noteBundles(envelope.repo_id);
   const objects = new RepoObjects(env, envelope.repo_id, parseStore(env, status.object_store));
   let projected = 0;
   let retry = 0;
@@ -137,7 +140,9 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
     }
     const wanted = commits.flatMap((c) => c.objects);
     const raw = await objects.raw(wanted);
-    if (raw.length < wanted.length) throw new Error(`Objects for ${row.refname} are not readable`);
+    // `raw` answers each object once; commits may share one (a batch's tree is its change's).
+    if (raw.length < new Set(wanted.map((o) => o.id)).size)
+      throw new Error(`Objects for ${row.refname} are not readable`);
     const { push_b64 } = compute({
       op: 'branch_push',
       refname: row.refname,

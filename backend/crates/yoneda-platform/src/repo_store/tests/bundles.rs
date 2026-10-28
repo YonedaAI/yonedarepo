@@ -61,6 +61,31 @@ fn indexes_and_locates_bundled_objects_for_the_platform_only() {
 }
 
 #[test]
+fn answers_locations_with_a_staged_read_and_flags_bundled_repositories() {
+    let h = Harness::new();
+    let status = |h: &Harness| h.ok(OWNER, json!({"op": "repo_status"}))["bundled"].clone();
+    let staged = |locate: bool| {
+        h.ok(
+            PROJECTOR,
+            json!({"op": "repo_staged_objects", "ids": [id(1), id(3)], "locate": locate}),
+        )
+    };
+    assert_eq!(status(&h), false);
+    assert_eq!(staged(true)["located"], json!([]));
+    let objects = json!([{"id": id(1), "kind": "blob", "at": 25, "size": 7}]);
+    index(&h, PROJECTOR, BUNDLE, objects).unwrap();
+    assert_eq!(status(&h), true);
+    let read = staged(true);
+    assert_eq!(read["objects"], json!([]));
+    assert_eq!(
+        read["located"],
+        json!([{"id": id(1), "bundle": BUNDLE, "at": 25, "size": 7, "kind": "blob"}])
+    );
+    // Without `locate`, the staged read answers as before.
+    assert!(staged(false).get("located").is_none());
+}
+
+#[test]
 fn refuses_malformed_index_rows_and_oversized_calls() {
     let h = Harness::new();
     let one = |object: Value| json!([object]);

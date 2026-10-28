@@ -238,7 +238,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_projection_result" => projection::result(db, c),
         "repo_objects_pending" => staging::pending(db),
         "repo_objects_projected" => staging::projected(db, c),
-        "repo_staged_objects" => staging::read(db, c),
+        "repo_staged_objects" => pushed::bundles::staged(db, c),
         "repo_projection_objects" => store_lineage::unprojected(db, c),
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
