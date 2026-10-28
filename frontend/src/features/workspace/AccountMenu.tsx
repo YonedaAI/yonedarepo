@@ -1,17 +1,28 @@
-import { ChevronDown, LogOut, UserRound } from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, LogOut, PlugZap, Settings, UserRound } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
+import { linkTo, type Navigate } from '../shell/useRoute';
 
 export function AccountMenu({
   identity,
+  navigate,
+  onConnect,
   onSignOut,
   onError,
 }: {
   identity: AccountIdentity | null;
+  /** Account settings and the CLI/MCP help; absent where the shell offers neither. */
+  navigate?: Navigate;
+  onConnect?: () => void;
   onSignOut: () => Promise<void>;
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const menu = useRef<HTMLDetailsElement>(null);
+  const closed = (then: () => void) => () => {
+    if (menu.current) menu.current.open = false;
+    then();
+  };
   const label =
     identity?.role === 'user'
       ? identity.username
@@ -26,6 +37,7 @@ export function AccountMenu({
         : 'Connected workspace';
   return (
     <details
+      ref={menu}
       className="account-menu"
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
@@ -49,6 +61,21 @@ export function AccountMenu({
           Signed in as <strong>{label}</strong>
           <small>{description}</small>
         </p>
+        {navigate && (
+          <a
+            {...linkTo({ view: 'settings' }, (route) => closed(() => navigate(route))())}
+            className="account-item"
+          >
+            <Settings size={15} aria-hidden="true" />
+            Settings
+          </a>
+        )}
+        {onConnect && (
+          <button type="button" onClick={closed(onConnect)}>
+            <PlugZap size={15} aria-hidden="true" />
+            Connect agents (CLI, MCP)
+          </button>
+        )}
         <button
           type="button"
           disabled={busy}

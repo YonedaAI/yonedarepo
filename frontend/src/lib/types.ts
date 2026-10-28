@@ -58,6 +58,8 @@ export interface Repository {
   remote: { namespace: string; name: string };
   /** The platform repository holding this project's source; the owner lands there. */
   platform_repo?: string;
+  /** The workspace record's binding to that platform repository (set during setup). */
+  platform?: { repo: string };
   policy?: {
     suite: string;
     version: string;

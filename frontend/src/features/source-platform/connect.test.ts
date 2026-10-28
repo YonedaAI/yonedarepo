@@ -59,20 +59,29 @@ describe('connect snippets', () => {
   });
 });
 
-describe('connect, tokens and device routes', () => {
-  it('round-trips the new views', () => {
+describe('settings, connect and device routes', () => {
+  it('round-trips the views', () => {
     for (const route of [
-      { view: 'tokens' } as const,
-      { view: 'connect', repo } as const,
+      { view: 'settings' } as const,
+      { view: 'repo-settings', repo, section: 'connect' } as const,
       { view: 'device', code: 'BCDF-GHJK' } as const,
       { view: 'device', code: '' } as const,
     ]) {
       const [path, search = ''] = formatSourceRoute(route).split('?');
       expect(parseSourceRoute(path, search ? `?${search}` : '')).toEqual(route);
     }
-    expect(formatSourceRoute({ view: 'tokens' })).toBe('/source/tokens');
-    expect(formatSourceRoute({ view: 'connect', repo })).toBe(`/source/${repo}/connect`);
+    expect(formatSourceRoute({ view: 'settings' })).toBe('/settings');
+    expect(formatSourceRoute({ view: 'repo-settings', repo, section: 'connect' })).toBe(
+      `/source/${repo}/settings/connect`,
+    );
     expect(formatSourceRoute({ view: 'device', code: 'BCDF-GHJK' })).toBe('/device?code=BCDF-GHJK');
+    // Older addresses still open the page that replaced them.
+    expect(parseSourceRoute('/source/tokens', '')).toEqual({ view: 'settings' });
+    expect(parseSourceRoute(`/source/${repo}/connect`, '')).toEqual({
+      view: 'repo-settings',
+      repo,
+      section: 'connect',
+    });
     expect(parseSourceRoute('/device', '?code=bcdfghjk')).toEqual({
       view: 'device',
       code: 'BCDF-GHJK',

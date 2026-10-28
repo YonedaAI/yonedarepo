@@ -1,0 +1,568 @@
+/* The one app shell: sidebar repository links, header breadcrumb, home, a repository's head,
+   tabs and chips, the Code tab, History segments, Settings and the New repository dialog. */
+.repository-list a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  color: #526175;
+  font-size: 13px;
+}
+.repository-list a:hover {
+  background: #f3f6fa;
+}
+.repository-list a.active {
+  background: #edf3ff;
+  color: #244da1;
+  font-weight: 500;
+}
+.rail-repo-name,
+.rail-repo-shared {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-repo-shared {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 10px;
+}
+.workspace-breadcrumb > a {
+  color: var(--muted);
+}
+.workspace-breadcrumb > a:hover {
+  color: var(--blue);
+}
+
+/* Home */
+.home-repos {
+  max-width: 880px;
+  padding: 32px;
+}
+.home-repos h1 {
+  margin: 0;
+}
+.home-repo-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.home-repo-list a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.home-repo-list a:hover {
+  border-color: var(--blue);
+}
+.home-repo-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.home-repo-name {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.home-repo-meta {
+  color: var(--muted);
+}
+.home-repo-list svg {
+  color: var(--muted);
+}
+
+/* A repository */
+.repo-page {
+  padding: 24px 32px 48px;
+  min-width: 0;
+}
+.repo-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.repo-head h1 {
+  font-size: 24px;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+}
+a.chip:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+.repo-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin: 0 0 18px;
+  overflow-x: auto;
+}
+.repo-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.repo-tabs a:hover {
+  color: #152436;
+}
+.repo-tabs a[aria-current="page"] {
+  color: var(--blue);
+  border-bottom-color: var(--blue);
+  font-weight: 500;
+}
+.repo-tabs a:focus-visible {
+  outline-offset: -3px;
+}
+.repo-view > .workspace-tabs {
+  margin: 0 0 16px;
+  padding: 0;
+  background: transparent;
+}
+.source-empty-state {
+  border: 1px dashed #c5d6e1;
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--surface);
+}
+.source-empty-state p {
+  margin: 0 0 8px;
+}
+.source-empty-state a,
+.source-note a,
+.readme-body a {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+/* Code */
+.source-toolbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+.source-crumbs {
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.source-crumbs a {
+  color: var(--blue);
+}
+.source-crumbs a:hover {
+  text-decoration: underline;
+}
+.source-crumbs [aria-current="page"] {
+  font-weight: 500;
+}
+.toolbar-link {
+  color: var(--blue);
+  font-size: 13px;
+}
+.clone-menu {
+  position: relative;
+}
+.clone-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  padding: 7px 14px;
+  border-radius: 7px;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 500;
+}
+.clone-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.clone-dropdown {
+  position: absolute;
+  z-index: 10;
+  right: 0;
+  top: calc(100% + 6px);
+  width: min(520px, calc(100vw - 32px));
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px #12243b18;
+}
+.latest-commit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+}
+.latest-commit strong {
+  font-weight: 500;
+}
+.latest-message {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.latest-commit a:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.latest-commit > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.latest-commit .latest-meta {
+  gap: 10px;
+  color: var(--muted);
+}
+.file-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.file-table td {
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+}
+.file-table tr:hover td {
+  background: #f8fafc;
+}
+.file-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.file-name {
+  width: 30%;
+  white-space: nowrap;
+}
+.file-name a:hover,
+.file-message a:hover {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.latest-commit + .source-table-wrap .file-table,
+.latest-commit + .source-empty {
+  border-radius: 0 0 8px 8px;
+}
+.file-icon-tree {
+  color: var(--blue);
+}
+.file-message {
+  color: var(--muted);
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-age {
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+  width: 1%;
+}
+.readme {
+  margin-top: 16px;
+}
+.readme-body {
+  padding: 4px 24px 16px;
+  line-height: 1.6;
+}
+.readme-body h2,
+.readme-body h3 {
+  margin: 18px 0 8px;
+  font-weight: 600;
+}
+.readme-body h2 {
+  font-size: 22px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.readme-body h3 {
+  font-size: 17px;
+}
+.readme-body p {
+  color: #152436;
+}
+.readme-body pre {
+  background: #f6f8fb;
+  padding: 12px;
+  border-radius: 6px;
+}
+.readme-body blockquote {
+  margin: 0 0 12px;
+  padding-left: 12px;
+  border-left: 3px solid var(--line);
+  color: var(--muted);
+}
+
+/* History */
+.segmented {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: inline-flex;
+  border: 1px solid #c5d6e1;
+  border-radius: 7px;
+  overflow: hidden;
+}
+.segmented button {
+  background: #fff;
+  color: #203a5b;
+  border-radius: 0;
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.segmented button + button {
+  border-left: 1px solid #c5d6e1;
+}
+.segmented button[aria-pressed="true"] {
+  background: #edf3ff;
+  color: var(--blue);
+}
+.segmented button:focus-visible {
+  outline-offset: -3px;
+}
+
+/* Settings */
+.repo-settings {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 28px;
+}
+.settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+}
+.settings-nav a {
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: #526175;
+  font-size: 13px;
+}
+.settings-nav a:hover {
+  background: #f3f6fa;
+}
+.settings-nav a[aria-current="page"] {
+  background: #edf3ff;
+  color: #244da1;
+  font-weight: 500;
+}
+.settings-body {
+  min-width: 0;
+  max-width: 820px;
+}
+.settings-body h2 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+.settings-body h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 20px 0 6px;
+}
+.settings-form {
+  display: grid;
+  gap: 16px;
+}
+.settings-wide {
+  max-width: 640px;
+}
+.settings-runner {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.settings-runner-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.settings-runner-head strong {
+  font-weight: 500;
+  margin-right: auto;
+}
+.settings-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+}
+.settings-add {
+  margin: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 12px 0;
+}
+.settings-save {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.settings-saved {
+  color: var(--success);
+  font-size: 13px;
+}
+.settings-problem {
+  color: #a0262f;
+  font-size: 12px;
+}
+.settings-url {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-row-actions {
+  display: flex;
+  gap: 6px;
+}
+.settings-deliveries {
+  margin: 12px 0;
+}
+.settings-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+.settings-facts dt {
+  color: var(--muted);
+}
+.settings-facts dd {
+  margin: 0;
+}
+.account-settings {
+  padding: 28px 32px 48px;
+}
+.account-settings h1 {
+  font-size: 24px;
+}
+.account-dropdown a.account-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: 7px;
+  color: #526175;
+  font-size: 12px;
+  font-weight: 500;
+}
+.account-dropdown a.account-item:hover {
+  background: #f3f6fa;
+}
+
+/* New repository */
+.dialog .new-repository-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.new-repository-option input {
+  margin-top: 3px;
+}
+.new-repository-text {
+  display: grid;
+  gap: 2px;
+}
+.new-repository-text small {
+  color: var(--muted);
+  font-weight: 400;
+}
+.new-repository-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 800px) {
+  .repo-page,
+  .home-repos,
+  .account-settings {
+    padding: 16px;
+  }
+  .repo-settings {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .settings-nav {
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+  }
+  .settings-nav a {
+    white-space: nowrap;
+  }
+  .source-toolbar-end {
+    margin-left: 0;
+  }
+  .file-name {
+    width: auto;
+  }
+  .file-message {
+    display: none;
+  }
+  .clone-dropdown {
+    left: 0;
+    right: auto;
+  }
+}

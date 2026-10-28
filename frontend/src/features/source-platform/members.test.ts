@@ -76,9 +76,10 @@ describe('members panel', () => {
     expect(html(RepoMembers, { repo })).toContain('Loading your access');
   });
 
-  it('has its own address', () => {
-    const route = { view: 'members' as const, repo };
-    expect(formatSourceRoute(route)).toBe(`/source/${repo}/members`);
+  it('is a section of repository Settings; the older address still opens it', () => {
+    const route = { view: 'repo-settings' as const, repo, section: 'members' as const };
+    expect(formatSourceRoute(route)).toBe(`/source/${repo}/settings/members`);
+    expect(parseSourceRoute(`/source/${repo}/settings/members`, '')).toEqual(route);
     expect(parseSourceRoute(`/source/${repo}/members`, '')).toEqual(route);
   });
 });
