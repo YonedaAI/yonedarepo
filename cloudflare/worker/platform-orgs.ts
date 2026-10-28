@@ -132,8 +132,9 @@ export async function orgsRoute(
   const post = method === 'POST';
   const del = method === 'DELETE';
   if (!name && get) {
-    const { orgs } = orgCaller(auth, false);
+    // An org-limited token may list, and sees only its own org.
     const limit = '_pat' in auth ? auth._pat.org : null;
+    const { orgs } = orgCaller(auth, false, limit ?? undefined);
     return {
       orgs: Object.entries(orgs ?? {})
         .filter(([org]) => !limit || org === limit)

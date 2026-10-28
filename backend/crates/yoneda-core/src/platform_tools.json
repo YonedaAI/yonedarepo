@@ -2406,7 +2406,7 @@
   },
   {
     "name": "git_hook_create",
-    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed or change.closed; titles and comment text only for hooks without paths); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed or change.closed; titles and comment text only for hooks without paths), release (release.published or release.deleted); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2424,7 +2424,8 @@
               "branch",
               "tag",
               "check",
-              "change"
+              "change",
+              "release"
             ]
           }
         },
