@@ -85,26 +85,21 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             )
         })?,
     };
-    let mut records = Vec::new();
-    for chunk in paths(c)?.chunks(100) {
-        let marks = vec!["?"; chunk.len()].join(",");
-        let mut params: Vec<Value> = chunk.iter().map(|p| json!(p)).collect();
-        params.push(json!(at));
-        let rows = db.query(
-            &format!("SELECT seq,path,symbol_path,commit_id,node_digest,contract,recorded_by,recorded_at,recorded_version FROM symbol_contracts WHERE path IN ({marks}) AND recorded_version<=? ORDER BY seq"),
-            &params,
-        )?;
-        for row in rows {
-            let contract: Value =
-                serde_json::from_str(row["contract"].as_str().unwrap_or_default())
-                    .map_err(|_| rows::corrupt("contract record"))?;
-            records.push(json!({ "seq": row["seq"], "path": row["path"],
-                "symbol_path": row["symbol_path"], "commit": row["commit_id"],
-                "node_digest": row["node_digest"], "contract": contract,
-                "recorded_by": row["recorded_by"], "recorded_at": row["recorded_at"],
-                "recorded_version": row["recorded_version"] }));
-        }
+    // The paths go as one JSON array: a parameter each would pass the 100 a statement binds.
+    let rows = db.query(
+        "SELECT seq,path,symbol_path,commit_id,node_digest,contract,recorded_by,recorded_at,recorded_version FROM symbol_contracts \
+         WHERE path IN (SELECT value FROM json_each(?)) AND recorded_version<=? ORDER BY seq",
+        &[json!(json!(paths(c)?).to_string()), json!(at)],
+    )?;
+    let mut records = Vec::with_capacity(rows.len());
+    for row in rows {
+        let contract: Value = serde_json::from_str(row["contract"].as_str().unwrap_or_default())
+            .map_err(|_| rows::corrupt("contract record"))?;
+        records.push(json!({ "seq": row["seq"], "path": row["path"],
+            "symbol_path": row["symbol_path"], "commit": row["commit_id"],
+            "node_digest": row["node_digest"], "contract": contract,
+            "recorded_by": row["recorded_by"], "recorded_at": row["recorded_at"],
+            "recorded_version": row["recorded_version"] }));
     }
-    records.sort_by_key(|r| r["seq"].as_i64());
     Ok(json!({ "version": at, "records": records }))
 }
