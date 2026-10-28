@@ -5,7 +5,7 @@
 // authorities to ask on their requests, org-access.ts) and drops this isolate's org access
 // copies after a change, so removals reach repositories within ACCESS_MS.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
-import { forgetOrgAccess, type OrgAccess, teamKey } from './org-access';
+import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import type { Env } from './types';
