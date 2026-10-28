@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { see } from '../../tools/staging/browser-collab-flow.mjs';
 import { cookieHeader, scrub, settle } from '../../tools/staging/browser-flow.mjs';
 
 test('cookie header joins every cookie', () => {
@@ -22,4 +23,10 @@ test('settle stops at the first visible failure with its text', async () => {
 
 test('settle times out when nothing shows', async () => {
   await assert.rejects(settle(shown(false), [], { timeoutMs: 0, what: 'sign-in' }), /Timed out waiting for sign-in/);
+});
+
+test('see names what is missing instead of the selector dump', async () => {
+  const missing = { first: () => ({ waitFor: async () => Promise.reject(new Error('Timeout 10ms exceeded.\nCall log: …')) }) };
+  await assert.rejects(see(missing, 'the Releases empty state', 10), /^Error: the Releases empty state is not shown \(Timeout 10ms exceeded\.\)$/);
+  await see({ first: () => ({ waitFor: async () => {} }) }, 'anything');
 });

@@ -6,13 +6,15 @@
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
 // page (the platform refuses an author's own approval); the page and the API must both read it
 // back landed. A second branch, cut from main before that landing, is then behind main: its
-// Change page's "Rebase on main" replays it onto main. Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// Change page's "Rebase on main" replays it onto main. Releases, forks and organizations follow
+// (browser-collab-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
+import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep } from './client.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
@@ -69,6 +71,9 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     const repo = await sourcePages(page, origin, account, { api, shot, cleanup }, m);
     const landed = await changeLanded(page, { origin, kit, account, repo, shot }, m);
     await changeRebased(page, { origin, account, repo, shot, ...landed }, m);
+    await releasePages(page, { account, repo, shot }, m);
+    await forkPages(page, { account, repo, shot, cleanup }, m);
+    await orgPages(page, { account, member: landed.member, shot, cleanup }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
@@ -91,6 +96,14 @@ export async function signIn(page, origin, { KIT_USERNAME, KIT_PASSWORD }) {
   await password.fill(KIT_PASSWORD);
   await password.press('Enter');
   await settle(page.getByRole('button', { name: 'New repository' }).first(), [page.getByRole('alert')], { timeoutMs: 30_000, what: 'sign-in' });
+}
+
+/** The account menu's Settings page (its summary is labelled "Account: <name>"). */
+export async function accountSettings(page) {
+  const menu = page.locator('details.account-menu');
+  await menu.getByLabel(/^Account:/).click();
+  await menu.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
 }
 
 /** "New repository" opens a dialog that creates a platform repository seeded with a README. */
@@ -140,11 +153,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   assert.ok(m.clone_url.startsWith(`git clone ${api}/git/${id}.git`), `the HTTPS clone line is not on ${api}: ${m.clone_url}`);
   assert.ok((await copied('clone')).startsWith(`git clone yoneda::${api}/${id}`), `the yoneda:: clone line is not on ${api}`);
   await shot('source-connect');
-  // The account menu (top right): its summary is labelled "Account: <name>".
-  const menu = page.locator('details.account-menu');
-  await menu.getByLabel(/^Account:/).click();
-  await menu.getByRole('link', { name: 'Settings' }).click();
-  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
+  await accountSettings(page);
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
   await shot('account-settings');
   m.source_pages = 'code,history,changes,settings,connect,account-settings';

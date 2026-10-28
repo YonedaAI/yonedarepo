@@ -43,8 +43,9 @@
 //          record reads back; zero model spend)
 //        node tools/staging-realworld.mjs --browser [--headed]
 //          (= --only 0,browser: headless system Chrome signs the kit account in through the
-//          login form, opens a new repository's pages, and approves and lands a change request
-//          on its Change page; zero model spend. Needs Google Chrome; screenshots in
+//          login form, opens a new repository's pages, approves and lands a change request on
+//          its Change page, publishes a release with an asset, forks and opens a change on the
+//          parent, and creates an org with a team and an org-owned repository; zero model spend. Needs Google Chrome; screenshots in
 //          .local/staging/browser-<ts>/. Also part of the full kit)
 //        node tools/staging-realworld.mjs --only 0,20 [--compaction-versions 20000]
 //          (log compaction: grow a repository's log through POST /refs/batch, compact with the
@@ -170,7 +171,7 @@ await step('24', 'Orgs: a team member pushes to an org repository; removal from 
 await step('reads', 'Declared reads: a stale read is refused on a plain git push; session records', (m) =>
   readsSessionsFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
-await step('browser', 'Browser: sign in, source pages, a change request approved and landed in the UI', (m) =>
+await step('browser', 'Browser: sign in, source pages, a change landed, releases, forks and orgs in the UI', (m) =>
   browserFlow({ origin: values.origin, api: values.api, kit, root, headed: values.headed }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
