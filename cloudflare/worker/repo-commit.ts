@@ -1,6 +1,7 @@
 // The platform's write path: server-side commits (prepare, then accept: staged in the
 // authority or pushed to the object store) and the revert/cherry-pick replays built on
 // them. Reads and the authority caller live in repo-ops.
+import { afterAnswer } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { commitInShard, shardable } from './repo-commit-shard';
@@ -89,8 +90,8 @@ export async function commit(
     if (prepared.staged) {
       record = { op: 'repo_record_commit', commit: prepared.commit, staged: true };
       // The edge copy spares the first reads a trip to the authority's staged copy; it is
-      // written while the commit is recorded and settles before the answer.
-      edge = timed('cache', () => store.cache(all, 'edge'));
+      // written after the answer (reads fall back to the staged copy meanwhile).
+      edge = afterAnswer(() => timed('cache', () => store.cache(all, 'edge')));
     } else {
       // Immutable and keyed by id, so the cache write runs alongside the push. A large
       // import writes through only its commit: thousands of tier writes cost minutes

@@ -3,7 +3,8 @@
 // so a hosted run can attribute that tail, and the record's durability once answered.
 // Local workerd is single-threaded: the timings here are relative only.
 import { evictDurableObject } from 'cloudflare:test';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import { withWaitUntil } from '../../cloudflare/worker/background';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { shardCall, shardOf } from '../../cloudflare/worker/repo-shards';
 import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -124,4 +125,31 @@ it('measures the record sub-phases in the many-repo burst shape', async () => {
     }),
   );
   console.log(JSON.stringify({ measured: 'commit phases p50/p95 (samples), 4 repos x 10 writers, local workerd', ...summary }));
+});
+
+it('answers a commit without waiting for the edge cache', async () => {
+  const { repo, token } = await burstRepo('edgeslow');
+  // A Cache API put that takes seconds (seen hosted on 2026-10-28: commit p95 18.7 s, all of
+  // it in `cache.edge`) must not hold the answer: the edge copy is written after it, on the
+  // waitUntil the entrypoint lends (lent here as the entrypoint does).
+  const slow = vi
+    .spyOn(caches.default, 'put')
+    .mockImplementation(() => new Promise((done) => setTimeout(done, 3_000)));
+  const after: Promise<unknown>[] = [];
+  try {
+    const started = Date.now();
+    const made = await withWaitUntil(
+      (work) => after.push(work),
+      () => commitOn(repo, token, 'w/edge.txt'),
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(made.phases['cache.edge']).toBeUndefined();
+    expect(after.length).toBeGreaterThan(0);
+    // The commit reads back at once, from the tiers behind the edge.
+    const read = await api(`${repo}/blob?path=w/edge.txt&commit=${made.body.commit}`, { token });
+    expect(read.status).toBe(200);
+  } finally {
+    await Promise.all(after);
+    slow.mockRestore();
+  }
 });
