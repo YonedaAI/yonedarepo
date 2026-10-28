@@ -135,3 +135,24 @@ test('with YONEDA_AGENT_WORKDIR, a session in any other directory is refused eve
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("the hook log keeps a hook's stderr, which opencode does not show", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yoneda-opencode-'));
+  const bin = join(dir, 'yoneda');
+  writeFileSync(bin, '#!/bin/sh\ncat >/dev/null\necho "yoneda hook: session record for c1 not posted: 409" >&2\n');
+  chmodSync(bin, 0o755);
+  const log = join(dir, 'hooks.jsonl');
+  const saved = { bin: process.env.YONEDA_BIN, log: process.env.YONEDA_HOOK_LOG };
+  Object.assign(process.env, { YONEDA_BIN: bin, YONEDA_HOOK_LOG: log });
+  try {
+    assert.equal(await plugin.runHook('opencode-stop', { sessionID: 's1' }), '');
+    const entry = JSON.parse(readFileSync(log, 'utf8'));
+    assert.equal(entry.event, 'opencode-stop');
+    assert.equal(entry.stderr, 'yoneda hook: session record for c1 not posted: 409');
+  } finally {
+    for (const [name, value] of [['YONEDA_BIN', saved.bin], ['YONEDA_HOOK_LOG', saved.log]])
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

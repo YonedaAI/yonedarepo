@@ -171,19 +171,35 @@ impl SessionFiles {
     }
 
     /// The pushed commits of `session` (and those no session claimed) not recorded yet,
-    /// once each, removed from the file; another session's stay for it. A session record
-    /// is posted at most once per push.
+    /// once each, removed from the file; another session's stay for it. The file is claimed
+    /// by an atomic rename, so of hooks taking at the same moment (opencode 2.2 runs two
+    /// plugin instances per session) exactly one gets each push, and a push noted meanwhile
+    /// starts a new file. A session record is posted at most once per push.
     pub fn take_pushed(&self, session: Option<&str>) -> Result<Vec<Pushed>> {
+        // Unique per taker: per process, and per thread for in-process callers.
+        let claim = format!(
+            "pushed.claim.{}.{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        )
+        .replace(['(', ')'], "");
+        match std::fs::rename(self.dir.join("pushed"), self.dir.join(&claim)) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => {
+                return Err(e).context(format!("claiming {}", self.dir.join("pushed").display()));
+            }
+        }
         let all: Vec<Pushed> = self
-            .lines("pushed")?
+            .lines(&claim)?
             .iter()
             .map(|l| Pushed::parse(l))
             .collect();
-        self.remove("pushed")?;
         let (mine, others): (Vec<Pushed>, Vec<Pushed>) = all
             .into_iter()
             .partition(|p| p.session.is_none() || p.session.as_deref() == session);
         self.note_again(&others)?;
+        self.remove(&claim)?;
         let mut seen = BTreeSet::new();
         Ok(mine
             .into_iter()
@@ -290,6 +306,40 @@ mod tests {
         assert_eq!(theirs.len(), 1);
         assert_eq!(theirs[0].session.as_deref(), Some("opencode:s2"));
         assert!(files.take_pushed(Some("opencode:s2"))?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn concurrent_takes_claim_each_pushed_commit_once() -> Result<()> {
+        // opencode 2.2 sets the plugin up twice, so two `yoneda hook opencode-stop` processes
+        // take the same session's pushes at the same moment (L3, 2026-10-28).
+        const TAKERS: usize = 8;
+        for round in 0..100 {
+            let dir = tempfile::tempdir().context("tempdir")?;
+            SessionFiles::new(dir.path()).note_pushed(
+                &strings(&["c1"]),
+                &[],
+                Some("opencode:s1"),
+            )?;
+            let start = std::sync::Arc::new(std::sync::Barrier::new(TAKERS));
+            let takers: Vec<_> = (0..TAKERS)
+                .map(|_| {
+                    let (path, start) = (dir.path().to_owned(), start.clone());
+                    std::thread::spawn(move || {
+                        start.wait();
+                        SessionFiles::new(&path).take_pushed(Some("opencode:s1"))
+                    })
+                })
+                .collect();
+            let mut taken = 0;
+            for taker in takers {
+                taken += taker
+                    .join()
+                    .map_err(|_| crate::error::Error::new("taker panicked"))??
+                    .len();
+            }
+            assert_eq!(taken, 1, "round {round}: one push taken {taken} times");
+        }
         Ok(())
     }
 
