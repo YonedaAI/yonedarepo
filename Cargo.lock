@@ -620,15 +620,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hmac"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6303bc9732ae41b04cb554b844a762b4115a61bfaa81e3e83050991eeb56863f"
-dependencies = [
- "digest",
-]
-
-[[package]]
 name = "http"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2870,34 +2861,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "yoneda-agents-core"
-version = "0.1.0"
-dependencies = [
- "base64",
- "schemars",
- "serde",
- "serde_json",
- "yoneda-core",
-]
-
-[[package]]
-name = "yoneda-app"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "base64",
- "hmac",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2",
- "subtle",
- "yoneda-agents-core",
- "yoneda-core",
- "yoneda-store",
-]
-
-[[package]]
 name = "yoneda-cli"
 version = "0.1.0"
 dependencies = [
@@ -2916,13 +2879,11 @@ name = "yoneda-cloudflare"
 version = "0.1.0"
 dependencies = [
  "js-sys",
- "serde-wasm-bindgen",
  "serde_json",
  "wasm-bindgen",
- "wasm-bindgen-futures",
  "worker",
- "yoneda-agents-core",
- "yoneda-app",
+ "yoneda-core",
+ "yoneda-store",
 ]
 
 [[package]]
@@ -2945,6 +2906,7 @@ dependencies = [
 name = "yoneda-platform"
 version = "0.1.0"
 dependencies = [
+ "argon2",
  "base64",
  "oxc_allocator",
  "oxc_ast",
@@ -2953,6 +2915,7 @@ dependencies = [
  "proc-macro2",
  "serde",
  "serde_json",
+ "subtle",
  "syn 3.0.9",
  "yoneda-core",
  "yoneda-store",
@@ -2992,7 +2955,6 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
  "worker",
- "yoneda-app",
  "yoneda-cloudflare",
  "yoneda-core",
  "yoneda-platform",

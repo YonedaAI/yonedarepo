@@ -12,17 +12,11 @@ export default defineConfig({
         name: 'yoneda-test',
         compatibilityDate: '2026-10-07',
         compatibilityFlags: ['nodejs_compat'],
-        durableObjects: {
-          REPOSITORIES: { className: 'RepositoryAuthority', useSQLite: true },
-          LIVE: { className: 'LiveRoom', useSQLite: true },
-        },
         r2Buckets: ['OBJECTS'],
         d1Databases: ['INDEX'],
         bindings: {
           OWNER_TOKEN: 'local-test-owner',
           ARTIFACTS_NAMESPACE: 'yoneda-test',
-          CODEX_MODEL: 'gpt-5.6-luna',
-          CLAUDE_MODEL: 'claude-sonnet-5-5',
           PLATFORM_OBJECT_STORE: 'r2',
         },
       },
@@ -33,7 +27,6 @@ export default defineConfig({
     fsModuleCachePath: fileURLToPath(new URL('../../.vitest/module-cache', import.meta.url)),
     include: ['tests/workers/**/*.test.ts'],
     setupFiles: ['tests/workers/platform-listing.ts'],
-    exclude: ['tests/workers/apps-*.test.ts'],
     // GitHub runners (4 vCPU, four workerd pools) run this suite about 8x slower than a
     // workstation; repo-tiers needed over 20 s there. The limit is a hang guard only.
     testTimeout: process.env.CI ? 60_000 : 20_000,

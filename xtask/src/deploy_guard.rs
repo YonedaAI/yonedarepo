@@ -180,7 +180,7 @@ pub(crate) fn rollout_gate(busy: &[(String, u64)], options: &Options) -> Result<
     let list = busy.join(", ");
     if options.dry_run || options.allow_active {
         println!(
-            "WARNING: the container rollout will stop running agents ({list} busy instance(s))."
+            "WARNING: the container rollout will stop running checks ({list} busy instance(s))."
         );
         return Ok(());
     }

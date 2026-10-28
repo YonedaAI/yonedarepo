@@ -144,24 +144,9 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
     )
     .await?;
     if !dry_run {
-        seed_starter(&spec).await?;
         let live = snapshot(&spec, &token).await?;
         let workers = inventory::deployables(&spec, &lock)?;
         plan::print(&env, &plan::diff(&spec, &lock, &workers, &live), &live);
     }
     Ok(())
-}
-
-/// New projects fork the website starter; a fresh stack has none until it is seeded (the
-/// renamed dev and the new prod both answered project creation with 409 NOT_FOUND).
-/// Idempotent: an existing starter is only read back.
-async fn seed_starter(spec: &Spec) -> Result<()> {
-    let origin = spec
-        .vars
-        .get("origin")
-        .ok_or("The spec has no origin to seed the website starter on")?;
-    let owner = secrets::read(&spec.secrets_path())?
-        .remove("OWNER_TOKEN")
-        .ok_or("OWNER_TOKEN missing from the env's secrets file")?;
-    crate::bootstrap::seed_template_authenticated(origin, &owner).await
 }

@@ -160,15 +160,7 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let spec = Spec::load(&env)?;
     let lock = Lock::load(&env)?;
     let options = Options::from_args(args)?;
-    let smoke = args.iter().any(|a| a == "--agent-smoke");
-    if smoke && (env != Env::Dev || options.dry_run) {
-        return Err("--agent-smoke runs only after a real `deploy --env dev`.".into());
-    }
-    run(&env, &spec, &lock, &options, None).await?;
-    if smoke {
-        crate::deploy_live::agent_smoke()?;
-    }
-    Ok(())
+    run(&env, &spec, &lock, &options, None).await
 }
 
 /// Deploys `spec` with the given D1 identities (`infra up` passes the lock it just built).

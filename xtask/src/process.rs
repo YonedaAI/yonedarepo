@@ -7,9 +7,6 @@ pub fn run(program: &str, args: &[&str]) -> Result<()> {
     }
     Ok(())
 }
-pub fn token() -> Result<String> {
-    Ok(std::fs::read_to_string(".local/owner-token")?.trim().into())
-}
 pub fn ensure_token() -> Result<()> {
     crate::local_config::ensure(std::path::Path::new("."))
 }

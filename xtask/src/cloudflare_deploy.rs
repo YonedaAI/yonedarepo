@@ -10,37 +10,22 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let dir = deployment(args)?;
     let manifest: Value = serde_json::from_slice(&std::fs::read(dir.join("deployment.json"))?)?;
     let platform = dir.join("platform.json");
-    let sites = dir.join("sites.json");
     if let Ok(account) = std::env::var("CLOUDFLARE_ACCOUNT_ID")
         && manifest["account_id"] != account
     {
         return Err("CLOUDFLARE_ACCOUNT_ID differs from deployment manifest".into());
     }
-    for path in [&platform, &sites] {
-        let config: Value = serde_json::from_slice(&std::fs::read(path)?)?;
-        if config["account_id"] != manifest["account_id"] {
-            return Err("Config account differs from deployment manifest".into());
-        }
-        let expected = if path == &platform {
-            manifest["name"].clone()
-        } else {
-            json!(format!(
-                "{}-sites",
-                manifest["name"].as_str().ok_or("Missing name")?
-            ))
-        };
-        if config["name"] != expected {
-            return Err("Config Worker name differs from deployment manifest".into());
-        }
-        if path == &platform
-            && (config["vars"]["ARTIFACTS_NAMESPACE"] != manifest["namespace"]
-                || config["vars"]["SITE_ORIGIN"] != manifest["sites_url"]
-                || config["d1_databases"][0]["database_id"] != manifest["database_id"])
-        {
-            return Err(
-                "Config namespace, site origin or database differs from deployment manifest".into(),
-            );
-        }
+    let config: Value = serde_json::from_slice(&std::fs::read(&platform)?)?;
+    if config["account_id"] != manifest["account_id"] {
+        return Err("Config account differs from deployment manifest".into());
+    }
+    if config["name"] != manifest["name"] {
+        return Err("Config Worker name differs from deployment manifest".into());
+    }
+    if config["vars"]["ARTIFACTS_NAMESPACE"] != manifest["namespace"]
+        || config["d1_databases"][0]["database_id"] != manifest["database_id"]
+    {
+        return Err("Config namespace or database differs from deployment manifest".into());
     }
     crate::commands::build_wasm()?;
     run("pnpm", &["--dir", crate::layout::FRONTEND, "build"])?;
@@ -49,11 +34,10 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
             &platform,
             &["deploy", "--dry-run", "--containers-rollout", "none"],
         )?;
-        wrangler(&sites, &["deploy", "--dry-run"])?;
         println!("Dry run passed. No remote resources or credentials changed.");
         return Ok(());
     }
-    let (upload, owner) = secrets(&dir, &platform)?;
+    let upload = secrets(&dir, &platform)?;
     wrangler(
         &platform,
         &["d1", "migrations", "apply", "INDEX", "--remote"],
@@ -74,7 +58,6 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let cleanup = std::fs::remove_file(&secret_path);
     result?;
     cleanup?;
-    wrangler(&sites, &["deploy"])?;
     let url = manifest["platform_url"]
         .as_str()
         .ok_or("Missing platform URL")?;
@@ -86,14 +69,10 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     if health["service"] != "yonedarepo" {
         return Err("Deployed health response did not identify YonedaRepo".into());
     }
-    crate::bootstrap::seed_template_authenticated(url, &owner).await?;
-    println!(
-        "Deployed and starter verified: {url}\nSites: {}\nSign up in the browser, then add your provider keys. No paid agent run was started.",
-        manifest["sites_url"].as_str().unwrap_or_default()
-    );
+    println!("Deployed: {url}\nSign up in the browser.");
     Ok(())
 }
-fn secrets(dir: &Path, config: &Path) -> Result<(Value, String)> {
+fn secrets(dir: &Path, config: &Path) -> Result<Value> {
     let inventory = Command::new("pnpm")
         .args([
             "exec",
@@ -115,44 +94,23 @@ fn secrets(dir: &Path, config: &Path) -> Result<(Value, String)> {
         .as_array()
         .ok_or("Unexpected secret inventory; refusing changes")?;
     let mut upload = json!({});
-    for (name, file, hex) in [
-        ("OWNER_TOKEN", "owner-token", false),
-        ("VAULT_KEY", "vault-key", true),
-    ] {
-        let path = dir.join(file);
-        let present = list.iter().any(|v| v["name"] == name);
-        if present && name == "OWNER_TOKEN" && !path.exists() {
-            return Err(format!("Existing operator token needs a private local copy at {} for starter bootstrap; refusing rotation",path.display()).into());
+    // An existing operator token is kept; a new one is backed up privately first.
+    if !list.iter().any(|v| v["name"] == "OWNER_TOKEN") {
+        let path = dir.join("owner-token");
+        if !path.exists() {
+            std::fs::write(
+                &path,
+                format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4()),
+            )?;
+            private(&path, false)?;
         }
-        if !present {
-            if !path.exists() {
-                let key = if hex {
-                    format!(
-                        "{}{}",
-                        uuid::Uuid::new_v4().simple(),
-                        uuid::Uuid::new_v4().simple()
-                    )
-                } else {
-                    format!("{}{}", uuid::Uuid::new_v4(), uuid::Uuid::new_v4())
-                };
-                std::fs::write(&path, key)?;
-                private(&path, false)?;
-            }
-            let key = std::fs::read_to_string(&path)?.trim().to_owned();
-            if key.len() < 32
-                || (hex && (key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit())))
-            {
-                return Err(format!("Invalid private {name} backup").into());
-            }
-            upload[name] = json!(key);
+        let key = std::fs::read_to_string(&path)?.trim().to_owned();
+        if key.len() < 32 {
+            return Err("Invalid private OWNER_TOKEN backup".into());
         }
+        upload["OWNER_TOKEN"] = json!(key);
     }
-    Ok((
-        upload,
-        std::fs::read_to_string(dir.join("owner-token"))?
-            .trim()
-            .into(),
-    ))
+    Ok(upload)
 }
 
 fn parse_inventory(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<Value> {

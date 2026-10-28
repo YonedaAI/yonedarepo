@@ -1,4 +1,3 @@
-mod bootstrap;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
@@ -15,7 +14,6 @@ mod deploy_secrets;
 mod dev;
 mod infra;
 mod layout;
-mod live;
 mod local_config;
 mod process;
 use std::path::PathBuf;

@@ -83,7 +83,7 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
     return grant && { _pat: grant };
   }
   const principal = await authenticateOnce(req, env);
-  if (!principal || principal.role === 'agent') return null;
+  if (!principal) return null;
   const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
   // Only a personal account session is a person; admin bearers may be held by scripts.
   const human = principal.role === 'user' ? { human: true as const } : {};

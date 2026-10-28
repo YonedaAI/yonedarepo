@@ -162,7 +162,7 @@ pub(crate) fn local_image(
             );
             if !rollouts.is_empty() {
                 println!(
-                    "WARNING: {} will switch to it: a container rollout stops their running agents.",
+                    "WARNING: {} will switch to it: a container rollout stops their running checks.",
                     rollouts.join(", ")
                 );
             }
@@ -173,7 +173,7 @@ pub(crate) fn local_image(
                 "Runtime image: BUILD for linux/amd64 ({reason}). Slow on an arm64 Mac (emulated Rust build)."
             );
             println!(
-                "WARNING: a container rollout will stop running agents on {}.",
+                "WARNING: a container rollout will stop running checks on {}.",
                 rollouts.join(", ")
             );
             facts.deployed.values().flatten().next().cloned()
