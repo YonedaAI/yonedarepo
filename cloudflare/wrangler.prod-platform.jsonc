@@ -1,16 +1,15 @@
 // Generated from infra/envs/prod.json by `cargo xtask infra up`; edit the spec, not this file.
 // Production platform Worker (yonedarepo.com): the same source platform as dev's
 // (infra/envs/dev.json), with its own Durable Object namespaces, Artifacts namespace, R2, D1,
-// queues, workflow, check containers and secrets. Browsers reach it through the agent Worker's
+// queues, workflow, check containers and secrets. Browsers reach it through the front Worker's
 // /api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom
-// Domain plus the exact route, which wins over the sites Worker's *.yonedarepo.com route);
+// Domain plus the exact route);
 // WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
-// VAULT_KEY    64 hex characters, shared with yonedarepo-prod-agents
 // Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
 // Check runs: one per invocation, up to check_instances (4) at once.
 // Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store
-// secret ZAI), bound to the platform Worker itself; it never reads an agent-layer connection.
+// secret ZAI), bound to the platform Worker itself.
 // The production superfan (wrangler.prod-superfan.jsonc) receives this Worker's tail events.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",

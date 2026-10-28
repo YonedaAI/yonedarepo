@@ -91,10 +91,9 @@
         "Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own",
         "Durable Object namespaces, Artifacts namespace, R2,",
         "D1, queues, workflow, check containers and secrets, so it shares nothing with production",
-        "(yonedarepo-prod-*). Browsers reach it through the dev agent Worker's",
+        "(yonedarepo-prod-*). Browsers reach it through the dev front Worker's",
         "/api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
-        "VAULT_KEY    64 hex characters, shared with yonedarepo-dev-agents",
         "Run next to the data: a commit makes about ten round trips to its repository's",
         "Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo",
         "otherwise. New repository objects are created near the placed Worker.",
@@ -104,12 +103,11 @@
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
-        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the prod sites Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).",
-        "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the agent Worker's managed connections use), bound to the platform Worker itself; it never reads an agent-layer connection."
+        "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route); WEB_ORIGIN is where people approve device logins (/device).",
+        "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the front Worker's managed connections use), bound to the platform Worker itself."
       ],
       "secrets": [
-        "OWNER_TOKEN",
-        "VAULT_KEY"
+        "OWNER_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "config": {
@@ -314,37 +312,24 @@
       "role": "agents",
       "file": "wrangler.dev-agents.jsonc",
       "notes": [
-        "Dev agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,",
-        "remote MCP). It reaches only the dev platform, through",
-        "the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the",
-        "WORKSPACES script binding. Its stores, containers and secrets are its own. Executable app",
-        "previews (cloudflare/apps) are off: APPS and APP_ORIGIN are unset.",
-        "Only the cheap providers have keys (ZAI glm-5.3-flash at low effort, MiMo mimo-v2.6-flash);",
-        "Codex and Claude have no binding and fail closed with PROVIDER_MISSING. MANAGED_PROVIDER_KEYS",
-        "lets the owner bind those two store keys to a named account as managed connections",
-        "(POST /api/admin/providers/managed); prod sets it too.",
-        "Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy",
-        "(POST /api/admin/workspace/allowance); it is a total, not a daily reset.",
+        "Dev front Worker (name kept from the agent layer, removed 2026-10-27): it serves the browser",
+        "app on dev.yonedarepo.com, account sign-in (/api/auth/*) and the owner session, and proxies",
+        "/api/v1 to the dev platform through the PLATFORM service binding on the same origin. Accounts",
+        "live in the platform's WorkspaceAuthority (WORKSPACES script binding). It has no stores,",
+        "containers or queues of its own.",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
-        "VAULT_KEY    64 hex characters, shared with yonedarepo-dev-platform",
-        "The prod sites Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a",
-        "route takes precedence over a Custom Domain, and the most specific route pattern wins. The",
-        "exact route keeps dev.yonedarepo.com here without touching the sites Worker (the same",
-        "pattern production uses for www).",
-        "Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts",
-        "sandbox/Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound",
-        "adds the provider key and the project token. Model requests go through the AI Gateway named",
-        "in SANDBOX_AI_GATEWAY (custom providers custom-zai and custom-mimo; one-time setup in",
-        "docs/runbook.md). The sandbox clones from SANDBOX_PLATFORM_ORIGIN."
+        "The exact route keeps dev.yonedarepo.com on this Worker (a route takes precedence over a",
+        "Custom Domain on one hostname, and the most specific route pattern wins).",
+        "v4 deletes the agent layer's Durable Object classes (RepositoryAuthority, LiveRoom,",
+        "AgentSandbox) and their data; the agent-run code is on the agent-run-workspaces branch."
       ],
       "secrets": [
-        "OWNER_TOKEN",
-        "VAULT_KEY"
+        "OWNER_TOKEN"
       ],
       "health": "yonedarepo",
       "config": {
         "name": "{prefix}-agents",
-        "main": "worker/agents-index.ts",
+        "main": "worker/front-index.ts",
         "compatibility_date": "2026-10-07",
         "compatibility_flags": [
           "nodejs_compat"
@@ -378,65 +363,20 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "{origin}",
-          "ARTIFACTS_NAMESPACE": "{prefix}",
-          "CODEX_MODEL": "gpt-5.6-luna",
-          "CLAUDE_MODEL": "claude-sonnet-5-5",
-          "MIMO_MODEL": "mimo-v2.6-flash",
-          "ZAI_MODEL": "glm-5.3-flash",
-          "STARTER_REPO": "yoneda-website-starter",
-          "SITE_ORIGIN": "https://{prefix}-sites.{subdomain}.workers.dev",
-          "MANAGED_PROVIDER_KEYS": "secrets-store",
-          "SANDBOX_PLATFORM_ORIGIN": "https://{prefix}-platform.{subdomain}.workers.dev",
-          "SANDBOX_AI_GATEWAY": "{account_id}/{prefix}"
+          "PUBLIC_APP_ORIGIN": "{origin}"
         },
         "services": [
-          {
-            "binding": "SELF",
-            "service": "{prefix}-agents"
-          },
           {
             "binding": "PLATFORM",
             "service": "{prefix}-platform"
           }
         ],
-        "secrets_store_secrets": [
-          {
-            "binding": "MIMO_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "MiMo"
-          },
-          {
-            "binding": "ZAI_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "ZAI"
-          }
-        ],
-        "artifacts": [
-          {
-            "binding": "ARTIFACTS",
-            "namespace": "{prefix}",
-            "remote": true
-          }
-        ],
         "durable_objects": {
           "bindings": [
-            {
-              "name": "REPOSITORIES",
-              "class_name": "RepositoryAuthority"
-            },
-            {
-              "name": "LIVE",
-              "class_name": "LiveRoom"
-            },
             {
               "name": "WORKSPACES",
               "class_name": "WorkspaceAuthority",
               "script_name": "{prefix}-platform"
-            },
-            {
-              "name": "AGENT_SANDBOX",
-              "class_name": "AgentSandbox"
             }
           ]
         },
@@ -462,69 +402,16 @@
               "ExecutionContainer",
               "SourceWorkspaceAuthority"
             ]
-          }
-        ],
-        "containers": [
+          },
           {
-            "class_name": "AgentSandbox",
-            "scheduling_policy": "durable_object",
-            "images": {
-              "agent": {
-                "dockerfile": "./sandbox/Dockerfile",
-                "build_context": ".."
-              }
-            }
+            "tag": "v4",
+            "deleted_classes": [
+              "RepositoryAuthority",
+              "LiveRoom",
+              "AgentSandbox"
+            ]
           }
         ],
-        "r2_buckets": [
-          {
-            "binding": "OBJECTS",
-            "bucket_name": "{prefix}-agents-objects"
-          }
-        ],
-        "d1_databases": [
-          {
-            "binding": "INDEX",
-            "database_name": "{prefix}-agents-index",
-            "migrations_dir": "migrations"
-          }
-        ],
-        "queues": {
-          "producers": [
-            {
-              "binding": "AGENT_QUEUE",
-              "queue": "{prefix}-agents-agent"
-            },
-            {
-              "binding": "CAPTURE_QUEUE",
-              "queue": "{prefix}-agents-capture"
-            },
-            {
-              "binding": "EVALUATE_QUEUE",
-              "queue": "{prefix}-agents-evaluate"
-            }
-          ],
-          "consumers": [
-            {
-              "queue": "{prefix}-agents-agent",
-              "max_batch_size": 1,
-              "max_retries": 3,
-              "dead_letter_queue": "{prefix}-agents-dead-letter"
-            },
-            {
-              "queue": "{prefix}-agents-capture",
-              "max_batch_size": 1,
-              "max_retries": 3,
-              "dead_letter_queue": "{prefix}-agents-dead-letter"
-            },
-            {
-              "queue": "{prefix}-agents-evaluate",
-              "max_batch_size": 1,
-              "max_retries": 3,
-              "dead_letter_queue": "{prefix}-agents-dead-letter"
-            }
-          ]
-        },
         "ratelimits": [
           {
             "name": "AUTH_LIMITER",
@@ -535,41 +422,6 @@
             }
           }
         ]
-      }
-    },
-    {
-      "role": "sites",
-      "file": "wrangler.dev-sites.jsonc",
-      "notes": [
-        "Dev website previews for the dev.yonedarepo.com stack: cloudflare/sites bound to the",
-        "dev agent Worker and its bucket. workers.dev only (a *.dev.yonedarepo.com wildcard would need an advanced certificate); the agent",
-        "Worker's SITE_ORIGIN points here."
-      ],
-      "secrets": [],
-      "config": {
-        "name": "{prefix}-sites",
-        "main": "sites/index.ts",
-        "compatibility_date": "2026-10-07",
-        "compatibility_flags": [
-          "nodejs_compat"
-        ],
-        "workers_dev": true,
-        "preview_urls": false,
-        "r2_buckets": [
-          {
-            "binding": "OBJECTS",
-            "bucket_name": "{prefix}-agents-objects"
-          }
-        ],
-        "services": [
-          {
-            "binding": "PLATFORM",
-            "service": "{prefix}-agents"
-          }
-        ],
-        "observability": {
-          "enabled": true
-        }
       }
     },
     {
@@ -636,50 +488,61 @@
       "2026-10-27), by exact name: its Workers and what only they bound. The Basin pipeline stream",
       "of platform-dev (CHANGELOG) is not a kind prune knows; delete it by hand.",
       "Also the isolated acceptance stack (yonedarepo-acceptance*, 2026-10-10 fixture) and the",
-      "standalone bench client yonedarepo-bench-client (now yonedarepo-dev-bench), by exact name."
+      "standalone bench client yonedarepo-bench-client (now yonedarepo-dev-bench), by exact name.",
+      "Also the agent layer and website previews, removed 2026-10-27, by exact name: the sites",
+      "Worker, the AgentSandbox container app, the agent queues and the agent Worker's D1 and R2. The",
+      "AI Gateway yonedarepo-dev (SANDBOX_AI_GATEWAY) is not a kind prune knows; delete it by hand."
     ],
     "prefix": "yonedarepo-staging",
     "workers": [
-      "yonedarepo-platform-dev",
-      "yonedarepo-agents-dev",
-      "yonedarepo-superfan-dev",
-      "yonedarepo-eval-dev",
       "yonedarepo-acceptance",
       "yonedarepo-acceptance-sites",
-      "yonedarepo-bench-client"
+      "yonedarepo-agents-dev",
+      "yonedarepo-bench-client",
+      "yonedarepo-dev-sites",
+      "yonedarepo-eval-dev",
+      "yonedarepo-platform-dev",
+      "yonedarepo-superfan-dev"
     ],
     "containers": [
-      "yonedarepo-platform-dev-checkcontainer",
+      "yonedarepo-acceptance-executioncontainer",
       "yonedarepo-agents-dev-agentsandbox",
-      "yonedarepo-acceptance-executioncontainer"
+      "yonedarepo-dev-agents-agentsandbox",
+      "yonedarepo-platform-dev-checkcontainer"
     ],
     "queues": [
-      "yonedarepo-platform-dev-jobs",
-      "yonedarepo-platform-dev-checks",
-      "yonedarepo-platform-dev-dead-letter",
-      "yonedarepo-agents-dev-agent",
-      "yonedarepo-agents-dev-capture",
-      "yonedarepo-agents-dev-evaluate",
-      "yonedarepo-agents-dev-dead-letter",
       "yonedarepo-acceptance-agent",
       "yonedarepo-acceptance-capture",
       "yonedarepo-acceptance-dead-letter",
       "yonedarepo-acceptance-evaluate",
-      "yonedarepo-acceptance-publish"
+      "yonedarepo-acceptance-publish",
+      "yonedarepo-agents-dev-agent",
+      "yonedarepo-agents-dev-capture",
+      "yonedarepo-agents-dev-dead-letter",
+      "yonedarepo-agents-dev-evaluate",
+      "yonedarepo-dev-agents-agent",
+      "yonedarepo-dev-agents-capture",
+      "yonedarepo-dev-agents-dead-letter",
+      "yonedarepo-dev-agents-evaluate",
+      "yonedarepo-platform-dev-checks",
+      "yonedarepo-platform-dev-dead-letter",
+      "yonedarepo-platform-dev-jobs"
     ],
     "workflows": [
       "yonedarepo-platform-dev-import"
     ],
     "d1": [
-      "yonedarepo-platform-dev-index",
+      "yonedarepo-acceptance-index",
       "yonedarepo-agents-dev-index",
-      "yonedarepo-acceptance-index"
+      "yonedarepo-dev-agents-index",
+      "yonedarepo-platform-dev-index"
     ],
     "r2": [
-      "yonedarepo-platform-dev-objects",
-      "yonedarepo-platform-dev-analytics",
+      "yonedarepo-acceptance-objects",
       "yonedarepo-agents-dev-objects",
-      "yonedarepo-acceptance-objects"
+      "yonedarepo-dev-agents-objects",
+      "yonedarepo-platform-dev-analytics",
+      "yonedarepo-platform-dev-objects"
     ],
     "artifacts": [
       "yoneda-platform-dev"

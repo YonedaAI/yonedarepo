@@ -19,9 +19,6 @@ fn committed(file: &str) -> Value {
         "wrangler.dev-superfan.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-superfan.jsonc")
         }
-        "wrangler.dev-sites.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.dev-sites.jsonc")
-        }
         "wrangler.dev-bench.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-bench.jsonc")
         }
@@ -33,9 +30,6 @@ fn committed(file: &str) -> Value {
         }
         "wrangler.prod-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-agents.jsonc")
-        }
-        "wrangler.prod-sites.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.prod-sites.jsonc")
         }
         other => panic!("no golden for {other}"),
     };
@@ -63,10 +57,9 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
             "wrangler.dev-superfan.jsonc",
             "wrangler.dev-platform.jsonc",
             "wrangler.dev-agents.jsonc",
-            "wrangler.dev-sites.jsonc",
             "wrangler.dev-bench.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, agents, sites; the bench client last"
+        "the platform's tail consumer first, then cutover order: platform, agents; the bench client last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(
@@ -94,10 +87,9 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
         [
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
-            "yonedarepo-prod-agents",
-            "yonedarepo-prod-sites"
+            "yonedarepo-prod-agents"
         ],
-        "the platform's tail consumer first, then platform, agents, sites; no bench in prod"
+        "the platform's tail consumer first, then platform, agents; no bench in prod"
     );
     let files: Vec<&str> = spec.workers.iter().map(|w| w.file.as_str()).collect();
     assert!(
@@ -256,7 +248,6 @@ fn inventory_reads_resources_and_health_origins() {
         by_role("agents").health.as_ref().unwrap().0,
         "https://dev.yonedarepo.com"
     );
-    assert_eq!(by_role("sites").health, None);
     assert_eq!(
         inventory::d1(&platform.config),
         [(
@@ -363,18 +354,18 @@ mod plan_diff {
     #[test]
     fn missing_resources_are_created_and_only_data_resources_need_explicit_creation() {
         let (spec, lock, workers, mut live) = matching();
-        live.d1.remove("yonedarepo-dev-agents-index");
+        live.d1.remove("yonedarepo-dev-platform-index");
         live.r2.remove("yonedarepo-dev-platform-objects");
-        live.queues.remove("yonedarepo-dev-agents-dead-letter");
-        live.workers.remove("yonedarepo-dev-sites");
+        live.queues.remove("yonedarepo-dev-platform-dead-letter");
+        live.workers.remove("yonedarepo-dev-bench");
         live.domains.clear();
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "d1", "yonedarepo-dev-agents-index"),
+            action(&rows, "d1", "yonedarepo-dev-platform-index"),
             Action::Create
         );
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-dev-sites"),
+            action(&rows, "worker", "yonedarepo-dev-bench"),
             Action::Create
         );
         assert_eq!(
@@ -384,9 +375,9 @@ mod plan_diff {
         assert_eq!(
             creations(&rows),
             [
+                Create::D1("yonedarepo-dev-platform-index".into()),
                 Create::R2("yonedarepo-dev-platform-objects".into()),
-                Create::D1("yonedarepo-dev-agents-index".into()),
-                Create::Queue("yonedarepo-dev-agents-dead-letter".into()),
+                Create::Queue("yonedarepo-dev-platform-dead-letter".into()),
             ]
         );
     }
@@ -488,7 +479,7 @@ mod plan_diff {
             Action::Unknown
         );
         assert_eq!(
-            action(&rows, "secret", "yonedarepo-dev-agents/VAULT_KEY"),
+            action(&rows, "secret", "yonedarepo-dev-agents/OWNER_TOKEN"),
             Action::Unknown
         );
         assert!(creations(&rows).is_empty());

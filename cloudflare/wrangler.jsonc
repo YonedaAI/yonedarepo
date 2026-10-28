@@ -37,46 +37,12 @@
   },
   "vars": {
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
-    "APP_ORIGIN": "https://apps.yonedarepo.com",
-    "ARTIFACTS_NAMESPACE": "yoneda-dev",
-    "CODEX_MODEL": "gpt-5.6-luna",
-    "CLAUDE_MODEL": "claude-sonnet-5-5",
-    "MIMO_MODEL": "mimo-v2.6-flash",
-    "ZAI_MODEL": "glm-5.3-flash",
-    "STARTER_REPO": "yoneda-website-starter",
-    "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev",
-    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo.com"
+    "ARTIFACTS_NAMESPACE": "yoneda-dev"
   },
   "services": [
     {
       "binding": "SELF",
       "service": "yonedarepo-dev"
-    },
-    {
-      "binding": "APPS",
-      "service": "yonedarepo-apps-dev"
-    }
-  ],
-  "secrets_store_secrets": [
-    {
-      "binding": "OPENAI_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "Codex"
-    },
-    {
-      "binding": "ANTHROPIC_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "Claude"
-    },
-    {
-      "binding": "MIMO_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "MiMo"
-    },
-    {
-      "binding": "ZAI_KEY",
-      "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-      "secret_name": "ZAI"
     }
   ],
   "artifacts": [
@@ -88,14 +54,6 @@
   ],
   "durable_objects": {
     "bindings": [
-      {
-        "name": "REPOSITORIES",
-        "class_name": "RepositoryAuthority"
-      },
-      {
-        "name": "LIVE",
-        "class_name": "LiveRoom"
-      },
       {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority"
@@ -111,10 +69,6 @@
       {
         "name": "OBJECT_PUSHES",
         "class_name": "ObjectPushQueue"
-      },
-      {
-        "name": "AGENT_SANDBOX",
-        "class_name": "AgentSandbox"
       }
     ]
   },
@@ -169,6 +123,14 @@
         "ExecutionContainer",
         "SourceWorkspaceAuthority"
       ]
+    },
+    {
+      "tag": "v9",
+      "deleted_classes": [
+        "RepositoryAuthority",
+        "LiveRoom",
+        "AgentSandbox"
+      ]
     }
   ],
   "containers": [
@@ -181,16 +143,6 @@
       "rollout_step_percentage": [
         100
       ]
-    },
-    {
-      "class_name": "AgentSandbox",
-      "images": {
-        "agent": {
-          "build_context": "..",
-          "dockerfile": "./sandbox/Dockerfile"
-        }
-      },
-      "scheduling_policy": "durable_object"
     }
   ],
   "r2_buckets": [
@@ -210,41 +162,11 @@
   "queues": {
     "producers": [
       {
-        "binding": "AGENT_QUEUE",
-        "queue": "yoneda-dev-agent"
-      },
-      {
-        "binding": "CAPTURE_QUEUE",
-        "queue": "yoneda-dev-capture"
-      },
-      {
-        "binding": "EVALUATE_QUEUE",
-        "queue": "yoneda-dev-evaluate"
-      },
-      {
         "binding": "PLATFORM_QUEUE",
         "queue": "yoneda-dev-platform"
       }
     ],
     "consumers": [
-      {
-        "queue": "yoneda-dev-agent",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yoneda-dev-dead-letter"
-      },
-      {
-        "queue": "yoneda-dev-capture",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yoneda-dev-dead-letter"
-      },
-      {
-        "queue": "yoneda-dev-evaluate",
-        "max_batch_size": 1,
-        "max_retries": 3,
-        "dead_letter_queue": "yoneda-dev-dead-letter"
-      },
       {
         "queue": "yoneda-dev-platform",
         "max_batch_size": 1,

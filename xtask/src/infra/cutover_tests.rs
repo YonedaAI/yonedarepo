@@ -64,12 +64,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
             host("https://www.yonedarepo.com/*", false)
         ]
     );
-    assert_eq!(
-        hosts_of(role(&workers, "sites")),
-        [
-            host("apps.yonedarepo.com", true),
-            host("https://*.yonedarepo.com/*", false)
-        ]
+    assert!(
+        !workers.iter().any(|w| w.role == "sites"),
+        "website previews left with the agent layer"
     );
     assert!(hosts_of(role(&workers, "superfan")).is_empty());
     assert!(
@@ -93,24 +90,22 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
 
     let agents = &role(&workers, "agents").config;
     let vars = &agents["vars"];
-    assert_eq!(vars["PUBLIC_APP_ORIGIN"], "https://yonedarepo.com");
-    assert_eq!(vars["SITE_ORIGIN"], "https://apps.yonedarepo.com");
     assert_eq!(
-        vars["SANDBOX_AI_GATEWAY"],
-        "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-prod"
+        vars,
+        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com"})
     );
-    assert_eq!(vars["MANAGED_PROVIDER_KEYS"], "secrets-store");
-    assert!(
-        vars.get("APP_ORIGIN").is_none() && vars.get("GUIDED_TASK_BOARD_STARTER_REPO").is_none()
-    );
-    let keys: Vec<&str> = agents["secrets_store_secrets"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|s| s["secret_name"].as_str().unwrap())
-        .collect();
-    assert_eq!(keys, ["MiMo", "ZAI"], "Claude and Codex stay off in prod");
-    assert_eq!(agents["containers"][0]["class_name"], "AgentSandbox");
+    for absent in [
+        "secrets_store_secrets",
+        "containers",
+        "queues",
+        "d1_databases",
+        "r2_buckets",
+    ] {
+        assert!(
+            agents.get(absent).is_none(),
+            "the front Worker has no {absent}"
+        );
+    }
     assert_eq!(agents["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(
         role(&workers, "agents").health,
@@ -261,7 +256,6 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-superfan",
             "yonedarepo-dev-platform",
             "yonedarepo-dev-agents",
-            "yonedarepo-dev-sites",
             "yonedarepo-dev-bench"
         ]
     );
@@ -279,16 +273,10 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("dev.yonedarepo.com", true),
                 host("https://dev.yonedarepo.com/*", false)
             ],
-            vec![],
             vec![host("hook-receiver.yonedaai.org", true)],
         ]
     );
     let agents = &role(&workers, "agents").config;
-    assert_eq!(
-        agents["vars"]["SANDBOX_AI_GATEWAY"],
-        "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev"
-    );
-    assert_eq!(agents["artifacts"][0]["namespace"], "yonedarepo-dev");
     assert_eq!(agents["ratelimits"][0]["namespace_id"], "2001");
     let mut strings = Vec::new();
     collect(
@@ -555,20 +543,6 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
     );
     holding(
         &mut live,
-        "apps.yonedarepo.com",
-        "yonedarepo-apps-dev",
-        true,
-        "d-apps",
-    );
-    holding(
-        &mut live,
-        "https://*.yonedarepo.com/*",
-        "yonedarepo-apps-dev",
-        false,
-        "r-wild",
-    );
-    holding(
-        &mut live,
         "https://dev.yonedarepo.com/*",
         "yonedarepo-staging-agents",
         false,
@@ -595,13 +569,6 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
         Vec::<String>::new(),
         "api is already held by the new platform; its unheld route is simply attached"
     );
-    assert_eq!(
-        moves("sites"),
-        [
-            "domain apps.yonedarepo.com: yonedarepo-apps-dev -> yonedarepo-prod-sites d-apps",
-            "route https://*.yonedarepo.com/*: yonedarepo-apps-dev -> yonedarepo-prod-sites r-wild",
-        ]
-    );
     assert!(moves("superfan").is_empty());
 
     let mut no_id = live.clone();
@@ -609,7 +576,7 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
     assert!(hosts::plan(role(&workers, "agents"), &no_id).is_err());
     let mut unread = live.clone();
     unread.errors.push("Routes: HTTP 403".into());
-    assert!(hosts::plan(role(&workers, "sites"), &unread).is_err());
+    assert!(hosts::plan(role(&workers, "agents"), &unread).is_err());
 }
 
 #[test]
@@ -631,7 +598,6 @@ fn pending_d1_entries_generate_but_count_as_not_created() {
         .insert("yonedarepo-prod-platform-index".into(), "real-id".into());
     let effective = effective_lock(&spec, &lock, &live).unwrap();
     assert_eq!(effective.d1["yonedarepo-prod-platform-index"], "real-id");
-    assert_eq!(effective.d1["yonedarepo-prod-agents-index"], "");
     let error = crate::deploy_guard::refuse_pending(&super::spec::Env::Prod, &lock)
         .unwrap_err()
         .to_string();
@@ -646,11 +612,10 @@ fn declared_names_cover_bindings_and_resources() {
     for (kind, name) in [
         (Kind::Worker, "yonedarepo-prod-superfan"),
         (Kind::Container, "yonedarepo-prod-platform-checkcontainer"),
-        (Kind::Container, "yonedarepo-prod-agents-agentsandbox"),
         (Kind::Workflow, "yonedarepo-prod-platform-import"),
         (Kind::Queue, "yonedarepo-prod-platform-dead-letter"),
-        (Kind::D1, "yonedarepo-prod-agents-index"),
-        (Kind::R2, "yonedarepo-prod-agents-objects"),
+        (Kind::D1, "yonedarepo-prod-platform-index"),
+        (Kind::R2, "yonedarepo-prod-platform-objects"),
         (Kind::Artifacts, "yonedarepo-prod"),
     ] {
         assert!(names.contains(&(kind, name.to_owned())), "{name}");

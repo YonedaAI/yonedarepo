@@ -39,7 +39,7 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
         return Err("Invalid account, namespace, workers.dev subdomain or D1 UUID".into());
     }
     let dir = directory(name)?;
-    let manifest = json!({"name":name,"account_id":account,"namespace":namespace,"database_id":database,"platform_url":format!("https://{name}.{subdomain}.workers.dev"),"sites_url":format!("https://{name}-sites.{subdomain}.workers.dev")});
+    let manifest = json!({"name":name,"account_id":account,"namespace":namespace,"database_id":database,"platform_url":format!("https://{name}.{subdomain}.workers.dev")});
     std::fs::create_dir_all(&dir)?;
     private(&dir, true)?;
     let template: Value = serde_json::from_slice(&std::fs::read(crate::layout::PLATFORM_CONFIG)?)?;
@@ -55,7 +55,7 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
         "One-time resources (skip resources that already exist):\npnpm exec wrangler r2 bucket create {name}-objects --config {0}/platform.json\npnpm exec wrangler d1 create {name}-index --config {0}/platform.json",
         dir.display()
     );
-    for suffix in ["agent", "capture", "evaluate", "platform", "dead-letter"] {
+    for suffix in ["platform", "dead-letter"] {
         println!(
             "pnpm exec wrangler queues create {name}-{suffix} --config {}/platform.json",
             dir.display()
@@ -75,11 +75,9 @@ fn save_configs(dir: &Path, manifest: &Value, template: Value) -> Result<()> {
             "Deployment identity differs from saved configuration; choose another --name".into(),
         );
     }
-    let (platform, sites) = configs(template, manifest);
     for (filename, value) in [
         ("deployment.json", manifest.clone()),
-        ("platform.json", platform),
-        ("sites.json", sites),
+        ("platform.json", configs(template, manifest)),
     ] {
         let path = dir.join(filename);
         if path.exists() {
@@ -89,7 +87,7 @@ fn save_configs(dir: &Path, manifest: &Value, template: Value) -> Result<()> {
             let mut saved: Value = serde_json::from_slice(&std::fs::read(&path)?).map_err(|error| {
                 format!("Cannot upgrade {}: {error}. Retain its identities and manually update source paths for the frontend/backend/cloudflare layout.", path.display())
             })?;
-            if upgrade_paths(&mut saved, filename == "sites.json") {
+            if upgrade_paths(&mut saved) {
                 std::fs::write(&path, serde_json::to_vec_pretty(&saved)?)?;
             }
         } else {
@@ -98,47 +96,37 @@ fn save_configs(dir: &Path, manifest: &Value, template: Value) -> Result<()> {
     }
     Ok(())
 }
-fn upgrade_paths(config: &mut Value, sites: bool) -> bool {
+fn upgrade_paths(config: &mut Value) -> bool {
     let mut changed = replace_path(
         config,
         "/main",
-        if sites {
-            "../../../sites/index.ts"
-        } else {
-            "../../../worker/index.ts"
-        },
-        if sites {
-            "../../../cloudflare/sites/index.ts"
-        } else {
-            "../../../cloudflare/worker/index.ts"
-        },
+        "../../../worker/index.ts",
+        "../../../cloudflare/worker/index.ts",
     );
-    if !sites {
-        changed |= replace_path(
-            config,
-            "/assets/directory",
-            "../../../web/dist",
-            "../../../frontend/dist",
-        );
-        if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut) {
-            for container in containers {
-                changed |= replace_path(
-                    container,
-                    "/image",
-                    "../../../containers/Dockerfile",
-                    "../../../cloudflare/containers/Dockerfile",
-                );
-            }
+    changed |= replace_path(
+        config,
+        "/assets/directory",
+        "../../../web/dist",
+        "../../../frontend/dist",
+    );
+    if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut) {
+        for container in containers {
+            changed |= replace_path(
+                container,
+                "/image",
+                "../../../containers/Dockerfile",
+                "../../../cloudflare/containers/Dockerfile",
+            );
         }
-        if let Some(databases) = config.get_mut("d1_databases").and_then(Value::as_array_mut) {
-            for database in databases {
-                changed |= replace_path(
-                    database,
-                    "/migrations_dir",
-                    "../../../migrations",
-                    "../../../cloudflare/migrations",
-                );
-            }
+    }
+    if let Some(databases) = config.get_mut("d1_databases").and_then(Value::as_array_mut) {
+        for database in databases {
+            changed |= replace_path(
+                database,
+                "/migrations_dir",
+                "../../../migrations",
+                "../../../cloudflare/migrations",
+            );
         }
     }
     changed
@@ -154,7 +142,7 @@ fn replace_path(config: &mut Value, pointer: &str, old: &str, new: &str) -> bool
         false
     }
 }
-fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
+fn configs(mut platform: Value, m: &Value) -> Value {
     let name = m["name"].as_str().unwrap_or_default();
     platform["name"] = m["name"].clone();
     platform["account_id"] = m["account_id"].clone();
@@ -162,48 +150,24 @@ fn configs(mut platform: Value, m: &Value) -> (Value, Value) {
     platform["$schema"] = json!("../../../node_modules/wrangler/config-schema.json");
     platform["assets"]["directory"] = json!("../../../frontend/dist");
     platform["vars"]["ARTIFACTS_NAMESPACE"] = m["namespace"].clone();
-    platform["vars"]["SITE_ORIGIN"] = m["sites_url"].clone();
     platform["services"][0]["service"] = m["name"].clone();
     platform
         .as_object_mut()
         .map(|p| p.remove("secrets_store_secrets"));
     platform["artifacts"][0]["namespace"] = m["namespace"].clone();
-    // Agent executions and platform checks share the pinned runtime image.
-    for index in 0..2 {
-        platform["containers"][index]["image"] = json!("../../../cloudflare/containers/Dockerfile");
-        platform["containers"][index]["image_build_context"] = json!("../../..");
-    }
-    // Sandbox images (AgentSandbox) resolve from the generated config's directory too.
+    // Platform checks run the pinned runtime image.
     for container in platform["containers"].as_array_mut().into_iter().flatten() {
-        for image in container["images"]
-            .as_object_mut()
-            .into_iter()
-            .flat_map(|m| m.values_mut())
-        {
-            if let Some(path) = image["dockerfile"]
-                .as_str()
-                .map(|p| p.trim_start_matches("./").to_owned())
-            {
-                image["dockerfile"] = json!(format!("../../../cloudflare/{path}"));
-                image["build_context"] = json!("../../..");
-            }
-        }
+        container["image"] = json!("../../../cloudflare/containers/Dockerfile");
+        container["image_build_context"] = json!("../../..");
     }
     platform["r2_buckets"][0]["bucket_name"] = json!(format!("{name}-objects"));
     platform["d1_databases"][0] = json!({"binding":"INDEX","database_name":format!("{name}-index"),"database_id":m["database_id"],"migrations_dir":"../../../cloudflare/migrations"});
     platform["workflows"][0]["name"] = json!(format!("{name}-platform-import"));
-    for (index, suffix) in ["agent", "capture", "evaluate", "platform"]
-        .iter()
-        .enumerate()
-    {
-        let queue = json!(format!("{name}-{suffix}"));
-        platform["queues"]["producers"][index]["queue"] = queue.clone();
-        platform["queues"]["consumers"][index]["queue"] = queue;
-        platform["queues"]["consumers"][index]["dead_letter_queue"] =
-            json!(format!("{name}-dead-letter"));
-    }
-    let sites = json!({"$schema":"../../../node_modules/wrangler/config-schema.json","name":format!("{name}-sites"),"account_id":m["account_id"],"main":"../../../cloudflare/sites/index.ts","compatibility_date":platform["compatibility_date"],"compatibility_flags":["nodejs_compat"],"workers_dev":true,"preview_urls":false,"observability":{"enabled":true},"r2_buckets":[{"binding":"OBJECTS","bucket_name":format!("{name}-objects")}],"services":[{"binding":"PLATFORM","service":name}]});
-    (platform, sites)
+    let queue = json!(format!("{name}-platform"));
+    platform["queues"]["producers"][0]["queue"] = queue.clone();
+    platform["queues"]["consumers"][0]["queue"] = queue;
+    platform["queues"]["consumers"][0]["dead_letter_queue"] = json!(format!("{name}-dead-letter"));
+    platform
 }
 pub(crate) fn private(path: &Path, directory: bool) -> Result<()> {
     #[cfg(unix)]

@@ -2,10 +2,9 @@
 // Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own
 // Durable Object namespaces, Artifacts namespace, R2,
 // D1, queues, workflow, check containers and secrets, so it shares nothing with production
-// (yonedarepo-prod-*). Browsers reach it through the dev agent Worker's
+// (yonedarepo-prod-*). Browsers reach it through the dev front Worker's
 // /api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.
 // OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
-// VAULT_KEY    64 hex characters, shared with yonedarepo-dev-agents
 // Run next to the data: a commit makes about ten round trips to its repository's
 // Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo
 // otherwise. New repository objects are created near the placed Worker.
@@ -15,8 +14,8 @@
 // head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.
 // Check runs take minutes (container start, the check): one per invocation, up to
 // the container limit (4) at once, apart from the derive and projection jobs above.
-// api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the prod sites Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).
-// Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the agent Worker's managed connections use), bound to the platform Worker itself; it never reads an agent-layer connection.
+// api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route); WEB_ORIGIN is where people approve device logins (/device).
+// Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the front Worker's managed connections use), bound to the platform Worker itself.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
