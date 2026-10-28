@@ -5,7 +5,9 @@
 // An isolate reuses an answer for at most ACCESS_MS from when its fetch started, and the
 // isolate that served an org change drops its copies, so removing someone from a team or an
 // org refuses them everywhere within ACCESS_MS of the change's answer: the same bound as a
-// repository's own access changes (repo-head.ts).
+// repository's own access changes (repo-head.ts). Joining a team or an org is bounded the
+// same way: another isolate may list and decide without it for under ACCESS_MS (unlike a
+// repository grant, which a refused read asks the head holder about again at once).
 import { ACCESS_MS } from './repo-head';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
