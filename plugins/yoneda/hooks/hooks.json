@@ -1,9 +1,9 @@
 {
-  "description": "YonedaRepo: the status line at session start, and in a clone with a YonedaRepo remote the files read become the next push's declared reads, a plain git push over smart HTTP is sent to yoneda push while reads are recorded, and each pushed commit gets a session record at the end of the turn.",
+  "description": "YonedaRepo: in a clone with a YonedaRepo remote, the session starts with the repository's context (recent sessions, open changes, landing rules, contracts), the files read become the next push's declared reads, a plain git push over smart HTTP is sent to yoneda push while reads are recorded, and each commit this session pushed gets its session record at the end of the turn.",
   "hooks": {
     "SessionStart": [
       {
-        "matcher": "startup|resume",
+        "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
             "type": "command",

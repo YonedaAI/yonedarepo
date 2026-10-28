@@ -9,7 +9,7 @@ account
   repo create <name> [--owner <org>] | repo list | repo delete <id> --confirm <name>
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
-  setup claude|codex|gemini                              a coding agent's skill files and MCP config
+  setup claude|codex|gemini|opencode                     a coding agent's skill or plugin and MCP config
   ssh-key add [--title <t>] <file.pub|->  | ssh-key list | ssh-key rm <id>   keys for Git over SSH
 
 organizations (owners manage members and teams; a repository grants a team by
@@ -44,12 +44,16 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   conflicts                           the last refused landing's conflicting paths
   status [--brief]                    one line, no network: commits not on the platform yet
   session record [<sha>] --cli <c> --summary <text> [--model <m>] [--transcript-ref <r>]
+                 [--session-id <id>]  (default id: $YONEDA_SESSION_ID or opencode's session)
   session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
+  context [--max-bytes <n>] [--json]  what a new coding session here should know: recent
+                                      sessions, open changes, landing rules, contracts
 
 declared reads (closure coverage: landing refuses a push whose reads changed meanwhile)
   reads add <path>... | reads list | reads clear    this session's reads ($GIT_DIR/yoneda/reads)
   push [<git push args>]              git push -o yoneda.reads=<recorded reads>, then clear them
-  hook claude-read|claude-bash|claude-stop          agent hook entry points (JSON on stdin)
+  hook claude-start|claude-read|claude-bash|claude-stop    agent hook entry points (JSON on
+  hook opencode-start|opencode-read|opencode-shell|opencode-stop      stdin; plugins/)
 
 offline checkouts (`yoneda clone`, kept for existing scripts)
   clone <repo-id> [dir] [--origin <url>]
@@ -232,6 +236,8 @@ pub enum SessionCommand {
         summary: String,
         model: Option<String>,
         transcript_ref: Option<String>,
+        /// The coding session's id (default: from the environment).
+        session_id: Option<String>,
     },
     List {
         commit: Option<String>,
@@ -291,12 +297,25 @@ pub struct Anchor {
 /// The agent hook a `yoneda hook <event>` call serves.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum HookEvent {
+    /// Claude Code SessionStart: the repository's context, and the session id exported.
+    ClaudeStart,
     /// Claude Code PostToolUse on Read/Grep: records the files read.
     ClaudeRead,
     /// Claude Code PreToolUse on Bash: sends `git push` with recorded reads to `yoneda push`.
     ClaudeBash,
     /// Claude Code Stop: posts a session record for each commit pushed this turn.
     ClaudeStop,
+    /// The opencode plugin's events (`opencode-start|read|shell|stop`).
+    Opencode(OpencodeEvent),
+}
+
+/// An opencode plugin event (`opencode_hook`).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum OpencodeEvent {
+    Start,
+    Read,
+    Shell,
+    Stop,
 }
 
 /// A coding agent `yoneda setup` configures.
@@ -305,6 +324,7 @@ pub enum Agent {
     Claude,
     Codex,
     Gemini,
+    Opencode,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -392,4 +412,9 @@ pub enum Command {
         command: ReleaseCommand,
     },
     Hook(HookEvent),
+    /// `yoneda context`: what a coding session starting here should know.
+    Context {
+        max_bytes: usize,
+        json: bool,
+    },
 }

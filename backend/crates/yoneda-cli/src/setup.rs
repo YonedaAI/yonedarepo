@@ -1,4 +1,4 @@
-//! `yoneda setup claude|codex|gemini`: installs a coding agent's YonedaRepo files (the
+//! `yoneda setup claude|codex|gemini|opencode`: installs a coding agent's YonedaRepo files (the
 //! skill or extension compiled in from `plugins/`) and points it at the platform's account
 //! MCP endpoint (`<origin>/api/v1/mcp`). The bearer is always read from `YONEDA_TOKEN`
 //! when the agent runs; no token is ever written into a file.
@@ -14,6 +14,8 @@ pub const CODEX_SKILL: &str = include_str!("../../../../plugins/codex/skills/yon
 /// The Gemini CLI extension (`~/.gemini/extensions/yoneda/`): its manifest and context.
 pub const GEMINI_MANIFEST: &str = include_str!("../../../../plugins/gemini/gemini-extension.json");
 pub const GEMINI_CONTEXT: &str = include_str!("../../../../plugins/gemini/GEMINI.md");
+/// The opencode 2 plugin (`<opencode config>/plugins/yoneda/index.ts`).
+pub const OPENCODE_PLUGIN: &str = include_str!("../../../../plugins/opencode/yoneda/index.ts");
 /// Where Claude Code installs the plugin from (this repository's marketplace).
 pub const CLAUDE_MARKETPLACE: &str = "YonedaAI/yonedarepo";
 pub const CLAUDE_PLUGIN: &str = "yoneda@yoneda";
@@ -64,6 +66,39 @@ pub fn gemini_server(url: &str) -> Value {
     })
 }
 
+/// `existing` opencode 2 config (JSON) with `mcp.servers.yoneda` set to the platform's
+/// remote server; opencode substitutes `{env:YONEDA_TOKEN}` when it connects.
+pub fn opencode_config(existing: &str, url: &str) -> Result<String> {
+    let mut config: Value = if existing.trim().is_empty() {
+        json!({ "$schema": "https://opencode.ai/config.json" })
+    } else {
+        serde_json::from_str(existing).map_err(|e| {
+            Error::new(format!(
+                "the existing opencode.json is not plain JSON ({e}); add plugins/opencode/opencode.jsonc's mcp entry by hand"
+            ))
+        })?
+    };
+    let server = json!({ "type": "remote", "url": url,
+        "headers": { "Authorization": format!("Bearer {{env:{TOKEN_ENV}}}") } });
+    let mcp = config
+        .as_object_mut()
+        .ok_or_else(|| Error::new("opencode.json is not a JSON object"))?
+        .entry("mcp")
+        .or_insert_with(|| json!({}));
+    let servers = mcp
+        .as_object_mut()
+        .ok_or_else(|| Error::new("opencode.json's mcp is not a JSON object"))?
+        .entry("servers")
+        .or_insert_with(|| json!({}));
+    servers
+        .as_object_mut()
+        .ok_or_else(|| Error::new("opencode.json's mcp.servers is not a JSON object"))?
+        .insert("yoneda".into(), server);
+    serde_json::to_string_pretty(&config)
+        .map(|s| s + "\n")
+        .context("encoding the config")
+}
+
 /// `existing` JSON with `mcpServers.yoneda` set to `server`.
 pub fn with_server(existing: &str, server: Value) -> Result<String> {
     let mut config: Value = if existing.trim().is_empty() {
@@ -109,6 +144,8 @@ fn install(path: &Path, text: &str) -> Result<()> {
 pub struct Places {
     pub home: PathBuf,
     pub codex_home: Option<PathBuf>,
+    /// `$XDG_CONFIG_HOME` (opencode's config is under it, default `~/.config`).
+    pub xdg_config: Option<PathBuf>,
     pub cwd: PathBuf,
 }
 
@@ -119,6 +156,9 @@ impl Places {
                 .map(PathBuf::from)
                 .ok_or_else(|| Error::new("HOME is not set"))?,
             codex_home: std::env::var_os("CODEX_HOME").map(PathBuf::from),
+            xdg_config: std::env::var_os("XDG_CONFIG_HOME")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
             cwd: std::env::current_dir().context("current directory")?,
         })
     }
@@ -159,6 +199,18 @@ pub fn setup(agent: Agent, origin: &str, at: &Places) -> Result<Vec<PathBuf>> {
             rewrite(&settings, |text| with_server(text, gemini_server(&url)))?;
             written.extend([manifest, context, settings]);
         }
+        Agent::Opencode => {
+            let base = at
+                .xdg_config
+                .clone()
+                .unwrap_or_else(|| at.home.join(".config"))
+                .join("opencode");
+            let plugin = base.join("plugins/yoneda/index.ts");
+            install(&plugin, OPENCODE_PLUGIN)?;
+            let config = base.join("opencode.json");
+            rewrite(&config, |text| opencode_config(text, &url))?;
+            written.extend([plugin, config]);
+        }
     }
     Ok(written)
 }
@@ -192,6 +244,7 @@ mod tests {
         Places {
             home: dir.join("home"),
             codex_home: None,
+            xdg_config: None,
             cwd: dir.join("project"),
         }
     }
@@ -269,6 +322,37 @@ mod tests {
         );
         let settings = read(&at.home.join(".gemini/settings.json"))?;
         assert!(settings.contains(&format!("{ORIGIN}/api/v1/mcp")));
+        Ok(())
+    }
+
+    #[test]
+    fn opencode_gets_the_plugin_and_its_mcp_server() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let at = places(dir.path());
+        let base = at.home.join(".config/opencode");
+        std::fs::create_dir_all(&base).context("mkdir")?;
+        std::fs::write(
+            base.join("opencode.json"),
+            r#"{"model":"zai-coding-plan/glm-5.3","mcp":{"servers":{"other":{"type":"local","command":["x"]}}}}"#,
+        )
+        .context("write")?;
+        let written = setup(Agent::Opencode, ORIGIN, &at)?;
+        assert_eq!(written.len(), 2);
+        assert_eq!(
+            read(&base.join("plugins/yoneda/index.ts"))?,
+            OPENCODE_PLUGIN
+        );
+        let config: Value =
+            serde_json::from_str(&read(&base.join("opencode.json"))?).context("config")?;
+        assert_eq!(config["model"], "zai-coding-plan/glm-5.3");
+        assert_eq!(config["mcp"]["servers"]["other"]["type"], "local");
+        let yoneda = &config["mcp"]["servers"]["yoneda"];
+        assert_eq!(yoneda["url"], format!("{ORIGIN}/api/v1/mcp"));
+        assert_eq!(
+            yoneda["headers"]["Authorization"],
+            "Bearer {env:YONEDA_TOKEN}"
+        );
+        assert!(opencode_config("// jsonc\n{}", URL).is_err());
         Ok(())
     }
 

@@ -1,0 +1,19 @@
+// YonedaRepo for opencode 2: merge into ~/.config/opencode/opencode.json (or a project's
+// opencode.json). `yoneda setup opencode` does this and installs the plugin. The token comes
+// from the YONEDA_TOKEN environment variable (a ypat_ personal access token from
+// `yoneda login`); it is never written here. For production use
+// https://api.yonedarepo.com/api/v1/mcp. Without a plugins entry, opencode loads the plugin
+// from ~/.config/opencode/plugins/yoneda/ (or .opencode/plugins/yoneda/ in a project).
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "zai-coding-plan/glm-5.3",
+  "mcp": {
+    "servers": {
+      "yoneda": {
+        "type": "remote",
+        "url": "https://api.dev.yonedarepo.com/api/v1/mcp",
+        "headers": { "Authorization": "Bearer {env:YONEDA_TOKEN}" }
+      }
+    }
+  }
+}
