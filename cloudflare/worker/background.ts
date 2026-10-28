@@ -17,3 +17,9 @@ export function deferred(work: () => Promise<unknown>) {
   waitUntil(work().catch((e) => console.warn(`deferred work failed: ${e?.message ?? e}`)));
   return true;
 }
+
+/** `work` after the response when the request lent its waitUntil, else now: the returned
+ * promise is what the answer must wait for (nothing, when deferred). */
+export function afterAnswer(work: () => Promise<unknown>): Promise<unknown> {
+  return deferred(work) ? Promise.resolve() : work();
+}
