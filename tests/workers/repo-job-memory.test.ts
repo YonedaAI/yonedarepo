@@ -10,7 +10,7 @@ import { compute } from '../../cloudflare/worker/repo-compute';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, countingOps, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -133,28 +133,4 @@ it('derives a large API commit (no bundles) through the read tiers, 32 at a time
   expect(seen.peak).toBeLessThanOrEqual(40);
   const found = await api(`/repos/${repo}/search?query=writer 299`, owner);
   expect(found.body.results.map((r: { path: string }) => r.path)).toEqual(['writers/299.txt']);
-});
-
-it('reads a landing not yet projected from its commit shard, not from the authority and all 64', async () => {
-  const batch = { ...scoped, LAND_MODE: 'batch' } as unknown as Env;
-  const owner = { cookie: await signup('burst_read') };
-  const created = await api('/repos', owner, { body: { name: 'burst_read', policy: { approvals: 0, required_checks: [] }, files: [file('a.txt', 'a\n')], author } }, batch);
-  const repo = created.body.id as string;
-  const made = await api(`/repos/${repo}/commits`, owner, { body: { ref: 'main', changes: [file('writers/0.txt', 'writer 0\n')], message: 'w0', author } }, batch);
-  const land = await api(`/repos/${repo}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, batch);
-  expect(land.status, JSON.stringify(land.body)).toBe(200);
-  const path = `/repos/${repo}/blob?path=writers/0.txt&min_version=${land.body.version}`;
-  const { id } = (await api(path, owner, {}, batch)).body;
-  // A reader in another colo or isolate: neither cache tier holds the file (the commit's
-  // cache fill is best effort), and the drain to R2 has not run.
-  await bindings.OBJECTS.delete(`platform/v1/${repo}/objects/${id}`);
-  await caches.default.delete(new Request(`https://objects.yoneda.internal/${repo}/${id}`));
-  const { env, take } = countingOps(batch);
-  const read = await api(path, owner, {}, env);
-  expect(read.body.content).toBe('writer 0\n');
-  expect(read.body.commit).toBeNull(); // served from the published head's overlay
-  // Before: one authority staged read and 64 shard reads.
-  const ops = take();
-  expect(ops.repo_staged_objects ?? 0).toBe(0);
-  expect(ops.store_staged_objects).toBeLessThanOrEqual(2);
 });
