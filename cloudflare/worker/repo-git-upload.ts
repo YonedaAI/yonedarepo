@@ -8,7 +8,7 @@
 
 import { transient } from './durable';
 import { compute } from './repo-compute';
-import { inBatches, rawObject, treeFor } from './repo-git-objects';
+import { rawObjects, treesFor } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -19,7 +19,6 @@ export const RESULT = {
 };
 export const REQUEST_BYTES = 8 * 1024 * 1024;
 const WALK_ROUNDS = 64;
-const READS = 32;
 /** Pack bytes gathered before they are sent (one side-band packet at most). */
 export const CHUNK = 65515;
 
@@ -135,14 +134,14 @@ async function enumerate(session: UploadSession, objects: RepoObjects) {
   for (let round = 0; step.need_trees; round++) {
     if (round >= WALK_ROUNDS)
       throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-    const trees = await inBatches(step.need_trees as string[], READS, (id) => treeFor(objects, id));
+    const trees = await treesFor(objects, step.need_trees as string[]);
     step = session.step({ trees });
   }
   return step;
 }
 
 /** The pack, in pieces of about `CHUNK` bytes: header, trees (from the session), then
- * blobs and commits read in batches, then the trailer. Closes the session. */
+ * blobs and commits read in groups (`rawObjects`), then the trailer. Closes the session. */
 async function* packChunks(session: UploadSession, objects: RepoObjects, listed: Json) {
   try {
     let pending: Uint8Array[] = [session.start()];
@@ -157,12 +156,8 @@ async function* packChunks(session: UploadSession, objects: RepoObjects, listed:
       }
     };
     for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
-    const fetch = listed.fetch as { id: string; kind: string }[];
-    for (let i = 0; i < fetch.length; i += READS) {
-      const batch = fetch.slice(i, i + READS);
-      const read = await Promise.all(batch.map((o) => rawObject(objects, o.id, o.kind)));
-      for (const [index, data] of read.entries()) {
-        const { id, kind } = batch[index];
+    for await (const group of rawObjects(objects, listed.fetch)) {
+      for (const { id, kind, data } of group) {
         if (!data)
           throw new ApiError(
             'NOT_FOUND',

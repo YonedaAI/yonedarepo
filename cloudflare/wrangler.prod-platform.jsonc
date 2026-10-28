@@ -201,6 +201,7 @@
   "vars": {
     "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
     "LAND_MODE": "batch",
+    "PUSH_BUNDLES": "off",
     "WEB_ORIGIN": "https://yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
   },

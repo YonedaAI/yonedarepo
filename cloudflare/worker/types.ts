@@ -40,6 +40,8 @@ export interface Env {
   ARTIFACTS_NAMESPACE: string;
   /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
   PLATFORM_OBJECT_STORE?: string;
+  /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
+  PUSH_BUNDLES?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls
    * back to the request origin. */
   WEB_ORIGIN?: string;

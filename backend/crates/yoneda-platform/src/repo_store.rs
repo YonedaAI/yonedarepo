@@ -250,6 +250,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_git_access" => git_http::access(&actor, c, &settings),
         "repo_git_walk" => git_http::walk(db, c, &actor),
         "repo_record_pushed" => pushed::record(db, c, &actor, &settings),
+        "repo_bundle_index" | "repo_bundle_locate" => pushed::bundles::op(db, c, &op, &actor),
         "repo_delete" => deletion::delete(db, c, &actor, &settings),
         "repo_purge_target" => deletion::purge_target(&actor, &settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
