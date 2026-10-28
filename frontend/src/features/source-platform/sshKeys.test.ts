@@ -1,8 +1,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { SshCloneLine } from './CodeParts';
 import { SshKeyTable, SshSetup } from './SshKeys';
-import { publicKeyProblem, type SshKey, suggestedTitle } from './sshKeyModel';
+import { publicKeyProblem, type SshKey, sshCloneCommand, suggestedTitle } from './sshKeyModel';
 import type { Loaded } from './useSource';
 
 const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl';
@@ -75,5 +76,38 @@ describe('SshSetup', () => {
       'not open yet',
     );
     expect(setup(undefined)).toBe('');
+  });
+});
+
+describe('SSH in the Clone menu', () => {
+  const REPO = 'r0123456789abcdef0123';
+  const tunnel = {
+    front_door: 'tunnel' as const,
+    host: 'ssh.dev.yonedarepo.com',
+    clone_url: 'ssh://git@ssh.dev.yonedarepo.com/<repository id>.git',
+    ssh_config:
+      'Host ssh.dev.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
+  };
+  const off = { front_door: null, host: null, clone_url: null, ssh_config: null };
+  const line = (access: unknown) =>
+    renderToStaticMarkup(createElement(SshCloneLine, { access, repo: REPO } as never));
+  it('builds the clone command only while SSH is open', () => {
+    expect(sshCloneCommand(tunnel, REPO)).toBe(
+      `git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git`,
+    );
+    expect(sshCloneCommand(off, REPO)).toBeNull();
+    expect(sshCloneCommand(undefined, REPO)).toBeNull();
+    expect(sshCloneCommand({ ...tunnel, host: 'evil.com"><x' }, REPO)).toBeNull();
+  });
+  it('shows the SSH line with Copy, and the setup hint only on the tunnel', () => {
+    const shown = line(tunnel);
+    expect(shown).toContain(`git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git`);
+    expect(shown).toContain('aria-label="Copy SSH"');
+    expect(shown).toContain('href="/settings#ssh-keys"');
+    const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });
+    expect(direct).toContain('Copy SSH');
+    expect(direct).not.toContain('/settings#ssh-keys');
+    expect(line(off)).toBe('');
+    expect(line(undefined)).toBe('');
   });
 });

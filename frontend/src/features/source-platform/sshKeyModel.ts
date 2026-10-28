@@ -18,6 +18,13 @@ export type SshAccess = {
   ssh_config: string | null;
 };
 
+/** The `git clone` line for a repository over SSH, or null while SSH is off. */
+export function sshCloneCommand(access: SshAccess | undefined, repo: string): string | null {
+  const host = access?.front_door ? access.host : null;
+  if (!host || !/^[a-z0-9.-]+$/.test(host)) return null;
+  return `git clone ssh://git@${host}/${repo}.git`;
+}
+
 const KEY_TYPE = /^(ssh-|ecdsa-|sk-)/;
 
 /** Why a pasted public key would be refused before sending it, or '' when it looks right. */
