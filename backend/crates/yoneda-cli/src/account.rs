@@ -1,4 +1,5 @@
-//! `yoneda repo create|list|delete|import`: repositories on the caller's account.
+//! `yoneda repo create|list|delete|import`: repositories on the caller's account (or, with
+//! `--owner`, on an organization it owns).
 use crate::command::RepoCommand;
 use crate::error::{Error, Result};
 use crate::remote::url::RemoteUrl;
@@ -23,10 +24,12 @@ fn clone_hint(origin: &str, repo: &str) -> String {
 pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
     let (origin, api) = target::account_api(origin)?;
     match command {
-        RepoCommand::Create { name } => {
-            let created = api
-                .post("/repos", &json!({ "name": name, "policy": *SOLO_POLICY }))
-                .await?;
+        RepoCommand::Create { name, owner } => {
+            let mut body = json!({ "name": name, "policy": *SOLO_POLICY });
+            if let Some(owner) = &owner {
+                body["owner"] = json!(owner);
+            }
+            let created = api.post("/repos", &body).await?;
             let id = created["id"]
                 .as_str()
                 .ok_or_else(|| Error::new("the platform returned no repository id"))?;

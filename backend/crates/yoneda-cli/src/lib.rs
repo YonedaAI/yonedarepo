@@ -19,6 +19,7 @@ pub mod error;
 mod git;
 pub mod import;
 pub mod login;
+mod org_cmd;
 mod plan;
 mod pull;
 mod reads;
