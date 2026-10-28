@@ -102,7 +102,7 @@ A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, 
 - `--only 0,6,7` runs the listed items; `--skip-bursts` leaves out 8–10.
 - `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--reads-sessions`: one gate with item 0.
 - `--api <origin>` is the platform API host for the CLI items (default `https://api.dev.yonedarepo.com`); `--origin`, `--platform` and `--client` name the front, platform and bench Workers.
-- `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits.
+- `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits. Every item deletes the repositories it creates, pass or fail (the fanout bench too), so leftovers come only from runs killed mid-item or from runs before this change (2026-10-27): `kit-clone`, `kit-check`, `kit-burst`, `fanout`.
 
 Evidence is `realworld-<ms>.json`; a single gate writes its own name (`browser-gate-*`, `model-check-*`, `webhook-gate-*`, `members-gate-*`, `reads-gate-*`). A prod deploy reads the newest `realworld*.json` and refuses unless its item 0 recorded both Workers at the commit being deployed and every item passed.
 
