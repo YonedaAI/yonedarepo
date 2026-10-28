@@ -70,6 +70,41 @@ export async function templateFiles(env: Env, name: string, pinned?: string) {
   return { commit: commit.hash, tree: commit.treeHash, files };
 }
 
+/** The platform's repository-name rule (yoneda-platform `rows::init`). */
+const REPO_NAME_MAX = 100;
+
+/** A project's display name as a repository name: runs of anything outside [A-Za-z0-9._-]
+ * become one `-` (accents dropped first), no leading `.` or `-`, at most `max` characters;
+ * empty when nothing usable is left. */
+export function repoSlug(name: unknown, max = REPO_NAME_MAX) {
+  return String(name ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/^[.-]+/, '')
+    .slice(0, max)
+    .replace(/[.-]+$/, '');
+}
+
+/**
+ * The repository name for a project: its display name, made valid. The platform does not
+ * require unique names per account, but the account MCP addresses repositories by name, so a
+ * name the owner's repositories already use gets the first free `-2`, `-3`… suffix. A
+ * concurrent creation may still pick the same name; that is allowed, only less convenient.
+ */
+export async function projectRepoName(env: Env, owner: string, project: Json) {
+  const base = repoSlug(project.name, REPO_NAME_MAX - 4) || project.id;
+  const { results } = await env.INDEX.prepare(
+    'SELECT name FROM platform_repos WHERE workspace=? AND (name=? OR name LIKE ?)',
+  )
+    .bind(owner, base, `${base}-%`)
+    .all<{ name: string }>();
+  const taken = new Set(results.map((r) => r.name));
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+  return name;
+}
+
 /**
  * Bind the project to a platform repository, creating it with `requester`'s own credential.
  * `onBehalf` is the operator provisioning for `owner`. Replays reuse the first binding
@@ -86,8 +121,7 @@ export async function ensureProjectPlatform(
   if (project.platform?.repo) return project.platform.repo;
   const seed = pinned ?? (await projectSeed(env, project));
   const common = {
-    // Platform names are identifiers; the display name stays on the workspace project.
-    name: project.id,
+    name: await projectRepoName(env, owner, project),
     policy: PLATFORM_POLICY,
     tokens: [{ name: AGENT_TOKEN, scopes: AGENT_SCOPES }],
     ...(onBehalf ? { workspace: owner } : {}),
