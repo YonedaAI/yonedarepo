@@ -2,8 +2,8 @@
 //! releases, hooks.
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
-    Anchor, ChangeCommand, CheckCommand, Command, HookEvent, ReadCommand, ReadsCommand,
-    ReleaseCommand, RepoCommand, SessionCommand, SyncMode, TokenCommand,
+    Anchor, ChangeCommand, CheckCommand, Command, HookEvent, OpencodeEvent, ReadCommand,
+    ReadsCommand, ReleaseCommand, RepoCommand, SessionCommand, SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
@@ -188,7 +188,7 @@ pub fn session(rest: &[String]) -> Result<Command> {
     let (sub, rest) = split_sub(rest, "session")?;
     let p = Parsed::new(
         &rest,
-        &with(&["cli", "summary", "model", "transcript-ref"]),
+        &with(&["cli", "summary", "model", "transcript-ref", "session-id"]),
         &[],
     )?;
     p.at_most(1)?;
@@ -204,6 +204,7 @@ pub fn session(rest: &[String]) -> Result<Command> {
                 .ok_or_else(|| Error::usage("session record needs --summary <text>"))?,
             model: p.flag("model"),
             transcript_ref: p.flag("transcript-ref"),
+            session_id: p.flag("session-id"),
         },
         "list" => SessionCommand::List { commit },
         other => return Err(Error::usage(format!("unknown session command {other:?}"))),
@@ -305,13 +306,40 @@ pub fn release(rest: &[String]) -> Result<Command> {
     })
 }
 
+pub fn context(rest: &[String]) -> Result<Command> {
+    let p = Parsed::new(rest, &["max-bytes"], &["json"])?;
+    p.at_most(0)?;
+    let max_bytes = match p.flag("max-bytes") {
+        None => crate::context_cmd::DEFAULT_BYTES,
+        Some(n) => n
+            .parse()
+            .ok()
+            .filter(|n| (256..=65_536).contains(n))
+            .ok_or_else(|| Error::usage("--max-bytes must be 256-65536"))?,
+    };
+    Ok(Command::Context {
+        max_bytes,
+        json: p.on("json"),
+    })
+}
+
 pub fn hook(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(rest, &[], &[])?;
     Ok(Command::Hook(
-        match p.exactly(1, "hook claude-read|claude-bash|claude-stop")?[0].as_str() {
+        match p.exactly(
+            1,
+            "hook claude-<start|read|bash|stop>|opencode-<start|read|shell|stop>",
+        )?[0]
+            .as_str()
+        {
+            "claude-start" => HookEvent::ClaudeStart,
             "claude-read" => HookEvent::ClaudeRead,
             "claude-bash" => HookEvent::ClaudeBash,
             "claude-stop" => HookEvent::ClaudeStop,
+            "opencode-start" => HookEvent::Opencode(OpencodeEvent::Start),
+            "opencode-read" => HookEvent::Opencode(OpencodeEvent::Read),
+            "opencode-shell" => HookEvent::Opencode(OpencodeEvent::Shell),
+            "opencode-stop" => HookEvent::Opencode(OpencodeEvent::Stop),
             other => return Err(Error::usage(format!("unknown hook {other:?}"))),
         },
     ))

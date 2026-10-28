@@ -2,7 +2,7 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 33] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 34] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -120,6 +120,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 33] = [
         include_str!("../migrations/repo_store/0032_releases.sql"),
     ),
     (33, include_str!("../migrations/repo_store/0033_lfs.sql")),
+    (
+        34,
+        include_str!("../migrations/repo_store/0034_session_ids.sql"),
+    ),
 ];
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.

@@ -7,7 +7,7 @@ use crate::command::{ReadsCommand, SessionCommand, Target};
 use crate::error::{Context, Error, Result};
 use crate::git::Git;
 use crate::remote::url;
-use crate::session_files::{SessionFiles, push_options};
+use crate::session_files::{SessionFiles, current_session, push_options};
 use crate::target;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -203,7 +203,7 @@ pub fn push(args: Vec<String>) -> Result<()> {
             exit_code: status.code().unwrap_or(1),
         });
     }
-    if helper || reads.is_empty() {
+    if helper {
         return Ok(());
     }
     let tips: Vec<String> = tracking(&at.git, &remote)
@@ -211,10 +211,38 @@ pub fn push(args: Vec<String>) -> Result<()> {
         .filter(|(r, c)| before.get(r) != Some(c))
         .map(|(_, c)| c)
         .collect();
-    files.note_pushed(&tips, &reads)?;
-    files.clear_reads()?;
-    eprintln!("yoneda: the push declared {} read(s); cleared", reads.len());
+    let olds: Vec<String> = before.into_values().collect();
+    let commits = pushed_commits(&at.git, &tips, &olds);
+    files.note_pushed(&commits, &reads, current_session().as_deref())?;
+    if !reads.is_empty() {
+        files.clear_reads()?;
+        eprintln!("yoneda: the push declared {} read(s); cleared", reads.len());
+    }
     Ok(())
+}
+
+/// The commits a push sent: its new tips and what they reach that `known` (the remote's
+/// refs before it) did not, newest first, at most 100.
+pub fn pushed_commits(git: &Git, tips: &[String], known: &[String]) -> Vec<String> {
+    if tips.is_empty() {
+        return Vec::new();
+    }
+    let mut args = vec!["rev-list", "--max-count=100"];
+    args.extend(tips.iter().map(String::as_str));
+    let excluded: Vec<String> = known.iter().map(|c| format!("^{c}")).collect();
+    args.extend(excluded.iter().map(String::as_str));
+    let mut commits: Vec<String> = git
+        .run(&args)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    for tip in tips {
+        if !commits.contains(tip) {
+            commits.push(tip.clone());
+        }
+    }
+    commits
 }
 
 /// The commit `given` names, default HEAD.
@@ -236,10 +264,12 @@ pub async fn session(target: &Target, command: SessionCommand) -> Result<()> {
             summary,
             model,
             transcript_ref,
+            session_id,
         } => {
             let commit = commit_of(commit)?;
             let body = json!({ "cli": cli, "summary": summary, "model": model,
-                               "transcript_ref": transcript_ref });
+                               "transcript_ref": transcript_ref,
+                               "session_id": session_id.or_else(current_session) });
             let posted = resolved
                 .api
                 .post(&format!("/commits/{commit}/sessions"), &body)
@@ -279,9 +309,11 @@ pub fn record_body(
     prompt_digest: Option<&str>,
     transcript_ref: Option<&str>,
     read_set_digest: Option<&str>,
+    session_id: Option<&str>,
 ) -> Value {
     json!({ "cli": cli, "model": model, "summary": summary, "prompt_digest": prompt_digest,
-            "transcript_ref": transcript_ref, "read_set_digest": read_set_digest })
+            "transcript_ref": transcript_ref, "read_set_digest": read_set_digest,
+            "session_id": session_id })
 }
 
 #[cfg(test)]

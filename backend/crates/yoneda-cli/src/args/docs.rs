@@ -7,6 +7,7 @@ const SKILL: &str = include_str!("../../../../../plugins/yoneda/skills/yoneda/SK
 const CODEX_SKILL: &str = include_str!("../../../../../plugins/codex/skills/yoneda/SKILL.md");
 const GEMINI: &str = include_str!("../../../../../plugins/gemini/GEMINI.md");
 const CODEX_AGENTS: &str = include_str!("../../../../../plugins/codex/AGENTS.md");
+const OPENCODE_AGENTS: &str = include_str!("../../../../../plugins/opencode/AGENTS.md");
 const GUIDE: &str = include_str!("../../../../../docs/remote-mcp.md");
 
 /// The `yoneda …` commands in a Markdown document's code.
@@ -65,6 +66,7 @@ fn every_documented_command_parses() {
         ("plugins/yoneda/skills/yoneda/SKILL.md", SKILL),
         ("plugins/gemini/GEMINI.md", GEMINI),
         ("plugins/codex/AGENTS.md", CODEX_AGENTS),
+        ("plugins/opencode/AGENTS.md", OPENCODE_AGENTS),
         ("docs/remote-mcp.md", GUIDE),
     ];
     for (name, doc) in docs {

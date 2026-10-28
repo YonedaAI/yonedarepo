@@ -1,21 +1,28 @@
 //! Agent hook entry points (`yoneda hook <event>`, the hook's JSON on stdin), wired by the
-//! Claude Code plugin (`plugins/yoneda/hooks/hooks.json`). They act only in a clone with a
-//! platform remote, and never fail the session: a problem is reported on stderr.
+//! Claude Code plugin (`plugins/yoneda/hooks/hooks.json`) and the opencode plugin
+//! (`plugins/opencode`, events in `opencode_hook`). They act only in a clone with a platform
+//! remote, and never fail the session: a problem is reported on stderr.
+//! - `claude-start` (SessionStart): the repository's context (`yoneda context`) as the
+//!   session's additional context, and `YONEDA_SESSION_ID=claude-code:<id>` exported to
+//!   the session's shell (`CLAUDE_ENV_FILE`), so its pushes are noted as its own.
 //! - `claude-read` (PostToolUse on Read and Grep): the files the agent read (Grep: the
 //!   files that matched) join this session's declared reads.
 //! - `claude-bash` (PreToolUse on Bash): a plain `git push` to a smart-HTTP remote while
 //!   reads are recorded is denied with the `yoneda push` that declares them. A `yoneda::`
 //!   remote needs nothing: its helper declares them.
-//! - `claude-stop` (Stop): a session record for each commit pushed this turn, summarised by
-//!   the transcript's last assistant message (truncated; the transcript is not uploaded).
+//! - `claude-stop` (Stop): a session record for each commit this session pushed, summarised
+//!   by the transcript's last assistant message (truncated; the transcript is not uploaded).
+use crate::agent_transcript::{Transcript, transcript};
 use crate::command::{HookEvent, Target};
 use crate::error::{Context, Result};
 use crate::session_cmd::{Here, here, record_body, relative};
 use crate::session_files::SessionFiles;
-use crate::target;
+use crate::{context_cmd, opencode_hook, target};
 use serde_json::{Value, json};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+
+pub use crate::agent_transcript::truncate;
 
 const SUMMARY_BYTES: usize = 4096;
 
@@ -26,13 +33,15 @@ pub async fn run(event: HookEvent) -> Result<()> {
         .context("reading the hook input")?;
     let hook: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
     let outcome = match event {
+        HookEvent::ClaudeStart => start(&hook).await,
         HookEvent::ClaudeRead => read(&hook),
         HookEvent::ClaudeBash => bash(&hook).map(|deny| {
             if let Some(reason) = deny {
                 println!("{}", denial(&reason));
             }
         }),
-        HookEvent::ClaudeStop => stop(&hook).await,
+        HookEvent::ClaudeStop => claude_stop(&hook).await,
+        HookEvent::Opencode(event) => opencode_hook::run(event, &hook).await,
     };
     if let Err(e) = outcome {
         eprintln!("yoneda hook: {e}");
@@ -40,14 +49,49 @@ pub async fn run(event: HookEvent) -> Result<()> {
     Ok(())
 }
 
-/// The clone the hook runs in, when it has a platform remote.
-fn clone_at(hook: &Value) -> Option<(Here, PathBuf)> {
-    let cwd = hook["cwd"]
-        .as_str()
+/// The clone at `cwd` (default: the current directory), when it has a platform remote.
+pub fn clone_in(cwd: Option<&str>) -> Option<(Here, PathBuf)> {
+    let cwd = cwd
+        .filter(|c| !c.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok())?;
     let at = here(&cwd).ok()?;
     (!at.platform_urls().is_empty()).then_some((at, cwd))
+}
+
+fn clone_at(hook: &Value) -> Option<(Here, PathBuf)> {
+    clone_in(hook["cwd"].as_str())
+}
+
+/// The context text for a session starting in the clone at `cwd`.
+pub async fn context_at(cwd: &Path) -> Result<String> {
+    std::env::set_current_dir(cwd).context("entering the clone")?;
+    Ok(context_cmd::for_hook(context_cmd::DEFAULT_BYTES).await)
+}
+
+async fn start(hook: &Value) -> Result<()> {
+    let Some((_, cwd)) = clone_at(hook) else {
+        return Ok(());
+    };
+    if let (Some(id), Ok(file)) = (
+        hook["session_id"].as_str(),
+        std::env::var("CLAUDE_ENV_FILE"),
+    ) {
+        let id = id.split_whitespace().collect::<String>();
+        let mut env = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file)
+            .context("opening CLAUDE_ENV_FILE")?;
+        writeln!(env, "export YONEDA_SESSION_ID='claude-code:{id}'")
+            .context("writing CLAUDE_ENV_FILE")?;
+    }
+    let text = context_at(&cwd).await?;
+    println!(
+        "{}",
+        json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": text } })
+    );
+    Ok(())
 }
 
 /// The paths a Read or Grep call read.
@@ -69,16 +113,20 @@ pub fn paths_read(hook: &Value) -> Vec<String> {
     }
 }
 
+/// Records `paths` (absolute, or relative to `cwd`) as read in the clone `at`.
+pub fn record_reads(at: &Here, cwd: &Path, paths: &[String]) -> Result<usize> {
+    let entries: Vec<String> = paths
+        .iter()
+        .filter_map(|p| relative(&at.top, cwd, p))
+        .collect();
+    SessionFiles::new(&at.git_dir).add_reads(&entries)
+}
+
 fn read(hook: &Value) -> Result<()> {
     let Some((at, cwd)) = clone_at(hook) else {
         return Ok(());
     };
-    let entries: Vec<String> = paths_read(hook)
-        .iter()
-        .filter_map(|p| relative(&at.top, &cwd, p))
-        .collect();
-    SessionFiles::new(&at.git_dir).add_reads(&entries)?;
-    Ok(())
+    record_reads(&at, &cwd, &paths_read(hook)).map(|_| ())
 }
 
 /// Whether a shell command runs `git push` (`git [-C dir] [-c k=v] push`).
@@ -106,15 +154,11 @@ pub fn runs_git_push(command: &str) -> bool {
         })
 }
 
-/// Why a Bash call must not run as written (`None`: let it run).
-fn bash(hook: &Value) -> Result<Option<String>> {
-    let command = hook["tool_input"]["command"].as_str().unwrap_or_default();
+/// Why `command`, run in the clone `at`, must not run as written (`None`: let it run).
+pub fn push_refusal(at: &Here, command: &str) -> Result<Option<String>> {
     if !runs_git_push(command) || command.contains("yoneda.reads") {
         return Ok(None);
     }
-    let Some((at, _)) = clone_at(hook) else {
-        return Ok(None);
-    };
     // Through a `yoneda::` remote the helper declares the reads itself.
     if at.platform_urls().iter().all(|u| u.starts_with("yoneda:")) {
         return Ok(None);
@@ -129,122 +173,94 @@ fn bash(hook: &Value) -> Result<Option<String>> {
     )))
 }
 
+fn bash(hook: &Value) -> Result<Option<String>> {
+    let command = hook["tool_input"]["command"].as_str().unwrap_or_default();
+    let Some((at, _)) = clone_at(hook) else {
+        return Ok(None);
+    };
+    push_refusal(&at, command)
+}
+
 fn denial(reason: &str) -> Value {
     json!({ "hookSpecificOutput": { "hookEventName": "PreToolUse",
             "permissionDecision": "deny", "permissionDecisionReason": reason } })
 }
 
-/// What a Claude Code transcript (JSON lines) says about the turn: the model, the last
-/// assistant text, and the person's prompts.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Transcript {
-    pub model: Option<String>,
-    pub last_text: Option<String>,
-    pub prompts: Vec<String>,
+/// What a session's records say about it.
+pub struct Record<'a> {
+    pub cli: &'a str,
+    pub model: Option<&'a str>,
+    pub summary: &'a str,
+    pub prompts: &'a [String],
+    pub session: &'a str,
 }
 
-fn texts(content: &Value) -> Vec<String> {
-    match content {
-        Value::String(text) => vec![text.clone()],
-        Value::Array(parts) => parts
-            .iter()
-            .filter(|p| p["type"] == "text")
-            .filter_map(|p| p["text"].as_str().map(str::to_owned))
-            .collect(),
-        _ => Vec::new(),
+/// Posts a session record for each commit `record.session` pushed from the clone `at` (and
+/// for pushes no session claimed). A network or server failure keeps the commit for the
+/// next turn's end. Returns how many records were posted.
+pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result<usize> {
+    let files = SessionFiles::new(&at.git_dir);
+    let pushed = files.take_pushed(Some(record.session))?;
+    if pushed.is_empty() {
+        return Ok(0);
     }
-}
-
-pub fn transcript(lines: &str) -> Transcript {
-    let mut out = Transcript::default();
-    for line in lines.lines() {
-        let Ok(entry) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        let message = &entry["message"];
-        match entry["type"].as_str() {
-            Some("assistant") => {
-                if let Some(model) = message["model"].as_str() {
-                    out.model = Some(model.to_owned());
-                }
-                let text = texts(&message["content"]).join("\n");
-                if !text.trim().is_empty() {
-                    out.last_text = Some(text);
+    let summary = truncate(record.summary, SUMMARY_BYTES - 3);
+    let prompts = (!record.prompts.is_empty())
+        .then(|| yoneda_core::digest(record.prompts.join("\n").as_bytes()));
+    std::env::set_current_dir(cwd).context("entering the clone")?;
+    let api = target::resolve(&Target::default())?.api;
+    let mut retry = Vec::new();
+    let mut posted = 0;
+    for push in pushed {
+        let body = record_body(
+            record.cli,
+            record.model,
+            &summary,
+            prompts.as_deref(),
+            Some(record.session),
+            push.reads.as_deref(),
+            Some(record.session),
+        );
+        match api
+            .post(&format!("/commits/{}/sessions", push.commit), &body)
+            .await
+        {
+            Ok(_) => posted += 1,
+            Err(f) => {
+                eprintln!(
+                    "yoneda hook: session record for {} not posted: {f}",
+                    push.commit
+                );
+                if f.status == 0 || f.status >= 500 {
+                    retry.push(push);
                 }
             }
-            // Tool results come back as user messages without text parts.
-            Some("user") => out.prompts.extend(texts(&message["content"])),
-            _ => {}
         }
     }
-    out
+    files.note_again(&retry)?;
+    Ok(posted)
 }
 
-/// `text` cut to at most `max` bytes on a character boundary.
-pub fn truncate(text: &str, max: usize) -> String {
-    let text = text.trim();
-    if text.len() <= max {
-        return text.to_owned();
-    }
-    let cut = (0..max)
-        .rev()
-        .find(|i| text.is_char_boundary(*i))
-        .unwrap_or(0);
-    format!("{}…", &text[..cut])
-}
-
-async fn stop(hook: &Value) -> Result<()> {
+async fn claude_stop(hook: &Value) -> Result<()> {
     let Some((at, cwd)) = clone_at(hook) else {
         return Ok(());
     };
-    let files = SessionFiles::new(&at.git_dir);
-    let pushed = files.take_pushed()?;
-    if pushed.is_empty() {
-        return Ok(());
-    }
     let seen = match hook["transcript_path"].as_str() {
         Some(path) => transcript(&std::fs::read_to_string(Path::new(path)).unwrap_or_default()),
         None => Transcript::default(),
     };
-    let summary = truncate(
-        seen.last_text.as_deref().unwrap_or("Claude Code session"),
-        SUMMARY_BYTES - 3,
+    let session = format!(
+        "claude-code:{}",
+        hook["session_id"].as_str().unwrap_or("unknown")
     );
-    let prompts =
-        (!seen.prompts.is_empty()).then(|| yoneda_core::digest(seen.prompts.join("\n").as_bytes()));
-    let transcript_ref = hook["session_id"]
-        .as_str()
-        .map(|id| format!("claude-code:{id}"));
-    std::env::set_current_dir(&cwd).context("entering the clone")?;
-    let api = target::resolve(&Target::default())?.api;
-    let mut retry = Vec::new();
-    for (commit, reads) in pushed {
-        let body = record_body(
-            "claude-code",
-            seen.model.as_deref(),
-            &summary,
-            prompts.as_deref(),
-            transcript_ref.as_deref(),
-            (reads.len() == 64).then_some(reads.as_str()),
-        );
-        match api
-            .post(&format!("/commits/{commit}/sessions"), &body)
-            .await
-        {
-            Ok(_) => {}
-            Err(f) => {
-                eprintln!("yoneda hook: session record for {commit} not posted: {f}");
-                // A network or server failure is retried at the next turn's end.
-                if f.status == 0 || f.status >= 500 {
-                    retry.push((commit, reads));
-                }
-            }
-        }
-    }
-    for (commit, digest) in retry {
-        files.note_pushed_digest(&commit, &digest)?;
-    }
-    Ok(())
+    let record = Record {
+        cli: "claude-code",
+        model: seen.model.as_deref(),
+        summary: seen.last_text.as_deref().unwrap_or("Claude Code session"),
+        prompts: &seen.prompts,
+        session: &session,
+    };
+    record_pushed(&at, &cwd, &record).await.map(|_| ())
 }
 
 #[cfg(test)]
@@ -282,29 +298,5 @@ mod tests {
                           "tool_response":{"mode":"files_with_matches","filenames":["src/a.rs","b.rs"]}});
         assert_eq!(paths_read(&grep), ["src/a.rs", "b.rs"]);
         assert!(paths_read(&json!({"tool_name":"Glob"})).is_empty());
-    }
-
-    #[test]
-    fn summarises_a_turn_from_its_transcript() {
-        let lines = [
-            json!({"type":"user","message":{"role":"user","content":"Fix the parser"}}),
-            json!({"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[
-                {"type":"text","text":"Looking."},{"type":"tool_use","name":"Read"}]}}),
-            json!({"type":"user","message":{"content":[{"type":"tool_result","content":"..."}]}}),
-            json!({"type":"assistant","message":{"model":"claude-sonnet-5-5","content":[
-                {"type":"text","text":"Fixed the parser and pushed."}]}}),
-            json!({"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash"}]}}),
-        ]
-        .map(|l| l.to_string())
-        .join("\n");
-        let seen = transcript(&format!("{lines}\nnot json\n"));
-        assert_eq!(seen.model.as_deref(), Some("claude-sonnet-5-5"));
-        assert_eq!(
-            seen.last_text.as_deref(),
-            Some("Fixed the parser and pushed.")
-        );
-        assert_eq!(seen.prompts, ["Fix the parser"]);
-        assert_eq!(truncate("ééé", 3), "é…");
-        assert_eq!(truncate(" short ", 10), "short");
     }
 }
