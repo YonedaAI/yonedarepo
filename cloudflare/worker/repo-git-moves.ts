@@ -44,7 +44,12 @@ export function refusal(command: Command, atomic: boolean): string | null {
 }
 
 /** `--atomic`: every working branch move and tag creation in one transaction, or none. */
-export async function moveAll(ctx: RepoContext, going: Command[], outcomes: Outcome) {
+export async function moveAll(
+  ctx: RepoContext,
+  going: Command[],
+  outcomes: Outcome,
+  messages: string[],
+) {
   if (going.length === 0) return;
   const updates = going.map((c) => ({ ref: c.ref, commit: c.new, expected: c.old }));
   try {
@@ -53,9 +58,20 @@ export async function moveAll(ctx: RepoContext, going: Command[], outcomes: Outc
     for (const c of going)
       if (stale.length > 0)
         outcomes.set(c.ref, stale.includes(c.ref) ? 'fetch first' : 'atomic push refused');
+    changeHints(moved, messages);
   } catch (e) {
     for (const c of going) outcomes.set(c.ref, reason(e));
   }
+}
+
+/** For each pushed working branch: its open change, or how to open one. */
+function changeHints(moved: Json, messages: string[]) {
+  for (const { ref, change } of moved.changes ?? [])
+    messages.push(
+      change === null
+        ? `open a change: yoneda change create ${short(ref)}`
+        : `change #${change} now at this push`,
+    );
 }
 
 /** One ref: a working branch by compare-and-swap (a tag by creation, the same call), a
@@ -72,7 +88,9 @@ export async function moveOne(
       op: 'repo_branch_batch',
       updates: [{ ref: c.ref, commit: c.new, expected: c.old }],
     });
-    return moved.stale ? 'fetch first' : null;
+    if (moved.stale) return 'fetch first';
+    changeHints(moved, messages);
+    return null;
   } catch (e) {
     return reason(e);
   }

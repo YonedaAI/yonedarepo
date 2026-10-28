@@ -86,7 +86,7 @@ export async function receivePack(
       return report(commands, outcomes, secret ? null : why, sideBand, messages);
     }
     await timed('git.move', async () => {
-      if (atomic) await moveAll(ctx, going, outcomes);
+      if (atomic) await moveAll(ctx, going, outcomes, messages);
       else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
     });
     // Every ref refused only because the authority was overloaded: nothing moved, so the
