@@ -1,7 +1,8 @@
 // Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
 // drives the served app as a person does, with zero model spend. It signs the kit account in
 // through the real login form, creates a repository with the shell's "New repository" dialog,
-// opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History,
+// opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History
+// (where it creates a branch under "Branches and tags" and deletes it again),
 // Changes (the empty list) and Settings (Landing rules, Connect) tabs
 // and the account Settings page. Then the second kit account (a member at write) commits on a
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
@@ -162,6 +163,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await tabs.getByRole('link', { name: 'History' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   await shot('source-history');
+  await branchesPage(page, account, id, shot, m);
   await tabs.getByRole('link', { name: 'Changes' }).click();
   await page.waitForURL(`**/source/${id}/changes`);
   await page.getByText('No open changes.').waitFor();
@@ -180,8 +182,30 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await accountSettings(page);
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
   await shot('account-settings');
-  m.source_pages = 'code,history,changes,settings,connect,account-settings';
+  m.source_pages = 'code,history,branches,changes,settings,connect,account-settings';
   return { id, name };
+}
+
+/** History → "Branches and tags": create a branch from main in the page, then delete it; the
+ * API reads back both. */
+export async function branchesPage(page, account, id, shot, m) {
+  const name = 'kit-ui-branch';
+  const refs = async () => (await account.get(`/api/v1/repos/${id}/refs`)).refs;
+  await page.getByRole('button', { name: 'Branches and tags' }).click();
+  await page.waitForURL(`**/source/${id}/branches`);
+  const form = page.getByRole('form', { name: 'Create a branch' });
+  await form.getByLabel('New branch').fill(name);
+  await form.getByRole('button', { name: 'Create branch' }).click();
+  const table = page.getByRole('table', { name: 'Branches' });
+  await table.getByRole('cell', { name, exact: true }).waitFor();
+  const created = await refs();
+  assert.equal(created[`refs/heads/${name}`], created['refs/heads/main'], 'the branch made in the page is not on main');
+  await shot('source-branch-created');
+  page.once('dialog', (dialog) => dialog.accept());
+  await table.getByRole('button', { name: `Delete branch ${name}` }).click();
+  await table.getByRole('cell', { name, exact: true }).waitFor({ state: 'detached' });
+  assert.equal((await refs())[`refs/heads/${name}`], undefined, 'the branch deleted in the page is still served');
+  m.branch_ui = 'created,deleted';
 }
 
 /**

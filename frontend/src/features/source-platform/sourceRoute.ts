@@ -1,6 +1,6 @@
 // URL state for the one app shell: every view is addressable and survives reload. Older
-// addresses (`/source`, `/source/tokens`, a repository's `/connect` and `/members`) still
-// parse, into the view that replaced them.
+// addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
+// `/settings/branches`) still parse, into the view that replaced them.
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
 
@@ -9,7 +9,6 @@ export const REPO_SETTINGS_SECTIONS = [
   'checks',
   'secrets',
   'webhooks',
-  'branches',
   'members',
   'tokens',
   'lfs',
@@ -28,6 +27,7 @@ export type SourceRoute =
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
+  | { view: 'branches'; repo: string }
   | { view: 'search'; repo: string; query: string }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
@@ -37,7 +37,7 @@ export type SourceRoute =
   | { view: 'session'; repo: string; id: number }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
-/** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code,
+/** The repository tabs; `transactions`, `branches` and `commit` belong to History, `overview` to Code,
  * `change` to Changes, `release` to Releases, `session` to Agents. */
 export type RepoTab =
   | 'code'
@@ -70,6 +70,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
+  if (view === 'branches' || (view === 'settings' && rest[0] === 'branches'))
+    return { view: 'branches', repo };
   if (view === 'connect') return { view: 'repo-settings', repo, section: 'connect' };
   if (view === 'members') return { view: 'repo-settings', repo, section: 'members' };
   if (view === 'settings')
@@ -117,6 +119,7 @@ export function formatSourceRoute(route: SourceRoute): string {
       ? `${base}/history`
       : `${base}/history?ref=${encodeURIComponent(route.ref)}`;
   if (route.view === 'transactions') return `${base}/transactions`;
+  if (route.view === 'branches') return `${base}/branches`;
   if (route.view === 'repo-settings')
     return route.section === 'rules' ? `${base}/settings` : `${base}/settings/${route.section}`;
   if (route.view === 'search')
@@ -151,6 +154,7 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
       return 'code';
     case 'history':
     case 'transactions':
+    case 'branches':
     case 'commit':
       return 'history';
     case 'changes':

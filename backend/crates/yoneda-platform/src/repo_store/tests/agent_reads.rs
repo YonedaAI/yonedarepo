@@ -192,3 +192,67 @@ fn contracts_pins_and_bisects_list_for_the_repository() {
     assert_eq!(bisect["testing"], started["testing"]);
     assert_eq!(bisect["remaining"], started["remaining"]);
 }
+
+#[test]
+fn sessions_list_the_commits_a_head_adds_over_its_base() {
+    let (h, root) = seeded();
+    let first = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn b() {}\n")]),
+            json!(["src/"]),
+        )
+        .unwrap();
+    let second = h
+        .commit(
+            AGENT,
+            Some(&first),
+            1,
+            json!([file("src/lib.rs", "pub fn c() {}\n")]),
+            json!(["src/"]),
+        )
+        .unwrap();
+    let on_root = record(&h, OWNER, &root, "claude-code", None)["session"]
+        .as_i64()
+        .unwrap();
+    let on_first = record(&h, AGENT, &first, "opencode", None)["session"]
+        .as_i64()
+        .unwrap();
+    let on_second = record(&h, AGENT, &second, "codex", None)["session"]
+        .as_i64()
+        .unwrap();
+
+    let range = h.ok(
+        CI,
+        json!({"op":"repo_session_list","head":second,"base":root}),
+    );
+    assert_eq!(
+        ids(&range),
+        [on_second, on_first],
+        "the base's sessions are left out"
+    );
+    assert_eq!(range["head"], json!(second));
+    assert_eq!(range["base"], json!(root));
+    assert_eq!(range["branch_scan_truncated"], false);
+    let whole = h.ok(CI, json!({"op":"repo_session_list","head":second}));
+    assert_eq!(ids(&whole), [on_second, on_first, on_root]);
+    let on_main = h.ok(
+        CI,
+        json!({"op":"repo_session_list","ref":"main","base":root}),
+    );
+    assert!(
+        ids(&on_main).is_empty(),
+        "main adds nothing over its own head"
+    );
+
+    for bad in [
+        json!({"op":"repo_session_list","base":root}),
+        json!({"op":"repo_session_list","ref":"main","head":second}),
+        json!({"op":"repo_session_list","head":"not-a-commit"}),
+        json!({"op":"repo_session_list","head":7}),
+    ] {
+        assert_eq!(code(h.run(CI, bad)), "INVALID_INPUT");
+    }
+}

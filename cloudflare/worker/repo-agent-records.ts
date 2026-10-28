@@ -35,6 +35,8 @@ export function agentRecords(
       cli: query.cli || null,
       model: query.model || null,
       ref: query.ref || null,
+      head: query.head || null,
+      base: query.base || null,
       ...page,
     });
   if (resource === 'contracts') return ctx.call({ op: 'repo_contract_list', ...page });

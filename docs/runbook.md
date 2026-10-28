@@ -109,7 +109,7 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 | Item | What must hold |
 |---|---|
 | `0` | `/health` revisions of the front and platform Workers (recorded with the evidence) |
-| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History, Changes (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Change page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
+| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History (creates a branch under "Branches and tags" and deletes it), Changes (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Change page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
 | `6` | `git clone` of protected `main` matches the API tree byte for byte |
 | `7` | A check run in a container passes, and no container is left afterwards |
 | `8`, `9` | 100- and 1000-writer bursts through the bench Worker: every land succeeds and reads back |
