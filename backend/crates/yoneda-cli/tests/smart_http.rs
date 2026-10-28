@@ -482,8 +482,9 @@ fn tags_push_and_clone(w: &World) -> TestResult {
         "the cloned tag is the pushed object, peeled to its commit",
     )?;
 
-    // A malformed tag object is refused and moves nothing.
-    let bad = format!("object {later}\ntype commit\n\nno tag header\n");
+    // A malformed tag object (Git parses it, but its tagger line is no identity) is
+    // refused and moves nothing.
+    let bad = format!("object {later}\ntype commit\ntag v3\ntagger nobody\n\nm\n");
     std::fs::write(dir.join("bad-tag"), bad).map_err(|e| e.to_string())?;
     let id = c.git(
         &dir,

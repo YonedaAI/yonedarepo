@@ -139,6 +139,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "push" => Command::Push(rest.to_vec()),
         "session" => sub::session(rest)?,
         "change" => sub::change(rest)?,
+        "release" => sub::release(rest)?,
         "hook" => sub::hook(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
@@ -349,6 +350,25 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("release create v1 --title First -m notes --asset dist/app.zip").ok(),
+            Some(Command::Release {
+                target: Target::default(),
+                command: ReleaseCommand::Create {
+                    tag: "v1".into(),
+                    title: Some("First".into()),
+                    notes: Some("notes".into()),
+                    asset: Some("dist/app.zip".into())
+                }
+            })
+        );
+        assert_eq!(
+            parsed("release show v1").ok(),
+            Some(Command::Release {
+                target: Target::default(),
+                command: ReleaseCommand::Show { tag: "v1".into() }
+            })
+        );
+        assert_eq!(
             parsed("setup codex").ok(),
             Some(Command::Setup {
                 agent: Agent::Codex,
@@ -381,6 +401,10 @@ mod tests {
             "change comment 1 -m hi --path a.rs --line 2 --side left",
             "change comment 1 --resolve",
             "change list extra",
+            "release create",
+            "release show",
+            "release list extra",
+            "release publish v1",
         ] {
             assert_eq!(
                 parsed(line).map_err(|e| e.exit_code).err(),
