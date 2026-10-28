@@ -1,6 +1,8 @@
-// "New repository": a platform repository seeded with a README.
+// "New repository": a platform repository seeded with a README, owned by the account or by
+// one of the organizations it owns.
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
+import { type OrgSummary, ownerOptions } from '../source-platform/orgModel';
 import { sourceApi } from '../source-platform/sourceApi';
 
 export const REPO_NAME_PATTERN = '[A-Za-z0-9_\\-][A-Za-z0-9._\\-]{0,99}';
@@ -15,13 +17,33 @@ export function readmeSeed(name: string, description: string) {
 
 export type Created = { repo: string };
 
+/** The create request's body: `owner` only for an organization (the caller is the default). */
+export function createBody(name: string, description: string, owner: string) {
+  return {
+    name,
+    ...(owner ? { owner } : {}),
+    policy: { required_checks: [], approvals: 1 },
+    files: [{ path: 'README.md', content_b64: readmeSeed(name, description) }],
+    author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' },
+  };
+}
+
 export function NewRepositoryDialog({
+  account,
+  orgs = [],
+  initialOwner,
   onClose,
   onCreated,
 }: {
+  account?: string;
+  orgs?: OrgSummary[];
+  /** Preselected owner (the open org page), when the caller owns it. */
+  initialOwner?: string;
   onClose: () => void;
   onCreated: (created: Created) => Promise<void>;
 }) {
+  const owners = ownerOptions(account, orgs);
+  const preselected = owners.some((o) => o.value && o.value === initialOwner) ? initialOwner : '';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -30,16 +52,12 @@ export function NewRepositoryDialog({
     const data = new FormData(event.currentTarget);
     const name = String(data.get('name') ?? '').trim();
     const description = String(data.get('description') ?? '');
+    const owner = String(data.get('owner') ?? '');
     setBusy(true);
     setError('');
     try {
       const created = await sourceApi<{ id: string }>('/repos', {
-        body: {
-          name,
-          policy: { required_checks: [], approvals: 1 },
-          files: [{ path: 'README.md', content_b64: readmeSeed(name, description) }],
-          author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' },
-        },
+        body: createBody(name, description, owner),
       });
       await onCreated({ repo: created.id });
     } catch (e) {
@@ -55,6 +73,18 @@ export function NewRepositoryDialog({
       initialFocus='input[name="name"]'
     >
       <form className="new-repository" onSubmit={create}>
+        {owners.length > 1 && (
+          <label>
+            Owner
+            <select name="owner" defaultValue={preselected} disabled={busy}>
+              {owners.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           Repository name
           <input

@@ -1,8 +1,11 @@
 // Account settings (`/settings`, from the account menu): the account, the CLIs signed in
-// with `yoneda login`, and personal access tokens.
+// with `yoneda login`, personal access tokens and organizations.
 import { useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
+import type { Navigate } from '../shell/useRoute';
+import { AccountOrgs } from '../source-platform/AccountOrgs';
 import { expiresIn } from '../source-platform/connect';
+import type { OrgSummary } from '../source-platform/orgModel';
 import {
   isDeviceLogin,
   onlyTokens,
@@ -70,10 +73,15 @@ export function CliTable({
 export function AccountSettings({
   identity,
   repos,
+  orgs,
+  navigate,
 }: {
   identity: AccountIdentity | null;
   /** The account's repositories by name, for a token's repository allowlist. */
   repos: RepoSummary[];
+  /** The account's organizations (the shell's copy, so the sidebar follows a new one). */
+  orgs?: Loaded<{ orgs: OrgSummary[] }>;
+  navigate?: Navigate;
 }) {
   const tokens = useSource<{ tokens: Pat[] }>('/tokens');
   const [error, setError] = useState('');
@@ -119,6 +127,7 @@ export function AccountSettings({
         {error && <Failure error={error} />}
       </section>
       <PersonalTokens repos={repos} tokens={tokens} />
+      {orgs && navigate && <AccountOrgs orgs={orgs} navigate={navigate} />}
     </div>
   );
 }
