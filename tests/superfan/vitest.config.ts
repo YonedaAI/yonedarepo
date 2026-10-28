@@ -15,8 +15,8 @@ export default defineConfig({
         durableObjects: { LEDGER: { className: 'SuperfanLedger', useSQLite: true } },
         bindings: {
           CF_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
-          WATCH_SCRIPT: 'yonedarepo-platform-dev',
-          WATCH_URL: 'https://yonedarepo-platform-dev.example.workers.dev',
+          WATCH_SCRIPT: 'yonedarepo-dev-platform',
+          WATCH_URL: 'https://yonedarepo-dev-platform.example.workers.dev',
           NS_SOURCE_REPOSITORY: '11111111111111111111111111111111',
           NS_OBJECT_PUSH_QUEUE: '22222222222222222222222222222222',
           NS_CHECK_CONTAINER: '33333333333333333333333333333333',

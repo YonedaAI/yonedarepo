@@ -194,6 +194,56 @@ fn dev_retires_its_staging_prefix_only() {
 }
 
 #[test]
+fn dev_retires_the_platform_dev_stack_by_exact_name() {
+    let retired = dev().0.retired;
+    for (kind, name) in [
+        (Kind::Worker, "yonedarepo-platform-dev"),
+        (Kind::Worker, "yonedarepo-agents-dev"),
+        (Kind::Worker, "yonedarepo-superfan-dev"),
+        (Kind::Worker, "yonedarepo-eval-dev"),
+        (Kind::Container, "yonedarepo-platform-dev-checkcontainer"),
+        (Kind::Container, "yonedarepo-agents-dev-agentsandbox"),
+        (Kind::Queue, "yonedarepo-platform-dev-dead-letter"),
+        (Kind::Queue, "yonedarepo-agents-dev-agent"),
+        (Kind::Workflow, "yonedarepo-platform-dev-import"),
+        (Kind::D1, "yonedarepo-agents-dev-index"),
+        (Kind::R2, "yonedarepo-platform-dev-analytics"),
+        (Kind::Artifacts, "yoneda-platform-dev"),
+    ] {
+        assert!(retired.matches(kind, name), "{name}");
+    }
+    for (kind, name) in [
+        (Kind::Worker, "yonedarepo-platform-dev-x"),
+        (Kind::Worker, "yonedarepo-eval"),
+        (Kind::Queue, "yonedarepo-platform-dev"),
+    ] {
+        assert!(
+            !retired.matches(kind, name),
+            "{name} is not an exact retired name"
+        );
+    }
+}
+
+#[test]
+fn dev_and_prod_never_share_a_rate_limit_namespace() {
+    let namespaces = |workers: &[Deployable]| -> BTreeSet<String> {
+        workers
+            .iter()
+            .flat_map(|w| {
+                w.config["ratelimits"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .filter_map(|r| r["namespace_id"].as_str().map(str::to_owned))
+            .collect()
+    };
+    let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
+    assert_eq!(prod, BTreeSet::from(["1001".to_owned()]));
+    assert_eq!(dev, BTreeSet::from(["2001".to_owned()]));
+}
+
+#[test]
 fn dev_is_renamed_on_the_same_hosts_and_secrets() {
     let (spec, workers) = dev();
     assert_eq!(spec.prefix, "yonedarepo-dev");
@@ -260,7 +310,7 @@ fn collect(values: &[serde_json::Value], out: &mut Vec<String>) {
 }
 
 #[test]
-fn dev_orphans_are_the_staging_stack_and_never_old_prod_or_new_dev() {
+fn dev_orphans_are_staging_and_platform_dev_never_old_prod_or_new_dev() {
     let (spec, workers) = dev();
     let mut live = cutover_account();
     for name in ["yonedarepo-staging-platform", "yonedarepo-staging-agents"] {
@@ -279,6 +329,7 @@ fn dev_orphans_are_the_staging_stack_and_never_old_prod_or_new_dev() {
     assert_eq!(
         found,
         [
+            "yonedarepo-platform-dev",
             "yonedarepo-staging-agents",
             "yonedarepo-staging-platform",
             "yonedarepo-staging-platform-checkcontainer",

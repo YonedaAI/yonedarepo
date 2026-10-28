@@ -148,11 +148,11 @@ CI deploy tokens live in the GitHub Environments `dev` and `production` (one tok
 
 Production cutover (yonedarepo.com from the Oct 14 single Worker to `prod.json`):
 1. Give the production token Secrets Store Write and the AI Gateway `yonedarepo-prod` (setup below, with that id).
-2. Write `~/.config/yonedarepo/prod.env` (0600): `OWNER_TOKEN`, `VAULT_KEY` (64 hex), `CF_ANALYTICS_TOKEN`, `SUPERFAN_READ_TOKEN`.
+2. Write `~/.config/yonedarepo/prod.env` (0600): `OWNER_TOKEN`, `VAULT_KEY` (64 hex), `CF_ANALYTICS_TOKEN` (read-only: Account Analytics, Workers Scripts, Queues, Containers; superfan looks up the platform's queue, Durable Object and container ids by name with it), `SUPERFAN_READ_TOKEN`.
 3. `cargo xtask infra up --env prod --confirm` once: it creates the D1/R2/queues, records the D1 ids and regenerates the configs, then stops; commit those on dev. Only then fast-forward `main`, deploy dev and run the kit at that commit.
 4. `cargo xtask infra up --env prod --confirm` again deploys superfan, platform, agents, sites (the platform names superfan in `tail_consumers`), moving `api.`, the apex, `www.`, `apps.` and the `*.yonedarepo.com` route off the old Workers.
 5. After the prod smoke: `cargo xtask infra prune --env prod --confirm`.
-6. Dev rename (`yonedarepo-staging-*` to `yonedarepo-dev-*`, after step 5; dev data resets): create the AI Gateway `yonedarepo-dev`, run `cargo xtask infra up --env dev` once (creates, records, stops), commit, run it again (deploys and moves `dev.`, `api.dev.` and `hook-receiver.yonedaai.org`), then `cargo xtask infra prune --env dev --confirm`. The local credential files keep their `staging*.env` names.
+6. Dev rename (`yonedarepo-staging-*` to `yonedarepo-dev-*`, after step 5; dev data resets): create the AI Gateway `yonedarepo-dev`, run `cargo xtask infra up --env dev` once (creates, records, stops), commit, run it again (deploys and moves `dev.`, `api.dev.` and `hook-receiver.yonedaai.org`), then `cargo xtask infra prune --env dev --confirm`, which also deletes the hand-written platform-dev stack (`yonedarepo-{platform,agents,superfan,eval}-dev` and what only they bound; its Basin pipeline stream is deleted by hand). The local credential files keep their `staging*.env` names; the dev `CF_ANALYTICS_TOKEN` needs the same read permissions as prod's.
 
 ## Sandbox runs (`sandbox-cli-v1`, staging)
 

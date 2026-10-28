@@ -1,6 +1,6 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
 // Dev agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,
-// remote MCP). Same code as wrangler.agents.jsonc; it reaches only the dev platform, through
+// remote MCP). It reaches only the dev platform, through
 // the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the
 // WORKSPACES script binding. Its stores, containers and secrets are its own. Executable app
 // previews (cloudflare/apps) are off: APPS and APP_ORIGIN are unset.
@@ -10,7 +10,6 @@
 // (POST /api/admin/providers/managed); prod sets it too.
 // Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy
 // (POST /api/admin/workspace/allowance); it is a total, not a daily reset.
-// Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:
 // OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
 // VAULT_KEY    64 hex characters, shared with yonedarepo-dev-platform
 // The prod sites Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
