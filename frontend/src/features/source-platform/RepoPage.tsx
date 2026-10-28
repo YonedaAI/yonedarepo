@@ -104,6 +104,7 @@ export function RepoPage({
                 key={route.commit}
                 repo={repo}
                 commit={route.commit}
+                status={data}
                 onNavigate={navigate}
                 onChanged={status.reload}
               />
