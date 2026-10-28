@@ -6,6 +6,7 @@ import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
 import { ReleaseView } from './ReleaseView';
+import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoFiles } from './RepoFiles';
 import { RepoOverview } from './RepoOverview';
@@ -13,6 +14,7 @@ import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { RepoTabs, StatusChips } from './RepoTabs';
 import type { RepoStatus } from './repoStatus';
+import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { formatSourceRoute, routeTab, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
@@ -105,7 +107,21 @@ export function RepoPage({
                 onBack={() => navigate({ view: 'changes', repo })}
                 onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                 onChanged={status.reload}
+                navigate={navigate}
               />
+            )}
+            {route.view === 'agents' && (
+              <RepoAgents
+                repo={repo}
+                section={route.section}
+                branches={(data?.refs ?? [])
+                  .filter((r) => r.name.startsWith('refs/heads/'))
+                  .map((r) => r.name.slice('refs/heads/'.length))}
+                navigate={navigate}
+              />
+            )}
+            {route.view === 'session' && (
+              <SessionView key={route.id} repo={repo} id={route.id} navigate={navigate} />
             )}
             {route.view === 'releases' && (
               <RepoReleases

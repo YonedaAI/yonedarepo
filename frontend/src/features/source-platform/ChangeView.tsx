@@ -1,9 +1,11 @@
 // One change request: what it proposes, its gates and actions, the conversation (comments and
 // branch pushes) and the diff from the merge base with main, with threads on its lines.
 import { useMemo } from 'react';
+import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
+import { CommitSessions } from './CommitSessions';
 import {
   type ChangeDetail,
   type ConversationItem,
@@ -56,12 +58,15 @@ export function ChangeView({
   onBack,
   onCommit,
   onChanged,
+  navigate,
 }: {
   repo: string;
   number: number;
   onBack?: () => void;
   onCommit?: (sha: string) => void;
   onChanged?: () => void;
+  /** Links the head commit's sessions to their pages. */
+  navigate?: Navigate;
 }) {
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
   const c = detail.data;
@@ -133,6 +138,14 @@ export function ChangeView({
       </header>
       <ChangeGates repo={repo} change={c} onChanged={refresh} />
       {c.status === 'open' && c.head && <RebaseButton repo={repo} change={c} onChanged={refresh} />}
+      {c.head && navigate && (
+        <CommitSessions
+          repo={repo}
+          commit={c.head}
+          navigate={navigate}
+          heading="Sessions behind the head commit"
+        />
+      )}
       <section aria-labelledby="conversation-heading">
         <h3 id="conversation-heading">Conversation</h3>
         {items.length === 0 && <p className="source-empty">No comments yet.</p>}

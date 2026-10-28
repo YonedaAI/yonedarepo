@@ -1577,6 +1577,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 }
 
 mod account_access;
+mod agent_reads;
 mod batches;
 mod branch_policy;
 mod branches;

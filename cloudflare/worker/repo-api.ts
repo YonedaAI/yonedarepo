@@ -13,6 +13,7 @@ import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
+import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute } from './repo-changes';
@@ -143,6 +144,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (get && resource === 'search')
     return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
   if (get && resource === 'blame') return run('git_blame', query);
+  const records = get ? agentRecords(ctx, resource, sha, sub, query) : undefined;
+  if (records) return records;
   if (get && resource === 'symbols') return run('symbol_list', query);
   if (get && resource === 'symbol') return run('symbol_get', query);
   if (get && resource === 'contract') return run('symbol_contract', query);
