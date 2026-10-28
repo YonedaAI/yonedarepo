@@ -5,6 +5,7 @@ import { expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
+import { type ObjectStore, RepoObjects } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -164,4 +165,29 @@ it('a read sharing another read of the same object does not wait for its cache f
   } finally {
     await Promise.all([job, ...after]);
   }
+});
+
+it('asks R2 once the edge is slower than the hedge, and never while the edge answers', async () => {
+  const { owner, id, repo, blobs } = await repoWith('edgehedge', local);
+  await read(owner, repo, blobs.slice(0, 2), local); // fills the edge
+  const gets: string[] = [];
+  const real = bindings.OBJECTS;
+  const counted = { get: (key: string, ...rest: any[]) => (gets.push(key), (real.get as any)(key, ...rest)), head: (key: string) => real.head(key) };
+  const env = { ...local, OBJECTS: counted } as unknown as Env;
+  // The store is never reached: one of the cache tiers holds every blob.
+  const tiers = () => new RepoObjects(env, id, {} as ObjectStore);
+  const healthy = tiers();
+  const bytes = await healthy.blob(blobs[1].id);
+  expect(healthy.hits).toEqual({ edge: 1, r2: 0, store: 0 });
+  expect(gets).toEqual([]);
+  await real.put(`platform/v1/${id}/objects/${blobs[1].id}`, bytes, { customMetadata: { kind: 'blob' } });
+  // Hosted burst read-backs (2026-10-28, bf7566e): 18 of the 19 edge lookups in the 15
+  // slowest reads ran into the 500 ms cap, on objects R2 held (head trees), each read
+  // paying it up to three times.
+  vi.spyOn(caches.default, 'match').mockImplementation(() => new Promise((done) => setTimeout(() => done(undefined), 3_000)));
+  const stalled = tiers();
+  const started = Date.now();
+  await stalled.blob(blobs[1].id);
+  expect(Date.now() - started).toBeLessThan(250);
+  expect(stalled.hits).toEqual({ edge: 0, r2: 1, store: 0 });
 });
