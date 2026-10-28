@@ -61,12 +61,14 @@ export async function dogfoodChange(ctx, metrics) {
         assert.equal(opened.base, base, 'the change was not opened on its scratch base');
       }],
       ['line comment', () => timed('comment_ms', () => owner.post(`${path}/changes/${metrics.change}/comments`, { body: 'Dogfood: does this read well?', path: '.dogfood/change.md', line: 1, side: 'new' }))],
-      // The owner pushed the head through a repository token they made: an approval by the
-      // same person must be refused like any self-review.
-      ['self-approval refused', async () => {
+      // The head was pushed by a repository token the owner minted, so it is that token's
+      // work and the owner may approve it (deliberate: agents push with tokens the owner
+      // mints and the human approves them; reviewers.rs). Only the owner's own pushes, by
+      // session or personal token, are refused to the owner.
+      ['owner approves the token-pushed head', async () => {
         const said = await owner.raw('POST', `${path}/commits/${head}/reviews`, { decision: 'approve' });
-        metrics.self_approval = `${said.status} ${said.body?.error?.message ?? 'accepted'}`;
-        assert.equal(said.status, 403, `the owner approved their own commit (pushed with their own repository token): ${metrics.self_approval}`);
+        metrics.token_head_approval = `${said.status} ${said.body?.error?.message ?? 'accepted'}`;
+        assert.equal(said.status, 200, `the owner could not approve a commit pushed by their repository token: ${metrics.token_head_approval}`);
       }, { soft: true }],
       ['change page data', async () => {
         const change = await timed('change_page_ms', () => owner.get(`${path}/changes/${metrics.change}?patch=1`));
