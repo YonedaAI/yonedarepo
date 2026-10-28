@@ -28,6 +28,28 @@ export function failureCode(e: any): string {
   return transient(e) ? 'OVERLOADED' : 'INTERNAL';
 }
 
+/** `Symbol.dispose` (workerd has it; this project's TypeScript lib does not declare it). */
+const DISPOSE = (Symbol as { dispose?: symbol }).dispose;
+
+/**
+ * The value of an RPC call (a Durable Object or binding method), with its disposer run once
+ * `use` is done with it. Every object an RPC answers carries one, and a result left to the
+ * garbage collector holds the call's resources until then (workerd: "An RPC result was not
+ * disposed properly"). Plain data in the value stays usable after disposal.
+ */
+export async function rpcValue<T, R = T>(
+  call: Promise<T>,
+  use: (value: T) => R | Promise<R> = (value) => value as unknown as R,
+): Promise<R> {
+  const value = await call;
+  try {
+    return await use(value);
+  } finally {
+    const dispose = DISPOSE && (value as Record<symbol, unknown> | null)?.[DISPOSE];
+    if (typeof dispose === 'function') dispose.call(value);
+  }
+}
+
 export async function durableJson<T = Record<string, any>>(
   stub: () => DurableObjectStub,
   url: string,

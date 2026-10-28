@@ -1,6 +1,7 @@
 // Imports an external Git repository: Artifacts fetches it into the repository's object
 // store, then its first-parent history (up to a limit) is recorded with file-level
 // changes and the branch is landed. Every step is idempotent so a Workflow can retry it.
+import { rpcValue } from './durable';
 import { parseStore, RepoObjects } from './repo-objects';
 import { caller, type Json, withTrees } from './repo-ops';
 import type { Env } from './types';
@@ -24,11 +25,13 @@ async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
   using repo = await env.ARTIFACTS.get(storeName(params.repo));
   const newestFirst: Commit[] = [];
   while (newestFirst.length < params.max) {
-    const page = await repo.log({
-      ref: params.branch,
-      limit: Math.min(1000, params.max - newestFirst.length),
-      offset: newestFirst.length,
-    });
+    const page = await rpcValue(
+      repo.log({
+        ref: params.branch,
+        limit: Math.min(1000, params.max - newestFirst.length),
+        offset: newestFirst.length,
+      }),
+    );
     if (page.length === 0) break;
     for (const c of page)
       newestFirst.push({
@@ -84,10 +87,12 @@ async function recordBatch(env: Env, params: ImportParams, batch: Commit[], prev
 export async function runImport(env: Env, params: ImportParams, step: ImportStep) {
   await step.do('import into the object store', RETRY, async () => {
     try {
-      await env.ARTIFACTS.import({
-        source: { url: params.url, branch: params.branch },
-        target: { name: storeName(params.repo) },
-      });
+      await rpcValue(
+        env.ARTIFACTS.import({
+          source: { url: params.url, branch: params.branch },
+          target: { name: storeName(params.repo) },
+        }),
+      );
     } catch (e: any) {
       if (e?.code !== 'ALREADY_EXISTS') throw e;
     }

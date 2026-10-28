@@ -8,6 +8,7 @@
 // earlier (the holder's copy, then this isolate's), never older than a version this
 // isolate already served, and never older than this isolate's own ref writes. A reader that
 // must see a write made elsewhere passes its version as `min_version`.
+import { rpcValue } from './durable';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
 import type { Env } from './types';
@@ -173,7 +174,7 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
   const wrote = held ? held.writes !== writes : writes > 0;
   const shared = wrote ? null : holder(env, repo);
   const floor = Math.max(minVersion, servedVersions.get(repo) ?? 0);
-  let refs = shared ? await once(`refs:${repo}`, () => shared.refs(repo, floor)) : null;
+  let refs = shared ? await once(`refs:${repo}`, () => rpcValue(shared.refs(repo, floor))) : null;
   if (!refs || refs.version < floor)
     refs = await once(`refs:${repo}:${writes}`, () => platform(env, repo)({ op: 'repo_refs' }));
   servedVersions.set(repo, Math.max(refs.version, servedVersions.get(repo) ?? 0));
