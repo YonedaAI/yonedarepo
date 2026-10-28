@@ -1,17 +1,20 @@
 // Item 18 of the staging kit: a change request end to end with the CLI and zero model spend.
 // A pushed branch suggests opening a change; `yoneda change create` opens it; a comment is
-// anchored to a diff line; a review-only repository token (another principal than the
-// pusher) approves the head; `yoneda change land` lands it, and the change reads back
-// landed at the head. No webhook receiver is involved.
+// anchored to a diff line. The kit account pushed the head, so its own approval is refused
+// (also through a repository token it made); the second kit account, added with the land
+// role, approves it. `yoneda change land` lands it, and the change reads back landed at the
+// head. No webhook receiver is involved.
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { secondAccount } from './client.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
 
-/** 18: branch → open change → line comment → approve → land → status landed. */
-export async function cliChangeRequest(kit, metrics) {
+/** 18: branch → open change → line comment → approve → land → status landed. `credentials`:
+ * the kit account's, from which the second (reviewing) account is derived. */
+export async function cliChangeRequest(kit, credentials, metrics) {
   if (!kit.token) return { skip: 'No PAT (item 12)' };
   const name = `kit-change-${Date.now()}`;
   const policy = { approvals: 1, required_checks: [] };
@@ -50,13 +53,25 @@ export async function cliChangeRequest(kit, metrics) {
   const comment = ['change', 'comment', String(number), '-m', 'Why three?', '--path', 'src/retry.ts', '--line', '1', '--side', 'new'];
   await kit.yonedaOk(comment, { cwd: dir });
 
-  // Approval is a review of the head commit by someone other than its pusher.
-  const reviewer = await api.post(`/repos/${repo}/tokens`, { name: 'kit-reviewer', scopes: ['read', 'review'] });
+  // Approval is a review of the head commit by another account than its pusher's: neither
+  // the kit account nor a repository token it made may approve it.
+  const review = (session) => session.raw('POST', `/repos/${repo}/commits/${head}/reviews`, { decision: 'approve' });
+  const own = await api.post(`/repos/${repo}/tokens`, { name: 'kit-own-reviewer', scopes: ['read', 'review'] });
   try {
-    await kit.pat(reviewer.token).post(`/repos/${repo}/commits/${head}/reviews`, { decision: 'approve' });
+    for (const [who, session] of [['the pusher', api], ["the pusher's token", kit.pat(own.token)]]) {
+      const refused = await review(session);
+      const said = `${refused.status} ${refused.body?.error?.message ?? ''}`;
+      assert.match(said, /^403 Authors cannot review their own commit/, `${who} was not refused as the author: ${said}`);
+    }
   } finally {
-    await api.call('DELETE', `/repos/${repo}/tokens/kit-reviewer`);
+    await api.call('DELETE', `/repos/${repo}/tokens/kit-own-reviewer`);
   }
+  assert.equal((await api.get(path)).head_commit?.gates?.ready, false, 'a refused review made the head ready');
+  const reviewer = await secondAccount(kit.platformAccount.origin.replace(/\/api\/v1$/, ''), credentials);
+  await kit.platformAccount.post(`/repos/${repo}/members`, { account: reviewer.name, role: 'land' });
+  const approved = await review(reviewer.session);
+  assert.ok(approved.ok, `the second account could not approve: ${approved.status} ${approved.body?.error?.message ?? ''}`);
+  metrics.reviewer = reviewer.name;
   assert.equal((await api.get(path)).head_commit?.gates?.ready, true, 'the approved head is not ready to land');
 
   const landed = await kit.yonedaOk(['change', 'land', String(number)], { cwd: dir });
