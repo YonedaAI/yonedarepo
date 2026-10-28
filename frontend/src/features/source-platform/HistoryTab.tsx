@@ -2,6 +2,7 @@
 // repository with an agent project, its recorded agent context too.
 import { type ReactNode, useState } from 'react';
 import type { Navigate } from '../shell/useRoute';
+import { OpenChangeButton } from './OpenChange';
 import { RepoHistory } from './RepoHistory';
 import { RepoTransactions } from './RepoTransactions';
 import type { RepoStatus } from './repoStatus';
@@ -63,6 +64,16 @@ export function HistoryTab({
               ))}
             </select>
           </label>
+        )}
+        {segment === 'history' && (
+          <OpenChangeButton
+            key={ref}
+            repo={route.repo}
+            branch={ref}
+            onOpened={(change) =>
+              navigate({ view: 'change', repo: route.repo, number: change.number })
+            }
+          />
         )}
       </div>
       {segment === 'agent' ? (
