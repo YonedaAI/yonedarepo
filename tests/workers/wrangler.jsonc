@@ -8,11 +8,7 @@
   "vars": {
     "OWNER_TOKEN": "local-test-owner",
     "ARTIFACTS_NAMESPACE": "yoneda-test",
-    "CODEX_MODEL": "gpt-5.6-luna",
-    "CLAUDE_MODEL": "claude-sonnet-5-5",
-    "PLATFORM_OBJECT_STORE": "r2",
-    "SANDBOX_PLATFORM_ORIGIN": "https://platform.test",
-    "VAULT_KEY": "1111111111111111111111111111111111111111111111111111111111111111"
+    "PLATFORM_OBJECT_STORE": "r2"
   },
   "services": [
     {
@@ -22,14 +18,6 @@
   ],
   "durable_objects": {
     "bindings": [
-      {
-        "name": "REPOSITORIES",
-        "class_name": "RepositoryAuthority"
-      },
-      {
-        "name": "LIVE",
-        "class_name": "LiveRoom"
-      },
       {
         "name": "WORKSPACES",
         "class_name": "WorkspaceAuthority"
@@ -49,10 +37,6 @@
       {
         "name": "LAND_COMBINERS",
         "class_name": "LandCombiner"
-      },
-      {
-        "name": "AGENT_SANDBOX",
-        "class_name": "FakeAgentSandbox"
       }
     ]
   },
@@ -60,56 +44,11 @@
     {
       "tag": "v1",
       "new_sqlite_classes": [
-        "RepositoryAuthority",
-        "LiveRoom"
-      ]
-    },
-    {
-      "tag": "v2",
-      "new_sqlite_classes": [
-        "WorkspaceAuthority"
-      ]
-    },
-    {
-      "tag": "v3",
-      "new_sqlite_classes": [
-        "SourceWorkspaceAuthority"
-      ]
-    },
-    {
-      "tag": "v4",
-      "new_sqlite_classes": [
-        "SourceRepository"
-      ]
-    },
-    {
-      "tag": "v5",
-      "new_sqlite_classes": [
-        "ObjectPushQueue"
-      ]
-    },
-    {
-      "tag": "v6",
-      "new_sqlite_classes": [
-        "CommitShard"
-      ]
-    },
-    {
-      "tag": "v7",
-      "new_sqlite_classes": [
+        "WorkspaceAuthority",
+        "SourceRepository",
+        "ObjectPushQueue",
+        "CommitShard",
         "LandCombiner"
-      ]
-    },
-    {
-      "tag": "v8",
-      "new_sqlite_classes": [
-        "FakeAgentSandbox"
-      ]
-    },
-    {
-      "tag": "v9",
-      "deleted_classes": [
-        "SourceWorkspaceAuthority"
       ]
     }
   ],

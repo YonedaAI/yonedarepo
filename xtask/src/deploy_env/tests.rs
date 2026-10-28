@@ -121,11 +121,11 @@ fn prebuilt_runs_install_push_and_record_instead_of_building() {
 
 #[test]
 fn prebuilt_runs_without_containers_push_nothing() {
-    let sites: Vec<Deployable> = dev_workers()
+    let plain: Vec<Deployable> = dev_workers()
         .into_iter()
         .filter(|w| !w.has_containers)
         .collect();
-    let plan = steps(&Env::Dev, &sites, false, &Source::Prebuilt);
+    let plan = steps(&Env::Dev, &plain, false, &Source::Prebuilt);
     assert!(!plan.contains(&Step::PushImage) && !plan.contains(&Step::RecordImage));
 }
 
@@ -140,13 +140,7 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             _ => None,
         })
         .collect();
-    assert_eq!(
-        migrations,
-        [
-            "yonedarepo-dev-platform-index",
-            "yonedarepo-dev-agents-index"
-        ]
-    );
+    assert_eq!(migrations, ["yonedarepo-dev-platform-index"]);
     let first_deploy = plan
         .iter()
         .position(|s| matches!(s, Step::Deploy { .. }))
@@ -173,10 +167,9 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Secrets { worker: 2 },
             Step::Health { worker: 2 },
             d(3),
-            d(4),
-            Step::Secrets { worker: 4 },
+            Step::Secrets { worker: 3 },
         ],
-        "superfan (no /health), platform, agents, sites, bench (BENCH_KEY, no /health)"
+        "superfan (no /health), platform, agents, bench (BENCH_KEY, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -241,7 +234,7 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 fn prod_checks_active_runs_right_before_each_container_rollout() {
     let workers = prod_workers();
     let roles: Vec<&str> = workers.iter().map(|w| w.role.as_str()).collect();
-    assert_eq!(roles, ["superfan", "platform", "agents", "sites"]);
+    assert_eq!(roles, ["superfan", "platform", "agents"]);
     let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
     for (index, worker) in workers.iter().enumerate() {
         let gate = plan
@@ -258,8 +251,8 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
             );
         }
     }
-    assert!(workers[1].has_containers && workers[2].has_containers);
-    assert!(!workers[0].has_containers && !workers[3].has_containers);
+    assert!(workers[1].has_containers);
+    assert!(!workers[0].has_containers && !workers[2].has_containers);
 }
 
 #[test]
@@ -620,6 +613,6 @@ fn the_summary_shows_which_container_apps_rolled_out() {
         rollouts(platform, None, None),
         format!("{app} ? (no rollout)")
     );
-    let sites = workers.iter().find(|w| w.role == "sites").unwrap();
-    assert_eq!(rollouts(sites, Some(&before), Some(&after)), "-");
+    let front = workers.iter().find(|w| w.role == "agents").unwrap();
+    assert_eq!(rollouts(front, Some(&before), Some(&after)), "-");
 }

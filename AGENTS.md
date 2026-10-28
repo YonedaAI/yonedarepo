@@ -1,22 +1,20 @@
 # YonedaRepo engineering guide
 
-YonedaRepo is a Git-compatible source platform for agents and API clients, built on Cloudflare: server-side commits, a Delta-style transaction log, optimistic concurrency and compute next to the data. Agent orchestration (runs, teams, compare, guided demo) is a separate layer that uses the platform's public API. Rust owns domain rules, durable state transitions, the native runner, MCP, capture and verification. TypeScript is the browser and the thin adapter for Cloudflare SDK capabilities unavailable in Rust.
+YonedaRepo is a Git-compatible source platform for agents and API clients, built on Cloudflare: server-side commits, a Delta-style transaction log, optimistic concurrency and compute next to the data. Agents use it only as clients, through Git, the CLI and MCP. Rust owns domain rules, durable state transitions, MCP and verification. TypeScript is the browser and the thin adapter for Cloudflare SDK capabilities unavailable in Rust.
 
 ## Layout and boundaries
 
-- `backend/crates/yoneda-core`: contracts both layers share: the Git object model, transaction log rules, merge, derived data and pure validation. No Cloudflare or network dependencies.
-- `backend/crates/yoneda-agents-core`: agent-layer contracts (runs, teams, providers, budgets, guided, evaluation, attempt source workspaces). Depends only on `yoneda-core`; the platform never depends on it.
+- `backend/crates/yoneda-core`: core contracts: the Git object model, transaction log rules, merge, derived data and pure validation. No Cloudflare or network dependencies.
 - `backend/crates/yoneda-store`: the SQL store trait shared by Durable Object and native SQLite adapters.
-- `backend/crates/yoneda-platform`: the source platform (SourceRepository authority, its migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store`; it must never import agent-layer code (enforced by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
-- `backend/crates/yoneda-app`: agent-layer commands and its transactional ledger, with native SQLite and DO adapters. Domain operations must be shared by local and deployed execution.
+- `backend/crates/yoneda-platform`: the source platform (SourceRepository and account authorities, their migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store` (enforced by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
 - `backend/crates/yoneda-cloudflare`: binding interoperability; no product policy.
 - `backend/crates/yoneda-worker`: Rust Durable Objects and Worker integration.
 - `backend/crates/yoneda-runtime`: the platform check server (`check-server`) that runs inside the CheckContainer image.
 - `cloudflare/worker`: focused TypeScript SDK adapters, authentication and transport.
 - `frontend`: browser features and components; no secrets or authoritative decisions.
-- `cloudflare/migrations`: append-only D1 discovery migrations. DO schema migrations live with `yoneda-platform` (platform) and `yoneda-app` (agent layer).
-- `cloudflare/sites` and `cloudflare/containers`: isolated website serving and the pinned CheckContainer image. Wrangler environment configuration lives in `cloudflare/wrangler*.jsonc`.
-- `shared`: browser/adapter contracts derived from the Rust provider registry; no secrets or authoritative state.
+- `cloudflare/migrations`: append-only D1 discovery migrations. DO schema migrations live with `yoneda-platform`.
+- `cloudflare/containers`: the pinned CheckContainer image. Wrangler environment configuration lives in `cloudflare/wrangler*.jsonc`.
+- `shared`: browser/adapter contracts derived from Rust where practical; no secrets or authoritative state.
 - `xtask`: reproducible developer and deployment commands. `fixtures`: small demo repositories. `docs`: architecture, operations and verification evidence. `context`: original design material.
 
 ## Code standards

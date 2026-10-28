@@ -113,20 +113,6 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
         check.record(&format!("{} /health = HEAD", worker.name), outcome);
     }
     check.record(
-        "owner GET /api/repositories",
-        expect_ok(
-            call(
-                &client,
-                reqwest::Method::GET,
-                &format!("{origin}/api/repositories"),
-                Some(&owner),
-                None,
-            )
-            .await,
-        )
-        .map(|_| "200".into()),
-    );
-    check.record(
         "owner GET /api/v1/repos (platform proxy)",
         expect_ok(
             call(

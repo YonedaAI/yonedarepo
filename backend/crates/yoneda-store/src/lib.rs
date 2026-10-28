@@ -1,5 +1,5 @@
-//! The synchronous SQL store contract shared by every Durable Object authority (agent
-//! ledger and source platform alike), with its native SQLite implementation for tests and
+//! The synchronous SQL store contract shared by every Durable Object authority (source
+//! repositories, commit shards, accounts), with its native SQLite implementation for tests and
 //! local tools. JSON in, JSON out; no Cloudflare dependency.
 use serde_json::Value;
 use yoneda_core::{Error, Result};

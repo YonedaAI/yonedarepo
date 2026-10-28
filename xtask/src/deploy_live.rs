@@ -233,23 +233,6 @@ async fn status_table(env: &Env, workers: &[Deployable]) -> Result<()> {
     Ok(())
 }
 
-/// `--agent-smoke` (off by default): after the deploy, one cheap hosted agent on a fresh kit
-/// project must reach a checked candidate (`tools/staging/agent-smoke.mjs`; spends real model
-/// money, target under $0.01; kit credentials from ~/.config/yonedarepo).
-pub(crate) fn agent_smoke() -> Result<()> {
-    let status = std::process::Command::new("node")
-        .args(["tools/staging-realworld.mjs", "--agent-smoke"])
-        .status()
-        .map_err(|error| format!("Cannot start the agent smoke: {error}"))?;
-    if status.success() {
-        println!("AGENT SMOKE: PASS");
-        Ok(())
-    } else {
-        println!("AGENT SMOKE: FAIL ({status})");
-        Err("The deploy finished but the agent smoke failed; see its output above.".into())
-    }
-}
-
 /// Each container application with its version before and after the deploy (a new version
 /// means a rollout; versions unknown in a dry run or when the listing failed).
 pub(crate) fn rollouts(

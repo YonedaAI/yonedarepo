@@ -1,5 +1,5 @@
-// The source platform must not depend on the agent layer (runs, harnesses, providers,
-// budgets). Platform modules may import only each other and neutral infrastructure.
+// The source platform stands alone: platform modules import only each other and neutral
+// infrastructure, and the front Worker reaches the platform only through its public API.
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -51,8 +51,6 @@ test('the platform depends on core contracts and the store only; core and the st
   assert.deepEqual((await dependencies('yoneda-platform')).sort(), ['yoneda-core', 'yoneda-store']);
   assert.deepEqual(await dependencies('yoneda-store'), ['yoneda-core']);
   assert.deepEqual(await dependencies('yoneda-core'), []);
-  // Agent contracts live outside core, so nothing the platform can see knows about agents.
-  assert.deepEqual(await dependencies('yoneda-agents-core'), ['yoneda-core']);
 });
 
 /** First path segment of each top-level item in the braced import starting at `start`. */
@@ -88,9 +86,9 @@ test('platform Rust modules use only platform code and core contracts', async ()
   }
 });
 
-test('the agent-layer Worker reaches the platform only through its public API', async () => {
+test('the front Worker reaches the platform only through its public API', async () => {
   const seen = new Set();
-  const pending = ['agents-index'];
+  const pending = ['front-index'];
   while (pending.length) {
     const module = pending.pop();
     if (seen.has(module)) continue;
@@ -98,11 +96,11 @@ test('the agent-layer Worker reaches the platform only through its public API', 
     const source = await readFile(`${worker}/${module}.ts`, 'utf8');
     for (const [, target] of source.matchAll(/from '\.\/([^']+)'/g)) pending.push(target);
   }
-  assert.ok(seen.has('routes') && seen.has('agents-entrypoint'), [...seen].join());
+  assert.ok(seen.has('front-routes') && seen.has('front-entrypoint'), [...seen].join());
   for (const module of seen)
-    assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `agent Worker imports ${module}`);
+    assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `front Worker imports ${module}`);
   const config = await readFile('cloudflare/wrangler.dev-agents.jsonc', 'utf8');
   for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'OBJECT_PUSHES', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
-    assert.ok(!config.includes(`"${binding}"`), `agent Worker binds ${binding}`);
+    assert.ok(!config.includes(`"${binding}"`), `front Worker binds ${binding}`);
   assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-dev-platform"/);
 });

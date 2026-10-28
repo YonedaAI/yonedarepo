@@ -1,7 +1,9 @@
 //! YonedaRepo source platform: the SourceRepository authority (refs, hash-chained log,
 //! checks, reviews, landing, grants) and the stateless Rust compute the Worker runs next
 //! to the object cache (diffs, merges, search, blame, symbols, review classes, contracts
-//! and the agent and human views).
+//! and the agent and human views), plus the account authority (sessions, personal access
+//! tokens, device login).
+mod accounts;
 mod commit_store;
 mod platform_access;
 mod platform_build;
@@ -33,6 +35,7 @@ mod platform_views;
 pub(crate) mod repo_store;
 mod secret_scan;
 
+pub use accounts::execute_workspace;
 pub use commit_store::{execute_commit_store, migrate_commit_store};
 pub use platform_compute::compute as platform_compute;
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};

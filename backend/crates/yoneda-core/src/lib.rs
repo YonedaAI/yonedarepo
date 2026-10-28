@@ -1,6 +1,5 @@
-//! Contracts both layers share: the Git object model, the transaction log, merge, derived
-//! data (blame, search, text diff), account identifiers and the error and digest primitives.
-//! Agent-layer contracts live in `yoneda-agents-core`.
+//! Core contracts: the Git object model, the transaction log, merge, derived data (blame,
+//! search, text diff), account identifiers and the error and digest primitives.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
