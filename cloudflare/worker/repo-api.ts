@@ -217,6 +217,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     });
   if (resource === 'branches' && post) return branchesRoute(ctx, parts.slice(3), () => bodyOf(req));
   if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
+  if (resource === 'tags' && sha && !sub && get)
+    return ctx.call({ op: 'repo_tag_show', name: decodeURIComponent(sha) });
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
@@ -263,6 +265,8 @@ async function batchRefs(ctx: RepoContext, body: Json) {
       ref: u?.ref,
       commit: u?.commit,
       expected: u?.expected ?? null,
+      // An annotated tag's object (`{data_b64}`), kept beside the tag's ref.
+      ...(u?.tag ? { tag: u.tag } : {}),
     })),
   });
   if (result.stale)

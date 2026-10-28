@@ -1,9 +1,11 @@
 // Releases: the adapter half. The authority owns releases and their asset records
 // (repo_store/releases.rs); this module routes the operations and moves asset bytes. An
 // upload is read whole (within the cap), hashed, checked by a dry run of the record, written
-// to R2 under the repository's platform prefix (so the repository purge removes it), and
-// only then recorded with its size and sha256. A download streams the R2 object with the
-// recorded sha256 in `x-yoneda-sha256`.
+// to R2 under the repository's platform prefix (so the repository purge removes it) at a
+// key named by its sha256, and only then recorded with its size and sha256. Concurrent
+// first uploads of one name write different keys (unless their bytes are equal) and only
+// one is recorded, so a download, which streams the key the record names, always serves
+// the recorded bytes, sent with that sha256 in `x-yoneda-sha256`.
 import { notifyHooks } from './repo-hooks';
 import { fromBase64, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -14,8 +16,8 @@ export const ASSET_BYTES = 25 * 1024 * 1024;
 /** MCP carries asset bytes as base64 in JSON; larger assets use REST. */
 const MCP_ASSET_BYTES = 4 * 1024 * 1024;
 
-export const assetKey = (repo: string, tag: string, name: string) =>
-  `platform/v1/${repo}/release/${tag}/${name}`;
+export const assetKey = (repo: string, tag: string, sha256: string, name: string) =>
+  `platform/v1/${repo}/release/${tag}/${sha256}/${name}`;
 
 const hex = (bytes: ArrayBuffer) =>
   [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -67,17 +69,20 @@ export async function uploadAsset(
   };
   // Refused before anything is written: no release, a taken name, a cap reached.
   const checked = await ctx.call({ ...record, dry_run: true });
-  const key = assetKey(ctx.repo, checked.tag, checked.name);
+  const key = assetKey(ctx.repo, checked.tag, sha256, checked.name);
   await ctx.env.OBJECTS.put(key, bytes, {
     sha256,
     httpMetadata: { contentType: checked.content_type },
   });
   try {
     return await ctx.call(record);
-  } catch (e: any) {
-    // A concurrent upload of the same name may own the object now; anything else leaves
-    // bytes nothing records.
-    if (e?.code !== 'ALREADY_EXISTS') await ctx.env.OBJECTS.delete(key).catch(() => {});
+  } catch (e) {
+    // Another upload took the name: its record names other bytes, so this key is ours
+    // alone. Otherwise (no record yet, or the same bytes) the key may be about to be
+    // recorded by a concurrent upload of the same bytes: it stays, and is removed with
+    // the repository if nothing records it.
+    const taken = await ctx.call({ op: 'repo_release_asset', tag, name }).catch(() => null);
+    if (taken && taken.sha256 !== sha256) await ctx.env.OBJECTS.delete(key).catch(() => {});
     throw e;
   }
 }
@@ -85,7 +90,7 @@ export async function uploadAsset(
 /** The recorded asset and its R2 object. */
 async function readAsset(ctx: RepoContext, tag: unknown, name: unknown) {
   const asset = await ctx.call({ op: 'repo_release_asset', tag, name });
-  const object = await ctx.env.OBJECTS.get(assetKey(ctx.repo, asset.tag, asset.name));
+  const object = await ctx.env.OBJECTS.get(assetKey(ctx.repo, asset.tag, asset.sha256, asset.name));
   if (!object) throw new ApiError('NOT_FOUND', `Asset ${asset.name} is missing from storage`);
   return { asset, object };
 }
@@ -129,7 +134,9 @@ export const releaseOperations = {
   // leaves bytes nothing serves, removed with the repository).
   git_release_delete: async (ctx: RepoContext, a: Json) => {
     const deleted = await ctx.call({ op: 'repo_release_delete', tag: a.tag });
-    const keys = (deleted.assets as string[]).map((n) => assetKey(ctx.repo, deleted.tag, n));
+    const keys = (deleted.assets as Json[]).map((a) =>
+      assetKey(ctx.repo, deleted.tag, a.sha256, a.name),
+    );
     if (keys.length > 0) await ctx.env.OBJECTS.delete(keys).catch(() => {});
     await notifyHooks(ctx.env, ctx.repo);
     return deleted;

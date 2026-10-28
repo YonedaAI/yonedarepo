@@ -158,6 +158,23 @@ pub(super) fn peel_wants<S: SqlStore>(
     Ok((peeled, objects))
 }
 
+/// `repo_tag_show {name}`: the tag's commit and, when annotated, its tag object
+/// (`tag`, `data_b64`), for clients that write it locally (`git-remote-yoneda`).
+pub(super) fn tag_show<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let refname = super::rows::tag_ref(&crate::storage::string(c, "name")?)?;
+    let commit = super::rows::ref_value(db, &refname)?
+        .ok_or_else(|| Error::new("NOT_FOUND", format!("No tag {refname}")))?;
+    let rows = db.query(
+        "SELECT tag_id,data_b64 FROM annotated_tags WHERE refname=?",
+        &[json!(refname)],
+    )?;
+    let row = rows.first();
+    Ok(json!({
+        "ref": refname, "commit": commit,
+        "tag": row.map(|r| r["tag_id"].clone()), "data_b64": row.map(|r| r["data_b64"].clone()),
+    }))
+}
+
 /// An annotated tag's id, message and tagger (null for a lightweight tag), for a release.
 pub(super) fn show<S: SqlStore>(db: &S, refname: &str) -> Result<Value> {
     let rows = db.query(
