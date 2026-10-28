@@ -39,21 +39,14 @@ fn head<S: SqlStore>(db: &S, branch: &str) -> Result<Value> {
 
 /// The newest record of each contract, those on `paths` first.
 fn contracts<S: SqlStore>(db: &S, paths: &[String], limit: u64) -> Result<Vec<Value>> {
-    let marks = vec!["?"; paths.len().max(1)].join(",");
-    let mut params: Vec<Value> = if paths.is_empty() {
-        vec![Value::Null]
-    } else {
-        paths.iter().map(|p| json!(p)).collect()
-    };
-    params.push(json!(limit));
+    // The paths go as one JSON array: a parameter each would pass the 100 a statement binds.
     let rows = db.query(
-        &format!(
-            "SELECT seq,path,symbol_path,commit_id,contract,recorded_at,path IN ({marks}) AS wanted \
-             FROM symbol_contracts WHERE seq IN \
-             (SELECT MAX(seq) FROM symbol_contracts GROUP BY path,symbol_path) \
-             ORDER BY wanted DESC, seq DESC LIMIT ?"
-        ),
-        &params,
+        "SELECT seq,path,symbol_path,commit_id,contract,recorded_at,\
+         path IN (SELECT value FROM json_each(?)) AS wanted \
+         FROM symbol_contracts WHERE seq IN \
+         (SELECT MAX(seq) FROM symbol_contracts GROUP BY path,symbol_path) \
+         ORDER BY wanted DESC, seq DESC LIMIT ?",
+        &[json!(json!(paths).to_string()), json!(limit)],
     )?;
     rows.into_iter()
         .map(|row| {

@@ -7,6 +7,12 @@ use yoneda_core::{Error, Result};
 #[cfg(feature = "native")]
 pub mod native;
 
+/// The most parameters one statement may bind: Durable Object SQLite refuses more ("too
+/// many SQL variables"; developers.cloudflare.com/durable-objects/platform/limits). A list
+/// of unbounded length is bound as one JSON array (`IN (SELECT value FROM json_each(?))`)
+/// or in chunks below this.
+pub const MAX_BOUND_PARAMETERS: usize = 100;
+
 pub trait SqlStore: Clone + 'static {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>>;
     fn transaction(&self, action: Box<dyn FnOnce() -> Result<Value>>) -> Result<Value>;
