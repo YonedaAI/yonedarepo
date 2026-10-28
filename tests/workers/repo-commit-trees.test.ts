@@ -109,13 +109,13 @@ async function burstRepo(name: string) {
   return { repo, token: minted.body.token as string, id: created.body.id as string };
 }
 
-/** Object reads across `made`: R2 operations, authority calls and shard calls other than
- * each commit's own record. */
+/** Object reads across `made`: R2 reads (not each commit's write-through of its blobs),
+ * authority calls and shard calls other than each commit's own record. */
 /** Waits until the head holder loaded the head and warmed its trees (a warm head). */
 const warmed = (id: string) => (fakeCombiners.get(`${id}#head`) as unknown as { idle(): Promise<void> }).idle();
 
 const reads = (made: { reads: Reads }[]) => ({
-  r2: made.flatMap((m) => m.reads.r2).length,
+  r2: made.flatMap((m) => m.reads.r2).filter((op) => op.startsWith('get:')).length,
   authority: made.flatMap((m) => m.reads.authority).length,
   shards: made.flatMap((m) => m.reads.shards).filter((op) => op !== 'store_record').length,
 });
