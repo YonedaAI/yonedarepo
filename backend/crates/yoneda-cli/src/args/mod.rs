@@ -19,10 +19,11 @@ fn simple(rest: &[String], switches: &[&str]) -> Result<Parsed> {
 
 fn setup(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(rest, &["origin"], &[])?;
-    let agent = match p.exactly(1, "setup claude|codex|gemini")?[0].as_str() {
+    let agent = match p.exactly(1, "setup claude|codex|gemini|opencode")?[0].as_str() {
         "claude" => Agent::Claude,
         "codex" => Agent::Codex,
         "gemini" => Agent::Gemini,
+        "opencode" => Agent::Opencode,
         other => return Err(Error::usage(format!("unknown agent {other:?}"))),
     };
     Ok(Command::Setup {
@@ -145,6 +146,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "change" => sub::change(rest)?,
         "release" => sub::release(rest)?,
         "hook" => sub::hook(rest)?,
+        "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
             return Err(Error::usage(format!(
@@ -220,7 +222,8 @@ mod tests {
                     cli: "codex".into(),
                     summary: "done".into(),
                     model: None,
-                    transcript_ref: None
+                    transcript_ref: None,
+                    session_id: None
                 }
             })
         );

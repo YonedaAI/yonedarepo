@@ -3,6 +3,7 @@
 //! transaction per push, server-side reads) is reached through the public HTTP API.
 pub mod account;
 mod agent_hook;
+mod agent_transcript;
 pub mod api;
 pub mod args;
 mod attempt;
@@ -14,11 +15,13 @@ mod chunk;
 mod clone;
 pub mod command;
 mod conflict;
+mod context_cmd;
 pub mod credentials;
 pub mod error;
 mod git;
 pub mod import;
 pub mod login;
+mod opencode_hook;
 mod org_cmd;
 mod plan;
 mod pull;

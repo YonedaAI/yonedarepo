@@ -4,7 +4,9 @@
 //! cleared and the tips noted for the session record.
 use super::{Session, say};
 use crate::error::{Error, Result};
-use crate::session_files::{MAX_READ_BYTES, MAX_READS, SessionFiles, reads_from_options};
+use crate::session_files::{
+    MAX_READ_BYTES, MAX_READS, SessionFiles, current_session, reads_from_options,
+};
 use std::collections::BTreeSet;
 
 pub fn reads(session: &Session) -> Result<Vec<String>> {
@@ -23,11 +25,21 @@ pub fn reads(session: &Session) -> Result<Vec<String>> {
     Ok(all.into_iter().collect())
 }
 
-/// After a push whose every ref went through: the recorded reads are spent.
+/// After a push whose every ref went through: the recorded reads are spent, and the
+/// commits it sent wait for the coding session's record (Git updates the remote-tracking
+/// refs only after the helper answers, so they still name what the remote had before).
 pub fn spent(session: &Session, tips: &[String], reads: &[String]) {
     let files = SessionFiles::new(&session.git_dir);
+    let known: Vec<String> = session
+        .git
+        .run(&["for-each-ref", "--format=%(objectname)", "refs/remotes/"])
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    let commits = crate::session_cmd::pushed_commits(&session.git, tips, &known);
     let done = files
-        .note_pushed(tips, reads)
+        .note_pushed(&commits, reads, current_session().as_deref())
         .and_then(|()| files.clear_reads());
     if let Err(e) = done {
         say(&format!(
