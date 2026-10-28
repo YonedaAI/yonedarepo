@@ -237,6 +237,14 @@ button.danger {
   gap: 4px;
   max-width: 320px;
 }
+.source-field-wide {
+  max-width: 760px;
+}
+.source-field-wide textarea {
+  width: 100%;
+  font-family: "IBM Plex Mono", monospace;
+  word-break: break-all;
+}
 .source-checks {
   display: grid;
   gap: 6px;
