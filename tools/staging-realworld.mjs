@@ -67,8 +67,9 @@
 //          platform with recorded-shape payloads, no model: tools/staging/agent-hooks-flow.mjs)
 //        node tools/staging-realworld.mjs --agents 4 [--agents-wave2 2] [--agent-model <provider/model>]
 //          [--agent-timeout 600] [--agent-budget 2]
-//          (= --only 0,12,29,17: L3, real opencode agents in parallel, paid; needs opencode on
-//          PATH with its model's credentials: tools/staging/agent-run-flow.mjs)
+//          (= --only 0,12,29,17: L3, real opencode agents in parallel, paid, each in its own
+//          Docker sandbox; needs Docker and the host opencode's stored credential for the
+//          model's provider: tools/staging/agent-run-flow.mjs)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
