@@ -1372,7 +1372,7 @@
   },
   {
     "name": "git_fork",
-    "description": "Fork this repository: a new repository owned by your account, its branches and tags this one's at the current version, its history shared (nothing is copied; objects are read from this repository). Needs read on the whole repository (directly, as a member or through a team) and an account credential (a session or a personal access token with repo:admin), never a repository token. Open a change back with git_change_create {fork, branch, title} on this repository. A repository with forks cannot be deleted until they are. REST: POST /fork.",
+    "description": "Fork this repository: a new repository owned by your account, its branches and tags this one's at the current version, its history shared (nothing is copied; objects are read from this repository). Needs read on the whole repository (directly, as a member, through a team, or because it is public) and an account credential (a session or a personal access token with repo:admin), never a repository token. Open a change back with git_change_create {fork, branch, title} on this repository. A repository with forks cannot be deleted until they are. REST: POST /fork.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1384,6 +1384,14 @@
         "owner": {
           "type": "string",
           "description": "An organization to own the fork (you must be one of its owners); default your own account"
+        },
+        "visibility": {
+          "type": "string",
+          "enum": [
+            "private",
+            "public"
+          ],
+          "description": "The fork's visibility (default private, whatever this repository's is)"
         }
       },
       "required": [],

@@ -87,7 +87,7 @@ async function orgRepos(env: Env, org: string, account: string) {
   const all = shown.role === 'owner';
   const marks = keys.map((_, i) => `?${i + 2}`).join(',');
   const listed = await env.INDEX.prepare(
-    `SELECT id,name,created_at,workspace AS owner FROM platform_repos WHERE workspace=?1 ${
+    `SELECT id,name,created_at,workspace AS owner,visibility FROM platform_repos WHERE workspace=?1 ${
       all ? '' : `AND id IN (SELECT repo FROM platform_members WHERE account IN (${marks}))`
     } ORDER BY created_at DESC LIMIT 200`,
   )

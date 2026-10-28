@@ -5,6 +5,9 @@
 // a 401 asks Git's credential helper for one. The SSH gateway's session token (`ysh_`, a
 // bearer) holds for its one repository and service only (platform-ssh.ts). The authority
 // decides access per request: read to fetch, write to push, and never a path-restricted grant.
+// Git asks without credentials first: that request is anonymous (repo-public.ts), which
+// fetches a public repository; anything else it is refused is a 401, so Git then offers
+// its credentials, and a private repository looks the same as one that does not exist.
 
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { sshBearer, verifySshToken } from './platform-ssh';
@@ -17,6 +20,7 @@ import { guardInherited } from './repo-inherit';
 import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { ANONYMOUS, limitAnonymous } from './repo-public';
 import { timed, withTimings } from './repo-timing';
 import type { Env } from './types';
 
@@ -40,10 +44,15 @@ export function refusal(status: number, message: string) {
   return new Response(`${message}\n`, { status, headers });
 }
 
-/** The caller: a token as the Basic password, or any credential `credentials` accepts. */
-async function gitCredentials(req: Request, env: Env): Promise<Credentials | null> {
+/** The caller: a token as the Basic password, or any credential `credentials` accepts;
+ * anonymous without any (rate limited per address). */
+export async function gitCredentials(req: Request, env: Env): Promise<Credentials | null> {
   const header = req.headers.get('authorization') ?? '';
-  if (!/^basic /i.test(header)) return header ? credentials(req, env) : null;
+  if (!header) {
+    await limitAnonymous(env, req, new URL(req.url).pathname);
+    return ANONYMOUS;
+  }
+  if (!/^basic /i.test(header)) return credentials(req, env);
   let password = '';
   try {
     const decoded = atob(header.slice(6).trim());
@@ -79,10 +88,16 @@ async function serve(req: Request, env: Env): Promise<Response> {
   if ((action === 'info/refs') !== (req.method === 'GET'))
     return refusal(405, `${req.method} is not allowed here`);
   const ssh = sshBearer(req);
-  const auth = await timed('git.auth', () =>
-    ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
-  );
+  let auth: Credentials | null;
+  try {
+    auth = await timed('git.auth', () =>
+      ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
+    );
+  } catch (e: any) {
+    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+  }
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
+  const anonymous = '_anonymous' in auth;
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   try {
     // Access first, so a refusal is an HTTP status Git reports, not a broken protocol.
@@ -102,6 +117,10 @@ async function serve(req: Request, env: Env): Promise<Response> {
     // A push refused because the authority was overloaded moved nothing (receivePack
     // throws only then), so Git gets a status it reports instead of a per-ref refusal.
     const code = failureCode(e);
+    // Without credentials, a refusal invites them (a push, or a repository that is private
+    // or missing: the same answer, so existence does not leak).
+    if (anonymous && ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'GONE'].includes(code))
+      return refusal(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
     if (status >= 500) console.error(`git ${service} failed: ${code}`);
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
