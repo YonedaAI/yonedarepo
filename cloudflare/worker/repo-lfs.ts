@@ -7,6 +7,7 @@
 // stored object's size and sha256 again before the authority records it. Objects live at
 // `platform/v1/<repo>/lfs/<oid>`, under the repository's prefix, so its purge removes them.
 // Credentials are those of smart HTTP (a token as the Basic password, or a bearer header).
+// A fork serves the LFS objects it inherits to readers of its parent (repo-lfs-inherit.ts).
 //
 // Locks: stock clients ask `POST locks/verify` before every push and `GET locks` for
 // `git lfs locks`. Both answer empty lists (no file is ever locked); creating a lock is
@@ -14,6 +15,7 @@
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { toHex } from './hmac';
 import { readJson } from './http';
+import { inheritObjects } from './repo-lfs-inherit';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { presign, type S3Credentials } from './s3-presign';
 import type { Env } from './types';
@@ -148,12 +150,14 @@ async function batch(ctx: RepoContext, req: Request, url: URL): Promise<Response
   });
   const lapsed = (decided.lapsed as string[]).map((oid) => lfsKey(ctx.repo, oid));
   if (lapsed.length > 0) await ctx.env.OBJECTS.delete(lapsed).catch(() => {});
+  // A fork's missing objects may be its parent's, for callers who read the parent.
+  if (decided.parent) await inheritObjects(ctx, decided);
   const verifyHref = `${url.origin}/git/${ctx.repo}.git/info/lfs/verify`;
   const actions = await Promise.all(
     (decided.objects as Json[]).map(async (o): Promise<Json> => {
       const { oid, size } = o;
       if (o.error) return { oid, size, error: o.error };
-      const key = lfsKey(ctx.repo, oid);
+      const key = lfsKey(o.holder ?? ctx.repo, oid);
       if (o.present && operation === 'upload') return { oid, size };
       if (o.present) {
         const href = await presign(creds, 'GET', key, URL_SECONDS);
