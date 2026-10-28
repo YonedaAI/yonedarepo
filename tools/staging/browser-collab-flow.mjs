@@ -26,6 +26,14 @@ export async function see(locator, what, timeout = 30_000) {
   });
 }
 
+/** The org's sidebar link. Its accessible name runs the role label on ("<org>owner"), so it
+ * is matched by the link's name text, exactly. */
+export const railOrg = (page, org) =>
+  page
+    .getByRole('navigation', { name: 'Organizations', exact: true })
+    .getByRole('link')
+    .filter({ has: page.locator('.rail-repo-name').getByText(org, { exact: true }) });
+
 /** Releases tab: empty state, publish for an annotated tag, attach and download an asset, delete. */
 export async function releasePages(page, { account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
@@ -164,7 +172,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
   await page.waitForURL(`**/orgs/${org}`);
   await see(page.getByText(/You are an owner/), 'the org page naming the creator an owner');
-  await see(page.getByRole('navigation', { name: 'Organizations' }).getByRole('link', { name: org, exact: true }), 'the org in the sidebar');
+  await see(railOrg(page, org), 'the org in the sidebar');
 
   const teams = page.getByRole('region', { name: 'Teams', exact: true });
   await see(teams.getByText('No teams yet.'), 'the Teams empty state');
@@ -215,7 +223,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   await settle(grant.getByRole('cell', { name: `team ${org}/devs` }), [grant.getByRole('alert')], { timeoutMs: 30_000, what: `granting team:${org}/devs` });
   await shot('org-repo-members');
 
-  await page.getByRole('navigation', { name: 'Organizations' }).getByRole('link', { name: org, exact: true }).click();
+  await railOrg(page, org).click();
   await page.waitForURL(`**/orgs/${org}`);
   await see(page.getByRole('region', { name: 'Repositories', exact: true }).getByRole('link', { name }), `${name} on the org page`);
   await shot('org-repos');
