@@ -13,6 +13,11 @@ account
 repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>])
   land [--branch <b>]                 land the branch's head on main
   review approve|reject <sha> [-m <reason>]
+  change create [<branch>] [--title <t>] [-m <body>]   open a change request (default: this branch)
+  change list [--status open|landed|closed|all]
+  change show <n>                     a change: gates, reviews, comments and files
+  change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
+  change land <n>                     land the change's head on main
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
@@ -149,6 +154,39 @@ pub enum SessionCommand {
     },
 }
 
+/// `yoneda change …`: change requests (a branch proposed for landing on main).
+#[derive(Debug, PartialEq, Eq)]
+pub enum ChangeCommand {
+    Create {
+        branch: Option<String>,
+        title: Option<String>,
+        body: Option<String>,
+    },
+    List {
+        status: Option<String>,
+    },
+    Show {
+        number: u64,
+    },
+    Comment {
+        number: u64,
+        body: Option<String>,
+        anchor: Option<Anchor>,
+        resolve: bool,
+    },
+    Land {
+        number: u64,
+    },
+}
+
+/// A diff line a comment is anchored to (`side` is `old` or `new`).
+#[derive(Debug, PartialEq, Eq)]
+pub struct Anchor {
+    pub path: String,
+    pub line: u64,
+    pub side: String,
+}
+
 /// The agent hook a `yoneda hook <event>` call serves.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum HookEvent {
@@ -230,6 +268,10 @@ pub enum Command {
     Session {
         target: Target,
         command: SessionCommand,
+    },
+    Change {
+        target: Target,
+        command: ChangeCommand,
     },
     Hook(HookEvent),
 }

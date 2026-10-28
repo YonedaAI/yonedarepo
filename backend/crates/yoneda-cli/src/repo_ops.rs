@@ -38,13 +38,17 @@ pub async fn platform_commit(t: &Resolved, spec: Option<&str>) -> Result<String>
     }
 }
 
+/// The clone's current branch, if inside one on a branch.
+pub fn current_branch(t: &Resolved) -> Option<String> {
+    t.clone
+        .as_ref()
+        .and_then(|c| c.git.run(&["symbolic-ref", "--short", "HEAD"]).ok())
+}
+
 pub async fn land(t: &Resolved, branch: Option<&str>) -> Result<()> {
     let branch = match branch {
         Some(b) => b.to_owned(),
-        None => t
-            .clone
-            .as_ref()
-            .and_then(|c| c.git.run(&["symbolic-ref", "--short", "HEAD"]).ok())
+        None => current_branch(t)
             .ok_or_else(|| Error::usage("land needs --branch <b> outside a clone"))?,
     };
     if branch == "main" {
@@ -57,10 +61,15 @@ pub async fn land(t: &Resolved, branch: Option<&str>) -> Result<()> {
             "the platform has no branch {branch}; git push it first"
         ))
     })?;
-    match t.api.land("main", &head).await {
+    land_head(t, &branch, &head).await
+}
+
+/// Lands `head` on main (`what` names it in the report); a conflict names its paths.
+pub async fn land_head(t: &Resolved, what: &str, head: &str) -> Result<()> {
+    match t.api.land("main", head).await {
         Ok(landed) => {
             println!(
-                "Landed {branch} ({head}) on main at version {}{}",
+                "Landed {what} ({head}) on main at version {}{}",
                 landed["version"],
                 if landed.get("merge").is_some() {
                     " (merged)"
