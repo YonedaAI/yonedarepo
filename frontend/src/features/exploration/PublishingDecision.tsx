@@ -27,12 +27,19 @@ export function PublishingDecision({
   ) => Promise<boolean>;
 }) {
   const [error, setError] = useState('');
+  // Recording the decision refreshes the snapshot while the platform landing is still running;
+  // the refreshed blocker ("already recorded") describes this dialog's own success, not an error.
+  const [submitted, setSubmitted] = useState(false);
+  const shownBlocker = submitted ? '' : blocker;
   async function accept(rationale: string, alternatives: { candidate: string; reason: string }[]) {
     if (blocker || !chosen) return;
     setError('');
+    setSubmitted(true);
     try {
       if (await onAccept(chosen.id, rationale, alternatives)) onClose();
+      else setSubmitted(false);
     } catch (failure) {
+      setSubmitted(false);
       setError((failure as Error).message);
     }
   }
@@ -48,9 +55,9 @@ export function PublishingDecision({
         <br />
         Exact revision <code>{short(chosen?.revision?.commit)}</code>
       </p>
-      {(error || blocker) && (
+      {(error || shownBlocker) && (
         <p role="alert" className="form-error">
-          {error || blocker}
+          {error || shownBlocker}
         </p>
       )}
       {comparison?.selection_reason ? (

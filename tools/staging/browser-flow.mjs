@@ -63,6 +63,11 @@ export async function browserFlow({ origin, owner, kit, root, timeoutMs = 10 * 6
   page.setDefaultTimeout(30_000);
   page.on('console', (message) => message.type() === 'error' && problems.push(`console: ${message.text()}`));
   page.on('pageerror', (error) => problems.push(`pageerror: ${error.message}`));
+  page.on('response', async (response) => {
+    if (response.status() < 400) return;
+    const body = await response.json().catch(() => ({}));
+    problems.push(`http ${response.status()} ${response.request().method()} ${new URL(response.url()).pathname} ${body.error?.code ?? ''} ${(body.error?.message ?? '').slice(0, 200)}`);
+  });
   let shots = 0;
   const shot = (name) => page.screenshot({ path: join(dir, `${String(++shots).padStart(2, '0')}-${name}.png`), fullPage: true });
   try {
