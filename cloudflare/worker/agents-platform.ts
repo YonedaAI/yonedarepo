@@ -100,6 +100,9 @@ export async function bindPlatform(
     platform_repo: repo,
     sealed: await seal(env, owner, 'platform', token, project),
   });
+  // A credential this isolate cached for an earlier binding of the same identity (a project
+  // id reused after its repository went away) must not outlive the new binding.
+  tokens.delete(`${owner}\0${project}`);
   return bound.platform.repo;
 }
 
