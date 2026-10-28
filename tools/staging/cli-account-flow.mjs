@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { b64 } from './client.mjs';
 import { PAT_SCOPES } from './cli-tools.mjs';
-import { McpClient } from './mcp-flow.mjs';
+import { McpClient } from './mcp-client.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const decode = (blob) => Buffer.from(blob.content ?? '', blob.encoding === 'base64' ? 'base64' : 'utf8').toString('utf8');
