@@ -2,6 +2,7 @@
 // that marks a change landed (repo_store/changes.rs); this module routes the operations,
 // adds the diff (object storage) to `show`, and sends the hook fan-out after events.
 // Approval is `git_review` on the head commit and landing is `git_land` on main.
+import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
 import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
 
@@ -28,10 +29,13 @@ async function notified(ctx: RepoContext, done: Promise<Json>) {
 
 /** Operations shared by REST and MCP. */
 export const changeOperations = {
+  // With `fork`: a branch of that fork, carried into this repository (repo-forks).
   git_change_create: (ctx: RepoContext, a: Json) =>
     notified(
       ctx,
-      ctx.call({ op: 'repo_change_create', branch: a.branch, title: a.title, body: a.body }),
+      a.fork
+        ? openForkChange(ctx, a)
+        : ctx.call({ op: 'repo_change_create', branch: a.branch, title: a.title, body: a.body }),
     ),
   git_change_list: (ctx: RepoContext, a: Json) =>
     ctx.call({
@@ -40,8 +44,17 @@ export const changeOperations = {
       ...(a.limit === undefined ? {} : { limit: Number(a.limit) }),
     }),
   git_change_show: async (ctx: RepoContext, a: Json) => {
-    const change = await ctx.call({ op: 'repo_change_show', number: changeNumber(a.number) });
-    return { ...change, diff: await changeDiff(ctx, change, a.patch === true) };
+    const show = { op: 'repo_change_show', number: changeNumber(a.number) };
+    let change = await ctx.call(show);
+    // A change from a fork follows the fork branch's pushes (before anyone reviews or lands
+    // its head); a failure to carry them is reported, not fatal to reading the change.
+    let source_error: string | undefined;
+    const moved = await followForkChange(ctx.env, ctx.repo, change).catch((e) => {
+      source_error = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`.slice(0, 500);
+      return false;
+    });
+    if (moved) change = await ctx.call(show);
+    return { ...change, source_error, diff: await changeDiff(ctx, change, a.patch === true) };
   },
   git_change_comment: (ctx: RepoContext, a: Json) =>
     notified(

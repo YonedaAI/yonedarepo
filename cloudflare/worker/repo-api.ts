@@ -213,6 +213,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'changes') return changesRoute(ctx, req, sha, sub, () => bodyOf(req));
+  if (resource === 'fork' && !sha && post) return run('git_fork', await bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });

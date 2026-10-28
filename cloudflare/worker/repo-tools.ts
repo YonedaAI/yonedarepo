@@ -9,6 +9,7 @@ import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { listTree, readFile } from './repo-files';
+import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
 import { memberOperations } from './repo-members';
@@ -49,6 +50,7 @@ export const operations: Record<string, Operation> = {
   git_merge_base: (ctx, a) => ctx.call({ op: 'repo_merge_base', left: a.left, right: a.right }),
   git_ls_tree: listTree,
   git_cat_file: readFile,
+  git_fork: forkRepository,
   git_grep: search,
   symbol_list: listSymbols,
   symbol_get: getSymbol,

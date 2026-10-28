@@ -15,7 +15,7 @@ import type { Env } from './types';
  * (acting as the account, never as a person), or, for the operator (admin bearer)
  * provisioning on someone's behalf, the named `workspace`. Never a repository token.
  */
-function owning(auth: Credentials, body: Json): Credentials & { _session: Json } {
+export function owning(auth: Credentials, body: Json): Credentials & { _session: Json } {
   if ('_pat' in auth) {
     requirePatScope(auth, 'repo:admin');
     if (body.workspace !== undefined)
@@ -55,10 +55,15 @@ async function issueTokens(ctx: RepoContext, requested: unknown) {
   return { tokens };
 }
 
+/** A new repository id: `r` and 20 hex digits. */
+export function newRepoId() {
+  const random = crypto.getRandomValues(new Uint8Array(10));
+  return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const auth = owning(requester, body);
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const id = newRepoId();
   const store = newStore(env, `yr-${id}`);
   await store.create();
   const ctx = new RepoContext(env, id, caller(env, id, auth));
@@ -100,8 +105,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
     throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
   const branch = typeof body.branch === 'string' && body.branch ? body.branch : 'main';
   const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   await ctx.call({
