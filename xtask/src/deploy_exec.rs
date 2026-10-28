@@ -112,10 +112,8 @@ impl Run<'_> {
                 ],
             )?,
             Step::ActiveGate { worker } => {
-                let active = crate::deploy_live::active_instances(
-                    &spec.account_id,
-                    &workers[worker].config,
-                )?;
+                let active =
+                    crate::deploy_live::active_instances(&spec.account_id, &workers[worker])?;
                 guard::active_gate(env, &workers[worker].name, active, options)?;
             }
             Step::RetiredGate => {
@@ -157,9 +155,9 @@ impl Run<'_> {
             Step::RolloutGate => {
                 let mut busy = Vec::new();
                 for worker in workers.iter().filter(|w| w.has_containers) {
-                    busy.extend(crate::deploy_live::busy_instances(
+                    busy.extend(crate::deploy_live::gated_instances(
                         &spec.account_id,
-                        &worker.config,
+                        worker,
                     )?);
                 }
                 guard::rollout_gate(&busy, options)?;

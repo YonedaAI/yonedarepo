@@ -129,6 +129,9 @@
         "SSH_TUNNEL_TOKEN"
       ],
       "health": "yonedarepo-platform",
+      "always_on": {
+        "SshGateway": "open SSH sessions"
+      },
       "config": {
         "name": "{prefix}-platform",
         "main": "worker/platform-index.ts",
