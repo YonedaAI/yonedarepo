@@ -1,20 +1,21 @@
 import { lazy, Suspense } from 'react';
 import { Dialog } from '../../components/Dialog';
 import type { useRepository } from '../../hooks/useRepository';
+import { AgentConnectHelp } from '../source-platform/ConnectPanel';
+import { currentApiOrigin } from '../source-platform/connect';
 import { AccountPanel } from './AccountPanel';
 import { ConnectAgents } from './ConnectAgents';
-import { NewProject } from './NewProject';
 import { OwnerConnection } from './OwnerConnection';
 
 const ProviderSettings = lazy(() =>
   import('./ProviderSettings').then((module) => ({ default: module.ProviderSettings })),
 );
 
-export type WorkspacePanel = 'agents' | 'providers' | 'project' | 'owner' | 'account' | null;
+export type WorkspacePanel = 'agents' | 'providers' | 'cli' | 'owner' | 'account' | null;
 const titles = {
   agents: 'Connect Agents',
   providers: 'Agent providers',
-  project: 'Add repository',
+  cli: 'Connect agents with the CLI and MCP',
   owner: 'Administrator access',
   account: 'Sign in to YonedaRepo',
 };
@@ -24,15 +25,16 @@ export function WorkspacePanels({
   panel,
   state,
   onClose,
-  onPanel,
+  onNew,
 }: {
   reviewer?: boolean;
   panel: WorkspacePanel;
   state: ReturnType<typeof useRepository>;
   onClose: () => void;
-  onPanel?: (panel: WorkspacePanel) => void;
+  /** Opens "New repository" (Connect Agents offers it before any repository exists). */
+  onNew?: () => void;
 }) {
-  if (!panel || (reviewer && ['agents', 'providers', 'project'].includes(panel))) return null;
+  if (!panel || (reviewer && ['agents', 'providers'].includes(panel))) return null;
   return (
     <Dialog key={panel} title={titles[panel]} onClose={onClose}>
       {panel === 'account' && !state.authenticated && (
@@ -48,7 +50,7 @@ export function WorkspacePanels({
         <ConnectAgents
           repo={state.snapshot ? state.id : undefined}
           onClose={onClose}
-          onProject={onPanel ? () => onPanel('project') : undefined}
+          onProject={onNew}
         />
       )}
       {panel === 'providers' && state.authenticated && (
@@ -56,15 +58,10 @@ export function WorkspacePanels({
           <ProviderSettings onClose={onClose} />
         </Suspense>
       )}
-      {panel === 'project' && state.authenticated && (
-        <NewProject
-          onClose={onClose}
-          onCreated={async (id) => {
-            await state.discover();
-            state.setId(id);
-            onClose();
-          }}
-        />
+      {panel === 'cli' && (
+        <div className="source-connect">
+          <AgentConnectHelp origin={currentApiOrigin()} />
+        </div>
       )}
       {panel === 'owner' && (
         <OwnerConnection

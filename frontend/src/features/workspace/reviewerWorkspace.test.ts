@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { useRepository } from '../../hooks/useRepository';
 import type { Snapshot } from '../../lib/types';
@@ -20,6 +20,7 @@ const snapshot: Snapshot = {
     published_commit: 'base',
     pending: null,
     remote: { namespace: 'test', name: 'sandbox' },
+    platform: { repo: 'r0123456789abcdef0123' },
   },
   runs: [],
   executions: [],
@@ -46,7 +47,14 @@ function state(reviewer: boolean): ReturnType<typeof useRepository> {
     setId: vi.fn(),
   } as unknown as ReturnType<typeof useRepository>;
 }
-beforeEach(() => exploration.mockReset().mockReturnValue(null));
+beforeEach(() => {
+  exploration.mockReset().mockReturnValue(null);
+  // The shell opens on the project repository's Runs tab.
+  vi.stubGlobal('window', {
+    location: { pathname: '/source/r0123456789abcdef0123/runs', search: '', origin: 'https://x' },
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
 describe('reviewer workspace permissions', () => {
   it('keeps history tracing while hiding forbidden recorded observations', () => {
     const props = {
@@ -76,18 +84,18 @@ describe('reviewer workspace permissions', () => {
     const html = renderToStaticMarkup(createElement(App));
     expect(exploration.mock.calls[0][0].reviewer).toBe(false);
     expect(html).toContain('Recover repository');
-    for (const label of ['New repository', 'Connect Agents', 'Delete repository'])
+    for (const label of ['New repository', 'Connect Agents', '>Runs<', '>Sandbox<'])
       expect(html).toContain(label);
   });
   it('retains ordinary workspace mutations for non-reviewer accounts', () => {
     vi.mocked(useRepository).mockReturnValue(state(false));
     const html = renderToStaticMarkup(createElement(App));
     expect(exploration.mock.calls[0][0].reviewer).toBe(false);
-    for (const label of ['New repository', 'Connect Agents', 'Delete repository'])
+    for (const label of ['New repository', 'Connect Agents', '>Runs<'])
       expect(html).toContain(label);
   });
-  it('cannot open an already selected contribution, provider or project panel after becoming a reviewer', () => {
-    for (const panel of ['agents', 'providers', 'project'] as const) {
+  it('cannot open an already selected contribution or provider panel after becoming a reviewer', () => {
+    for (const panel of ['agents', 'providers'] as const) {
       const html = renderToStaticMarkup(
         createElement(WorkspacePanels, {
           panel,

@@ -1,88 +1,6 @@
-.source-app {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-.source-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
-}
-.source-header a {
-  color: inherit;
-  text-decoration: none;
-}
-.source-body {
-  display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
-  flex: 1;
-}
-.source-repos {
-  border-right: 1px solid var(--line);
-  padding: 16px;
-  background: var(--surface);
-}
-.source-repos h2 {
-  font-size: 13px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin: 0 0 8px;
-}
-.source-repos ul {
-  list-style: none;
-  padding: 0;
-  margin: 0 0 16px;
-}
-.source-repos a {
-  display: block;
-  padding: 6px 8px;
-  border-radius: 6px;
-  color: inherit;
-  text-decoration: none;
-  overflow-wrap: anywhere;
-}
-.source-repos a[aria-current="page"],
-.source-repos a:hover {
-  background: #eef2fb;
-  color: var(--blue);
-}
 .source-create {
   display: grid;
   gap: 6px;
-}
-.source-main {
-  padding: 20px 24px;
-  min-width: 0;
-}
-.source-repo-head {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.source-repo-head h1,
-.source-welcome h1 {
-  font-size: 22px;
-  margin: 0 0 8px;
-}
-.source-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-  margin: 8px 0 16px;
-}
-.source-tabs a {
-  padding: 8px 12px;
-  color: var(--muted);
-  text-decoration: none;
-  border-bottom: 2px solid transparent;
-}
-.source-tabs a[aria-current="page"] {
-  color: var(--blue);
-  border-bottom-color: var(--blue);
 }
 .source-toolbar {
   display: flex;
@@ -96,13 +14,6 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-}
-.source-crumbs button.quiet,
-.source-tree button.quiet {
-  background: transparent;
-  color: var(--blue);
-  min-height: 28px;
-  padding: 4px 6px;
 }
 .source-version {
   display: flex;
@@ -136,22 +47,6 @@
   padding: 8px 10px;
   border-radius: 6px;
   margin: 8px 0;
-}
-.source-tree {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-.source-tree > :not(:first-child) {
-  border-top: 1px solid var(--line);
-}
-.source-tree button.quiet {
-  width: 100%;
-  justify-content: flex-start;
-  color: inherit;
 }
 .source-file,
 .source-diff section,
@@ -279,19 +174,6 @@ button.danger {
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
-@media (max-width: 760px) {
-  .source-body {
-    grid-template-columns: 1fr;
-    align-content: start;
-  }
-  .source-repos {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-  .source-main {
-    padding: 16px;
-  }
-}
 .source-class {
   font-size: 12px;
   padding: 1px 8px;
@@ -334,13 +216,6 @@ button.danger {
   margin-bottom: 8px;
 }
 /* Tokens, device approval and the Connect panel. */
-.source-header-links {
-  display: flex;
-  gap: 16px;
-}
-.source-header-links a[aria-current="page"] {
-  font-weight: 600;
-}
 .source-tokens section,
 .source-connect section,
 .source-device form {

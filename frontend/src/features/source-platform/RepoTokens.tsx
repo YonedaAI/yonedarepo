@@ -1,10 +1,11 @@
 // Repository tokens (`yrp_…`): scoped to one repository (and optionally to paths), for an
-// agent or CI that should touch nothing else. Owner-only; shown once, revocable by name.
+// agent or CI that should touch nothing else. Managed in the repository's Settings; shown
+// once, revocable by name.
 import { type FormEvent, useState } from 'react';
 import { REPO_TOKEN_SCOPES, scopeList } from './connect';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
-import { type RepoSummary, ScopeChecks, ShownOnce } from './TokenParts';
+import { ScopeChecks, ShownOnce } from './TokenParts';
 import { type Loaded, useSource } from './useSource';
 
 export type RepoToken = {
@@ -62,10 +63,8 @@ export function RepoTokenTable({
   );
 }
 
-export function RepoTokens({ repos }: { repos: RepoSummary[] }) {
-  const [repo, setRepo] = useState('');
-  const selected = repo || repos[0]?.id || '';
-  const tokens = useSource<{ tokens: RepoToken[] }>(selected ? `/repos/${selected}/tokens` : null);
+export function RepoTokens({ repo }: { repo: string }) {
+  const tokens = useSource<{ tokens: RepoToken[] }>(`/repos/${repo}/tokens`);
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<Scope[]>(['read', 'write']);
   const [busy, setBusy] = useState(false);
@@ -77,7 +76,7 @@ export function RepoTokens({ repos }: { repos: RepoSummary[] }) {
     setBusy(true);
     setError('');
     try {
-      const created = await sourceApi<{ token: string }>(`/repos/${selected}/tokens`, {
+      const created = await sourceApi<{ token: string }>(`/repos/${repo}/tokens`, {
         body: { name, scopes },
       });
       setSecret(created.token);
@@ -93,7 +92,7 @@ export function RepoTokens({ repos }: { repos: RepoSummary[] }) {
     if (!window.confirm(`Revoke ${token}? Clients using it stop working immediately.`)) return;
     setError('');
     try {
-      await sourceApi(`/repos/${selected}/tokens/${encodeURIComponent(token)}`, {
+      await sourceApi(`/repos/${repo}/tokens/${encodeURIComponent(token)}`, {
         method: 'DELETE',
       });
       tokens.reload();
@@ -108,43 +107,31 @@ export function RepoTokens({ repos }: { repos: RepoSummary[] }) {
       <p className="source-meta">
         Scoped to one repository, for an agent that should touch nothing else.
       </p>
-      {repos.length === 0 ? (
-        <p className="source-empty">Create a repository first.</p>
+      <RepoTokenTable tokens={tokens} onRevoke={revoke} />
+      {secret ? (
+        <ShownOnce token={secret} onDone={() => setSecret('')} />
       ) : (
-        <>
-          <label htmlFor="repo-token-repo" className="source-field">
-            Repository
-            <select id="repo-token-repo" value={selected} onChange={(e) => setRepo(e.target.value)}>
-              {repos.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+        <form
+          onSubmit={create}
+          className="source-token-form"
+          aria-label="Create a repository token"
+        >
+          <label htmlFor="repo-token-name" className="source-field">
+            Name
+            <input
+              id="repo-token-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              pattern="[a-z0-9][a-z0-9._\-]{0,63}"
+              title="lowercase letters, digits, and . _ - after the first character"
+              required
+            />
           </label>
-          <RepoTokenTable tokens={tokens} onRevoke={revoke} />
-          {secret ? (
-            <ShownOnce token={secret} onDone={() => setSecret('')} />
-          ) : (
-            <form onSubmit={create} className="source-token-form">
-              <label htmlFor="repo-token-name" className="source-field">
-                Name
-                <input
-                  id="repo-token-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  pattern="[a-z0-9][a-z0-9._\-]{0,63}"
-                  title="lowercase letters, digits, and . _ - after the first character"
-                  required
-                />
-              </label>
-              <ScopeChecks legend="Scopes" options={OPTIONS} value={scopes} onChange={setScopes} />
-              <button type="submit" disabled={busy || !name || scopes.length === 0}>
-                {busy ? 'Creating…' : 'Create repository token'}
-              </button>
-            </form>
-          )}
-        </>
+          <ScopeChecks legend="Scopes" options={OPTIONS} value={scopes} onChange={setScopes} />
+          <button type="submit" disabled={busy || !name || scopes.length === 0}>
+            {busy ? 'Creating…' : 'Create repository token'}
+          </button>
+        </form>
       )}
       {error && <Failure error={error} />}
     </section>
