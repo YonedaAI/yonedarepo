@@ -196,14 +196,33 @@ pub struct Record<'a> {
 }
 
 /// Posts a session record for each commit `record.session` pushed from the clone `at` (and
-/// for pushes no session claimed). A network or server failure keeps the commit for the
-/// next turn's end. Returns how many records were posted.
+/// for pushes no session claimed). A failure before posting, or a network, conflict, rate or
+/// server failure, keeps the commit for the next turn's end. Returns how many records were
+/// posted.
 pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result<usize> {
     let files = SessionFiles::new(&at.git_dir);
     let pushed = files.take_pushed(Some(record.session))?;
     if pushed.is_empty() {
         return Ok(0);
     }
+    match post_records(cwd, record, &pushed).await {
+        Ok((posted, retry)) => {
+            files.note_again(&retry)?;
+            Ok(posted)
+        }
+        Err(e) => {
+            files.note_again(&pushed)?;
+            Err(e)
+        }
+    }
+}
+
+/// Posts `record` on each of `pushed`; the posted count and the pushes to retry.
+async fn post_records(
+    cwd: &Path,
+    record: &Record<'_>,
+    pushed: &[crate::session_files::Pushed],
+) -> Result<(usize, Vec<crate::session_files::Pushed>)> {
     let summary = truncate(record.summary, SUMMARY_BYTES - 3);
     let prompts = (!record.prompts.is_empty())
         .then(|| yoneda_core::digest(record.prompts.join("\n").as_bytes()));
@@ -231,14 +250,13 @@ pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result
                     "yoneda hook: session record for {} not posted: {f}",
                     push.commit
                 );
-                if f.status == 0 || f.status >= 500 {
-                    retry.push(push);
+                if matches!(f.status, 0 | 409 | 429) || f.status >= 500 {
+                    retry.push(push.clone());
                 }
             }
         }
     }
-    files.note_again(&retry)?;
-    Ok(posted)
+    Ok((posted, retry))
 }
 
 async fn claude_stop(hook: &Value) -> Result<()> {
@@ -266,6 +284,38 @@ async fn claude_stop(hook: &Value) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_record_pass_that_fails_before_posting_keeps_the_pushes() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let git = crate::git::Git::new(dir.path());
+        git.run(&["init", "-q"])?;
+        git.run(&[
+            "remote",
+            "add",
+            "origin",
+            "yoneda::https://api.example.invalid/r1",
+        ])?;
+        let at = here(dir.path())?;
+        let files = SessionFiles::new(&at.git_dir);
+        files.note_pushed(&["c1".to_owned()], &[], Some("opencode:s1"))?;
+        let record = Record {
+            cli: "opencode",
+            model: None,
+            summary: "Added clamp.",
+            prompts: &[],
+            session: "opencode:s1",
+        };
+        // The clone cannot be entered: nothing is posted, and nothing may be forgotten.
+        let gone = dir.path().join("gone");
+        assert!(record_pushed(&at, &gone, &record).await.is_err());
+        let kept = files.take_pushed(Some("opencode:s1"))?;
+        assert_eq!(
+            kept.iter().map(|p| p.commit.as_str()).collect::<Vec<_>>(),
+            ["c1"]
+        );
+        Ok(())
+    }
 
     #[test]
     fn spots_git_push_in_shell_commands() {
