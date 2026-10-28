@@ -28,6 +28,7 @@ const writes = new Set([
   'accept',
   'reject_candidate',
   'cancel_run',
+  'delete_run',
   'observe',
   'update_policy',
   'context_publish',

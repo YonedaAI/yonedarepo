@@ -1,10 +1,12 @@
 import { ApiError } from '../lib/api';
 import type { RepositoryOverview, RunDetail, RunsPage, Snapshot } from '../lib/types';
 import {
+  deletedRunIds,
   emptySnapshot,
   mergeRunDetails,
   RequestedRunNotFoundError,
   scopedRunIds,
+  withoutRuns,
 } from './repositorySnapshot';
 
 export interface RepositoryRefreshOptions {
@@ -80,10 +82,12 @@ export async function refreshRepository(options: RepositoryRefreshOptions) {
   }
   page = unwrap(await history);
   if (!isCurrent()) return;
+  // Runs just loaded are current; a loaded run missing from its page range was deleted.
+  next = withoutRuns(next, deletedRunIds(page, next.runs, loaded));
   const primary = page.items[0]?.id;
   if (typeof primary === 'string' && !loaded.has(primary)) {
     accept(primary, await load<RunDetail>(`repos/${id}/runs/${encodeURIComponent(primary)}`));
-  } else if (!loaded.size) publish();
+  } else publish();
   if (!isCurrent()) return;
   await Promise.all(
     scopedRunIds(page.items, next.runs)
