@@ -1,6 +1,17 @@
 //! The synchronous SQL store contract shared by every Durable Object authority (source
 //! repositories, commit shards, accounts), with its native SQLite implementation for tests and
 //! local tools. JSON in, JSON out; no Cloudflare dependency.
+//!
+//! This is the one seam where durable state enters platform logic. Parameters and rows are
+//! [`serde_json::Value`]s (a row is an object keyed by column name), so neither side shares a
+//! driver type: `yoneda-cloudflare` implements [`SqlStore`] over Durable Object SQLite and
+//! `native` over rusqlite, and the platform is tested against the native one.
+//!
+//! Contract both implementations keep:
+//! - [`SqlStore::transaction`] runs its action atomically and rolls back on `Err`; the action
+//!   is synchronous, so no network I/O can happen while it holds the transaction.
+//! - Statements bind at most [`MAX_BOUND_PARAMETERS`] values.
+//! - SQL failures come back as [`yoneda_core::Error`] values.
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 

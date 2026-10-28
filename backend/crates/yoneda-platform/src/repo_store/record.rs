@@ -6,7 +6,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Error, Result,
-    git_object::{ObjectId, hidden_ref, verify_receive_pack_report},
+    git_object::ObjectId,
+    transport::{hidden_ref, verify_receive_pack_report},
 };
 
 /// Moves a prepared commit into history once the adapter has read it back from the

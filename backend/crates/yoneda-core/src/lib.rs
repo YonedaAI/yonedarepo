@@ -1,5 +1,10 @@
-//! Core contracts: the Git object model, the transaction log, merge, derived data (blame,
-//! search, text diff), account identifiers and the error and digest primitives.
+//! Core contracts: the Git object model, Git transport codecs, the transaction log, merge,
+//! derived data (blame, search, text diff), account identifiers and the error and digest
+//! primitives.
+//!
+//! Everything here is pure: no I/O, clock, randomness or Cloudflare dependency. Callers pass
+//! bytes, JSON and time in and get values or a contextual [`Error`] back, so the same rules
+//! run in the Durable Object, the stateless Worker compute, the CLI and native tests.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -7,6 +12,7 @@ use std::collections::BTreeMap;
 
 pub mod account;
 pub mod git_object;
+pub mod transport;
 pub mod txlog;
 /// MCP tools of the source platform (`/api/v1/repos/:id/mcp`), named after Git verbs.
 pub const PLATFORM_MCP_TOOLS: &str = include_str!("platform_tools.json");
