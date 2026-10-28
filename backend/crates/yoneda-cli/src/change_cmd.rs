@@ -59,6 +59,9 @@ fn gates(gates: &Value) -> String {
 
 fn show(change: &Value) {
     println!("{}", summary(change));
+    if let Some(fork) = change["source_repo"].as_str() {
+        println!("from fork {fork} branch {}", text(change, "source_branch"));
+    }
     if !text(change, "body").is_empty() {
         println!("\n  {}\n", text(change, "body").replace('\n', "\n  "));
     }
@@ -111,6 +114,7 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             branch,
             title,
             body,
+            to_parent,
         } => {
             let branch = branch
                 .or_else(|| current_branch(t))
@@ -123,7 +127,23 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                 })
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| branch.clone());
-            let body = json!({ "branch": branch, "title": title, "body": body });
+            let mut body = json!({ "branch": branch, "title": title, "body": body });
+            // From a fork: the parent opens it, carrying this fork's branch across.
+            if to_parent {
+                let status = t.api.status().await?;
+                let parent = status["parent"]["repo"]
+                    .as_str()
+                    .ok_or_else(|| Error::usage(format!("{} is not a fork", t.repo)))?;
+                body["fork"] = json!(t.repo);
+                let change = t.api.sibling(parent)?.post("/changes", &body).await?;
+                println!("Opened on {parent}: {}", summary(&change));
+                println!(
+                    "next: a reviewer of {parent} approves {}, then yoneda change land {} --repo {parent}",
+                    text(&change, "head"),
+                    change["number"]
+                );
+                return Ok(());
+            }
             let change = t.api.post("/changes", &body).await?;
             println!("Opened {}", summary(&change));
             println!(

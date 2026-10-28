@@ -1,8 +1,9 @@
 // A repository inside the shell: name, status chips, tabs and the current tab's view.
 import { RepoSettings } from '../repo-settings/RepoSettings';
-import type { Navigate } from '../shell/useRoute';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
+import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
 import { ReleaseView } from './ReleaseView';
 import { RepoChanges } from './RepoChanges';
@@ -39,7 +40,28 @@ export function RepoPage({
     <div className="repo-page">
       <div className="repo-head">
         <h1>{name ?? data?.name ?? repo}</h1>
+        {data?.parent && (
+          <p className="source-meta">
+            forked from{' '}
+            <a
+              {...linkTo(
+                { view: 'files', repo: data.parent.repo, path: '', ref: 'main' },
+                navigate,
+              )}
+            >
+              {data.parent.repo}
+            </a>{' '}
+            at v{data.parent.version}
+          </p>
+        )}
         {data && <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />}
+        {data && (
+          <ForkButton
+            repo={repo}
+            name={data.name}
+            onForked={(fork) => navigate({ view: 'files', repo: fork.id, path: '', ref: 'main' })}
+          />
+        )}
       </div>
       {drift.map((p) => (
         <p key={p.refname} role="alert" className="source-error">

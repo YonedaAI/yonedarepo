@@ -11,6 +11,10 @@ export type RepoStatus = {
   refs?: { name: string; commit_id: string; version: number }[];
   projections?: { refname: string; status: string; detail?: string }[];
   viewer?: Viewer;
+  /** Set on a fork: the repository it was forked from and that one's version at the fork. */
+  parent?: { repo: string; version: number } | null;
+  /** How many forks read this repository's objects (it is deleted only after them). */
+  forks?: number;
 };
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;

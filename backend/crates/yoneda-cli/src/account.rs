@@ -1,5 +1,5 @@
-//! `yoneda repo create|list|delete|import`: repositories on the caller's account (or, with
-//! `--owner`, on an organization it owns).
+//! `yoneda repo create|list|delete|import|fork`: repositories on the caller's account (or,
+//! with `--owner`, on an organization it owns).
 use crate::command::RepoCommand;
 use crate::error::{Error, Result};
 use crate::remote::url::RemoteUrl;
@@ -71,6 +71,29 @@ pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
             let token = target::token_for(&origin)?;
             let id = crate::import::import(&origin, &api, &token, dir, &name, batch_files).await?;
             println!("  {}", clone_hint(&origin, &id));
+        }
+        RepoCommand::Fork { id, name, owner } => {
+            if !crate::api::valid_repo_id(&id) {
+                return Err(Error::usage(format!("{id:?} is not a repository id")));
+            }
+            let forked = api
+                .post(
+                    &format!("/repos/{id}/fork"),
+                    &json!({ "name": name, "owner": owner }),
+                )
+                .await?;
+            let fork = forked["id"]
+                .as_str()
+                .ok_or_else(|| Error::new("the platform returned no repository id"))?;
+            println!(
+                "Forked {id} at version {} as {} ({fork}): {} ref(s), {} commit(s)\n  {}",
+                forked["parent_version"],
+                forked["name"].as_str().unwrap_or_default(),
+                forked["refs"],
+                forked["commits"],
+                clone_hint(&origin, fork)
+            );
+            println!("next: push a branch, then yoneda change create <branch> --to-parent");
         }
     }
     Ok(())
