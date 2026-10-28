@@ -42,6 +42,9 @@ export interface Env {
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
   PUSH_BUNDLES?: string;
+  /** `off` leaves a shard commit's blobs to its shard's drain instead of also writing them
+   * to R2's cache key after the commit (repo-commit-shard); anything else writes them. */
+  BLOB_WRITE_THROUGH?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls
    * back to the request origin. */
   WEB_ORIGIN?: string;

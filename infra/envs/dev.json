@@ -102,6 +102,7 @@
         "Batched landing, with commits beginning from and main reads served by the published",
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.",
+        "BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain (A/B against landing throughput).",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
         "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route); WEB_ORIGIN is where people approve device logins (/device).",
@@ -144,6 +145,7 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "BLOB_WRITE_THROUGH": "on",
           "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}"
