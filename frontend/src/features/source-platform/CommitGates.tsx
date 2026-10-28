@@ -37,7 +37,16 @@ export type CommitDetail = {
 
 /** Ready or not, with what landing still needs in plain words: the review class only when
  * it is known, approvals only when the policy requires them. */
-export function GateSummary({ gates, classes }: { gates: Gates; classes: ReviewClasses }) {
+export function GateSummary({
+  gates,
+  classes,
+  notes = [],
+}: {
+  gates: Gates;
+  classes: ReviewClasses;
+  /** More of what landing needs, beyond the gates. */
+  notes?: string[];
+}) {
   const label = classLabel(classes);
   const lines = [
     label && `${label}${gates.auto_approved ? ' · auto-approved by policy' : ''}`,
@@ -46,6 +55,7 @@ export function GateSummary({ gates, classes }: { gates: Gates; classes: ReviewC
       gates.approvals >= gates.approvals_required &&
       `Approved (${gates.approvals} of ${gates.approvals_required})`,
     ...gateNeeds(gates),
+    ...notes,
   ].filter((line): line is string => Boolean(line));
   return (
     <>

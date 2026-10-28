@@ -5,7 +5,7 @@ import type { Policy } from '../repo-settings/policy';
 import type { CommitDetail, Gates } from './CommitGates';
 import { GateSummary } from './CommitGates';
 import { CommitLanding } from './CommitLanding';
-import { classLabel, commitPanel, revertBranch } from './commitPanel';
+import { classLabel, commitPanel, isAuthor, OWN_COMMIT, revertBranch } from './commitPanel';
 import type { Viewer } from './RepoMembers';
 import type { RepoStatus } from './repoStatus';
 
@@ -163,6 +163,65 @@ describe('a commit not yet landed', () => {
       review: false,
       land: true,
     });
+  });
+});
+
+describe("the viewer's own commit", () => {
+  const blocked = gates({ ready: false, approvals_required: 1 });
+  it("is never offered for its author's approval, and says why", () => {
+    expect(isAuthor('user:kit', 'kit')).toBe(true);
+    expect(isAuthor('user:kit', 'other')).toBe(false);
+    expect(isAuthor('user:kit', undefined)).toBe(false);
+    expect(isAuthor('token:kit', 'kit')).toBe(false);
+    const own = commitPanel(
+      { landings: [], gates: blocked, principal: 'user:kit' },
+      owner,
+      noChecks,
+      'kit',
+    );
+    expect(own).toMatchObject({
+      review: false,
+      notes: [OWN_COMMIT],
+      needs: ['1 more approval (0 of 1).', OWN_COMMIT],
+    });
+    const html = renderToStaticMarkup(
+      createElement(CommitLanding, {
+        repo: 'r0123456789abcdef0123',
+        detail: detail({ gates: blocked, principal: 'user:kit' }),
+        status: status(owner),
+        username: 'kit',
+        onNavigate: () => {},
+        onReload: () => {},
+      }),
+    );
+    expect(html).toContain('<li>You can&#x27;t approve your own commit.</li>');
+    expect(html).not.toContain('Approve');
+    expect(html).not.toContain('Reject');
+  });
+  it('is offered to another reviewer, with no note', () => {
+    const theirs = commitPanel(
+      { landings: [], gates: blocked, principal: 'user:kit' },
+      lander,
+      noChecks,
+      'ada',
+    );
+    expect(theirs).toMatchObject({ review: true, notes: [] });
+  });
+  it('needs no note when nothing asks for approval or the viewer cannot review', () => {
+    const none = commitPanel(
+      { landings: [], gates: gates(), principal: 'user:kit' },
+      owner,
+      noChecks,
+      'kit',
+    );
+    expect(none).toMatchObject({ review: false, notes: [] });
+    const writes = commitPanel(
+      { landings: [], gates: blocked, principal: 'user:kit' },
+      writer,
+      noChecks,
+      'kit',
+    );
+    expect(writes).toMatchObject({ review: false, notes: [] });
   });
 });
 

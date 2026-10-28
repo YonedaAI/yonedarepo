@@ -51,27 +51,41 @@ export type CommitPanel =
       state: 'pending';
       ready: boolean;
       needs: string[];
+      /** Lines beyond the gates (the viewer's own commit), already in `needs`. */
+      notes: string[];
       review: boolean;
       land: boolean;
       runChecks: boolean;
       breakGlass: boolean;
     };
 
+export const OWN_COMMIT = "You can't approve your own commit.";
+
+/** Whether `username` (the signed-in account) wrote the commit recorded as `principal`. */
+export const isAuthor = (principal: string, username: string | undefined) =>
+  Boolean(username) && principal === `user:${username}`;
+
 export function commitPanel(
-  commit: { landings: Landing[]; gates: Gates },
+  commit: { landings: Landing[]; gates: Gates; principal?: string },
   viewer: Viewer | undefined,
   policy: Policy | undefined,
+  username?: string,
 ): CommitPanel {
   const runChecks = writer(viewer) && checksConfigured(policy);
   if (commit.landings.length > 0)
     return { state: 'landed', landings: commit.landings, revert: writer(viewer), runChecks };
   const { gates } = commit;
   const needs = gateNeeds(gates);
+  const reviewable = gates.approvals_required > 0 && !gates.auto_approved;
+  // The platform refuses an author's own approval: say so instead of offering it.
+  const own = isAuthor(commit.principal ?? '', username);
+  const notes = reviewable && own && reviewer(viewer) ? [OWN_COMMIT] : [];
   return {
     state: 'pending',
     ready: gates.ready,
-    needs,
-    review: reviewer(viewer) && gates.approvals_required > 0 && !gates.auto_approved,
+    needs: [...needs, ...notes],
+    notes,
+    review: reviewer(viewer) && reviewable && !own,
     land: reviewer(viewer) && gates.ready,
     runChecks,
     breakGlass: Boolean(viewer?.owner) && !gates.ready,

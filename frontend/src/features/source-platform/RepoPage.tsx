@@ -26,6 +26,7 @@ type RepoRoute = Extract<SourceRoute, { repo: string }>;
 export function RepoPage({
   route,
   name,
+  username,
   navigate,
   onDeleted,
   onMissing,
@@ -34,6 +35,8 @@ export function RepoPage({
   route: RepoRoute;
   /** The name the sidebar shows, until the repository's own status loads. */
   name?: string;
+  /** The signed-in account's username. */
+  username?: string;
   navigate: Navigate;
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown or not theirs). */
@@ -105,6 +108,7 @@ export function RepoPage({
                 repo={repo}
                 commit={route.commit}
                 status={data}
+                username={username}
                 onNavigate={navigate}
                 onChanged={status.reload}
               />

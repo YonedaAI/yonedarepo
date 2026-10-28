@@ -13,11 +13,14 @@ export function CommitView({
   repo,
   commit,
   status,
+  username,
   onNavigate,
   onChanged,
 }: {
   repo: string;
   commit: string;
+  /** The signed-in account's username. */
+  username?: string;
   /** The repository's status: the viewer's role, the policy and the branches. */
   status?: RepoStatus;
   onNavigate: (r: SourceRoute) => void;
@@ -56,6 +59,7 @@ export function CommitView({
         repo={repo}
         detail={d}
         status={status}
+        username={username}
         onNavigate={onNavigate}
         onReload={() => {
           detail.reload();
