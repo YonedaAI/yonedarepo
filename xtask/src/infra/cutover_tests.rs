@@ -426,9 +426,13 @@ fn hosts_held_by_old_workers_are_moved_and_own_hosts_are_left_alone() {
 
 #[test]
 fn pending_d1_entries_generate_but_count_as_not_created() {
-    let (spec, workers) = prod();
-    let lock: Lock = serde_json::from_str(PROD_LOCK).unwrap();
-    assert!(lock.d1.values().all(|id| id == PENDING_D1));
+    // The lock as it is before the first `infra up` records the real D1 ids.
+    let mut pending: serde_json::Value = serde_json::from_str(PROD_LOCK).unwrap();
+    for id in pending["d1"].as_object_mut().unwrap().values_mut() {
+        *id = json!(PENDING_D1);
+    }
+    let (spec, workers) = workers(PROD, &pending.to_string());
+    let lock: Lock = serde_json::from_value(pending).unwrap();
     let platform = role(&workers, "platform");
     assert_eq!(
         platform.config["d1_databases"][0]["database_id"],
@@ -463,4 +467,17 @@ fn declared_names_cover_bindings_and_resources() {
     ] {
         assert!(names.contains(&(kind, name.to_owned())), "{name}");
     }
+}
+
+#[test]
+fn an_empty_2xx_answer_counts_as_success() {
+    use reqwest::StatusCode;
+    use serde_json::json;
+    let ok = super::live::succeeded;
+    // DELETE /workers/domains/:id answers 200 with no body.
+    assert!(ok(StatusCode::OK, &serde_json::Value::Null));
+    assert!(ok(StatusCode::OK, &json!({"success": true})));
+    assert!(!ok(StatusCode::OK, &json!({"success": false})));
+    assert!(!ok(StatusCode::NOT_FOUND, &serde_json::Value::Null));
+    assert!(!ok(StatusCode::FORBIDDEN, &json!({"success": true})));
 }
