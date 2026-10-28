@@ -1,5 +1,13 @@
 // The repository's tabs and status chips. Left and Right (Home, End) move between tabs.
-import { Code2, GitCommitVertical, History, Search, Settings, ShieldCheck } from 'lucide-react';
+import {
+  Code2,
+  GitCommitVertical,
+  GitPullRequest,
+  History,
+  Search,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { landingNeeds, type RepoStatus } from './repoStatus';
@@ -8,6 +16,7 @@ import { type RepoTab, tabRoute } from './sourceRoute';
 const TABS: { id: RepoTab; label: string; Icon: typeof Code2 }[] = [
   { id: 'code', label: 'Code', Icon: Code2 },
   { id: 'history', label: 'History', Icon: History },
+  { id: 'changes', label: 'Changes', Icon: GitPullRequest },
   { id: 'runs', label: 'Runs', Icon: GitCommitVertical },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },

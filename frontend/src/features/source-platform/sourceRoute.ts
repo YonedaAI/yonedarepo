@@ -26,11 +26,14 @@ export type SourceRoute =
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
   | { view: 'search'; repo: string; query: string }
+  | { view: 'changes'; repo: string }
+  | { view: 'change'; repo: string; number: number }
   | { view: 'runs'; repo: string; run?: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
-/** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code. */
-export type RepoTab = 'code' | 'history' | 'runs' | 'search' | 'settings';
+/** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code,
+ * `change` to Changes. */
+export type RepoTab = 'code' | 'history' | 'changes' | 'runs' | 'search' | 'settings';
 
 const REPO = /^r[0-9a-f]{20}$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -61,6 +64,12 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
     return run ? { view: 'runs', repo, run } : { view: 'runs', repo };
   }
   if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
+  if (view === 'changes') {
+    const number = Number(rest[0]);
+    return rest[0] && /^[1-9][0-9]*$/.test(rest[0]) && Number.isSafeInteger(number)
+      ? { view: 'change', repo, number }
+      : { view: 'changes', repo };
+  }
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
@@ -93,6 +102,8 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'search')
     return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
+  if (route.view === 'changes') return `${base}/changes`;
+  if (route.view === 'change') return `${base}/changes/${route.number}`;
   const query = new URLSearchParams();
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
@@ -117,6 +128,9 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'transactions':
     case 'commit':
       return 'history';
+    case 'changes':
+    case 'change':
+      return 'changes';
     case 'runs':
       return 'runs';
     case 'search':
@@ -132,6 +146,7 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
 export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'code') return { view: 'files', repo, path: '', ref: 'main' };
   if (tab === 'history') return { view: 'history', repo, ref: 'main' };
+  if (tab === 'changes') return { view: 'changes', repo };
   if (tab === 'runs') return { view: 'runs', repo };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };

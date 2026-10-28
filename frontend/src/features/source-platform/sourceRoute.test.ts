@@ -28,6 +28,8 @@ describe('source routes', () => {
       { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
       { view: 'runs', repo },
       { view: 'runs', repo, run: 'run-1' },
+      { view: 'changes', repo },
+      { view: 'change', repo, number: 12 },
       { view: 'repo-settings', repo, section: 'rules' },
       { view: 'repo-settings', repo, section: 'webhooks' },
     ];
@@ -45,6 +47,11 @@ describe('source routes', () => {
       section: 'rules',
     });
     expect(parseSourceRoute(`/source/${repo}/commit/xyz`, '')).toMatchObject({ view: 'files' });
+    for (const bad of ['0', '-1', '1.5', '07', 'x', '99999999999999999999'])
+      expect(parseSourceRoute(`/source/${repo}/changes/${bad}`, '')).toEqual({
+        view: 'changes',
+        repo,
+      });
     expect(parseSourceRoute(`/source/${repo}`, '?at=-1')).toEqual({
       view: 'files',
       repo,
@@ -60,8 +67,9 @@ describe('repository tabs', () => {
     expect(routeTab({ view: 'transactions', repo })).toBe('history');
     expect(routeTab({ view: 'commit', repo, commit: sha })).toBe('history');
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
+    expect(routeTab({ view: 'change', repo, number: 3 })).toBe('changes');
     expect(routeTab({ view: 'settings' })).toBeUndefined();
-    for (const tab of ['code', 'history', 'runs', 'search', 'settings'] as const)
+    for (const tab of ['code', 'history', 'changes', 'runs', 'search', 'settings'] as const)
       expect(routeTab(tabRoute(tab, repo))).toBe(tab);
   });
 });

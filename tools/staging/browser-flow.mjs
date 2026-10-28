@@ -1,14 +1,14 @@
 // Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
-// drives the served app as a person does. It signs the kit account in through the real login
-// form, creates a repository with the shell's "New repository" dialog and opens its Code, History
-// and Settings (Landing rules, Connect) tabs and the account Settings page, then creates a
-// repository with agent runs (a project), starts a compare run with two cheap agents (managed GLM
-// flash on opencode), waits for "Choose a result", uses the first checked result, publishes it
-// and checks the readback and the moved project head. When the "Delete run" control exists it
-// deletes the run and checks Run history; otherwise it records `delete=unavailable`. Each step's
-// screenshot goes to .local/staging/browser-<ts>/; a failure adds the page text and console
-// errors there. The API (with the browser's own session cookie) is used only for funding,
-// waiting, readback and cleanup.
+// drives the served app as a person does. It signs the kit account in through the real login form,
+// creates a repository with the shell's "New repository" dialog and opens its Code, History,
+// Changes (the empty list) and Settings (Landing rules, Connect) tabs and the account Settings
+// page, then creates a repository with agent runs (a project), starts a compare run with two cheap
+// agents (managed GLM flash on opencode), waits for "Choose a result", uses the first checked
+// result, publishes it and checks the readback and the moved project head. When the "Delete run"
+// control exists it deletes the run and checks Run history; otherwise it records
+// `delete=unavailable`. Each step's screenshot goes to .local/staging/browser-<ts>/; a failure adds
+// the page text and console errors there. The API (with the browser's own session cookie) is used
+// only for funding, waiting, readback and cleanup.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -137,6 +137,10 @@ export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
   await tabs.getByRole('link', { name: 'History' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   await shot('source-history');
+  await tabs.getByRole('link', { name: 'Changes' }).click();
+  await page.waitForURL(`**/source/${id}/changes`);
+  await page.getByText('No open changes.').waitFor();
+  await shot('source-changes');
   await tabs.getByRole('link', { name: 'Settings' }).click();
   await page.getByRole('heading', { name: 'Landing rules' }).waitFor();
   await shot('source-settings');
@@ -150,7 +154,7 @@ export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
   await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
   await shot('account-settings');
-  m.source_pages = 'code,history,settings,connect,account-settings';
+  m.source_pages = 'code,history,changes,settings,connect,account-settings';
 }
 
 /** Workspace: new project, compare run, owner choice, publication, readback, run deletion. */
