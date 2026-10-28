@@ -1,6 +1,5 @@
 // A repository's Settings tab (owner and admins): landing rules, checks, secret exceptions,
 // webhooks, members, repository tokens, connect, and deleting it.
-import type { Repository } from '../../lib/types';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ConnectPanel, DeleteRepository } from '../source-platform/ConnectPanel';
 import { currentApiOrigin } from '../source-platform/connect';
@@ -30,21 +29,16 @@ export function RepoSettings({
   repo,
   section,
   status,
-  project,
   navigate,
   onPolicySaved,
   onDeleted,
-  onDeleteProject,
 }: {
   repo: string;
   section: RepoSettingsSection;
   status?: RepoStatus;
-  /** The repository's agent project: it is removed first, then the repository. */
-  project?: Repository;
   navigate: Navigate;
   onPolicySaved: () => void;
   onDeleted: () => void;
-  onDeleteProject: (project: Repository) => void;
 }) {
   if (!status) return <Loading what="settings" />;
   if (!status.viewer?.owner)
@@ -101,22 +95,9 @@ export function RepoSettings({
         {section === 'connect' && (
           <ConnectPanel repo={repo} name={status.name} origin={currentApiOrigin()} />
         )}
-        {section === 'delete' &&
-          (project ? (
-            <section aria-labelledby="delete-heading" className="source-danger">
-              <h2 id="delete-heading">Delete repository</h2>
-              <p>
-                <strong>{project.name}</strong> has an agent project (its runs, context graph and
-                agent access). Remove the project first; the repository stays until you delete it
-                here afterwards.
-              </p>
-              <button type="button" className="danger" onClick={() => onDeleteProject(project)}>
-                Remove the agent project
-              </button>
-            </section>
-          ) : (
-            <DeleteRepository repo={repo} name={status.name} onDeleted={onDeleted} />
-          ))}
+        {section === 'delete' && (
+          <DeleteRepository repo={repo} name={status.name} onDeleted={onDeleted} />
+        )}
       </div>
     </div>
   );

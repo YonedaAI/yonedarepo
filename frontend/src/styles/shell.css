@@ -103,9 +103,6 @@
   display: block;
   padding: 8px 10px 16px;
 }
-.rail-connections {
-  margin-top: 28px;
-}
 .rail-bottom {
   margin-top: auto;
   padding-top: 32px;
@@ -128,8 +125,7 @@
   font-size: 10px;
   padding: 16px 10px 0;
 }
-.environment i,
-.published-revision i {
+.environment i {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -170,65 +166,4 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.published-revision {
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-}
-.workspace-tabs {
-  display: flex;
-  align-items: center;
-  gap: 28px;
-  padding: 0 32px;
-  border-bottom: 1px solid var(--line);
-  background: #fff;
-}
-.workspace-tabs > button {
-  border-radius: 0;
-  background: transparent;
-  padding: 17px 0 15px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted);
-  font-size: 13px;
-}
-.workspace-tabs > button.selected {
-  color: var(--blue);
-  border-bottom-color: var(--blue);
-}
-.live-updating {
-  align-self: center;
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 12px;
-}
-.tab-site {
-  margin-left: auto;
-  font-size: 12px;
-}
-.live-updating + .tab-site {
-  margin-left: 12px;
-}
-.tab-site .site-link {
-  margin: 0;
-}
-.workspace-inline-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  padding: 30px 32px;
-  color: var(--muted);
-  font-size: 13px;
-}
-.workspace-inline-status > svg {
-  color: var(--blue);
-  flex-shrink: 0;
-}
-@media (max-width: 760px) {
-  .workspace-inline-status {
-    padding: 24px 20px;
-  }
 }

@@ -1,14 +1,11 @@
 import { ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
-import { short } from '../../lib/api';
-import type { AccountIdentity, Repository } from '../../lib/types';
+import type { AccountIdentity } from '../../lib/types';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { AccountMenu } from './AccountMenu';
 
-/** The shell's header: where you are, the current repository's published head, refresh and
- * the account menu. */
+/** The shell's header: where you are, refresh and the account menu. */
 export function WorkspaceHeader({
   title,
-  project,
   loading,
   onRefresh,
   authenticated,
@@ -21,8 +18,6 @@ export function WorkspaceHeader({
 }: {
   /** The current page or repository; the breadcrumb ends here. */
   title: string;
-  /** The current repository's agent project, whose published head the header shows. */
-  project?: Repository;
   loading: boolean;
   onRefresh: () => void;
   authenticated: boolean;
@@ -44,12 +39,6 @@ export function WorkspaceHeader({
         </strong>
       </div>
       <div className="header-actions">
-        {project?.published_commit && (
-          <span className="published-revision" title="Canonical published source revision">
-            <i />
-            Published <code>{short(project.published_commit)}</code>
-          </span>
-        )}
         <button
           type="button"
           className="icon-button"

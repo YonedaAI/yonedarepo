@@ -35,7 +35,6 @@
 .workspace-breadcrumb > a:hover {
   color: var(--blue);
 }
-
 /* Home */
 .home-repos {
   max-width: 880px;
@@ -79,7 +78,6 @@
 .home-repo-list svg {
   color: var(--muted);
 }
-
 /* A repository */
 .repo-page {
   padding: 24px 32px 48px;
@@ -145,11 +143,6 @@ a.chip:hover {
 .repo-tabs a:focus-visible {
   outline-offset: -3px;
 }
-.repo-view > .workspace-tabs {
-  margin: 0 0 16px;
-  padding: 0;
-  background: transparent;
-}
 .source-empty-state {
   border: 1px dashed #c5d6e1;
   border-radius: 8px;
@@ -165,7 +158,6 @@ a.chip:hover {
   color: var(--blue);
   text-decoration: underline;
 }
-
 /* Code */
 .source-toolbar-end {
   display: flex;
@@ -340,7 +332,6 @@ a.chip:hover {
   border-left: 3px solid var(--line);
   color: var(--muted);
 }
-
 /* History */
 .segmented {
   margin: 0;
@@ -369,7 +360,6 @@ a.chip:hover {
 .segmented button:focus-visible {
   outline-offset: -3px;
 }
-
 /* Settings */
 .repo-settings {
   display: grid;
@@ -509,30 +499,11 @@ a.chip:hover {
 .account-dropdown a.account-item:hover {
   background: #f3f6fa;
 }
-
-/* New repository */
-.dialog .new-repository-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-}
-.new-repository-option input {
-  margin-top: 3px;
-}
-.new-repository-text {
-  display: grid;
-  gap: 2px;
-}
-.new-repository-text small {
-  color: var(--muted);
-  font-weight: 400;
-}
 .new-repository-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
 }
-
 @media (max-width: 800px) {
   .repo-page,
   .home-repos,
@@ -565,4 +536,12 @@ a.chip:hover {
     left: 0;
     right: auto;
   }
+}
+.page-heading h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.page-heading p {
+  margin-bottom: 0;
 }

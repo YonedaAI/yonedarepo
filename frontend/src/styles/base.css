@@ -106,7 +106,6 @@ p {
   font-size: 14px;
   line-height: 1.6;
 }
-
 button.quiet {
   background: #fff;
   border-color: #8090a4;
@@ -172,15 +171,11 @@ pre {
   padding: 12px;
   border-radius: 6px;
 }
-.section-heading,
 .page-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-}
-.section-heading h3 {
-  margin: 0;
 }
 .skip-link {
   position: fixed;
@@ -212,12 +207,6 @@ pre {
   overflow: hidden;
   mask-image: linear-gradient(to bottom, #000 calc(100% - 1.6em), transparent);
 }
-[data-clamp]:has(+ .clamp-toggle) {
-  margin-bottom: 2px;
-}
-button.clamp-toggle {
-  margin: 0;
-}
 .app-crash {
   max-width: 560px;
   margin: 15vh auto;
@@ -226,4 +215,30 @@ button.clamp-toggle {
 }
 .app-crash button {
   margin-top: 16px;
+}
+
+pre {
+  font-size: 11px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.spin {
+  animation: spin 2s linear infinite;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }

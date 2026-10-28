@@ -83,7 +83,7 @@ export function AccountSettings({
       <h1>Settings</h1>
       <section aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>
-        {identity?.role === 'user' ? (
+        {identity ? (
           <dl className="settings-facts">
             <dt>Account name</dt>
             <dd>
@@ -96,9 +96,7 @@ export function AccountSettings({
             </dd>
           </dl>
         ) : (
-          <p className="source-meta">
-            {identity ? 'Administrator session: no personal account.' : 'Sign in to see it.'}
-          </p>
+          <p className="source-meta">Sign in to see it.</p>
         )}
       </section>
       <section aria-labelledby="cli-heading">

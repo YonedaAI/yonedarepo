@@ -11,12 +11,6 @@
     gap: 28px;
     padding: 32px 24px;
   }
-  .workflow-stages {
-    grid-template-columns: repeat(3, 1fr);
-  }
-  .header-actions .published-revision {
-    display: none;
-  }
 }
 @media (max-width: 800px) {
   .app {
@@ -53,20 +47,6 @@
   .workspace-breadcrumb > span {
     display: none;
   }
-  .workspace-tabs {
-    padding: 0 20px;
-    gap: 20px;
-    flex-wrap: wrap;
-  }
-  .workspace-tabs > button {
-    font-size: 12px;
-    gap: 5px;
-  }
-  .tab-site {
-    margin-left: 0;
-    width: 100%;
-    padding-bottom: 12px;
-  }
   .welcome-onboarding {
     grid-template-columns: 1fr;
     padding: 24px 20px;
@@ -92,80 +72,8 @@
     margin: 28px auto;
     padding: 0 24px;
   }
-  .getting-started {
-    grid-template-columns: 1fr;
-    gap: 24px;
-  }
-  .exploration,
-  .graph-section,
-  .history-tools {
-    padding: 24px 20px;
-  }
-  .runs-toolbar {
-    align-items: flex-start;
-    gap: 12px;
-  }
-  .runs-toolbar h1 {
-    font-size: 24px;
-  }
-  .runs-toolbar p {
-    font-size: 12px;
-  }
-  .runs-toolbar > button {
-    white-space: nowrap;
-  }
-  .run-picker {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .intent-row {
-    flex-direction: column;
-    gap: 6px;
-  }
-  .run-meta {
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-  .candidate-grid,
-  .history-tools {
-    grid-template-columns: 1fr;
-  }
-  .graph-workspace {
-    flex-direction: column;
-  }
-  .graph-canvas {
-    height: 520px;
-    flex: auto;
-    width: 100%;
-  }
-  .evidence-panel {
-    width: 100%;
-    max-height: 460px;
-    border-left: 0;
-    border-top: 1px solid var(--line);
-  }
-  .context-tools label {
-    flex: 1;
-    min-width: 130px;
-  }
-  .comparison-heading {
-    align-items: flex-start;
-  }
-  .error-banner,
-  .publication-banner {
-    padding: 14px 20px;
-  }
 }
 @media (max-width: 480px) {
-  .workflow-stages {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  .runs-toolbar {
-    flex-wrap: wrap;
-  }
-  .run-picker select {
-    width: 100%;
-  }
   .dialog {
     width: calc(100vw - 16px);
     max-height: calc(100dvh - 16px);
@@ -183,11 +91,5 @@
   .welcome-flow span {
     font-size: 11px;
     gap: 4px;
-  }
-  .provider-group-heading {
-    padding-left: 12px;
-  }
-  .provider-rows li {
-    padding-left: 12px;
   }
 }

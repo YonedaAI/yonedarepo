@@ -81,14 +81,17 @@ details.account-panel[open] {
   gap: 14px;
   margin-top: 18px;
 }
-.account-panel label,
-.workspace-panel label {
+.account-panel label {
   display: grid;
   gap: 7px;
 }
 .account-panel :where(form) > p {
   margin: -6px 0 0;
   font-size: 12px;
+}
+.run-actions {
+  display: flex;
+  gap: 12px;
 }
 .account-panel .run-actions {
   margin: 20px 0 0;
@@ -142,39 +145,6 @@ details.account-panel[open] {
   min-height: 44px;
   padding: 0 18px;
 }
-.getting-started {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  gap: 28px;
-  padding: 28px 0;
-  margin-bottom: 26px;
-}
-.getting-started > div,
-.getting-started > button {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: flex-start;
-  background: transparent;
-  padding: 0;
-  color: #152436;
-  text-align: left;
-}
-.getting-started h2,
-.getting-started strong {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0;
-}
-.getting-started p,
-.getting-started span {
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--muted);
-  margin: 0;
-}
 .workspace-loading {
   text-align: center;
   padding: 100px 24px;
@@ -209,156 +179,4 @@ details.account-panel[open] {
   margin: 0 0 8px;
   color: var(--muted);
   line-height: 1.6;
-}
-.context-tools {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 10px;
-  margin: 24px 0 16px;
-}
-.context-tools label {
-  display: grid;
-  gap: 7px;
-}
-.context-results {
-  display: grid;
-  max-height: 220px;
-  overflow: auto;
-  gap: 6px;
-  margin: 12px 0;
-}
-.context-results button {
-  justify-content: start;
-  text-align: left;
-  color: #244da1;
-  background: #edf3ff;
-}
-.provider-settings > .subtle {
-  margin: 0 0 14px;
-}
-button.provider-new-toggle {
-  gap: 6px;
-}
-.provider-new,
-.provider-inline-form {
-  margin: 12px 0;
-  padding: 16px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fafbfd;
-}
-.provider-groups {
-  display: grid;
-  gap: 14px;
-  margin: 18px 0 0;
-}
-.provider-group {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  overflow: visible;
-}
-.provider-group-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px 10px 14px;
-  border-bottom: 1px solid var(--line);
-  background: #f6f8fb;
-  border-radius: 8px 8px 0 0;
-}
-.provider-group-heading h3 {
-  margin: 0;
-  font-size: 14px;
-}
-.provider-group-heading small,
-.provider-row-name small {
-  display: block;
-  margin-top: 2px;
-  color: var(--muted);
-  font-size: 12px;
-}
-.provider-group-heading button.quiet,
-.provider-add-menu > summary {
-  gap: 6px;
-  min-height: 32px;
-  padding: 4px 10px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.provider-add-menu {
-  position: relative;
-}
-.provider-add-menu > summary {
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid #8090a4;
-  border-radius: 7px;
-  background: #fff;
-  color: #203a5b;
-  font-weight: 500;
-  list-style: none;
-}
-.provider-add-menu > summary::-webkit-details-marker {
-  display: none;
-}
-.provider-add-menu > div {
-  position: absolute;
-  right: 0;
-  z-index: 2;
-  display: grid;
-  min-width: 200px;
-  margin-top: 4px;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 8px 24px #12243b1f;
-}
-.provider-add-menu p {
-  margin: 0 0 4px;
-  font-size: 12px;
-}
-.provider-add-menu button.text-button {
-  justify-content: flex-start;
-}
-.provider-inline-form {
-  margin: 12px;
-}
-.provider-rows {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.provider-rows li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px 36px;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 6px 8px 14px;
-}
-.provider-rows li + li {
-  border-top: 1px solid var(--line);
-}
-.provider-row-name {
-  min-width: 0;
-}
-.provider-row-name strong,
-.provider-row-name small {
-  overflow-wrap: anywhere;
-}
-.provider-model-picker,
-.provider-billing-picker {
-  display: grid;
-  gap: 10px;
-}
-.provider-model-note {
-  color: var(--muted);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.provider-model-note a {
-  color: var(--blue);
-  text-decoration: underline;
 }

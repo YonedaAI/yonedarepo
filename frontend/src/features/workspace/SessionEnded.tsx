@@ -1,7 +1,6 @@
 import { LogIn } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { AccountPanel } from './AccountPanel';
-import { ReviewerAccess } from './ReviewerAccess';
 
 /** Replaces the whole workspace once the server rejects a previously valid session. */
 export function SessionEnded({ onConnected }: { onConnected: () => void }) {
@@ -20,7 +19,6 @@ export function SessionEnded({ onConnected }: { onConnected: () => void }) {
         unchanged.
       </p>
       <AccountPanel initialMode="login" onConnected={onConnected} />
-      <ReviewerAccess onConnected={onConnected} />
     </section>
   );
 }
