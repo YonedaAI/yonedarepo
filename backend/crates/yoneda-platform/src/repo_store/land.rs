@@ -1,6 +1,14 @@
 //! Landing moves a branch with a compare-and-swap and appends one hash-chained log entry.
 //! There is no merge lock: if the branch moved, `merging` decides between a conflict
 //! (stale read), a platform merge commit, or a stale parent.
+//!
+//! `git_land` takes no expected-old by design: the caller names a commit, not the branch
+//! value it saw. The compare-and-swap is against the branch inside this transaction, and
+//! the commit's base version and read set are checked against the log entries after it.
+//! A commit begun from the published head (`begin_from_head`, `repo-commit-shard.ts`) never
+//! called the authority, so landing is its first optimistic-concurrency check. A stock
+//! `git push` differs: each ref command carries Git's old id as an expected-old lease
+//! (`platform_git_receive`).
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use super::{changes, merging};
 use crate::storage::{SqlStore, number};

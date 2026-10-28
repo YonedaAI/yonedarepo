@@ -21,7 +21,8 @@
 //!   and object bytes the adapter fetched from the object tiers arrive as arguments. The
 //!   platform performs no network I/O; it answers with what to write (pack bodies, pushes)
 //!   and the adapter writes it and reports back (readback before recording, expected-old on
-//!   every ref move).
+//!   pushed ref moves). It never runs `git`; Git objects are built and parsed by
+//!   `yoneda_core`.
 mod accounts;
 mod commit_store;
 mod platform_access;

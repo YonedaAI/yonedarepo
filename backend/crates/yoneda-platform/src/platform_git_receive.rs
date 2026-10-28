@@ -2,7 +2,8 @@
 //! streams in (command list, then the pack, resolved as it arrives), verification asks the
 //! adapter for what only the repository holds, and the verified objects stream out for the
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
-//! applies the ref updates through the authority's compare-and-swap paths.
+//! applies the ref updates through the authority's compare-and-swap paths, with each
+//! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
 use crate::platform_git_verify::{Step, Verifier};
 use crate::platform_objects::supplied_tree;
 use crate::storage::{bad, string};
