@@ -24,6 +24,9 @@ import { readRefs } from './repo-snapshots';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
+/** A count from MCP (a number) or a query string (text); absent stays null. */
+const optionalNumber = (value: unknown) =>
+  value === undefined || value === null || value === '' ? null : Number(value);
 const version = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
 
@@ -92,8 +95,27 @@ export const operations: Record<string, Operation> = {
       prompt_digest: a.prompt_digest ?? null,
       transcript_ref: a.transcript_ref ?? null,
       read_set_digest: a.read_set_digest ?? null,
+      session_id: a.session_id ?? null,
     }),
   git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
+  git_sessions_recent: (ctx, a) =>
+    ctx.call({
+      op: 'repo_sessions_recent',
+      limit: optionalNumber(a.limit),
+      before: optionalNumber(a.before),
+      session_id: a.session_id || null,
+    }),
+  // What a new coding session should know: heads, landing rules, recent sessions, open
+  // changes and contracts on the paths it works on (a list, or comma-separated over REST).
+  git_context: (ctx, a) =>
+    ctx.call({
+      op: 'repo_agent_context',
+      branch: a.branch || null,
+      paths: typeof a.paths === 'string' ? a.paths.split(',').filter(Boolean) : (a.paths ?? null),
+      sessions: optionalNumber(a.sessions),
+      changes: optionalNumber(a.changes),
+      contracts: optionalNumber(a.contracts),
+    }),
   git_bisect: async (ctx, a) => {
     const step = a.id
       ? await ctx.call({ op: 'repo_bisect_step', id: a.id })

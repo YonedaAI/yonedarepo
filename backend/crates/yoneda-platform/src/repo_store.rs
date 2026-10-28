@@ -6,6 +6,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod adopt;
+mod agent_context;
 mod annotated;
 pub(crate) mod auth;
 mod bisect;
@@ -239,6 +240,8 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_session_record" => sessions::record(db, c, &actor),
         "repo_sessions" => sessions::list(db, c, &actor),
+        "repo_sessions_recent" => sessions::recent(db, c, &actor),
+        "repo_agent_context" => agent_context::context(db, c, &actor, &settings),
         "repo_change_create" => changes::create(db, c, &actor),
         "repo_changes" => changes::list(db, c, &actor),
         "repo_change_show" => changes::show(db, c, &actor, &settings),
