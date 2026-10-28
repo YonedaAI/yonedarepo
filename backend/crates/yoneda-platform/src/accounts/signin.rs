@@ -78,6 +78,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     &[],
                 )?;
                 super::tokens::revoke_all(db, now)?;
+                super::ssh_keys::remove_all(db, now)?;
                 audit(db, "account.recovered", now, json!({}))?;
             } else {
                 session(db, c, now)?;
