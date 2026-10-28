@@ -45,6 +45,12 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
                 ],
             )?;
             run("cargo", &["test", "--workspace"])?;
+            // The SSH gateway is its own workspace (its image builds from its directory alone).
+            let gateway = "backend/crates/yoneda-ssh-gateway/Cargo.toml";
+            run("cargo", &["fmt", "--check", "--manifest-path", gateway])?;
+            let lint = ["clippy", "--manifest-path", gateway, "--all-targets"];
+            run("cargo", &[&lint[..], &["--", "-D", "warnings"]].concat())?;
+            run("cargo", &["test", "--manifest-path", gateway])?;
             build_wasm()?;
             run("pnpm", &["check"])?;
             run("pnpm", &["test"])?;

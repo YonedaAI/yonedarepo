@@ -58,6 +58,22 @@ export interface Env {
   /** The source platform Worker (front Worker); its public API is all it calls. */
   PLATFORM?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
+  /** This Worker itself (service binding); the SSH gateway's container reaches the
+   * platform through it (platform-ssh-gateway.ts). */
+  SELF?: Fetcher;
+  /** Shared with the SSH gateway: signs its JWTs to `/internal/ssh/*` and derives the
+   * session-token key (platform-ssh.ts). Unset, or under 32 characters: SSH is off. */
+  SSH_GATEWAY_SECRET?: string;
+  /** The gateway's SSH host keys (OpenSSH private key files), passed to its container. */
+  SSH_HOST_ED25519_KEY?: string;
+  SSH_HOST_ECDSA_KEY?: string;
+  /** SSH gateway containers (platform-ssh-gateway.ts); absent where not deployed. */
+  SSH_GATEWAYS?: DurableObjectNamespace<import('./platform-ssh-gateway').SshGateway>;
+  /** `on` routes inbound TCP (the Worker `connect()` handler) to the SSH gateway; anything
+   * else refuses it. Off until inbound TCP to Workers (Spectrum to a Worker) is granted. */
+  SSH_FRONT_DOOR?: string;
+  /** How many gateway instances share inbound connections (default 1). */
+  SSH_GATEWAY_INSTANCES?: string;
   BUILD_REVISION?: string;
 }
 export type Principal = {

@@ -1,7 +1,7 @@
 # Runbook
 
-Operating the YonedaRepo source platform: stock Git, model checks, local setup, environments
-and deploys, the real-world kit, and recovery.
+Operating the YonedaRepo source platform: stock Git (HTTPS and SSH), model checks, local setup,
+environments and deploys, the real-world kit, and recovery.
 
 ## Stock Git over HTTPS
 
@@ -17,6 +17,14 @@ A push lists working branches as usual but never protected ones (`main`, `releas
 Working branches move by compare-and-swap on the value Git saw (`--force` works there; a branch that moved meanwhile is `fetch first`); `--atomic` moves all of them in one transaction or none, and cannot include a protected branch. Every object is verified before anything is recorded and refs move only after the commits are recorded under their own ids, so a push that fails or is cut off leaves refs and the log unchanged. A file carrying a credential refuses the whole push with `secret detected in <path>:<line>` (owner exceptions: policy `secret_allow`). Limits per push: 64 MiB of pack, 40,000 objects, 16 MiB per object; larger pushes use `git-remote-yoneda`. Lightweight tags (`git tag v1 && git push origin v1`, or `POST /repos/:id/tags {name, commit}`, MCP `git_tag`) need `write` and `land`, are created once and never move or disappear (a forced push or `--delete` of a tag is refused), are mirrored to the object store like `main`, and are cloned and fetched like branches; annotated tags (`git tag -a`) are refused. Over protocol v2, partial clones (`--filter=blob:none`; a checkout then fetches the files it needs by id) and shallow ones (`--depth`, `--deepen`, `--unshallow`) are served; other filters, `--shallow-since` and `--shallow-exclude` are refused with a `remote error`. A fetch may want only commits and files a branch or tag reaches (otherwise `not our ref`), up to 100,000 wants over v2 (a partial clone's checkout asks for every file it lacks at once) and 10,000 over v0; one fetch sends at most 40,000 objects, as each is one R2 read within the Worker's 50,000 subrequests. Not served yet: annotated tags, push options, and fetching history imported into Artifacts (use the helper). The platform Worker sets `limits.subrequests=50000` because each Git object sent or received is one R2 read or write.
 
 A push to a working branch with no open change request prints `open a change: yoneda change create <branch>`. Approving a change is a review of its head commit by an account other than the head's author: the platform refuses an author's own review, also through a repository token the author created (a token reviews for the account that made it).
+
+## Stock Git over SSH
+
+`git clone ssh://git@<ssh host>/<repo-id>.git` (user `git`, public-key authentication only) with a key added under Settings → SSH keys, `yoneda ssh-key add ~/.ssh/id_ed25519.pub` or `POST /api/v1/ssh-keys {title, key}` (Ed25519, ECDSA P-256/384/521, RSA ≥ 2048 bits; a key belongs to one account at a time). A key acts as its account with `repo:read` to fetch and `repo:read`, `repo:write` and `repo:land` to push; removing it refuses the open session's next request and every new connection at once. Fetches need protocol version 2 (Git 2.26+ default; v0 is refused with how to switch); pushes are v0 as over HTTPS, delete-only pushes included. `ssh -T git@<ssh host>` greets the account.
+
+How it runs: inbound TCP reaches the platform Worker's `connect()` handler, which pipes it to an `SshGateway` container (`cloudflare/ssh-gateway/Dockerfile`, crate `backend/crates/yoneda-ssh-gateway`, its own workspace). The gateway verifies the key's signature, asks `POST /internal/ssh/lookup` for its account, takes a ten-minute `ysh_` token for one repository and service from `POST /internal/ssh/session` (both with an HS256 JWT signed with `SSH_GATEWAY_SECRET`), and bridges Git's SSH transport onto `/git/<repo>.git` smart HTTP; its only egress is the Worker itself. Secrets: `SSH_GATEWAY_SECRET` (32+ random characters) and `SSH_HOST_ED25519_KEY` / `SSH_HOST_ECDSA_KEY` (`ssh-keygen -t ed25519 -N '' -f k && base64 < k`, generated once and kept: new host keys break every client's `known_hosts`).
+
+**Front door.** Public inbound TCP into Workers is not generally available (Spectrum to a Worker is a private beta), so `SSH_FRONT_DOOR` is `off` and no gateway container starts; `/health` reports `ssh: false` and kit item 26 skips. When access is granted: point a Spectrum TCP application on port 22 at the platform Worker, set `SSH_FRONT_DOOR=on`, deploy, then `node tools/staging-realworld.mjs --ssh --ssh-host <host>`. Locally, `node tests/ssh/e2e.mjs [--docker]` runs the same flow against `wrangler dev` and the gateway (native or its image).
 
 ## Model checks
 
@@ -101,7 +109,7 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, `hooks`, `members`, `reads` and `22`, which need a review key, a receiver or the second account and run only when named. Options:
 
 - `--only 0,6,7` runs the listed items; `--skip-bursts` leaves out 8–10.
-- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`: one gate with item 0.
+- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`, `--ssh [--ssh-host <host>] [--ssh-port 22]` (item 26, skipped while the SSH front door is off): one gate with item 0.
 - `--api <origin>` is the platform API host for the CLI items (default `https://api.dev.yonedarepo.com`); `--origin`, `--platform` and `--client` name the front, platform and bench Workers.
 - `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits. Every item deletes the repositories it creates, pass or fail (the fanout bench too), so leftovers come only from runs killed mid-item or from runs before this change (2026-10-27): `kit-clone`, `kit-check`, `kit-burst`, `fanout`.
 
