@@ -191,7 +191,11 @@ pub(crate) async fn run(
     timings.record("preflight: clean tree, branch tip", started, true);
     let head = facts.head.clone();
     let prebuilt = match &options.prebuilt {
-        Some(dir) => Some(crate::deploy_prebuilt::check(dir, &head)?),
+        Some(dir) => {
+            let checked = crate::deploy_prebuilt::check(dir, &head)?;
+            checked.check_api_origin(&crate::infra::api_origin::api_origin(spec)?)?;
+            Some(checked)
+        }
         None => None,
     };
     let (source, image, inputs) = match (&prebuilt, env) {

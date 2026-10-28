@@ -41,7 +41,7 @@ export async function settle(ok, failures, { timeoutMs, what }) {
   }
 }
 
-export async function browserFlow({ origin, kit, root, headed = false }, m) {
+export async function browserFlow({ origin, api, kit, root, headed = false }, m) {
   const dir = join(root, `.local/staging/browser-${Date.now()}`);
   await mkdir(dir, { recursive: true });
   m.evidence = relative(root, dir);
@@ -65,7 +65,7 @@ export async function browserFlow({ origin, kit, root, headed = false }, m) {
     await signIn(page, origin, kit);
     await shot('signed-in');
     const account = new Session(origin, { cookie: cookieHeader(await context.cookies(origin)) });
-    const repo = await sourcePages(page, origin, account, { shot, cleanup }, m);
+    const repo = await sourcePages(page, origin, account, { api, shot, cleanup }, m);
     await changeLanded(page, { origin, kit, account, repo, shot }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
@@ -100,7 +100,7 @@ export async function newRepository(page, name) {
 }
 
 /** A platform repository: create it, open its tabs and the account settings; deleted by API at the end. */
-export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
+export async function sourcePages(page, origin, account, { api, shot, cleanup }, m) {
   const name = `kit-browser-${Date.now()}`;
   await page.goto(origin);
   const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST');
@@ -132,6 +132,11 @@ export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
   await shot('source-settings');
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
+  // Git, the CLI and MCP live on the platform API host, never the app's own origin.
+  const copied = (label) => page.locator('.source-copy', { has: page.getByText(label, { exact: true }) }).locator('code').innerText();
+  m.clone_url = await copied('HTTPS');
+  assert.ok(m.clone_url.startsWith(`git clone ${api}/git/${id}.git`), `the HTTPS clone line is not on ${api}: ${m.clone_url}`);
+  assert.ok((await copied('clone')).startsWith(`git clone yoneda::${api}/${id}`), `the yoneda:: clone line is not on ${api}`);
   await shot('source-connect');
   // The account menu (top right): its summary is labelled "Account: <name>".
   const menu = page.locator('details.account-menu');

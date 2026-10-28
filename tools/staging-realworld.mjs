@@ -130,7 +130,7 @@ await step('reads', 'Declared reads: a stale read is refused on a plain git push
   readsSessionsFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
 await step('browser', 'Browser: sign in, source pages, a change request approved and landed in the UI', (m) =>
-  browserFlow({ origin: values.origin, kit, root, headed: values.headed }, m),
+  browserFlow({ origin: values.origin, api: values.api, kit, root, headed: values.headed }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));

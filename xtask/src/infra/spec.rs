@@ -167,7 +167,7 @@ impl Spec {
             _ => PathBuf::from(&self.secrets_file),
         }
     }
-    fn substitutions(&self) -> BTreeMap<String, String> {
+    pub(crate) fn substitutions(&self) -> BTreeMap<String, String> {
         let mut values = self.vars.clone();
         values.insert("prefix".into(), self.prefix.clone());
         values.insert("account_id".into(), self.account_id.clone());

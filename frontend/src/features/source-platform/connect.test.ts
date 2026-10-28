@@ -1,4 +1,7 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { ConnectPanel } from './ConnectPanel';
 import {
   apiOrigin,
   claudeMcpJson,
@@ -16,6 +19,16 @@ const api = 'https://api.dev.yonedarepo.com';
 const repo = 'r0123456789abcdef0123';
 
 describe('connect snippets', () => {
+  it('points every Connect line at the API origin, never the page origin', () => {
+    const html = renderToStaticMarkup(
+      createElement(ConnectPanel, { repo, name: 'demo', origin: api }),
+    ).replaceAll('&quot;', '"');
+    expect(html).toContain(`git clone ${api}/git/${repo}.git demo`);
+    expect(html).toContain(`git clone yoneda::${api}/${repo} demo`);
+    expect(html).toContain(`yoneda login --origin ${api}`);
+    expect(html).toContain(`${api}/api/v1/mcp`);
+    expect(html).not.toContain('https://dev.yonedarepo.com');
+  });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);
     expect(apiOrigin('https://dev.yonedarepo.com', '  ')).toBe('https://dev.yonedarepo.com');
