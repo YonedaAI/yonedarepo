@@ -7,11 +7,12 @@
 import { expect, it, vi } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { platformCall } from '../../cloudflare/worker/repo-bundles';
+import { isolateLocations, platformCall } from '../../cloudflare/worker/repo-bundles';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
+import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, artifacts, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, artifacts, author, bindings, countingOps, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -134,13 +135,38 @@ it('writes a large push as one bundle and serves it to every reader', async () =
   heads.mockRestore();
   expect((await api(`/repos/${repo}/blob?path=f0300.txt`, { cookie }, {}, on)).body.content).toBe('added\n');
 
-  // The Artifacts projection reads both commits' objects from the bundles.
+  // The Artifacts projection reads both commits' objects from the bundles: in a fresh
+  // consumer isolate, located in bulk because the repository's status says it holds bundles.
+  isolateLocations.clear();
+  const { env: consumer, take } = countingOps(on);
   for (const message of queued.splice(0)) {
-    if (message.kind === 'platform_objects') await projectObjects(on, message.repo_id);
-    if (message.kind === 'platform_project') await projectRefs(on, message);
+    if (message.kind === 'platform_objects') await projectObjects(consumer, message.repo_id);
+    if (message.kind === 'platform_project') await projectRefs(consumer, message);
   }
+  // (Without the status, each 64 objects that missed R2 would cost a staged read: 5 here.)
+  const ops = take();
+  expect(ops.repo_bundle_locate).toBe(1);
+  expect(ops.repo_staged_objects ?? 0).toBeLessThanOrEqual(1);
   const held = artifacts.get(`yr-${repo}`);
   for (const id of [commit.id, tree.id, blobs[299].id, next.commit.id, added.id]) expect(held?.has(id), id).toBe(true);
+});
+
+it('reads a bundled file in a fresh isolate through the staged read, with no locate call', async () => {
+  const { repo, cookie, blobs, tree } = await bundledPush('bundle_fresh');
+  // Another isolate: nothing located, no cached copy of the tree or the file.
+  isolateLocations.clear();
+  isolateTrees.clear();
+  for (const id of [tree.id, blobs[42].id]) {
+    await bindings.OBJECTS.delete(`platform/v1/${repo}/objects/${id}`);
+    await caches.default.delete(new Request(`https://objects.yoneda.internal/${repo}/${id}`));
+  }
+  const { env, take } = countingOps(on);
+  expect((await api(`/repos/${repo}/blob?path=f0042.txt`, { cookie }, {}, env)).body.content).toBe('bundle_fresh 42\n');
+  // Whatever missed every tier was found in the one staged read the miss already made.
+  const ops = take();
+  expect(ops.repo_bundle_locate ?? 0).toBe(0);
+  expect(ops.repo_staged_objects).toBeGreaterThanOrEqual(1);
+  expect(ops.repo_staged_objects).toBeLessThanOrEqual(2);
 });
 
 it('leaves only an unreferenced bundle when a push dies before or while indexing it', async () => {

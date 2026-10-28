@@ -79,6 +79,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         "refs": refs,
         "projections": super::projection::list(db)?,
         "objects": super::staging::status(db)?,
+        "bundled": super::pushed::bundles::any(db)?,
         "automation": super::break_glass::state(db)?,
         "viewer": { "principal": actor.principal, "owner": actor.owner,
             "role": actor.member.map(super::members::Role::as_str) },

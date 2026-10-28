@@ -262,3 +262,33 @@ export async function api(
 export const file = (path: string, text: string) => ({ path, content_b64: btoa(text) });
 export const author = { name: 'Scripted Client', email: 'client@example.com' };
 
+
+/** `target` with every authority and commit-shard command counted by op; `take` answers
+ * the counts since the last take. */
+export function countingOps(target: Env) {
+  const ops = new Map<string, number>();
+  const counted = (namespace: DurableObjectNamespace) => ({
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => {
+      const stub = namespace.get(id);
+      return {
+        fetch: (url: string, init: RequestInit) => {
+          const body = JSON.parse(String(init.body));
+          for (const c of Array.isArray(body) ? body : [body]) ops.set(c.op, (ops.get(c.op) ?? 0) + 1);
+          return stub.fetch(url, init);
+        },
+      };
+    },
+  });
+  const counting = {
+    ...target,
+    SOURCE_REPOS: counted(target.SOURCE_REPOS),
+    COMMIT_SHARDS: counted(target.COMMIT_SHARDS as DurableObjectNamespace),
+  } as unknown as Env;
+  const take = () => {
+    const seen: Record<string, number> = Object.fromEntries(ops);
+    ops.clear();
+    return seen;
+  };
+  return { env: counting, take };
+}
