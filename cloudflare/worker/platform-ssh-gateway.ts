@@ -79,10 +79,6 @@ export class SshGateway extends Container<Env> {
   /** Open `connect()` connections: without the tunnel it sleeps only when there are none. */
   private open = 0;
 
-  static outboundByHost = {
-    [PLATFORM_HOST]: (req: Request, env: Env) => forwardToPlatform(req, env),
-  };
-
   private async ready() {
     const door = frontDoor(this.env);
     if (!door) throw new Error('SSH is off (SSH_FRONT_DOOR)');
@@ -141,6 +137,14 @@ export class SshGateway extends Container<Env> {
     else await this.stop();
   }
 }
+
+// The container's route to the platform. Assigned, not declared as a `static` class field:
+// a class field (ES2022 define semantics, our TS target) creates an own property that hides
+// @cloudflare/containers' `outboundByHost` setter, so its per-class registry, which
+// ContainerProxy reads, stays empty and every request to platform.internal is refused (520).
+SshGateway.outboundByHost = {
+  [PLATFORM_HOST]: (req: Request, env: Env) => forwardToPlatform(req, env),
+};
 
 const gateway = (env: Env) => env.SSH_GATEWAYS?.get(env.SSH_GATEWAYS.idFromName(GATEWAY));
 
