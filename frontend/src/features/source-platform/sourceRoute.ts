@@ -1,21 +1,41 @@
-// URL state for the source platform UI: every view is addressable and survives reload.
+// URL state for the one app shell: every view is addressable and survives reload. Older
+// addresses (`/source`, `/source/tokens`, a repository's `/connect` and `/members`) still
+// parse, into the view that replaced them.
 import { normalizeUserCode } from './connect';
 
+export const REPO_SETTINGS_SECTIONS = [
+  'rules',
+  'checks',
+  'secrets',
+  'webhooks',
+  'members',
+  'tokens',
+  'connect',
+  'delete',
+] as const;
+export type RepoSettingsSection = (typeof REPO_SETTINGS_SECTIONS)[number];
+
 export type SourceRoute =
-  | { view: 'repos' }
-  | { view: 'tokens' }
+  /** `project` is the workspace's older `/?repo=<project>` link, followed to its Runs tab. */
+  | { view: 'home'; project?: string }
+  | { view: 'settings' }
   | { view: 'device'; code: string }
-  | { view: 'connect'; repo: string }
-  | { view: 'members'; repo: string }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
-  | { view: 'search'; repo: string; query: string };
+  | { view: 'search'; repo: string; query: string }
+  | { view: 'runs'; repo: string; run?: string }
+  | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
+
+/** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code. */
+export type RepoTab = 'code' | 'history' | 'runs' | 'search' | 'settings';
 
 const REPO = /^r[0-9a-f]{20}$/;
 const SHA = /^[0-9a-f]{40}$/;
+const isSection = (value: string | undefined): value is RepoSettingsSection =>
+  (REPO_SETTINGS_SECTIONS as readonly string[]).includes(value ?? '');
 
 export function parseSourceRoute(pathname: string, search: string): SourceRoute {
   const params = new URLSearchParams(search);
@@ -23,13 +43,23 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   const [root, repo, view, ...rest] = parts;
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
-  if (root === 'source' && repo === 'tokens' && !view) return { view: 'tokens' };
-  if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'repos' };
+  if (root === 'settings' && !repo) return { view: 'settings' };
+  if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
+  if (root !== 'source' || !repo || !REPO.test(repo)) {
+    const project = params.get('repo');
+    return project ? { view: 'home', project } : { view: 'home' };
+  }
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
-  if (view === 'connect') return { view: 'connect', repo };
-  if (view === 'members') return { view: 'members', repo };
+  if (view === 'connect') return { view: 'repo-settings', repo, section: 'connect' };
+  if (view === 'members') return { view: 'repo-settings', repo, section: 'members' };
+  if (view === 'settings')
+    return { view: 'repo-settings', repo, section: isSection(rest[0]) ? rest[0] : 'rules' };
+  if (view === 'runs') {
+    const run = params.get('run');
+    return run ? { view: 'runs', repo, run } : { view: 'runs', repo };
+  }
   if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
@@ -45,8 +75,9 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 }
 
 export function formatSourceRoute(route: SourceRoute): string {
-  if (route.view === 'repos') return '/source';
-  if (route.view === 'tokens') return '/source/tokens';
+  if (route.view === 'home')
+    return route.project ? `/?repo=${encodeURIComponent(route.project)}` : '/';
+  if (route.view === 'settings') return '/settings';
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   const base = `/source/${route.repo}`;
@@ -55,8 +86,10 @@ export function formatSourceRoute(route: SourceRoute): string {
       ? `${base}/history`
       : `${base}/history?ref=${encodeURIComponent(route.ref)}`;
   if (route.view === 'transactions') return `${base}/transactions`;
-  if (route.view === 'connect') return `${base}/connect`;
-  if (route.view === 'members') return `${base}/members`;
+  if (route.view === 'repo-settings')
+    return route.section === 'rules' ? `${base}/settings` : `${base}/settings/${route.section}`;
+  if (route.view === 'runs')
+    return route.run ? `${base}/runs?run=${encodeURIComponent(route.run)}` : `${base}/runs`;
   if (route.view === 'search')
     return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
@@ -68,4 +101,38 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'overview')
     return path ? `${base}/overview/${path}${suffix}` : `${base}/overview${suffix}`;
   return path ? `${base}/files/${path}${suffix}` : `${base}${suffix}`;
+}
+
+/** The repository a route shows, if any. */
+export const routeRepo = (route: SourceRoute): string | undefined =>
+  'repo' in route ? route.repo : undefined;
+
+/** The tab a repository route belongs to. */
+export function routeTab(route: SourceRoute): RepoTab | undefined {
+  switch (route.view) {
+    case 'files':
+    case 'overview':
+      return 'code';
+    case 'history':
+    case 'transactions':
+    case 'commit':
+      return 'history';
+    case 'runs':
+      return 'runs';
+    case 'search':
+      return 'search';
+    case 'repo-settings':
+      return 'settings';
+    default:
+      return undefined;
+  }
+}
+
+/** Where a tab starts. */
+export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
+  if (tab === 'code') return { view: 'files', repo, path: '', ref: 'main' };
+  if (tab === 'history') return { view: 'history', repo, ref: 'main' };
+  if (tab === 'runs') return { view: 'runs', repo };
+  if (tab === 'search') return { view: 'search', repo, query: '' };
+  return { view: 'repo-settings', repo, section: 'rules' };
 }

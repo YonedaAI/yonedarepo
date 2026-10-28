@@ -1,7 +1,6 @@
 @import "./styles/base.css";
 @import "./styles/shell.css";
 @import "./styles/account-menu.css";
-@import "./styles/repository-actions.css";
 @import "./styles/exploration.css";
 @import "./styles/graph.css";
 @import "./styles/history.css";
@@ -21,3 +20,4 @@
 @import "./styles/actions.css";
 @import "./styles/source-platform.css";
 @import "./styles/source-views.css";
+@import "./styles/one-app.css";

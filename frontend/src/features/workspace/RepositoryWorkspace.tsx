@@ -1,4 +1,4 @@
-import { GitBranch, GitCompareArrows, Network } from 'lucide-react';
+import { GitCompareArrows, Network } from 'lucide-react';
 import { useState } from 'react';
 import { short } from '../../lib/api';
 import type { Graph, Snapshot } from '../../lib/types';
@@ -9,6 +9,7 @@ import { ConflictStatusPanel } from '../history/ConflictStatusPanel';
 import { HistoryTools } from '../history/HistoryTools';
 import type { WorkspacePanel } from './WorkspacePanels';
 
+/** The Runs tab of a repository with an agent project: runs, and the evidence trail. */
 export function RepositoryWorkspace({
   reviewer = false,
   snapshot,
@@ -30,15 +31,13 @@ export function RepositoryWorkspace({
 }) {
   const [view, setView] = useState('runs');
   const [evidenceRun, setEvidenceRun] = useState('');
-  const [history, setHistory] = useState<Graph | null>(null);
   const repo = snapshot.repository;
   return (
     <>
-      <nav className="workspace-tabs" aria-label="Repository views">
+      <nav className="workspace-tabs" aria-label="Runs views">
         {[
           { id: 'runs', label: 'Runs', Icon: GitCompareArrows },
           { id: 'graph', label: 'Evidence trail', Icon: Network },
-          { id: 'history', label: 'Source history', Icon: GitBranch },
         ].map(({ id, label, Icon }) => (
           <button
             type="button"
@@ -65,7 +64,7 @@ export function RepositoryWorkspace({
           <code>{short(repo.published_commit)}</code>
         </div>
       )}
-      {(repo.status === 'blocked' || view === 'history') && (
+      {repo.status === 'blocked' && (
         <ConflictStatusPanel
           repository={repo}
           reviewer={reviewer}
@@ -91,19 +90,40 @@ export function RepositoryWorkspace({
         />
       )}
       {view === 'graph' && <GraphWorkspace snapshot={snapshot} runId={evidenceRun || undefined} />}
-      {view === 'history' && (
-        <>
-          <HistoryTools
-            reviewer={reviewer}
-            snapshot={snapshot}
-            onGraph={setHistory}
-            onError={onError}
-          />
-          {history && (
-            <GraphWorkspace snapshot={snapshot} initialGraph={history} title="Revision context" />
-          )}
-        </>
-      )}
     </>
+  );
+}
+
+/** The agent project's source history (History tab): conflicts, traces and their graph. */
+export function AgentSourceHistory({
+  reviewer = false,
+  snapshot,
+  onChange,
+  onError,
+}: {
+  reviewer?: boolean;
+  snapshot: Snapshot;
+  onChange: () => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const [history, setHistory] = useState<Graph | null>(null);
+  return (
+    <div className="agent-source-history">
+      <ConflictStatusPanel
+        repository={snapshot.repository}
+        reviewer={reviewer}
+        onChange={onChange}
+        onError={onError}
+      />
+      <HistoryTools
+        reviewer={reviewer}
+        snapshot={snapshot}
+        onGraph={setHistory}
+        onError={onError}
+      />
+      {history && (
+        <GraphWorkspace snapshot={snapshot} initialGraph={history} title="Revision context" />
+      )}
+    </div>
   );
 }

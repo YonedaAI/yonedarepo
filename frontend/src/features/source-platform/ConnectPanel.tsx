@@ -1,5 +1,5 @@
-// Connect a repository: the clone command and CLI install, the account MCP for agents with
-// Claude Code and Codex configuration, and deleting the repository (type its name).
+// Connect a repository: its clone commands, the CLI install and the account MCP for agents
+// with Claude Code and Codex configuration; and deleting a repository (type its name).
 import { type FormEvent, useState } from 'react';
 import {
   claudeMcpJson,
@@ -13,33 +13,53 @@ import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
 
+/** The clone URLs for a repository: stock Git over HTTPS and the yoneda remote helper. */
+export const httpsUrl = (origin: string, repo: string) => `${origin}/git/${repo}.git`;
+
 export function ConnectPanel({
   repo,
   name,
   origin,
-  onDeleted,
 }: {
   repo: string;
   name?: string;
   origin: string;
-  onDeleted: () => void;
 }) {
   return (
     <div className="source-connect">
       <section aria-labelledby="connect-git">
         <h2 id="connect-git">Clone with git</h2>
         <p className="source-meta">
-          Plain git through the yoneda remote helper. <code>git push origin main</code> lands: the
-          server merges disjoint concurrent changes.
+          Stock Git over HTTPS with a token as the password, or the yoneda remote helper.{' '}
+          <code>git push origin main</code> lands: the server merges disjoint concurrent changes.
         </p>
+        <CopyBlock
+          label="HTTPS"
+          text={`git clone ${httpsUrl(origin, repo)}${name ? ` ${name}` : ''}`}
+        />
         <CopyBlock label="clone" text={cloneCommand(origin, repo, name)} />
+        <p className="source-meta">
+          Repository id <code>{repo}</code>
+        </p>
+      </section>
+      <AgentConnectHelp origin={origin} />
+    </div>
+  );
+}
+
+/** The yoneda CLI and the account MCP endpoint, for agents across every repository. */
+export function AgentConnectHelp({ origin }: { origin: string }) {
+  return (
+    <>
+      <section aria-labelledby="connect-cli">
+        <h2 id="connect-cli">The yoneda CLI</h2>
         <CopyBlock label="install the yoneda CLI" text={installSteps(origin)} />
       </section>
       <section aria-labelledby="connect-agents">
         <h2 id="connect-agents">Agents (MCP)</h2>
         <p className="source-meta">
           One endpoint for all your repositories: every tool takes a <code>repo</code> argument.
-          Authenticate with a personal access token from <a href="/source/tokens">Tokens</a> in the{' '}
+          Authenticate with a personal access token from <a href="/settings">Settings</a> in the{' '}
           <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
@@ -50,8 +70,7 @@ export function ConnectPanel({
         />
         <CopyBlock label="Codex ~/.codex/config.toml" text={codexToml(origin)} />
       </section>
-      <DeleteRepository repo={repo} name={name} onDeleted={onDeleted} />
-    </div>
+    </>
   );
 }
 
@@ -82,8 +101,8 @@ export function DeleteRepository({
     }
   }
   return (
-    <section aria-labelledby="connect-delete" className="source-danger">
-      <h2 id="connect-delete">Delete repository</h2>
+    <section aria-labelledby="delete-heading" className="source-danger">
+      <h2 id="delete-heading">Delete repository</h2>
       <p>
         Deleting removes its history, refs and tokens for everyone. It cannot be undone. Type{' '}
         <strong>{expected}</strong> to confirm.

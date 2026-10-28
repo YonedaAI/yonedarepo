@@ -1,148 +1,164 @@
-import { File, Folder } from 'lucide-react';
-import { useEffect, useState } from 'react';
+// The Code tab: branch or tag, path, version (time travel) and Clone; the latest commit; the
+// directory as a file table with its README below, or one file with blame.
+import { type ReactNode, useState } from 'react';
+import { linkTo, type Navigate } from '../shell/useRoute';
+import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
+import { readQuery, useActivity, useCommitMessages, useListing } from './codeData';
+import { currentApiOrigin } from './connect';
 import { FileBlame } from './FileBlame';
+import { FileTable } from './FileTable';
+import { Markdown } from './markdown';
+import type { RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
-import { SourceApiError, shortSha, sourceApi } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
+import { useSource } from './useSource';
 import { VersionPicker } from './VersionPicker';
 
-type Entry = { name: string; type: string; id: string };
-type FileBody = {
-  commit: string;
-  size: number;
-  encoding: string;
-  content: string;
-  executable: boolean;
-};
-type Listing = { kind: 'tree'; commit: string; entries: Entry[] } | ({ kind: 'file' } & FileBody);
 type Route = Extract<SourceRoute, { view: 'files' }>;
+const README = /^readme(\.(md|markdown))?$/i;
 
-function query(route: Route, path: string) {
-  const params = new URLSearchParams({ path, ref: route.ref });
-  if (route.at !== undefined) params.set('at', String(route.at));
-  return params.toString();
+/** The ref the API reads: a branch name, or a tag's commit (tags never move). */
+export function apiRef(ref: string, refs: RepoStatus['refs']): string | undefined {
+  if (!ref.startsWith('refs/tags/')) return ref;
+  return refs?.find((r) => r.name === ref)?.commit_id;
 }
 
-/** Reads `path` as a directory, falling back to a file when it is not one. */
-function useListing(route: Route) {
-  const [state, setState] = useState<{ value?: Listing; error?: string; empty?: boolean }>({});
-  const [tick, setTick] = useState(0);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: tick re-reads the same location.
-  useEffect(() => {
-    const controller = new AbortController();
-    const signal = controller.signal;
-    const base = `/repos/${route.repo}`;
-    setState({});
-    sourceApi(`${base}/tree?${query(route, route.path)}`, { signal })
-      .then((tree) => setState({ value: { kind: 'tree', ...tree } }))
-      .catch(async (e) => {
-        if (signal.aborted) return;
-        if (e instanceof SourceApiError && /not a directory/.test(e.message)) {
-          const file = await sourceApi(`${base}/blob?${query(route, route.path)}`, { signal });
-          setState({ value: { kind: 'file', ...file } });
-        } else if (e instanceof SourceApiError && e.code === 'NOT_FOUND') setState({ empty: true });
-        else throw e;
-      })
-      .catch((e) => !signal.aborted && setState({ error: e.message }));
-    return () => controller.abort();
-  }, [route.repo, route.path, route.ref, route.at, tick]);
-  return { ...state, reload: () => setTick((t) => t + 1) };
+function Readme({ repo, ref, path, at }: { repo: string; ref: string; path: string; at?: number }) {
+  const file = useSource<{ encoding: string; content: string }>(
+    `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
+  );
+  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
+  if (!file.data) return <Loading what="README" />;
+  if (file.data.encoding !== 'utf-8') return null;
+  return (
+    <article className="source-file readme" aria-label={path}>
+      <header>
+        <code>{path.split('/').pop()}</code>
+      </header>
+      <div className="readme-body">
+        <Markdown source={file.data.content} />
+      </div>
+    </article>
+  );
 }
 
 export function RepoFiles({
   route,
-  onNavigate,
+  status,
+  navigate,
 }: {
   route: Route;
-  onNavigate: (r: SourceRoute) => void;
+  status?: RepoStatus;
+  navigate: Navigate;
 }) {
-  const listing = useListing(route);
+  const ref = apiRef(route.ref, status?.refs);
+  const listing = useListing(route.repo, ref, route.path, route.at);
   const [blaming, setBlaming] = useState(false);
-  const go = (path: string) => onNavigate({ ...route, path });
+  const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
+  const activity = useActivity(
+    route.repo,
+    status?.version,
+    route.ref,
+    route.path,
+    tree?.entries.map((e) => e.name),
+    route.at,
+  );
+  const messages = useCommitMessages(
+    route.repo,
+    [...activity.values()].map((a) => a.commit),
+  );
+  const go = (path: string): SourceRoute => ({ ...route, path });
+  const pathLink = (path: string, children: ReactNode, attrs = {}) => (
+    <a {...attrs} {...linkTo(go(path), navigate)}>
+      {children}
+    </a>
+  );
+  const commitLink = (commit: string, children: ReactNode) => (
+    <a {...linkTo({ view: 'commit', repo: route.repo, commit }, navigate)}>{children}</a>
+  );
   const crumbs = route.path.split('/').filter(Boolean);
+  const readme = tree?.entries.find((e) => e.type !== 'tree' && README.test(e.name));
   return (
     <section className="source-files" aria-label="Files">
       <div className="source-toolbar">
+        <BranchPicker
+          refs={status?.refs ?? []}
+          value={route.ref}
+          onChange={(next) => navigate({ ...route, ref: next, path: '', at: undefined })}
+        />
         <nav aria-label="Path" className="source-crumbs">
-          <button type="button" className="quiet" onClick={() => go('')}>
-            {route.ref}
-          </button>
+          {pathLink('', <strong>{status?.name ?? route.repo}</strong>)}
           {crumbs.map((part, i) => (
             <span key={crumbs.slice(0, i + 1).join('/')}>
-              /
-              <button
-                type="button"
-                className="quiet"
-                onClick={() => go(crumbs.slice(0, i + 1).join('/'))}
-              >
-                {part}
-              </button>
+              <span aria-hidden="true">/</span>
+              {i === crumbs.length - 1 ? (
+                <span aria-current="page">{part}</span>
+              ) : (
+                pathLink(crumbs.slice(0, i + 1).join('/'), part)
+              )}
             </span>
           ))}
         </nav>
-        <VersionPicker
-          repo={route.repo}
-          at={route.at}
-          onChange={(at) => onNavigate({ ...route, at })}
-        />
+        <span className="source-toolbar-end">
+          <VersionPicker
+            repo={route.repo}
+            at={route.at}
+            onChange={(at) => navigate({ ...route, at })}
+          />
+          <a className="toolbar-link" {...linkTo({ ...route, view: 'overview' }, navigate)}>
+            Overview
+          </a>
+          <CloneButton repo={route.repo} name={status?.name} origin={currentApiOrigin()} />
+        </span>
       </div>
       {route.at !== undefined && (
         <p className="source-note" role="status">
           Time travel: showing {route.ref} as of log version {route.at}. Reads are pinned and
-          immutable.
+          immutable. <a {...linkTo({ ...route, at: undefined }, navigate)}>Back to latest</a>
         </p>
       )}
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
       {listing.empty && (
-        <p className="source-empty">
-          {route.path || route.ref} does not exist{' '}
-          {route.at === undefined ? 'on this branch' : 'at this version'}.
-        </p>
+        <div className="source-empty-state">
+          <p>
+            {route.path || route.ref} does not exist{' '}
+            {route.at === undefined ? 'on this branch' : 'at this version'}.
+          </p>
+          {route.path ? (
+            pathLink('', 'Go to the repository root')
+          ) : (
+            <p className="source-meta">
+              Push a first commit: <code>git push origin main</code> (see Clone).
+            </p>
+          )}
+        </div>
       )}
       {!listing.value && !listing.error && !listing.empty && <Loading what="files" />}
-      {listing.value?.kind === 'tree' && (
+      {listing.value && route.at === undefined && (
+        <LatestCommit repo={route.repo} commit={listing.value.commit} commitLink={commitLink} />
+      )}
+      {tree && (
         <>
-          <p className="source-meta">
-            Commit{' '}
-            <a
-              href={`/source/${route.repo}/commit/${listing.value.commit}`}
-              onClick={(e) => {
-                e.preventDefault();
-                onNavigate({
-                  view: 'commit',
-                  repo: route.repo,
-                  commit: (listing.value as Listing).commit,
-                });
-              }}
-            >
-              <code>{shortSha(listing.value.commit)}</code>
-            </a>
-          </p>
-          <ul className="source-tree">
-            {[...listing.value.entries]
-              .sort(
-                (a, b) =>
-                  Number(b.type === 'tree') - Number(a.type === 'tree') ||
-                  a.name.localeCompare(b.name),
-              )
-              .map((entry) => (
-                <li key={entry.name}>
-                  <button
-                    type="button"
-                    className="quiet"
-                    disabled={entry.type === 'gitlink'}
-                    onClick={() => go(route.path ? `${route.path}/${entry.name}` : entry.name)}
-                  >
-                    {entry.type === 'tree' ? (
-                      <Folder size={15} aria-hidden />
-                    ) : (
-                      <File size={15} aria-hidden />
-                    )}
-                    {entry.name}
-                  </button>
-                </li>
-              ))}
-          </ul>
+          {tree.entries.length === 0 ? (
+            <p className="source-empty">This directory is empty.</p>
+          ) : (
+            <FileTable
+              dir={route.path}
+              entries={tree.entries}
+              activity={activity}
+              messages={messages}
+              link={pathLink}
+              commitLink={commitLink}
+            />
+          )}
+          {readme && ref && (
+            <Readme
+              repo={route.repo}
+              ref={ref}
+              path={route.path ? `${route.path}/${readme.name}` : readme.name}
+              at={route.at}
+            />
+          )}
         </>
       )}
       {listing.value?.kind === 'file' && (
@@ -152,7 +168,7 @@ export function RepoFiles({
             <span>
               {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
             </span>
-            {route.at === undefined && listing.value.encoding === 'utf-8' && (
+            {route.at === undefined && listing.value.encoding === 'utf-8' && ref && (
               <button
                 type="button"
                 className="quiet"
@@ -163,13 +179,8 @@ export function RepoFiles({
               </button>
             )}
           </header>
-          {blaming && route.at === undefined ? (
-            <FileBlame
-              repo={route.repo}
-              path={route.path}
-              refName={route.ref}
-              onNavigate={onNavigate}
-            />
+          {blaming && route.at === undefined && ref ? (
+            <FileBlame repo={route.repo} path={route.path} refName={ref} onNavigate={navigate} />
           ) : listing.value.encoding === 'utf-8' ? (
             <pre>{listing.value.content}</pre>
           ) : (
