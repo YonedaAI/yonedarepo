@@ -58,6 +58,24 @@ export interface Env {
   /** The source platform Worker (front Worker); its public API is all it calls. */
   PLATFORM?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
+  /** This Worker itself (service binding); the SSH gateway's container reaches the
+   * platform through it (platform-ssh-gateway.ts). */
+  SELF?: Fetcher;
+  /** Shared with the SSH gateway: signs its JWTs to `/internal/ssh/*` and derives the
+   * session-token key (platform-ssh.ts). Unset, or under 32 characters: SSH is off. */
+  SSH_GATEWAY_SECRET?: string;
+  /** The gateway's SSH host keys (OpenSSH private key files), passed to its container. */
+  SSH_HOST_ED25519_KEY?: string;
+  SSH_HOST_ECDSA_KEY?: string;
+  /** SSH gateway containers (platform-ssh-gateway.ts); absent where not deployed. */
+  SSH_GATEWAYS?: DurableObjectNamespace<import('./platform-ssh-gateway').SshGateway>;
+  /** How clients reach the SSH gateway: `tunnel` (Cloudflare Tunnel, cloudflared in its
+   * container), `connect` (inbound TCP to this Worker, private beta) or `off`. */
+  SSH_FRONT_DOOR?: string;
+  /** The tunnel's token (secret; the `tunnel` front door). */
+  SSH_TUNNEL_TOKEN?: string;
+  /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
+  SSH_HOST?: string;
   BUILD_REVISION?: string;
 }
 export type Principal = {

@@ -33,6 +33,7 @@ pub mod session_cmd;
 pub mod session_files;
 pub mod setup;
 mod snapshot;
+mod ssh_key_cmd;
 mod state;
 mod status;
 mod sync;

@@ -13,6 +13,7 @@ yoneda-store.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 base64 = "0.23.1"
+sha2.workspace = true
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
 subtle = "2.6.1"
 syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "visit"] }

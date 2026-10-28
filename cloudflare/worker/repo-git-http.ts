@@ -2,10 +2,12 @@
 // (upload-pack; protocol version 2 when Git asks for it, with partial and shallow clones)
 // and push (receive-pack, version 0) without the remote helper. Credentials are a
 // repository or personal token as the Basic password (any user name) or a bearer header;
-// a 401 asks Git's credential helper for one. The authority decides access per request:
-// read to fetch, write to push, and never a path-restricted grant.
+// a 401 asks Git's credential helper for one. The SSH gateway's session token (`ysh_`, a
+// bearer) holds for its one repository and service only (platform-ssh.ts). The authority
+// decides access per request: read to fetch, write to push, and never a path-restricted grant.
 
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
+import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
@@ -76,7 +78,10 @@ async function serve(req: Request, env: Env): Promise<Response> {
     return refusal(403, 'Only smart HTTP is served (Git 1.6.6 or newer)');
   if ((action === 'info/refs') !== (req.method === 'GET'))
     return refusal(405, `${req.method} is not allowed here`);
-  const auth = await timed('git.auth', () => gitCredentials(req, env));
+  const ssh = sshBearer(req);
+  const auth = await timed('git.auth', () =>
+    ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
+  );
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   try {
