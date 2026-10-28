@@ -7,6 +7,7 @@ import { afterAnswer, deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
+import { inBatches } from './repo-git-objects';
 import { beginFromHead, headTrees, noteBuilt } from './repo-head';
 import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
@@ -16,6 +17,8 @@ import { timed } from './repo-timing';
 
 const STAGE_OBJECTS = 256;
 const STAGE_BYTES = 1024 * 1024;
+/** R2 writes in flight after a commit's answer (an invocation keeps six connections open). */
+const R2_WRITES = 6;
 
 /** Whether `body` can be built statelessly here. */
 export const shardable = (env: { COMMIT_SHARDS?: unknown }, body: Json) =>
@@ -129,10 +132,21 @@ export async function commitInShard(
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
   noteBuilt(built.commit, paths);
   const all = built.objects as CachedObject[];
-  // Written through at commit time so this colo's first reads are served from the edge,
-  // but after the answer: the edge is an optimization (reads fall back to R2 and the
-  // shard), and a slow Cache API put held commits for seconds (commit p95 18.7 s, 10-28).
-  const edge = afterAnswer(() => timed('cache', () => store.cache(all, 'edge')));
+  // Written through at commit time, after the answer. Its blobs go to R2 first, where any
+  // isolate's first read of the file finds them: the shard's own drain to R2 waits in the
+  // queue behind a burst, and a read that misses R2 asks all 64 shards (hosted burst
+  // read-backs, 10-28: `read.shards` up to 4.6 s). Then all of it to this colo's edge, an
+  // optimization (a slow Cache API put held commits for seconds, commit p95 18.7 s, 10-28).
+  const blobs = all.filter((o) => o.kind === 'blob');
+  const edge = afterAnswer(() =>
+    timed('cache', async () => {
+      // A failure leaves the blob to the shard's drain, as before: never fails the commit.
+      await inBatches(blobs, R2_WRITES, (o) => store.cache([o], 'r2')).catch((e) =>
+        console.warn(`blob write-through failed: ${e?.message ?? e}`),
+      );
+      await store.cache(all, 'edge');
+    }),
+  );
   const [classes, symbols] = await timed('derive', () =>
     Promise.all([
       // Review classes gate semantic auto-approval; a failure leaves the commit
