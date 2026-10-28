@@ -36,9 +36,15 @@ pub async fn serve(config: config::Config) -> std::io::Result<()> {
     }
     tracing::info!(listen = %config.ssh_listen, "ssh.listening");
     // The Cloudflare Tunnel front door, once SSH is listening for it.
+    platform
+        .report(
+            "gateway.started",
+            serde_json::json!({ "tunnel": config.cloudflared.is_some() }),
+        )
+        .await;
     let tunnel = config
         .cloudflared
-        .map(|binary| tokio::spawn(tunnel::supervise(binary)));
+        .map(|binary| tokio::spawn(tunnel::supervise(binary, platform.clone())));
     let slots = Arc::new(Semaphore::new(CONNECTIONS));
     let stop = shutdown();
     tokio::pin!(stop);
