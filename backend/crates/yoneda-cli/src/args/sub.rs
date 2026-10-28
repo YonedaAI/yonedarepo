@@ -9,10 +9,18 @@ use crate::error::{Error, Result};
 
 pub fn repo(rest: &[String]) -> Result<Command> {
     let (sub, rest) = split_sub(rest, "repo")?;
-    let p = Parsed::new(&rest, &["origin", "confirm", "name", "batch-files"], &[])?;
+    let p = Parsed::new(
+        &rest,
+        &["origin", "confirm", "name", "batch-files", "owner"],
+        &[],
+    )?;
+    if p.flag("owner").is_some() && sub != "create" {
+        return Err(Error::usage("only repo create takes --owner"));
+    }
     let command = match sub.as_str() {
         "create" => RepoCommand::Create {
             name: p.exactly(1, "repo create <name>")?[0].clone(),
+            owner: p.flag("owner"),
         },
         "list" => {
             p.at_most(0)?;

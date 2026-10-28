@@ -8,7 +8,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         "signup" => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
-            if account(db).is_ok() {
+            if get(db, "account").is_ok() {
                 return Err(Error::new(
                     "ALREADY_EXISTS",
                     "Username or email unavailable",
@@ -26,7 +26,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let valid = super::access::valid(db, now)?
                 && get(db, &key).is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
             if valid {
-                Ok(public_account(&account(db)?))
+                let mut public = public_account(&account(db)?);
+                public["orgs"] = json!(super::orgs::hints(db)?);
+                Ok(public)
             } else {
                 Ok(json!({"authenticated":false}))
             }

@@ -8,6 +8,8 @@ import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
+import { orgAccess } from './org-access';
+import { orgsRoute } from './orgs';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { breakGlass } from './repo-break-glass';
@@ -89,7 +91,10 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
   // Only a personal account session is a person; admin bearers may be held by scripts.
   const human = principal.role === 'user' ? { human: true as const } : {};
-  return { _session: { workspace: principal.workspace, principal: name, ...human } };
+  const orgs = await orgAccess(env, principal.workspace, principal.orgs ?? []);
+  return {
+    _session: { workspace: principal.workspace, principal: name, ...human, ...(orgs && { orgs }) },
+  };
 }
 
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
@@ -103,6 +108,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     req.method === 'POST'
   )
     return deviceApprove(env, auth, await bodyOf(req));
+  if (parts[0] === 'orgs')
+    return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req));
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
@@ -295,7 +302,13 @@ async function handle(req: Request, env: Env): Promise<Response> {
   // an MCP tool either) stays unreachable through it.
   const machine: Credentials =
     '_session' in auth
-      ? { _session: { workspace: auth._session.workspace, principal: auth._session.principal } }
+      ? {
+          _session: {
+            workspace: auth._session.workspace,
+            principal: auth._session.principal,
+            ...(auth._session.orgs && { orgs: auth._session.orgs }),
+          },
+        }
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);

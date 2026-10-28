@@ -56,4 +56,6 @@ export interface Env {
 export type Principal = {
   workspace: string;
   role: 'user' | 'admin';
+  /** Organizations the account joined (hints from its authority; they grant nothing). */
+  orgs?: string[];
 };

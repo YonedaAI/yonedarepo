@@ -8,6 +8,8 @@ import { type Created, NewRepositoryDialog } from './features/shell/NewRepositor
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { useRoute } from './features/shell/useRoute';
 import { DevicePage } from './features/source-platform/DevicePage';
+import { OrgPage } from './features/source-platform/OrgPage';
+import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
 import { routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
@@ -25,6 +27,7 @@ export function App() {
   const [notice, setNotice] = useState('');
   const [tick, setTick] = useState(0);
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
+  const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const rows = repoRows(platform.data?.repos ?? []);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
@@ -47,7 +50,9 @@ export function App() {
         ? 'Settings'
         : route.view === 'device'
           ? 'Approve a device'
-          : (row?.name ?? repo ?? '');
+          : route.view === 'org'
+            ? route.org
+            : (row?.name ?? repo ?? '');
   return (
     <div className="app">
       <a className="skip-link" href="#workspace">
@@ -58,7 +63,9 @@ export function App() {
         loading={session.loading || platform.loading}
         rows={rows}
         rowsError={rowsError}
+        orgs={orgs.data?.orgs ?? []}
         current={repo}
+        currentOrg={route.view === 'org' ? route.org : undefined}
         navigate={navigate}
         onNew={() => setCreating(true)}
       />
@@ -85,6 +92,7 @@ export function App() {
           onRefresh={() => {
             setTick((t) => t + 1);
             platform.reload();
+            orgs.reload();
             void session.discover();
           }}
         />
@@ -123,9 +131,14 @@ export function App() {
               <AccountSettings
                 identity={session.identity}
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
+                orgs={orgs}
+                navigate={navigate}
               />
             )}
             {route.view === 'device' && <DevicePage code={route.code} />}
+            {route.view === 'org' && (
+              <OrgPage key={`${route.org}:${tick}`} org={route.org} navigate={navigate} />
+            )}
             {'repo' in route && (
               <RepoPage
                 key={`${route.repo}:${tick}`}
@@ -148,7 +161,15 @@ export function App() {
         onSignedIn={() => void session.discover()}
         onClose={() => setPanel(null)}
       />
-      {creating && <NewRepositoryDialog onClose={() => setCreating(false)} onCreated={created} />}
+      {creating && (
+        <NewRepositoryDialog
+          account={session.identity?.username}
+          orgs={orgs.data?.orgs ?? []}
+          initialOwner={route.view === 'org' ? route.org : undefined}
+          onClose={() => setCreating(false)}
+          onCreated={created}
+        />
+      )}
     </div>
   );
 }

@@ -40,7 +40,7 @@ it('issues personal tokens to a signed-in account, lists them without secrets an
   expect(listed.body.tokens.map((t: any) => t.name)).toEqual(['laptop', 'ci']);
   expect(JSON.stringify(listed.body)).not.toContain(issued.token);
   expect(Object.keys(listed.body.tokens[0]).sort()).toEqual(
-    ['created_at', 'expires_at', 'id', 'last_used_at', 'name', 'repos', 'scopes'],
+    ['created_at', 'expires_at', 'id', 'last_used_at', 'name', 'org', 'repos', 'scopes'],
   );
   // Only a session issues tokens; a token cannot mint more, or list them without repo:admin.
   expect((await api('/tokens', { token: issued.token }, { body: { name: 'x', scopes: ['repo:read'] } })).status).toBe(401);
