@@ -1,6 +1,7 @@
 // The Git object stores behind repositories: Artifacts (production) or R2 (local
 // development and the fallback the plan keeps open). Each repository records which one
 // holds its objects; the tiered reads in front of them live in repo-objects.
+import { rpcValue } from './durable';
 import { compute } from './repo-compute';
 import { record, timed } from './repo-timing';
 import type { Env } from './types';
@@ -53,7 +54,7 @@ class ArtifactsStore implements ObjectStore {
     return `artifacts:${this.env.ARTIFACTS_NAMESPACE}/${this.name}`;
   }
   async create() {
-    await this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' });
+    await rpcValue(this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' }));
   }
   /**
    * Pushes through the repository's queue: Artifacts takes one receive-pack at a time. The
@@ -65,7 +66,7 @@ class ArtifactsStore implements ObjectStore {
     for (let attempt = 0; ; attempt++) {
       const { remote, token } = await timed('push.token', () => this.credentials(attempt > 0));
       try {
-        const pushed = await queue.push(remote, token, body);
+        const pushed = await rpcValue(queue.push(remote, token, body));
         record('push.wait', pushed.waited_ms);
         record('push.send', pushed.sent_ms);
         record('push.batch', pushed.batch);
@@ -83,32 +84,33 @@ class ArtifactsStore implements ObjectStore {
     if (!fresh && remote && cached && cached.expires > Date.now())
       return { remote, token: cached.plaintext };
     using repo = await this.env.ARTIFACTS.get(this.name);
-    const url = remote ?? (await repo.info()).remote;
+    const url = remote ?? (await rpcValue(repo.info())).remote;
     remotes.set(this.spec, url);
-    const token = await repo.createToken('write', TOKEN_SECONDS);
+    const token = await rpcValue(repo.createToken('write', TOKEN_SECONDS));
     tokens.set(this.spec, { plaintext: token.plaintext, expires: Date.now() + TOKEN_REUSE_MS });
     return { remote: url, token: token.plaintext };
   }
   async cloneAccess() {
     using repo = await this.env.ARTIFACTS.get(this.name);
-    const info = await repo.info();
-    const token = await repo.createToken('read', CLONE_TOKEN_SECONDS);
+    const info = await rpcValue(repo.info());
+    const token = await rpcValue(repo.createToken('read', CLONE_TOKEN_SECONDS));
     return { remote: info.remote, token: token.plaintext, expires_in_seconds: CLONE_TOKEN_SECONDS };
   }
   async readCommit(id: string) {
     using repo = await this.env.ARTIFACTS.get(this.name);
-    const commit = await repo.readCommit(id);
+    const commit = await rpcValue(repo.readCommit(id));
     return commit ? { tree: commit.treeHash, parents: commit.parents } : null;
   }
   async readTree(id: string) {
     using repo = await this.env.ARTIFACTS.get(this.name);
-    const entries = await repo.readTree(id);
+    const entries = await rpcValue(repo.readTree(id));
     return entries ? entries.map((e) => ({ name: e.name, type: e.type, id: e.hash })) : null;
   }
   async readBlob(id: string) {
     using repo = await this.env.ARTIFACTS.get(this.name);
-    const blob = await repo.readBlob(id);
-    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+    return rpcValue(repo.readBlob(id), async (blob) =>
+      blob ? new Uint8Array(await blob.arrayBuffer()) : null,
+    );
   }
 }
 

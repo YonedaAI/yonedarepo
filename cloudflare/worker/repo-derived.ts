@@ -4,11 +4,13 @@
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
 // A segment's paths are relative to its partition, and each read passes the partition's
 // prefix, so a renamed or duplicated directory reuses the segment under its own path.
+import { noteBundles } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
+import { blobWaves, inWaves } from './repo-object-waves';
 import { type CachedObject, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { writeSeed } from './repo-seed';
@@ -19,30 +21,46 @@ const MAX_RESULTS = 200;
 const asOf = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
 
-/** Runs a Rust compute op that walks trees and reads blobs, supplying both on request. */
-export async function withObjects(ctx: RepoContext, input: Json, known: CachedObject[] = []) {
+/**
+ * Runs a Rust compute op that walks trees and reads blobs, supplying both on request, a
+ * bounded wave at a time. Blob bytes beyond `maxBytes` refuse with TOO_LARGE: every
+ * supplied object goes into one compute call, and Wasm memory never shrinks once grown.
+ */
+export async function withObjects(
+  ctx: RepoContext,
+  input: Json,
+  known: CachedObject[] = [],
+  maxBytes = Number.POSITIVE_INFINITY,
+) {
   const objects = await ctx.objects();
   const trees: Json = {};
   const blobs: Json = {};
+  let bytes = 0;
   // Objects the caller already holds (a commit being built) are only supplied on request.
   const held = new Map(known.map((o) => [o.id, o]));
-  const supply = async (id: string, kind: 'tree' | 'blob') => {
+  const tree = async (id: string) => {
     const object = held.get(id);
-    if (object?.kind === 'tree' && kind === 'tree') return object.entries;
-    if (object?.kind === 'blob' && kind === 'blob') return object.data_b64;
-    return kind === 'tree' ? objects.tree(id) : toBase64(await objects.blob(id));
+    trees[id] = object?.kind === 'tree' ? object.entries : await objects.tree(id);
+  };
+  const supply = (id: string, data_b64: string) => {
+    bytes += (data_b64.length * 3) / 4;
+    if (bytes > maxBytes)
+      throw new ApiError('TOO_LARGE', `More than ${maxBytes} bytes of files to read`);
+    blobs[id] = data_b64;
   };
   for (let round = 0; round <= 256; round++) {
     const result = compute({ ...input, trees, blobs });
-    if (result.need_trees)
-      await Promise.all(
-        (result.need_trees as string[]).map(async (id) => (trees[id] = await supply(id, 'tree'))),
-      );
-    else if (result.need_blobs)
-      await Promise.all(
-        (result.need_blobs as string[]).map(async (id) => (blobs[id] = await supply(id, 'blob'))),
-      );
-    else return result;
+    if (result.need_trees) await inWaves(result.need_trees as string[], tree);
+    else if (result.need_blobs) {
+      const read: string[] = [];
+      for (const id of result.need_blobs as string[]) {
+        const object = held.get(id);
+        if (object?.kind === 'blob') supply(id, object.data_b64);
+        else read.push(id);
+      }
+      for await (const wave of blobWaves(objects, read))
+        for (const [id, data] of wave) supply(id, toBase64(data));
+    } else return result;
   }
   throw new ApiError('INVALID_INPUT', 'Too many object rounds');
 }
@@ -51,26 +69,48 @@ export async function withObjects(ctx: RepoContext, input: Json, known: CachedOb
 // they were first built for, so they are never read again.
 const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/v2/${key}`;
 
-/** Segments for a root tree, building missing ones. Returns how many were built. */
+/** Blob bytes one partition's index may read (a larger one is skipped, as a partition of
+ * too many files is). */
+const INDEX_BYTES = 8 * 1024 * 1024;
+/** Cached segments read at a time. */
+const SEGMENT_READS = 8;
+
+/** Segments for a root tree, building missing ones. Returns how many were built. Cached
+ * segments are read side by side; missing ones are built one at a time, since a build
+ * holds its partition's files. */
 export async function searchSegments(ctx: RepoContext, root: string) {
   const { partitions } = await withObjects(ctx, { op: 'search_plan', root });
   let built = 0;
-  const segments = await Promise.all(
-    (partitions as Json[]).map(async (p) => {
-      const key = segmentKey(ctx.repo, p.key);
-      const cached = await ctx.env.OBJECTS.get(key);
-      if (cached) return { partition: p, segment: await cached.json<Json>() };
-      const result = await withObjects(ctx, {
-        op: 'index_partition',
-        tree: p.tree,
-        shallow: p.shallow,
-      });
-      if (result.too_large) return { partition: p, too_large: true };
-      await ctx.env.OBJECTS.put(key, JSON.stringify(result.segment));
-      built++;
-      return { partition: p, segment: result.segment };
-    }),
-  );
+  const segments: Json[] = [];
+  for (let i = 0; i < partitions.length; i += SEGMENT_READS)
+    segments.push(
+      ...(await Promise.all(
+        (partitions as Json[]).slice(i, i + SEGMENT_READS).map(async (p) => {
+          const cached = await ctx.env.OBJECTS.get(segmentKey(ctx.repo, p.key));
+          return { partition: p, ...(cached ? { segment: await cached.json<Json>() } : {}) };
+        }),
+      )),
+    );
+  for (const entry of segments) {
+    if (entry.segment) continue;
+    const p = entry.partition;
+    const result: Json = await withObjects(
+      ctx,
+      { op: 'index_partition', tree: p.tree, shallow: p.shallow },
+      [],
+      INDEX_BYTES,
+    ).catch((e) => {
+      if (e instanceof ApiError && e.code === 'TOO_LARGE') return { too_large: true };
+      throw e;
+    });
+    if (result.too_large) {
+      entry.too_large = true;
+      continue;
+    }
+    await ctx.env.OBJECTS.put(segmentKey(ctx.repo, p.key), JSON.stringify(result.segment));
+    built++;
+    entry.segment = result.segment;
+  }
   return { segments, built };
 }
 
@@ -164,6 +204,8 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     caller(env, envelope.repo_id, { _system: 'derive' }),
   );
   const head = await ctx.call({ op: 'repo_snapshot', ref: envelope.job_id });
+  // A push's bundles are then read in bulk, not one staged read per file.
+  if ((await ctx.status()).bundled) noteBundles(envelope.repo_id);
   const segments = await searchSegments(ctx, head.tree);
   // Warm-start seed for check runs on nearby commits; a failure only costs them speed.
   const at = { commit: String(head.commit), tree: String(head.tree) };
