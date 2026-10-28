@@ -1,6 +1,5 @@
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { accountPrincipal } from './accounts';
-import { sessionValid } from './session';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 export async function authorized(req: Request, env: Env) {
@@ -12,7 +11,6 @@ export async function authenticate(req: Request, env: Env): Promise<Principal | 
   const account = await accountPrincipal(req, env);
   if (account) return account;
   const admin: Principal = { workspace: '_admin', role: 'admin' };
-  if (await sessionValid(req, env)) return admin;
   const authorization = req.headers.get('authorization');
   if (env.OWNER_TOKEN && authorization?.startsWith('Bearer ')) {
     const supplied = await sha(authorization.slice(7));
