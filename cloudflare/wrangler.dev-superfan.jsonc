@@ -1,0 +1,61 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Dev superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the
+// dev platform Worker (yonedarepo-dev-platform, dev.yonedarepo.com stack) with its own
+// ledger and a $1/day cap. Like prod's, it runs on tail events only: the hourly watch needs the platform's namespace, queue and container ids (known after the first deploy) and cloudflare/superfan/config.ts watches only yonedarepo-platform-dev. Secrets, set from stdin:
+// CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only
+// SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
+// Deployed first: the dev platform names this Worker in tail_consumers.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "SuperfanLedger",
+        "name": "LEDGER"
+      }
+    ]
+  },
+  "main": "superfan/index.ts",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "SuperfanLedger"
+      ],
+      "tag": "v1"
+    }
+  ],
+  "name": "yonedarepo-dev-superfan",
+  "observability": {
+    "enabled": true
+  },
+  "preview_urls": false,
+  "secrets_store_secrets": [
+    {
+      "binding": "MIMO_KEY",
+      "secret_name": "MiMo",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    },
+    {
+      "binding": "ZAI_KEY",
+      "secret_name": "ZAI",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "7 * * * *"
+    ]
+  },
+  "vars": {
+    "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "DAILY_CAP_MICROUSD": "1000000",
+    "MIMO_TOKEN_PLAN_REGION": "sgp",
+    "SUPERFAN_MODEL": "mimo-v2.6-flash",
+    "TELEMETRY_SOURCE": "cloudflare",
+    "WATCH_SCRIPT": "yonedarepo-dev-platform",
+    "WATCH_URL": "https://yonedarepo-dev-platform.mlong-f01.workers.dev"
+  },
+  "workers_dev": true
+}

@@ -79,7 +79,7 @@ export async function cloneMatchesApi(platform, metrics) {
 
 /** Live (not inactive) instances of the staging check container application. */
 function liveCheckContainers() {
-  const app = JSON.parse(wrangler(['containers', 'list', '--json'])).find((a) => a.name === 'yonedarepo-staging-platform-checkcontainer');
+  const app = JSON.parse(wrangler(['containers', 'list', '--json'])).find((a) => a.name === 'yonedarepo-dev-platform-checkcontainer');
   assert.ok(app, 'Staging check container application not found');
   return JSON.parse(wrangler(['containers', 'instances', app.id, '--json'])).filter((i) => i.state !== 'inactive');
 }

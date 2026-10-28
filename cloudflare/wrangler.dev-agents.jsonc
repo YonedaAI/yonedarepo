@@ -1,21 +1,21 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
-// Staging agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,
-// remote MCP). Same code as wrangler.agents.jsonc; it reaches only the staging platform, through
+// Dev agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,
+// remote MCP). Same code as wrangler.agents.jsonc; it reaches only the dev platform, through
 // the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the
-// WORKSPACES script binding. Its stores, containers and secrets are its own. App previews are
-// off: the apps Worker is bound to production, so APPS and APP_ORIGIN are unset here.
+// WORKSPACES script binding. Its stores, containers and secrets are its own. Executable app
+// previews (cloudflare/apps) are off: APPS and APP_ORIGIN are unset.
 // Only the cheap providers have keys (ZAI glm-5.3-flash at low effort, MiMo mimo-v2.6-flash);
 // Codex and Claude have no binding and fail closed with PROVIDER_MISSING. MANAGED_PROVIDER_KEYS
 // lets the owner bind those two store keys to a named account as managed connections
-// (POST /api/admin/providers/managed); no other config sets it, so production stays off.
+// (POST /api/admin/providers/managed); prod sets it too.
 // Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy
 // (POST /api/admin/workspace/allowance); it is a total, not a daily reset.
 // Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:
-// OWNER_TOKEN  staging-only owner credential (~/.config/yonedarepo/staging.env)
-// VAULT_KEY    64 hex characters, shared with yonedarepo-staging-platform
-// The apps Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
+// OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)
+// VAULT_KEY    64 hex characters, shared with yonedarepo-dev-platform
+// The prod sites Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a
 // route takes precedence over a Custom Domain, and the most specific route pattern wins. The
-// exact route keeps dev.yonedarepo.com here without touching the apps Worker (the same
+// exact route keeps dev.yonedarepo.com here without touching the sites Worker (the same
 // pattern production uses for www).
 // Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts
 // sandbox/Dockerfile (Claude Code + yoneda CLI) with Internet off; SandboxOutbound
@@ -28,7 +28,7 @@
   "artifacts": [
     {
       "binding": "ARTIFACTS",
-      "namespace": "yonedarepo-staging",
+      "namespace": "yonedarepo-dev",
       "remote": true
     }
   ],
@@ -57,8 +57,8 @@
   "d1_databases": [
     {
       "binding": "INDEX",
-      "database_id": "7e8e3f13-39c1-4778-9bec-262985dacfac",
-      "database_name": "yonedarepo-staging-agents-index",
+      "database_id": "pending",
+      "database_name": "yonedarepo-dev-agents-index",
       "migrations_dir": "migrations"
     }
   ],
@@ -75,7 +75,7 @@
       {
         "class_name": "WorkspaceAuthority",
         "name": "WORKSPACES",
-        "script_name": "yonedarepo-staging-platform"
+        "script_name": "yonedarepo-dev-platform"
       },
       {
         "class_name": "AgentSandbox",
@@ -111,7 +111,7 @@
       "tag": "v3"
     }
   ],
-  "name": "yonedarepo-staging-agents",
+  "name": "yonedarepo-dev-agents",
   "observability": {
     "enabled": true
   },
@@ -123,43 +123,43 @@
   "queues": {
     "consumers": [
       {
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "dead_letter_queue": "yonedarepo-dev-agents-dead-letter",
         "max_batch_size": 1,
         "max_retries": 3,
-        "queue": "yonedarepo-staging-agents-agent"
+        "queue": "yonedarepo-dev-agents-agent"
       },
       {
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "dead_letter_queue": "yonedarepo-dev-agents-dead-letter",
         "max_batch_size": 1,
         "max_retries": 3,
-        "queue": "yonedarepo-staging-agents-capture"
+        "queue": "yonedarepo-dev-agents-capture"
       },
       {
-        "dead_letter_queue": "yonedarepo-staging-agents-dead-letter",
+        "dead_letter_queue": "yonedarepo-dev-agents-dead-letter",
         "max_batch_size": 1,
         "max_retries": 3,
-        "queue": "yonedarepo-staging-agents-evaluate"
+        "queue": "yonedarepo-dev-agents-evaluate"
       }
     ],
     "producers": [
       {
         "binding": "AGENT_QUEUE",
-        "queue": "yonedarepo-staging-agents-agent"
+        "queue": "yonedarepo-dev-agents-agent"
       },
       {
         "binding": "CAPTURE_QUEUE",
-        "queue": "yonedarepo-staging-agents-capture"
+        "queue": "yonedarepo-dev-agents-capture"
       },
       {
         "binding": "EVALUATE_QUEUE",
-        "queue": "yonedarepo-staging-agents-evaluate"
+        "queue": "yonedarepo-dev-agents-evaluate"
       }
     ]
   },
   "r2_buckets": [
     {
       "binding": "OBJECTS",
-      "bucket_name": "yonedarepo-staging-agents-objects"
+      "bucket_name": "yonedarepo-dev-agents-objects"
     }
   ],
   "ratelimits": [
@@ -197,23 +197,23 @@
   "services": [
     {
       "binding": "SELF",
-      "service": "yonedarepo-staging-agents"
+      "service": "yonedarepo-dev-agents"
     },
     {
       "binding": "PLATFORM",
-      "service": "yonedarepo-staging-platform"
+      "service": "yonedarepo-dev-platform"
     }
   ],
   "vars": {
-    "ARTIFACTS_NAMESPACE": "yonedarepo-staging",
+    "ARTIFACTS_NAMESPACE": "yonedarepo-dev",
     "CLAUDE_MODEL": "claude-sonnet-5-5",
     "CODEX_MODEL": "gpt-5.6-luna",
     "MANAGED_PROVIDER_KEYS": "secrets-store",
     "MIMO_MODEL": "mimo-v2.6-flash",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
-    "SANDBOX_AI_GATEWAY": "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-staging",
-    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo-staging-platform.mlong-f01.workers.dev",
-    "SITE_ORIGIN": "https://yonedarepo-staging-sites.mlong-f01.workers.dev",
+    "SANDBOX_AI_GATEWAY": "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev",
+    "SANDBOX_PLATFORM_ORIGIN": "https://yonedarepo-dev-platform.mlong-f01.workers.dev",
+    "SITE_ORIGIN": "https://yonedarepo-dev-sites.mlong-f01.workers.dev",
     "STARTER_REPO": "yoneda-website-starter",
     "ZAI_MODEL": "glm-5.3-flash"
   },
