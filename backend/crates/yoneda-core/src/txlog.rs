@@ -1,6 +1,8 @@
 //! Delta-style transaction log for a repository: an append-only, hash-chained sequence of
 //! ref transitions with the paths each one touched. Snapshots are `(version → refs)`;
 //! writers commit optimistically and are checked against entries after their base version.
+//! Only ref transitions are logged: replay rebuilds refs, not commit records, checks or
+//! reviews.
 mod access;
 pub mod archive;
 mod checkpoint;

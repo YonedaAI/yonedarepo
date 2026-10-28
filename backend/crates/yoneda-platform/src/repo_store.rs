@@ -2,6 +2,17 @@
 //! transaction log, checks, reviews and landing. It knows API principals only, never
 //! agents or runs. Every operation is synchronous SQL; object-store I/O (Artifacts, R2)
 //! happens in the adapter before `repo_record_commit` and never inside a transaction.
+//!
+//! Event sourcing covers refs only: the log replays to the ref map at any version
+//! (`checkpoints`). Commit records (`record`), check results (upserted per commit, name and
+//! policy digest in `checks`) and reviews are rows keyed by commit id; replaying the log
+//! does not rebuild them.
+//!
+//! Object-store writes are never atomic with the row commit. Two mechanisms cover the gap:
+//! the staged-objects outbox (`staging`: objects held here with an outbox row in the same
+//! transaction, written to R2 afterwards and dropped only once confirmed) and readback
+//! (`record`: a commit built for the object store is recorded only after the adapter reads
+//! it back, refusing a mismatch with `READBACK_MISMATCH`).
 use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
