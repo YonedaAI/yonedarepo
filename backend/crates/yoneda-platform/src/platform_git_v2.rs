@@ -31,12 +31,12 @@ pub fn capabilities(_: &Value) -> Result<Value> {
     Ok(encoded(v2_capabilities(AGENT)))
 }
 
-/// `git_v2_request`: a request body → `{command: "ls-refs", symrefs, prefixes}` or
+/// `git_v2_request`: a request body → `{command: "ls-refs", symrefs, peel, prefixes}` or
 /// `{command: "fetch", wants, haves, shallows, depth, deepen_relative, omit_blobs, done}`.
 pub fn request(c: &Value) -> Result<Value> {
     Ok(match v2_request(&request_body(c)?)? {
         V2Command::LsRefs(r) => json!({
-            "command": "ls-refs", "symrefs": r.symrefs, "prefixes": r.prefixes,
+            "command": "ls-refs", "symrefs": r.symrefs, "peel": r.peel, "prefixes": r.prefixes,
         }),
         V2Command::Fetch(f) => json!({
             "command": "fetch", "wants": f.wants, "haves": f.haves, "shallows": f.shallows,
@@ -46,8 +46,10 @@ pub fn request(c: &Value) -> Result<Value> {
     })
 }
 
-/// `git_ls_refs`: `{refs: {name: id}, symrefs, prefixes}` → the answer: HEAD (main, when it
-/// exists) then branches and tags in name order, those under any prefix (all without one).
+/// `git_ls_refs`: `{refs: {name: id}, annotated: {name: tag id}, symrefs, peel, prefixes}`
+/// → the answer: HEAD (main, when it exists) then branches and tags in name order, those
+/// under any prefix (all without one). An annotated tag is listed as its tag object, with
+/// `peeled:<commit>` when the client asked to peel.
 pub fn ls_refs(c: &Value) -> Result<Value> {
     let prefixes: Vec<&str> = c["prefixes"]
         .as_array()
@@ -60,18 +62,22 @@ pub fn ls_refs(c: &Value) -> Result<Value> {
     for (name, id) in c["refs"].as_object().into_iter().flatten() {
         let listed = name.starts_with("refs/heads/") || name.starts_with("refs/tags/");
         if listed && wanted(name) {
-            refs.push((
-                name.clone(),
-                ObjectId::parse(id.as_str().unwrap_or_default())?,
-                None,
-            ));
+            let commit = ObjectId::parse(id.as_str().unwrap_or_default())?;
+            refs.push(match c["annotated"][name].as_str() {
+                Some(tag) => (
+                    name.clone(),
+                    ObjectId::parse(tag)?,
+                    (c["peel"] == true).then(|| format!("peeled:{commit}")),
+                ),
+                None => (name.clone(), commit, None),
+            });
         }
     }
     refs.sort();
     if let Some(main) = c["refs"][MAIN].as_str()
         && wanted("HEAD")
     {
-        let target = (c["symrefs"] == true).then(|| MAIN.to_owned());
+        let target = (c["symrefs"] == true).then(|| format!("symref-target:{MAIN}"));
         refs.insert(0, ("HEAD".into(), ObjectId::parse(main)?, target));
     }
     Ok(encoded(ls_refs_answer(&refs)))
@@ -139,6 +145,14 @@ mod tests {
         assert!(!all.contains("refs/yoneda"));
         let heads = text(ls_refs(&json!({ "refs": refs, "prefixes": ["refs/heads/"] })).unwrap());
         assert!(!heads.contains("HEAD") && !heads.contains("refs/tags/"));
+        // An annotated tag is its tag object, peeled to its commit when asked.
+        let tag = "d".repeat(40);
+        let annotated = json!({ "refs/tags/v1": tag });
+        let peeled =
+            text(ls_refs(&json!({ "refs": refs, "annotated": annotated, "peel": true })).unwrap());
+        assert!(peeled.contains(&format!("{tag} refs/tags/v1 peeled:{main}\n")));
+        let plain = text(ls_refs(&json!({ "refs": refs, "annotated": annotated })).unwrap());
+        assert!(plain.contains(&format!("{tag} refs/tags/v1\n")));
         let empty = text(ls_refs(&json!({ "refs": {}, "symrefs": true })).unwrap());
         assert_eq!(empty, "0000");
     }

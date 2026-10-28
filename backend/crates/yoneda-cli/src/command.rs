@@ -19,6 +19,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on main
+  release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
+  release list | release show <tag>   releases; a release's notes and assets (with sha256)
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
@@ -155,6 +157,21 @@ pub enum SessionCommand {
     },
 }
 
+/// `yoneda release …`: releases of existing tags, with downloadable assets.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReleaseCommand {
+    Create {
+        tag: String,
+        title: Option<String>,
+        notes: Option<String>,
+        asset: Option<String>,
+    },
+    List,
+    Show {
+        tag: String,
+    },
+}
+
 /// `yoneda change …`: change requests (a branch proposed for landing on main).
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChangeCommand {
@@ -278,6 +295,10 @@ pub enum Command {
     Change {
         target: Target,
         command: ChangeCommand,
+    },
+    Release {
+        target: Target,
+        command: ReleaseCommand,
     },
     Hook(HookEvent),
 }

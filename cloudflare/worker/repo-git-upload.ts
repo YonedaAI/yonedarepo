@@ -140,7 +140,8 @@ async function enumerate(session: UploadSession, objects: RepoObjects) {
   return step;
 }
 
-/** The pack, in pieces of about `CHUNK` bytes: header, trees (from the session), then
+/** The pack, in pieces of about `CHUNK` bytes: header, trees and tag objects (from the
+ * session), then
  * blobs and commits read in groups (`rawObjects`), then the trailer. Closes the session. */
 async function* packChunks(session: UploadSession, objects: RepoObjects, listed: Json) {
   try {
@@ -156,6 +157,8 @@ async function* packChunks(session: UploadSession, objects: RepoObjects, listed:
       }
     };
     for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
+    // Annotated tag objects travel with the walk.
+    for (const id of (listed.tags ?? []) as string[]) yield* add(session.entry('tag', id));
     for await (const group of rawObjects(objects, listed.fetch)) {
       for (const { id, kind, data } of group) {
         if (!data)

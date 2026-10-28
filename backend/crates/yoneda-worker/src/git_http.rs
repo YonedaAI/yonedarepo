@@ -162,7 +162,8 @@ pub fn git_upload_entry(
     UPLOADING
         .with_borrow_mut(|s| {
             s.with(handle, |u| {
-                u.pack_entry(kind, id, (kind != "tree").then_some(data))
+                // Trees and tag objects are held by the session.
+                u.pack_entry(kind, id, (!matches!(kind, "tree" | "tag")).then_some(data))
             })
         })
         .map_err(thrown)

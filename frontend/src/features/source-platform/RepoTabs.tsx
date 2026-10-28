@@ -7,6 +7,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Tag,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
@@ -17,6 +18,7 @@ const TABS: { id: RepoTab; label: string; Icon: typeof Code2 }[] = [
   { id: 'code', label: 'Code', Icon: Code2 },
   { id: 'history', label: 'History', Icon: History },
   { id: 'changes', label: 'Changes', Icon: GitPullRequest },
+  { id: 'releases', label: 'Releases', Icon: Tag },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];

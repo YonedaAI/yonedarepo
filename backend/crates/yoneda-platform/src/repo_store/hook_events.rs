@@ -240,6 +240,9 @@ fn entry_events<S: SqlStore>(db: &S, entry: &TxEntry) -> Result<Vec<Event>> {
             _ => "moved",
         };
         event.fields.insert("action".into(), json!(action));
+        if tag && let Some(object) = super::annotated::tag_id(db, &entry.refname)? {
+            event.fields.insert("tag_object".into(), json!(object));
+        }
         return Ok(vec![event]);
     }
     let mut land = base("land", head.clone());
