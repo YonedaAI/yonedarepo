@@ -49,7 +49,7 @@ Device login follows RFC 8628: `POST /api/v1/device/code`, approval at `/device`
 | `repo_list` | repositories the credential can use |
 | `repo_create {name, files?, policy?}` | needs `repo:admin`; `policy {approvals:0, required_checks:[]}` lands solo |
 | `repo_delete {repo, confirm}` | needs `repo:admin`; `confirm` must equal the repository name |
-| all 47 platform tools (`git_*`, `symbol_*`, from `platform_tools.json`) | each takes a required `repo` (id or exact name) |
+| all 48 platform tools (`git_*`, `symbol_*`, from `platform_tools.json`) | each takes a required `repo` (id or exact name) |
 
 The platform tools dispatch through the same operation table as REST and the per-repository MCP, with the caller's own credential: scopes and the allowlist apply exactly as they do for REST. A typical cloud-agent loop is `repo_create`, `git_commit` (server-side, nothing to push), `git_land`, then `git_grep` or `git_cat_file`.
 
