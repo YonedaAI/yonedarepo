@@ -115,6 +115,14 @@ it('clones a pushed history in a few bundle reads per directory level', async ()
   expect(count).toBe(59);
   expect(full).toBeGreaterThan(0);
   expect(full).toBeLessThanOrEqual(8);
+  // Asked for timings, the pack ends with them; log.txt's later versions went as deltas.
+  const timed = await request(repo, token, 'git-upload-pack', `${pkt('command=fetch\n')}0001${pkt(`want ${tip}\n`)}${pkt('done\n')}0000`, {
+    'git-protocol': 'version=2',
+    'x-yoneda-timing': '1',
+  });
+  const line = /yoneda-timing (.*)\n/.exec(new TextDecoder('latin1').decode(timed))?.[1] ?? '';
+  expect(line).toMatch(/entries=59 /);
+  expect(Number(/deltas=(\d+)/.exec(line)?.[1])).toBeGreaterThanOrEqual(4);
   // A partial clone: the same walk, and the commits (no files).
   const partial = await bundleReads(repo, async () => (count = await fetchV2(repo, token, [`want ${tip}`, 'filter blob:none', 'done'])));
   expect(count).toBe(42);

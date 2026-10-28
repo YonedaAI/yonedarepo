@@ -5,6 +5,7 @@
 //! decoded object reproduces its original bytes and id.
 mod commit;
 mod delta;
+mod delta_encode;
 mod diff;
 mod graph;
 mod id;
@@ -22,6 +23,7 @@ mod tree;
 
 pub use commit::{Commit, Signature};
 pub use delta::{apply_delta, delta_result_size};
+pub use delta_encode::encode_delta;
 pub use diff::{TreeChange, Walk, diff_trees};
 pub use graph::{CommitGraph, is_ancestor, merge_bases, next_generation};
 pub use id::{ObjectId, ObjectKind, hash_object};

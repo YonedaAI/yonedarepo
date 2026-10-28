@@ -43,24 +43,25 @@ fn hex(gram: &[u8; 3]) -> String {
     format!("{:02x}{:02x}{:02x}", gram[0], gram[1], gram[2])
 }
 
-/// Builds a segment from a partition's files (path, blob id, content).
-pub fn build_segment(files: &[(String, ObjectId, Vec<u8>)]) -> Segment {
+/// Builds a segment from a partition's files (path, blob id, content; `None` for a file
+/// known to be over `MAX_INDEXED_BYTES`, listed by path only as if its content were read).
+pub fn build_segment(files: &[(String, ObjectId, Option<Vec<u8>>)]) -> Segment {
     let mut segment = Segment::default();
     for (index, (path, id, data)) in files.iter().enumerate() {
-        let indexed = data.len() <= MAX_INDEXED_BYTES && !is_binary(data);
+        let content = data
+            .as_deref()
+            .filter(|d| d.len() <= MAX_INDEXED_BYTES && !is_binary(d));
         segment.files.push(SegmentFile {
             path: path.clone(),
             id: *id,
-            indexed,
+            indexed: content.is_some(),
         });
-        if indexed {
-            for gram in trigrams(&fold(data)) {
-                segment
-                    .grams
-                    .entry(hex(&gram))
-                    .or_default()
-                    .push(index as u32);
-            }
+        for gram in content.map(|d| trigrams(&fold(d))).unwrap_or_default() {
+            segment
+                .grams
+                .entry(hex(&gram))
+                .or_default()
+                .push(index as u32);
         }
     }
     segment
@@ -151,7 +152,7 @@ mod tests {
             (
                 p.to_string(),
                 hash_object(ObjectKind::Blob, t.as_bytes()),
-                t.as_bytes().to_vec(),
+                Some(t.as_bytes().to_vec()),
             )
         };
         build_segment(&[
