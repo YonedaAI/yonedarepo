@@ -51,6 +51,12 @@ fn a_change_follows_its_branch_and_lands_with_its_head() {
     token(&h, "docs", json!(["read", "write"]), json!(["docs/"]));
     token(&h, "other", json!(["read", "write"]), Value::Null);
     let first = push(&h, "fix", &root, "src/retry.rs");
+    // A branch moved with no open change answers null (a push then suggests one).
+    let other = h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"other","commit":first,"expected":null}),
+    );
+    assert_eq!(other["change"], Value::Null);
 
     // Only an existing working branch, by a whole-repository writer, once while open.
     assert_eq!(code(open(&h, AGENT, "nope")), "NOT_FOUND");
@@ -89,10 +95,7 @@ fn a_change_follows_its_branch_and_lands_with_its_head() {
         AGENT,
         json!({"op":"repo_branch_batch","updates":[{"ref":"fix","commit":second,"expected":first}]}),
     );
-    assert_eq!(
-        pushed["changes"],
-        json!([{"ref":"refs/heads/fix","change":1}])
-    );
+    assert_eq!(pushed["refs"][0]["change"], 1);
     let shown = h.ok(CI, json!({"op":"repo_change_show","number":1}));
     assert_eq!(shown["head"], json!(second));
     assert_eq!(shown["head_commit"]["commit"], json!(second));

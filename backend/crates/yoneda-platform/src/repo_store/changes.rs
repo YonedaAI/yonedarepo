@@ -278,21 +278,8 @@ pub(super) fn landed<S: SqlStore>(
     Ok(())
 }
 
-/// For a push's branch moves: each moved branch's open change number, or null (the
-/// adapter then suggests opening one).
-pub(super) fn for_moves<S: SqlStore>(db: &S, moved: &[Value]) -> Result<Vec<Value>> {
-    let mut found = Vec::new();
-    for item in moved {
-        let Some(refname) = item["ref"].as_str() else {
-            continue;
-        };
-        let Some(branch) = refname.strip_prefix("refs/heads/") else {
-            continue;
-        };
-        if item["deleted"] == true {
-            continue;
-        }
-        found.push(json!({ "ref": refname, "change": open_on(db, branch)? }));
-    }
-    Ok(found)
+/// The open change on branch `refname` (`refs/heads/…`): its number, or null.
+pub(super) fn open_on_ref<S: SqlStore>(db: &S, refname: &str) -> Result<Value> {
+    let branch = refname.strip_prefix("refs/heads/").unwrap_or(refname);
+    Ok(json!(open_on(db, branch)?))
 }
