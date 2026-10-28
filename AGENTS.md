@@ -45,6 +45,29 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 - Local tests must work without provider keys or paid inference. Live provider, container and Artifacts checks are an explicit separate command. Clearly label simulated incidents and test fixtures.
 - Before declaring completion, run the relevant gates and record exact results and outstanding blockers. Distinguish source implementation, local test, deployment, live run and user acceptance. Never invent a successful run.
 
+## Development process (owner rules)
+
+Branches and worktrees
+- All work happens in a worktree on its own `claude/<slice>` branch (`git worktree add ../yonedarepo-<slice> -b claude/<slice> dev`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree (keep the branch).
+- `dev` stays clean: no untracked or uncommitted files. Uncommitted code found anywhere goes onto its own branch as a WIP commit; never merge it unreviewed.
+- Fast worktree start: APFS-clone `target/` (`cp -cR target/debug target/wasm32-unknown-unknown <wt>/target/`), symlink `node_modules` and `frontend/node_modules`, and run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm).
+- GitHub: `origin` is the private YonedaAI/yonedarepo (`dev` deploys dev, `main` is promoted to prod with owner approval). Never push private history to the archived public MagnetonIO/yonedarepo. Run a secret scan (`gitleaks git --redact`) before pushing new history.
+
+Tests
+- Targeted tests only: the test files and crate filters for the code you changed, plus fmt/clippy/tsc/biome for touched languages. Never run full suites (whole `tests/workers`, `cargo test --workspace`) unless the lead or owner asks; never leave a suite running in the background.
+- Reproduce a defect with a failing test first. Prefer upgrading a tool or image over skipping or loosening a test; all dependencies stay on their newest versions unless blocked (say why).
+- Test data is "pure" repositories: imported open-source repos or the owner's dev test repos. Never use this codebase as test data.
+- Real coding agents (opencode, Claude Code, …) run only inside the Docker sandbox (`tools/staging/agent-sandbox*`): only the agent's clone mounted, a throwaway HOME, no host git config, `gh`, SSH or credentials, a fail-closed cwd/origin check, and a before/after check that the host checkout and every remote are unchanged. Never run them on the host.
+- Performance work: write the request budget first, put new paths behind a switch, bench with the 1,000-writer burst and real-history repos, at least 3 runs, server-side timing, min/median/max.
+
+Environments and deploys
+- Exactly two environments: dev (`yonedarepo-dev-*`, dev.yonedarepo.com) and prod (`yonedarepo-prod-*`, yonedarepo.com), defined in `infra/envs/{dev,prod}.json`.
+- Deploy dev from the local checkout with `cargo xtask deploy --env dev`; don't push to GitHub just to deploy. Load credentials with `set -a; . <file>; set +a` and never print them.
+- Heavy tests (bursts, big pushes, compaction, full kit, real agents) run on dev only. Prod gets one deploy per wave, only when dev is fully green and the owner says "ship", followed by the small smoke (frontend, sign-in, CLI items 12–17, browser item, one model check).
+- Before a container rollout, warn the owner and re-check for active runs. Local Docker builds are fine (native arm64 for local tests); remove superseded and test images afterwards and never touch other projects' volumes.
+- Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, reviewer agents, supervisors) into the product.
+- Status and task lists contain only what a working dev and prod need; no governance or nice-to-have rows.
+
 ## References
 
 Use these as guidance, adapted to the actual repository rather than copied wholesale:
