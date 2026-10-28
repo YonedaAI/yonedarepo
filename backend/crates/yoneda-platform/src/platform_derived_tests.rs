@@ -130,3 +130,19 @@ fn files_known_too_large_are_listed_unread_with_the_same_segment() {
     assert_eq!(read["segment"]["files"][0]["indexed"], false);
     assert_eq!(read["segment"]["files"][0]["skipped"], "larger than 4 MiB");
 }
+
+#[test]
+fn blame_answers_cap_each_line_at_500_characters() {
+    let content = format!("{}\nshort\n", "é".repeat(2000));
+    let blob = hash_object(ObjectKind::Blob, content.as_bytes());
+    let commit = ObjectId::from_bytes([7; 20]);
+    let answer = compute(json!({
+        "op": "blame",
+        "versions": [{ "commit": commit, "blob": blob }],
+        "blobs": { blob.hex(): STANDARD.encode(&content) },
+    }))
+    .unwrap();
+    assert_eq!(answer["lines"][0]["text"], "é".repeat(500));
+    assert_eq!(answer["lines"][1]["text"], "short");
+    assert_eq!(answer["lines"][1]["line"], 2);
+}
