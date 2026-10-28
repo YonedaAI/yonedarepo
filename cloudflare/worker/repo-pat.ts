@@ -2,6 +2,7 @@
 // The account's WorkspaceAuthority holds each token's digest, scopes, allowlist and expiry
 // and is asked on every request (strict: no cache), through a D1 lookup from digest to
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
+import { type OrgAccess, orgAccess } from './org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';
 import type { Env } from './types';
@@ -24,6 +25,10 @@ export type PatGrant = {
   scopes: PatScope[];
   /** Repository allowlist; `null`: every repository of the account. */
   repos: string[] | null;
+  /** The one organization whose repositories the token is limited to; `null`: none. */
+  org: string | null;
+  /** The account's organizations as their authorities answered for this request. */
+  orgs?: OrgAccess;
 };
 export type Pat = { _pat: PatGrant };
 
@@ -55,12 +60,18 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
     await env.INDEX.prepare('DELETE FROM platform_tokens WHERE token_hash=?').bind(tokenHash).run();
     return null;
   }
+  const org: string | null = checked.org ?? null;
+  // An org-limited token acts only through that org.
+  const hints: string[] = (checked.orgs ?? []).filter((o: string) => !org || o === org);
+  const orgs = await orgAccess(env, row.workspace, hints);
   return {
     workspace: row.workspace,
     principal: `user:${row.workspace}`,
     id: checked.id,
     scopes: checked.scopes,
     repos: checked.repos ?? null,
+    org,
+    ...(orgs && { orgs }),
   };
 }
 
@@ -77,6 +88,7 @@ export async function issuePat(env: Env, account: string, request: Json) {
     token_hash: tokenHash,
     scopes: request.scopes,
     repos: request.repos ?? null,
+    org: request.org ?? null,
     expires_days: request.expires_days ?? 30,
   });
   await env.INDEX.prepare(
@@ -90,6 +102,7 @@ export async function issuePat(env: Env, account: string, request: Json) {
     name: created.name,
     scopes: created.scopes,
     repos: created.repos,
+    org: created.org ?? null,
     expires_at: created.expires_at,
   };
 }

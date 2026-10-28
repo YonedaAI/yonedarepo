@@ -38,6 +38,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                 .into_iter()
                 .next()
                 .ok_or_else(|| Error::new("UNAUTHORIZED", "Unknown, expired or revoked token"))?;
+            let mut checked = public(&row)?;
+            checked["orgs"] = json!(super::orgs::hints(db)?);
             if row["last_used_at"]
                 .as_i64()
                 .is_none_or(|at| at + USE_RESOLUTION <= now)
@@ -47,7 +49,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
                     &[json!(now), row["id"].clone()],
                 )?;
             }
-            public(&row)
+            Ok(checked)
         }
         "pat_revoke" => {
             account(db)?;
@@ -70,7 +72,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
     }
 }
 
-/// What a token grants, validated: `{scopes, repos, expires_days}` (repos `null`: all).
+/// What a token grants, validated: `{scopes, repos, org, expires_days}` (repos `null`: all;
+/// org `null`: not limited to one organization's repositories).
 pub(super) fn grant(c: &Value) -> Result<Value> {
     let scopes: Vec<String> = serde_json::from_value(c["scopes"].clone())
         .map_err(|_| bad("scopes must be a list of repo:* scopes"))?;
@@ -107,11 +110,16 @@ pub(super) fn grant(c: &Value) -> Result<Value> {
         }
         _ => return Err(bad("repos must be a list of repository ids")),
     };
+    let org = match &c["org"] {
+        Value::Null => Value::Null,
+        Value::String(name) => json!(super::orgs::org_name(name)?),
+        _ => return Err(bad("org must be an organization name, or null")),
+    };
     let days = number(c, "expires_days")?;
     if !(1..=90).contains(&days) {
         return Err(bad("expires_days must be 1-90"));
     }
-    Ok(json!({"scopes":scopes,"repos":repos,"expires_days":days}))
+    Ok(json!({"scopes":scopes,"repos":repos,"org":org,"expires_days":days}))
 }
 
 fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
@@ -139,13 +147,14 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let expires_at = now + grant["expires_days"].as_i64().unwrap_or(30) * DAY;
     db.query(
-        "INSERT INTO account_tokens(id,name,token_hash,scopes,repos,created_at,expires_at) VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO account_tokens(id,name,token_hash,scopes,repos,org,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
         &[
             json!(id),
             json!(name),
             json!(hash(c, "token_hash", &[64])?),
             json!(grant["scopes"].to_string()),
             json!((!grant["repos"].is_null()).then(|| grant["repos"].to_string())),
+            grant["org"].clone(),
             json!(now),
             json!(expires_at),
         ],
@@ -154,7 +163,7 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         db,
         "pat.created",
         now,
-        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"]}),
+        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"],"org":grant["org"]}),
     )?;
     let row = db.query("SELECT * FROM account_tokens WHERE id=?", &[json!(id)])?;
     public(row.first().ok_or_else(|| bad("Token was not stored"))?)
@@ -179,6 +188,7 @@ fn public(row: &Value) -> Result<Value> {
     };
     Ok(json!({
         "id": row["id"], "name": row["name"], "scopes": parse("scopes")?, "repos": parse("repos")?,
+        "org": row["org"],
         "created_at": row["created_at"], "expires_at": row["expires_at"],
         "last_used_at": row["last_used_at"],
     }))

@@ -8,6 +8,7 @@
 // revoked token or removed member is refused everywhere within ACCESS_MS of the change's
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
 import { rpcValue } from './durable';
+import { teamEntries } from './org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
@@ -18,7 +19,7 @@ import type { Env } from './types';
 
 /** The oldest copy of the head (and its access snapshot) an isolate decides on. Past it,
  * the isolate asks the holder again, which answers from memory. */
-const ACCESS_MS = 1000;
+export const ACCESS_MS = 1000;
 /** Per repository: main's head (small, changes per landing) and the access snapshot
  * (live token digests and members' roles; changes only with access, versioned). */
 const heads = new Map<string, { head: Json; at: number }>();
@@ -52,10 +53,11 @@ function holder(env: Env, repo: string): Holder | null {
   return typeof stub.head === 'function' ? (stub as Holder) : null;
 }
 
-/** The account a session or personal token acts for (a member, if not the owner). */
-function accountOf(credentials: Json): string | null {
-  const account = credentials._session?.workspace ?? credentials._pat?.workspace;
-  return typeof account === 'string' ? account : null;
+/** The member entries a session or personal token acts by: its account's and its teams'. */
+function entriesOf(credentials: Json): string[] {
+  const holder = credentials._session ?? credentials._pat;
+  if (typeof holder?.workspace !== 'string') return [];
+  return [holder.workspace, ...teamEntries(holder.orgs)];
 }
 
 /** The digest the authority files a repository token under (as `auth.rs` computes it). */
@@ -137,7 +139,7 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   return access;
 }
 
-/** Main's published head for `credentials`, carrying only their token or member row. */
+/** Main's published head for `credentials`, carrying only their token or member rows. */
 async function headFor(
   env: Env,
   repo: string,
@@ -150,9 +152,9 @@ async function headFor(
   ]);
   const access = await accessFor(env, repo, head);
   const token = digest && (access.tokens as Json[]).find((t) => t.digest === digest);
-  const account = accountOf(credentials);
-  const member = account && ((access.members ?? []) as Json[]).find((m) => m.account === account);
-  return { ...head, tokens: token ? [token] : [], members: member ? [member] : [] };
+  const entries = entriesOf(credentials);
+  const members = ((access.members ?? []) as Json[]).filter((m) => entries.includes(m.account));
+  return { ...head, tokens: token ? [token] : [], members };
 }
 
 /** This isolate built `commit`, writing `paths`: its landing then holds back only begins

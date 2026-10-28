@@ -38,6 +38,10 @@ const managementTools: Json[] = [
       type: 'object',
       properties: {
         name: { type: 'string', pattern: '^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$' },
+        owner: {
+          type: 'string',
+          description: 'An organization to own the repository (you must be one of its owners)',
+        },
         files: { type: 'array', items: file, maxItems: 10000 },
         policy: {
           type: 'object',
@@ -69,6 +73,93 @@ const managementTools: Json[] = [
   },
 ];
 
+const orgArg = { type: 'string', description: 'Organization name' };
+/** Organization tools: name, description, required arguments (all strings) and the REST call. */
+const orgTools: [string, string, string[], (a: Json) => [string, string, Json?]][] = [
+  [
+    'org_list',
+    'Organizations you belong to, with your role (owner or member).',
+    [],
+    () => ['GET', '/orgs'],
+  ],
+  [
+    'org_create',
+    'Create an organization (names share the account namespace); you become its owner.',
+    ['name'],
+    (a) => ['POST', '/orgs', { name: a.name }],
+  ],
+  [
+    'org_show',
+    'An organization: its members with roles, and its teams with their members. Members only.',
+    ['org'],
+    (a) => ['GET', `/orgs/${enc(a.org)}`],
+  ],
+  [
+    'org_repos',
+    "The organization's repositories you can see (all of them for an owner).",
+    ['org'],
+    (a) => ['GET', `/orgs/${enc(a.org)}/repos`],
+  ],
+  [
+    'org_member_add',
+    'Add an existing account to the organization, or change its role (owner or member). Owners only.',
+    ['org', 'account', 'role'],
+    (a) => ['POST', `/orgs/${enc(a.org)}/members`, { account: a.account, role: a.role }],
+  ],
+  [
+    'org_member_remove',
+    'Remove a member (or leave yourself); their teams go too and their repository access through them ends within a second. The last owner stays.',
+    ['org', 'account'],
+    (a) => ['DELETE', `/orgs/${enc(a.org)}/members/${enc(a.account)}`],
+  ],
+  [
+    'org_team_create',
+    'Create a team. Grant it a repository role with git_member_add account "team:<org>/<team>". Owners only.',
+    ['org', 'team'],
+    (a) => ['POST', `/orgs/${enc(a.org)}/teams`, { name: a.team }],
+  ],
+  [
+    'org_team_delete',
+    'Delete a team; access through it ends within a second. Owners only.',
+    ['org', 'team'],
+    (a) => ['DELETE', `/orgs/${enc(a.org)}/teams/${enc(a.team)}`],
+  ],
+  [
+    'org_team_member_add',
+    'Add an organization member to a team. Owners only.',
+    ['org', 'team', 'account'],
+    (a) => ['POST', `/orgs/${enc(a.org)}/teams/${enc(a.team)}/members`, { account: a.account }],
+  ],
+  [
+    'org_team_member_remove',
+    'Remove someone from a team; their access through it ends within a second. Owners only.',
+    ['org', 'team', 'account'],
+    (a) => ['DELETE', `/orgs/${enc(a.org)}/teams/${enc(a.team)}/members/${enc(a.account)}`],
+  ],
+];
+function enc(value: unknown) {
+  return encodeURIComponent(String(value ?? ''));
+}
+const orgToolSchemas: Json[] = orgTools.map(([name, description, required]) => ({
+  name,
+  description,
+  inputSchema: {
+    type: 'object',
+    properties: Object.fromEntries(
+      required.map((k) => [
+        k,
+        k === 'org'
+          ? orgArg
+          : k === 'role'
+            ? { type: 'string', enum: ['owner', 'member'] }
+            : { type: 'string' },
+      ]),
+    ),
+    required,
+    additionalProperties: false,
+  },
+}));
+
 /** Every platform tool with `repo` added (the shared schemas are copied, never mutated). */
 const repoTools: Json[] = platformTools.map((tool: Json) => ({
   ...tool,
@@ -79,11 +170,11 @@ const repoTools: Json[] = platformTools.map((tool: Json) => ({
   },
 }));
 
-export const accountTools: Json[] = [...managementTools, ...repoTools];
+export const accountTools: Json[] = [...managementTools, ...orgToolSchemas, ...repoTools];
 
 export function accountMcp(req: Request, env: Env, auth: Credentials, route: Route) {
   const origin = new URL(req.url).origin;
-  const rest = (method: 'GET' | 'POST' | 'DELETE', path: string, body?: Json) => {
+  const rest = (method: string, path: string, body?: Json) => {
     const url = new URL(`/api/v1${path}`, origin);
     const init: RequestInit = { method, headers: { 'content-type': 'application/json' } };
     if (body !== undefined) init.body = JSON.stringify(body);
@@ -109,6 +200,8 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
     tools: accountTools,
     call: async (name, args) => {
       if (name === 'repo_list') return rest('GET', '/repos');
+      const org = orgTools.find(([tool]) => tool === name);
+      if (org) return rest(...org[3](args));
       if (name === 'repo_create') return rest('POST', '/repos', args);
       if (name === 'repo_delete') {
         const id = await resolve(args.repo);
