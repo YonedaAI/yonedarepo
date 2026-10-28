@@ -3,13 +3,13 @@
 // upload-pack answer carries Server-Timing (the walk, before the pack) and ends with a
 // `remote: yoneda-timing ...` line (entries, deltas, bytes read and sent, waits while the
 // pack streamed); the wall time and the pack bytes the client received are measured here.
-// Search and blame print their Server-Timing. Read only: a read-scoped repository token is
+// Search, blame and the overview (the human view) print their Server-Timing. Read only: a read-scoped repository token is
 // minted for the run and deleted afterwards; it reaches Git through the environment only.
 //
 // Usage (credentials from the environment only):
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
 //   node tools/staging/clone-probe.mjs --repo <id> [--runs 3] [--ref main] [--query permission]
-//     [--path README.md] [--only clone,partial,shallow,deepen,search,blame]
+//     [--path README.md] [--only clone,partial,shallow,deepen,search,blame,overview]
 //     [--reference <public clone URL>] [--origin <front>] [--api <platform host>]
 // `--reference` clones the same history from elsewhere (e.g. GitHub) as the client's
 // bandwidth floor.
@@ -28,7 +28,7 @@ const { values } = parseArgs({
     ref: { type: 'string', default: 'main' },
     query: { type: 'string', default: 'permission' },
     path: { type: 'string', default: 'README.md' },
-    only: { type: 'string', default: 'clone,partial,shallow,deepen,search,blame' },
+    only: { type: 'string', default: 'clone,partial,shallow,deepen,search,blame,overview' },
     reference: { type: 'string' },
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
@@ -126,12 +126,13 @@ try {
     const api = new Session(`${values.api}/api/v1`, { bearer: token });
     const rest = async (op, path) => {
       const r = await api.raw('GET', `/repos/${values.repo}${path}`);
-      const size = r.body?.results?.length ?? r.body?.lines?.length ?? r.body?.error?.code ?? '';
+      const size = r.body?.results?.length ?? r.body?.lines?.length ?? r.body?.files_analyzed ?? r.body?.error?.code ?? '';
       console.log(`\n## ${op} (run ${run}): ${Math.round(r.ms)} ms, ${r.status} (${size})\n  ${r.headers.get('server-timing') ?? ''}`);
     };
     const query = encodeURIComponent(values.query);
     if (only.has('search')) await rest(`search "${values.query}"`, `/search?q=${query}&ref=${values.ref}`);
     if (only.has('blame')) await rest(`blame ${values.path}`, `/blame?path=${encodeURIComponent(values.path)}&ref=${values.ref}`);
+    if (only.has('overview')) await rest('overview', `/views/human?path=&ref=${values.ref}`);
     for (const what of ['full', 'partial', 'shallow', 'reference']) rmSync(at(what), { recursive: true, force: true });
   }
 } finally {
