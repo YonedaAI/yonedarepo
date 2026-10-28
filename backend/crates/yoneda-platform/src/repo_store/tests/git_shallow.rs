@@ -144,18 +144,56 @@ fn client_shallows_bound_what_it_holds() {
 }
 
 #[test]
-fn a_version_2_fetch_may_want_objects_that_are_not_commits() {
+fn a_version_2_fetch_may_want_only_blobs_a_branch_or_tag_reaches() {
     let (h, c, _) = chain();
-    let blob = "e".repeat(40);
-    let refused = h.run(
-        AGENT,
-        json!({"op":"repo_git_walk","wants":[blob],"haves":[]}),
+    let walk = |wants: Value| {
+        h.run(
+            AGENT,
+            json!({"op":"repo_git_walk","wants":wants,"haves":[],"objects":true}),
+        )
+    };
+    // The seed's files are on main (introduced by its root).
+    let seeded: Vec<String> = h.ok(OWNER, json!({"op":"repo_commit","commit":c[0]}))["paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["new_blob"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(seeded.len(), 2);
+    let served = walk(json!(seeded)).unwrap();
+    assert_eq!(served["objects"], json!(seeded));
+    assert_eq!(sent(&served), Vec::<String>::new());
+    // An id no recorded commit introduces is not ours, nor a commit only a refused or
+    // deleted branch held (c1..c5 were recorded but never on a ref).
+    let err = walk(json!(["e".repeat(40)])).unwrap_err();
+    assert_eq!(err.code, "NOT_FOUND");
+    assert!(err.message.contains("not our ref"), "{}", err.message);
+    let commit = |parent: &str, path: &str, text: &str| {
+        h.commit(AGENT, Some(parent), 1, json!([file(path, text)]), json!([]))
+            .unwrap()
+    };
+    let hidden = commit(&c[0], "hidden.txt", "never on a ref\n");
+    let blob = |commit: &str| {
+        h.ok(OWNER, json!({"op":"repo_commit","commit":commit}))["paths"][0]["new_blob"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let unreached = blob(&hidden);
+    assert_eq!(code(walk(json!([unreached]))), "NOT_FOUND");
+    // Reached through a branch: served; once the branch is deleted, not.
+    let batch = |updates: Value| h.ok(AGENT, json!({"op":"repo_branch_batch","updates":updates}));
+    batch(json!([{ "ref": "topic", "commit": hidden, "expected": null }]));
+    assert_eq!(
+        walk(json!([unreached])).unwrap()["objects"],
+        json!([unreached])
     );
-    assert_eq!(code(refused), "NOT_FOUND");
-    let lazy = h.ok(
+    batch(json!([{ "ref": "topic", "commit": null, "expected": hidden }]));
+    assert_eq!(code(walk(json!([unreached]))), "NOT_FOUND");
+    // A version 0 fetch still wants commits only.
+    let v0 = h.run(
         AGENT,
-        json!({"op":"repo_git_walk","wants":[blob, c[1]],"haves":[c[1]],"objects":true}),
+        json!({"op":"repo_git_walk","wants":[seeded[0]],"haves":[]}),
     );
-    assert_eq!(lazy["objects"], json!([blob]));
-    assert_eq!(sent(&lazy), Vec::<String>::new());
+    assert_eq!(code(v0), "NOT_FOUND");
 }

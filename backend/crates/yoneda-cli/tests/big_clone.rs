@@ -2,12 +2,15 @@
 //! version 2): a partial clone (`--filter=blob:none`) receives commits and trees only and
 //! fetches the files a checkout needs lazily, by id; a shallow clone (`--depth 1`) deepens
 //! (`git fetch --deepen 5`) and unshallows; every result passes `git fsck`, and a
-//! version 0 clone still works. Run with `cargo test -p yoneda-cli --test big_clone --
+//! version 0 clone still works. A blob wanted by id is served only when a branch or tag
+//! reaches it: never from a push refused for a secret or a read conflict, or a deleted
+//! branch. Run with `cargo test -p yoneda-cli --test big_clone --
 //! --include-ignored --nocapture`; it needs the workspace's node modules (wrangler) and
 //! the Rust Wasm worker build.
 #[allow(dead_code)] // shared with the remote helper tests
 mod support;
 
+use base64::Engine;
 use std::path::Path;
 use support::{Client, Platform, TestResult};
 
@@ -38,6 +41,9 @@ fn client(platform: &Platform, name: &str, token: &str) -> TestResult<Client> {
     };
     client.git(&home, &["config", "--global", "credential.helper", "store"])?;
     client.git(&home, &["config", "--global", "init.defaultBranch", "main"])?;
+    // No background repack after a fetch: it races `git fsck` on the packs.
+    client.git(&home, &["config", "--global", "maintenance.auto", "false"])?;
+    client.git(&home, &["config", "--global", "gc.auto", "0"])?;
     Ok(client)
 }
 
@@ -202,5 +208,120 @@ fn partial_and_shallow_clones_over_protocol_v2() -> TestResult {
     )?;
     let both = home.join("both");
     check(count(&reader, &both)? == 1, "partial shallow history")?;
-    fsck(&reader, &both, "partial shallow")
+    fsck(&reader, &both, "partial shallow")?;
+    unreachable_blobs_are_not_served(&platform)
+}
+
+fn pkt(line: &str) -> String {
+    format!("{:04x}{line}", line.len() + 4)
+}
+
+/// A raw protocol v2 fetch of `id` (as a partial clone's lazy fetch asks): the answer.
+fn fetch_by_id(platform: &Platform, repo: &str, token: &str, id: &str) -> TestResult<String> {
+    let body = format!(
+        "{}0001{}{}{}0000",
+        pkt("command=fetch\n"),
+        pkt(&format!("want {id}\n")),
+        pkt("filter blob:none\n"),
+        pkt("done\n")
+    );
+    let auth = base64::engine::general_purpose::STANDARD.encode(format!("git:{token}"));
+    let url = format!("{}/git/{repo}.git/git-upload-pack", platform.origin);
+    platform.rt.block_on(async {
+        let response = reqwest::Client::new()
+            .post(url)
+            .header("authorization", format!("Basic {auth}"))
+            .header("git-protocol", "version=2")
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let bytes = response.bytes().await.map_err(|e| e.to_string())?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })
+}
+
+fn refused(answer: &str, what: &str) -> TestResult {
+    check(
+        !answer.contains("PACK") && answer.contains("not our ref"),
+        &format!("{what} was served: {}", &answer[..answer.len().min(200)]),
+    )
+}
+
+/// Blobs a branch or tag does not reach stay unserved, whatever the store holds: a push
+/// refused for a secret (scanned before anything is stored), one refused at the ref move
+/// for a stale declared read (its commit and blobs are recorded), and a deleted branch.
+fn unreachable_blobs_are_not_served(platform: &Platform) -> TestResult {
+    let (repo, token) = platform.repo(&[("config.json", "{\"v\":1}\n"), ("app.js", "a\n")])?;
+    let url = format!("{}/git/{repo}.git", platform.origin);
+    let (a, b) = (
+        client(platform, "hidden-a", &token)?,
+        client(platform, "hidden-b", &token)?,
+    );
+    a.git(&a.home, &["clone", "-q", &url, "w"])?;
+    b.git(&b.home, &["clone", "-q", &url, "w"])?;
+    let (da, db) = (a.home.join("w"), b.home.join("w"));
+    let blob =
+        |c: &Client, dir: &Path, path: &str| c.git(dir, &["rev-parse", &format!("HEAD:{path}")]);
+    // Reachable: main's file is served by id.
+    let served = fetch_by_id(platform, &repo, &token, &blob(&a, &da, "app.js")?)?;
+    check(served.contains("PACK"), "main's blob by id")?;
+
+    let fake = ["gh", "p_"].concat()
+        + &"aB3dE5gH7jK9mN1pQ"
+            .chars()
+            .cycle()
+            .take(36)
+            .collect::<String>();
+    a.commit(
+        &da,
+        "leak",
+        &[("env.ts", &format!("const t = \"{fake}\";\n"))],
+    )?;
+    let leak = blob(&a, &da, "env.ts")?;
+    let out = a.git_output(&da, &["push", "origin", "HEAD:refs/heads/leak"])?;
+    check(!out.status.success(), "secret push refused")?;
+    refused(
+        &fetch_by_id(platform, &repo, &token, &leak)?,
+        "a secret-refused blob",
+    )?;
+    a.git(&da, &["reset", "-q", "--hard", "HEAD~1"])?;
+
+    a.commit(
+        &da,
+        "app relies on config v1",
+        &[("app.js", "only in a refused push\n")],
+    )?;
+    let stale = blob(&a, &da, "app.js")?;
+    b.commit(&db, "config v2", &[("config.json", "{\"v\":2}\n")])?;
+    b.git(&db, &["push", "-q", "origin", "main"])?;
+    let out = a.git_output(
+        &da,
+        &["push", "-o", "yoneda.reads=config.json", "origin", "main"],
+    )?;
+    check(!out.status.success(), "stale read refused")?;
+    let mine = a.git(&da, &["rev-parse", "HEAD"])?;
+    check(
+        platform
+            .owner_call("GET", &format!("/repos/{repo}/commits/{mine}"), None)
+            .is_ok(),
+        "the refused push's commit is recorded",
+    )?;
+    refused(
+        &fetch_by_id(platform, &repo, &token, &stale)?,
+        "a blob of a refused ref move",
+    )?;
+
+    b.commit(&db, "tmp", &[("tmp.txt", "only on a deleted branch\n")])?;
+    let gone = blob(&b, &db, "tmp.txt")?;
+    b.git(&db, &["push", "-q", "origin", "HEAD:refs/heads/tmp"])?;
+    check(
+        fetch_by_id(platform, &repo, &token, &gone)?.contains("PACK"),
+        "a branch's blob is served",
+    )?;
+    b.git(&db, &["push", "-q", "origin", ":refs/heads/tmp"])?;
+    refused(
+        &fetch_by_id(platform, &repo, &token, &gone)?,
+        "a deleted branch's blob",
+    )
 }
