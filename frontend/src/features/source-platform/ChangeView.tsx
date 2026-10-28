@@ -12,6 +12,7 @@ import {
   groupComments,
   who,
 } from './changeModel';
+import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -109,6 +110,7 @@ export function ChangeView({
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
       <ChangeGates repo={repo} change={c} onChanged={refresh} />
+      {c.status === 'open' && c.head && <RebaseButton repo={repo} change={c} onChanged={refresh} />}
       <section aria-labelledby="conversation-heading">
         <h3 id="conversation-heading">Conversation</h3>
         {items.length === 0 && <p className="source-empty">No comments yet.</p>}

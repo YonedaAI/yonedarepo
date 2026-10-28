@@ -42,6 +42,7 @@ mod projection;
 mod projection_plan;
 mod pushed;
 mod reads;
+mod rebase;
 mod record;
 mod reviewers;
 mod rows;
@@ -88,6 +89,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         }
         "repo_prepare_commit"
         | "repo_record_commit"
+        | "repo_rebase_plan"
         | "repo_branch_set"
         | "repo_branch_batch"
         | "repo_begin_commit" => actor.require("write"),
@@ -186,11 +188,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     grants::precheck(db, &op, c, &actor.grant)?;
     let principal = actor.principal.as_str();
     let result = match op.as_str() {
-        "repo_status" => reads::status(db, &settings).map(|mut status| {
-            status["viewer"] = json!({ "principal": principal, "owner": actor.owner,
-                "role": actor.member.map(members::Role::as_str) });
-            status
-        }),
+        "repo_status" => reads::status(db, &settings, &actor),
         "repo_clone_access" => Ok(json!({ "object_store": settings.object_store })),
         "repo_refs" => reads::refs(db, c),
         "repo_snapshot" => reads::snapshot(db, c),
@@ -246,6 +244,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_objects_stored" => store_lineage::stored_op(db, c),
         "repo_review" => record::review(db, c, principal),
         "repo_branch_set" => branches::set(db, c, principal),
+        "repo_rebase_plan" => rebase::plan(db, c),
         "repo_branch_batch" => branches::batch(db, c, principal),
         "repo_tag_create" => tags::create(db, c, principal),
         // Git over HTTPS: each checks its own scope (read to fetch, write to push).

@@ -46,11 +46,14 @@ export type Push = {
   at: number;
 };
 
+type DiffEnd = { commit: string; tree: string };
+
 export type ChangeDetail = Change & {
   head_commit: CommitDetail | null;
   comments: ChangeComment[];
   timeline: Push[];
-  diff: { base: string; head: string; changes: DiffChange[] } | null;
+  /** From the merge base with main (null: unrelated histories) to the head, as git_diff answers. */
+  diff: { base: DiffEnd | null; head: DiffEnd; changes: DiffChange[] } | null;
 };
 
 /** Where a comment on a line sits: deleted lines on the base file, others on the head file. */
