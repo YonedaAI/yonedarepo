@@ -112,7 +112,7 @@
         "`cloudflared access ssh` connects without a login); the cron below keeps it running (about $7 a",
         "month on basic). connect: inbound TCP to this Worker (Spectrum, private beta). off: no container.",
         "Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY",
-        "(base64 of OpenSSH host key files, generated once and kept), SSH_TUNNEL_TOKEN (the tunnel's token)."
+        "(base64 of OpenSSH host key files, generated once and kept). SSH_TUNNEL_TOKEN joins the secrets when prod turns the tunnel on."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -120,8 +120,7 @@
         "LFS_S3_SECRET_ACCESS_KEY",
         "SSH_GATEWAY_SECRET",
         "SSH_HOST_ED25519_KEY",
-        "SSH_HOST_ECDSA_KEY",
-        "SSH_TUNNEL_TOKEN"
+        "SSH_HOST_ECDSA_KEY"
       ],
       "health": "yonedarepo-platform",
       "config": {
