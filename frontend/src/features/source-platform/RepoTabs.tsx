@@ -1,5 +1,6 @@
 // The repository's tabs and status chips. Left and Right (Home, End) move between tabs.
 import {
+  Bot,
   Code2,
   GitCommitVertical,
   GitPullRequest,
@@ -18,6 +19,7 @@ const TABS: { id: RepoTab; label: string; Icon: typeof Code2 }[] = [
   { id: 'code', label: 'Code', Icon: Code2 },
   { id: 'history', label: 'History', Icon: History },
   { id: 'changes', label: 'Changes', Icon: GitPullRequest },
+  { id: 'agents', label: 'Agents', Icon: Bot },
   { id: 'releases', label: 'Releases', Icon: Tag },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },

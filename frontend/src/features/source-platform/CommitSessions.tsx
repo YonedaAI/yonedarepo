@@ -1,24 +1,28 @@
+import { linkTo, type Navigate } from '../shell/useRoute';
+import { recorder, type SessionRecord } from './agentModel';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
 
-type Session = {
-  id: number;
-  cli: string;
-  model: string | null;
-  summary: string;
-  transcript_ref: string | null;
-  read_set_digest: string | null;
-  recorded_by: string;
-  at: number;
-};
-
 /** The coding sessions that produced a commit (CLI, model, summary), as their pushers
- * recorded them. Transcripts are not on the platform; a reference names where one is. */
-export function CommitSessions({ repo, commit }: { repo: string; commit: string }) {
-  const loaded = useSource<{ sessions: Session[] }>(`/repos/${repo}/commits/${commit}/sessions`);
+ * recorded them, each linking to its session page. Transcripts are not on the platform; a
+ * reference names where one is. */
+export function CommitSessions({
+  repo,
+  commit,
+  navigate,
+  heading = 'Sessions',
+}: {
+  repo: string;
+  commit: string;
+  navigate: Navigate;
+  heading?: string;
+}) {
+  const loaded = useSource<{ sessions: Omit<SessionRecord, 'commit' | 'subject' | 'reads'>[] }>(
+    `/repos/${repo}/commits/${commit}/sessions`,
+  );
   return (
-    <section aria-label="Sessions">
-      <h3>Sessions</h3>
+    <section aria-label={heading}>
+      <h3>{heading}</h3>
       {loaded.loading && !loaded.data && <p className="source-empty">Loading sessions…</p>}
       {loaded.error && <p className="source-empty">Sessions unavailable: {loaded.error}</p>}
       {loaded.data?.sessions.length === 0 && (
@@ -27,8 +31,14 @@ export function CommitSessions({ repo, commit }: { repo: string; commit: string 
       <ul>
         {loaded.data?.sessions.map((s) => (
           <li key={s.id}>
-            <strong>{s.cli}</strong>
-            {s.model && ` · ${s.model}`} · {s.recorded_by} · {when(s.at)}
+            <a
+              className="agent-session-ref"
+              {...linkTo({ view: 'session', repo, id: s.id }, navigate)}
+            >
+              <strong>{s.cli}</strong>
+              {s.model && ` · ${s.model}`}
+            </a>{' '}
+            · {recorder(s.recorded_by)} · {when(s.at)}
             <p className="source-session-summary">{s.summary}</p>
             {s.transcript_ref && (
               <p className="source-meta">
