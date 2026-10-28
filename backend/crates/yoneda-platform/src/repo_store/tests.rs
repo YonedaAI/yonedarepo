@@ -1592,6 +1592,7 @@ mod check_release;
 mod checkpoints;
 mod compaction;
 mod compaction_writes;
+mod contract_paths;
 mod forks;
 mod git_shallow;
 mod hooks;

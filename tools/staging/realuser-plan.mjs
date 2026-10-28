@@ -106,6 +106,29 @@ export async function timedSteps(metrics, list, scrub = String) {
   if (metrics.findings.length) throw new Error(metrics.findings.join('; '));
 }
 
+/**
+ * Problems and warnings for a repository's protected refs (`refs`) after the run: `was` and
+ * `now` map each to its commit (absent and null are the same), `entries` are the log entries
+ * since the snapshot. A move this run's tokens made (`token:realuser-<ts>-*`) or that the log
+ * does not explain fails the run; one by anyone else (the owner committing meanwhile) is a
+ * warning naming who.
+ */
+export function protectedMoves({ repo, refs, was, now, entries = [], ts }) {
+  const problems = [];
+  const warnings = [];
+  for (const ref of refs) {
+    const [before, after] = [was[ref] ?? null, now[ref] ?? null];
+    if (before === after) continue;
+    const moves = entries.filter((e) => e.refname === ref);
+    const actors = [...new Set(moves.map((e) => String(e.actor)))];
+    const line = `${repo} ${ref} moved during the run: ${before} -> ${after}`;
+    if (!moves.length) problems.push(`${line} (no log entry explains it)`);
+    else if (actors.some((a) => a.startsWith(`token:realuser-${ts}-`))) problems.push(`${line} by this run (${actors.join(', ')})`);
+    else warnings.push(`${line} by ${actors.join(', ')}, not this run`);
+  }
+  return { problems, warnings };
+}
+
 /** This run's refs still on the platform (`refs` is GET /refs' map). */
 export function leftovers(refs, ts) {
   const p = scratchPrefix(ts);

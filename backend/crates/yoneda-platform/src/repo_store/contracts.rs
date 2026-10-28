@@ -86,7 +86,8 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         })?,
     };
     let mut records = Vec::new();
-    for chunk in paths(c)?.chunks(100) {
+    // 99 paths and the version: Durable Object SQLite binds at most 100 parameters.
+    for chunk in paths(c)?.chunks(99) {
         let marks = vec!["?"; chunk.len()].join(",");
         let mut params: Vec<Value> = chunk.iter().map(|p| json!(p)).collect();
         params.push(json!(at));

@@ -1,6 +1,7 @@
 // Batch, resumable object fetch through the tiered cache (Scion S11/S12).
 import { expect, it } from 'vitest';
-import { api, author, file, misses, signup, usePlatformFixture } from './repo-fixture';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { api, author, file, misses, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -42,6 +43,35 @@ it('serves objects by id from the cache tiers and resumes across the response bu
   expect((await api(`${repo}/objects`, owner, { body: { objects: [{ id: 'nope', kind: 'blob' }] } })).status).toBe(400);
   expect((await api(`${repo}/objects`, {}, { body: { objects: blobs } })).status).toBe(401);
 });
+
+it('serves a large blob as a stub to a client that downloads it on its own request', async () => {
+  const owner = { cookie: await signup('largeowner') };
+  const text = 'z'.repeat(3 * 1024 * 1024);
+  const created = await api('/repos', owner, {
+    body: { name: 'large', policy: { required_checks: [], approvals: 0 }, files: [file('big.txt', text), file('a.txt', 'a\n')], author },
+  });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const id = (name: string) => tree.body.objects[0].entries.find((e: any) => e.name === name).id;
+  const blobs = [{ id: id('big.txt'), kind: 'blob' }, { id: id('a.txt'), kind: 'blob' }];
+  // Asked with `large`: the big blob is a stub, the small one inline; without it, both inline.
+  const page = await api(`${repo}/objects`, owner, { body: { objects: blobs, large: true } });
+  expect(page.body.objects[0]).toEqual({ id: id('big.txt'), kind: 'blob', size: text.length, large: true });
+  expect(atob(page.body.objects[1].data_b64)).toBe('a\n');
+  const inline = await api(`${repo}/objects`, owner, { body: { objects: blobs.slice(0, 1) } });
+  expect(inline.body.objects[0].data_b64.length).toBeGreaterThan(text.length);
+  // The stub's bytes, raw.
+  const download = await SELF_FETCH(`${repo}/objects/${id('big.txt')}`, owner.cookie);
+  expect(download.status).toBe(200);
+  expect(download.headers.get('content-type')).toBe('application/octet-stream');
+  expect(await download.text()).toBe(text);
+  expect((await SELF_FETCH(`${repo}/objects/${'f'.repeat(40)}`, owner.cookie)).status).toBe(404);
+  expect((await SELF_FETCH(`${repo}/objects/${id('big.txt')}`)).status).toBe(401);
+});
+
+/** A raw (non-JSON) GET of the platform API. */
+const SELF_FETCH = (path: string, cookie?: string) =>
+  platformFetch(new Request(`https://yoneda/api/v1${path}`, { headers: cookie ? { cookie } : {} }), scoped);
 
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
 async function gitId(kind: string, data: Uint8Array) {
