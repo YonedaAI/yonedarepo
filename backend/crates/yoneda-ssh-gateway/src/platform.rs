@@ -137,6 +137,14 @@ impl Platform {
 
     /// The account and key a verified public key belongs to, or `None`.
     pub async fn lookup(&self, fingerprint: &str) -> Result<Option<Identity>, PlatformError> {
+        let found = self.find(fingerprint).await;
+        if let Err(e) = &found {
+            self.failed("lookup", e).await;
+        }
+        found
+    }
+
+    async fn find(&self, fingerprint: &str) -> Result<Option<Identity>, PlatformError> {
         let response = self
             .internal("lookup", json!({ "fingerprint": fingerprint }))
             .await?;
@@ -159,10 +167,32 @@ impl Platform {
             "account": identity.account, "key_id": identity.key_id,
             "fingerprint": identity.fingerprint, "repo": repo.as_str(), "service": service.name(),
         });
-        Ok(checked(self.internal("session", body).await?)
-            .await?
-            .json()
-            .await?)
+        let minted = async {
+            Ok(checked(self.internal("session", body).await?)
+                .await?
+                .json()
+                .await?)
+        };
+        let minted = minted.await;
+        if let Err(e) = &minted {
+            self.failed("session", e).await;
+        }
+        minted
+    }
+
+    /// A failed internal call, in the container's log and (when the platform is reachable at
+    /// all) the platform's: `gateway.lookup_failed` / `gateway.session_failed` with the URL and
+    /// HTTP status, so a refused route (520) or a secret mismatch (401) is visible.
+    async fn failed(&self, call: &str, error: &PlatformError) {
+        let url = format!("{}/internal/ssh/{call}", self.base);
+        let status = match error {
+            PlatformError::Refused { status, .. } => Some(*status),
+            PlatformError::Transport(e) => e.status().map(|s| s.as_u16()),
+        };
+        tracing::warn!(%url, ?status, error = %error, "gateway.{call}_failed");
+        let event = format!("gateway.{call}_failed");
+        let detail = json!({ "url": url, "status": status, "error": error.to_string() });
+        self.report(&event, detail).await;
     }
 
     fn git_url(&self, repo: &RepoId, tail: &str) -> String {
@@ -269,5 +299,59 @@ mod tests {
             "FORBIDDEN: no   [31mred"
         );
         assert_eq!(sanitize(&"x".repeat(900)).len(), 500);
+    }
+
+    /// A platform stand-in: answers `/internal/ssh/lookup` with `status` and records each
+    /// request's path and body.
+    async fn stand_in(status: u16) -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let mut buf = vec![0u8; 8192];
+                let n = stream.read(&mut buf).await.unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                let path = request.split(' ').nth(1).unwrap_or_default().to_owned();
+                let body = request.split("\r\n\r\n").nth(1).unwrap_or_default();
+                log.lock().unwrap().push(format!("{path} {body}"));
+                let code = if path.ends_with("/lookup") {
+                    status
+                } else {
+                    200
+                };
+                let reply = format!(
+                    "HTTP/1.1 {code} X\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{{}}"
+                );
+                let _ = stream.write_all(reply.as_bytes()).await;
+            }
+        });
+        (base, seen)
+    }
+
+    #[tokio::test]
+    async fn a_refused_lookup_is_reported_with_its_url_and_status() {
+        let (base, seen) = stand_in(520).await;
+        let platform = Platform::new(&base, &[7; 32]).unwrap();
+        let fingerprint = "SHA256:8EqRGtHv7KPU4JP7ITUpjcB1ZW5aJP4ISN49NDYsKWo";
+        assert!(platform.lookup(fingerprint).await.is_err());
+        let seen = seen.lock().unwrap().clone();
+        assert_eq!(seen.len(), 2, "{seen:?}");
+        assert!(seen[0].starts_with("/internal/ssh/lookup "));
+        let report: serde_json::Value =
+            serde_json::from_str(seen[1].split_once(' ').unwrap().1).unwrap();
+        assert_eq!(report["event"], "gateway.lookup_failed");
+        assert_eq!(report["detail"]["status"], 520);
+        assert_eq!(
+            report["detail"]["url"],
+            format!("{base}/internal/ssh/lookup")
+        );
+        // An unknown key is an answer, not a failure: nothing is reported.
+        let (base, seen) = stand_in(404).await;
+        let platform = Platform::new(&base, &[7; 32]).unwrap();
+        assert_eq!(platform.lookup(fingerprint).await.unwrap(), None);
+        assert_eq!(seen.lock().unwrap().len(), 1);
     }
 }
