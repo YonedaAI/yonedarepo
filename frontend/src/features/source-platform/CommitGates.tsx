@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { BreakGlassRecord } from './BreakGlass';
 import type { Repair } from './CommitRepairs';
-import { when } from './sourceApi';
+import { classLabel, gateNeeds } from './commitPanel';
 
 export type Gates = {
   ready: boolean;
@@ -35,40 +35,28 @@ export type CommitDetail = {
   gates: Gates;
 };
 
-export function GateSummary({
-  gates,
-  classes,
-  landings,
-}: {
-  gates: Gates;
-  classes: ReviewClasses;
-  landings: Landing[];
-}) {
+/** Ready or not, with what landing still needs in plain words: the review class only when
+ * it is known, approvals only when the policy requires them. */
+export function GateSummary({ gates, classes }: { gates: Gates; classes: ReviewClasses }) {
+  const label = classLabel(classes);
+  const lines = [
+    label && `${label}${gates.auto_approved ? ' · auto-approved by policy' : ''}`,
+    !label && gates.auto_approved && 'Auto-approved by policy',
+    gates.approvals_required > 0 &&
+      gates.approvals >= gates.approvals_required &&
+      `Approved (${gates.approvals} of ${gates.approvals_required})`,
+    ...gateNeeds(gates),
+  ].filter((line): line is string => Boolean(line));
   return (
     <>
       <h3>{gates.ready ? 'Ready to land' : 'Not ready to land'}</h3>
-      <ul>
-        <li>
-          Review class: {classes?.overall.replace('_', ' ') ?? 'not classified (needs a human)'}
-          {gates.auto_approved && ' · auto-approved by policy'}
-        </li>
-        <li>
-          Approvals {gates.approvals}/{gates.approvals_required}
-          {gates.rejected && ' · rejected'}
-        </li>
-        {gates.missing_checks.length > 0 && (
-          <li>Waiting for checks: {gates.missing_checks.join(', ')}</li>
-        )}
-        {gates.failing_checks.length > 0 && (
-          <li>Failing checks: {gates.failing_checks.join(', ')}</li>
-        )}
-        {landings.map((l) => (
-          <li key={l.refname}>
-            Landed on {l.refname.replace(/^refs\/heads\//, '')} at v{l.version} ·{' '}
-            {when(l.landed_at)}
-          </li>
-        ))}
-      </ul>
+      {lines.length > 0 && (
+        <ul>
+          {lines.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }
