@@ -1,5 +1,5 @@
 use crate::SqlStore;
-use rusqlite::{Connection, types::Value as SqlValue};
+use rusqlite::{Connection, limits::Limit, types::Value as SqlValue};
 use serde_json::Value;
 use std::{cell::RefCell, rc::Rc};
 use yoneda_core::{Error, Result};
@@ -8,21 +8,39 @@ use yoneda_core::{Error, Result};
 pub struct NativeStore(Rc<RefCell<Connection>>);
 impl NativeStore {
     pub fn memory() -> Result<Self> {
-        Ok(Self(Rc::new(RefCell::new(
-            Connection::open_in_memory().map_err(db_error)?,
-        ))))
+        Self::limited(Connection::open_in_memory().map_err(db_error)?)
     }
     pub fn open(path: &std::path::Path) -> Result<Self> {
-        Ok(Self(Rc::new(RefCell::new(
-            Connection::open(path).map_err(db_error)?,
-        ))))
+        Self::limited(Connection::open(path).map_err(db_error)?)
+    }
+    /// Durable Object SQLite's bound-parameter limit, so tests fail where production would.
+    fn limited(connection: Connection) -> Result<Self> {
+        let limit = i32::try_from(crate::MAX_BOUND_PARAMETERS)
+            .map_err(|_| Error::new("DATABASE", "Invalid parameter limit"))?;
+        connection
+            .set_limit(Limit::SQLITE_LIMIT_VARIABLE_NUMBER, limit)
+            .map_err(db_error)?;
+        Ok(Self(Rc::new(RefCell::new(connection))))
     }
 }
+/// Durable Object SQLite binds at most 100 parameters per statement; the native store
+/// refuses more too, so tests catch a query that only fails once deployed.
+const MAX_PARAMS: usize = 100;
+
 fn db_error(e: rusqlite::Error) -> Error {
     Error::new("DATABASE", e.to_string())
 }
 impl SqlStore for NativeStore {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>> {
+        if params.len() > MAX_PARAMS {
+            return Err(Error::new(
+                "DATABASE",
+                format!(
+                    "too many SQL variables: {} bound, at most {MAX_PARAMS}",
+                    params.len()
+                ),
+            ));
+        }
         let connection = self.0.borrow();
         let values: Vec<_> = params
             .iter()
@@ -80,5 +98,28 @@ impl SqlStore for NativeStore {
                 Err(error)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn binds_at_most_as_many_parameters_as_durable_object_sqlite() {
+        let db = NativeStore::memory().unwrap();
+        let bind = |n: usize| {
+            let marks = vec!["?"; n].join(",");
+            let params: Vec<Value> = (0..n).map(|i| json!(i)).collect();
+            db.query(&format!("SELECT 1 WHERE 0 IN ({marks})"), &params)
+        };
+        assert_eq!(bind(crate::MAX_BOUND_PARAMETERS).unwrap().len(), 1);
+        let refused = bind(crate::MAX_BOUND_PARAMETERS + 1).unwrap_err();
+        assert!(
+            refused.message.contains("too many SQL variables"),
+            "{}",
+            refused.message
+        );
     }
 }

@@ -11,6 +11,7 @@
 // a single read that missed R2 asks in the staged-object call it makes anyway, so a
 // repository without bundles (API commits under a burst) costs its authority nothing more.
 import { putBytes } from './repo-stores';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 type Json = Record<string, any>;
@@ -174,7 +175,9 @@ export async function locate(env: Env, repo: string, wanted: Wanted[]) {
   const chunks: string[][] = [];
   for (let i = 0; i < unique.length; i += LOCATE_IDS) chunks.push(unique.slice(i, i + LOCATE_IDS));
   await inWidth(chunks, LOCATE_WIDTH, async (ids) => {
-    const { located } = await platformCall(env, repo, { op: 'repo_bundle_locate', ids });
+    const { located } = await timed('do.bundle_locate', () =>
+      platformCall(env, repo, { op: 'repo_bundle_locate', ids }),
+    );
     for (const l of located as Location[]) {
       found.set(l.id, l);
       isolateLocations.set(repo, l);
@@ -183,12 +186,17 @@ export async function locate(env: Env, repo: string, wanted: Wanted[]) {
   return ofKind(wanted, found);
 }
 
+/** Ranged reads made and bytes they returned. */
+export type ReadStats = { reads: number; bytes: number };
+
 /** How `readLocated` reads: neighbours closer than `gap` share a range; `copy` keeps
- * copies (not views pinning whole ranges); `frame` sees every object in each range read. */
+ * copies (not views pinning whole ranges); `frame` sees every object in each range read;
+ * `stats` counts the reads. */
 export type ReadOptions = {
   gap?: number;
   copy?: boolean;
   frame?: (kind: string, id: string, data: Uint8Array) => void;
+  stats?: ReadStats;
 };
 
 /** The content of `located` objects, by id: neighbours share one ranged read of at most
@@ -199,7 +207,7 @@ export async function readLocated(
   repo: string,
   located: Location[],
   range = RANGE,
-  { gap = GAP, copy = false, frame }: ReadOptions = {},
+  { gap = GAP, copy = false, frame, stats }: ReadOptions = {},
 ) {
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
@@ -216,9 +224,15 @@ export async function readLocated(
   }
   const out = new Map<string, Uint8Array>();
   await inWidth(ranges, READ_WIDTH, async (r) => {
-    const object = await env.OBJECTS.get(bundleKey(repo, r.bundle), {
-      range: { offset: r.start, length: r.end - r.start },
-    });
+    const object = await timed('bundle.read', () =>
+      env.OBJECTS.get(bundleKey(repo, r.bundle), {
+        range: { offset: r.start, length: r.end - r.start },
+      }),
+    );
+    if (stats) {
+      stats.reads++;
+      stats.bytes += r.end - r.start;
+    }
     if (!object)
       throw Object.assign(new Error(`Object bundle ${r.bundle} is missing`), { code: 'NOT_FOUND' });
     const bytes = new Uint8Array(await object.arrayBuffer());
@@ -277,6 +291,15 @@ export function readKnown(
 ) {
   for (const l of located) isolateLocations.set(repo, l);
   return readLocated(env, repo, [...remembered(repo, wanted).values()], range, options);
+}
+
+/** Where the bundles hold blobs `ids` (by id), asking the authority only where `repo` is
+ * known to hold bundles. */
+export async function bundledPlaces(objects: { env: Env; repo: string }, ids: string[]) {
+  const wanted = ids.map((id) => ({ id, kind: 'blob' }));
+  return holdsBundles(objects.repo)
+    ? locate(objects.env, objects.repo, wanted)
+    : remembered(objects.repo, wanted);
 }
 
 /** `fromBundles` where `repo` is known to hold bundles, else `readKnown`. */

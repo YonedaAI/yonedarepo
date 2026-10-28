@@ -85,13 +85,15 @@ async function orgRepos(env: Env, org: string, account: string) {
       .map((t) => teamKey(org, { name: t.name, id: t.id })),
   ];
   const all = shown.role === 'owner';
-  const marks = keys.map((_, i) => `?${i + 2}`).join(',');
+  // The keys go as one JSON parameter: D1 binds at most 100 per statement.
   const listed = await env.INDEX.prepare(
     `SELECT id,name,created_at,workspace AS owner,visibility FROM platform_repos WHERE workspace=?1 ${
-      all ? '' : `AND id IN (SELECT repo FROM platform_members WHERE account IN (${marks}))`
+      all
+        ? ''
+        : 'AND id IN (SELECT repo FROM platform_members WHERE account IN (SELECT value FROM json_each(?2)))'
     } ORDER BY created_at DESC LIMIT 200`,
   )
-    .bind(org, ...(all ? [] : keys))
+    .bind(org, ...(all ? [] : [JSON.stringify(keys)]))
     .all<Json>();
   return { repos: listed.results };
 }

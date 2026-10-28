@@ -4,6 +4,9 @@ import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type Result = { path: string; lines: { line: number; text: string }[] };
+type Skipped = { path: string; reason: string };
+/** Files not content-searched named in the note; the rest are counted. */
+const NAMED = 5;
 
 export function RepoSearch({
   repo,
@@ -15,7 +18,7 @@ export function RepoSearch({
   onNavigate: (r: SourceRoute) => void;
 }) {
   const [draft, setDraft] = useState(query);
-  const found = useSource<{ results: Result[]; skipped_partitions: string[] }>(
+  const found = useSource<{ results: Result[]; skipped_files: Skipped[]; skipped_count: number }>(
     query.length >= 2
       ? `/repos/${repo}/search?query=${encodeURIComponent(query)}&ignore_case=true`
       : null,
@@ -44,9 +47,15 @@ export function RepoSearch({
       {found.data && found.data.results.length === 0 && (
         <p className="source-empty">No matches for “{query}”.</p>
       )}
-      {found.data?.skipped_partitions.length ? (
+      {found.data?.skipped_count ? (
         <p className="source-note">
-          Not searched (too large): {found.data.skipped_partitions.join(', ')}
+          Content not searched (matched by path only) for {found.data.skipped_count}{' '}
+          {found.data.skipped_count === 1 ? 'file' : 'files'}:{' '}
+          {found.data.skipped_files
+            .slice(0, NAMED)
+            .map((f) => `${f.path} (${f.reason})`)
+            .join(', ')}
+          {found.data.skipped_count > NAMED ? `, and ${found.data.skipped_count - NAMED} more` : ''}
         </p>
       ) : null}
       {found.data?.results.map((r) => (

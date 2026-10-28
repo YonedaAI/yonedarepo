@@ -110,7 +110,8 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
 }
 
 /// The served objects among `wanted` and the ids the platform does not have. `raw` asks
-/// for commits as their exact Git content.
+/// for commits as their exact Git content. Large blobs come as stubs (`large`: base64 in a
+/// JSON page costs the platform several copies of a blob) and are downloaded one by one.
 async fn request(
     api: &Api,
     wanted: &[(String, ObjectKind)],
@@ -128,7 +129,7 @@ async fn request(
             let page = api
                 .post_read(
                     "/objects",
-                    &json!({ "objects": ids, "after": after, "raw": raw }),
+                    &json!({ "objects": ids, "after": after, "raw": raw, "large": true }),
                 )
                 .await?;
             absent.extend(
@@ -138,7 +139,13 @@ async fn request(
                     .flatten()
                     .filter_map(|m| m.as_str().map(str::to_owned)),
             );
-            fetched.extend(page["objects"].as_array().cloned().unwrap_or_default());
+            for object in page["objects"].as_array().cloned().unwrap_or_default() {
+                fetched.push(if object["large"] == true {
+                    downloaded(api, &object).await?
+                } else {
+                    object
+                });
+            }
             match page["next"].as_u64() {
                 Some(next) if next > after => after = next,
                 Some(_) => return Err(Error::new("the platform's object paging did not advance")),
@@ -147,6 +154,18 @@ async fn request(
         }
     }
     Ok((fetched, absent))
+}
+
+/// A large blob's stub as the served blob: its bytes downloaded on their own (verified
+/// against the id with every other object).
+async fn downloaded(api: &Api, stub: &Value) -> Result<Value> {
+    let id = object_id(stub, "id")?;
+    let bytes = api.get_bytes(&format!("/objects/{id}")).await?;
+    Ok(json!({
+        "id": id.hex(),
+        "kind": "blob",
+        "data_b64": base64::engine::general_purpose::STANDARD.encode(bytes),
+    }))
 }
 
 /// A platform commit as served with `raw`.
@@ -297,4 +316,93 @@ fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
     git.unpack(&pack)?;
     pending.clear();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A local platform stand-in: `POST /objects` answers a page with one large blob as a
+    /// stub, `GET /objects/<id>` its bytes; every request line is recorded.
+    async fn platform(
+        blob: Vec<u8>,
+        id: String,
+    ) -> Result<(String, std::sync::Arc<std::sync::Mutex<Vec<String>>>)> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        let origin = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|e| Error::new(e.to_string()))?
+        );
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let log = seen.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = vec![0u8; 8192];
+                let n = socket.read(&mut request).await.unwrap_or(0);
+                let line = String::from_utf8_lossy(&request[..n])
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_owned();
+                if let Ok(mut log) = log.lock() {
+                    log.push(line.clone());
+                }
+                let (status, kind, body) = if line.starts_with("POST /api/v1/objects ") {
+                    let page = json!({ "objects": [{ "id": id, "kind": "blob", "size": blob.len(), "large": true }],
+                        "missing": [], "next": null });
+                    ("200 OK", "application/json", page.to_string().into_bytes())
+                } else if line.starts_with(&format!("GET /api/v1/objects/{id} ")) {
+                    ("200 OK", "application/octet-stream", blob.clone())
+                } else {
+                    (
+                        "503 Service Unavailable",
+                        "text/html",
+                        b"<html>limits</html>".to_vec(),
+                    )
+                };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(&body).await;
+            }
+        });
+        Ok((origin, seen))
+    }
+
+    /// A blob served as a stub is downloaded on its own request and verified like any other.
+    #[tokio::test]
+    async fn downloads_a_large_blob_the_page_only_names() -> Result<()> {
+        let blob = vec![7u8; 3 * 1024 * 1024];
+        let id = hash_object(ObjectKind::Blob, &blob).hex();
+        let (origin, seen) = platform(blob.clone(), id.clone()).await?;
+        let api = Api::account(&origin, None)?;
+        let fetched = fetch(&api, &[(id.clone(), ObjectKind::Blob)]).await?;
+        let (kind, data, _) = verified(&fetched[0])?;
+        assert_eq!((kind, data.len()), (ObjectKind::Blob, blob.len()));
+        let lines = seen.lock().map(|l| l.clone()).unwrap_or_default();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[1].starts_with(&format!("GET /api/v1/objects/{id} ")));
+        Ok(())
+    }
+
+    /// A gateway's non-JSON error names the request it answered.
+    #[tokio::test]
+    async fn a_platform_error_without_json_names_its_request() -> Result<()> {
+        let (origin, _) = platform(Vec::new(), "0".repeat(40)).await?;
+        let api = Api::account(&origin, None)?;
+        let failed = api.get_bytes("/elsewhere").await;
+        let Err(failure) = failed else {
+            return Err(Error::new("the 503 was not an error"));
+        };
+        assert_eq!(failure.status, 503);
+        assert_eq!(failure.message, "HTTP 503 from /api/v1/elsewhere");
+        Ok(())
+    }
 }

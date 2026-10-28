@@ -1,66 +1,35 @@
-import { useState } from 'react';
-import { BreakGlass } from './BreakGlass';
 import { CommitDiff } from './CommitDiff';
-import {
-  type CommitDetail,
-  type Conflict,
-  ConflictList,
-  GateSummary,
-  ReviewButtons,
-} from './CommitGates';
+import type { CommitDetail } from './CommitGates';
+import { CommitLanding } from './CommitLanding';
 import { CommitRepairs } from './CommitRepairs';
 import { CommitSessions } from './CommitSessions';
-import { useReadOnly } from './repoAccess';
+import type { RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
-import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
+import { shortSha, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 export function CommitView({
   repo,
   commit,
+  status,
+  username,
   onNavigate,
   onChanged,
 }: {
   repo: string;
   commit: string;
+  /** The signed-in account's username. */
+  username?: string;
+  /** The repository's status: the viewer's role, the policy and the branches. */
+  status?: RepoStatus;
   onNavigate: (r: SourceRoute) => void;
   onChanged: () => void;
 }) {
   const detail = useSource<CommitDetail>(`/repos/${repo}/commits/${commit}`);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
-  const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [notice, setNotice] = useState('');
-  const [target, setTarget] = useState('main');
-  // A public reader sees the gates, checks and reviews, never review, land or revert.
-  const readOnly = useReadOnly();
-  async function act(
-    label: string,
-    path: string,
-    body: unknown,
-    done: string | ((r: any) => string),
-  ) {
-    setBusy(label);
-    setError('');
-    setNotice('');
-    setConflicts([]);
-    try {
-      const result = await sourceApi(`/repos/${repo}${path}`, { body });
-      setNotice(typeof done === 'string' ? done : done(result));
-      detail.reload();
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-      setConflicts((e as SourceApiError).details?.conflicts ?? []);
-    } finally {
-      setBusy('');
-    }
-  }
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return <Loading what="commit" />;
   const d = detail.data;
-  const gates = d.gates;
   return (
     <article className="source-commit" aria-label={`Commit ${shortSha(d.commit)}`}>
       <header>
@@ -86,88 +55,17 @@ export function CommitView({
           <p className="source-meta">Declared read set: {d.read_set.join(', ')}</p>
         )}
       </header>
-      <section className="source-gates" aria-label="Landing gates">
-        <GateSummary gates={gates} classes={d.review_classes} landings={d.landings} />
-        {!readOnly && (
-          <div className="source-actions">
-            <ReviewButtons
-              disabled={!!busy}
-              onReview={(decision, reason) =>
-                act(
-                  decision,
-                  `/commits/${commit}/reviews`,
-                  { decision, reason },
-                  decision === 'approve' ? 'Approved.' : 'Rejected.',
-                )
-              }
-            />
-            <button
-              type="button"
-              className="quiet"
-              disabled={!!busy}
-              onClick={() =>
-                act('checks', `/commits/${commit}/check-runs`, {}, (r) =>
-                  r.runs?.length
-                    ? `Checks: ${r.runs.map((x: any) => `${x.name} ${x.status}`).join(', ')}.`
-                    : 'This repository has no check runners.',
-                )
-              }
-            >
-              Run checks
-            </button>
-            <button
-              type="button"
-              className="quiet"
-              disabled={!!busy}
-              onClick={async () => {
-                setBusy('revert');
-                setError('');
-                try {
-                  const made = await sourceApi(`/repos/${repo}/commits/${commit}/revert`, {
-                    body: { ref: target },
-                  });
-                  onNavigate({ view: 'commit', repo, commit: made.commit });
-                } catch (e) {
-                  setError((e as Error).message);
-                } finally {
-                  setBusy('');
-                }
-              }}
-            >
-              Revert
-            </button>
-            <input
-              aria-label="Branch to land on"
-              value={target}
-              onChange={(e) => setTarget(e.target.value)}
-            />
-            <button
-              type="button"
-              disabled={!!busy || !gates.ready}
-              onClick={() => act('land', '/land', { ref: target, commit }, `Landed on ${target}.`)}
-            >
-              {busy === 'land' ? 'Landing…' : 'Land'}
-            </button>
-          </div>
-        )}
-        <BreakGlass
-          repo={repo}
-          commit={commit}
-          target={target}
-          landedOn={d.landings.map((l) => l.refname)}
-          records={d.break_glass}
-          onDone={(r) => {
-            setNotice(r.already ? 'Already recorded; nothing changed.' : 'Break-glass recorded.');
-            if (r.commit && r.commit !== commit)
-              onNavigate({ view: 'commit', repo, commit: r.commit });
-            else detail.reload();
-            onChanged();
-          }}
-        />
-        {notice && <p role="status">{notice}</p>}
-        {error && <Failure error={error} />}
-        <ConflictList conflicts={conflicts} />
-      </section>
+      <CommitLanding
+        repo={repo}
+        detail={d}
+        status={status}
+        username={username}
+        onNavigate={onNavigate}
+        onReload={() => {
+          detail.reload();
+          onChanged();
+        }}
+      />
       <section aria-label="Checks">
         <h3>Checks</h3>
         {d.checks.length === 0 && d.check_runs.length === 0 && (

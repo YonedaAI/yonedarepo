@@ -1579,6 +1579,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 mod account_access;
 mod agent_reads;
 mod batches;
+mod bound_parameters;
 mod branch_policy;
 mod branches;
 mod break_glass;
@@ -1592,6 +1593,7 @@ mod check_release;
 mod checkpoints;
 mod compaction;
 mod compaction_writes;
+mod contract_paths;
 mod forks;
 mod git_shallow;
 mod hooks;

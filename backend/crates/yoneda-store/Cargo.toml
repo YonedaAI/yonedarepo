@@ -10,4 +10,4 @@ native = ["dep:rusqlite"]
 [dependencies]
 yoneda-core.workspace = true
 serde_json.workspace = true
-rusqlite = { version = "0.40", features = ["bundled"], optional = true }
+rusqlite = { version = "0.40", features = ["bundled", "limits"], optional = true }

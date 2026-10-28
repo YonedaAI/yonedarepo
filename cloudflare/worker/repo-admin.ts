@@ -43,16 +43,17 @@ export async function listRepositories(env: Env, auth: Credentials) {
     .filter(([, a]) => a.role === 'owner')
     .map(([org]) => org);
   const entries = [account, ...teamEntries(orgs)];
-  const marks = (list: string[], from: number) => list.map((_, i) => `?${from + i}`).join(',');
+  // Each list is one JSON parameter: D1 binds at most 100 per statement, and an account's
+  // orgs and teams can outnumber that.
   const listed = await env.INDEX.prepare(
     `SELECT id,name,created_at,workspace AS owner,'owner' AS role,visibility FROM platform_repos
-       WHERE workspace IN (${marks([account, ...owned], 1)})
+       WHERE workspace IN (SELECT value FROM json_each(?1))
      UNION ALL
      SELECT r.id,r.name,r.created_at,r.workspace AS owner,m.role,r.visibility FROM platform_members m
-       JOIN platform_repos r ON r.id=m.repo WHERE m.account IN (${marks(entries, owned.length + 2)})
+       JOIN platform_repos r ON r.id=m.repo WHERE m.account IN (SELECT value FROM json_each(?2))
      ORDER BY created_at DESC LIMIT 400`,
   )
-    .bind(account, ...owned, ...entries)
+    .bind(JSON.stringify([account, ...owned]), JSON.stringify(entries))
     .all<Listed>();
   // A repository reached several ways (directly and through teams) is listed once, by its
   // highest role.

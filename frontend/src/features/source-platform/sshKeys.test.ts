@@ -95,6 +95,9 @@ describe('SSH in the Clone menu', () => {
     expect(sshCloneCommand(tunnel, REPO)).toBe(
       `git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git`,
     );
+    expect(sshCloneCommand(tunnel, REPO, 'demo')).toBe(
+      `git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git demo`,
+    );
     expect(sshCloneCommand(off, REPO)).toBeNull();
     expect(sshCloneCommand(undefined, REPO)).toBeNull();
     expect(sshCloneCommand({ ...tunnel, host: 'evil.com"><x' }, REPO)).toBeNull();
@@ -102,6 +105,12 @@ describe('SSH in the Clone menu', () => {
   it('shows the SSH line with Copy, and the setup hint only on the tunnel', () => {
     const shown = line(tunnel);
     expect(shown).toContain(`git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git`);
+    const named = renderToStaticMarkup(
+      createElement(SshCloneLine, { access: tunnel, repo: REPO, name: 'demo' }),
+    );
+    expect(named).toContain(
+      `<code>git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git demo</code>`,
+    );
     expect(shown).toContain('aria-label="Copy SSH"');
     expect(shown).toContain('href="/settings#ssh-keys"');
     const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });

@@ -1,6 +1,7 @@
-//! Undeltified pack v2: the smallest pack Git's receive-pack accepts, so the server can
-//! push freshly built objects to Artifacts without a Git CLI.
-use super::{ObjectKind, invalid};
+//! Pack v2: undeltified, the smallest pack Git's receive-pack accepts, so the server can
+//! push freshly built objects to Artifacts without a Git CLI; a fetch's pack may also
+//! carry REF_DELTA entries against objects in the same pack.
+use super::{ObjectId, ObjectKind, invalid};
 use crate::Result;
 use miniz_oxide::{
     DataFormat, MZFlush, MZStatus,
@@ -55,17 +56,18 @@ impl PackWriter {
 
     /// One whole object, zlib-compressed.
     pub fn entry(&mut self, kind: ObjectKind, data: &[u8]) -> Vec<u8> {
-        let mut size = data.len();
-        let mut byte = (kind.pack_code() << 4) | (size & 15) as u8;
-        size >>= 4;
-        let mut out = Vec::with_capacity(data.len() / 2 + 16);
-        while size > 0 {
-            out.push(byte | 0x80);
-            byte = (size & 0x7f) as u8;
-            size >>= 7;
-        }
-        out.push(byte);
+        let mut out = entry_header(kind.pack_code(), data.len());
         out.extend_from_slice(&compress_to_vec_zlib(data, 6));
+        self.hasher.update(&out);
+        out
+    }
+
+    /// One object as `delta` (see `encode_delta`) against `base`, which must be in the
+    /// same pack (REF_DELTA: Git resolves it by id, wherever the base is).
+    pub fn delta_entry(&mut self, base: &ObjectId, delta: &[u8]) -> Vec<u8> {
+        let mut out = entry_header(7, delta.len());
+        out.extend_from_slice(base.as_bytes());
+        out.extend_from_slice(&compress_to_vec_zlib(delta, 6));
         self.hasher.update(&out);
         out
     }
@@ -74,6 +76,20 @@ impl PackWriter {
     pub fn finish(self) -> [u8; 20] {
         self.hasher.finalize().into()
     }
+}
+
+/// An entry's type and size header.
+fn entry_header(code: u8, mut size: usize) -> Vec<u8> {
+    let mut out = Vec::with_capacity(size / 2 + 32);
+    let mut byte = (code << 4) | (size & 15) as u8;
+    size >>= 4;
+    while size > 0 {
+        out.push(byte | 0x80);
+        byte = (size & 0x7f) as u8;
+        size >>= 7;
+    }
+    out.push(byte);
+    out
 }
 
 /// Reads an undeltified pack, verifying the trailer checksum and every size limit.

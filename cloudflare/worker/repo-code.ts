@@ -5,10 +5,11 @@
 
 import { commit } from './repo-commit';
 import { compute } from './repo-compute';
-import { searchSegments, withObjects } from './repo-derived';
 import { keepAllowed, requirePath } from './repo-grants';
+import { withObjects } from './repo-object-compute';
 import { type CachedObject, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext, target, walk } from './repo-ops';
+import { searchSegments, segmentsIn } from './repo-search-index';
 
 const PLATFORM_AUTHOR = { name: 'YonedaRepo', email: 'commits@yonedarepo.invalid' };
 const MAX_CLASSIFIED_FILES = 200;
@@ -158,33 +159,33 @@ export async function codemod(ctx: RepoContext, args: Json) {
   const where = await target(ctx, ref);
   const prefix = String(args.path ?? '');
   const objects = await ctx.objects();
-  const { segments } = await searchSegments(ctx, where.tree);
-  const perPartition = await Promise.all(
-    segments.map(async (entry) => {
-      if (entry.too_large)
-        return { partition: entry.partition.prefix, skipped: true, changes: [] as Json[] };
-      const { candidates } = compute({
-        op: 'search_segment',
-        segment: entry.segment,
-        prefix: entry.partition.prefix,
-        query: find,
-      });
-      const changes: Json[] = [];
-      for (const file of await keepAllowed(ctx, candidates as Json[])) {
-        if (!file.indexed || (prefix && !String(file.path).startsWith(prefix))) continue;
-        const result = compute({
-          op: 'replace_literal',
-          id: file.id,
-          find,
-          replace: String(args.replace ?? ''),
-          blobs: { [file.id]: toBase64(await objects.blob(file.id)) },
-        });
-        if (result.changed)
-          changes.push({ path: file.path, content_b64: result.content_b64, expect: result.expect });
-      }
-      return { partition: entry.partition.prefix, changes };
-    }),
+  const { indexes } = await searchSegments(ctx, where.tree);
+  // Changes by partition (a chunked partition's segments add to one entry).
+  const byPartition = new Map<string, Json[]>(
+    indexes.map((index) => [String(index.partition.prefix), []]),
   );
+  for await (const { partition, segment } of segmentsIn(ctx, indexes)) {
+    const { candidates } = compute({
+      op: 'search_segment',
+      segment,
+      prefix: partition.prefix,
+      query: find,
+    });
+    const changes = byPartition.get(String(partition.prefix)) as Json[];
+    for (const file of await keepAllowed(ctx, candidates as Json[])) {
+      if (!file.indexed || (prefix && !String(file.path).startsWith(prefix))) continue;
+      const result = compute({
+        op: 'replace_literal',
+        id: file.id,
+        find,
+        replace: String(args.replace ?? ''),
+        blobs: { [file.id]: toBase64(await objects.blob(file.id)) },
+      });
+      if (result.changed)
+        changes.push({ path: file.path, content_b64: result.content_b64, expect: result.expect });
+    }
+  }
+  const perPartition = [...byPartition.values()].map((changes) => ({ changes }));
   const changes = perPartition.flatMap((p) => p.changes);
   if (changes.length === 0)
     return { changed: false, commit: null, partitions: perPartition.length };

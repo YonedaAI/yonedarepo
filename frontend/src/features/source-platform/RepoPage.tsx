@@ -13,7 +13,7 @@ import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoFiles } from './RepoFiles';
-import { RepoNotFound } from './RepoNotFound';
+import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
@@ -31,8 +31,11 @@ export function RepoPage({
   route,
   name,
   authenticated,
+  username,
   navigate,
   onDeleted,
+  onMissing,
+  onNew,
   onSignIn,
   onLoaded,
 }: {
@@ -41,26 +44,40 @@ export function RepoPage({
   name?: string;
   /** Whether an account is signed in (a signed-out visitor reads public repositories only). */
   authenticated: boolean;
+  /** The signed-in account's username. */
+  username?: string;
   navigate: Navigate;
   onDeleted: () => void;
+  /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
+  onMissing: () => void;
+  onNew: () => void;
   onSignIn?: () => void;
   /** The loaded name and visibility, for the shell's header. */
   onLoaded?: (repo: { repo: string; name: string; visibility: Visibility }) => void;
 }) {
   const repo = route.repo;
   const status = useSource<RepoStatus>(`/repos/${repo}`);
+  const gone = useRepoGone(repo);
+  const missing = gone || repoMissing(status.code);
   const data = status.data;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
   const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
+  useEffect(() => {
+    if (missing) onMissing();
+  }, [missing]);
   useEffect(() => {
     if (data) onLoaded?.({ repo, name: data.name, visibility: data.visibility ?? 'private' });
   }, [data, repo, onLoaded]);
-  if (status.errorStatus === 404)
+  if (missing)
     return (
-      <div className="repo-page">
-        <RepoNotFound authenticated={authenticated} onSignIn={onSignIn} navigate={navigate} />
-      </div>
+      <RepoNotFound
+        navigate={navigate}
+        onNew={onNew}
+        authenticated={authenticated}
+        onSignIn={onSignIn}
+      />
     );
   return (
     <ReadOnlyContext.Provider value={access.readOnly}>
@@ -116,6 +133,8 @@ export function RepoPage({
                   key={route.commit}
                   repo={repo}
                   commit={route.commit}
+                  status={data}
+                  username={username}
                   onNavigate={navigate}
                   onChanged={status.reload}
                 />

@@ -1,5 +1,6 @@
 // SSH public keys for Git over SSH (`/api/v1/ssh-keys`). The platform parses and
 // fingerprints a key and decides; this only catches the usual paste mistakes early.
+import { gitClone } from './connect';
 
 export type SshKey = {
   id: string;
@@ -19,10 +20,14 @@ export type SshAccess = {
 };
 
 /** The `git clone` line for a repository over SSH, or null while SSH is off. */
-export function sshCloneCommand(access: SshAccess | undefined, repo: string): string | null {
+export function sshCloneCommand(
+  access: SshAccess | undefined,
+  repo: string,
+  dir?: string,
+): string | null {
   const host = access?.front_door ? access.host : null;
   if (!host || !/^[a-z0-9.-]+$/.test(host)) return null;
-  return `git clone ssh://git@${host}/${repo}.git`;
+  return gitClone(`ssh://git@${host}/${repo}.git`, dir);
 }
 
 const KEY_TYPE = /^(ssh-|ecdsa-|sk-)/;
