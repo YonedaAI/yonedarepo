@@ -1,6 +1,7 @@
 // Batch, resumable object fetch through the tiered cache (Scion S11/S12).
 import { expect, it } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { gitObjectId } from '../../cloudflare/worker/repo-objects';
 import { api, author, file, misses, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -28,8 +29,12 @@ it('serves objects by id from the cache tiers and resumes across the response bu
   const first = await api(`${repo}/objects`, owner, { body: { objects: blobs } });
   expect(first.body.objects.length).toBeLessThan(3);
   expect(first.body.next).toBe(first.body.objects.length);
-  const rest = await api(`${repo}/objects`, owner, { body: { objects: blobs, after: first.body.next } });
-  const all = [...first.body.objects, ...rest.body.objects];
+  const all = [...first.body.objects];
+  for (let after = first.body.next; after !== null; ) {
+    const page = await api(`${repo}/objects`, owner, { body: { objects: blobs, after } });
+    all.push(...page.body.objects);
+    after = page.body.next;
+  }
   expect(all.map((o: any) => o.id)).toEqual(blobs.map((b: any) => b.id));
   expect(atob(all.find((o: any) => o.id === blobs[0].id).data_b64)).toBe('a\n');
 
@@ -41,7 +46,8 @@ it('serves objects by id from the cache tiers and resumes across the response bu
   // Lookups run concurrently, so the store records misses in completion order.
   expect([...misses].sort()).toEqual([`blob:${'f'.repeat(40)}`, `tree:${blobs[0].id}`].sort());
   expect((await api(`${repo}/objects`, owner, { body: { objects: [{ id: 'nope', kind: 'blob' }] } })).status).toBe(400);
-  expect((await api(`${repo}/objects`, {}, { body: { objects: blobs } })).status).toBe(401);
+  // Signed out, a private repository is not there at all (repo-visibility).
+  expect((await api(`${repo}/objects`, {}, { body: { objects: blobs } })).status).toBe(404);
 });
 
 it('serves a large blob as a stub to a client that downloads it on its own request', async () => {
@@ -66,7 +72,8 @@ it('serves a large blob as a stub to a client that downloads it on its own reque
   expect(download.headers.get('content-type')).toBe('application/octet-stream');
   expect(await download.text()).toBe(text);
   expect((await SELF_FETCH(`${repo}/objects/${'f'.repeat(40)}`, owner.cookie)).status).toBe(404);
-  expect((await SELF_FETCH(`${repo}/objects/${id('big.txt')}`)).status).toBe(401);
+  // Signed out, a private repository is not there at all.
+  expect((await SELF_FETCH(`${repo}/objects/${id('big.txt')}`)).status).toBe(404);
 });
 
 /** A raw (non-JSON) GET of the platform API. */
@@ -124,4 +131,30 @@ it('serves exact commit objects, and replays a commit made elsewhere byte for by
     body: { parent: root, base_version: 1, changes: [file('c.txt', 'c\n')], message: 'x', author, committer: { name: 'B', email: 'b@x', tz: 'utc' } },
   });
   expect(refused.status).toBe(400);
+});
+
+it('checks a blob read from the store of record against its id without Rust compute', async () => {
+  // `git hash-object` of "hello\n".
+  expect(await gitObjectId('blob', new TextEncoder().encode('hello\n'))).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
+  const owner = { cookie: await signup('pagesowner') };
+  // 40 blobs of 1 MiB: a page stops at its response budget (4 MiB of base64) and every blob
+  // still arrives, in order, across pages.
+  const files = Array.from({ length: 40 }, (_, i) => file(`c${i}.md`, `${i}`.padEnd(1024 * 1024, 'x')));
+  const created = await api('/repos', owner, { body: { name: 'pages', policy: { required_checks: [], approvals: 0 }, files, author } });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const blobs = tree.body.objects[0].entries.map((e: any) => ({ id: e.id, kind: 'blob' }));
+  const got: any[] = [];
+  let after = 0;
+  let pages = 0;
+  for (;;) {
+    const page = await api(`${repo}/objects`, owner, { body: { objects: blobs, after, large: true } });
+    expect(page.status).toBe(200);
+    got.push(...page.body.objects);
+    pages++;
+    if (page.body.next === null) break;
+    after = page.body.next;
+  }
+  expect(got.map((o) => o.id)).toEqual(blobs.map((b: any) => b.id));
+  expect(pages).toBeGreaterThanOrEqual(10);
 });

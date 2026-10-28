@@ -25,7 +25,7 @@ impl fmt::Display for Failure {
 
 /// No answer, an unreadable one, a gateway error or an overloaded platform (503
 /// OVERLOADED): worth retrying a call that is safe to repeat.
-fn transient(failure: &Failure) -> bool {
+pub(crate) fn transient(failure: &Failure) -> bool {
     matches!(failure.status, 0 | 502 | 503 | 504)
 }
 

@@ -40,6 +40,16 @@ export const OVERLAP_CACHE_OBJECTS = 64;
 const missing = (what: string) =>
   Object.assign(new Error(`${what} is missing`), { code: 'NOT_FOUND' });
 
+/** A Git object's id: SHA-1 of `<kind> <size>\0` and its content. */
+export async function gitObjectId(kind: string, data: Uint8Array) {
+  const header = new TextEncoder().encode(`${kind} ${data.length}\0`);
+  const whole = new Uint8Array(header.length + data.length);
+  whole.set(header);
+  whole.set(data, header.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', whole));
+  return [...digest].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export type ObjectKind = 'tree' | 'blob' | 'commit';
 /** Reads served per tier, for the S12 hit-rate gate: edge (Cache API), R2, object store. */
 export type TierHits = { edge: number; r2: number; store: number };
@@ -209,9 +219,24 @@ export class RepoObjects {
     return bundled ? this.parsed(id, kind, bundled) : null;
   }
 
-  private parsed(id: string, kind: ObjectKind, bytes: ArrayBuffer | Uint8Array) {
-    const data_b64 = toBase64(new Uint8Array(bytes));
-    return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
+  /** Raw Git content as a structured object, checked against its id. A blob is checked here
+   * rather than by Rust compute: a compute call holds about 5x its blob in Wasm memory
+   * (measured: 85 MiB for a 16 MiB blob, beyond the 21 MiB input), and Wasm memory never
+   * shrinks, so one large blob left the isolate over its memory limit (503 on /objects). */
+  private async parsed(
+    id: string,
+    kind: ObjectKind,
+    bytes: ArrayBuffer | Uint8Array,
+  ): Promise<CachedObject> {
+    const data = new Uint8Array(bytes);
+    if (kind === 'blob') {
+      if ((await gitObjectId('blob', data)) !== id)
+        throw Object.assign(new Error(`Blob ${id} does not match its id`), {
+          code: 'OBJECT_INVALID',
+        });
+      return { id, kind, data_b64: toBase64(data) };
+    }
+    return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64: toBase64(data) }] })
       .objects[0] as CachedObject;
   }
 
