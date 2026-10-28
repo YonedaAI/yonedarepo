@@ -1,6 +1,6 @@
 // Repository deletion: confirmed by name, it leaves a tombstone (reads and writes answer
 // GONE, tokens revoked, listing row removed) and purges the object store in a platform job.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -75,4 +75,20 @@ it('lets the owner session delete, and nobody else', async () => {
   expect((await api(`/repos/${id}?confirm=mine`, { cookie: other }, { method: 'DELETE' })).status).toBe(403);
   expect((await api(`/repos/${id}?confirm=mine`, { cookie }, { method: 'DELETE' })).body).toEqual({ deleted: true });
   expect((await api(`/repos/${id}`, { cookie })).body.error.code).toBe('GONE');
+});
+
+it('answers GONE in every isolate once the delete has answered', async () => {
+  // These routes are one isolate; a fresh import of them is another, with its own copies.
+  vi.resetModules();
+  const { platformFetch } = await import('../../cloudflare/worker/platform-routes');
+  const cookie = await signup('isolate_deleter');
+  const created = await api('/repos', { cookie }, { body: { name: 'shared', files: [file('a.txt', 'a\n')], author } }, local);
+  const id = created.body.id as string;
+  const token = (await api('/tokens', { cookie }, { body: { name: 'r', scopes: ['repo:read'] } })).body.token as string;
+  // This isolate reads (and keeps a copy of main's head); the other one serves the delete.
+  expect((await api(`/repos/${id}/refs`, { token }, {}, local)).status).toBe(200);
+  const request = new Request(`https://yoneda/api/v1/repos/${id}?confirm=shared`, { method: 'DELETE', headers: { cookie } });
+  expect((await platformFetch(request, local)).status).toBe(200);
+  const read = await api(`/repos/${id}/refs`, { token }, {}, local);
+  expect([read.status, read.body.error?.code]).toEqual([404, 'GONE']);
 });

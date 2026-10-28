@@ -1,9 +1,9 @@
 // Account-level repository administration: listing an account's repositories and deleting
 // one. Deletion makes the authority a tombstone in one transaction (GONE from then on, its
-// repository tokens revoked), removes the D1 listing row, drops main's published head and
-// queues a platform job that purges the object store. Every step is idempotent, so a
+// repository tokens revoked), removes the D1 listing row, drops main's published head in
+// every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store. Every step is idempotent, so a
 // retried delete repeats whatever a failed attempt left undone.
-import { forgetHead, refreshHead } from './repo-head';
+import { dropDeletedHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import type { Env } from './types';
@@ -49,8 +49,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
     env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
   ]);
-  forgetHead(repo);
-  await refreshHead(env, repo, true);
+  await dropDeletedHead(env, repo);
   await env.PLATFORM_QUEUE.send({
     v: 1,
     repo_id: repo,
