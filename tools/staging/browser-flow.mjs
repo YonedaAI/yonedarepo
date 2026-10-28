@@ -10,14 +10,15 @@
 // back landed. A second branch, cut from main before that landing, is then behind main: its
 // Change page's "Rebase on main" replays it onto main. The Agents tab then shows a session
 // recorded by API (browser-agent-flow.mjs). Releases, forks and organizations follow
-// (browser-collab-flow.mjs), then tokens and deleting an org (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// (browser-collab-flow.mjs), then tokens, deleting an org and a repository deleted while its
+// page is open (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
-import { adminPages } from './browser-admin-flow.mjs';
+import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep } from './client.mjs';
@@ -81,6 +82,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     await forkPages(page, { account, repo, shot, cleanup }, m);
     await orgPages(page, { account, member: landed.member, shot, cleanup }, m);
     await adminPages(page, { api, account, repo, shot, cleanup, secrets }, m);
+    await deletedRepoPage(page, { origin, account, shot, cleanup }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
@@ -145,11 +147,14 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
   await page.locator('.clone-menu > summary').click();
   const cloneMenu = page.locator('.clone-dropdown');
-  await cloneMenu.getByText('HTTPS (token as password)').waitFor();
+  // Every entry is a whole command into a directory named after the repository.
+  const menuLine = (label) => cloneMenu.locator('.source-copy', { has: page.getByText(label, { exact: true }) }).locator('code');
+  assert.equal(await menuLine('HTTPS (token as password)').innerText(), `git clone ${api}/git/${id}.git ${name}`, 'the Clone menu HTTPS line');
+  assert.equal(await menuLine('yoneda remote helper').innerText(), `git clone yoneda::${api}/${id} ${name}`, 'the Clone menu yoneda line');
   const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
   if (ssh?.front_door && ssh.host) {
     m.ssh_clone = await sshBlock.locator('code').innerText();
-    assert.equal(m.ssh_clone, `git clone ssh://git@${ssh.host}/${id}.git`, 'the Clone menu SSH line');
+    assert.equal(m.ssh_clone, `git clone ssh://git@${ssh.host}/${id}.git ${name}`, 'the Clone menu SSH line');
     if (ssh.front_door === 'tunnel')
       await cloneMenu.getByRole('link', { name: 'Settings → SSH keys' }).waitFor();
   } else {

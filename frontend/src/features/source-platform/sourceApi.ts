@@ -11,6 +11,17 @@ export class SourceApiError extends Error {
   }
 }
 
+type GoneListener = (repo: string) => void;
+const goneListeners = new Set<GoneListener>();
+const REPO_PATH = /^\/repos\/(r[0-9a-f]{20})(?:[/?]|$)/;
+
+/** Calls `listener` with the repository id whenever a read under `/repos/<id>` answers GONE
+ * (the repository was deleted), so its page can replace every view with one not-found page. */
+export function onRepoGone(listener: GoneListener): () => void {
+  goneListeners.add(listener);
+  return () => goneListeners.delete(listener);
+}
+
 export async function sourceApi<T = any>(
   path: string,
   init: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; signal?: AbortSignal } = {},
@@ -23,13 +34,17 @@ export async function sourceApi<T = any>(
     credentials: 'same-origin',
   });
   const value = await response.json().catch(() => ({}));
-  if (!response.ok)
+  if (!response.ok) {
+    const code = value.error?.code ?? 'REQUEST_FAILED';
+    const repo = code === 'GONE' ? REPO_PATH.exec(path)?.[1] : undefined;
+    if (repo) for (const listener of goneListeners) listener(repo);
     throw new SourceApiError(
-      value.error?.code ?? 'REQUEST_FAILED',
+      code,
       value.error?.message ?? `Request failed (${response.status})`,
       response.status,
       value.error?.details,
     );
+  }
   return value as T;
 }
 

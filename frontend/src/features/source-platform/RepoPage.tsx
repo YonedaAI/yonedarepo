@@ -1,4 +1,5 @@
 // A repository inside the shell: name, status chips, tabs and the current tab's view.
+import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
@@ -9,6 +10,7 @@ import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoFiles } from './RepoFiles';
+import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
@@ -26,15 +28,27 @@ export function RepoPage({
   name,
   navigate,
   onDeleted,
+  onMissing,
+  onNew,
 }: {
   route: RepoRoute;
   /** The name the sidebar shows, until the repository's own status loads. */
   name?: string;
   navigate: Navigate;
   onDeleted: () => void;
+  /** The repository is not there for this viewer (deleted, unknown or not theirs). */
+  onMissing: () => void;
+  onNew: () => void;
 }) {
   const repo = route.repo;
   const status = useSource<RepoStatus>(`/repos/${repo}`);
+  const gone = useRepoGone(repo);
+  const missing = gone || repoMissing(status.code);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
+  useEffect(() => {
+    if (missing) onMissing();
+  }, [missing]);
+  if (missing) return <RepoNotFound navigate={navigate} onNew={onNew} />;
   const data = status.data;
   const owner = data?.viewer?.owner === true;
   const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
