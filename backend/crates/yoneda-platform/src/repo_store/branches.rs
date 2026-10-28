@@ -37,6 +37,8 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         ));
     }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
+    // A working branch moved to the head of an open change based on it lands that change.
+    super::changes::landed(db, &commit.id, &refname, version, number(c, "now")?)?;
     // The branch's open change (or null), so a push can name it or suggest opening one.
     let change = super::changes::open_on_ref(db, &refname)?;
     Ok(json!({ "ref": refname, "commit": commit.id, "version": version, "change": change }))

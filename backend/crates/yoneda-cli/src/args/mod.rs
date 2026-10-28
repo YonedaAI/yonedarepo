@@ -330,13 +330,14 @@ mod tests {
             })
         );
         assert_eq!(
-            parsed("change create fix --title Retry -m why").ok(),
+            parsed("change create fix --title Retry -m why --base stage").ok(),
             Some(Command::Change {
                 target: Target::default(),
                 command: ChangeCommand::Create {
                     branch: Some("fix".into()),
                     title: Some("Retry".into()),
                     body: Some("why".into()),
+                    base: Some("stage".into()),
                     to_parent: false
                 }
             })
@@ -352,6 +353,7 @@ mod tests {
                     branch: Some("fix".into()),
                     title: None,
                     body: None,
+                    base: None,
                     to_parent: true
                 }
             })

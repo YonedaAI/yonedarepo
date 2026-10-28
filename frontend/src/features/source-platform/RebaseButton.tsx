@@ -1,5 +1,5 @@
-// "Rebase on main" for an open change: replays its branch onto main's head on the server
-// (POST branches/<name>/rebase). Offered while the branch is behind main; a conflict lists
+// "Rebase on <base>" for an open change: replays its branch onto its base's head on the
+// server (POST branches/<name>/rebase). Offered while the branch is behind; a conflict lists
 // its paths and the branch stays as it was.
 import { useState } from 'react';
 import { type Conflict, ConflictList } from './CommitGates';
@@ -10,7 +10,7 @@ import { useSource } from './useSource';
 
 export type RebaseState = 'behind' | 'current' | 'unknown';
 
-/** Behind when main's head is not the merge base the change's diff was taken from. */
+/** Behind when the base's head is not the merge base the change's diff was taken from. */
 export function rebaseState(change: ChangeDetail, mainHead: string | undefined): RebaseState {
   if (!mainHead || !change.head || !change.diff) return 'unknown';
   return change.diff.base?.commit === mainHead ? 'current' : 'behind';

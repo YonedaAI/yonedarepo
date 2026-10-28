@@ -32,6 +32,12 @@ describe('fork requests', () => {
       path: `/repos/${parent}/changes`,
       body: { fork: repo, branch: 'feature', title: 'Fork work', body: 'Why' },
     });
+    expect(changeRequest(repo, undefined, 'here', { ...change, base: ' stage ' }).body).toEqual({
+      branch: 'feature',
+      base: 'stage',
+      title: 'Fork work',
+      body: undefined,
+    });
     // Not a fork: the parent target falls back to this repository.
     expect(changeRequest(repo, undefined, 'parent', change).repo).toBe(repo);
   });

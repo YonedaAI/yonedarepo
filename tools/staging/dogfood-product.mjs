@@ -1,9 +1,8 @@
 // Kit item 30 (`--dogfood`), the product half: a change request on the owner's repository
-// (session record, line comment, approval, change page data), its head landed on a scratch
-// base, a server-side rebase of a branch behind that base, and the reads a person makes on a
-// real codebase (search, blame, history, Overview, a file at an older version, a compare),
-// each timed. Changes always target main on the platform, so the change is never landed
-// through itself: its head lands on the scratch base and the change is closed.
+// based on a scratch branch (session record, line comment, approval, change page data),
+// landed through the change on that base, a server-side rebase of a branch behind the base,
+// and the reads a person makes on a real codebase (search, blame, history, Overview, a file at
+// an older version, a compare), each timed. main is never a change's base here.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,10 +53,12 @@ export async function dogfoodChange(ctx, metrics) {
         await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'dogfood', model: 'none', summary: `Dogfood ${ts}: a scratch change on the owner repository.` });
       }],
       ['open the change', async () => {
-        const opened = await timed('open_ms', () => owner.post(`${path}/changes`, { branch: scratch(refs.change, ts), title: `Dogfood ${ts}`, body: 'Scratch change from the dogfood kit; closed by it.' }));
+        const base = scratch(refs.changeBase, ts);
+        const opened = await timed('open_ms', () => owner.post(`${path}/changes`, { branch: scratch(refs.change, ts), base, title: `Dogfood ${ts}`, body: 'Scratch change from the dogfood kit, landed on its scratch base.' }));
         ctx.changes.push(opened.number);
         metrics.change = opened.number;
         metrics.change_base = opened.base;
+        assert.equal(opened.base, base, 'the change was not opened on its scratch base');
       }],
       ['line comment', () => timed('comment_ms', () => owner.post(`${path}/changes/${metrics.change}/comments`, { body: 'Dogfood: does this read well?', path: '.dogfood/change.md', line: 1, side: 'new' }))],
       // The owner pushed the head through a repository token they made: an approval by the
@@ -74,15 +75,18 @@ export async function dogfoodChange(ctx, metrics) {
         assert.ok(paths.includes('.dogfood/change.md') && paths.every((p) => p.startsWith('.dogfood/')), `the change diff is ${paths.join(', ')}`);
         metrics.gates = JSON.stringify(change.head_commit?.gates ?? null).slice(0, 300);
         metrics.comments = change.comment_count;
+        assert.equal(change.base_protected, false, 'the scratch base reads as protected');
         const { sessions } = await timed('change_sessions_ms', () => owner.get(`${path}/sessions?${q({ head, base: main, limit: 200 })}`));
         assert.ok(sessions.some((s) => s.summary?.startsWith(`Dogfood ${ts}`)), 'the recorded session is not on the change page');
       }],
-      ['land the head on the scratch base, close the change', async () => {
-        const landed = await timed('land_ms', () => owner.post(`${path}/land`, { ref: scratch(refs.changeBase, ts), commit: head }));
+      ['land the change on its scratch base', async () => {
+        const change = await owner.get(`${path}/changes/${metrics.change}`);
+        const landed = await timed('land_ms', () => owner.post(`${path}/land`, { ref: scratch(change.base, ts), commit: change.head }));
         metrics.land_version = landed.version;
         assert.equal(await headOf(refs.changeBase), head, 'the scratch base is not the change head');
-        const closed = await owner.post(`${path}/changes/${metrics.change}/close`);
-        metrics.change_status = closed.status;
+        const after = await owner.get(`${path}/changes/${metrics.change}`);
+        metrics.change_status = after.status;
+        assert.deepEqual([after.status, after.landed_commit], ['landed', head], 'landing the head on its base did not land the change');
       }],
       ['server-side rebase of a branch behind its base', async () => {
         await git('switch', '-q', '-c', refs.behind, head);

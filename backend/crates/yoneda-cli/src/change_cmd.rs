@@ -1,6 +1,7 @@
-//! `yoneda change`: change requests. A change proposes a pushed branch for landing on main;
-//! its head is the branch's current commit, approved with `yoneda review approve <head>`
-//! and landed with `yoneda change land <n>`.
+//! `yoneda change`: change requests. A change proposes a pushed branch for landing on its
+//! base (main unless `--base` names another branch); its head is the branch's current
+//! commit, approved with `yoneda review approve <head>` and landed on the base with
+//! `yoneda change land <n>`.
 use crate::command::ChangeCommand;
 use crate::error::{Error, Result};
 use crate::repo_ops::{current_branch, land_head};
@@ -114,6 +115,7 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             branch,
             title,
             body,
+            base,
             to_parent,
         } => {
             let branch = branch
@@ -128,6 +130,9 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                 .filter(|s| !s.trim().is_empty())
                 .unwrap_or_else(|| branch.clone());
             let mut body = json!({ "branch": branch, "title": title, "body": body });
+            if let Some(base) = base {
+                body["base"] = json!(base);
+            }
             // From a fork: the parent opens it, carrying this fork's branch across.
             if to_parent {
                 let status = t.api.status().await?;
@@ -201,7 +206,8 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             let head = change["head"]
                 .as_str()
                 .ok_or_else(|| Error::new(format!("change #{number} has no head commit")))?;
-            land_head(t, &format!("change #{number}"), head).await?;
+            let base = change["base"].as_str().unwrap_or("main");
+            land_head(t, &format!("change #{number}"), head, base).await?;
         }
     }
     Ok(())
