@@ -109,7 +109,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   )
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'orgs')
-    return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req));
+    return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));

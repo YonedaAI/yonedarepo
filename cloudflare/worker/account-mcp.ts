@@ -101,6 +101,12 @@ const orgTools: [string, string, string[], (a: Json) => [string, string, Json?]]
     (a) => ['GET', `/orgs/${enc(a.org)}/repos`],
   ],
   [
+    'org_delete',
+    'Delete an organization that owns no repositories; its name is retired for good. confirm must equal the name. Owners only.',
+    ['org', 'confirm'],
+    (a) => ['DELETE', `/orgs/${enc(a.org)}?confirm=${enc(a.confirm)}`],
+  ],
+  [
     'org_member_add',
     'Add an existing account to the organization, or change its role (owner or member). Owners only.',
     ['org', 'account', 'role'],

@@ -1,7 +1,8 @@
 //! Organization access on a repository, as the adapter resolved it from each org's
 //! authority for one request (`orgs` on `_session` or `_pat`): an org owner acts as the
 //! owner of the org's repositories, and a team member holds its team entry's role
-//! (`team:<org>/<team>` in `members`).
+//! (`team:<org>/<team>#<id>` in `members`: the team's id, so a later team that reuses a
+//! deleted team's name holds none of its grants).
 use super::members::Role;
 use crate::storage::bad;
 use serde_json::Value;
@@ -33,8 +34,10 @@ impl<'a> Orgs<'a> {
         let mut best = member(account)?;
         for (org, access) in self.0.into_iter().flatten() {
             for team in access["teams"].as_array().into_iter().flatten() {
-                let team = team.as_str().ok_or_else(|| bad("Corrupt team"))?;
-                best = best.max(member(&format!("team:{org}/{team}"))?);
+                let (Some(name), Some(id)) = (team["name"].as_str(), team["id"].as_i64()) else {
+                    return Err(bad("Corrupt team"));
+                };
+                best = best.max(member(&format!("team:{org}/{name}#{id}"))?);
             }
         }
         Ok(best)

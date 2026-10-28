@@ -5,7 +5,7 @@
 // authorities to ask on their requests, org-access.ts) and drops this isolate's org access
 // copies after a change, so removals reach repositories within ACCESS_MS.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
-import { forgetOrgAccess, type OrgAccess } from './org-access';
+import { forgetOrgAccess, type OrgAccess, teamKey } from './org-access';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import type { Env } from './types';
@@ -82,7 +82,7 @@ async function orgRepos(env: Env, org: string, account: string) {
     account,
     ...(shown.teams as Json[])
       .filter((t) => (t.members as string[]).includes(account))
-      .map((t) => `team:${org}/${t.name}`),
+      .map((t) => teamKey(org, { name: t.name, id: t.id })),
   ];
   const all = shown.role === 'owner';
   const marks = keys.map((_, i) => `?${i + 2}`).join(',');
@@ -96,6 +96,28 @@ async function orgRepos(env: Env, org: string, account: string) {
   return { repos: listed.results };
 }
 
+/** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories
+ * (as the listing shows; a repository created meanwhile is the race documented in
+ * `orgs.rs`: its name is retired with the org, so it never passes to a new owner). Former
+ * members' hints are dropped afterwards. */
+async function deleteOrg(env: Env, org: string, actor: string, confirm: string) {
+  await orgCommand(env, org, { op: 'org_show', actor });
+  const owned = await env.INDEX.prepare(
+    'SELECT COUNT(*) AS n FROM platform_repos WHERE workspace=?',
+  )
+    .bind(org)
+    .first<{ n: number }>();
+  if ((owned?.n ?? 0) > 0)
+    throw new ApiError(
+      'CONFLICT',
+      `${org} owns ${owned?.n} repositories; delete them before the organization`,
+    );
+  const deleted = await orgCommand(env, org, { op: 'org_delete', actor, confirm });
+  forgetOrgAccess(org);
+  await Promise.all((deleted.members as string[]).map((m) => hint(env, m, org, false)));
+  return { org, deleted: true };
+}
+
 /** `/api/v1/orgs[/:org[/members[/:account]|/teams[/:team[/members[/:account]]]|/repos]]`. */
 export async function orgsRoute(
   env: Env,
@@ -103,6 +125,7 @@ export async function orgsRoute(
   method: string,
   parts: string[],
   body: () => Promise<Json>,
+  query: URLSearchParams = new URLSearchParams(),
 ): Promise<Json> {
   const [name, resource, item, sub, target] = parts;
   const get = method === 'GET';
@@ -141,6 +164,7 @@ export async function orgsRoute(
   const { account: actor } = orgCaller(auth, change, org);
   const run = (command: Json) => orgCommand(env, org, { ...command, actor });
   if (!resource && get) return run({ op: 'org_show' });
+  if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
   if (resource === 'members' && !item && post) {
     const { account, role } = await body();
