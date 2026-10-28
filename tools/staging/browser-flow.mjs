@@ -5,7 +5,8 @@
 // and the account Settings page. Then the second kit account (a member at write) commits on a
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
 // page (the platform refuses an author's own approval); the page and the API must both read it
-// back landed. Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// back landed. A second branch, cut from main before that landing, is then behind main: its
+// Change page's "Rebase on main" replays it onto main. Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
@@ -66,7 +67,8 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     await shot('signed-in');
     const account = new Session(origin, { cookie: cookieHeader(await context.cookies(origin)) });
     const repo = await sourcePages(page, origin, account, { api, shot, cleanup }, m);
-    await changeLanded(page, { origin, kit, account, repo, shot }, m);
+    const landed = await changeLanded(page, { origin, kit, account, repo, shot }, m);
+    await changeRebased(page, { origin, account, repo, shot, ...landed }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
@@ -159,6 +161,8 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
+  const base = (await account.get(api('/refs'))).refs['refs/heads/main'];
+  await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: base, expected: null });
   const made = await member.session.post(`/repos/${id}/commits`, {
     ref: 'main',
     changes: [{ path: 'docs/browser-gate.md', content_b64: b64('Added by the browser gate.\n') }],
@@ -190,4 +194,34 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   Object.assign(m, { change_status: after.status, landed_version: after.landed_version });
   assert.equal(after.status, 'landed', `the change is ${after.status} after landing in the UI`);
   assert.equal(after.landed_commit, made.commit, 'the change landed another commit');
+  return { member, base };
+}
+
+/**
+ * "Rebase on main" in the UI. The member commits on kit-rebase, cut from main before the
+ * landing above, so the branch is behind main; the kit account opens its change and rebases
+ * it on the Change page. The branch must then sit on main's head with a new commit.
+ */
+export async function changeRebased(page, { origin, account, member, base, repo: { id }, shot }, m) {
+  const api = (path) => `/api/v1/repos/${id}${path}`;
+  const made = await member.session.post(`/repos/${id}/commits`, {
+    ref: 'kit-rebase',
+    changes: [{ path: 'docs/rebase.md', content_b64: b64('Rebased by the browser gate.\n') }],
+    message: 'Browser gate: a change behind main',
+    author,
+  });
+  await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: made.commit, expected: base });
+  const change = await account.post(api('/changes'), { branch: 'kit-rebase', title: 'Browser gate rebase' });
+  await page.goto(`${origin}/source/${id}/changes/${change.number}`);
+  const box = page.getByRole('region', { name: 'Rebase' });
+  const started = performance.now();
+  await box.getByRole('button', { name: 'Rebase on main' }).click();
+  await settle(box.getByText('Up to date with main.'), [page.getByRole('alert')], { timeoutMs: 60_000, what: 'rebase' });
+  m.rebase_ui_ms = Math.round(performance.now() - started);
+  await shot('change-rebased');
+  const refs = (await account.get(api('/refs'))).refs;
+  const after = await account.get(api(`/changes/${change.number}`));
+  assert.notEqual(refs['refs/heads/kit-rebase'], made.commit, 'the branch did not move');
+  assert.equal(after.diff.base.commit, refs['refs/heads/main'], 'the rebased branch is not on main');
+  m.rebased = refs['refs/heads/kit-rebase'];
 }
