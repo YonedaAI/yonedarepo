@@ -13,6 +13,7 @@ import { deleteRepository, listRepositories } from './repo-admin';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute } from './repo-changes';
+import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
@@ -145,6 +146,12 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'commits' && sha && sub === 'pin' && post)
     return run('git_pin', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'vacuum' && post) return vacuum(ctx, await bodyOf(req).catch(() => ({})));
+  // Owner-run log compaction (the derive job also runs it after landings) and its bound.
+  if (resource === 'compact' && post) return compactLog(env, repo, ctx.call);
+  if (resource === 'retention' && req.method === 'PUT') {
+    const { keep_versions, keep_days } = await bodyOf(req);
+    return ctx.call({ op: 'repo_set_retention', keep_versions, keep_days });
+  }
   if (get && resource === 'diff')
     return run('git_diff', {
       ...query,

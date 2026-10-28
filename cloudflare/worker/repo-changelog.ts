@@ -50,6 +50,12 @@ async function readState(env: Env, repo: string): Promise<ChangeLogState> {
   return (await readCursor(env, repo)).state;
 }
 
+/** The version the change-log stream has read through, while one is bound: log
+ * compaction keeps later versions in the authority. */
+export async function changeLogHold(env: Env, repo: string) {
+  return env.CHANGELOG ? (await readState(env, repo)).version : undefined;
+}
+
 /** The cursor and its etag; `etag` is null while no cursor exists yet. */
 async function readCursor(env: Env, repo: string) {
   const stored = await env.OBJECTS.get(stateKey(repo));
