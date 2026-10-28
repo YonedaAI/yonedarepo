@@ -57,7 +57,7 @@ pub(crate) fn container_versions(account_id: &str) -> Result<BTreeMap<String, u6
         .collect())
 }
 
-/// Busy instances (active, assigned, starting or scheduling) of the Worker's containers.
+/// Busy instances (active or assigned) of the Worker's containers.
 pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> {
     Ok(busy_instances(account_id, config)?
         .iter()
@@ -71,8 +71,10 @@ pub(crate) fn busy_instances(account_id: &str, config: &Value) -> Result<Vec<(St
     busy_apps(account_id, |name| declared.contains_key(name))
 }
 
-/// Busy instances (active, assigned, starting or scheduling) of every container application
-/// whose name `wanted` accepts.
+/// Busy instances of every container application whose name `wanted` accepts. Instances
+/// still starting or scheduling are printed but not counted: they hold no work yet (dev saw
+/// four sit in `starting` with nothing active), and a check whose container dies is claimed
+/// again once its lease lapses (repo-checks.ts watchdog).
 pub(crate) fn busy_apps(
     account_id: &str,
     wanted: impl Fn(&str) -> bool,
@@ -93,14 +95,23 @@ pub(crate) fn busy_apps(
             account_id,
             &["containers", "info", id, "--json"],
         )?)?;
-        let counts = &info["health"]["instances"];
-        let count = ["active", "assigned", "starting", "scheduling"]
-            .iter()
-            .map(|k| counts[*k].as_u64().unwrap_or(0))
-            .sum::<u64>();
+        let (count, starting) = instance_counts(&info);
+        if starting > 0 {
+            println!(
+                "Containers: {name} has {starting} instance(s) starting or scheduling (not counted as busy)."
+            );
+        }
         busy.push((name.to_owned(), count));
     }
     Ok(busy)
+}
+
+/// (busy, starting) instance counts of `containers info --json`: busy is active or assigned,
+/// starting is starting or scheduling.
+pub(crate) fn instance_counts(info: &Value) -> (u64, u64) {
+    let counts = &info["health"]["instances"];
+    let sum = |keys: [&str; 2]| keys.iter().map(|k| counts[*k].as_u64().unwrap_or(0)).sum();
+    (sum(["active", "assigned"]), sum(["starting", "scheduling"]))
 }
 
 /// `cargo xtask live-check --env <env>`: CI's dev deploy job asks whether this commit is

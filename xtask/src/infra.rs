@@ -1,6 +1,7 @@
 //! Infrastructure as code: `cargo xtask infra gen|plan|up|down|smoke --env <env>`.
 //! Specs live in `infra/envs/`; generated wrangler configs in `cloudflare/`.
 pub(crate) mod apply;
+pub(crate) mod consumers;
 pub(crate) mod drift;
 pub(crate) mod env;
 pub(crate) mod generate;
