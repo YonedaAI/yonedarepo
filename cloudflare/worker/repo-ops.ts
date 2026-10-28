@@ -82,6 +82,11 @@ const KEEPS_REFS = new Set([
   'repo_compact_plan',
   'repo_compact_done',
   'repo_set_retention',
+  'repo_lfs_batch',
+  'repo_lfs_store',
+  'repo_lfs_discard',
+  'repo_lfs_usage',
+  'repo_lfs_set_quota',
 ]);
 const writes = new Map<string, number>();
 /** How many commands that may move refs this isolate has sent to `repo`. */
