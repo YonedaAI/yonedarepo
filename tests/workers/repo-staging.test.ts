@@ -119,7 +119,9 @@ it('finds an object that moves from the staged copy to R2 in the middle of a rea
   const { owner, id, path } = await repo('handover');
   const made = await api(`${path}/commits`, owner, { body: { ref: 'main', changes: [file('h.txt', 'h\n')], message: 'h', author } });
   const blob = made.body.touches[0].new_blob;
+  // The commit's write-through (after its answer) has not reached either cache tier yet.
   await caches.default.delete(new Request(`${EDGE}/${id}/${blob}`));
+  await bindings.OBJECTS.delete(`platform/v1/${id}/objects/${blob}`);
   const jobs = queued.splice(0).filter((m) => m.kind === 'platform_objects');
   // The reader misses R2; before it asks for the staged copy, the projector writes R2 and
   // drops that copy. The read must still succeed.
