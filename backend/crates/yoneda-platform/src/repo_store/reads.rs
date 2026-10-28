@@ -81,6 +81,8 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         "objects": super::staging::status(db)?,
         "bundled": super::pushed::bundles::any(db)?,
         "automation": super::break_glass::state(db)?,
+        "parent": settings.parent.as_ref().map(|(repo, version)| json!({ "repo": repo, "version": version })),
+        "forks": super::forks::count(db)?,
         "viewer": { "principal": actor.principal, "owner": actor.owner,
             "role": actor.member.map(super::members::Role::as_str) },
     }))

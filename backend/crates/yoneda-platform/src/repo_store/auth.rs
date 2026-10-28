@@ -135,7 +135,7 @@ pub fn actor_with(
 ) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
-        | "purge" | "hooks" | "compact"),
+        | "purge" | "hooks" | "compact" | "fork"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -145,6 +145,8 @@ pub fn actor_with(
             "derive" => &["classify"],
             "hooks" => &["hooks"],
             "compact" => &["compact"],
+            // Carries a fork's change into its parent: records commits, moves the mirror.
+            "fork" => &["write", "fork"],
             _ => &["system"],
         };
         return Ok(Actor {
