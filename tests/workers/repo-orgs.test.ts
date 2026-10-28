@@ -140,4 +140,36 @@ it('serves organizations over the account MCP', async () => {
   expect((await mcp('org_repos', { org: 'beta' })).structuredContent.repos.map((r: any) => r.id)).toEqual([repo.id]);
   expect((await mcp('org_team_delete', { org: 'beta', team: 'ops' })).structuredContent).toMatchObject({ deleted: true });
   expect((await mcp('org_show', { org: 'nope_org' })).isError).toBe(true);
+
+  // Deleting: refused while it owns repositories; the name is retired afterwards.
+  const owning = await mcp('org_delete', { org: 'beta', confirm: 'beta' });
+  expect(owning.content[0].text).toContain('CONFLICT');
+  await mcp('repo_delete', { repo: repo.id, confirm: 'svc' });
+  expect((await mcp('org_delete', { org: 'beta', confirm: 'bet' })).isError).toBe(true);
+  expect((await mcp('org_delete', { org: 'beta', confirm: 'beta' })).structuredContent).toMatchObject({ deleted: true });
+  expect((await mcp('org_list', {})).structuredContent.orgs).toEqual([]);
+  expect((await mcp('org_show', { org: 'beta' })).isError).toBe(true);
+  expect((await mcp('org_create', { name: 'beta' })).content[0].text).toContain('ALREADY_EXISTS');
+});
+
+it('a deleted team takes its grants with it: a new team of the same name starts with none', async () => {
+  const erin = { cookie: await signup('orgs_erin') };
+  const finn = { cookie: await signup('orgs_finn') };
+  await api('/orgs', erin, { body: { name: 'gamma' } });
+  await api('/orgs/gamma/members', erin, { body: { account: 'orgs_finn', role: 'member' } });
+  await api('/orgs/gamma/teams', erin, { body: { name: 'devs' } });
+  const id = (await api('/repos', erin, { body: { name: 'old', owner: 'gamma', files: [file('a.md', 'a\n')], author } })).body.id as string;
+  await api(`/repos/${id}/members`, erin, { body: { account: 'team:gamma/devs', role: 'write' } });
+  await api('/orgs/gamma/teams/devs', erin, { method: 'DELETE' });
+  // Re-created under the same name, with finn in it: the old repository grant is not his.
+  await api('/orgs/gamma/teams', erin, { body: { name: 'devs' } });
+  await api('/orgs/gamma/teams/devs/members', erin, { body: { account: 'orgs_finn' } });
+  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(403);
+  expect((await api('/repos', finn)).body.repos).toEqual([]);
+  // Granting the new team works, and replaces the stale row; removing by name clears it.
+  await api(`/repos/${id}/members`, erin, { body: { account: 'team:gamma/devs', role: 'read' } });
+  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(200);
+  expect((await api(`/repos/${id}/members`, erin)).body.members).toEqual([expect.objectContaining({ account: 'team:gamma/devs', role: 'read' })]);
+  expect((await api(`/repos/${id}/members/${encodeURIComponent('team:gamma/devs')}`, erin, { method: 'DELETE' })).body).toMatchObject({ removed: true });
+  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(403);
 });

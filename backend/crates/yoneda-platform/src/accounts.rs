@@ -37,9 +37,9 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "device_create" | "device_approve" | "device_poll" => {
                 device::handle(&db, &command, now)
             }
-            "org_create" | "org_access" | "team_exists" | "org_show" | "org_member_put"
-            | "org_member_remove" | "team_create" | "team_delete" | "team_member_put"
-            | "team_member_remove" | "org_hint_add" | "org_hint_remove" => {
+            "org_create" | "org_access" | "team_exists" | "org_show" | "org_delete"
+            | "org_member_put" | "org_member_remove" | "team_create" | "team_delete"
+            | "team_member_put" | "team_member_remove" | "org_hint_add" | "org_hint_remove" => {
                 orgs::handle(&db, &command, now)
             }
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
@@ -47,13 +47,14 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 3] = [
+const MIGRATIONS: [(i64, &str); 4] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
         include_str!("accounts/migrations/0002_account_tokens.sql"),
     ),
     (3, include_str!("accounts/migrations/0003_orgs.sql")),
+    (4, include_str!("accounts/migrations/0004_team_ids.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

@@ -1,5 +1,7 @@
 //! Teams of an organization: named groups of its members that repositories grant a role
-//! to (`team:<org>/<team>`). Only the org's owners manage them (checked by `orgs`).
+//! to (`team:<org>/<team>#<id>`). Each team gets an id from the org's counter that is never
+//! reused, so a repository grant made to a deleted team never reaches a later team of the
+//! same name. Only the org's owners manage them (checked by `orgs`).
 use super::orgs::{count, personal, role_of};
 use super::*;
 
@@ -65,15 +67,17 @@ fn member_remove<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     Ok(json!({ "team": team, "account": account, "removed": true }))
 }
 
-pub(super) fn exists<S: SqlStore>(db: &S, c: &Value) -> Result<bool> {
+/// The id of the team named by `c`, if it exists.
+pub(super) fn id_of<S: SqlStore>(db: &S, c: &Value) -> Result<Option<i64>> {
     let team = team_name(c)?;
-    Ok(!db
-        .query("SELECT name FROM org_teams WHERE name=?", &[json!(team)])?
-        .is_empty())
+    Ok(db
+        .query("SELECT id FROM org_teams WHERE name=?", &[json!(team)])?
+        .first()
+        .and_then(|r| r["id"].as_i64()))
 }
 
 fn existing_team<S: SqlStore>(db: &S, c: &Value) -> Result<String> {
-    if !exists(db, c)? {
+    if id_of(db, c)?.is_none() {
         return Err(Error::new(
             "NOT_FOUND",
             format!("No team named {}", string(c, "team")?),
@@ -96,12 +100,19 @@ fn create<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value
     if count(db, "SELECT COUNT(*) AS n FROM org_teams", &[])? >= TEAM_LIMIT {
         return Err(bad("Team limit reached"));
     }
+    let id = get(db, "team_seq").map_or(0, |seq| seq["last"].as_i64().unwrap_or(0)) + 1;
+    put(db, "team_seq", &json!({ "last": id }))?;
     db.query(
-        "INSERT INTO org_teams(name,created_by,created_at) VALUES(?,?,?)",
-        &[json!(team), json!(actor), json!(now)],
+        "INSERT INTO org_teams(name,id,created_by,created_at) VALUES(?,?,?,?)",
+        &[json!(team), json!(id), json!(actor), json!(now)],
     )?;
-    audit(db, "org.team_created", now, json!({ "team": team }))?;
-    Ok(json!({ "team": team, "created_at": now }))
+    audit(
+        db,
+        "org.team_created",
+        now,
+        json!({ "team": team, "id": id }),
+    )?;
+    Ok(json!({ "team": team, "id": id, "created_at": now }))
 }
 
 /// `team_member_put {team, account}`: only members of the org join its teams.

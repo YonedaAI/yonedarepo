@@ -11,7 +11,10 @@ import type { Env, Json } from './types';
 import { workspace } from './workspace';
 
 export type OrgRole = 'owner' | 'member';
-export type OrgAccess = Record<string, { role: OrgRole; teams: string[] }>;
+/** A team as its org numbers it: ids are never reused, so a grant made to a deleted team
+ * never reaches a later team of the same name. */
+export type OrgTeam = { name: string; id: number };
+export type OrgAccess = Record<string, { role: OrgRole; teams: OrgTeam[] }>;
 
 /** Orgs asked per request at most (an account's hints beyond it are not resolved). */
 const ORGS_PER_ACCOUNT = 100;
@@ -68,7 +71,10 @@ export function forgetOrgAccess(org: string, account?: string) {
   for (const k of answers.keys()) if (k.startsWith(`${org}\n`)) answers.delete(k);
 }
 
+/** A team's repository member entry (`team:<org>/<team>#<id>`, as `members.rs` keys it). */
+export const teamKey = (org: string, team: OrgTeam) => `team:${org}/${team.name}#${team.id}`;
+
 /** The repository member entries `orgs` resolves to for its account: its teams'. */
 export function teamEntries(orgs: OrgAccess | undefined): string[] {
-  return Object.entries(orgs ?? {}).flatMap(([org, a]) => a.teams.map((t) => `team:${org}/${t}`));
+  return Object.entries(orgs ?? {}).flatMap(([org, a]) => a.teams.map((t) => teamKey(org, t)));
 }

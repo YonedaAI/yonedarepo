@@ -464,6 +464,16 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("org delete acme --confirm acme").ok(),
+            Some(Command::Org {
+                origin: None,
+                command: OrgCommand::Delete {
+                    org: "acme".into(),
+                    confirm: "acme".into()
+                }
+            })
+        );
+        assert_eq!(
             parsed("org show acme --origin https://y").ok(),
             Some(Command::Org {
                 origin: Some("https://y".into()),
@@ -510,6 +520,7 @@ mod tests {
             "org team add acme devs",
             "org team rename acme devs x",
             "org delete acme",
+            "org show acme --confirm acme",
         ] {
             assert_eq!(
                 parsed(line).map_err(|e| e.exit_code).err(),
