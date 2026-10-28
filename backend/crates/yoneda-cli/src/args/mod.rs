@@ -1,9 +1,11 @@
 //! Command-line parsing: a small table-driven parser (no framework). The command set is
 //! wide but each command has a handful of flags; clap would add more than it removes.
+mod change;
 #[cfg(test)]
 mod docs;
 mod org;
 mod parser;
+mod release;
 mod ssh_key;
 mod sub;
 
@@ -143,8 +145,8 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "reads" => sub::declared_reads(rest)?,
         "push" => Command::Push(rest.to_vec()),
         "session" => sub::session(rest)?,
-        "change" => sub::change(rest)?,
-        "release" => sub::release(rest)?,
+        "change" => change::change(rest)?,
+        "release" => release::release(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
