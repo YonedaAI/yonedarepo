@@ -72,6 +72,11 @@ pub async fn run(origin: Option<&str>, command: OrgCommand) -> Result<()> {
                 println!("{}  {}", text(&r["id"]), text(&r["name"]));
             }
         }
+        OrgCommand::Delete { org, confirm } => {
+            let query = format!("?confirm={}", crate::api::encode(&confirm));
+            api.delete(&format!("{}{query}", path(&org, &[]))).await?;
+            println!("Deleted organization {org}; its name is retired");
+        }
         OrgCommand::MemberAdd { org, account, role } => {
             let body = json!({ "account": account, "role": role });
             api.post(&path(&org, &["members"]), &body).await?;

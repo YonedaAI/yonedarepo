@@ -13,6 +13,8 @@ account
 organizations (owners manage members and teams; a repository grants a team by
 `team:<org>/<team>` as a member)
   org list | org create <name> | org show <org> | org repos <org>
+  org delete <org> --confirm <org>   (owners; only once it owns no repositories; the name
+                                      is retired for good)
   org member add <org> <account> [--role owner|member] | org member remove <org> <account>
   org team create|delete <org> <team>
   org team add|remove <org> <team> <account>
@@ -101,6 +103,10 @@ pub enum OrgCommand {
     },
     Repos {
         org: String,
+    },
+    Delete {
+        org: String,
+        confirm: String,
     },
     MemberAdd {
         org: String,
