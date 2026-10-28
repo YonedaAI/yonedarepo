@@ -3,14 +3,15 @@
 import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { sshInternal } from './platform-ssh';
-import { frontDoor } from './platform-ssh-gateway';
+import { frontDoor, sshWake } from './platform-ssh-gateway';
 import { repoApi } from './repo-api';
 import { gitHttp } from './repo-git-http';
 import type { Env } from './types';
 
 export async function platformFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
-  if (url.pathname === '/health')
+  if (url.pathname === '/health') {
+    sshWake(env);
     return response({
       service: 'yonedarepo-platform',
       v: 1,
@@ -18,6 +19,7 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
       // How Git over SSH is reachable, or null (kit item 26 skips while it is not).
       ssh: frontDoor(env),
     });
+  }
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push).
   if (url.pathname.startsWith('/git/')) return gitHttp(req, env);

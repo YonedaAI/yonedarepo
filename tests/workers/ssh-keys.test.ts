@@ -2,7 +2,7 @@
 // (JWT-authenticated key lookup and session tokens) and the `ysh_` session token on smart
 // HTTP, held to one repository and service and refused at once when its key is removed.
 import { SignJWT } from 'jose';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -163,4 +163,15 @@ it('tells clients how to reach Git over SSH through the tunnel', async () => {
   expect((await api('/ssh-keys', { cookie }, {}, tunnel)).body.ssh).toEqual(expected);
   const connect = { ...tunnel, SSH_FRONT_DOOR: 'connect' } as Env;
   expect((await api('/ssh-keys', { cookie }, {}, connect)).body.ssh).toMatchObject({ front_door: 'connect', ssh_config: null });
+});
+
+it('logs the gateway\'s own state for wrangler tail, from the gateway only', async () => {
+  const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+  const exited = { event: 'tunnel.exited', detail: { exit_code: 1, tail: ['ERR failed to connect'] } };
+  expect(await internal('status', exited)).toEqual({ status: 200, body: { recorded: true } });
+  expect(logged).toHaveBeenCalledWith(
+    JSON.stringify({ event: 'ssh.tunnel.exited', exit_code: 1, tail: ['ERR failed to connect'] }),
+  );
+  expect((await internal('status', { event: 'evil"event' })).status).toBe(400);
+  expect((await internal('status', exited, 'Bearer nope')).status).toBe(401);
 });
