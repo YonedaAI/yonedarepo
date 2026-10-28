@@ -1,6 +1,7 @@
-use super::{Mode, Source, Step, mode, rollouts, steps};
+use super::{Source, Step, steps, with_host_moves};
 use crate::deploy_guard::{self as guard, Facts, Options};
 use crate::deploy_image::ImagePlan;
+use crate::deploy_live::rollouts;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use serde_json::json;
@@ -237,25 +238,73 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 
 #[test]
 fn prod_checks_active_runs_right_before_each_container_rollout() {
-    // The prod spec binds no container since the harness was retired; one that does is gated.
-    let mut workers = prod_workers();
-    assert!(!workers.iter().any(|w| w.has_containers));
-    workers[0].has_containers = true;
+    let workers = prod_workers();
+    let roles: Vec<&str> = workers.iter().map(|w| w.role.as_str()).collect();
+    assert_eq!(roles, ["superfan", "platform", "agents", "sites"]);
     let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
-    let gate = plan
-        .iter()
-        .position(|s| *s == Step::ActiveGate { worker: 0 })
-        .unwrap();
-    assert_eq!(
-        plan[gate + 1],
-        Step::Deploy {
-            worker: 0,
-            dry_run: false
+    for (index, worker) in workers.iter().enumerate() {
+        let gate = plan
+            .iter()
+            .position(|s| *s == Step::ActiveGate { worker: index });
+        assert_eq!(gate.is_some(), worker.has_containers, "{}", worker.name);
+        if let Some(gate) = gate {
+            assert_eq!(
+                plan[gate + 1],
+                Step::Deploy {
+                    worker: index,
+                    dry_run: false
+                }
+            );
         }
+    }
+    assert!(workers[1].has_containers && workers[2].has_containers);
+    assert!(!workers[0].has_containers && !workers[3].has_containers);
+}
+
+#[test]
+fn prod_checks_the_retired_workers_containers_before_the_first_deploy() {
+    let plan = steps(&Env::Prod, &prod_workers(), false, &Source::Dockerfile);
+    let gate = plan.iter().position(|s| *s == Step::RetiredGate).unwrap();
+    let first_deploy = plan
+        .iter()
+        .position(|s| matches!(s, Step::Deploy { .. }))
+        .unwrap();
+    let last_migration = plan
+        .iter()
+        .rposition(|s| matches!(s, Step::Migrate { .. }))
+        .unwrap();
+    assert!(last_migration < gate && gate < first_deploy, "{plan:?}");
+    assert_eq!(plan.iter().filter(|s| **s == Step::RetiredGate).count(), 1);
+    let dev = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
+    assert!(!dev.contains(&Step::RetiredGate));
+}
+
+#[test]
+fn infra_up_moves_each_workers_hosts_right_before_its_deploy() {
+    let workers = prod_workers();
+    let plan = with_host_moves(
+        steps(&Env::Prod, &workers, false, &Source::Dockerfile),
+        &workers,
     );
+    for (index, worker) in workers.iter().enumerate() {
+        let deploy = plan
+            .iter()
+            .position(|s| matches!(s, Step::Deploy { worker, .. } if *worker == index))
+            .unwrap();
+        let moved = plan[deploy - 1] == Step::MoveHosts { worker: index };
+        assert_eq!(
+            moved,
+            !inventory::routes(&worker.config).is_empty(),
+            "{}",
+            worker.name
+        );
+    }
+    assert!(Step::MoveHosts { worker: 0 }.mutates_remote());
     assert!(
-        !plan.contains(&Step::ActiveGate { worker: 1 }),
-        "sites has no containers"
+        !steps(&Env::Prod, &workers, false, &Source::Dockerfile)
+            .iter()
+            .any(|s| matches!(s, Step::MoveHosts { .. })),
+        "a plain deploy moves no host"
     );
 }
 
@@ -524,19 +573,37 @@ fn prod_deploys_only_the_tip_of_main() {
 }
 
 #[test]
-fn deploy_without_an_env_is_refused_and_legacy_is_explicit() {
+fn deploy_without_an_env_is_refused_and_the_legacy_env_is_gone() {
     let args = |list: &[&str]| list.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let error = mode(&args(&["deploy"])).unwrap_err().to_string();
-    assert!(error.contains("Refusing: name an environment"), "{error}");
-    assert!(mode(&args(&["deploy", "--confirm"])).is_err());
-    assert_eq!(
-        mode(&args(&["deploy", "--env", "prod-legacy", "--confirm"])).unwrap(),
-        Mode::Legacy
-    );
-    assert_eq!(
-        mode(&args(&["deploy", "--env", "dev"])).unwrap(),
-        Mode::Spec
-    );
+    let error = Env::from_args(&args(&["deploy"])).unwrap_err().to_string();
+    assert!(error.contains("Missing --env"), "{error}");
+    assert!(Env::from_args(&args(&["deploy", "--confirm"])).is_err());
+    let error = Env::from_args(&args(&["deploy", "--env", "prod-legacy", "--confirm"]))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("Unknown environment"), "{error}");
+}
+
+#[test]
+fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
+    let with_browser = |status: &str| {
+        let mut evidence = evidence(HEAD, "pass");
+        evidence["items"].as_array_mut().unwrap().push(
+            json!({"id": guard::BROWSER_ITEM, "title": "Browser", "status": status, "metrics": {}}),
+        );
+        evidence
+    };
+    guard::evidence_passes(Some(&with_browser("pass")), HEAD).unwrap();
+    for status in ["fail", "skip"] {
+        let error = guard::evidence_passes(Some(&with_browser(status)), HEAD)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("kit item browser"), "{error}");
+    }
+    // Not yet required (guard::BROWSER_REQUIRED): evidence without the item still passes.
+    guard::evidence_passes(Some(&evidence(HEAD, "pass")), HEAD).unwrap();
+    let no_item_zero = json!({"items": [{"id": "browser", "status": "pass"}]});
+    assert!(guard::evidence_passes(Some(&no_item_zero), HEAD).is_err());
 }
 
 #[test]

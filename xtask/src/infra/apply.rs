@@ -29,6 +29,26 @@ pub(crate) fn creations(rows: &[plan::Row]) -> Vec<Create> {
         .collect()
 }
 
+/// The host moves this deploy makes (each is redone from a fresh read right before its
+/// Worker deploys).
+fn print_moves(workers: &[inventory::Deployable], live: &Live) -> Result<()> {
+    let moves: Vec<String> = workers
+        .iter()
+        .map(|w| super::hosts::plan(w, live))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .map(|m| m.describe())
+        .collect();
+    if moves.is_empty() {
+        println!("Host moves: none.");
+    }
+    for line in moves {
+        println!("Host move planned: {line}");
+    }
+    Ok(())
+}
+
 pub(crate) async fn snapshot(spec: &Spec, token: &str) -> Result<Live> {
     let live = live::read(spec, token.to_owned(), &spec.worker_names()?).await;
     Ok(live)
@@ -114,11 +134,13 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
     {
         println!("Dry run: configs carry a placeholder D1 id until the databases exist.");
     }
+    print_moves(&workers, &live)?;
     crate::deploy_env::run(
         &env,
         &spec,
         &lock,
         &crate::deploy_guard::Options::from_args(args)?,
+        Some(&token),
     )
     .await?;
     if !dry_run {

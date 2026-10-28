@@ -1,9 +1,9 @@
-// Managed provider connections (staging): the owner binds a deployment's Secrets Store key
+// Managed provider connections (dev and prod): the owner binds a deployment's Secrets Store key
 // (Z.ai or MiMo only) to a named account without anyone pasting it. The account's vault holds
 // an owner-bound reference, never the plaintext; the Worker resolves it from the binding at
 // call time, so a rotated store key applies at once. Off unless the deployment sets
-// MANAGED_PROVIDER_KEYS=secrets-store (only wrangler.staging-agents.jsonc does); with the
-// flag off the route is absent and every stored reference fails closed.
+// MANAGED_PROVIDER_KEYS=secrets-store (the dev and prod agent Workers, infra/envs/*.json); with
+// the flag off the route is absent and every stored reference fails closed.
 import { providerDefinition } from '../../shared/providers';
 import { username } from './accounts';
 import { error, readJson, response } from './http';
