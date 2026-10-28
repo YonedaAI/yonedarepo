@@ -45,7 +45,7 @@ export async function forkFlow({ origin, api, kit, platform }, metrics) {
   let fork = null;
   let pat = null;
   try {
-    assert.equal((await member.raw('POST', `${path}/fork`, {})).status, 403, 'no read, no fork');
+    assert.equal((await member.raw('POST', `${path}/fork`, {})).status, 404, 'no read, no fork (a private repository is not found)');
     await platform.post(`${path}/members`, { account: memberName, role: 'read' });
 
     // The fork: owned by the second account, its refs the parent's.
