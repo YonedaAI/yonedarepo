@@ -33,7 +33,7 @@ fn sig(name: &str, email: &str, seconds: i64, offset: &str) -> Signature {
         name: name.into(),
         email: email.into(),
         seconds,
-        offset: offset.into(),
+        offset: offset.parse().unwrap(),
     }
 }
 

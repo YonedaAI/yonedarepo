@@ -7,13 +7,15 @@ use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 use yoneda_core::{
     Error, Result,
-    blame::blame,
+    blame::{BlameLine, blame},
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
     search::{MAX_INDEXED_BYTES, Segment, build_segment, grep},
 };
 
 /// Files one directory may list for indexing (its index is built in chunks).
 const MAX_PARTITION_FILES: usize = 200_000;
+/// Characters of each line a blame answer carries; longer lines are cut there.
+const BLAME_LINE_CHARS: usize = 500;
 
 pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
     let Some(encoded) = c["blobs"].get(id.hex()).and_then(Value::as_str) else {
@@ -179,7 +181,17 @@ pub fn blame_versions(c: &Value) -> Result<Value> {
     if !need.is_empty() {
         return Ok(json!({ "need_blobs": need }));
     }
-    Ok(json!({ "lines": blame(&history) }))
+    Ok(json!({ "lines": capped(blame(&history), BLAME_LINE_CHARS) }))
+}
+
+/// `lines` with each text cut to at most `max_chars` characters.
+fn capped(mut lines: Vec<BlameLine>, max_chars: usize) -> Vec<BlameLine> {
+    for line in &mut lines {
+        if let Some((at, _)) = line.text.char_indices().nth(max_chars) {
+            line.text.truncate(at);
+        }
+    }
+    lines
 }
 
 #[cfg(test)]
