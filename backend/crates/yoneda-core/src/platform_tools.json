@@ -1158,6 +1158,43 @@
     }
   },
   {
+    "name": "git_rebase",
+    "description": "Rebase a working branch onto another branch's head (default main) on the server: replays the branch's commits not on onto, oldest first, each as a three-way merge, then moves the branch with one compare-and-swap on its planned head. Requires the write scope. A conflict returns CONFLICT with base/ours/theirs per path (details.conflicts, plus details.commit) and leaves the branch unchanged; a branch already on onto answers up_to_date; a push to the branch meanwhile returns STALE_HEAD. Protected branches (main) are refused; merge commits on the branch return NOT_SUPPORTED.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "Working branch to rebase"
+        },
+        "onto": {
+          "type": "string",
+          "description": "Branch whose head the commits replay onto (default main)"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "branch"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_branch",
     "description": "Create or move a working branch (any branch except main) to a recorded commit, by compare-and-swap: expected is the branch's current commit, or null to create it. Requires the write scope; a mismatch returns STALE_HEAD. main moves only through git_land.",
     "inputSchema": {

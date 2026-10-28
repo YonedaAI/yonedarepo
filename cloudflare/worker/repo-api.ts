@@ -22,7 +22,7 @@ import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
 import { timed, withTimings } from './repo-timing';
-import { operations } from './repo-tools';
+import { branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
 import type { Env } from './types';
@@ -200,7 +200,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
       ...(await bodyOf(req)),
       land_mode: req.headers.get('x-yoneda-land-mode'),
     });
-  if (resource === 'branches' && post) return run('git_branch', await bodyOf(req));
+  if (resource === 'branches' && post) return branchesRoute(ctx, parts.slice(3), () => bodyOf(req));
   if (resource === 'tags' && !sha && post) return run('git_tag', await bodyOf(req));
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
