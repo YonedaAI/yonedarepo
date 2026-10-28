@@ -1,7 +1,5 @@
-// The source platform's HTTP surface on its own: /api/v1 (REST + MCP), /git (smart HTTP
-// for stock Git), account sign-in for owner sessions, health, and the /source web UI. It
-// routes into no agent-layer code, so a platform-only Worker can serve it with the agent
-// layer switched off.
+// The source platform's HTTP surface: /api/v1 (REST + MCP), /git (smart HTTP for stock
+// Git), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { repoApi } from './repo-api';
@@ -19,7 +17,7 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push).
   if (url.pathname.startsWith('/git/')) return gitHttp(req, env);
-  if (url.pathname.startsWith('/api/auth/') || url.pathname === '/api/session') {
+  if (url.pathname.startsWith('/api/auth/')) {
     const handled = await accountRoute(req, env);
     if (handled) return handled;
   }
