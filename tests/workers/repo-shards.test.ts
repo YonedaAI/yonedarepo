@@ -4,7 +4,8 @@
 import { expect, it, vi } from 'vitest';
 import { adoptCommit, shardOf } from '../../cloudflare/worker/repo-shards';
 import { expiredCommits } from '../../cloudflare/worker/repo-vacuum';
-import { api, author, bindings, drainObjects, file, queued, signup, usePlatformFixture } from './repo-fixture';
+import type { Env } from '../../cloudflare/worker/types';
+import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -126,4 +127,32 @@ it('keeps every ancestor of newer work across shards', () => {
     { old: [{ id: 'c', parents: ['b'] }, { id: 'x', parents: [] }], young_parents: ['c'] },
   ];
   expect(expiredCommits(scans)).toEqual(['x']);
+});
+
+it('reads a staged object although a shard that does not hold it fails to answer', async () => {
+  const owner = { cookie: await signup('shardbusy') };
+  const created = await api('/repos', owner, { body: { name: 's', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
+  const id = created.body.id;
+  const made = await api(`/repos/${id}/commits`, owner, { body: { ref: 'main', changes: [file('b.txt', 'b\n')], message: 'b', author } });
+  const path = `/repos/${id}/blob?commit=${made.body.commit}&path=b.txt`;
+  const blob = (await api(path, owner)).body.id;
+  // Not drained: only its commit's shard holds it once both cache tiers miss.
+  await bindings.OBJECTS.delete(`platform/v1/${id}/objects/${blob}`);
+  await caches.default.delete(new Request(`https://objects.yoneda.internal/${id}/${blob}`));
+  // One other shard of the 64 is unreachable (hosted bursts: "Network connection lost").
+  const real = bindings.COMMIT_SHARDS as DurableObjectNamespace;
+  const down = `${id}:${(shardOf(made.body.commit) + 1) % 64}`;
+  const shards = {
+    idFromName: (name: string) => ({ name, id: real.idFromName(name) }),
+    get: ({ name, id: shard }: { name: string; id: DurableObjectId }) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        if (name === down) throw new Error('Network connection lost.');
+        return real.get(shard).fetch(url, init);
+      },
+    }),
+  };
+  const env = { ...scoped, COMMIT_SHARDS: shards } as unknown as Env;
+  const read = await api(path, owner, {}, env);
+  expect(read.status, JSON.stringify(read.body)).toBe(200);
+  expect(read.body.content).toBe('b\n');
 });

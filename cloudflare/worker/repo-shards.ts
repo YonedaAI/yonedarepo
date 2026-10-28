@@ -158,19 +158,29 @@ export const unrecorded = (e: unknown) =>
     : null;
 
 /** Staged objects of shard commits not yet in R2, from every shard (a rare read path:
- * an object is staged with its commit, whose id the reader does not know). */
+ * an object is staged with its commit, whose id the reader does not know). A shard that
+ * cannot answer fails the call only when an object is found in no other shard: one busy
+ * shard of 64 must not fail reads of objects it does not hold. */
 export async function stagedInShards(env: Env, repo: string, ids: string[], raw = false) {
   if (!env.COMMIT_SHARDS || ids.length === 0) return [];
+  let failure: unknown = null;
   const found = await Promise.all(
     Array.from({ length: SHARDS }, (_, shard) =>
       shardCall(env, repo, shard, {
         op: 'store_staged_objects',
         ids,
         ...(raw ? { raw: true } : {}),
-      }).then((r) => r.objects as (CachedObject | RawObject)[]),
+      }).then(
+        (r) => r.objects as (CachedObject | RawObject)[],
+        (e) => {
+          failure ??= e;
+          return [];
+        },
+      ),
     ),
   );
   const byId = new Map(found.flat().map((o) => [o.id, o]));
+  if (failure && ids.some((id) => !byId.has(id))) throw failure;
   return [...byId.values()];
 }
 
