@@ -1,11 +1,12 @@
 // The Code tab's toolbar and summary: branch and tag picker, Clone, and the latest commit.
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { httpsUrl } from './ConnectPanel';
 import { cloneCommand } from './connect';
 import { ago, principalName } from './fileActivity';
 import { Failure } from './SourceStatus';
 import { shortSha } from './sourceApi';
+import { type SshAccess, sshCloneCommand } from './sshKeyModel';
 import { CopyBlock } from './TokenParts';
 import { useSource } from './useSource';
 
@@ -53,7 +54,31 @@ export function BranchPicker({
   );
 }
 
-/** "Clone": the HTTPS and yoneda remote URLs with copy buttons. */
+/** The SSH clone line when Git over SSH is open, and on the Cloudflare Tunnel front door a
+ * pointer to the one-time client setup (Settings → SSH keys); nothing while it is off. */
+export function SshCloneLine({ access, repo }: { access?: SshAccess; repo: string }) {
+  const command = sshCloneCommand(access, repo);
+  if (!command) return null;
+  return (
+    <>
+      <CopyBlock label="SSH" text={command} />
+      {access?.front_door === 'tunnel' && (
+        <p className="source-meta clone-hint">
+          Needs cloudflared and an <code>~/.ssh/config</code> entry once:{' '}
+          <a href="/settings#ssh-keys">Settings → SSH keys</a>.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** Asks the platform how SSH is reached (only once the menu opens). */
+function SshClone({ repo }: { repo: string }) {
+  const ssh = useSource<{ ssh?: SshAccess }>('/ssh-keys');
+  return <SshCloneLine access={ssh.data?.ssh} repo={repo} />;
+}
+
+/** "Clone": the HTTPS, SSH (when open) and yoneda remote URLs with copy buttons. */
 export function CloneButton({
   repo,
   name,
@@ -63,9 +88,11 @@ export function CloneButton({
   name?: string;
   origin: string;
 }) {
+  const [open, setOpen] = useState(false);
   return (
     <details
       className="clone-menu"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
           event.currentTarget.open = false;
@@ -79,6 +106,7 @@ export function CloneButton({
       </summary>
       <div className="clone-dropdown">
         <CopyBlock label="HTTPS (token as password)" text={httpsUrl(origin, repo)} />
+        {open && <SshClone repo={repo} />}
         <CopyBlock label="yoneda remote helper" text={cloneCommand(origin, repo, name)} />
       </div>
     </details>

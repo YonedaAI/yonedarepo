@@ -214,6 +214,14 @@ a.chip:hover {
   border-radius: 10px;
   box-shadow: 0 8px 28px #12243b18;
 }
+.clone-hint {
+  margin: -4px 0 8px;
+  font-size: 0.85rem;
+}
+.clone-hint a {
+  color: var(--blue);
+  text-decoration: underline;
+}
 .latest-commit {
   display: flex;
   flex-wrap: wrap;
