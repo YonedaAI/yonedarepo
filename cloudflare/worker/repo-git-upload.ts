@@ -3,7 +3,8 @@
 // first parent to list the trees and files it introduced, then writes an undeltified pack
 // entry by entry while blobs and commits are read from the store of record, so the pack
 // streams out (on side-band when asked) and is never held whole. Refs are served from the
-// log, so a fetch never sees Git projection lag.
+// log, so a fetch never sees Git projection lag. This is protocol version 0; version 2
+// (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
 import { compute } from './repo-compute';
@@ -12,17 +13,17 @@ import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 
-const RESULT = {
+export const RESULT = {
   'content-type': 'application/x-git-upload-pack-result',
   'cache-control': 'no-cache',
 };
-const REQUEST_BYTES = 8 * 1024 * 1024;
+export const REQUEST_BYTES = 8 * 1024 * 1024;
 const WALK_ROUNDS = 64;
 const READS = 32;
 /** Pack bytes gathered before they are sent (one side-band packet at most). */
-const CHUNK = 65515;
+export const CHUNK = 65515;
 
-const pkt = (text: string) => {
+export const pkt = (text: string) => {
   const bytes = new TextEncoder().encode(text);
   const head = new TextEncoder().encode((bytes.length + 4).toString(16).padStart(4, '0'));
   return concat([head, bytes]);
@@ -38,7 +39,7 @@ function concat(parts: Uint8Array[]) {
   return out;
 }
 
-async function readAll(body: ReadableStream<Uint8Array>, limit: number) {
+export async function readAll(body: ReadableStream<Uint8Array>, limit: number) {
   const parts: Uint8Array[] = [];
   let length = 0;
   for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
@@ -74,23 +75,32 @@ export async function uploadPack(
     }).body_b64,
   );
   if (!request.done) return new Response(ack, { headers: RESULT });
-  const session = UploadSession.open(walk);
+  const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
+  return sendPack(ack, UploadSession.open(walk), objects, band);
+}
+
+/** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
+ * with a flush when banded. A failure before the pack starts is an ERR line after `head`
+ * (Git prints it as `remote error: <message>`); an overloaded authority is rethrown, so Git
+ * gets an HTTP 503 it can retry. */
+export async function sendPack(
+  head: Uint8Array,
+  session: UploadSession,
+  objects: RepoObjects,
+  band: number,
+): Promise<Response> {
   let listed: Json;
   try {
     listed = await enumerate(session, objects);
   } catch (e: any) {
     session.close();
-    // Nothing is sent yet: an overloaded authority is an HTTP 503 Git can retry.
     if (transient(e)) throw e;
-    // Git prints an ERR line as `remote error: <message>`.
-    const message = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`.slice(0, 500);
-    return new Response(concat([ack, pkt(`ERR ${message}\n`)]), { headers: RESULT });
+    return errLine(head, e);
   }
-  const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
   const chunks = packChunks(session, objects, listed);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(ack);
+      controller.enqueue(head);
     },
     async pull(controller) {
       try {
@@ -111,6 +121,12 @@ export async function uploadPack(
     },
   });
   return new Response(out, { headers: RESULT });
+}
+
+/** `head` and an ERR line for `e`. */
+export function errLine(head: Uint8Array, e: any) {
+  const message = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`.slice(0, 500);
+  return new Response(concat([head, pkt(`ERR ${message}\n`)]), { headers: RESULT });
 }
 
 /** Lists what to send, reading the trees each commit's diff needs. */

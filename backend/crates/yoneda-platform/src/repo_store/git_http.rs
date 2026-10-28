@@ -2,6 +2,7 @@
 //! commits a fetch must send. Stock Git reads and writes whole repositories, so a
 //! path-restricted grant is refused outright, as for `clone`.
 use super::auth::Actor;
+use super::git_shallow;
 use super::rows::{self, RecordedGraph, Settings};
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
@@ -58,9 +59,13 @@ const COMMON: u8 = 2;
 
 /// `repo_git_walk`: the commits reachable from `wants` but not from the recorded `haves`
 /// (`git rev-list wants --not haves`), newest first, each with its tree, parents and its
-/// first parent's tree (what the client already has of it, when that parent is common),
-/// and the recorded haves in request order. Walks by generation, so it stops once only
-/// common history is left; `common_only` (a negotiation round) skips the walk.
+/// first parent's tree (what the client already has of it, when that parent is common;
+/// none for a shallow boundary), and the recorded haves in request order. Walks by
+/// generation, so it stops once only common history is left; `common_only` (a negotiation
+/// round) skips the walk. A shallow fetch (`shallows`, `depth`, `deepen_relative`) is cut
+/// as `git_shallow` plans and answers its `shallow` and `unshallow` lines. With `objects`
+/// (protocol v2, where a partial clone fetches missing blobs by id), wants that are not
+/// commits are listed as `objects` for the adapter to read from this repository's store.
 pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let wants = ids(c, "wants", HAVES)?;
@@ -68,15 +73,22 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     let graph = RecordedGraph(db);
     let mut marks: HashMap<ObjectId, u8> = HashMap::new();
     let mut queue = BinaryHeap::new();
+    let (mut wanted, mut objects) = (Vec::new(), Vec::new());
     for want in &wants {
-        let row = rows::commit_row(db, want)?.ok_or_else(|| {
-            Error::new(
-                "NOT_FOUND",
-                format!("{want} is not a commit in this repository"),
-            )
-        })?;
-        *marks.entry(*want).or_default() |= WANTED;
-        queue.push((row.generation, *want));
+        match rows::commit_row(db, want)? {
+            Some(row) => {
+                *marks.entry(*want).or_default() |= WANTED;
+                queue.push((row.generation, *want));
+                wanted.push(*want);
+            }
+            None if c["objects"] == true => objects.push(*want),
+            None => {
+                return Err(Error::new(
+                    "NOT_FOUND",
+                    format!("{want} is not a commit in this repository"),
+                ));
+            }
+        }
     }
     let mut common = Vec::new();
     for have in &haves {
@@ -90,6 +102,16 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     if c["common_only"] == true {
         return Ok(json!({ "common": common }));
     }
+    let shallow = git_shallow::plan(db, &graph, c, &wanted)?;
+    for id in shallow.client.iter().chain(&shallow.starts) {
+        let mark = if shallow.client.contains(id) {
+            COMMON
+        } else {
+            WANTED
+        };
+        *marks.entry(*id).or_default() |= mark;
+        queue.push((graph.generation(id)?, *id));
+    }
     let mut done = HashSet::new();
     let mut send = Vec::new();
     while queue.iter().any(|(_, id)| marks[id] == WANTED) {
@@ -99,7 +121,12 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         }
         // Every child has a higher generation and was popped first: this mark is final.
         let mark = marks[&id];
-        for parent in graph.parents(&id)? {
+        let parents = if shallow.stops.contains(&id) {
+            Vec::new()
+        } else {
+            graph.parents(&id)?
+        };
+        for parent in parents {
             let entry = marks.entry(parent).or_default();
             if *entry | mark != *entry {
                 *entry |= mark;
@@ -120,6 +147,7 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     for id in send {
         let row = rows::recorded(db, &id)?;
         let base_tree = match row.parents.first() {
+            Some(_) if shallow.boundaries.contains(&id) => None,
             Some(parent) => rows::commit_row(db, parent)?.map(|p| p.tree),
             None => None,
         };
@@ -127,5 +155,8 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
             "commit": id, "tree": row.tree, "parents": row.parents, "base_tree": base_tree,
         }));
     }
-    Ok(json!({ "commits": commits, "common": common }))
+    Ok(json!({
+        "commits": commits, "common": common, "objects": objects,
+        "shallow": shallow.shallow, "unshallow": shallow.unshallow,
+    }))
 }

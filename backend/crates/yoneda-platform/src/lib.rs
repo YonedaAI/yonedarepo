@@ -17,6 +17,7 @@ mod platform_facts_script;
 mod platform_git_http;
 pub mod platform_git_receive;
 pub mod platform_git_upload;
+pub mod platform_git_v2;
 mod platform_git_verify;
 mod platform_graph;
 mod platform_head;
