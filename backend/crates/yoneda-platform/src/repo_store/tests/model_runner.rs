@@ -115,8 +115,9 @@ fn model_runs_are_claimed_with_rubric_and_intent_and_gate_landing() {
         json!({"op":"repo_check_request","commit":id,"name":"security"}),
     )["runs"][0]["id"]
         .clone();
-    let epoch = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":rerun}))["epoch"].clone();
-    let evidence = json!({"kind":"model","verdict":"fail","score":10,
+    let claim = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":rerun}));
+    let epoch = claim["epoch"].clone();
+    let evidence = json!({"kind":"model","verdict":"fail","score":10,"commit":claim["commit"],"tree":claim["tree"],
         "findings":[{"path":"db.py","line":1,"severity":"high","message":"SQL concatenation"}]});
     h.ok(
         SYSTEM,

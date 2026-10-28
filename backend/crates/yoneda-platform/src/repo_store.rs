@@ -18,6 +18,7 @@ mod change_hooks;
 mod change_records;
 mod changes;
 mod changesets;
+mod check_evidence;
 mod checkpoints;
 mod checks;
 mod classes;

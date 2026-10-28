@@ -80,8 +80,22 @@ export async function writeSeed(
 }
 
 /**
+ * SHA-256 (hex) of a checked file set: one `<type> <blob id> <path>\n` line per file,
+ * ordered by path (UTF-16 code units), so it can be recomputed from the tree's file listing
+ * (gitlinks excluded).
+ */
+export async function fileSetDigest(files: Omit<SeedFile, 'data_b64'>[]) {
+  const lines = [...files]
+    .sort((a, b) => (a.path < b.path ? -1 : 1))
+    .map((f) => `${f.type} ${f.id} ${f.path}\n`);
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(lines.join('')));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
  * The files of `tree` for a check run: from the seed of `ref` plus the blobs that differ,
- * or read in full without a usable seed. Reports how many blobs it fetched.
+ * or read in full without a usable seed. Reports how many blobs it fetched and the digest
+ * of the file set it returns.
  */
 export async function checkFiles(
   env: Env,
@@ -89,9 +103,16 @@ export async function checkFiles(
   objects: RepoObjects,
   tree: string,
   ref = 'main',
-): Promise<{ files: CheckJob['files']; seed: { commit: string; fetched: number } | null }> {
+): Promise<{
+  files: CheckJob['files'];
+  seed: { commit: string; fetched: number } | null;
+  files_sha256: string;
+}> {
   const stored = await env.OBJECTS.get(seedKey(repo, ref));
-  if (!stored) return { files: strip(await treeFiles(objects, tree)), seed: null };
+  if (!stored) {
+    const files = await treeFiles(objects, tree);
+    return { files: strip(files), seed: null, files_sha256: await fileSetDigest(files) };
+  }
   const seed = await stored.json<Seed>();
   const byPath = new Map(seed.files.map((f) => [f.path, f]));
   const { changes } = await withTrees(objects, { op: 'tree_diff', old: seed.tree, new: tree });
@@ -116,7 +137,11 @@ export async function checkFiles(
   const bytes = files.reduce((sum, f) => sum + (f.data_b64.length * 3) / 4, 0);
   if (files.length > MAX_FILES || bytes > MAX_BYTES)
     throw new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
-  return { files: strip(files), seed: { commit: seed.commit, fetched } };
+  return {
+    files: strip(files),
+    seed: { commit: seed.commit, fetched },
+    files_sha256: await fileSetDigest(files),
+  };
 }
 
 const strip = (files: SeedFile[]) => files.map(({ id: _id, ...file }) => file);

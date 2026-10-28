@@ -80,6 +80,9 @@ async function proposeRepairs(env: Env, repo: string, run: Json, refs: string[])
   }
 }
 
+/** The commit and tree a claimed run checks, as its evidence must name them. */
+const ranOn = (run: Json) => ({ commit: run.commit, tree: run.tree });
+
 /** The files and starting evidence of a claimed command check, ready for its container. */
 async function containerJob(env: Env, repo: string, call: Call, run: Json) {
   const status = await call({ op: 'repo_status' });
@@ -91,6 +94,10 @@ async function containerJob(env: Env, repo: string, call: Call, run: Json) {
     files: shipped.files,
   };
   const evidence: Json = {
+    // What ran: the authority refuses a verdict whose evidence names another commit, tree
+    // or no file set.
+    ...ranOn(run),
+    files_sha256: shipped.files_sha256,
     queued_ms: run.queued_ms,
     // Files came from the branch's warm-start seed plus this many fetched blobs.
     ...(shipped.seed ? { seed: shipped.seed } : {}),
@@ -193,7 +200,7 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<voi
   if (run.kind === 'model') {
     try {
       const { outcome, evidence } = await modelCheck(env, new RepoContext(env, repo, call), run);
-      await settle(env, report, outcome, evidence);
+      await settle(env, report, outcome, { ...evidence, ...ranOn(run) });
     } catch (e) {
       await failCheckRun(env, report, e);
     }

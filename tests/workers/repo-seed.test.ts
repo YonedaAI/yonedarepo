@@ -3,6 +3,7 @@
 import { expect, it } from 'vitest';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
+import { fileSetDigest } from '../../cloudflare/worker/repo-seed';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, executed, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -15,7 +16,24 @@ async function checked(owner: { cookie: string }, repo: string, changes: unknown
   const run = queued.filter((m) => m.kind === 'platform_check').at(-1);
   expect(await executeCheckRun(local, run)).toBeUndefined();
   const detail = await api(`${repo}/commits/${made.body.commit}`, owner, {}, local);
-  return { job: executed.at(-1).job, evidence: JSON.parse(detail.body.checks[0].evidence) };
+  const evidence = JSON.parse(detail.body.checks[0].evidence);
+  // The verdict names exactly what ran: this commit, its tree and the shipped file set.
+  expect([evidence.commit, evidence.tree]).toEqual([made.body.commit, detail.body.tree]);
+  return { job: executed.at(-1).job, evidence };
+}
+
+/** The digest of `files` (path → text) as Git sees them, recomputed independently. */
+async function expectedDigest(files: Record<string, string>) {
+  const listed = await Promise.all(
+    Object.entries(files).map(async ([path, text]) => {
+      const body = new TextEncoder().encode(text);
+      const header = new TextEncoder().encode(`blob ${body.length}\0`);
+      const sha1 = await crypto.subtle.digest('SHA-1', new Uint8Array([...header, ...body]));
+      const id = [...new Uint8Array(sha1)].map((b) => b.toString(16).padStart(2, '0')).join('');
+      return { path, type: 'blob', id };
+    }),
+  );
+  return fileSetDigest(listed);
 }
 
 it('ships a nearby commit from the seed plus the changed blobs only', async () => {
@@ -36,4 +54,7 @@ it('ships a nearby commit from the seed plus the changed blobs only', async () =
   expect(shipped['src/2.txt']).toBe('two\n');
   expect(shipped['src/3.txt']).toBeUndefined();
   expect(shipped['src/4.txt']).toBe('4\n');
+  // The seeded file set is the commit's tree exactly, and its digest says so.
+  expect(warm.evidence.files_sha256).toBe(await expectedDigest(shipped));
+  expect(cold.evidence.files_sha256).not.toBe(warm.evidence.files_sha256);
 });
