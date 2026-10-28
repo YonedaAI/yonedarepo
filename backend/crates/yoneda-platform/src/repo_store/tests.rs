@@ -1595,6 +1595,7 @@ mod git_shallow;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod lfs;
 mod members;
 mod model_runner;
 mod orgs;

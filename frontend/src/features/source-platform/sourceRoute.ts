@@ -10,6 +10,7 @@ export const REPO_SETTINGS_SECTIONS = [
   'webhooks',
   'members',
   'tokens',
+  'lfs',
   'connect',
   'delete',
 ] as const;

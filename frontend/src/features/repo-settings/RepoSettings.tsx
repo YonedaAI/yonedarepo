@@ -1,5 +1,5 @@
 // A repository's Settings tab (owner and admins): landing rules, checks, secret exceptions,
-// webhooks, members, repository tokens, connect, and deleting it.
+// webhooks, members, repository tokens, the LFS quota, connect, and deleting it.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ConnectPanel, DeleteRepository } from '../source-platform/ConnectPanel';
 import { currentApiOrigin } from '../source-platform/connect';
@@ -10,6 +10,7 @@ import { Loading } from '../source-platform/SourceStatus';
 import type { RepoSettingsSection } from '../source-platform/sourceRoute';
 import { ChecksSettings } from './ChecksSettings';
 import { LandingRules } from './LandingRules';
+import { LfsSettings } from './LfsSettings';
 import { PolicyForm } from './PolicyForm';
 import { RepoWebhooks } from './RepoWebhooks';
 import { SecretExceptions } from './SecretExceptions';
@@ -21,6 +22,7 @@ export const SECTION_TITLES: Record<RepoSettingsSection, string> = {
   webhooks: 'Webhooks',
   members: 'Members',
   tokens: 'Repository tokens',
+  lfs: 'Large files (LFS)',
   connect: 'Connect',
   delete: 'Delete repository',
 };
@@ -92,6 +94,7 @@ export function RepoSettings({
         {section === 'webhooks' && <RepoWebhooks repo={repo} />}
         {section === 'members' && <RepoMembers repo={repo} viewer={status.viewer} />}
         {section === 'tokens' && <RepoTokens repo={repo} />}
+        {section === 'lfs' && <LfsSettings repo={repo} />}
         {section === 'connect' && (
           <ConnectPanel repo={repo} name={status.name} origin={currentApiOrigin()} />
         )}

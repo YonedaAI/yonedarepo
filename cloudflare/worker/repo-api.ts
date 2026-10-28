@@ -19,6 +19,7 @@ import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
+import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
 import { parseStore } from './repo-objects';
@@ -223,6 +224,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'changes') return changesRoute(ctx, req, sha, sub, () => bodyOf(req));
+  if (resource === 'lfs' && !sha) return lfsRoute(ctx, req.method, () => bodyOf(req));
   if (resource === 'fork' && !sha && post) return run('git_fork', await bodyOf(req));
   if (resource === 'releases') return releasesRoute(ctx, req, parts.slice(3), () => bodyOf(req));
   if (resource === 'clone' && post) {

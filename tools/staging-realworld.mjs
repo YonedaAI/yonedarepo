@@ -10,7 +10,9 @@
 // a conflict refused with its paths), cleanup, and log compaction (20: 20,000 versions, a
 // bounded SQL tail, `log --at 5` from the R2 segment), and annotated tags and releases (23:
 // `git push` of a `git tag -a`, a fresh clone holding the tag object, a release asset whose
-// download matches its sha256). The CLI items need
+// download matches its sha256), and Git LFS (25: `git lfs track`, a --lfs-mb file pushed
+// straight to R2, a fresh clone's sha256, a read-only token's upload refused; needs git-lfs).
+// The CLI items need
 // `cargo build -p yoneda-cli --release` (`--cli-bin` names another directory). Prints a
 // pass/fail table and writes evidence to .local/staging/. Credentials come only from 0600
 // files in ~/.config/yonedarepo/:
@@ -50,6 +52,8 @@
 //        node tools/staging-realworld.mjs --only 0,20 [--compaction-versions 20000]
 //          (log compaction: grow a repository's log through POST /refs/batch, compact with the
 //          owner's POST /compact until nothing is due, check the bound and reads at version 5)
+//        node tools/staging-realworld.mjs --lfs [--lfs-mb 200]
+//          (= --only 0,25: Git LFS with stock git-lfs; the file size is --lfs-mb MiB)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -65,6 +69,7 @@ import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-fl
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
+import { lfsFlow } from './staging/lfs-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
 import { orgsFlow } from './staging/orgs-flow.mjs';
@@ -104,6 +109,9 @@ const { values } = parseArgs({
     forks: { type: 'boolean', default: false },
     // The organizations gate alone (items 0 and 24).
     orgs: { type: 'boolean', default: false },
+    // The Git LFS gate alone (items 0 and 25), and item 25's file size in MiB.
+    lfs: { type: 'boolean', default: false },
+    'lfs-mb': { type: 'string', default: '200' },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
@@ -114,6 +122,8 @@ const { values } = parseArgs({
 const root = fileURLToPath(new URL('../', import.meta.url));
 const only = values.orgs
   ? new Set(['0', '24'])
+  : values.lfs
+  ? new Set(['0', '25'])
   : values['model-check']
   ? new Set(['0', 'model'])
   : values.webhooks
@@ -186,6 +196,9 @@ await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 fro
 await step('23', 'Annotated tag push + fresh clone (cat-file -t = tag), release with an asset (sha256)', (m) =>
   releasesFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
+await step('25', `Git LFS: track *.bin, push ${values['lfs-mb']} MiB to R2, fresh clone sha256 matches, read-only upload refused`, (m) =>
+  lfsFlow({ api: values.api, platform: platformAccount, mb: Number(values['lfs-mb']) }, m),
+);
 
 const execFileAsync = promisify(execFile);
 /** `<what>_errors` and `<what>_failures` of a bench section, when it has any. */
@@ -248,8 +261,8 @@ if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
+const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);
