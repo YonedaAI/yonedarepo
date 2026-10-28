@@ -156,3 +156,45 @@ fn blame_answers_cap_each_line_at_500_characters() {
     assert_eq!(answer["lines"][1]["text"], "short");
     assert_eq!(answer["lines"][1]["line"], 2);
 }
+
+/// A real partition's segment is far longer than a short text field: the Worker sends it
+/// base64'd as `segment_b64`, and a segment over 16 KiB of text must still be searched
+/// (live: every search answered 400 "Missing or invalid segment_b64").
+#[test]
+fn a_segment_larger_than_a_text_field_is_searched() {
+    let mut entries = Vec::new();
+    let mut blobs = serde_json::Map::new();
+    for i in 0..200 {
+        let content = format!("pub fn handler_{i}() {{ let hook_{i} = {i} * 31; }}\n").into_bytes();
+        let blob = hash_object(ObjectKind::Blob, &content);
+        blobs.insert(blob.hex(), json!(STANDARD.encode(&content)));
+        entries.push((format!("f{i:03}.rs"), blob));
+    }
+    let named: Vec<(&str, FileMode, ObjectId)> = entries
+        .iter()
+        .map(|(n, id)| (n.as_str(), FileMode::Blob, *id))
+        .collect();
+    let (root, root_json) = tree(&named);
+    let trees = json!({ root.hex(): root_json });
+    let blobs = Value::Object(blobs);
+    let plan = compute(json!({ "op": "search_plan", "root": root, "trees": trees })).unwrap();
+    let p = &plan["partitions"][0];
+    let built = index_partition(&p["tree"], &p["shallow"], &trees, &blobs, json!({}));
+    let segment = built["segment_b64"].as_str().unwrap();
+    assert!(
+        segment.len() > 16_384,
+        "the segment is only {} bytes of base64",
+        segment.len()
+    );
+    let found = compute(
+        json!({ "op": "search_segment", "segment_b64": segment, "prefix": "", "query": "hook_17" }),
+    )
+    .unwrap();
+    let paths: Vec<&str> = found["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|f| f["path"].as_str())
+        .collect();
+    assert!(paths.contains(&"f017.rs"), "{paths:?}");
+}
