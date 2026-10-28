@@ -192,8 +192,8 @@ pub(crate) fn worker_drift(config: &Value, live: &LiveWorker) -> Vec<String> {
         && live.migration_tag.as_deref() != Some(tag.as_str())
     {
         lines.push(format!(
-            "DO migration tag: declared {tag}, live {:?}",
-            live.migration_tag
+            "DO migration tag: declared {tag}, live {}",
+            live.migration_tag.as_deref().unwrap_or("none")
         ));
     }
     if let (Some(declared), Some(found)) = (config["workers_dev"].as_bool(), live.workers_dev)

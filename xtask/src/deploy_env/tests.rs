@@ -665,19 +665,21 @@ fn the_summary_shows_which_container_apps_rolled_out() {
     let workers = dev_workers();
     let platform = workers.iter().find(|w| w.role == "platform").unwrap();
     let app = "yonedarepo-dev-platform-checkcontainer".to_string();
-    let before = BTreeMap::from([(app.clone(), 1)]);
-    let after = BTreeMap::from([(app.clone(), 2)]);
+    // Every declared app is listed, the SSH gateway too (its own image: often no rollout).
+    let gateway = "yonedarepo-dev-platform-sshgateway".to_string();
+    let before = BTreeMap::from([(app.clone(), 1), (gateway.clone(), 7)]);
+    let after = BTreeMap::from([(app.clone(), 2), (gateway.clone(), 7)]);
     assert_eq!(
         rollouts(platform, Some(&before), Some(&after)),
-        format!("{app} v1 -> v2 (rolled out)")
+        format!("{app} v1 -> v2 (rolled out); {gateway} v7 (no rollout)")
     );
     assert_eq!(
         rollouts(platform, Some(&before), Some(&before)),
-        format!("{app} v1 (no rollout)")
+        format!("{app} v1 (no rollout); {gateway} v7 (no rollout)")
     );
     assert_eq!(
         rollouts(platform, None, None),
-        format!("{app} ? (no rollout)")
+        format!("{app} ? (no rollout); {gateway} ? (no rollout)")
     );
     let front = workers.iter().find(|w| w.role == "agents").unwrap();
     assert_eq!(rollouts(front, Some(&before), Some(&after)), "-");
