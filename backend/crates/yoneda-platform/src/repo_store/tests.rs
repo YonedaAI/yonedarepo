@@ -1605,6 +1605,7 @@ mod pushed;
 mod rebase;
 mod releases;
 mod secrets;
+mod self_review;
 mod sessions;
 mod shards;
 mod staging;

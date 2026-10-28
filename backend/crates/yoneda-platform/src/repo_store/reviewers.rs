@@ -2,6 +2,12 @@
 //! session or personal token alike); a repository token reviews for the account that
 //! created it, so nobody approves their own commit through a token they made, and the
 //! approval count is of distinct accounts.
+//!
+//! Deliberately asymmetric: a commit pushed *by* a repository token is authored by that
+//! token (`token:<name>`), not by the account that created it, so that account may approve
+//! it. Agents push with tokens the owner mints and the human approves their work; resolving
+//! the author's token too would leave a one-person repository unable to approve any agent
+//! commit. Pinned by tests/self_review.rs.
 use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result, git_object::ObjectId};
