@@ -46,7 +46,7 @@ export async function membersFlow({ origin, api, kit, platform }, metrics) {
     }
   };
   try {
-    assert.equal(await status(member, 'GET', `${path}/refs`), 403, 'a stranger is refused');
+    assert.equal(await status(member, 'GET', `${path}/refs`), 404, 'a private repository is not found by a stranger');
     assert.equal((await platform.raw('POST', `${path}/members`, { account: `${memberName}_nobody`, role: 'read' })).status, 404, 'an unknown account is refused');
 
     // read: listed with its role, reads and clones, can't push.
@@ -88,7 +88,7 @@ export async function membersFlow({ origin, api, kit, platform }, metrics) {
     // Removal ends access at once: REST and stock Git.
     const removed = performance.now();
     await platform.call('DELETE', `${path}/members/${memberName}`);
-    assert.equal(await status(member, 'GET', `${path}/tree?path=`), 403, 'REST refused after removal');
+    assert.equal(await status(member, 'GET', `${path}/tree?path=`), 404, 'REST refused (not found) after removal');
     const fetched = git(['fetch', '-q', 'origin'], work);
     assert.ok(!fetched.ok, 'Git refused after removal');
     metrics.revoke_ms = Math.round(performance.now() - removed);

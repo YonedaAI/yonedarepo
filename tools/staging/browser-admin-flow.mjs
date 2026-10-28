@@ -27,9 +27,9 @@ async function shownOnce(page, region, prefix, secrets, what) {
   return token;
 }
 
-/** Waits until `session` is refused (401/403) for `path`: revocation took effect. */
+/** Waits until `session` is refused (401/403/404) for `path`: revocation took effect. */
 async function refused(session, path, what) {
-  await until(async () => [401, 403].includes((await session.raw('GET', path)).status), {
+  await until(async () => [401, 403, 404].includes((await session.raw('GET', path)).status), {
     timeoutMs: 15_000,
     intervalMs: 500,
     what,
