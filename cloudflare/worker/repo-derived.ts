@@ -4,7 +4,7 @@
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
 // A segment's paths are relative to its partition, and each read passes the partition's
 // prefix, so a renamed or duplicated directory reuses the segment under its own path.
-import { noteBundles, RANGE, readBundled, WIDE_GAP } from './repo-bundles';
+import { bundledPlaces, noteBundles, RANGE, readBundled, WIDE_GAP } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
@@ -14,6 +14,7 @@ import { blobWaves, inWaves } from './repo-object-waves';
 import { type CachedObject, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { writeSeed } from './repo-seed';
+import { timed } from './repo-timing';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
@@ -27,16 +28,20 @@ const asOf = (args: Json) =>
  * Runs a Rust compute op that walks trees and reads blobs, supplying both on request, a
  * bounded wave at a time. Blob bytes beyond `maxBytes` refuse with TOO_LARGE: every
  * supplied object goes into one compute call, and Wasm memory never shrinks once grown.
+ * With `sized`, the op is told the sizes of the bundled blobs it asks for (`sizes`)
+ * before any is read, and asked again: one that skips large files reads none of them.
  */
 export async function withObjects(
   ctx: RepoContext,
   input: Json,
   known: CachedObject[] = [],
   maxBytes = Number.POSITIVE_INFINITY,
+  sized = false,
 ) {
   const objects = await ctx.objects();
   const trees: Json = {};
   const blobs: Json = {};
+  const sizes: Json = {};
   let bytes = 0;
   // Objects the caller already holds (a commit being built) are only supplied on request.
   const held = new Map(known.map((o) => [o.id, o]));
@@ -51,7 +56,7 @@ export async function withObjects(
     blobs[id] = data_b64;
   };
   for (let round = 0; round <= 256; round++) {
-    const result = compute({ ...input, trees, blobs });
+    const result = compute({ ...input, trees, blobs, ...(sized ? { sizes } : {}) });
     if (result.need_trees) {
       const need = (result.need_trees as string[]).filter((id) => !held.has(id));
       Object.assign(trees, await bundledTrees(objects, need));
@@ -60,6 +65,12 @@ export async function withObjects(
         tree,
       );
     } else if (result.need_blobs) {
+      const unsized = (result.need_blobs as string[]).filter((id) => !(id in sizes));
+      if (sized && unsized.length > 0) {
+        for (const id of unsized) sizes[id] = null;
+        for (const [id, l] of await bundledPlaces(objects, unsized)) sizes[id] = l.size;
+        continue;
+      }
       const read: string[] = [];
       for (const id of result.need_blobs as string[]) {
         const object = held.get(id);
@@ -105,34 +116,47 @@ const INDEX_BYTES = 8 * 1024 * 1024;
 const SEGMENT_READS = 8;
 
 /** Segments for a root tree, building missing ones. Returns how many were built. Cached
- * segments are read side by side; missing ones are built one at a time, since a build
- * holds its partition's files. */
+ * segments (or a partition's too-large mark) are read side by side; missing ones are built
+ * one at a time, since a build holds its partition's files, reading none too large to
+ * index. */
 export async function searchSegments(ctx: RepoContext, root: string) {
-  const { partitions } = await withObjects(ctx, { op: 'search_plan', root });
+  const { partitions } = await timed('search.plan', () =>
+    withObjects(ctx, { op: 'search_plan', root }),
+  );
   let built = 0;
   const segments: Json[] = [];
   for (let i = 0; i < partitions.length; i += SEGMENT_READS)
     segments.push(
       ...(await Promise.all(
         (partitions as Json[]).slice(i, i + SEGMENT_READS).map(async (p) => {
-          const cached = await ctx.env.OBJECTS.get(segmentKey(ctx.repo, p.key));
-          return { partition: p, ...(cached ? { segment: await cached.json<Json>() } : {}) };
+          const cached = await timed('search.segment', () =>
+            ctx.env.OBJECTS.get(segmentKey(ctx.repo, p.key)),
+          );
+          const stored = cached ? await cached.json<Json>() : null;
+          if (stored?.too_large) return { partition: p, too_large: true };
+          return { partition: p, ...(stored ? { segment: stored } : {}) };
         }),
       )),
     );
   for (const entry of segments) {
-    if (entry.segment) continue;
+    if (entry.segment || entry.too_large) continue;
     const p = entry.partition;
-    const result: Json = await withObjects(
-      ctx,
-      { op: 'index_partition', tree: p.tree, shallow: p.shallow },
-      [],
-      INDEX_BYTES,
+    const result: Json = await timed('search.index', () =>
+      withObjects(
+        ctx,
+        { op: 'index_partition', tree: p.tree, shallow: p.shallow },
+        [],
+        INDEX_BYTES,
+        true,
+      ),
     ).catch((e) => {
       if (e instanceof ApiError && e.code === 'TOO_LARGE') return { too_large: true };
       throw e;
     });
     if (result.too_large) {
+      // A partition's key is its content: it stays too large, so later searches skip it
+      // without reading its files again.
+      await ctx.env.OBJECTS.put(segmentKey(ctx.repo, p.key), JSON.stringify({ too_large: true }));
       entry.too_large = true;
       continue;
     }
@@ -176,8 +200,10 @@ export async function search(ctx: RepoContext, args: Json) {
     const wave = files.slice(i, i + GREP_WAVE);
     const content = new Map<string, Uint8Array>();
     const indexed = wave.filter((f) => f.indexed).map((f) => String(f.id));
-    for await (const read of blobWaves(objects, indexed))
-      for (const [id, data] of read) content.set(id, data);
+    await timed('search.files', async () => {
+      for await (const read of blobWaves(objects, indexed))
+        for (const [id, data] of read) content.set(id, data);
+    });
     for (const file of wave) {
       if (results.length >= limit) break;
       const data = content.get(file.id);

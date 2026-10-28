@@ -15,8 +15,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
     Error, Result,
     git_object::{
-        FileMode, ObjectId, ObjectKind, PackWriter, TreeEntry, Walk, diff_trees, encode_tree,
-        hash_object,
+        FileMode, ObjectId, ObjectKind, PackWriter, TreeEntry, Walk, diff_trees, encode_delta,
+        encode_tree, hash_object,
     },
 };
 
@@ -24,6 +24,12 @@ use yoneda_core::{
 const MAX_FILES: usize = 200_000;
 /// Objects one fetch sends: each costs the adapter a read.
 pub const MAX_OBJECTS: usize = 40_000;
+/// Delta chains are at most this long (Git's default `pack.depth`).
+const MAX_DEPTH: u8 = 50;
+/// File versions larger than this are sent whole and never kept as a base.
+const MAX_DELTA_BYTES: usize = 4 * 1024 * 1024;
+/// Bytes of written versions kept as bases for versions still to come.
+const BASE_BYTES: usize = 32 * 1024 * 1024;
 
 fn within_limit(objects: usize) -> Result<()> {
     if objects > MAX_OBJECTS {
@@ -51,6 +57,14 @@ pub struct UploadSession {
     trees: HashMap<ObjectId, Vec<TreeEntry>>,
     objects: Vec<(ObjectId, ObjectKind)>,
     writer: Option<PackWriter>,
+    /// Each file version's other versions in this pack (its path's previous and next, from
+    /// the commits' diffs): one written first is the base the other is sent against.
+    partners: HashMap<ObjectId, Vec<ObjectId>>,
+    /// Written versions kept as bases while a partner is still to come, with their chain
+    /// depth; `base_bytes` in all.
+    bases: HashMap<ObjectId, (Vec<u8>, u8)>,
+    base_bytes: usize,
+    written: HashSet<ObjectId>,
 }
 
 impl UploadSession {
@@ -109,6 +123,7 @@ impl UploadSession {
         }
         let mut need = BTreeSet::new();
         let mut objects = Vec::new();
+        let mut pairs = Vec::new();
         let mut seen = HashSet::new();
         let mut add = |id: ObjectId, kind: ObjectKind, objects: &mut Vec<_>| {
             if seen.insert(id) {
@@ -131,6 +146,11 @@ impl UploadSession {
                             && mode != FileMode::Gitlink
                         {
                             add(id, ObjectKind::Blob, &mut objects);
+                            if let Some((old_mode, old)) = change.old
+                                && old_mode != FileMode::Gitlink
+                            {
+                                pairs.push((old, id));
+                            }
                         }
                     }
                 }
@@ -158,6 +178,15 @@ impl UploadSession {
             .map(|(id, _)| *id)
             .collect();
         let tags: Vec<ObjectId> = self.tags.iter().map(|(id, _)| *id).collect();
+        // Only versions both sent here pair up (no thin packs).
+        let sent: HashSet<ObjectId> = objects.iter().map(|(id, _)| *id).collect();
+        self.partners.clear();
+        for (old, new) in pairs {
+            if old != new && sent.contains(&old) {
+                self.partners.entry(old).or_default().push(new);
+                self.partners.entry(new).or_default().push(old);
+            }
+        }
         self.objects = objects;
         Ok(json!({ "count": self.objects.len(), "fetch": fetch, "trees": trees, "tags": tags }))
     }
@@ -174,10 +203,6 @@ impl UploadSession {
     /// `data`), or a blob or commit the adapter read, which must hash to `id`.
     pub fn pack_entry(&mut self, kind: &str, id: &str, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let id = ObjectId::parse(id)?;
-        let writer = self
-            .writer
-            .as_mut()
-            .ok_or_else(|| bad("The pack has not started"))?;
         let (kind, bytes) = match (kind, data) {
             ("tree", None) => {
                 let entries = self
@@ -194,7 +219,15 @@ impl UploadSession {
                     .ok_or_else(|| bad(&format!("Tag {id} is not in this fetch")))?;
                 (ObjectKind::Tag, data.clone())
             }
-            ("blob", Some(data)) => (ObjectKind::Blob, data.to_vec()),
+            ("blob", Some(data)) => {
+                if hash_object(ObjectKind::Blob, data) != id {
+                    return Err(Error::new(
+                        "GIT_OBJECT_INVALID",
+                        format!("Stored blob does not hash to {id}"),
+                    ));
+                }
+                return self.blob_entry(id, data);
+            }
             ("commit", Some(data)) => (ObjectKind::Commit, data.to_vec()),
             _ => {
                 return Err(bad(
@@ -202,6 +235,10 @@ impl UploadSession {
                 ));
             }
         };
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| bad("The pack has not started"))?;
         if hash_object(kind, &bytes) != id {
             return Err(Error::new(
                 "GIT_OBJECT_INVALID",
@@ -209,6 +246,48 @@ impl UploadSession {
             ));
         }
         Ok(writer.entry(kind, &bytes))
+    }
+
+    /// A file version: as a delta against a partner already written and kept, when that
+    /// is under half its size and the chain stays within `MAX_DEPTH`, else whole. It is
+    /// then kept as a base while a partner is still to come, and a base whose partners are
+    /// all written is let go.
+    fn blob_entry(&mut self, id: ObjectId, data: &[u8]) -> Result<Vec<u8>> {
+        let partners = self.partners.get(&id).cloned().unwrap_or_default();
+        let base = partners
+            .iter()
+            .filter_map(|p| self.bases.get(p).map(|(bytes, depth)| (p, bytes, *depth)))
+            .filter(|(_, _, depth)| *depth < MAX_DEPTH)
+            .min_by_key(|(_, _, depth)| *depth);
+        let delta = base
+            .filter(|_| data.len() <= MAX_DELTA_BYTES)
+            .and_then(|(p, bytes, depth)| {
+                encode_delta(bytes, data, data.len() / 2).map(|delta| (*p, delta, depth + 1))
+            });
+        let writer = self
+            .writer
+            .as_mut()
+            .ok_or_else(|| bad("The pack has not started"))?;
+        let (entry, depth) = match delta {
+            Some((base, delta, depth)) => (writer.delta_entry(&base, &delta), depth),
+            None => (writer.entry(ObjectKind::Blob, data), 0),
+        };
+        self.written.insert(id);
+        for p in &partners {
+            let done = self
+                .partners
+                .get(p)
+                .is_none_or(|qs| qs.iter().all(|q| self.written.contains(q)));
+            if done && let Some((bytes, _)) = self.bases.remove(p) {
+                self.base_bytes -= bytes.len();
+            }
+        }
+        let awaited = partners.iter().any(|p| !self.written.contains(p));
+        if awaited && data.len() <= MAX_DELTA_BYTES && self.base_bytes + data.len() <= BASE_BYTES {
+            self.base_bytes += data.len();
+            self.bases.insert(id, (data.to_vec(), depth));
+        }
+        Ok(entry)
     }
 
     /// The pack trailer; the session is spent.
@@ -290,5 +369,77 @@ mod tests {
         assert!(session.pack_entry("tag", &id.hex(), None).is_ok());
         let wrong = json!({ "id": "d".repeat(40), "data_b64": STANDARD.encode(&data) });
         assert!(UploadSession::new(&json!({ "commits": [], "tags": [wrong] })).is_err());
+    }
+
+    #[test]
+    fn sends_a_files_next_version_as_a_delta_git_resolves() {
+        use yoneda_core::git_object::{PackLimits, PackReader};
+        let versions: Vec<Vec<u8>> = (0..3)
+            .map(|v| {
+                let mut text = format!("## {v}\n").into_bytes();
+                text.extend((0..2000).flat_map(|n| format!("- change {n}\n").into_bytes()));
+                text
+            })
+            .collect();
+        let blobs: Vec<ObjectId> = versions
+            .iter()
+            .map(|v| hash_object(ObjectKind::Blob, v))
+            .collect();
+        let trees: Vec<(ObjectId, Vec<u8>)> = blobs
+            .iter()
+            .map(|blob| {
+                let entries = [TreeEntry {
+                    name: "CHANGELOG.md".into(),
+                    mode: FileMode::Blob,
+                    id: *blob,
+                }];
+                let data = encode_tree(&entries).unwrap();
+                (hash_object(ObjectKind::Tree, &data), data)
+            })
+            .collect();
+        let commit = |n: usize| format!("{n}").repeat(40);
+        let walk = json!({ "commits": [
+            { "commit": commit(2), "tree": trees[2].0, "base_tree": trees[1].0 },
+            { "commit": commit(1), "tree": trees[1].0, "base_tree": trees[0].0 },
+            { "commit": commit(0), "tree": trees[0].0, "base_tree": null },
+        ]});
+        let mut session = UploadSession::new(&walk).unwrap();
+        let supplied: Vec<Value> = trees
+            .iter()
+            .map(|(id, data)| json!({ "id": id, "data_b64": STANDARD.encode(data) }))
+            .collect();
+        assert_eq!(
+            session.step(&json!({ "trees": supplied })).unwrap()["count"],
+            9
+        );
+        // The trees and files alone, the files oldest first (as a push's bundles hold
+        // them): each later version is a small delta, and Git's reader resolves them all.
+        session
+            .objects
+            .retain(|(_, kind)| *kind != ObjectKind::Commit);
+        let mut pack = session.pack_start().unwrap();
+        for (id, _) in &trees {
+            pack.extend(session.pack_entry("tree", &id.hex(), None).unwrap());
+        }
+        let mut sizes = Vec::new();
+        for (v, blob) in blobs.iter().enumerate() {
+            let entry = session
+                .pack_entry("blob", &blob.hex(), Some(&versions[v]))
+                .unwrap();
+            sizes.push(entry.len());
+            pack.extend(entry);
+        }
+        assert!(
+            sizes[0] > 1000 && sizes[1] < 100 && sizes[2] < 100,
+            "{sizes:?}"
+        );
+        assert!(session.bases.is_empty());
+        pack.extend(session.pack_finish().unwrap());
+        let mut reader = PackReader::new(PackLimits::default(), 1 << 30);
+        reader.feed(&pack).unwrap();
+        reader.finish().unwrap();
+        for (v, blob) in blobs.iter().enumerate() {
+            assert_eq!(*reader.content(blob).unwrap(), versions[v]);
+        }
     }
 }

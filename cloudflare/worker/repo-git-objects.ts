@@ -7,6 +7,7 @@ import {
   type Location,
   locate,
   RANGE,
+  type ReadStats,
   readLocated,
   type Wanted,
   WIDE_GAP,
@@ -47,9 +48,10 @@ const byPlace = (a?: Location, b?: Location) => {
  * size: bundled objects in bundle order, each group one ranged read of at most about
  * `RANGE` bytes (bridging gaps up to `WIDE_GAP`), read `READ_AHEAD` groups ahead; then the
  * rest `READS` at a time through `rawObject`. A pushed history's pack thus reads each
- * bundle about once, not once per object it lists in commit order.
+ * bundle about once, not once per object it lists in commit order. `stats` counts the
+ * ranged reads.
  */
-export async function* rawObjects(objects: RepoObjects, wanted: Wanted[]) {
+export async function* rawObjects(objects: RepoObjects, wanted: Wanted[], stats?: ReadStats) {
   const where = await locate(objects.env, objects.repo, wanted);
   const order = [...wanted].sort((a, b) => byPlace(where.get(a.id), where.get(b.id)));
   const groups: Wanted[][] = [];
@@ -83,7 +85,7 @@ export async function* rawObjects(objects: RepoObjects, wanted: Wanted[]) {
       objects.repo,
       group.flatMap((w) => where.get(w.id) ?? []),
       RANGE,
-      { gap: WIDE_GAP },
+      { gap: WIDE_GAP, stats },
     );
     const rest = await Promise.all(
       group.map((w) => (bundled.has(w.id) ? null : rawObject(objects, w.id, w.kind))),
