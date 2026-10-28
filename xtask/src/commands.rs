@@ -106,16 +106,28 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         "infra" => crate::infra::execute(&args).await,
         "seed-template" => {
-            let url = args
-                .windows(2)
-                .find(|v| v[0] == "--url")
-                .map(|v| v[1].as_str())
-                .unwrap_or("http://127.0.0.1:8787");
-            crate::bootstrap::seed_template(url).await
+            let flag = |name: &str| {
+                args.windows(2)
+                    .find(|v| v[0] == name)
+                    .map(|v| v[1].as_str())
+            };
+            let url = flag("--url").unwrap_or("http://127.0.0.1:8787");
+            match flag("--env") {
+                // A spec env: its own owner token from its secrets file (prod.env, staging.env).
+                Some(name) => {
+                    let env = crate::infra::env::Env::parse(name)?;
+                    let spec = crate::infra::spec::Spec::load(&env)?;
+                    let owner = crate::infra::secrets::read(&spec.secrets_path())?
+                        .remove("OWNER_TOKEN")
+                        .ok_or("OWNER_TOKEN missing from the env's secrets file")?;
+                    crate::bootstrap::seed_template_authenticated(url, &owner).await
+                }
+                None => crate::bootstrap::seed_template(url).await,
+            }
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs.\nLocal check uses no paid inference."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL] [--env dev|prod]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs.\nLocal check uses no paid inference."
             );
             Ok(())
         }
