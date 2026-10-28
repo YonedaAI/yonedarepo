@@ -156,6 +156,7 @@ export function App() {
                 key={`${route.repo}:${tick}`}
                 route={route}
                 name={row?.name}
+                username={session.identity?.username}
                 navigate={navigate}
                 onDeleted={() => {
                   platform.reload();

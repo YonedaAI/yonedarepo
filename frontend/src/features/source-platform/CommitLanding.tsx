@@ -39,18 +39,21 @@ export function CommitLanding({
   repo,
   detail,
   status,
+  username,
   onNavigate,
   onReload,
 }: {
   repo: string;
   detail: CommitDetail;
   status?: RepoStatus;
+  /** The signed-in account: its own commits are not offered for its approval. */
+  username?: string;
   onNavigate: (r: SourceRoute) => void;
   /** The commit and the repository changed (a review, landing or check run). */
   onReload: () => void;
 }) {
   const commit = detail.commit;
-  const panel = commitPanel(detail, status?.viewer, status?.policy);
+  const panel = commitPanel(detail, status?.viewer, status?.policy, username);
   const branches = (status?.refs ?? [])
     .filter((r) => r.name.startsWith('refs/heads/'))
     .map((r) => r.name.slice('refs/heads/'.length));
@@ -128,7 +131,7 @@ export function CommitLanding({
         </>
       ) : (
         <>
-          <GateSummary gates={detail.gates} classes={detail.review_classes} />
+          <GateSummary gates={detail.gates} classes={detail.review_classes} notes={panel.notes} />
           {(panel.review || panel.land || runChecks) && (
             <div className="source-actions">
               {panel.review && (
