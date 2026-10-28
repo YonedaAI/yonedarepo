@@ -69,14 +69,24 @@ const ENDED = ['session.execution.succeeded', 'session.execution.failed', 'sessi
 /** opencode's default when a session names no model: GLM on the Z.ai coding plan. */
 export const DEFAULT_MODEL = 'zai-coding-plan/glm-5.3';
 
-/** Runs `yoneda hook <event>` with `payload` on stdin; its stdout ('' on any failure). */
-export function runHook(event: string, payload: Json, timeoutMs = 20_000): Promise<string> {
+/** Appends one hook call to `$YONEDA_HOOK_LOG`, when set (what opencode passed, and what
+ * the hook answered: for opencode-start, the context the session got). */
+function logHook(entry: Json) {
   const log = process.env.YONEDA_HOOK_LOG;
-  if (log) {
-    try {
-      appendFileSync(log, `${JSON.stringify({ event, payload })}\n`);
-    } catch {}
-  }
+  if (!log) return;
+  try {
+    appendFileSync(log, `${JSON.stringify({ at: Date.now(), ...entry })}\n`);
+  } catch {}
+}
+
+/** Runs `yoneda hook <event>` with `payload` on stdin; its stdout ('' on any failure). */
+export async function runHook(event: string, payload: Json, timeoutMs = 20_000): Promise<string> {
+  const output = await spawnHook(event, payload, timeoutMs);
+  logHook({ event, payload, output });
+  return output;
+}
+
+function spawnHook(event: string, payload: Json, timeoutMs: number): Promise<string> {
   return new Promise((resolve) => {
     const child = spawn(process.env.YONEDA_BIN || 'yoneda', ['hook', event], {
       cwd: typeof payload.cwd === 'string' ? payload.cwd : undefined,

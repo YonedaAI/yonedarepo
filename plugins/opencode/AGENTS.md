@@ -14,4 +14,4 @@ This repository's Git remote is YonedaRepo (`yoneda::https://…` or the platfor
 2. `yoneda setup opencode` copies `yoneda/index.ts` to `~/.config/opencode/plugins/yoneda/` and adds the YonedaRepo MCP server to `~/.config/opencode/opencode.json` (the bearer is read from `YONEDA_TOKEN` when opencode connects; no token is written). `opencode.jsonc` here is the same configuration to copy by hand; a project can instead keep the plugin in `.opencode/plugins/yoneda/`.
 3. `export YONEDA_TOKEN=…`, then start opencode in a clone. opencode's own model choice applies (GLM through `zai-coding-plan/glm-5.3` by default here; `opencode auth login` stores its key).
 
-`YONEDA_HOOK_LOG=<file>` makes the plugin append every hook payload it sends to that file, to see what opencode passed.
+`YONEDA_HOOK_LOG=<file>` makes the plugin append every hook call to that file as a JSON line: what opencode passed and what the hook answered (for a session start, the context it got).
