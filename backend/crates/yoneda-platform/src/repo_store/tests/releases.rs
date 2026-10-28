@@ -71,6 +71,24 @@ fn annotated_tags_are_checked_kept_listed_and_fetched() {
     let lightweight = json!({"op":"repo_tag_create","name":"v1","commit":root});
     assert_eq!(code(h.run(OWNER, lightweight)), "ALREADY_EXISTS");
 
+    // A client reads the tag object back to write it locally (`git-remote-yoneda`).
+    let shown = h.ok(CI, json!({"op":"repo_tag_show","name":"v1"}));
+    assert_eq!(
+        (&shown["commit"], &shown["tag"], &shown["data_b64"]),
+        (&json!(root), &json!(id), &json!(STANDARD.encode(&data)))
+    );
+    h.ok(
+        OWNER,
+        json!({"op":"repo_tag_create","name":"light","commit":root}),
+    );
+    let light = h.ok(CI, json!({"op":"repo_tag_show","name":"light"}));
+    assert_eq!(
+        (&light["tag"], &light["data_b64"]),
+        (&Value::Null, &Value::Null)
+    );
+    let missing = json!({"op":"repo_tag_show","name":"nope"});
+    assert_eq!(code(h.run(CI, missing)), "NOT_FOUND");
+
     // A fetch that wants the tag object gets its commit and the object itself.
     let walk = h.ok(OWNER, json!({"op":"repo_git_walk","wants":[id],"haves":[]}));
     assert_eq!(walk["commits"][0]["commit"], json!(root));
@@ -191,7 +209,10 @@ fn releases_need_a_tag_land_scope_and_keep_assets_within_caps() {
     // Deleting answers the asset names to remove; the tag stays.
     let delete = json!({"op":"repo_release_delete","tag":"v1"});
     assert_eq!(code(h.run(CI, delete.clone())), "FORBIDDEN");
-    assert_eq!(h.ok(OWNER, delete)["assets"], json!(["app.zip"]));
+    assert_eq!(
+        h.ok(OWNER, delete)["assets"],
+        json!([{ "name": "app.zip", "sha256": sha }])
+    );
     assert!(
         h.ok(CI, json!({"op":"repo_releases"}))["releases"]
             .as_array()

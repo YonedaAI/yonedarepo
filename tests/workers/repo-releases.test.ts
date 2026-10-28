@@ -3,7 +3,7 @@
 // 2) and sent to a fetch that wants it; `git_tag` with a message builds one. A release is
 // published only with write and land, and its asset's bytes round-trip through R2 with
 // the recorded sha256.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -126,7 +126,7 @@ it('builds annotated tags server-side and publishes releases with assets only wi
   expect(uploaded.status).toBe(200);
   expect(await uploaded.json()).toMatchObject({ name: 'app.tar', size: bytes.length, sha256 });
   expect((await put({ cookie })).status).toBe(409);
-  const key = `platform/v1/${repo}/release/v1/app.tar`;
+  const key = `platform/v1/${repo}/release/v1/${sha256}/app.tar`;
   expect((await scoped.OBJECTS.head(key))?.size).toBe(bytes.length);
 
   // A read-only token downloads the same bytes with the recorded sha256.
@@ -145,7 +145,45 @@ it('builds annotated tags server-side and publishes releases with assets only wi
   expect((await api(`/repos/${repo}/releases`, { token: reader })).body.releases).toHaveLength(1);
 
   const deleted = await api(`/repos/${repo}/releases/v1`, owner, { method: 'DELETE' });
-  expect(deleted.body.assets).toEqual(['app.tar']);
+  expect(deleted.body.assets).toEqual([{ name: 'app.tar', sha256 }]);
   expect(await scoped.OBJECTS.head(key)).toBeNull();
   expect((await api(`/repos/${repo}/releases`, owner)).body.releases).toEqual([]);
+});
+
+it('keeps one upload whole when two first uploads of a name race', async () => {
+  const { repo, cookie, main } = await setup('releases_race');
+  await api(`/repos/${repo}/tags`, { cookie }, { body: { name: 'v1', commit: main } });
+  await api(`/repos/${repo}/releases`, { cookie }, { body: { tag: 'v1', title: 'Race' } });
+  const url = `https://yoneda/api/v1/repos/${repo}/releases/v1/assets/same.bin`;
+  const put = (body: Uint8Array) =>
+    platformFetch(new Request(url, { method: 'PUT', headers: { cookie }, body }), scoped);
+  // A's bytes reach R2 only after B has written and recorded its own.
+  const [a, b] = [text.encode('upload A\n'), text.encode('upload B, longer\n')];
+  let releaseA = () => {};
+  const held = new Promise<void>((resolve) => {
+    releaseA = resolve;
+  });
+  const write = scoped.OBJECTS.put.bind(scoped.OBJECTS);
+  const puts = vi.spyOn(scoped.OBJECTS, 'put').mockImplementation(async (key, value, options) => {
+    if (key.includes('/release/') && puts.mock.calls.length === 1) await held;
+    return write(key, value, options);
+  });
+  try {
+    const first = put(a);
+    await vi.waitFor(() => expect(puts).toHaveBeenCalledTimes(1));
+    const second = await put(b);
+    releaseA();
+    const statuses = [(await first).status, second.status].sort();
+    expect(statuses).toEqual([200, 409]);
+  } finally {
+    puts.mockRestore();
+  }
+  const download = await platformFetch(new Request(url, { headers: { cookie } }), scoped);
+  const bytes = await download.arrayBuffer();
+  // The bytes served are the bytes recorded: B's.
+  expect(download.headers.get('x-yoneda-sha256')).toBe(hex(await crypto.subtle.digest('SHA-256', b)));
+  expect(hex(await crypto.subtle.digest('SHA-256', bytes))).toBe(download.headers.get('x-yoneda-sha256'));
+  // A's bytes are gone; only the recorded upload is stored.
+  const stored = await scoped.OBJECTS.list({ prefix: `platform/v1/${repo}/release/` });
+  expect(stored.objects).toHaveLength(1);
 });

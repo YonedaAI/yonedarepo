@@ -1,6 +1,7 @@
 //! Releases: a title, notes and downloadable assets attached to one existing tag (at most
-//! one release per tag). Asset bytes live in R2 under `release/<repo>/<tag>/<name>`; the
-//! adapter writes them (after a `dry_run` of the same call refused nothing) and then
+//! one release per tag). Asset bytes live in R2 under a key named by the recorded sha256
+//! (`…/release/<tag>/<sha256>/<name>`), so the bytes served are always the bytes recorded;
+//! the adapter writes them (after a `dry_run` of the same call refused nothing) and then
 //! records the asset's size and sha256 here. Assets are immutable: a name is used once per
 //! release until the release is deleted. Publishing and deleting are `release` webhook
 //! events. A release describes the whole repository, so path-restricted credentials can
@@ -100,15 +101,15 @@ pub fn show<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     Ok(release)
 }
 
-/// `repo_release_delete {tag}`: the release and its asset rows; answers the asset names
-/// so the adapter deletes their bytes. The tag stays (tags never disappear).
+/// `repo_release_delete {tag}`: the release and its asset rows; answers each asset's name
+/// and sha256 so the adapter deletes their bytes. The tag stays (tags never disappear).
 pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     changes::whole_repository(actor)?;
     let (tag, _) = existing_tag(db, c)?;
     let release = get(db, &tag)?;
     let names: Vec<Value> = assets(db, &tag)?
         .into_iter()
-        .map(|a| a["name"].clone())
+        .map(|a| json!({ "name": a["name"], "sha256": a["sha256"] }))
         .collect();
     db.query("DELETE FROM release_assets WHERE tag=?", &[json!(tag)])?;
     db.query("DELETE FROM releases WHERE tag=?", &[json!(tag)])?;
