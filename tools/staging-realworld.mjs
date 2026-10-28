@@ -16,6 +16,7 @@
 //   staging-bench.env BENCH_KEY of the staging bench client Worker
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <a> --run-b <b>]
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,17 [--api <platform origin>] [--cli-bin <dir>]
+//        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
 //        node tools/staging-realworld.mjs --agent-smoke [--smoke-provider zai|mimo] [--smoke-timeout <s>]
 //          (= --only 0,smoke: one cheap single-agent run must reach a checked candidate)
 //        node tools/staging-realworld.mjs --sandbox-smoke [--smoke-provider zai|mimo] [--agents 1|2] [--smoke-timeout <s>] [--smoke-check-wait <s>]
@@ -92,6 +93,9 @@ const { values } = parseArgs({
     run: { type: 'string' },
     'run-b': { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
+    // Prod smoke: prod hosts, the prod owner credential (prod.env), evidence prod-smoke-*.json
+    // (never realworld*, the prod deploy guard's dev evidence). Pass --only with the items.
+    prod: { type: 'boolean', default: false },
     // The post-deploy agent smoke alone (items 0 and smoke); `--only smoke` also selects it.
     'agent-smoke': { type: 'boolean', default: false },
     // The sandbox-cli-v1 smoke alone (items 0 and sandbox).
@@ -157,7 +161,13 @@ const only = values.proof
 // gate a second account, so they run only when named too.
 const wanted = (id) => (only ? only.has(id) : !['smoke', 'sandbox', 'model', 'hooks', 'members', 'reads', 'proof'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
-const { OWNER_TOKEN } = readEnvFile('staging.env');
+if (values.prod)
+  Object.assign(values, {
+    origin: 'https://yonedarepo.com',
+    api: 'https://api.yonedarepo.com',
+    platform: 'https://yonedarepo-prod-platform.mlong-f01.workers.dev',
+  });
+const { OWNER_TOKEN } = readEnvFile(values.prod ? 'prod.env' : 'staging.env');
 if (values.fund) {
   const funded = await fundAccount(new Session(values.origin, { bearer: OWNER_TOKEN }), values.fund);
   console.log(`Funded ${values.fund}: managed-zai + managed-mimo, ${funded.already_funded ? 'allowance already set' : `$${funded.limit_microusd / 1e6} allowance`}`);
@@ -293,7 +303,7 @@ const evidence = { schema: 1, origin: values.origin, platform: values.platform, 
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['smoke', 'sandbox', 'model', 'hooks', 'members', 'reads', 'proof', 'browser'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const prefix = { smoke: 'agent-smoke', sandbox: 'sandbox-smoke', model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', proof: `proof-${values.proof}` }[smoke] ?? 'realworld';
+const prefix = { smoke: 'agent-smoke', sandbox: 'sandbox-smoke', model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', proof: `proof-${values.proof}` }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nModel spend: $${modelSpend.toFixed(4)}. Evidence: ${file}`);
