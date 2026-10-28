@@ -1,4 +1,4 @@
-//! Repository commands that change platform state: land, review, policy, tokens and
+//! Repository commands that change platform state: land, rebase, review, policy, tokens and
 //! checks, plus `conflicts`. Commits may be named by local id inside a clone (the
 //! helper's commit map translates them) or by platform id anywhere.
 use crate::command::{CheckCommand, TokenCommand};
@@ -87,6 +87,33 @@ pub async fn land_head(t: &Resolved, what: &str, head: &str) -> Result<()> {
                 paths.join(", ")
             )))
         }
+        Err(f) => Err(f.into()),
+    }
+}
+
+/// `rebase`: replays the branch's commits onto `onto`'s head on the server and moves the
+/// branch; a conflict names its paths and leaves the branch where it was.
+pub async fn rebase(t: &Resolved, branch: &str, onto: Option<&str>) -> Result<()> {
+    let onto = onto.unwrap_or("main");
+    let path = format!("/branches/{}/rebase", crate::api::encode(branch));
+    match t.api.post(&path, &json!({ "onto": onto })).await {
+        Ok(done) if done["up_to_date"] == true => {
+            println!("{branch} is already on {onto}");
+            Ok(())
+        }
+        Ok(done) => {
+            println!(
+                "Rebased {branch} onto {onto}: {} commit(s) replayed, now at {}",
+                done["commits"].as_array().map_or(0, Vec::len),
+                done["head"].as_str().unwrap_or_default()
+            );
+            Ok(())
+        }
+        Err(f) if f.code == "CONFLICT" => Err(Error::conflict(format!(
+            "rebase refused, {branch} unchanged: {}\n  conflicting: {}",
+            f.message,
+            crate::remote::land_conflict_paths(&f.details).join(", ")
+        ))),
         Err(f) => Err(f.into()),
     }
 }

@@ -5,14 +5,15 @@
 // 100/1000-writer and many-repo bursts (8-10), and the CLI items 12-18: `yoneda login` by
 // device flow, `yoneda repo`, plain git through git-remote-yoneda (concurrent pushes,
 // conflicts, atomic and killed pushes), the account MCP with a PAT, `--at` reads, a change
-// request (18: open, comment, approve, land) and cleanup. They need
+// request (18: open, comment, approve, land), a server-side rebase (21: linear in a clone,
+// a conflict refused with its paths) and cleanup. They need
 // `cargo build -p yoneda-cli --release` (`--cli-bin` names another directory). Prints a
 // pass/fail table and writes evidence to .local/staging/. Credentials come only from 0600
 // files in ~/.config/yonedarepo/:
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
 //   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
 // Usage: node tools/staging-realworld.mjs [--only 0,6,7] [--skip-bursts]
-//        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,17 [--api <platform origin>] [--cli-bin <dir>]
+//        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,21,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
 //        node tools/staging-realworld.mjs --model-check
 //          (= --only 0,model: a `security` model runner fails a seeded SQL-injection commit and
@@ -48,6 +49,7 @@ import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from '
 import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
 import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
+import { cliRebase } from './staging/rebase-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 
@@ -158,7 +160,7 @@ await step('9', '1000-writer burst (platform API)', (m) => fanout(1000, m));
 await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
   BENCH_KEY ? manyRepoBurst(platformAccount, { client: values.client, key: BENCH_KEY, target: values.platform }, m) : { skip: 'BENCH_KEY not in staging-bench.env' },
 );
-if (['12', '13', '14', '15', '16', '17', '18'].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {
@@ -169,6 +171,7 @@ if (['12', '13', '14', '15', '16', '17', '18'].some(wanted)) {
     await step('16', 'Server-side reads at a version (log, grep, blame --at)', (m) => serverReads(cli, repo, m));
     // Before 17, whose cleanup deletes its repository too.
     await step('18', 'CLI: change request (branch, open, line comment, approve, land, landed)', (m) => cliChangeRequest(cli, kit, m));
+    await step('21', 'CLI: server-side rebase (linear in a clone, conflict refused, repo deleted)', (m) => cliRebase(cli, m));
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.

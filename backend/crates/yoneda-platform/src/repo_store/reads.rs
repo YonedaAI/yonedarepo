@@ -1,6 +1,7 @@
 //! Snapshot-consistent reads. `at` pins a log version; refs at a past version are rebuilt
 //! by replaying the hash-chained log, so time travel also verifies history integrity.
 use super::{
+    auth::Actor,
     land::gates,
     rows::{self, Settings, branch_ref, current_version, object_id},
 };
@@ -58,7 +59,8 @@ pub(super) fn refs_at<S: SqlStore>(
     Ok(replay_projected(&from, &tail, &projected)?.refs)
 }
 
-pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
+/// The repository's status, with who is asking (`viewer`).
+pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result<Value> {
     let refs = db.query(
         "SELECT name,commit_id AS commit_id,version FROM refs ORDER BY name",
         &[],
@@ -74,6 +76,8 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
         "projections": super::projection::list(db)?,
         "objects": super::staging::status(db)?,
         "automation": super::break_glass::state(db)?,
+        "viewer": { "principal": actor.principal, "owner": actor.owner,
+            "role": actor.member.map(super::members::Role::as_str) },
     }))
 }
 
