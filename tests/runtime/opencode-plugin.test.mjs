@@ -3,7 +3,7 @@
 // session and added to every model call, reads go to opencode-read, a refused push throws,
 // and a session's record is made when its run ends and again (idempotently) at cleanup.
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -153,6 +153,31 @@ test("the hook log keeps a hook's stderr, which opencode does not show", async (
     for (const [name, value] of [['YONEDA_BIN', saved.bin], ['YONEDA_HOOK_LOG', saved.log]])
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('cleanup waits for a record pass a session end started, even in an instance that saw no model call', async () => {
+  // opencode 2.2 runs two plugin instances; the one without the model call still hears the
+  // session end, and in the agent sandbox the container stops when opencode exits after the
+  // cleanups resolve, killing any hook still running.
+  const dir = mkdtempSync(join(tmpdir(), 'yoneda-opencode-'));
+  const done = join(dir, 'done');
+  const bin = join(dir, 'yoneda');
+  writeFileSync(bin, `#!/bin/sh\ncat >/dev/null\nsleep 0.3\necho "$2" >> '${done}'\n`);
+  chmodSync(bin, 0o755);
+  const saved = process.env.YONEDA_BIN;
+  process.env.YONEDA_BIN = bin;
+  try {
+    const twin = fakeOpencode(dir, []);
+    const cleanup = await plugin.default.setup(twin.ctx);
+    twin.emit({ type: 'session.execution.succeeded', data: { sessionID: 's1' } });
+    await new Promise((r) => setTimeout(r, 30));
+    await cleanup();
+    assert.equal(existsSync(done) ? readFileSync(done, 'utf8').trim() : '', 'opencode-stop', 'the record pass finished before cleanup resolved');
+  } finally {
+    if (saved === undefined) delete process.env.YONEDA_BIN;
+    else process.env.YONEDA_BIN = saved;
     rmSync(dir, { recursive: true, force: true });
   }
 });

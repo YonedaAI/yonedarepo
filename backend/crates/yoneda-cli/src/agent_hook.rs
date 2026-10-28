@@ -196,39 +196,34 @@ pub struct Record<'a> {
 }
 
 /// Posts a session record for each commit `record.session` pushed from the clone `at` (and
-/// for pushes no session claimed). A failure before posting, or a network, conflict, rate or
-/// server failure, keeps the commit for the next turn's end. Returns how many records were
-/// posted.
+/// for pushes no session claimed). A commit stays noted until its record is posted or
+/// refused for good: a failure before posting, a network, conflict, rate or server failure,
+/// or this process being killed, leaves it for the next turn's end. Returns how many records
+/// were posted.
 pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result<usize> {
     let files = SessionFiles::new(&at.git_dir);
-    let pushed = files.take_pushed(Some(record.session))?;
+    let pushed = files.pending_pushed(Some(record.session))?;
     if pushed.is_empty() {
         return Ok(0);
     }
-    match post_records(cwd, record, &pushed).await {
-        Ok((posted, retry)) => {
-            files.note_again(&retry)?;
-            Ok(posted)
-        }
-        Err(e) => {
-            files.note_again(&pushed)?;
-            Err(e)
-        }
-    }
+    let (posted, done) = post_records(cwd, record, &pushed).await?;
+    files.forget_pushed(&done)?;
+    Ok(posted)
 }
 
-/// Posts `record` on each of `pushed`; the posted count and the pushes to retry.
+/// Posts `record` on each of `pushed`: how many were posted, and the commits done with
+/// (posted, or refused for a reason a retry would not change).
 async fn post_records(
     cwd: &Path,
     record: &Record<'_>,
     pushed: &[crate::session_files::Pushed],
-) -> Result<(usize, Vec<crate::session_files::Pushed>)> {
+) -> Result<(usize, Vec<String>)> {
     let summary = truncate(record.summary, SUMMARY_BYTES - 3);
     let prompts = (!record.prompts.is_empty())
         .then(|| yoneda_core::digest(record.prompts.join("\n").as_bytes()));
     std::env::set_current_dir(cwd).context("entering the clone")?;
     let api = target::resolve(&Target::default())?.api;
-    let mut retry = Vec::new();
+    let mut done = Vec::new();
     let mut posted = 0;
     for push in pushed {
         let body = record_body(
@@ -244,19 +239,22 @@ async fn post_records(
             .post(&format!("/commits/{}/sessions", push.commit), &body)
             .await
         {
-            Ok(_) => posted += 1,
+            Ok(_) => {
+                posted += 1;
+                done.push(push.commit.clone());
+            }
             Err(f) => {
                 eprintln!(
                     "yoneda hook: session record for {} not posted: {f}",
                     push.commit
                 );
-                if matches!(f.status, 0 | 409 | 429) || f.status >= 500 {
-                    retry.push(push.clone());
+                if !(matches!(f.status, 0 | 409 | 429) || f.status >= 500) {
+                    done.push(push.commit.clone());
                 }
             }
         }
     }
-    Ok((posted, retry))
+    Ok((posted, done))
 }
 
 async fn claude_stop(hook: &Value) -> Result<()> {
@@ -309,7 +307,7 @@ mod tests {
         // The clone cannot be entered: nothing is posted, and nothing may be forgotten.
         let gone = dir.path().join("gone");
         assert!(record_pushed(&at, &gone, &record).await.is_err());
-        let kept = files.take_pushed(Some("opencode:s1"))?;
+        let kept = files.pending_pushed(Some("opencode:s1"))?;
         assert_eq!(
             kept.iter().map(|p| p.commit.as_str()).collect::<Vec<_>>(),
             ["c1"]
