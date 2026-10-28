@@ -15,6 +15,7 @@ describe('source routes', () => {
   it('round-trips every view', () => {
     const routes: SourceRoute[] = [
       { view: 'home' },
+      { view: 'explore' },
       { view: 'settings' },
       { view: 'files', repo, path: '', ref: 'main' },
       { view: 'files', repo, path: 'src/a b.rs', ref: 'feature/x', at: 3 },
@@ -32,11 +33,21 @@ describe('source routes', () => {
       { view: 'release', repo, tag: 'team/v 2' },
       { view: 'repo-settings', repo, section: 'rules' },
       { view: 'repo-settings', repo, section: 'webhooks' },
+      { view: 'repo-settings', repo, section: 'visibility' },
     ];
     for (const route of routes) {
       const url = new URL(formatSourceRoute(route), 'https://x');
       expect(parseSourceRoute(url.pathname, url.search)).toEqual(route);
     }
+  });
+  it('lists public repositories at /source/explore, also reached from the bare /explore', () => {
+    expect(formatSourceRoute({ view: 'explore' })).toBe('/source/explore');
+    expect(parseSourceRoute('/source/explore', '')).toEqual({ view: 'explore' });
+    expect(parseSourceRoute('/explore', '')).toEqual({ view: 'explore' });
+    expect(parseSourceRoute('/explore/', '')).toEqual({ view: 'explore' });
+    // Not a repository id, and nothing nests under it.
+    expect(parseSourceRoute('/source/explore/x', '')).toEqual({ view: 'home' });
+    expect(routeTab({ view: 'explore' })).toBeUndefined();
   });
   it('falls back safely on malformed input', () => {
     expect(parseSourceRoute('/source/not-a-repo', '')).toEqual({ view: 'home' });

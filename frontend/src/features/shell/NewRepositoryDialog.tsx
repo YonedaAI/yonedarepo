@@ -1,8 +1,10 @@
 // "New repository": a platform repository seeded with a README, owned by the account or by
-// one of the organizations it owns.
+// one of the organizations it owns, private (the default) or public.
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
+import { VISIBILITIES, VISIBILITY_HELP, VISIBILITY_LABELS } from '../repo-settings/visibilityModel';
 import { type OrgSummary, ownerOptions } from '../source-platform/orgModel';
+import type { Visibility } from '../source-platform/repoAccess';
 import { sourceApi } from '../source-platform/sourceApi';
 
 export const REPO_NAME_PATTERN = '[A-Za-z0-9_\\-][A-Za-z0-9._\\-]{0,99}';
@@ -17,11 +19,18 @@ export function readmeSeed(name: string, description: string) {
 
 export type Created = { repo: string };
 
-/** The create request's body: `owner` only for an organization (the caller is the default). */
-export function createBody(name: string, description: string, owner: string) {
+/** The create request's body: `owner` only for an organization (the caller is the default);
+ * `visibility` always, so the choice never depends on the server's default. */
+export function createBody(
+  name: string,
+  description: string,
+  owner: string,
+  visibility: Visibility = 'private',
+) {
   return {
     name,
     ...(owner ? { owner } : {}),
+    visibility,
     policy: { required_checks: [], approvals: 1 },
     files: [{ path: 'README.md', content_b64: readmeSeed(name, description) }],
     author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' },
@@ -53,11 +62,12 @@ export function NewRepositoryDialog({
     const name = String(data.get('name') ?? '').trim();
     const description = String(data.get('description') ?? '');
     const owner = String(data.get('owner') ?? '');
+    const visibility: Visibility = data.get('visibility') === 'public' ? 'public' : 'private';
     setBusy(true);
     setError('');
     try {
       const created = await sourceApi<{ id: string }>('/repos', {
-        body: createBody(name, description, owner),
+        body: createBody(name, description, owner, visibility),
       });
       await onCreated({ repo: created.id });
     } catch (e) {
@@ -102,6 +112,24 @@ export function NewRepositoryDialog({
           Description (optional)
           <textarea name="description" maxLength={500} rows={2} disabled={busy} />
         </label>
+        <fieldset className="visibility-choice" disabled={busy}>
+          <legend>Visibility</legend>
+          {VISIBILITIES.map((v) => (
+            <label key={v}>
+              <input
+                type="radio"
+                name="visibility"
+                value={v}
+                defaultChecked={v === 'private'}
+                aria-describedby={`visibility-${v}-help`}
+              />
+              <span>
+                <strong>{VISIBILITY_LABELS[v]}</strong>
+                <small id={`visibility-${v}-help`}>{VISIBILITY_HELP[v]}</small>
+              </span>
+            </label>
+          ))}
+        </fieldset>
         {error && (
           <p role="alert" className="form-error">
             {error}

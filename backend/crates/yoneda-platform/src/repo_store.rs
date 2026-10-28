@@ -67,6 +67,7 @@ mod tags;
 mod tokens;
 mod tree_cache;
 mod version_projection;
+mod visibility;
 pub use migration::migrate_repo_store;
 pub(crate) use rows::protected as protected_ref;
 
@@ -93,6 +94,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
+    visibility::gate(&actor, &op, c)?;
     match op.as_str() {
         // Tags are release markers that never move: creating one needs `land` as well.
         "repo_tag_create" => actor.require("write").and_then(|()| actor.require("land")),
@@ -197,6 +199,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
         "repo_break_glass" => actor.require_human_owner(),
+        "repo_set_visibility" => actor.require_repo_owner(),
         "repo_clone_access" => actor.require_human_reader(),
         _ => actor.require("read"),
     }?;
@@ -323,6 +326,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_token_revoke" => tokens::revoke_token(db, c, &actor),
         "repo_tokens" => tokens::list_tokens(db, &actor),
         "repo_members" => members::list(db),
+        "repo_set_visibility" => visibility::set(db, c, &actor),
         "repo_member_put" => members::put(db, c, &actor, &settings),
         "repo_member_remove" => members::remove(db, c, &actor, &settings),
         _ => Err(Error::new(

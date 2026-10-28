@@ -1,4 +1,6 @@
-// URL state for the one app shell: every view is addressable and survives reload. Older
+// URL state for the one app shell: every view is addressable and survives reload. Public
+// repositories are listed at `/source/explore` (the platform host redirects `/explore` there;
+// the bare path parses too, for a host that does not). Older
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
 // `/settings/branches`) still parse, into the view that replaced them.
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
@@ -12,6 +14,7 @@ export const REPO_SETTINGS_SECTIONS = [
   'members',
   'tokens',
   'lfs',
+  'visibility',
   'connect',
   'delete',
 ] as const;
@@ -19,6 +22,7 @@ export type RepoSettingsSection = (typeof REPO_SETTINGS_SECTIONS)[number];
 
 export type SourceRoute =
   | { view: 'home' }
+  | { view: 'explore' }
   | { view: 'settings' }
   | { view: 'device'; code: string }
   | { view: 'org'; org: string }
@@ -66,6 +70,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'settings' && !repo) return { view: 'settings' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
+  if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
+    return { view: 'explore' };
   if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
@@ -110,6 +116,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'home') return '/';
   if (route.view === 'settings') return '/settings';
+  if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';

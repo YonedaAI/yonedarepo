@@ -87,7 +87,7 @@ async function orgRepos(env: Env, org: string, account: string) {
   const all = shown.role === 'owner';
   // The keys go as one JSON parameter: D1 binds at most 100 per statement.
   const listed = await env.INDEX.prepare(
-    `SELECT id,name,created_at,workspace AS owner FROM platform_repos WHERE workspace=?1 ${
+    `SELECT id,name,created_at,workspace AS owner,visibility FROM platform_repos WHERE workspace=?1 ${
       all
         ? ''
         : 'AND id IN (SELECT repo FROM platform_members WHERE account IN (SELECT value FROM json_each(?2)))'

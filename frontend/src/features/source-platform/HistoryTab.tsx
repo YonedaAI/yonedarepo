@@ -5,6 +5,7 @@ import type { Navigate } from '../shell/useRoute';
 import { OpenChangeButton } from './OpenChange';
 import { RepoHistory } from './RepoHistory';
 import { RepoTransactions } from './RepoTransactions';
+import { useReadOnly } from './repoAccess';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
 import type { SourceRoute } from './sourceRoute';
 
@@ -24,6 +25,7 @@ export function HistoryTab({
     .map((r) => r.name.slice('refs/heads/'.length));
   const ref = route.view === 'history' ? route.ref : 'main';
   const segment = route.view;
+  const readOnly = useReadOnly();
   const toggle = (id: string, label: string, to: SourceRoute) => (
     <button key={id} type="button" aria-pressed={segment === id} onClick={() => navigate(to)}>
       {label}
@@ -53,7 +55,7 @@ export function HistoryTab({
             </select>
           </label>
         )}
-        {segment === 'history' && (
+        {segment === 'history' && !readOnly && (
           <OpenChangeButton
             key={ref}
             repo={route.repo}

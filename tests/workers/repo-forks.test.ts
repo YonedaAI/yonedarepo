@@ -52,7 +52,7 @@ it('forks, commits on the fork, and lands a change from it on the parent', async
   expect((await api(`/repos/${parent}/members`, alice, { body: { account: 'fork_bob', role: 'read' } }, local)).status).toBe(200);
 
   // Read on the parent is enough to fork; no read, no fork.
-  expect((await api(`/repos/${parent}/fork`, carol, { body: {} }, local)).status).toBe(403);
+  expect((await api(`/repos/${parent}/fork`, carol, { body: {} }, local)).status).toBe(404);
   const forked = await api(`/repos/${parent}/fork`, bob, { body: { name: 'mine' } }, local);
   expect(forked.status, JSON.stringify(forked.body)).toBe(200);
   expect(forked.body).toMatchObject({ name: 'mine', parent, refs: 1, commits: 1 });
@@ -72,8 +72,8 @@ it('forks, commits on the fork, and lands a change from it on the parent', async
   await drainObjects(local);
 
   // The change: opened on the parent by the fork's writer, who only reads the parent.
-  expect((await api(`/repos/${parent}/changes`, carol, { body: { fork, branch: 'feature', title: 'x' } }, local)).status).toBe(403);
-  expect((await api(`/repos/${parent}/changes`, alice, { body: { fork, branch: 'feature', title: 'x' } }, local)).status).toBe(403);
+  expect((await api(`/repos/${parent}/changes`, carol, { body: { fork, branch: 'feature', title: 'x' } }, local)).status).toBe(404);
+  expect((await api(`/repos/${parent}/changes`, alice, { body: { fork, branch: 'feature', title: 'x' } }, local)).status).toBe(404);
   const opened = await api(`/repos/${parent}/changes`, bob, { body: { fork, branch: 'feature', title: 'Fork work' } }, local);
   expect(opened.status, JSON.stringify(opened.body)).toBe(200);
   expect(opened.body).toMatchObject({ branch: `forks/${fork}/feature`, head, source_repo: fork, source_branch: 'feature', author: 'user:fork_bob' });
@@ -137,7 +137,7 @@ it('forks an org repository read through a team, and forks into an org only as i
   // bob reads the org's repository only through team "devs".
   await api('/orgs/forkacme/members', alice, { body: { account: 'forkorg_bob', role: 'member' } }, local);
   await api('/orgs/forkacme/teams', alice, { body: { name: 'devs' } }, local);
-  expect((await api(`/repos/${parent}/fork`, bob, { body: {} }, local)).status).toBe(403);
+  expect((await api(`/repos/${parent}/fork`, bob, { body: {} }, local)).status).toBe(404);
   await api('/orgs/forkacme/teams/devs/members', alice, { body: { account: 'forkorg_bob' } }, local);
   expect((await api(`/repos/${parent}/members`, alice, { body: { account: 'team:forkacme/devs', role: 'read' } }, local)).status).toBe(200);
   const mine = await api(`/repos/${parent}/fork`, bob, { body: { name: 'bobs' } }, local);

@@ -113,7 +113,7 @@ fn personal_tokens_hold_only_their_repository_scopes() {
             admin.clone(),
             json!({"op":"repo_status"})
         )),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     assert_eq!(
         code(pat(&h, json!(["root"]), json!({"op":"repo_status"}))),
