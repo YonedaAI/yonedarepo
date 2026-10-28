@@ -7,7 +7,7 @@
 import { expect, it } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { lfsKey } from '../../cloudflare/worker/repo-lfs';
-import { presign } from '../../cloudflare/worker/s3-presign';
+import { presign } from '../../cloudflare/worker/repo-s3-presign';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
