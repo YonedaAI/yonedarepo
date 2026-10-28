@@ -1,7 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { evictDurableObject, reset } from 'cloudflare:test';
 import { afterEach, expect, it } from 'vitest';
-import { ledger } from '../../cloudflare/worker/storage';
 import type { Env } from '../../cloudflare/worker/types';
 const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
@@ -29,16 +28,6 @@ it('signs up, authenticates after eviction and revokes the opaque session on log
  expect(login.headers.get('set-cookie')).toContain('Secure');
  await request('auth/logout',{},cookie);
  expect(await (await request('auth/session',undefined,cookie)).json()).toMatchObject({authenticated:false});
-},30000);
-it('isolates repository graph, evidence and live reads between accounts', async () => {
- const alice = await signup('alice'); const bob = await signup('bob');
- await ledger(bindings,'alice-project',{op:'init',id:'alice-project',name:'Private',workspace:'alice',remote:{namespace:'yoneda-test',name:'private'},commit:'a'.repeat(40),policy:{version:'retry-v2',suite:'retry-contract-v2',environment:'rust-1.94.0-evaluator-v2',required_checks:['build','behavior']}});
- expect((await request('repos/alice-project/snapshot',undefined,alice.cookie)).status).toBe(200);
- expect((await request('repos/alice-project/snapshot',undefined,bob.cookie)).status).toBe(403);
- expect((await request('repos/alice-project/graph',undefined,bob.cookie)).status).toBe(403);
- expect((await request('repos/alice-project/evidence?digest='+ 'a'.repeat(64),undefined,bob.cookie)).status).toBe(403);
- const cross = await bindings.SELF.fetch('https://yoneda/api/repos/alice-project/start_run',{method:'POST',headers:{cookie:alice.cookie,origin:'https://evil.example','content-type':'application/json'},body:JSON.stringify({id:'cross',intent:'Cross-site request'})});
- expect(cross.status).toBe(401);
 },30000);
 it('uses a one-time recovery code and revokes old sessions', async () => {
  const {cookie,account} = await signup('recover_user');

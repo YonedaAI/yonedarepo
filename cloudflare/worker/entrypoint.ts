@@ -1,21 +1,24 @@
-// Combined deployment: the agent layer and the source platform in one Worker. Platform
-// routes and jobs go straight to the platform; everything else is the agent layer.
-import { AgentsEntrypoint } from './agents-entrypoint';
+// Combined deployment (local development): the front Worker and the source platform in one
+// Worker. Platform routes and jobs go straight to the platform; everything else is the front.
+import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
+import { frontFetch } from './front-routes';
 import { platformJob } from './platform-entrypoint';
 import { repoApi } from './repo-api';
-import type { Envelope } from './types';
+import type { Env, Envelope } from './types';
 
-export class YonedaEntrypoint extends AgentsEntrypoint {
-  override async fetch(req: Request): Promise<Response> {
+export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
+  async fetch(req: Request): Promise<Response> {
     if (new URL(req.url).pathname.startsWith('/api/v1/'))
       return withWaitUntil(
         (work) => this.ctx.waitUntil(work),
         () => repoApi(req, this.env),
       );
-    return super.fetch(req);
+    return frontFetch(req, this.env);
   }
-  protected override async platformMessage(message: Message<Envelope>) {
-    await platformJob(this.env, message);
+  async queue(batch: MessageBatch<Envelope>) {
+    await Promise.all(
+      batch.messages.map((message) => platformJob(this.env, message).catch(() => message.retry())),
+    );
   }
 }
