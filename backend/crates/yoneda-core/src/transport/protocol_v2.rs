@@ -4,8 +4,8 @@
 //! (`deepen`, `deepen-relative`) are parsed here; which objects a fetch sends is decided by
 //! the platform.
 use super::smart_http::{FLUSH, pkt_line};
-use super::{ObjectId, invalid};
 use crate::Result;
+use crate::git_object::{ObjectId, invalid};
 
 /// Ends a request's capability list and separates the sections of an answer.
 pub const DELIM: &[u8] = b"0001";
