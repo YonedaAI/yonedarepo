@@ -6,6 +6,7 @@ use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod adopt;
+mod annotated;
 pub(crate) mod auth;
 mod bisect;
 mod branches;
@@ -40,6 +41,7 @@ mod maintenance;
 pub(crate) mod members;
 mod merging;
 pub(crate) mod migration;
+mod org_access;
 mod policy;
 pub(crate) mod prepare;
 mod projection;
@@ -48,6 +50,7 @@ mod pushed;
 mod reads;
 mod rebase;
 mod record;
+mod releases;
 mod reviewers;
 mod rows;
 mod runner;
@@ -90,6 +93,10 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         // Tags are release markers that never move: creating one needs `land` as well.
         "repo_tag_create" => actor.require("write").and_then(|()| actor.require("land")),
         "repo_branch_batch" if tags::in_batch(c) => {
+            actor.require("write").and_then(|()| actor.require("land"))
+        }
+        // Releases publish a tag the way tags mark one: `land` as well as `write`.
+        "repo_release_create" | "repo_release_delete" | "repo_release_asset_put" => {
             actor.require("write").and_then(|()| actor.require("land"))
         }
         "repo_prepare_commit"
@@ -253,6 +260,13 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_rebase_plan" => rebase::plan(db, c),
         "repo_branch_batch" => branches::batch(db, c, principal),
         "repo_tag_create" => tags::create(db, c, principal),
+        "repo_tag_show" => annotated::tag_show(db, c),
+        "repo_release_create" => releases::create(db, c, &actor),
+        "repo_releases" => releases::list(db, c, &actor),
+        "repo_release_show" => releases::show(db, c, &actor),
+        "repo_release_delete" => releases::delete(db, c, &actor),
+        "repo_release_asset_put" => releases::asset_put(db, c, &actor),
+        "repo_release_asset" => releases::asset(db, c, &actor),
         // Git over HTTPS: each checks its own scope (read to fetch, write to push).
         "repo_git_access" => git_http::access(&actor, c, &settings),
         "repo_git_walk" => git_http::walk(db, c, &actor),

@@ -2,7 +2,12 @@
 //! API principals (agents, CI, scripts) with explicit scopes. The platform never sees
 //! *what kind* of client a token belongs to, only its name and scopes. Another account's
 //! session or personal token acts by its membership role (`members`), capped by the token.
+//! On a repository an organization owns, the org's owners act as the owner; anyone else,
+//! org members included, needs a membership role: their own row or one of their teams'
+//! (`team:<org>/<team>`), whichever is highest. The adapter resolves an account's orgs and
+//! teams from each org's authority (`orgs` on `_session` or `_pat`) for every request.
 use super::members::Role;
+use super::org_access::Orgs;
 use super::rows::Settings;
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
@@ -181,7 +186,19 @@ pub fn actor_with(
         if principal != format!("user:{account}") {
             return Err(not_member());
         }
-        let role = member(&account)?.ok_or_else(not_member)?;
+        let orgs = Orgs::of(session)?;
+        if orgs.owns(workspace) {
+            return Ok(Actor {
+                principal,
+                owner: true,
+                member: None,
+                human,
+                account_token: false,
+                scopes: Vec::new(),
+                grant: None,
+            });
+        }
+        let role = orgs.role(&account, &member)?.ok_or_else(not_member)?;
         return Ok(Actor {
             principal,
             owner: role == Role::Admin,
@@ -243,10 +260,19 @@ fn account_token(
             _ => return Err(Error::new("FORBIDDEN", "Unknown token scope")),
         }
     }
-    let role = if account == workspace {
+    if let Some(org) = pat.get("org").and_then(Value::as_str)
+        && org != workspace
+    {
+        return Err(Error::new(
+            "FORBIDDEN",
+            format!("This token is limited to the {org} organization's repositories"),
+        ));
+    }
+    let orgs = Orgs::of(pat)?;
+    let role = if account == workspace || orgs.owns(workspace) {
         None
     } else {
-        let role = member(&account)?.ok_or_else(not_member)?;
+        let role = orgs.role(&account, &member)?.ok_or_else(not_member)?;
         scopes = role
             .scopes()
             .iter()

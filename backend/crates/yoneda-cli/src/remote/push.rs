@@ -1,10 +1,10 @@
 //! `push`: every ref's commits are uploaded first; then one compare-and-swap per branch
-//! (one batch for `--atomic`), one landing for main, or one creation per new lightweight
-//! tag publishes them (tags never move or disappear). A push killed
+//! (one batch for `--atomic`), one landing for main, or one creation per new tag (an
+//! annotated one with its tag object) publishes them (tags never move or disappear). A push killed
 //! before that leaves every ref as it was: uploaded commits stay unreferenced and the
 //! platform's vacuum removes them.
 use super::list::{MAIN, branches};
-use super::tags::{TAGS, create_tag, tag_refusal};
+use super::tags::{TAGS, create_tag, tag_refusal, tag_update};
 use super::upload::{self, Uploaded};
 use super::{Session, declared, land, say};
 use crate::error::{Error, Result};
@@ -44,9 +44,15 @@ struct Ready {
 }
 
 /// Why a ref is refused before anything is uploaded (`None`: nothing to do, or go).
-fn refusal(session: &Session, spec: &Spec, local: &str, current: Option<&str>) -> Option<String> {
+fn refusal(
+    session: &Session,
+    spec: &Spec,
+    local: &str,
+    current: Option<&str>,
+    annotated: Option<&str>,
+) -> Option<String> {
     if spec.dst.starts_with(TAGS) {
-        return tag_refusal(session, &spec.src, local, current);
+        return tag_refusal(session, &spec.src, local, current, annotated);
     }
     if !spec.dst.starts_with("refs/heads/") {
         return Some("only branches (refs/heads/*) and tags (refs/tags/*) can be pushed".into());
@@ -76,7 +82,7 @@ fn line(dst: &str, outcome: &std::result::Result<(), String>) -> String {
 /// Pushes `specs`; returns Git's status lines (without the final blank line).
 pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
     let mut outcomes: BTreeMap<String, std::result::Result<(), String>> = BTreeMap::new();
-    let (_, heads) = match branches(session).await {
+    let listed = match branches(session).await {
         Ok(found) => found,
         Err(e) => {
             return specs
@@ -103,8 +109,9 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
                 continue;
             }
         };
-        let current = heads.get(&spec.dst).cloned();
-        let outcome = match refusal(session, spec, &local, current.as_deref()) {
+        let current = listed.heads.get(&spec.dst).cloned();
+        let annotated = listed.annotated.get(&spec.dst).map(String::as_str);
+        let outcome = match refusal(session, spec, &local, current.as_deref(), annotated) {
             Some(why) => Err(why),
             None => Ok(()),
         };
@@ -202,7 +209,7 @@ async fn publish(
         let outcome = if item.spec.dst == MAIN {
             land::land(session, &item.local, &done).await
         } else if item.spec.dst.starts_with(TAGS) {
-            create_tag(session, &item.spec.dst, &done).await
+            create_tag(session, &item.spec.src, &item.spec.dst, &done).await
         } else {
             set_branch(session, &item, &done).await
         };
@@ -259,10 +266,20 @@ async fn batch(
     session: &Session,
     uploaded: &[(Ready, Uploaded)],
 ) -> std::result::Result<(), Box<dyn Fn(&str) -> String>> {
-    let updates: Vec<Value> = uploaded
-        .iter()
-        .map(|(item, done)| json!({ "ref": item.spec.dst, "commit": done.tip, "expected": item.current }))
-        .collect();
+    let mut updates: Vec<Value> = Vec::new();
+    for (item, done) in uploaded {
+        updates.push(if item.spec.dst.starts_with(TAGS) {
+            match tag_update(session, &item.spec.src, &item.spec.dst, done) {
+                Ok(update) => update,
+                Err(e) => {
+                    let text = e.message;
+                    return Err(Box::new(move |_: &str| text.clone()));
+                }
+            }
+        } else {
+            json!({ "ref": item.spec.dst, "commit": done.tip, "expected": item.current })
+        });
+    }
     match session
         .api
         .post("/refs/batch", &json!({ "updates": updates }))

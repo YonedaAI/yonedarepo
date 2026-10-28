@@ -1,14 +1,16 @@
-//! Repository members: other accounts that use a repository with a role. The adapter has
-//! already checked that the account exists; the authority decides who may add, change or
-//! remove whom. Admins act as the owner except that they cannot delete the repository or
-//! add, change or remove admins; nobody can make the owner a member.
+//! Repository members: other accounts, or organizations' teams (`team:<org>/<team>`), that
+//! use a repository with a role. The adapter has already checked that the account or team
+//! exists; the authority decides who may add, change or remove whom. Admins act as the
+//! owner except that they cannot delete the repository or add, change or remove admins;
+//! nobody can make the owner a member.
 use super::auth::Actor;
 use super::rows::Settings;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// Ordered by what they allow (`Read` least), so a caller's highest role wins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Role {
     Read,
     Write,
@@ -84,12 +86,39 @@ fn target<S: SqlStore>(
             "The owner is not a member and cannot be changed or removed",
         ));
     }
-    let account = yoneda_core::account::normalize_account_identifier(&account)?;
+    let account = member_key(&account)?;
     let current = role_of(db, &account)?;
     if current == Some(Role::Admin) {
         actor.require_repo_owner()?;
     }
     Ok((account, current))
+}
+
+/// A team name: 1-32 characters of a-z, 0-9, `_` and `-`, starting with a letter or digit.
+pub(crate) fn valid_team_name(name: &str) -> bool {
+    (1..=32).contains(&name.len())
+        && name
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
+/// A member entry: an account, or an organization's team as `team:<org>/<team>` (whose
+/// members the adapter resolves per request; see `auth`).
+fn member_key(account: &str) -> Result<String> {
+    let Some(team) = account.trim().strip_prefix("team:") else {
+        return yoneda_core::account::normalize_account_identifier(account);
+    };
+    let (org, name) = team.split_once('/').unwrap_or_default();
+    let org_valid = !org.contains('@')
+        && yoneda_core::account::normalize_account_identifier(org).is_ok_and(|o| o == org);
+    if !org_valid || !valid_team_name(name) {
+        return Err(bad("A team entry is team:<org>/<team>"));
+    }
+    Ok(format!("team:{org}/{name}"))
 }
 
 /// `repo_member_put {account, role}`: adds a member or changes its role.

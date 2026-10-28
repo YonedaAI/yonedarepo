@@ -153,6 +153,6 @@ fn upgrades_from_the_compaction_schema_with_an_empty_index() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.len()
+        migrations.last().unwrap().0
     );
 }

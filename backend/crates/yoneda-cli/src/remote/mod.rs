@@ -4,8 +4,8 @@
 //! - list/fetch write the platform's commits byte for byte (see `fetch`);
 //! - a push uploads every new commit first, each rebuilt by the platform as the same
 //!   object (see `crate::replay`), then makes one compare-and-swap (or one batch for
-//!   `--atomic`, one landing for main, or one creation for a new lightweight tag), so
-//!   nothing is visible before it.
+//!   `--atomic`, one landing for main, or one creation for a new tag, an annotated one
+//!   with its tag object), so nothing is visible before it.
 //!
 //! The commit map (`map`) keeps only the cases where ids cannot match.
 pub mod convert;

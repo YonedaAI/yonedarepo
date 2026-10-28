@@ -1,22 +1,29 @@
-//! Lightweight tags: a `refs/tags/*` ref is created once, at a recorded commit, and never
-//! moves or disappears. Creation is logged as a `RefMove` like any branch move and is
-//! projected to the object store like a protected branch. Annotated tag objects are not
-//! stored; the Git paths refuse them before they reach here.
+//! Tags: a `refs/tags/*` ref is created once, at a recorded commit, and never moves or
+//! disappears. Creation is logged as a `RefMove` like any branch move and is projected to
+//! the object store like a protected branch. An annotated tag (`tag: {data_b64}` on the
+//! update, or `message` here) keeps its ref at the commit and its tag object beside it
+//! (`annotated`).
+use super::annotated::{self, Annotation};
 use super::branches::move_ref;
 use super::rows::{self, object_id};
-use crate::storage::string;
+use crate::storage::{number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
-/// `repo_tag_create {name, commit}`.
+/// `repo_tag_create {name, commit, message?, tagger?}`: with `message`, the platform
+/// builds an annotated tag object.
 pub fn create<S: crate::storage::SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let refname = rows::tag_ref(&string(c, "name")?)?;
-    check(db, c, &refname)?;
-    create_at(db, c, &refname, principal)
+    let mut c = c.clone();
+    if let Some(data) = annotated::built(&c, &refname, principal)? {
+        c["tag"] = json!({ "data_b64": data });
+    }
+    check(db, &c, &refname)?;
+    create_at(db, &c, &refname, principal)
 }
 
-/// Creates `refname` at `c.commit` (already checked); creating it again at the same
-/// commit is a no-op.
+/// Creates `refname` at `c.commit` (already checked), with its tag object when annotated;
+/// creating the same tag again is a no-op.
 pub(super) fn create_at<S: crate::storage::SqlStore>(
     db: &S,
     c: &Value,
@@ -24,11 +31,19 @@ pub(super) fn create_at<S: crate::storage::SqlStore>(
     principal: &str,
 ) -> Result<Value> {
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
+    let annotation = Annotation::of(c, &commit.id)?;
+    let tag = annotation.as_ref().map(|a| a.id);
     if rows::ref_value(db, refname)? == Some(commit.id) {
-        return Ok(json!({ "ref": refname, "commit": commit.id, "already": true }));
+        if annotated::tag_id(db, refname)? != tag {
+            return Err(already(refname, &commit.id));
+        }
+        return Ok(json!({ "ref": refname, "commit": commit.id, "tag": tag, "already": true }));
     }
     let version = move_ref(db, c, refname, None, &commit, principal)?;
-    Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+    if let Some(annotation) = annotation {
+        annotation.store(db, refname, principal, number(c, "now")?)?;
+    }
+    Ok(json!({ "ref": refname, "commit": commit.id, "tag": tag, "version": version }))
 }
 
 /// Refuses anything but creating `refname` at a recorded commit: no deletion, no expected
@@ -43,6 +58,7 @@ pub(super) fn check<S: crate::storage::SqlStore>(db: &S, c: &Value, refname: &st
         )));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
+    Annotation::of(c, &commit.id)?;
     match rows::ref_value(db, refname)? {
         Some(current) if current != commit.id => Err(already(refname, &current)),
         _ => Ok(()),

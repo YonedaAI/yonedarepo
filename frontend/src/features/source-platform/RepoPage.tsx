@@ -5,9 +5,11 @@ import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
+import { ReleaseView } from './ReleaseView';
 import { RepoChanges } from './RepoChanges';
 import { RepoFiles } from './RepoFiles';
 import { RepoOverview } from './RepoOverview';
+import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { RepoTabs, StatusChips } from './RepoTabs';
 import type { RepoStatus } from './repoStatus';
@@ -103,6 +105,24 @@ export function RepoPage({
                 onBack={() => navigate({ view: 'changes', repo })}
                 onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                 onChanged={status.reload}
+              />
+            )}
+            {route.view === 'releases' && (
+              <RepoReleases
+                repo={repo}
+                owner={owner}
+                hrefOf={(tag) => formatSourceRoute({ view: 'release', repo, tag })}
+                onOpen={(tag) => navigate({ view: 'release', repo, tag })}
+              />
+            )}
+            {route.view === 'release' && (
+              <ReleaseView
+                key={route.tag}
+                repo={repo}
+                tag={route.tag}
+                owner={owner}
+                onBack={() => navigate({ view: 'releases', repo })}
+                onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
               />
             )}
             {route.view === 'search' && (

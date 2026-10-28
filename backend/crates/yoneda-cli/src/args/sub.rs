@@ -1,17 +1,26 @@
-//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, hooks.
+//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, changes,
+//! releases, hooks.
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
     Anchor, ChangeCommand, CheckCommand, Command, HookEvent, ReadCommand, ReadsCommand,
-    RepoCommand, SessionCommand, SyncMode, TokenCommand,
+    ReleaseCommand, RepoCommand, SessionCommand, SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
 pub fn repo(rest: &[String]) -> Result<Command> {
     let (sub, rest) = split_sub(rest, "repo")?;
-    let p = Parsed::new(&rest, &["origin", "confirm", "name", "batch-files"], &[])?;
+    let p = Parsed::new(
+        &rest,
+        &["origin", "confirm", "name", "batch-files", "owner"],
+        &[],
+    )?;
+    if p.flag("owner").is_some() && sub != "create" && sub != "fork" {
+        return Err(Error::usage("only repo create and repo fork take --owner"));
+    }
     let command = match sub.as_str() {
         "create" => RepoCommand::Create {
             name: p.exactly(1, "repo create <name>")?[0].clone(),
+            owner: p.flag("owner"),
         },
         "list" => {
             p.at_most(0)?;
@@ -35,6 +44,7 @@ pub fn repo(rest: &[String]) -> Result<Command> {
         "fork" => RepoCommand::Fork {
             id: p.exactly(1, "repo fork <id>")?[0].clone(),
             name: p.flag("name"),
+            owner: p.flag("owner"),
         },
         other => return Err(Error::usage(format!("unknown repo command {other:?}"))),
     };
@@ -265,6 +275,31 @@ pub fn change(rest: &[String]) -> Result<Command> {
         other => return Err(Error::usage(format!("unknown change command {other:?}"))),
     };
     Ok(Command::Change {
+        target: p.target(),
+        command,
+    })
+}
+
+pub fn release(rest: &[String]) -> Result<Command> {
+    let (sub, rest) = split_sub(rest, "release")?;
+    let p = Parsed::new(&rest, &with(&["title", "message", "asset"]), &[])?;
+    let command = match sub.as_str() {
+        "create" => ReleaseCommand::Create {
+            tag: p.exactly(1, "release create <tag>")?[0].clone(),
+            title: p.flag("title"),
+            notes: p.flag("message"),
+            asset: p.flag("asset"),
+        },
+        "list" => {
+            p.at_most(0)?;
+            ReleaseCommand::List
+        }
+        "show" => ReleaseCommand::Show {
+            tag: p.exactly(1, "release show <tag>")?[0].clone(),
+        },
+        other => return Err(Error::usage(format!("unknown release command {other:?}"))),
+    };
+    Ok(Command::Release {
         target: p.target(),
         command,
     })

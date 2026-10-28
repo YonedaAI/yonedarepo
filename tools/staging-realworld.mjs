@@ -8,7 +8,9 @@
 // conflicts, atomic and killed pushes), the account MCP with a PAT, `--at` reads, a change
 // request (18: open, comment, approve, land), a server-side rebase (21: linear in a clone,
 // a conflict refused with its paths), cleanup, and log compaction (20: 20,000 versions, a
-// bounded SQL tail, `log --at 5` from the R2 segment). The CLI items need
+// bounded SQL tail, `log --at 5` from the R2 segment), and annotated tags and releases (23:
+// `git push` of a `git tag -a`, a fresh clone holding the tag object, a release asset whose
+// download matches its sha256). The CLI items need
 // `cargo build -p yoneda-cli --release` (`--cli-bin` names another directory). Prints a
 // pass/fail table and writes evidence to .local/staging/. Credentials come only from 0600
 // files in ~/.config/yonedarepo/:
@@ -31,6 +33,10 @@
 //          (= --only 0,22: the second kit account forks a repository it reads, pushes a branch
 //          to the fork with stock Git, opens a change on the parent; the owner lands it and a
 //          fresh clone of the parent holds the commit; the parent is deleted after the fork)
+//        node tools/staging-realworld.mjs --orgs
+//          (= --only 0,24: an organization with team "devs" owns a repository granted to the
+//          team; the second kit account pushes through the team with an org-limited token and
+//          is refused within the 1 s access bound once removed from the team)
 //        node tools/staging-realworld.mjs --reads-sessions
 //          (= --only 0,reads: stock Git over smart HTTP; a push declaring a read that changed
 //          meanwhile is refused as a read conflict, lands after git pull, and its session
@@ -60,8 +66,10 @@ import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from '
 import { forkFlow } from './staging/fork-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
+import { orgsFlow } from './staging/orgs-flow.mjs';
 import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
 import { cliRebase } from './staging/rebase-flow.mjs';
+import { releasesFlow } from './staging/releases-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 
@@ -93,6 +101,8 @@ const { values } = parseArgs({
     members: { type: 'boolean', default: false },
     // The forks gate alone (items 0 and 22), which needs the second account too.
     forks: { type: 'boolean', default: false },
+    // The organizations gate alone (items 0 and 24).
+    orgs: { type: 'boolean', default: false },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
@@ -101,7 +111,9 @@ const { values } = parseArgs({
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const only = values['model-check']
+const only = values.orgs
+  ? new Set(['0', '24'])
+  : values['model-check']
   ? new Set(['0', 'model'])
   : values.webhooks
     ? new Set(['0', 'hooks'])
@@ -117,8 +129,9 @@ const only = values['model-check']
             ? new Set(values.only.split(','))
             : null;
 // The model check needs the platform's review key, the webhook gate a receiver and the
-// members and forks gates a second account, so a full kit run leaves them out unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+// members, forks (22) and orgs (24) gates a second account, so a full kit run leaves them out
+// unless named.
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -151,6 +164,9 @@ await step('members', 'Members: a second account reads, pushes and lands by role
 await step('22', 'Forks: a reader forks, pushes to the fork, opens a change on the parent; it lands and clones', (m) =>
   forkFlow({ origin: values.origin, api: values.api, kit, platform: platformAccount }, m),
 );
+await step('24', 'Orgs: a team member pushes to an org repository; removal from the team refuses within 1 s', (m) =>
+  orgsFlow({ origin: values.origin, api: values.api, kit, platform: platformAccount }, m),
+);
 await step('reads', 'Declared reads: a stale read is refused on a plain git push; session records', (m) =>
   readsSessionsFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
@@ -165,6 +181,9 @@ await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), sha
 await step('model', 'Model check: vulnerable commit fails and cannot land, the fix passes and lands', (m) => modelCheck(platformAccount, m));
 await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 from R2', (m) =>
   compactionFlow(platformAccount, m, { versions: Number(values['compaction-versions']) }),
+);
+await step('23', 'Annotated tag push + fresh clone (cat-file -t = tag), release with an asset (sha256)', (m) =>
+  releasesFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
 
 const execFileAsync = promisify(execFile);
@@ -228,8 +247,8 @@ if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
+const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);

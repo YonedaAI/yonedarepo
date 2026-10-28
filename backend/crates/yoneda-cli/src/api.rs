@@ -158,14 +158,37 @@ impl Api {
         body: Option<&Value>,
     ) -> std::result::Result<Value, Failure> {
         let mut request = self.http.request(method, format!("{}{path}", self.base));
-        request = match &self.header {
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        self.answer(request).await
+    }
+
+    /// A PUT whose body is raw bytes (a release asset), never retried.
+    pub async fn put_bytes(
+        &self,
+        path: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+    ) -> std::result::Result<Value, Failure> {
+        let request = self
+            .http
+            .put(format!("{}{path}", self.base))
+            .header("content-type", content_type)
+            .body(bytes);
+        self.answer(request).await
+    }
+
+    /// Sends `request` with this client's credentials; the JSON answer or the API error.
+    async fn answer(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> std::result::Result<Value, Failure> {
+        let request = match &self.header {
             Header::Authorization(value) => request.header("authorization", value),
             Header::Cookie(value) => request.header("cookie", value),
             Header::None => request,
         };
-        if let Some(body) = body {
-            request = request.json(body);
-        }
         let unreachable = |e: reqwest::Error| Failure {
             status: 0,
             code: "UNREACHABLE".into(),

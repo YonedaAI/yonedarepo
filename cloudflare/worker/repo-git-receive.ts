@@ -4,7 +4,8 @@
 // are written to R2, the new commits are recorded under their own ids, and only then do
 // refs move: working branches by compare-and-swap (one batch for `--atomic`), protected
 // branches by landing, with the server's merge when they moved meanwhile, and new
-// lightweight tags by creation (tags never move or disappear). A push that fails or dies
+// tags by creation (tags never move or disappear; an annotated tag's object is verified
+// against the commit it tags and kept by the authority). A push that fails or dies
 // before that leaves every ref and the log as they were. `-o yoneda.reads=…` declares the
 // files the pushed work relied on: they are recorded with each pushed tip, and landing
 // refuses the push as a read conflict when one of them changed after its base.
@@ -14,7 +15,15 @@ import { transient } from './durable';
 import { bundlesOn, locate, storeBundle } from './repo-bundles';
 import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
-import { type Command, moveAll, moveOne, type Outcome, reason, refusal } from './repo-git-moves';
+import {
+  type Command,
+  moveAll,
+  moveOne,
+  type Outcome,
+  reason,
+  refusal,
+  target,
+} from './repo-git-moves';
 import { inBatches, rawObject, treeFor, treesFor } from './repo-git-objects';
 import { ReceiveSession } from './repo-git-sessions';
 import { notifyHooks } from './repo-hooks';
@@ -68,7 +77,8 @@ export async function receivePack(
       for (const [ref, why] of outcomes) outcomes.set(ref, why ?? 'atomic push refused');
     }
     const going = (commands as Command[]).filter((c) => !outcomes.get(c.ref));
-    const tips = going.flatMap((c) => (c.new ? [c.new] : []));
+    // An annotated tag's tip is the commit it tags (its object is kept by the authority).
+    const tips = going.flatMap((c) => (c.new ? [target(c) as string] : []));
     let fresh = new Set<string>();
     try {
       if (tips.length > 0)

@@ -21,13 +21,14 @@ const REPO = /^r[0-9a-f]{20}$/;
 const credentialsOf = (ctx: RepoContext) => ctx.call.sign({}) as Credentials;
 
 /**
- * `git_fork {name?, policy?}` on the parent: a new repository owned by the caller's account
- * (needs only read here), its refs the parent's at the current version. The fork is listed
+ * `git_fork {name?, owner?, policy?}` on the parent: a new repository owned by the caller's
+ * account or by organization `owner` (an owner of it asks; needs only read here), its refs the parent's at the current version. The fork is listed
  * only once its history and refs are in place, so a failed attempt leaves nothing visible.
  */
 export async function forkRepository(ctx: RepoContext, args: Json) {
   const { env } = ctx;
-  const auth = owning(credentialsOf(ctx), {});
+  // Forking into an organization (`owner`) needs an owner of it, as creating there does.
+  const auth = await owning(env, credentialsOf(ctx), { owner: args.owner });
   const source = await ctx.call({ op: 'repo_fork_source' });
   if (forkDepth(source.object_store) >= FORK_DEPTH)
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);

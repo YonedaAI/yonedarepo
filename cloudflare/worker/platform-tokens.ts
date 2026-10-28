@@ -114,6 +114,7 @@ export async function deviceApprove(env: Env, auth: Credentials, body: Json) {
     account,
     scopes: body.scopes,
     repos: body.repos ?? null,
+    org: body.org ?? null,
     expires_days: body.expires_days ?? 30,
     deny: body.deny === true,
   });
@@ -148,6 +149,7 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
     name: polled.client_name,
     scopes: grant.scopes,
     repos: grant.repos,
+    org: grant.org ?? null,
     expires_days: grant.expires_days,
   });
   return {

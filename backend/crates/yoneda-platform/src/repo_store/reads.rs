@@ -90,7 +90,10 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
 
 pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
-    Ok(json!({ "version": version, "refs": refs_at(db, c, version)? }))
+    let refs = refs_at(db, c, version)?;
+    // Annotated tags: the tag object each such ref names to Git (the ref holds the commit).
+    let annotated = super::annotated::listed(db, &refs)?;
+    Ok(json!({ "version": version, "refs": refs, "annotated": annotated }))
 }
 
 pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {

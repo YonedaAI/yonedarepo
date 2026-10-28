@@ -105,7 +105,7 @@ const RECENT = 64;
 const HISTORY = 200;
 
 async function advertise(ctx: RepoContext, service: string) {
-  const { refs } = await ctx.call({ op: 'repo_refs' });
+  const { refs, annotated } = await ctx.call({ op: 'repo_refs' });
   let haves: string[] = [];
   if (service === 'git-receive-pack' && refs['refs/heads/main']) {
     const log = await ctx.call({ op: 'repo_log', ref: 'main', limit: HISTORY });
@@ -113,7 +113,7 @@ async function advertise(ctx: RepoContext, service: string) {
       .map((c) => c.commit as string)
       .filter((_, i) => i < RECENT || Number.isInteger(Math.log2(i)));
   }
-  const { body_b64 } = compute({ op: 'git_advertise', service, refs, haves });
+  const { body_b64 } = compute({ op: 'git_advertise', service, refs, annotated, haves });
   return new Response(fromBase64(body_b64), {
     headers: {
       'content-type': `application/x-${service}-advertisement`,

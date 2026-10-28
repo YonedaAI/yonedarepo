@@ -599,8 +599,8 @@ fn killed_push_leaves_refs_unchanged(w: &World) -> TestResult {
     check(w.blob(&repo, "k.txt") == "k\n", "the retried push landed")
 }
 
-/// Lightweight tags through the helper: `git push origin v1` creates one, a fresh clone
-/// lists it, and it never moves or disappears; an annotated tag is refused.
+/// Tags through the helper: `git push origin v1` creates one, a fresh clone lists it, and
+/// it never moves or disappears; an annotated tag keeps its object through push and clone.
 fn tags_push_and_clone(w: &World) -> TestResult {
     let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
     let c = w.client("tags", &token)?;
@@ -651,17 +651,59 @@ fn tags_push_and_clone(w: &World) -> TestResult {
         !deleted.status.success() && text(&deleted).contains("cannot be deleted"),
         &text(&deleted),
     )?;
-    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
-    let annotated = push(&c, &dir, &["origin", "v2"])?;
-    check(
-        !annotated.status.success()
-            && text(&annotated).contains("annotated tags are not supported"),
-        &text(&annotated),
-    )?;
     let refs = w.refs(&repo)?;
     check(
-        refs["refs/tags/v1"] == first.as_str() && refs.get("refs/tags/v2").is_none(),
+        refs["refs/tags/v1"] == first.as_str(),
         "refusals moved nothing",
+    )?;
+
+    // An annotated tag of an unpushed commit: the helper uploads the commit, the platform
+    // keeps the tag object, and a fresh clone (and a fetch) have the very same object.
+    let later = c.git(&dir, &["rev-parse", "HEAD"])?;
+    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
+    let object = c.git(&dir, &["rev-parse", "v2"])?;
+    let annotated = push(&c, &dir, &["origin", "v2"])?;
+    check(annotated.status.success(), &text(&annotated))?;
+    let listed = w
+        .platform
+        .owner_call("GET", &format!("/repos/{repo}/refs"), None)?;
+    check(
+        listed["refs"]["refs/tags/v2"] == later.as_str()
+            && listed["annotated"]["refs/tags/v2"] == object.as_str(),
+        &listed.to_string(),
+    )?;
+    let again = push(&c, &dir, &["origin", "v2"])?;
+    check(
+        text(&again).contains("Everything up-to-date"),
+        &text(&again),
+    )?;
+    let fresh = w.client("tags-annotated", &token)?;
+    let copy = w.clone(&fresh, &repo, "annotated")?;
+    check(
+        fresh.git(&copy, &["cat-file", "-t", "v2"])? == "tag"
+            && fresh.git(&copy, &["rev-parse", "v2"])? == object
+            && fresh.git(&copy, &["rev-parse", "v2^{commit}"])? == later,
+        "a fresh clone has the tag object, peeled to its commit",
+    )?;
+    // `--atomic`: a branch and an annotated tag in one batch.
+    c.git(&dir, &["checkout", "-q", "-b", "rel"])?;
+    let tip = commit(&c, &dir, "rc", &[("rc.txt", "rc\n")])?;
+    c.git(&dir, &["tag", "-a", "v3", "-m", "rc"])?;
+    let v3 = c.git(&dir, &["rev-parse", "v3"])?;
+    let atomic = push(&c, &dir, &["--atomic", "origin", "rel", "v3"])?;
+    check(atomic.status.success(), &text(&atomic))?;
+    let listed = w
+        .platform
+        .owner_call("GET", &format!("/repos/{repo}/refs"), None)?;
+    check(
+        listed["refs"]["refs/heads/rel"] == tip.as_str()
+            && listed["annotated"]["refs/tags/v3"] == v3.as_str(),
+        &listed.to_string(),
+    )?;
+    let fetched = fresh.git_output(&copy, &["fetch", "--tags", "origin"])?;
+    check(
+        fetched.status.success() && fresh.git(&copy, &["rev-parse", "v3"])? == v3,
+        &text(&fetched),
     )
 }
 

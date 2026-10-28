@@ -6,10 +6,17 @@ usage: yoneda <command> [options]
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
   logout [--origin <url>]
-  repo create <name> | repo list | repo delete <id> --confirm <name>
+  repo create <name> [--owner <org>] | repo list | repo delete <id> --confirm <name>
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
-  repo fork <id> [--name <name>]                         a fork on your account (needs read)
+  repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
   setup claude|codex|gemini                              a coding agent's skill files and MCP config
+
+organizations (owners manage members and teams; a repository grants a team by
+`team:<org>/<team>` as a member)
+  org list | org create <name> | org show <org> | org repos <org>
+  org member add <org> <account> [--role owner|member] | org member remove <org> <account>
+  org team create|delete <org> <team>
+  org team add|remove <org> <team> <account>
 
 repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>])
   land [--branch <b>]                 land the branch's head on main
@@ -21,6 +28,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on main
+  release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
+  release list | release show <tag>   releases; a release's notes and assets (with sha256)
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
@@ -67,6 +76,8 @@ pub struct Target {
 pub enum RepoCommand {
     Create {
         name: String,
+        /// An organization to own it (the caller must be one of its owners).
+        owner: Option<String>,
     },
     List,
     Delete {
@@ -78,10 +89,54 @@ pub enum RepoCommand {
         name: Option<String>,
         batch_files: usize,
     },
-    /// A fork of repository `id`, owned by the caller's account.
+    /// A fork of repository `id`, owned by the caller's account or organization `owner`.
     Fork {
         id: String,
         name: Option<String>,
+        /// An organization to own it (the caller must be one of its owners).
+        owner: Option<String>,
+    },
+}
+
+/// `yoneda org …`: organizations, their members and teams.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrgCommand {
+    List,
+    Create {
+        name: String,
+    },
+    Show {
+        org: String,
+    },
+    Repos {
+        org: String,
+    },
+    MemberAdd {
+        org: String,
+        account: String,
+        role: String,
+    },
+    MemberRemove {
+        org: String,
+        account: String,
+    },
+    TeamCreate {
+        org: String,
+        team: String,
+    },
+    TeamDelete {
+        org: String,
+        team: String,
+    },
+    TeamAdd {
+        org: String,
+        team: String,
+        account: String,
+    },
+    TeamRemove {
+        org: String,
+        team: String,
+        account: String,
     },
 }
 
@@ -162,6 +217,21 @@ pub enum SessionCommand {
     },
 }
 
+/// `yoneda release …`: releases of existing tags, with downloadable assets.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ReleaseCommand {
+    Create {
+        tag: String,
+        title: Option<String>,
+        notes: Option<String>,
+        asset: Option<String>,
+    },
+    List,
+    Show {
+        tag: String,
+    },
+}
+
 /// `yoneda change …`: change requests (a branch proposed for landing on main).
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChangeCommand {
@@ -231,6 +301,10 @@ pub enum Command {
         origin: Option<String>,
         command: RepoCommand,
     },
+    Org {
+        origin: Option<String>,
+        command: OrgCommand,
+    },
     Setup {
         agent: Agent,
         origin: Option<String>,
@@ -287,6 +361,10 @@ pub enum Command {
     Change {
         target: Target,
         command: ChangeCommand,
+    },
+    Release {
+        target: Target,
+        command: ReleaseCommand,
     },
     Hook(HookEvent),
 }
