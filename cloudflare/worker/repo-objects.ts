@@ -3,6 +3,7 @@
 // immutable, so a cache entry keyed by id never needs invalidation; keys are per
 // repository so access follows repository auth.
 import { deferred } from './background';
+import { fromBundles, platformCall } from './repo-bundles';
 import { compute } from './repo-compute';
 import { stagedInShardOf, stagedInShards } from './repo-shards';
 import {
@@ -53,7 +54,7 @@ export class RepoObjects {
   readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
   constructor(
     readonly env: Env,
-    private readonly repo: string,
+    readonly repo: string,
     readonly store: ObjectStore,
     private readonly trees: TreeMemo = isolateTrees,
   ) {}
@@ -187,11 +188,15 @@ export class RepoObjects {
     return { bytes: this.encode(object), tier: 'store' };
   }
 
-  /** The store of record's copy (raw Git content in R2), parsed. */
+  /** The store of record's copy (raw Git content in R2, alone or in a push's bundle),
+   * parsed. */
   private async recorded(id: string, kind: ObjectKind): Promise<CachedObject | null> {
     const raw = await this.env.OBJECTS.get(this.rawKey(id));
-    if (!raw || raw.customMetadata?.kind !== kind) return null;
-    const data_b64 = toBase64(new Uint8Array(await raw.arrayBuffer()));
+    let bytes: Uint8Array | null =
+      raw?.customMetadata?.kind === kind ? new Uint8Array(await raw.arrayBuffer()) : null;
+    bytes ??= (await fromBundles(this.env, this.repo, [{ id, kind }])).get(id) ?? null;
+    if (!bytes) return null;
+    const data_b64 = toBase64(bytes);
     return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
       .objects[0] as CachedObject;
   }
@@ -203,15 +208,24 @@ export class RepoObjects {
   }
 
   /**
-   * Raw content of objects for a pack: the store of record (R2), then the authority's
-   * staged copy for objects still in flight. Missing ones are left out.
+   * Raw content of objects for a pack: the store of record (R2: bundles, then one object
+   * per key), then the authority's staged copy for objects still in flight. Missing ones
+   * are left out.
    */
   async raw(wanted: { id: string; kind: string }[]): Promise<RawObject[]> {
+    const bundled = await fromBundles(this.env, this.repo, wanted);
     const found: RawObject[] = [];
+    const rest: { id: string; kind: string }[] = [];
+    for (const w of wanted) {
+      const data = bundled.get(w.id);
+      if (data)
+        found.push({ id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
+      else rest.push(w);
+    }
     const absent: { id: string; kind: string }[] = [];
-    for (let i = 0; i < wanted.length; i += CACHE_CHUNK) {
+    for (let i = 0; i < rest.length; i += CACHE_CHUNK) {
       await Promise.all(
-        wanted.slice(i, i + CACHE_CHUNK).map(async (w) => {
+        rest.slice(i, i + CACHE_CHUNK).map(async (w) => {
           const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
           if (stored)
             found.push({
@@ -255,17 +269,7 @@ export class RepoObjects {
   }
 
   private async stagedCall(args: { ids: string[]; raw?: true }): Promise<unknown[]> {
-    const stub = this.env.SOURCE_REPOS.get(this.env.SOURCE_REPOS.idFromName(this.repo));
-    const response = await stub.fetch('https://source-repository/', {
-      method: 'POST',
-      body: JSON.stringify({ op: 'repo_staged_objects', ...args, _system: 'projection' }),
-    });
-    const value = await response.json<{
-      objects?: unknown[];
-      error?: { code: string; message: string };
-    }>();
-    if (value.error)
-      throw Object.assign(new Error(value.error.message), { code: value.error.code });
+    const value = await platformCall(this.env, this.repo, { op: 'repo_staged_objects', ...args });
     return value.objects ?? [];
   }
 
