@@ -5,7 +5,7 @@
 //! in the pack (and of the right kind) or held by the repository: trees the walk needs are
 //! read through the adapter (which proves they exist), and files outside the pack are
 //! confirmed by the adapter one by one. The same diff yields each commit's path touches.
-use crate::platform_objects::{entry_type, new_trees};
+use crate::platform_objects::new_trees;
 use crate::secret_scan::{SecretAllow, scan};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -272,7 +272,7 @@ fn new_commits(
 fn touch(change: &TreeChange) -> PathTouch {
     let mode = |side: Option<(FileMode, ObjectId)>| {
         side.filter(|(m, _)| *m != FileMode::Gitlink)
-            .map(|(m, _)| entry_type(m).to_owned())
+            .map(|(m, _)| m)
     };
     PathTouch {
         path: change.path.clone(),
