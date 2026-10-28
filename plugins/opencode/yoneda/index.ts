@@ -204,10 +204,13 @@ export default {
       }
     })().catch(() => {});
 
-    // opencode may exit right after a run ends: finish (or make) every seen session's record.
+    // opencode exits right after a run ends (in the agent sandbox the container then stops and
+    // kills any hook still running): finish (or make) every seen session's record, and every
+    // record pass a session end started, also in an instance that saw no model call.
     return async () => {
       controller.abort();
       await Promise.allSettled([...models.keys()].map(stop));
+      await Promise.allSettled([...stops.values()]);
     };
   },
 };
