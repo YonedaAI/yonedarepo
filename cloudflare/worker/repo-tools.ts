@@ -98,12 +98,16 @@ export const operations: Record<string, Operation> = {
       session_id: a.session_id ?? null,
     }),
   git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
+  // The listing the web's Sessions page reads (GET /sessions, repo-agent-records.ts).
   git_sessions_recent: (ctx, a) =>
     ctx.call({
-      op: 'repo_sessions_recent',
+      op: 'repo_session_list',
       limit: optionalNumber(a.limit),
       before: optionalNumber(a.before),
       session_id: a.session_id || null,
+      cli: a.cli || null,
+      model: a.model || null,
+      ref: a.ref || null,
     }),
   // What a new coding session should know: heads, landing rules, recent sessions, open
   // changes and contracts on the paths it works on (a list, or comma-separated over REST).

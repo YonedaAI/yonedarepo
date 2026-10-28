@@ -6,7 +6,7 @@
 //! client renders and caps the text it hands the agent.
 use super::auth::Actor;
 use super::rows::{self, Settings};
-use super::{changes, sessions};
+use super::{agent_reads, changes, sessions};
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
 use yoneda_core::Result;
@@ -14,6 +14,7 @@ use yoneda_core::Result;
 const MAX_PATHS: usize = 100;
 const MAX_CONTRACTS: u64 = 10;
 const MAX_CHANGES: u64 = 20;
+const MAX_SESSIONS: u64 = 50;
 
 fn count(c: &Value, key: &str, default: u64, max: u64) -> Result<u64> {
     match &c[key] {
@@ -95,7 +96,11 @@ pub fn context<S: SqlStore>(
     for path in &paths {
         yoneda_core::validate_path(path)?;
     }
-    let recent = sessions::recent(db, &json!({ "limit": c["sessions"] }), actor)?;
+    let recent = agent_reads::session_list(
+        db,
+        &json!({ "limit": count(c, "sessions", 8, MAX_SESSIONS)? }),
+        actor,
+    )?;
     let open = changes::list(
         db,
         &json!({ "status": "open", "limit": count(c, "changes", 10, MAX_CHANGES)? }),
