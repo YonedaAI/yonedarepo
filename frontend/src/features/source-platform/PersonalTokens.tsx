@@ -1,6 +1,6 @@
 // Personal access tokens (`ypat_…`): account-wide tokens for the yoneda CLI and agents,
-// with scopes, an optional repository allowlist and an expiry. Created from the session,
-// shown once, revocable.
+// with scopes, an optional repository allowlist, an optional organization limit and an
+// expiry. Created from the session, shown once, revocable.
 import { type FormEvent, useState } from 'react';
 import {
   DEFAULT_EXPIRY_DAYS,
@@ -9,6 +9,7 @@ import {
   PAT_SCOPES,
   type PatScope,
 } from './connect';
+import type { OrgSummary } from './orgModel';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import {
@@ -25,6 +26,8 @@ export type Pat = {
   name: string;
   scopes: string[];
   repos: string[] | null;
+  /** The one organization whose repositories it reaches (null: not limited). */
+  org?: string | null;
   created_at: number;
   expires_at: number | null;
   last_used_at: number | null;
@@ -55,6 +58,7 @@ export function PatTable({
             <th>Name</th>
             <th>Scopes</th>
             <th>Repositories</th>
+            <th>Organization</th>
             <th>Expires</th>
             <th>Last used</th>
             <th>
@@ -68,10 +72,16 @@ export function PatTable({
               <td>{t.name}</td>
               <td>{t.scopes.join(', ')}</td>
               <td>{t.repos ? t.repos.map(name).join(', ') : 'all'}</td>
+              <td>{t.org ?? 'any'}</td>
               <td>{expiresIn(t.expires_at, now)}</td>
               <td>{t.last_used_at ? when(t.last_used_at) : 'never'}</td>
               <td>
-                <button type="button" className="quiet" onClick={() => onRevoke(t)}>
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={`Revoke ${t.name}`}
+                  onClick={() => onRevoke(t)}
+                >
                   Revoke
                 </button>
               </td>
@@ -94,6 +104,23 @@ export const onlyTokens = (
 ): Loaded<{ tokens: Pat[] }> =>
   tokens.data ? { ...tokens, data: { tokens: tokens.data.tokens.filter(which) } } : tokens;
 
+/** The `POST /tokens` body: only the limits the form set (no org and no repositories: all). */
+export function patBody(form: {
+  name: string;
+  scopes: PatScope[];
+  days: number;
+  repos: string[];
+  org: string;
+}) {
+  return {
+    name: form.name.trim(),
+    scopes: form.scopes,
+    expires_days: form.days,
+    ...(form.repos.length ? { repos: form.repos } : {}),
+    ...(form.org ? { org: form.org } : {}),
+  };
+}
+
 /** Revokes a personal token after confirming, then re-reads the list. */
 export async function revokePat(token: Pat, tokens: Loaded<unknown>, what = 'Clients using it') {
   if (!window.confirm(`Revoke ${token.name}? ${what} stop working immediately.`)) return;
@@ -101,11 +128,41 @@ export async function revokePat(token: Pat, tokens: Loaded<unknown>, what = 'Cli
   tokens.reload();
 }
 
+/** Optional organization limit: the token reaches only that org's repositories and cannot
+ * create organizations or repositories outside it. */
+export function OrgLimit({
+  orgs,
+  value,
+  onChange,
+}: {
+  orgs: OrgSummary[];
+  value: string;
+  onChange: (org: string) => void;
+}) {
+  const names = orgs.map((o) => o.org).sort();
+  return (
+    <label htmlFor="pat-org" className="source-field">
+      Organization
+      <select id="pat-org" value={value} onChange={(e) => onChange(e.target.value)}>
+        <option value="">Any (not limited)</option>
+        {names.map((org) => (
+          <option key={org} value={org}>
+            Only {org}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function PersonalTokens({
   repos,
+  orgs = [],
   tokens: all,
 }: {
   repos: RepoSummary[];
+  /** The account's organizations, for the organization limit. */
+  orgs?: OrgSummary[];
   tokens: Loaded<{ tokens: Pat[] }>;
 }) {
   const tokens = onlyTokens(all, (t) => !isDeviceLogin(t));
@@ -113,6 +170,7 @@ export function PersonalTokens({
   const [scopes, setScopes] = useState<PatScope[]>(DEFAULT_PAT_SCOPES);
   const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
   const [allow, setAllow] = useState<string[]>([]);
+  const [org, setOrg] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [secret, setSecret] = useState('');
@@ -123,12 +181,7 @@ export function PersonalTokens({
     setError('');
     try {
       const created = await sourceApi<{ token: string }>('/tokens', {
-        body: {
-          name,
-          scopes,
-          expires_days: days,
-          ...(allow.length ? { repos: allow } : {}),
-        },
+        body: patBody({ name, scopes, days, repos: allow, org }),
       });
       setSecret(created.token);
       setName('');
@@ -159,7 +212,11 @@ export function PersonalTokens({
       {secret ? (
         <ShownOnce token={secret} onDone={() => setSecret('')} />
       ) : (
-        <form onSubmit={create} className="source-token-form">
+        <form
+          onSubmit={create}
+          className="source-token-form"
+          aria-label="Create a personal access token"
+        >
           <label htmlFor="pat-name" className="source-field">
             Name
             <input
@@ -174,7 +231,8 @@ export function PersonalTokens({
           <ScopeChecks legend="Scopes" options={PAT_SCOPES} value={scopes} onChange={setScopes} />
           <ExpirySelect id="pat-expiry" value={days} onChange={setDays} />
           <RepoAllowlist repos={repos} value={allow} onChange={setAllow} />
-          <button type="submit" disabled={busy || !name || scopes.length === 0}>
+          {orgs.length > 0 && <OrgLimit orgs={orgs} value={org} onChange={setOrg} />}
+          <button type="submit" disabled={busy || !name.trim() || scopes.length === 0}>
             {busy ? 'Creating…' : 'Create token'}
           </button>
         </form>

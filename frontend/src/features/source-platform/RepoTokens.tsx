@@ -1,8 +1,8 @@
 // Repository tokens (`yrp_…`): scoped to one repository (and optionally to paths), for an
-// agent or CI that should touch nothing else. Managed in the repository's Settings; shown
+// agent or CI that should touch nothing else. They do not expire; revoke them by name. Managed in the repository's Settings; shown
 // once, revocable by name.
 import { type FormEvent, useState } from 'react';
-import { REPO_TOKEN_SCOPES, scopeList } from './connect';
+import { pathList, REPO_TOKEN_SCOPES, scopeList } from './connect';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { ScopeChecks, ShownOnce } from './TokenParts';
@@ -17,6 +17,12 @@ export type RepoToken = {
 };
 type Scope = (typeof REPO_TOKEN_SCOPES)[number];
 const OPTIONS = REPO_TOKEN_SCOPES.map((scope) => ({ scope, label: scope }));
+
+/** The `POST /tokens` body: no paths means the whole repository. */
+export function repoTokenBody(name: string, scopes: Scope[], paths: string) {
+  const grant = pathList(paths);
+  return { name: name.trim(), scopes, ...(grant ? { paths: grant } : {}) };
+}
 
 export function RepoTokenTable({
   tokens,
@@ -51,7 +57,12 @@ export function RepoTokenTable({
               <td>{scopeList(t.paths).join(', ') || 'all'}</td>
               <td>{when(t.created_at)}</td>
               <td>
-                <button type="button" className="quiet" onClick={() => onRevoke(t.name)}>
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={`Revoke ${t.name}`}
+                  onClick={() => onRevoke(t.name)}
+                >
                   Revoke
                 </button>
               </td>
@@ -67,6 +78,7 @@ export function RepoTokens({ repo }: { repo: string }) {
   const tokens = useSource<{ tokens: RepoToken[] }>(`/repos/${repo}/tokens`);
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<Scope[]>(['read', 'write']);
+  const [paths, setPaths] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [secret, setSecret] = useState('');
@@ -77,10 +89,11 @@ export function RepoTokens({ repo }: { repo: string }) {
     setError('');
     try {
       const created = await sourceApi<{ token: string }>(`/repos/${repo}/tokens`, {
-        body: { name, scopes },
+        body: repoTokenBody(name, scopes, paths),
       });
       setSecret(created.token);
       setName('');
+      setPaths('');
       tokens.reload();
     } catch (e) {
       setError((e as Error).message);
@@ -128,6 +141,20 @@ export function RepoTokens({ repo }: { repo: string }) {
             />
           </label>
           <ScopeChecks legend="Scopes" options={OPTIONS} value={scopes} onChange={setScopes} />
+          <label htmlFor="repo-token-paths" className="source-field">
+            Paths (optional)
+            <input
+              id="repo-token-paths"
+              value={paths}
+              onChange={(e) => setPaths(e.target.value)}
+              placeholder="src/, docs/"
+              autoComplete="off"
+              aria-describedby="repo-token-paths-help"
+            />
+            <span id="repo-token-paths-help" className="source-meta">
+              Files or directories, comma separated. Leave empty for the whole repository.
+            </span>
+          </label>
           <button type="submit" disabled={busy || !name || scopes.length === 0}>
             {busy ? 'Creating…' : 'Create repository token'}
           </button>
