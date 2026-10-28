@@ -56,7 +56,7 @@
   "d1_databases": [
     {
       "binding": "INDEX",
-      "database_id": "pending",
+      "database_id": "cbe01735-960f-45b6-8591-d25052ab7f0d",
       "database_name": "yonedarepo-dev-agents-index",
       "migrations_dir": "migrations"
     }
