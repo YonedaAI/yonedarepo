@@ -23,6 +23,7 @@
 //! `forks/<fork>/<branch>` (`repo_fork_mirror`). The change is an ordinary change on that
 //! mirror, so reviews, checks and landing (expected-old lease, ancestry) are unchanged.
 use super::auth::Actor;
+use super::op::ForkOp;
 use super::rows::{self, Settings, branch_ref, object_id};
 use super::{fork_copy, git_http, land};
 use crate::storage::{SqlStore, bad, number, string};
@@ -32,31 +33,32 @@ use yoneda_core::{Error, Result, txlog::TxKind};
 /// Most commits one change from a fork brings into the parent at a time.
 const CHANGE_COMMITS: usize = 500;
 
-pub(super) fn owns(op: &str) -> bool {
-    op.starts_with("repo_fork_")
-}
-
-pub(super) fn authorize(actor: &Actor, op: &str) -> Result<()> {
+pub(super) fn authorize(actor: &Actor, op: ForkOp) -> Result<()> {
     match op {
         // The parent's side of forking: anyone who may read the whole repository.
-        "repo_fork_source" | "repo_fork_export" => {
+        ForkOp::Source | ForkOp::Export => {
             actor.require("read")?;
             git_http::whole_repository(actor)
         }
         // Offering a branch to the parent: a writer of the whole fork.
-        "repo_fork_offer" => {
+        ForkOp::Offer => {
             actor.require("write")?;
             git_http::whole_repository(actor)
         }
         // A new fork's history and refs: only the platform's fork job fills them.
-        "repo_fork_record" | "repo_fork_refs" if actor.can("import") => Ok(()),
+        ForkOp::Record | ForkOp::Refs if actor.can("import") => Ok(()),
         // Registering forks and carrying changes across: the platform only.
-        "repo_fork_register" | "repo_fork_forget" | "repo_fork_branch" | "repo_fork_mirror"
+        ForkOp::Register | ForkOp::Forget | ForkOp::Branch | ForkOp::Mirror
             if actor.can("fork") =>
         {
             Ok(())
         }
-        _ => Err(Error::new(
+        ForkOp::Record
+        | ForkOp::Refs
+        | ForkOp::Register
+        | ForkOp::Forget
+        | ForkOp::Branch
+        | ForkOp::Mirror => Err(Error::new(
             "FORBIDDEN",
             "Only the platform runs this fork step",
         )),
@@ -66,24 +68,20 @@ pub(super) fn authorize(actor: &Actor, op: &str) -> Result<()> {
 pub(super) fn run<S: SqlStore>(
     db: &S,
     c: &Value,
-    op: &str,
+    op: ForkOp,
     actor: &Actor,
     settings: &Settings,
 ) -> Result<Value> {
     match op {
-        "repo_fork_source" => fork_copy::source(db, settings),
-        "repo_fork_export" => fork_copy::export(db, c),
-        "repo_fork_record" => fork_copy::record(db, c),
-        "repo_fork_refs" => fork_copy::refs(db, c, &actor.principal),
-        "repo_fork_register" => register(db, c, true),
-        "repo_fork_forget" => register(db, c, false),
-        "repo_fork_offer" => offer(db, c, settings),
-        "repo_fork_branch" => branch(db, c, actor),
-        "repo_fork_mirror" => mirror(db, c, &actor.principal),
-        _ => Err(Error::new(
-            "UNKNOWN_OP",
-            format!("Unknown platform op {op}"),
-        )),
+        ForkOp::Source => fork_copy::source(db, settings),
+        ForkOp::Export => fork_copy::export(db, c),
+        ForkOp::Record => fork_copy::record(db, c),
+        ForkOp::Refs => fork_copy::refs(db, c, &actor.principal),
+        ForkOp::Register => register(db, c, true),
+        ForkOp::Forget => register(db, c, false),
+        ForkOp::Offer => offer(db, c, settings),
+        ForkOp::Branch => branch(db, c, actor),
+        ForkOp::Mirror => mirror(db, c, &actor.principal),
     }
 }
 

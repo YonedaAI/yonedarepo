@@ -8,21 +8,6 @@ use super::*;
 const TEAM_LIMIT: i64 = 100;
 const TEAM_SIZE_LIMIT: i64 = 1000;
 
-pub(super) fn handle<S: SqlStore>(
-    db: &S,
-    c: &Value,
-    op: &str,
-    actor: &str,
-    now: i64,
-) -> Result<Value> {
-    match op {
-        "team_create" => create(db, c, actor, now),
-        "team_delete" => delete(db, c, now),
-        "team_member_put" => member_put(db, c, actor, now),
-        _ => member_remove(db, c, now),
-    }
-}
-
 fn team_name(c: &Value) -> Result<String> {
     let name = string(c, "team")?;
     if !crate::repo_store::members::valid_team_name(&name) {
@@ -33,7 +18,7 @@ fn team_name(c: &Value) -> Result<String> {
     Ok(name)
 }
 
-fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let team = existing_team(db, c)?;
     db.query("DELETE FROM org_teams WHERE name=?", &[json!(team)])?;
     db.query("DELETE FROM org_team_members WHERE team=?", &[json!(team)])?;
@@ -41,7 +26,7 @@ fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     Ok(json!({ "team": team, "deleted": true }))
 }
 
-fn member_remove<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+pub(super) fn member_remove<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let team = existing_team(db, c)?;
     let account = personal(c)?;
     let found = db.query(
@@ -86,7 +71,7 @@ fn existing_team<S: SqlStore>(db: &S, c: &Value) -> Result<String> {
     team_name(c)
 }
 
-fn create<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value> {
+pub(super) fn create<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value> {
     let team = team_name(c)?;
     if !db
         .query("SELECT name FROM org_teams WHERE name=?", &[json!(team)])?
@@ -116,7 +101,7 @@ fn create<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value
 }
 
 /// `team_member_put {team, account}`: only members of the org join its teams.
-fn member_put<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value> {
+pub(super) fn member_put<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value> {
     let team = existing_team(db, c)?;
     let account = personal(c)?;
     if role_of(db, &account)?.is_none() {

@@ -1,5 +1,6 @@
 //! Automation controls: the pause that refuses automated verdicts and landings, and the
 //! release of a landing lease (and queue) left behind by a merger that is down.
+use super::super::op::{RepoOp as R, StoreOp};
 use super::super::rows::branch_ref;
 use super::Audit;
 use crate::storage::{SqlStore, bad};
@@ -9,18 +10,23 @@ use yoneda_core::{Error, Result};
 
 /// Operations automation performs that a pause refuses for every non-owner caller.
 /// Reads, commit recording and ref projection continue, so the human view stays live.
-pub const PAUSED_OPS: [&str; 10] = [
-    "repo_land",
-    "repo_land_enqueue",
-    "repo_land_claim",
-    "repo_land_batch",
-    "repo_check",
-    "repo_check_claim",
-    "repo_check_complete",
-    "repo_record_repair",
-    "repo_record_classes",
-    "repo_bisect_step",
-];
+pub fn pauses(op: StoreOp) -> bool {
+    matches!(
+        op,
+        StoreOp::Repo(
+            R::Land
+                | R::LandEnqueue
+                | R::LandClaim
+                | R::LandBatch
+                | R::Check
+                | R::CheckClaim
+                | R::CheckComplete
+                | R::RecordRepair
+                | R::RecordClasses
+                | R::BisectStep
+        )
+    )
+}
 
 /// The pause in force, if automation is paused.
 pub fn paused<S: SqlStore>(db: &S) -> Result<Option<Value>> {

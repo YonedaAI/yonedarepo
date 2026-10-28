@@ -1602,6 +1602,7 @@ mod land_shapes;
 mod lfs;
 mod members;
 mod model_runner;
+mod ops;
 mod orgs;
 mod pushed;
 mod rebase;

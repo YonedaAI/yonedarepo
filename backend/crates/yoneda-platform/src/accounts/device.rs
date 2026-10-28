@@ -3,13 +3,14 @@
 //! mints the personal token when the approved code is first redeemed, so a code is single
 //! use and no secret waits in storage. Poll outcomes are answers, not errors, so the poll
 //! bookkeeping (interval, consumption) commits with them.
+use super::op::DeviceOp;
 use super::*;
 use subtle::ConstantTimeEq;
 
 const LIFETIME_MS: i64 = 10 * 60 * 1000;
 const INTERVAL_MS: i64 = 5_000;
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> Result<Value> {
     let code = user_code(c)?;
     let row = db
         .query(
@@ -19,8 +20,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         .into_iter()
         .next();
     let live = row.as_ref().filter(|r| expires(r) > now);
-    match string(c, "op")?.as_str() {
-        "device_create" => {
+    match op {
+        DeviceOp::Create => {
             if live.is_some() {
                 return Err(Error::new("ALREADY_EXISTS", "User code in use"));
             }
@@ -38,7 +39,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"user_code":code,"expires_at":now+LIFETIME_MS,"interval":INTERVAL_MS/1000}))
         }
-        "device_approve" => {
+        DeviceOp::Approve => {
             let Some(row) = row else {
                 return Err(Error::new("NOT_FOUND", "Unknown or used code"));
             };
@@ -66,8 +67,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"approved":!deny,"client_name":row["client_name"]}))
         }
-        "device_poll" => poll(db, &code, live, c, now),
-        _ => Err(bad("Unknown device command")),
+        DeviceOp::Poll => poll(db, &code, live, c, now),
     }
 }
 

@@ -1,11 +1,12 @@
+use super::op::SigninOp;
 use super::*;
 use argon2::{Algorithm, Argon2, Params, Version};
 use subtle::ConstantTimeEq;
 const LIFETIME: i64 = 7 * 24 * 60 * 60 * 1000;
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    match string(c, "op")?.as_str() {
-        "signup" => {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> Result<Value> {
+    match op {
+        SigninOp::Signup => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
             if get(db, "account").is_ok() {
@@ -21,7 +22,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             audit(db, "account.created", now, json!({"username":username}))?;
             Ok(public_account(&a))
         }
-        "session" => {
+        SigninOp::Session => {
             let key = format!("session:{}", hash(c, "session_hash", &[64])?);
             let valid = super::access::valid(db, now)?
                 && get(db, &key).is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
@@ -34,8 +35,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
         }
         // Whether this account was signed up (the platform invites members by account).
-        "account_exists" => Ok(json!({"exists": account(db).is_ok()})),
-        "logout" => {
+        SigninOp::AccountExists => Ok(json!({"exists": account(db).is_ok()})),
+        SigninOp::Logout => {
             db.query(
                 "DELETE FROM workspace_records WHERE id=?",
                 &[json!(format!(
@@ -45,14 +46,14 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"authenticated":false}))
         }
-        "login" | "recover" => {
+        SigninOp::Login | SigninOp::Recover => {
             let Ok(mut a) = account(db) else {
                 return Ok(json!({"authenticated":false}));
             };
             if !super::access::valid(db, now)? || !allow_attempt(db, now)? {
                 return Ok(json!({"authenticated":false,"limited":true}));
             }
-            let recovery = c["op"] == "recover";
+            let recovery = op == SigninOp::Recover;
             let valid = if recovery {
                 equal(
                     &hash(c, "recovery_hash", &[64])?,
@@ -85,7 +86,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             Ok(public_account(&a))
         }
-        _ => Err(bad("Unknown account operation")),
     }
 }
 fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
