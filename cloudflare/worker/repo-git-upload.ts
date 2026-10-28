@@ -129,7 +129,7 @@ export function errLine(head: Uint8Array, e: any) {
 }
 
 /** Lists what to send, reading the trees each commit's diff needs. */
-async function enumerate(session: UploadSession, objects: RepoObjects) {
+export async function enumerate(session: UploadSession, objects: RepoObjects) {
   let step = session.step({});
   for (let round = 0; step.need_trees; round++) {
     if (round >= WALK_ROUNDS)

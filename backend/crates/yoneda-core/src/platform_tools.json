@@ -1269,8 +1269,60 @@
     }
   },
   {
+    "name": "git_fork",
+    "description": "Fork this repository: a new repository owned by your account, its branches and tags this one's at the current version, its history shared (nothing is copied; objects are read from this repository). Needs read on the whole repository and an account credential (a session or a personal access token with repo:admin), never a repository token. Open a change back with git_change_create {fork, branch, title} on this repository. A repository with forks cannot be deleted until they are. REST: POST /fork.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$",
+          "description": "The fork's name (default: this repository's)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^r[0-9a-f]{20}$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string",
+          "pattern": "^r[0-9a-f]{20}$"
+        },
+        "parent_version": {
+          "type": "integer",
+          "description": "This repository's log version the refs were copied at"
+        },
+        "refs": {
+          "type": "integer",
+          "description": "Branches and tags copied"
+        },
+        "commits": {
+          "type": "integer",
+          "description": "Commits in the copied history"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parent",
+        "parent_version",
+        "refs",
+        "commits"
+      ]
+    }
+  },
+  {
     "name": "git_change_create",
-    "description": "Open a change request: propose landing a branch on main. The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: main, commit: head}; a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. REST: POST /changes.",
+    "description": "Open a change request: propose landing a branch on main. The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: main, commit: head}; a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. From a fork: pass `fork` (the fork's id) and a branch of the fork; this needs only read here and write on the fork, the branch's new commits are carried into this repository and the change proposes their mirror forks/<fork>/<branch> (it follows later pushes when shown). REST: POST /changes.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1286,6 +1338,11 @@
         "body": {
           "type": "string",
           "maxLength": 8000
+        },
+        "fork": {
+          "type": "string",
+          "pattern": "^r[0-9a-f]{20}$",
+          "description": "A fork of this repository whose branch is proposed (call on the parent)"
         }
       },
       "required": [
@@ -1361,6 +1418,20 @@
         "comment_count": {
           "type": "integer",
           "description": "Number of comments"
+        },
+        "source_repo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's repository id"
+        },
+        "source_branch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's branch (mirrored here as forks/<fork>/<branch>)"
         }
       },
       "required": [
@@ -1485,6 +1556,20 @@
             "comment_count": {
               "type": "integer",
               "description": "Number of comments"
+            },
+            "source_repo": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "A change from a fork: the fork's repository id"
+            },
+            "source_branch": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "A change from a fork: the fork's branch (mirrored here as forks/<fork>/<branch>)"
             }
           },
           "required": [
@@ -1635,6 +1720,20 @@
             "comment_count": {
               "type": "integer",
               "description": "Number of comments"
+            },
+            "source_repo": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "A change from a fork: the fork's repository id"
+            },
+            "source_branch": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "A change from a fork: the fork's branch (mirrored here as forks/<fork>/<branch>)"
             }
           },
           "required": [
@@ -1981,6 +2080,20 @@
         "comment_count": {
           "type": "integer",
           "description": "Number of comments"
+        },
+        "source_repo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's repository id"
+        },
+        "source_branch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's branch (mirrored here as forks/<fork>/<branch>)"
         }
       },
       "required": [
@@ -2084,6 +2197,20 @@
         "comment_count": {
           "type": "integer",
           "description": "Number of comments"
+        },
+        "source_repo": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's repository id"
+        },
+        "source_branch": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A change from a fork: the fork's branch (mirrored here as forks/<fork>/<branch>)"
         }
       },
       "required": [
