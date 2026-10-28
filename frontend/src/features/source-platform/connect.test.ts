@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { CloneButton } from './CodeParts';
 import { ConnectPanel } from './ConnectPanel';
 import {
   apiOrigin,
@@ -8,7 +9,9 @@ import {
   cloneCommand,
   codexToml,
   expiresIn,
+  httpsCloneCommand,
   isUserCode,
+  loginCommand,
   mcpUrl,
   normalizeUserCode,
   scopeList,
@@ -17,6 +20,48 @@ import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
 
 const api = 'https://api.dev.yonedarepo.com';
 const repo = 'r0123456789abcdef0123';
+
+/** Each copy block's label and the exact text it shows (which is the text Copy copies). */
+const copyBlocks = (html: string) =>
+  [...html.matchAll(/<span>([^<]+)<\/span>.*?<code>([^<]*)<\/code>/g)].map(([, label, text]) => [
+    label,
+    text,
+  ]);
+
+describe('the Clone menu', () => {
+  it('offers the yoneda remote helper first, then HTTPS, as whole git clone commands', () => {
+    const html = renderToStaticMarkup(
+      createElement(CloneButton, { repo, name: 'demo', origin: api }),
+    );
+    expect(copyBlocks(html)).toEqual([
+      ['yoneda remote helper (recommended)', `git clone yoneda::${api}/${repo} demo`],
+      ['HTTPS (needs a personal token as the password)', `git clone ${api}/git/${repo}.git demo`],
+    ]);
+  });
+  it('says what each needs: one yoneda login on the API origin, or a personal token', () => {
+    for (const component of [CloneButton, ConnectPanel]) {
+      const html = renderToStaticMarkup(
+        createElement(component, { repo, name: 'demo', origin: api }),
+      );
+      expect(html).toContain(`Run once: <code>yoneda login --origin ${api}</code>`);
+      expect(html).toContain('then pull/push use your login');
+      expect(html).toContain('href="/settings#personal-tokens"');
+      expect(html).toContain('Settings → Personal tokens');
+      const order = copyBlocks(html).map(([label]) => label);
+      expect(order.slice(0, 2)).toEqual([
+        'yoneda remote helper (recommended)',
+        'HTTPS (needs a personal token as the password)',
+      ]);
+    }
+    expect(loginCommand('https://api.yonedarepo.com')).toBe(
+      'yoneda login --origin https://api.yonedarepo.com',
+    );
+  });
+  it('builds the HTTPS command with and without a directory', () => {
+    expect(httpsCloneCommand(api, repo)).toBe(`git clone ${api}/git/${repo}.git`);
+    expect(httpsCloneCommand(api, repo, 'demo')).toBe(`git clone ${api}/git/${repo}.git demo`);
+  });
+});
 
 describe('connect snippets', () => {
   it('points every Connect line at the API origin, never the page origin', () => {
