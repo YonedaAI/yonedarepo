@@ -81,6 +81,7 @@ mod tags;
 mod tokens;
 mod tree_cache;
 mod version_projection;
+mod visibility;
 pub use migration::migrate_repo_store;
 pub(crate) use rows::protected as protected_ref;
 

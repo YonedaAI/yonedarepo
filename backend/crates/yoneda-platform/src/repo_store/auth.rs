@@ -6,6 +6,10 @@
 //! org members included, needs a membership role: their own row or one of their teams'
 //! (`team:<org>/<team>`), whichever is highest. The adapter resolves an account's orgs and
 //! teams from each org's authority (`orgs` on `_session` or `_pat`) for every request.
+//! Anyone else is told NOT_FOUND on a private repository and reads a public one as a
+//! public reader (`visibility`); a caller without credentials is `_anonymous`.
+mod pat;
+
 use super::members::Role;
 use super::org_access::Orgs;
 use super::rows::Settings;
@@ -26,6 +30,8 @@ pub struct Actor {
     scopes: Vec<String>,
     /// Directory grant (`None`: whole repository).
     pub grant: super::grants::Grant,
+    /// Reads only because the repository is public (not the owner, a member or its token).
+    pub public: bool,
 }
 
 impl Actor {
@@ -77,6 +83,10 @@ impl Actor {
             Err(super::break_glass::refusal())
         }
     }
+    /// A public reader without credentials.
+    pub fn anonymous(&self) -> bool {
+        self.public && self.principal == ANONYMOUS
+    }
     /// The owner's account itself (never an admin member).
     pub fn repo_owner(&self) -> bool {
         self.owner && self.member.is_none()
@@ -105,17 +115,46 @@ impl Actor {
     }
 }
 
+/// The principal of a public reader without credentials.
+const ANONYMOUS: &str = "anonymous";
+
+/// A public reader acting as `principal`: `read` over the whole repository, nothing else.
+fn public_reader(principal: String) -> Actor {
+    Actor {
+        principal,
+        owner: false,
+        member: None,
+        human: false,
+        account_token: false,
+        scopes: vec!["read".to_owned()],
+        grant: None,
+        public: true,
+    }
+}
+
+/// A caller that is neither the owner nor a member: a public reader of a public repository;
+/// on a private one, the repository does not exist for it.
+fn outsider(principal: String, public: bool) -> Result<Actor> {
+    if public {
+        Ok(public_reader(principal))
+    } else {
+        Err(not_found())
+    }
+}
+
 pub(super) fn token_digest(secret: &str) -> String {
     yoneda_core::digest(format!("yonedarepo:repo-token:v1:{secret}").as_bytes())
 }
 
-/// `_session`, `_token` and `_system` are set by the authenticating adapter, never by
-/// callers. `_session.human` marks a personal account session (not an admin bearer). `_system` names a platform role (check executor, ref projector, importer,
+/// `_session`, `_token`, `_pat`, `_anonymous` and `_system` are set by the authenticating
+/// adapter, never by callers. `_session.human` marks a personal account session (not an
+/// admin bearer). `_system` names a platform role (check executor, ref projector, importer,
 /// merger), each holding only the scope its job needs.
 pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Actor> {
     actor_with(
         c,
         &settings.workspace,
+        settings.visibility == super::visibility::Visibility::Public,
         |digest| {
             Ok(db
                 .query(
@@ -129,12 +168,13 @@ pub fn actor<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Acto
     )
 }
 
-/// The actor for credentials `c`, with live tokens looked up by digest through `token`
-/// and members' roles by account through `member` (the authority's tables, or a
-/// published snapshot of them).
+/// The actor for credentials `c` on a repository of `workspace` (`public` when anyone
+/// reads it), with live tokens looked up by digest through `token` and members' roles by
+/// account through `member` (the authority's tables, or a published snapshot of them).
 pub fn actor_with(
     c: &Value,
     workspace: &str,
+    public: bool,
     token: impl Fn(&str) -> Result<Option<Value>>,
     member: impl Fn(&str) -> Result<Option<Role>>,
 ) -> Result<Actor> {
@@ -161,11 +201,15 @@ pub fn actor_with(
             human: false,
             account_token: false,
             grant: None,
+            public: false,
             scopes: std::iter::once("read")
                 .chain(roles.iter().copied())
                 .map(str::to_owned)
                 .collect(),
         });
+    }
+    if c.get("_anonymous") == Some(&Value::Bool(true)) {
+        return outsider(ANONYMOUS.to_owned(), public);
     }
     if let Some(session) = c.get("_session").filter(|s| s.is_object()) {
         let account = string(session, "workspace")?;
@@ -180,11 +224,12 @@ pub fn actor_with(
                 account_token: false,
                 scopes: Vec::new(),
                 grant: None,
+                public: false,
             });
         }
         // Only an account's own session is a member (never an admin bearer for it).
         if principal != format!("user:{account}") {
-            return Err(not_member());
+            return outsider(principal, public);
         }
         let orgs = Orgs::of(session)?;
         if orgs.owns(workspace) {
@@ -196,9 +241,12 @@ pub fn actor_with(
                 account_token: false,
                 scopes: Vec::new(),
                 grant: None,
+                public: false,
             });
         }
-        let role = orgs.role(&account, &member)?.ok_or_else(not_member)?;
+        let Some(role) = orgs.role(&account, &member)? else {
+            return outsider(principal, public);
+        };
         return Ok(Actor {
             principal,
             owner: role == Role::Admin,
@@ -207,10 +255,11 @@ pub fn actor_with(
             account_token: false,
             scopes: role.scopes().iter().map(|s| (*s).to_owned()).collect(),
             grant: None,
+            public: false,
         });
     }
     if let Some(pat) = c.get("_pat").filter(|s| s.is_object()) {
-        return account_token(pat, workspace, member);
+        return pat::account_token(pat, workspace, public, member);
     }
     let secret =
         string(c, "_token").map_err(|_| Error::new("UNAUTHORIZED", "Missing credentials"))?;
@@ -228,68 +277,14 @@ pub fn actor_with(
             Some(paths) => Some(serde_json::from_str(paths).map_err(|_| bad("Corrupt grant"))?),
             None => None,
         },
+        public: false,
     })
 }
 
-fn not_member() -> Error {
-    Error::new("FORBIDDEN", "Repository belongs to another workspace")
-}
-
-/// A personal access token the adapter verified against its account: the account's
-/// principal (never human, so break-glass stays out of reach), `repo:admin` as the owner,
-/// and the other account scopes as the repository scopes of the same name. On another
-/// account's repository the token holds only what both it and the membership role allow
-/// (`repo:admin` counting as every scope). The adapter enforces the token's repository
-/// allowlist before calling.
-fn account_token(
-    pat: &Value,
-    workspace: &str,
-    member: impl Fn(&str) -> Result<Option<Role>>,
-) -> Result<Actor> {
-    let account = string(pat, "workspace")?;
-    let held: Vec<String> =
-        serde_json::from_value(pat["scopes"].clone()).map_err(|_| bad("Corrupt token scopes"))?;
-    let mut scopes = Vec::new();
-    let mut admin = false;
-    for scope in &held {
-        match scope.as_str() {
-            "repo:admin" => admin = true,
-            "repo:read" | "repo:write" | "repo:land" | "repo:review" => {
-                scopes.push(scope["repo:".len()..].to_owned())
-            }
-            _ => return Err(Error::new("FORBIDDEN", "Unknown token scope")),
-        }
-    }
-    if let Some(org) = pat.get("org").and_then(Value::as_str)
-        && org != workspace
-    {
-        return Err(Error::new(
-            "FORBIDDEN",
-            format!("This token is limited to the {org} organization's repositories"),
-        ));
-    }
-    let orgs = Orgs::of(pat)?;
-    let role = if account == workspace || orgs.owns(workspace) {
-        None
-    } else {
-        let role = orgs.role(&account, &member)?.ok_or_else(not_member)?;
-        scopes = role
-            .scopes()
-            .iter()
-            .filter(|s| admin || scopes.iter().any(|held| held == *s))
-            .map(|s| (*s).to_owned())
-            .collect();
-        Some(role)
-    };
-    Ok(Actor {
-        principal: string(pat, "principal")?,
-        owner: admin && role.is_none_or(|r| r == Role::Admin),
-        member: role,
-        human: false,
-        account_token: true,
-        scopes,
-        grant: None,
-    })
+/// The refusal for an account that is neither owner nor member of a private repository:
+/// the same answer as a repository that does not exist, so its existence does not leak.
+fn not_found() -> Error {
+    Error::new("NOT_FOUND", "Repository not found")
 }
 
 /// Live tokens as a published snapshot holds them (digests only, never secrets).

@@ -6,7 +6,8 @@
 // `x-amz-checksum-sha256` (the oid), so R2 refuses other bytes; verify then checks the
 // stored object's size and sha256 again before the authority records it. Objects live at
 // `platform/v1/<repo>/lfs/<oid>`, under the repository's prefix, so its purge removes them.
-// Credentials are those of smart HTTP (a token as the Basic password, or a bearer header).
+// Credentials are those of smart HTTP (a token as the Basic password, or a bearer header);
+// without any, a public repository's objects download anonymously (repo-public.ts).
 // A fork serves the LFS objects it inherits to readers of its parent (repo-lfs-inherit.ts).
 //
 // Locks: stock clients ask `POST locks/verify` before every push and `GET locks` for
@@ -90,7 +91,11 @@ export async function lfsHttp(
   const match = PATH.exec(url.pathname);
   if (!match) return lfsError(404, 'Not a Git LFS URL');
   const [, repo, action] = match;
-  const auth = await authenticate(req, env);
+  const auth = await authenticate(req, env).catch((e) => e as Error);
+  if (auth instanceof Error) {
+    const code = failureCode(auth);
+    return lfsError(STATUS[code] ?? 500, `${code}: ${auth.message}`);
+  }
   if (!auth) return lfsError(401, 'Use a repository or personal access token as the password');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
   const post = req.method === 'POST';
@@ -116,6 +121,9 @@ export async function lfsHttp(
     return lfsError(404, 'Unknown Git LFS endpoint');
   } catch (e: any) {
     const code = failureCode(e);
+    // Without credentials, a refusal invites them, as smart HTTP's does (repo-git-http.ts).
+    if ('_anonymous' in auth && ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'GONE'].includes(code))
+      return lfsError(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
     if (status >= 500 && status !== 501 && status !== 507) console.error(`git lfs failed: ${code}`);
     return lfsError(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);

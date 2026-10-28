@@ -108,6 +108,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
         R::BreakGlass => actor.require_human_owner(),
+        R::SetVisibility => actor.require_repo_owner(),
         R::CloneAccess => actor.require_human_reader(),
         // Every other op, and a guarded op above whose caller passes its guard, reads.
         R::AdoptCommit

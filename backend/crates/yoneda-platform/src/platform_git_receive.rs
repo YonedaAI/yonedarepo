@@ -18,6 +18,9 @@ use yoneda_core::{
 /// Larger pushes go through `git-remote-yoneda`, which uploads commit by commit.
 pub const MAX_PACK_BYTES: usize = 64 * 1024 * 1024;
 const MAX_COMMAND_BYTES: usize = 1024 * 1024;
+/// Pushes of more objects than the adapter stages in its authority (STAGE_OBJECTS in
+/// repo-git-receive.ts) keep their commits and trees out of their files' bundles.
+const SPLIT_OBJECTS: usize = 256;
 pub const LIMITS: PackLimits = PackLimits {
     max_objects: 40_000,
     max_object_bytes: 16 * 1024 * 1024,
@@ -212,10 +215,16 @@ impl ReceiveSession {
             return Ok(Vec::new());
         };
         let mut out = Vec::new();
+        // A large push's commits and trees end their batch before its first file, so they
+        // fill bundles of their own: a walk or a partial clone never reads across files.
+        let split = self.writes.len() > SPLIT_OBJECTS;
+        let mut last = None;
         while let Some((id, kind)) = self.writes.get(self.written).copied() {
-            if !out.is_empty() && out.len() >= budget {
+            let files_start = split && kind == ObjectKind::Blob && last.is_some_and(|k| k != kind);
+            if !out.is_empty() && (out.len() >= budget || files_start) {
                 break;
             }
+            last = Some(kind);
             let data = pack.content(&id)?;
             let length = u32::try_from(data.len()).map_err(|_| bad("Object is too large"))?;
             out.push(match kind {

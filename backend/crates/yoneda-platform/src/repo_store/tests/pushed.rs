@@ -3,14 +3,14 @@
 //! compare-and-swap, a fetch walks only what the client lacks, and access refuses a token
 //! without the service's scope or with a path grant.
 use super::*;
-use yoneda_core::git_object::{ObjectId, Signature};
+use yoneda_core::git_object::{ObjectId, Signature, TzOffset};
 
 fn pushed(parent: &str, tree: &str, message: &str) -> (String, Value) {
     let who = Signature {
         name: "Dev".into(),
         email: "dev@example.com".into(),
         seconds: 1_700_000_000,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let commit = Commit::new(
         ObjectId::parse(tree).unwrap(),

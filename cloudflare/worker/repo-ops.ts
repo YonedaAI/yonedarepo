@@ -28,6 +28,8 @@ export type Credentials =
   | { _token: string }
   /** A personal access token the adapter verified (repo-pat.ts). */
   | { _pat: PatGrant }
+  /** No credentials at all: reads a public repository, nothing else (repo-public.ts). */
+  | { _anonymous: true }
   | {
       _system:
         | 'checks'
@@ -43,7 +45,7 @@ export type Credentials =
         | 'fork';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
-const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_system'];
+const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system'];
 export class ApiError extends Error {
   constructor(
     readonly code: string,

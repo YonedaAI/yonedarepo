@@ -63,7 +63,7 @@ it('shares a repository by role across REST, Git and listing, and revokes at onc
   const role = (account: string, r: string) => api(`${repo}/members`, owner, { body: { account, role: r } });
 
   // Strangers see nothing; unknown accounts can't be invited; members can't manage members.
-  expect((await api(`${repo}/refs`, bob)).status).toBe(403);
+  expect((await api(`${repo}/refs`, bob)).status).toBe(404);
   expect((await role('members_nobody', 'read')).body.error.code).toBe('NOT_FOUND');
   expect((await role('members_owner', 'read')).status).toBe(403);
   expect((await role('members_bob', 'read')).body).toMatchObject({ account: 'members_bob', role: 'read' });
@@ -111,9 +111,9 @@ it('shares a repository by role across REST, Git and listing, and revokes at onc
   // Removal ends access at once: REST reads (served from the published head), Git, listing.
   expect((await api(`${repo}/tree?path=`, bob)).status).toBe(200);
   expect((await api(`${repo}/members/members_bob`, owner, { method: 'DELETE' })).body).toMatchObject({ removed: true });
-  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(403);
-  expect((await api(`${repo}/blob?path=README.md`, { token: pat })).status).toBe(403);
-  expect((await git(id, pat, 'info/refs?service=git-upload-pack')).status).toBe(403);
+  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(404);
+  expect((await api(`${repo}/blob?path=README.md`, { token: pat })).status).toBe(404);
+  expect((await git(id, pat, 'info/refs?service=git-upload-pack')).status).toBe(404);
   expect((await api('/repos', bob)).body.repos).toEqual([]);
   expect((await api(`${repo}/members`, owner)).body.members).toEqual([]);
 });

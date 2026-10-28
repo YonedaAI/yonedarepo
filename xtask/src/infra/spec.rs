@@ -17,6 +17,7 @@ pub(crate) const SPEC_DIR: &str = "infra/envs";
 /// Generated configs live next to the hand-written ones, so relative paths stay identical.
 pub(crate) const CONFIG_DIR: &str = "cloudflare";
 const EPHEMERAL_RATE_LIMIT: &str = "2900";
+const EPHEMERAL_PUBLIC_RATE_LIMIT: &str = "2901";
 /// Lock entry of a D1 database the spec declares but `infra up` has not created yet. Configs
 /// generate with it; a deploy refuses it (deploy_env::run).
 pub(crate) const PENDING_D1: &str = "pending";
@@ -131,6 +132,10 @@ impl Spec {
         self.secrets_file = env.state_dir().join("secrets.env").display().to_string();
         self.vars
             .insert("ratelimit".into(), EPHEMERAL_RATE_LIMIT.into());
+        self.vars.insert(
+            "public_ratelimit".into(),
+            EPHEMERAL_PUBLIC_RATE_LIMIT.into(),
+        );
         self.vars.insert(
             "origin".into(),
             format!(

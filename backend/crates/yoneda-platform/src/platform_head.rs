@@ -28,6 +28,8 @@ fn actor(c: &Value) -> Result<Actor> {
     actor_with(
         credentials,
         &string(head, "workspace")?,
+        // A head published before visibility carries none: private.
+        head["visibility"] == "public",
         |digest| Ok(tokens.iter().find(|t| t["digest"] == digest).cloned()),
         |account| {
             members
@@ -54,9 +56,13 @@ pub fn head_begin(c: &Value) -> Result<Value> {
     }))
 }
 
-/// `head_access`: the caller's read access (principal and directory grant).
+/// `head_access`: the caller's read access (principal, directory grant, and whether it
+/// reads only because the repository is public).
 pub fn head_access(c: &Value) -> Result<Value> {
     let actor = actor(c)?;
     actor.require("read")?;
-    Ok(json!({ "principal": actor.principal, "owner": actor.owner, "grant": actor.grant }))
+    Ok(json!({
+        "principal": actor.principal, "owner": actor.owner, "grant": actor.grant,
+        "public": actor.public,
+    }))
 }

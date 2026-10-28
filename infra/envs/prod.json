@@ -8,7 +8,8 @@
   "secrets_file": "~/.config/yonedarepo/prod.env",
   "vars": {
     "origin": "https://yonedarepo.com",
-    "ratelimit": "1001"
+    "ratelimit": "1001",
+    "public_ratelimit": "1002"
   },
   "check_instances": 4,
   "workers": [
@@ -333,6 +334,14 @@
             "namespace_id": "{ratelimit}",
             "simple": {
               "limit": 30,
+              "period": 60
+            }
+          },
+          {
+            "name": "PUBLIC_LIMITER",
+            "namespace_id": "{public_ratelimit}",
+            "simple": {
+              "limit": 300,
               "period": 60
             }
           }

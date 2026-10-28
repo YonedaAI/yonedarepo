@@ -1,0 +1,116 @@
+/* Public and private repositories: the Public badge, the visibility choice when creating a
+   repository, Settings → Visibility, Explore and the not-found (or private) state. */
+.visibility-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid #a9d6cf;
+  border-radius: 999px;
+  background: #eef8f6;
+  color: var(--success);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.rail-repo-public {
+  margin-left: auto;
+  color: var(--success);
+  font-size: 10px;
+}
+.rail-repo-shared + .rail-repo-public {
+  margin-left: 6px;
+}
+/* New repository: two radio cards, Private first (the default). */
+.visibility-choice {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.visibility-choice legend {
+  padding: 0;
+  margin-bottom: 8px;
+}
+.new-repository .visibility-choice label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.new-repository .visibility-choice label:has(input:checked) {
+  border-color: var(--blue);
+  background: #f5f8ff;
+}
+.new-repository .visibility-choice label:has(input:focus-visible) {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+.visibility-choice input {
+  margin: 3px 0 0;
+}
+.visibility-choice span {
+  display: grid;
+  gap: 2px;
+}
+.visibility-choice small {
+  color: var(--muted);
+}
+/* Settings → Visibility */
+.visibility-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: inherit;
+}
+.visibility-confirm p {
+  margin-top: 0;
+}
+.visibility-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+/* Explore */
+.explore > .source-meta {
+  margin: 8px 0 0;
+}
+.explore-more {
+  margin-top: 16px;
+}
+/* A repository the server does not show: missing, or private to this visitor. */
+.repo-not-found {
+  max-width: 640px;
+}
+.repo-not-found h1 {
+  font-size: 22px;
+  margin: 8px 0;
+}
+.repo-not-found .source-actions {
+  align-items: center;
+}
+.repo-not-found-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid #8090a4;
+  border-radius: 7px;
+  color: #203a5b;
+  font-weight: 500;
+}
+.repo-not-found-link:hover {
+  border-color: var(--blue);
+  background: #edf3ff;
+}
+.rail-explore {
+  margin-bottom: 12px;
+}

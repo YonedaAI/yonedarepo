@@ -2,6 +2,7 @@
 import { type FormEvent, useState } from 'react';
 import type { Anchor, ChangeComment, Thread } from './changeModel';
 import { who } from './changeModel';
+import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
 
@@ -41,6 +42,8 @@ export function Composer({
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A public reader reads the conversation but cannot join it.
+  const readOnly = useReadOnly();
   async function send(resolve: boolean) {
     setBusy(true);
     setError('');
@@ -58,6 +61,7 @@ export function Composer({
     event.preventDefault();
     void send(false);
   };
+  if (readOnly) return null;
   return (
     <form className="source-composer" onSubmit={onSubmit} aria-label={label}>
       <textarea
