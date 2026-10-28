@@ -1,10 +1,10 @@
 //! Smart-HTTP receive-pack framing for server-side pushes of freshly built objects.
-use super::{ObjectId, invalid};
 use crate::Result;
+use crate::git_object::{ObjectId, invalid};
 
 /// Recorded commits stay reachable in the object store under a hidden ref, so the store
 /// never collects them before (or without) a branch pointing at them.
-pub const HIDDEN_REF_PREFIX: &str = "refs/yoneda/c/";
+const HIDDEN_REF_PREFIX: &str = "refs/yoneda/c/";
 
 pub fn hidden_ref(commit: &ObjectId) -> String {
     format!("{HIDDEN_REF_PREFIX}{commit}")

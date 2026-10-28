@@ -11,7 +11,8 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque, hash_map::Entry};
 use yoneda_core::{
     Error, Result,
-    git_object::{CommitGraph, INFINITE_DEPTH, ObjectId},
+    git_object::{CommitGraph, ObjectId},
+    transport::INFINITE_DEPTH,
 };
 
 /// Most commits a depth may cover; past it, a fetch is a full one.

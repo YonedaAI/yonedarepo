@@ -329,6 +329,7 @@ fn criss_cross_merges_report_every_best_base() {
 
 #[test]
 fn receive_pack_framing_matches_git_and_rejects_partial_reports() {
+    use crate::transport::{hidden_ref, receive_pack_request, verify_receive_pack_report};
     let commit = id(FIRST);
     let refname = hidden_ref(&commit);
     let body = receive_pack_request(&refname, None, commit, b"PACK").unwrap();

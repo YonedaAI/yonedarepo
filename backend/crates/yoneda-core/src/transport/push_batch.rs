@@ -3,8 +3,8 @@
 //! request: their objects in one pack, one command per ref, and Git's per-ref report split
 //! back so each caller verifies only its own ref.
 use super::protocol::{parse_receive_pack_request, receive_pack_report, report_lines};
-use super::{PackLimits, hash_object, invalid, read_pack, write_pack};
 use crate::Result;
+use crate::git_object::{PackLimits, hash_object, invalid, read_pack, write_pack};
 use std::collections::BTreeSet;
 
 fn pkt(line: &str) -> String {
@@ -98,8 +98,9 @@ pub fn split_receive_pack_report(report: &[u8], refname: &str) -> Result<Vec<u8>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::git_object::{
-        ObjectId, ObjectKind, receive_pack_delete, receive_pack_request, verify_receive_pack_report,
+    use crate::git_object::{ObjectId, ObjectKind};
+    use crate::transport::{
+        receive_pack_delete, receive_pack_outcome, receive_pack_request, verify_receive_pack_report,
     };
 
     fn push(name: &str, blob: &[u8]) -> (Vec<u8>, ObjectId) {
@@ -151,7 +152,7 @@ mod tests {
         verify_receive_pack_report(&a, "refs/yoneda/c/a").unwrap();
         let b = split_receive_pack_report(report, "refs/yoneda/c/b").unwrap();
         assert_eq!(
-            crate::git_object::receive_pack_outcome(&b, "refs/yoneda/c/b").unwrap(),
+            receive_pack_outcome(&b, "refs/yoneda/c/b").unwrap(),
             Some("stale info".into())
         );
         assert!(split_receive_pack_report(report, "refs/yoneda/c/z").is_err());
