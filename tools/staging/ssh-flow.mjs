@@ -1,6 +1,9 @@
 // Git over SSH (kit item 26, and the local end-to-end test tests/ssh/e2e.mjs) with stock git
 // and OpenSSH, zero model spend. Fresh ed25519 keys in a temporary directory: one added to
-// the account over REST, one never added. Checks: `ssh -T` greets the account; a client
+// the account over REST, one never added. When the platform answers with an `ssh_config`
+// (the Cloudflare Tunnel front door), every ssh and git command runs through exactly that
+// config (its ProxyCommand; `proxyOverride` replaces the cloudflared command for local runs);
+// otherwise it connects to sshHost:sshPort directly. Checks: `ssh -T` greets the account; a client
 // offering the unknown key first is still the known key's account; protocol v2 clone, a
 // partial (blob:none) and a shallow clone; push of a branch and of main; a delete-only push;
 // a version 0 fetch, a command other than Git's, an unknown repository and (with `other`)
@@ -45,12 +48,14 @@ function reader(stream) {
   };
 }
 
-export async function sshFlow({ platform, other, sshHost, sshPort = 22 }, metrics) {
+export async function sshFlow({ platform, other, sshHost, sshPort = 22, proxyOverride }, metrics) {
   const dir = mkdtempSync(join(tmpdir(), 'yoneda-ssh-'));
   const known = keypair(dir, 'known');
   const unknown = keypair(dir, 'unknown');
+  // Set once the platform says how to connect (see above).
+  let route = { config: '/dev/null', host: sshHost, port: sshPort };
   const sshArgs = (...keys) => [
-    '-F', '/dev/null', '-p', String(sshPort), '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
+    '-F', route.config, '-p', String(route.port), '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
     '-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${join(dir, 'known_hosts')}`,
     '-o', 'LogLevel=ERROR', ...keys.flatMap((k) => ['-i', k.path]),
   ];
@@ -89,8 +94,17 @@ export async function sshFlow({ platform, other, sshHost, sshPort = 22 }, metric
     const added = await platform.post('/ssh-keys', { title: 'kit', key: known.public });
     keys.push(added.id);
     metrics.fingerprint = added.fingerprint;
-    const url = `ssh://git@${sshHost}:${sshPort}/${repo.id}.git`;
-    const ssh = (args, keyList = [known]) => run('ssh', [...sshArgs(...keyList), `git@${sshHost}`, ...args]);
+    if (added.ssh?.ssh_config) {
+      const config = proxyOverride
+        ? added.ssh.ssh_config.replace('cloudflared access ssh --hostname %h', proxyOverride)
+        : added.ssh.ssh_config;
+      writeFileSync(join(dir, 'ssh_config'), config);
+      route = { config: join(dir, 'ssh_config'), host: added.ssh.host, port: 22 };
+      metrics.via = `ProxyCommand (${proxyOverride ? 'local override' : 'cloudflared'}) to ${route.host}`;
+    } else metrics.via = `direct to ${sshHost}:${sshPort}`;
+    const { host, port } = route;
+    const url = `ssh://git@${host}:${port}/${repo.id}.git`;
+    const ssh = (args, keyList = [known]) => run('ssh', [...sshArgs(...keyList), `git@${host}`, ...args]);
 
     const hello = ssh(['-T']);
     assert.equal(hello.status, 1, hello.out);
@@ -123,7 +137,7 @@ export async function sshFlow({ platform, other, sshHost, sshPort = 22 }, metric
 
     metrics.v0_refused = refused(git(['-c', 'protocol.version=0', 'ls-remote', url]), 'a version 0 fetch', /protocol\.version 2/);
     metrics.shell_refused = refused(ssh(['ls', '/']), 'a non-Git command', /only `git clone`/);
-    const missing = `ssh://git@${sshHost}:${sshPort}/r${'0'.repeat(20)}.git`;
+    const missing = `ssh://git@${host}:${port}/r${'0'.repeat(20)}.git`;
     metrics.unknown_repo_refused = refused(git(['ls-remote', missing]), 'an unknown repository', /ERROR/);
     if (other) {
       const theirs = keypair(dir, 'other');
@@ -136,7 +150,7 @@ export async function sshFlow({ platform, other, sshHost, sshPort = 22 }, metric
     }
 
     // Removal stops an open session: ls-refs answers, the key is removed, the next is refused.
-    const session = spawn('ssh', [...sshArgs(known), '-o', 'SetEnv=GIT_PROTOCOL=version=2', `git@${sshHost}`, `git-upload-pack '${repo.id}.git'`], {
+    const session = spawn('ssh', [...sshArgs(known), '-o', 'SetEnv=GIT_PROTOCOL=version=2', `git@${host}`, `git-upload-pack '${repo.id}.git'`], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const exited = new Promise((resolve) => session.on('exit', resolve));

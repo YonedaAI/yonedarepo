@@ -18,8 +18,9 @@
 // files in ~/.config/yonedarepo/:
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
 //   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
-// Git over SSH (26, opt-in with --ssh: tools/staging/ssh-flow.mjs against --ssh-host, skipped
-// while the platform's /health says the SSH front door is off).
+// Git over SSH (26, opt-in with --ssh: tools/staging/ssh-flow.mjs, through the platform's
+// cloudflared ssh_config on the tunnel front door, else at --ssh-host; skipped while /health
+// says SSH is off).
 // Usage: node tools/staging-realworld.mjs [--only 0,6,7] [--skip-bursts] [--big-files N]
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,21,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
@@ -59,7 +60,7 @@
 //        node tools/staging-realworld.mjs --ssh [--ssh-host ssh.dev.yonedarepo.com] [--ssh-port 22]
 //          (= --only 0,26: Git over SSH with stock git and OpenSSH; needs the second account)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -212,7 +213,10 @@ await step('25', `Git LFS: track *.bin, push ${values['lfs-mb']} MiB to R2, fres
 );
 await step('26', `Git over SSH at ${values['ssh-host']}:${values['ssh-port']}: v2, partial and shallow clones, push, delete, refusals, removal stops an open session`, async (m) => {
   const health = await new Session(values.platform).get('/health');
-  if (!health.ssh) return { skip: 'the SSH front door is off (SSH_FRONT_DOOR; inbound TCP to Workers is in private beta)' };
+  if (!health.ssh) return { skip: 'Git over SSH is off on this platform (SSH_FRONT_DOOR)' };
+  // The tunnel front door: the flow uses the platform's ssh_config, whose ProxyCommand is cloudflared.
+  if (health.ssh === 'tunnel' && spawnSync('cloudflared', ['--version']).status !== 0)
+    return { skip: 'cloudflared is not installed (brew install cloudflared); the tunnel front door needs it' };
   const { session: other } = await secondAccount(values.origin, kit);
   return sshFlow({ platform: platformAccount, other, sshHost: values['ssh-host'], sshPort: Number(values['ssh-port']) }, m);
 });

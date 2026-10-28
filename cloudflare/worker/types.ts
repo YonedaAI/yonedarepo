@@ -69,11 +69,13 @@ export interface Env {
   SSH_HOST_ECDSA_KEY?: string;
   /** SSH gateway containers (platform-ssh-gateway.ts); absent where not deployed. */
   SSH_GATEWAYS?: DurableObjectNamespace<import('./platform-ssh-gateway').SshGateway>;
-  /** `on` routes inbound TCP (the Worker `connect()` handler) to the SSH gateway; anything
-   * else refuses it. Off until inbound TCP to Workers (Spectrum to a Worker) is granted. */
+  /** How clients reach the SSH gateway: `tunnel` (Cloudflare Tunnel, cloudflared in its
+   * container), `connect` (inbound TCP to this Worker, private beta) or `off`. */
   SSH_FRONT_DOOR?: string;
-  /** How many gateway instances share inbound connections (default 1). */
-  SSH_GATEWAY_INSTANCES?: string;
+  /** The tunnel's token (secret; the `tunnel` front door). */
+  SSH_TUNNEL_TOKEN?: string;
+  /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
+  SSH_HOST?: string;
   BUILD_REVISION?: string;
 }
 export type Principal = {

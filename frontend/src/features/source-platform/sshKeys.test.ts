@@ -1,7 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { SshKeyTable } from './SshKeys';
+import { SshKeyTable, SshSetup } from './SshKeys';
 import { publicKeyProblem, type SshKey, suggestedTitle } from './sshKeyModel';
 import type { Loaded } from './useSource';
 
@@ -51,5 +51,29 @@ describe('SSH key table', () => {
     expect(html).toContain(key.fingerprint);
     expect(html).toContain('never');
     expect(html).toContain('aria-label="Delete SSH key laptop"');
+  });
+});
+
+describe('SshSetup', () => {
+  const setup = (access: unknown) =>
+    renderToStaticMarkup(createElement(SshSetup, { access } as never));
+  it('shows the tunnel ssh config and the clone URL', () => {
+    const html = setup({
+      front_door: 'tunnel',
+      host: 'ssh.yonedarepo.com',
+      clone_url: 'ssh://git@ssh.yonedarepo.com/<repository id>.git',
+      ssh_config: 'Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
+    });
+    expect(html).toContain('install cloudflared');
+    expect(html).toContain(
+      '<pre>Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n</pre>',
+    );
+    expect(html).toContain('ssh://git@ssh.yonedarepo.com/&lt;repository id&gt;.git');
+  });
+  it('says when SSH is not open, and shows nothing while loading', () => {
+    expect(setup({ front_door: null, host: null, clone_url: null, ssh_config: null })).toContain(
+      'not open yet',
+    );
+    expect(setup(undefined)).toBe('');
   });
 });

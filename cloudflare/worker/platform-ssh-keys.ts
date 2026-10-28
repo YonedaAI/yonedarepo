@@ -4,6 +4,7 @@
 // account that registered it, so the gateway's lookup is strongly consistent. A lookup
 // always re-checks the key with its account: removal there is the revocation, effective at
 // once, and a claim left behind by a failure grants nothing.
+import { frontDoor } from './platform-ssh-gateway';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import type { Env } from './types';
@@ -48,11 +49,29 @@ export async function sshKeyRoute(
 ): Promise<Json> {
   if (!id && method === 'GET') {
     const listed = await workspace(env, manager(auth, false), { op: 'ssh_key_list' });
-    return { keys: listed.keys };
+    return { keys: listed.keys, ssh: sshAccess(env) };
   }
-  if (!id && method === 'POST') return addKey(env, manager(auth, true), await body());
+  if (!id && method === 'POST')
+    return { ...(await addKey(env, manager(auth, true), await body())), ssh: sshAccess(env) };
   if (id && method === 'DELETE') return removeKey(env, manager(auth, false), id);
   throw new ApiError('NOT_FOUND', 'Unknown API path');
+}
+
+/** How clients reach Git over SSH: the front door, the host, a clone URL template and, on
+ * the tunnel, the `~/.ssh/config` entry that makes plain `ssh`/`git` use cloudflared. */
+export function sshAccess(env: Env) {
+  const door = frontDoor(env);
+  const host = env.SSH_HOST && /^[a-z0-9.-]+$/.test(env.SSH_HOST) ? env.SSH_HOST : null;
+  if (!door || !host) return { front_door: null, host: null, clone_url: null, ssh_config: null };
+  return {
+    front_door: door,
+    host,
+    clone_url: `ssh://git@${host}/<repository id>.git`,
+    ssh_config:
+      door === 'tunnel'
+        ? `Host ${host}\n  ProxyCommand cloudflared access ssh --hostname %h\n`
+        : null,
+  };
 }
 
 /** Adds a key to the account, then claims its fingerprint. A fingerprint another account

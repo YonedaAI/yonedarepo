@@ -10,6 +10,14 @@ export type SshKey = {
   last_used_at: number | null;
 };
 
+/** How clients reach Git over SSH (`ssh` beside the keys); `host` null while it is off. */
+export type SshAccess = {
+  front_door: 'tunnel' | 'connect' | null;
+  host: string | null;
+  clone_url: string | null;
+  ssh_config: string | null;
+};
+
 const KEY_TYPE = /^(ssh-|ecdsa-|sk-)/;
 
 /** Why a pasted public key would be refused before sending it, or '' when it looks right. */

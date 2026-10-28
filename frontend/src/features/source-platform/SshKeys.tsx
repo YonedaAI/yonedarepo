@@ -3,7 +3,7 @@
 import { type FormEvent, useState } from 'react';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
-import { publicKeyProblem, type SshKey, suggestedTitle } from './sshKeyModel';
+import { publicKeyProblem, type SshAccess, type SshKey, suggestedTitle } from './sshKeyModel';
 import { type Loaded, useSource } from './useSource';
 
 export function SshKeyTable({
@@ -58,8 +58,37 @@ export function SshKeyTable({
   );
 }
 
+/** How to use a key: the tunnel's one-time client setup, then the clone URL. */
+export function SshSetup({ access }: { access?: SshAccess }) {
+  if (!access) return null;
+  if (!access.host)
+    return (
+      <p className="source-meta">Git over SSH is not open yet; use HTTPS with a token meanwhile.</p>
+    );
+  return (
+    <div className="source-meta">
+      {access.ssh_config && (
+        <>
+          <p>
+            Git over SSH goes through Cloudflare Tunnel. Once per machine,{' '}
+            <a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/">
+              install cloudflared
+            </a>{' '}
+            and add this to <code>~/.ssh/config</code>:
+          </p>
+          <pre>{access.ssh_config}</pre>
+        </>
+      )}
+      <p>
+        Then clone with <code>{access.clone_url}</code>.
+      </p>
+    </div>
+  );
+}
+
 export function SshKeys() {
-  const keys = useSource<{ keys: SshKey[] }>('/ssh-keys');
+  const keys = useSource<{ keys: SshKey[]; ssh?: SshAccess }>('/ssh-keys');
+  const access = keys.data?.ssh;
   const [title, setTitle] = useState('');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -102,9 +131,9 @@ export function SshKeys() {
       <p className="source-meta">
         Clone, fetch and push over SSH as this account. Add the contents of a <code>.pub</code>{' '}
         file, for example <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
-        <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>. SSH access opens once the platform's
-        SSH host is live; until then use HTTPS with a token.
+        <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>.
       </p>
+      <SshSetup access={access} />
       <SshKeyTable keys={keys} onDelete={remove} />
       <form onSubmit={add} className="source-token-form">
         <label htmlFor="ssh-title" className="source-field">

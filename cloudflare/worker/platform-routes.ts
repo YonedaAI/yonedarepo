@@ -3,6 +3,7 @@
 import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { sshInternal } from './platform-ssh';
+import { frontDoor } from './platform-ssh-gateway';
 import { repoApi } from './repo-api';
 import { gitHttp } from './repo-git-http';
 import type { Env } from './types';
@@ -14,8 +15,8 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
       service: 'yonedarepo-platform',
       v: 1,
       revision: env.BUILD_REVISION ?? 'development',
-      // Whether Git over SSH is reachable (kit item 26 skips while it is not).
-      ssh: env.SSH_FRONT_DOOR === 'on',
+      // How Git over SSH is reachable, or null (kit item 26 skips while it is not).
+      ssh: frontDoor(env),
     });
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push).

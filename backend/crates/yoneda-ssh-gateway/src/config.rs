@@ -1,7 +1,8 @@
 //! Configuration from the environment the container (or a local run) is started with:
 //! `PLATFORM_URL`, `SSH_LISTEN`, `HEALTH_LISTEN` (optional), `SSH_GATEWAY_SECRET` and the
 //! host keys `SSH_HOST_ED25519_KEY` (required) and `SSH_HOST_ECDSA_KEY` (OpenSSH private
-//! key files, unencrypted, as is or base64-encoded on one line). Host keys come from secrets so they survive every deploy.
+//! key files, unencrypted, as is or base64-encoded on one line). With `TUNNEL_TOKEN`, it also
+//! runs cloudflared (the Cloudflare Tunnel front door, tunnel.rs). Host keys come from secrets so they survive every deploy.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use russh::keys::{Algorithm, PrivateKey};
 use std::net::SocketAddr;
@@ -12,6 +13,9 @@ pub struct Config {
     pub health_listen: Option<SocketAddr>,
     pub secret: Vec<u8>,
     pub host_keys: Vec<PrivateKey>,
+    /// cloudflared to run beside the gateway: set when `TUNNEL_TOKEN` is (the Cloudflare
+    /// Tunnel front door); `CLOUDFLARED` names another binary (local runs).
+    pub cloudflared: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -69,6 +73,8 @@ impl Config {
                 .transpose()?,
             secret: secret.into_bytes(),
             host_keys,
+            cloudflared: get("TUNNEL_TOKEN")
+                .map(|_| get("CLOUDFLARED").unwrap_or(crate::tunnel::CLOUDFLARED.into())),
         })
     }
 }
@@ -153,5 +159,12 @@ mod tests {
         assert!(config(&[("SSH_HOST_ED25519_KEY", "garbage".into())]).is_err());
         assert!(config(&[("SSH_GATEWAY_SECRET", "short".into())]).is_err());
         assert!(config(&[("PLATFORM_URL", "ftp://x".into())]).is_err());
+        // cloudflared runs only with a tunnel token.
+        assert_eq!(loaded.cloudflared, None);
+        let tunnel = config(&[("TUNNEL_TOKEN", "t".into())]).unwrap();
+        assert_eq!(
+            tunnel.cloudflared.as_deref(),
+            Some(crate::tunnel::CLOUDFLARED)
+        );
     }
 }

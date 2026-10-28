@@ -106,6 +106,28 @@ fn when(value: &Value) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// How to use the key, from the platform's `ssh` answer: on the Cloudflare Tunnel front door,
+/// cloudflared once and the `~/.ssh/config` entry; then the clone command.
+pub fn setup(ssh: &Value) -> String {
+    let Some(host) = ssh["host"].as_str() else {
+        return "Git over SSH is not open on this platform yet; use HTTPS with a token meanwhile."
+            .into();
+    };
+    let clone = format!("Then: git clone ssh://git@{host}/<repository id>.git");
+    match ssh["ssh_config"].as_str() {
+        Some(config) => format!(
+            "Git over SSH goes through Cloudflare Tunnel. Once per machine:\n\
+             1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/\n\
+             2. Add to ~/.ssh/config:\n\n{}\n{clone}",
+            config
+                .lines()
+                .map(|l| format!("    {l}\n"))
+                .collect::<String>()
+        ),
+        None => clone,
+    }
+}
+
 pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
     let (_, api) = target::account_api(origin)?;
     match command {
@@ -121,6 +143,7 @@ pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
                 text(&added["fingerprint"]),
                 text(&added["title"])
             );
+            println!("{}", setup(&added["ssh"]));
         }
         SshKeyCommand::List => {
             let keys = api.get("/ssh-keys").await?["keys"]
@@ -180,6 +203,29 @@ mod tests {
         assert!(public_key("").is_err());
         assert!(public_key("ssh-ed25519").is_err());
         assert!(public_key("pgp-key AAAA").is_err());
+    }
+
+    #[test]
+    fn setup_prints_the_tunnel_ssh_config_and_the_clone_command() {
+        let tunnel = json!({
+            "front_door": "tunnel", "host": "ssh.yonedarepo.com",
+            "ssh_config": "Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n",
+        });
+        let printed = setup(&tunnel);
+        assert!(printed.contains("Install cloudflared"), "{printed}");
+        assert!(printed.contains(
+            "    Host ssh.yonedarepo.com\n      ProxyCommand cloudflared access ssh --hostname %h\n"
+        ));
+        assert!(printed.ends_with("git clone ssh://git@ssh.yonedarepo.com/<repository id>.git"));
+        let direct = setup(
+            &json!({"front_door": "connect", "host": "ssh.yonedarepo.com", "ssh_config": null}),
+        );
+        assert_eq!(
+            direct,
+            "Then: git clone ssh://git@ssh.yonedarepo.com/<repository id>.git"
+        );
+        assert!(setup(&json!({"host": null})).contains("not open"));
+        assert!(setup(&Value::Null).contains("not open"));
     }
 
     #[test]
