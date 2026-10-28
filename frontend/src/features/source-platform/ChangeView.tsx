@@ -5,7 +5,7 @@ import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
-import { CommitSessions } from './CommitSessions';
+import { ChangeSessions } from './ChangeSessions';
 import {
   type ChangeDetail,
   type ConversationItem,
@@ -65,7 +65,7 @@ export function ChangeView({
   onBack?: () => void;
   onCommit?: (sha: string) => void;
   onChanged?: () => void;
-  /** Links the head commit's sessions to their pages. */
+  /** Links the sessions behind the change's commits to their pages. */
   navigate?: Navigate;
 }) {
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
@@ -139,11 +139,12 @@ export function ChangeView({
       <ChangeGates repo={repo} change={c} onChanged={refresh} />
       {c.status === 'open' && c.head && <RebaseButton repo={repo} change={c} onChanged={refresh} />}
       {c.head && navigate && (
-        <CommitSessions
+        <ChangeSessions
           repo={repo}
-          commit={c.head}
+          head={c.head}
+          base={c.diff?.base?.commit ?? null}
           navigate={navigate}
-          heading="Sessions behind the head commit"
+          onCommit={onCommit}
         />
       )}
       <section aria-labelledby="conversation-heading">

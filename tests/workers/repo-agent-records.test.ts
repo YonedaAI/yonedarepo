@@ -31,6 +31,10 @@ it('lists agent records for the agent pages', async () => {
   const filtered = await api(`/repos/${repo}/sessions?cli=claude-code&ref=main&limit=5`, { token: reader });
   expect(filtered.body.sessions.map((s: { commit: string }) => s.commit)).toEqual([root]);
   expect(filtered.body.ref).toBe('refs/heads/main');
+  // A change's view: what its head adds over its merge base with main.
+  const added = await api(`/repos/${repo}/sessions?head=${sha}&base=${root}`, { token: reader });
+  expect(added.body.sessions.map((s: { commit: string }) => s.commit)).toEqual([sha, sha]);
+  expect((await api(`/repos/${repo}/sessions?base=${root}`, { token: reader })).status).toBe(400);
   const page = await api(`/repos/${repo}/sessions?limit=1&cli=opencode`, { token: reader });
   expect(page.body.next).toBe(null);
   const two = await api(`/repos/${repo}/sessions?limit=2`, { token: reader });

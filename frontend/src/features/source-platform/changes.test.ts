@@ -1,15 +1,25 @@
 // Change requests as the server would render them: the list and its filter, the change page
-// in each status, line threads on the diff, and the pure rules for anchors and threads.
+// in each status, line threads on the diff, the sessions behind its commits, and the pure
+// rules for anchors and threads.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Loaded } from './useSource';
 
-const state: { value: Loaded<any> } = { value: { loading: true, reload: () => {} } };
-vi.mock('./useSource', () => ({ useSource: () => state.value }));
+const state: { value: Loaded<any>; paths: (string | null)[] } = {
+  value: { loading: true, reload: () => {} },
+  paths: [],
+};
+vi.mock('./useSource', () => ({
+  useSource: (path: string | null) => {
+    state.paths.push(path);
+    return state.value;
+  },
+}));
 
 const { ChangeTable, StatusFilter } = await import('./RepoChanges');
 const { ChangeView } = await import('./ChangeView');
+const { ChangeSessions } = await import('./ChangeSessions');
 const { OpenChangeButton, proposable } = await import('./OpenChange');
 const { DiffFiles } = await import('./DiffFiles');
 const { anchorKey, conversation, diffAnchors, groupComments, rowAnchor } = await import(
@@ -82,6 +92,7 @@ const view = () => html(ChangeView, { repo, number: 7 });
 
 beforeEach(() => {
   state.value = { loading: true, reload: () => {} };
+  state.paths = [];
 });
 
 describe('change rules', () => {
@@ -263,5 +274,68 @@ describe('a change from a fork', () => {
     expect(page).toContain('TOO_LARGE: too many commits');
     state.value = loaded({ data: detail() });
     expect(view()).not.toContain('from fork');
+  });
+});
+
+describe('sessions behind a change', () => {
+  const session = (id: number, commit: string, subject: string) => ({
+    id,
+    commit,
+    cli: 'claude-code',
+    model: 'claude-sonnet-5-5',
+    summary: `summary ${id}`,
+    prompt_digest: null,
+    transcript_ref: null,
+    read_set_digest: null,
+    recorded_by: 'token:agent',
+    at: id,
+    subject,
+    reads: 0,
+  });
+  const list = (sessions: object[], over: object = {}) => ({
+    sessions,
+    next: null,
+    clis: [],
+    models: [],
+    ref: null,
+    branch_scan_truncated: false,
+    ...over,
+  });
+  const sessions = (props: object = {}) =>
+    html(ChangeSessions, { repo, head, base: older, navigate: () => {}, ...props });
+
+  it('reads what the head adds over the merge base and groups it by commit', () => {
+    state.value = loaded({
+      data: list([session(3, head, 'second'), session(2, older, 'first'), session(1, head, 'x')]),
+    });
+    const page = sessions();
+    expect(state.paths).toContain(
+      `/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`,
+    );
+    expect(page.indexOf('second')).toBeLessThan(page.indexOf('first'));
+    expect(page.match(/<h4>/g)).toHaveLength(2);
+    expect(page).toContain('summary 1');
+    expect(page).toContain(`/source/${repo}/agents/sessions/3`);
+    expect(page).not.toContain('newest sessions only');
+  });
+
+  it('shows loading, failure, empty and cut-off states', () => {
+    expect(sessions()).toContain('Loading sessions');
+    state.value = loaded({ error: 'boom' });
+    expect(sessions()).toContain('Sessions unavailable: boom');
+    state.value = loaded({ data: list([]) });
+    expect(sessions()).toContain('No session recorded for this change');
+    state.value = loaded({ data: list([session(1, head, 'x')], { next: 1 }) });
+    expect(sessions()).toContain('newest sessions only');
+    state.value = loaded({ data: list([]) });
+    sessions({ base: null });
+    expect(state.paths.at(-1)).toBe(`/repos/${repo}/sessions?head=${head}&limit=200`);
+  });
+
+  it('is on the change page for every commit, not just the head', () => {
+    state.value = loaded({ data: detail() });
+    const page = html(ChangeView, { repo, number: 7, navigate: () => {} });
+    expect(page).toContain('Sessions behind this change');
+    expect(state.paths).toContain(`/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`);
   });
 });
