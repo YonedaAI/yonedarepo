@@ -152,14 +152,14 @@ pub(crate) fn active_gate(env: &Env, worker: &str, active: u64, options: &Option
     busy_gate(worker, active, options)
 }
 
-/// Busy container instances stop whatever comes next (a rollout, a cutover, a deletion),
+/// Busy (active or assigned) container instances stop whatever comes next (a rollout, a cutover, a deletion),
 /// unless `--allow-active`.
 pub(crate) fn busy_gate(what: &str, active: u64, options: &Options) -> Result<()> {
     if active == 0 || options.allow_active {
         return Ok(());
     }
     Err(format!(
-        "Stopping before {what}: {active} container instance(s) are busy and this kills their runs. Retry when idle, or pass --allow-active."
+        "Stopping before {what}: {active} container instance(s) are active (not just starting) and this kills their runs. Retry when idle, or pass --allow-active."
     )
     .into())
 }
@@ -180,12 +180,12 @@ pub(crate) fn rollout_gate(busy: &[(String, u64)], options: &Options) -> Result<
     let list = busy.join(", ");
     if options.dry_run || options.allow_active {
         println!(
-            "WARNING: the container rollout will stop running checks ({list} busy instance(s))."
+            "WARNING: the container rollout will stop running checks ({list} active instance(s))."
         );
         return Ok(());
     }
     Err(format!(
-        "Stopping before the container rollout: busy instances ({list}) would be killed. Retry when idle, or pass --allow-active."
+        "Stopping before the container rollout: active instances ({list}) would be killed (starting ones are not counted). Retry when idle, or pass --allow-active."
     )
     .into())
 }

@@ -58,6 +58,9 @@ impl Run<'_> {
             Step::RetiredGate => "busy containers of retired Workers".into(),
             Step::RolloutGate => "rollout gate (busy containers)".into(),
             Step::MoveHosts { worker } => format!("move hosts to {}", name(worker)),
+            Step::DetachConsumers { worker, .. } => {
+                format!("stale queue consumers {}", name(worker))
+            }
             Step::Deploy { worker, dry_run } => {
                 format!(
                     "deploy {}{}",
@@ -130,6 +133,25 @@ impl Run<'_> {
                 let moves = crate::infra::hosts::detach(spec, token, &workers[worker]).await?;
                 if moves.is_empty() {
                     println!("Host moves: none for {}.", workers[worker].name);
+                }
+            }
+            Step::DetachConsumers { worker, dry_run } => {
+                let token = self
+                    .host_token
+                    .map(str::to_owned)
+                    .or_else(crate::deploy_credentials::current);
+                let Some(token) = token else {
+                    println!(
+                        "WARNING: no API token, so stale queue consumers of {} were not checked. If the deploy fails with code 11001, run `wrangler queues consumer remove <queue> {}`.",
+                        workers[worker].name, workers[worker].name
+                    );
+                    return Ok(());
+                };
+                let stale =
+                    crate::infra::consumers::detach(spec, &token, &workers[worker], dry_run)
+                        .await?;
+                if stale.is_empty() {
+                    println!("Queue consumers: none stale for {}.", workers[worker].name);
                 }
             }
             Step::RolloutGate => {
