@@ -21,6 +21,8 @@ mod classes;
 mod contracts;
 mod deletion;
 mod git_http;
+mod git_shallow;
+mod git_wanted;
 pub(crate) mod grants;
 mod head;
 mod history;
@@ -55,7 +57,6 @@ mod symbols;
 mod tags;
 mod tokens;
 mod tree_cache;
-mod vacuum;
 mod version_projection;
 pub use migration::migrate_repo_store;
 pub(crate) use rows::protected as protected_ref;
@@ -109,7 +110,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
-        "repo_pin" | "repo_record_contract" => actor.require("write"),
+        "repo_record_contract" => actor.require("write"),
         // Only the platform classifier records review classes.
         "repo_record_classes" | "repo_record_symbols" if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
@@ -206,8 +207,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_contracts" => contracts::list(db, c),
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
-        "repo_pin" => vacuum::pin(db, c, principal),
-        op if maintenance::owns(op) => maintenance::run(db, c, op),
+        op if maintenance::owns(op) => maintenance::run(db, c, op, principal),
         // The store travels with the answer, so the adapter needs no status read first.
         "repo_prepare_commit" => {
             prepare::prepare(db, c, principal, &settings).map(|mut prepared| {

@@ -2,7 +2,8 @@
 // Real-world test kit for the dev stack (dev.yonedarepo.com): the source platform used as a
 // person, an agent and a script would, with no agent runs. Items: live revisions (0), a git
 // clone checked byte for byte against the API (6), a check run in a container (7),
-// 100/1000-writer and many-repo bursts (8-10), and the CLI items 12-18: `yoneda login` by
+// 100/1000-writer and many-repo bursts (8-10), big clones over Git protocol v2 (19: partial
+// with lazy blobs, shallow, deepen, fsck), and the CLI items 12-18: `yoneda login` by
 // device flow, `yoneda repo`, plain git through git-remote-yoneda (concurrent pushes,
 // conflicts, atomic and killed pushes), the account MCP with a PAT, `--at` reads, a change
 // request (18: open, comment, approve, land), a server-side rebase (21: linear in a clone,
@@ -44,6 +45,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
+import { bigClone } from './staging/big-clone-flow.mjs';
 import { browserFlow } from './staging/browser-flow.mjs';
 import { compactionFlow } from './staging/compaction-flow.mjs';
 import { cliChangeRequest } from './staging/change-flow.mjs';
@@ -143,6 +145,9 @@ await step('browser', 'Browser: sign in, source pages, a change request approved
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
+await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), shallow, deepen, fsck', (m) =>
+  bigClone({ api: values.api, platform: platformAccount }, m),
+);
 await step('model', 'Model check: vulnerable commit fails and cannot land, the fix passes and lands', (m) => modelCheck(platformAccount, m));
 await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 from R2', (m) =>
   compactionFlow(platformAccount, m, { versions: Number(values['compaction-versions']) }),

@@ -58,6 +58,10 @@ pub fn compute(c: Value) -> Result<Value> {
         "git_upload_request" => crate::platform_git_http::parse_upload(&c),
         "git_acknowledge" => crate::platform_git_http::acknowledge(&c),
         "git_report" => crate::platform_git_http::report(&c),
+        "git_v2_capabilities" => crate::platform_git_v2::capabilities(&c),
+        "git_v2_request" => crate::platform_git_v2::request(&c),
+        "git_ls_refs" => crate::platform_git_v2::ls_refs(&c),
+        "git_v2_fetch_head" => crate::platform_git_v2::fetch_head(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
 }
