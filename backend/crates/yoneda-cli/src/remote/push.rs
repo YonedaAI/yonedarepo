@@ -231,11 +231,25 @@ async fn set_branch(
 ) -> std::result::Result<(), String> {
     let body = json!({ "ref": item.spec.dst, "commit": done.tip, "expected": item.current });
     match session.api.post_idempotent("/branches", &body).await {
-        Ok(_) => Ok(()),
+        Ok(moved) => {
+            change_hint(&item.spec.dst, &moved);
+            Ok(())
+        }
         Err(f) if f.code == "STALE_HEAD" => {
             Err("fetch first: the branch moved on the platform".into())
         }
         Err(f) => Err(f.to_string()),
+    }
+}
+
+/// After a branch moved: its open change, or how to open one (the same lines a smart-HTTP
+/// push prints).
+fn change_hint(dst: &str, moved: &Value) {
+    let branch = dst.strip_prefix("refs/heads/").unwrap_or(dst);
+    match moved.get("change") {
+        Some(Value::Null) => say(&format!("open a change: yoneda change create {branch}")),
+        Some(number) => say(&format!("change #{number} now at this push")),
+        None => {}
     }
 }
 

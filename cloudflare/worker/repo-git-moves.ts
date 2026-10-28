@@ -66,7 +66,7 @@ export async function moveAll(
 
 /** For each pushed working branch: its open change, or how to open one. */
 function changeHints(moved: Json, messages: string[]) {
-  for (const { ref, change } of moved.changes ?? [])
+  for (const { ref, change } of (moved.refs ?? []).filter((r: Json) => 'change' in r))
     messages.push(
       change === null
         ? `open a change: yoneda change create ${short(ref)}`

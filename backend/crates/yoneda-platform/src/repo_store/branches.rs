@@ -37,7 +37,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         ));
     }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
-    Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+    // The branch's open change (or null), so a push can name it or suggest opening one.
+    let change = super::changes::open_on_ref(db, &refname)?;
+    Ok(json!({ "ref": refname, "commit": commit.id, "version": version, "change": change }))
 }
 
 /// Logs `refname` moving from `old` to `commit`, moves it, records its projection target
@@ -210,9 +212,7 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             set(db, &command, principal)?
         });
     }
-    // Each moved branch with its open change, so a push can suggest opening one.
-    let changes = super::changes::for_moves(db, &refs)?;
-    Ok(json!({ "version": current_version(db)?, "refs": refs, "changes": changes }))
+    Ok(json!({ "version": current_version(db)?, "refs": refs }))
 }
 
 fn expected_of(c: &Value) -> Result<Option<ObjectId>> {
