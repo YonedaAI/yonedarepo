@@ -6,7 +6,8 @@
 // many-repo bursts, and project deletion. Items 12-17 use the git platform without the agents
 // website (zero model spend): `yoneda login` by device flow, `yoneda repo`, plain git through
 // git-remote-yoneda (concurrent pushes, conflicts, atomic and killed pushes), the account MCP
-// with a PAT, `--at` reads and cleanup. They need `cargo build -p yoneda-cli --release`
+// with a PAT, `--at` reads, a change request (item 18: open, comment, approve, land) and
+// cleanup. They need `cargo build -p yoneda-cli --release`
 // (`--cli-bin` names another directory). Prints a pass/fail table and writes evidence to
 // .local/staging/. Credentials come only from 0600 files in ~/.config/yonedarepo/:
 //   staging.env       OWNER_TOKEN (staging-only owner credential)
@@ -15,7 +16,7 @@
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
 //   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <a> --run-b <b>]
-//        node tools/staging-realworld.mjs --only 12,13,14,15,16,17 [--api <platform origin>] [--cli-bin <dir>]
+//        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
 //        node tools/staging-realworld.mjs --agent-smoke [--smoke-provider zai|mimo] [--smoke-timeout <s>]
 //          (= --only 0,smoke: one cheap single-agent run must reach a checked candidate)
@@ -64,6 +65,7 @@ import { agentSmoke } from './staging/agent-smoke.mjs';
 import { browserFlow } from './staging/browser-flow.mjs';
 import { proof, proofPlan } from './staging/proof-flow.mjs';
 import { sandboxSmoke } from './staging/sandbox-smoke.mjs';
+import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
@@ -278,7 +280,7 @@ await step('11', 'Delete test project, token revoked', async (m) => {
   await deleteProject(account, state.project, m);
 });
 
-if (['12', '13', '14', '15', '16', '17'].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18'].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {
@@ -287,6 +289,8 @@ if (['12', '13', '14', '15', '16', '17'].some(wanted)) {
     await step('14', 'CLI: atomic push with a stale branch, killed push', (m) => cliTransactional(cli, repo, m));
     await step('15', 'Account MCP with a PAT (round trip, allowlist)', (m) => accountMcp(cli, repo, m));
     await step('16', 'Server-side reads at a version (log, grep, blame --at)', (m) => serverReads(cli, repo, m));
+    // Before 17, whose cleanup deletes its repository too.
+    await step('18', 'CLI: change request (branch, open, line comment, approve, land, landed)', (m) => cliChangeRequest(cli, m));
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.

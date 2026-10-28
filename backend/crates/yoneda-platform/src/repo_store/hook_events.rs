@@ -20,15 +20,15 @@ const MAX_VERSIONS: u64 = 100;
 const MAX_PENDING: i64 = 1000;
 const MAX_MESSAGE: usize = 4096;
 
-struct Event {
-    name: &'static str,
+pub(super) struct Event {
+    pub name: &'static str,
     /// The log version, for events the log ordered; refusals and checks have none.
-    version: Option<u64>,
-    at_ms: i64,
-    fields: Map<String, Value>,
+    pub version: Option<u64>,
+    pub at_ms: i64,
+    pub fields: Map<String, Value>,
     /// Paths the commit touched and its message, shown only within a hook's grant.
-    paths: Vec<String>,
-    message: Option<String>,
+    pub paths: Vec<String>,
+    pub message: Option<String>,
 }
 
 fn cursor<S: SqlStore>(db: &S) -> Result<Option<(u64, i64)>> {
@@ -89,6 +89,7 @@ pub fn fanout<S: SqlStore>(db: &S) -> Result<Value> {
     let mut events = Vec::new();
     for entry in rows::entries(db, after, until, None)? {
         events.extend(entry_events(db, &entry)?);
+        events.extend(super::change_hooks::landed(db, &entry)?);
     }
     let (refused, next_ticket) = change_records::refusals(db, ticket, MAX_VERSIONS)?;
     events.extend(refused.into_iter().map(refusal));
@@ -165,7 +166,7 @@ pub fn check<S: SqlStore>(
     Ok(true)
 }
 
-fn enqueue<S: SqlStore>(db: &S, hook: &Hook, event: &Event) -> Result<()> {
+pub(super) fn enqueue<S: SqlStore>(db: &S, hook: &Hook, event: &Event) -> Result<()> {
     let pending = db.query(
         "SELECT COUNT(*) AS n FROM hook_outbox WHERE hook_id=?",
         &[json!(hook.id)],

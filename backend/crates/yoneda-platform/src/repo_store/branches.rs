@@ -37,7 +37,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         ));
     }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
-    Ok(json!({ "ref": refname, "commit": commit.id, "version": version }))
+    // The branch's open change (or null), so a push can name it or suggest opening one.
+    let change = super::changes::open_on_ref(db, &refname)?;
+    Ok(json!({ "ref": refname, "commit": commit.id, "version": version, "change": change }))
 }
 
 /// Logs `refname` moving from `old` to `commit`, moves it, records its projection target

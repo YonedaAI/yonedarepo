@@ -9,7 +9,11 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
-pub const EVENTS: [&str; 6] = ["land", "merged", "refused", "branch", "tag", "check"];
+/// `change` subscribes to every change request event (`change.opened`, `change.commented`,
+/// `change.landed`, `change.closed`).
+pub const EVENTS: [&str; 7] = [
+    "land", "merged", "refused", "branch", "tag", "check", "change",
+];
 const MAX_HOOKS: i64 = 20;
 /// Delivery attempts kept per hook for `GET /hooks/:id/deliveries`.
 pub const LOG_SIZE: i64 = 50;
@@ -26,7 +30,8 @@ pub struct Hook {
 
 impl Hook {
     pub fn wants(&self, event: &str) -> bool {
-        self.events.iter().any(|e| e == event)
+        let family = event.split('.').next().unwrap_or(event);
+        self.events.iter().any(|e| e == family)
     }
 }
 

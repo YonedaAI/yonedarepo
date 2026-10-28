@@ -1581,6 +1581,7 @@ mod branch_policy;
 mod branches;
 mod break_glass;
 mod change_records;
+mod changes;
 mod changesets;
 mod check_posters;
 mod check_release;

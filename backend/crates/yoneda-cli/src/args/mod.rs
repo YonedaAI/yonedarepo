@@ -129,6 +129,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "reads" => sub::declared_reads(rest)?,
         "push" => Command::Push(rest.to_vec()),
         "session" => sub::session(rest)?,
+        "change" => sub::change(rest)?,
         "hook" => sub::hook(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
@@ -290,6 +291,43 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("change create fix --title Retry -m why").ok(),
+            Some(Command::Change {
+                target: Target::default(),
+                command: ChangeCommand::Create {
+                    branch: Some("fix".into()),
+                    title: Some("Retry".into()),
+                    body: Some("why".into())
+                }
+            })
+        );
+        assert_eq!(
+            parsed("change comment #3 --path src/a.rs --line 7 --side new --resolve").ok(),
+            Some(Command::Change {
+                target: Target::default(),
+                command: ChangeCommand::Comment {
+                    number: 3,
+                    body: None,
+                    anchor: Some(Anchor {
+                        path: "src/a.rs".into(),
+                        line: 7,
+                        side: "new".into()
+                    }),
+                    resolve: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("change land 2 --repo r2").ok(),
+            Some(Command::Change {
+                target: Target {
+                    origin: None,
+                    repo: Some("r2".into())
+                },
+                command: ChangeCommand::Land { number: 2 }
+            })
+        );
+        assert_eq!(
             parsed("setup codex").ok(),
             Some(Command::Setup {
                 agent: Agent::Codex,
@@ -314,6 +352,14 @@ mod tests {
             "log --at soon",
             "setup vim",
             "repo import d --batch-files 0",
+            "change show",
+            "change show 0",
+            "change land x",
+            "change comment 1",
+            "change comment 1 -m hi --path a.rs --line 2",
+            "change comment 1 -m hi --path a.rs --line 2 --side left",
+            "change comment 1 --resolve",
+            "change list extra",
         ] {
             assert_eq!(
                 parsed(line).map_err(|e| e.exit_code).err(),

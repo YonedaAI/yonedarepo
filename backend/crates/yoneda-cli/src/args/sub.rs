@@ -1,8 +1,8 @@
 //! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, hooks.
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
-    CheckCommand, Command, HookEvent, ReadCommand, ReadsCommand, RepoCommand, SessionCommand,
-    SyncMode, TokenCommand,
+    Anchor, ChangeCommand, CheckCommand, Command, HookEvent, ReadCommand, ReadsCommand,
+    RepoCommand, SessionCommand, SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
@@ -195,6 +195,71 @@ pub fn session(rest: &[String]) -> Result<Command> {
         other => return Err(Error::usage(format!("unknown session command {other:?}"))),
     };
     Ok(Command::Session {
+        target: p.target(),
+        command,
+    })
+}
+
+pub fn change(rest: &[String]) -> Result<Command> {
+    let (sub, rest) = split_sub(rest, "change")?;
+    let p = Parsed::new(
+        &rest,
+        &with(&["title", "message", "status", "path", "line", "side"]),
+        &["resolve"],
+    )?;
+    let number = || -> Result<u64> {
+        p.exactly(1, &format!("change {sub} <number>"))?[0]
+            .trim_start_matches('#')
+            .parse()
+            .ok()
+            .filter(|n| *n > 0)
+            .ok_or_else(|| Error::usage("a change number is a positive integer"))
+    };
+    let command = match sub.as_str() {
+        "create" => {
+            p.at_most(1)?;
+            ChangeCommand::Create {
+                branch: p.positional.first().cloned(),
+                title: p.flag("title"),
+                body: p.flag("message"),
+            }
+        }
+        "list" => {
+            p.at_most(0)?;
+            ChangeCommand::List {
+                status: p.flag("status"),
+            }
+        }
+        "show" => ChangeCommand::Show { number: number()? },
+        "land" => ChangeCommand::Land { number: number()? },
+        "comment" => {
+            let anchor = match (p.flag("path"), p.number("line")?, p.flag("side")) {
+                (None, None, None) => None,
+                (Some(path), Some(line), Some(side)) if ["old", "new"].contains(&side.as_str()) => {
+                    Some(Anchor { path, line, side })
+                }
+                _ => {
+                    return Err(Error::usage(
+                        "an anchored comment needs --path, --line and --side old|new",
+                    ));
+                }
+            };
+            let (body, resolve) = (p.flag("message"), p.on("resolve"));
+            if body.is_none() && !(resolve && anchor.is_some()) {
+                return Err(Error::usage(
+                    "change comment needs -m <text> (or --resolve with an anchor)",
+                ));
+            }
+            ChangeCommand::Comment {
+                number: number()?,
+                body,
+                anchor,
+                resolve,
+            }
+        }
+        other => return Err(Error::usage(format!("unknown change command {other:?}"))),
+    };
+    Ok(Command::Change {
         target: p.target(),
         command,
     })

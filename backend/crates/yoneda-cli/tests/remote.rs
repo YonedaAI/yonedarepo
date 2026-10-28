@@ -141,7 +141,7 @@ fn clone_push_branch_and_land(w: &World) -> TestResult {
     let local = commit(&c, &dir, "add b", &[("b.txt", "b\n")])?;
     let out = push(&c, &dir, &["origin", "feature"])?;
     check(
-        out.status.success(),
+        out.status.success() && text(&out).contains("open a change: yoneda change create feature"),
         &format!("push branch: {}", text(&out)),
     )?;
     let feature = w.refs(&repo)?["refs/heads/feature"]
