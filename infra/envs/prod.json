@@ -97,6 +97,7 @@
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
         "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.",
+        "BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain (A/B against landing throughput).",
         "Check runs: one per invocation, up to check_instances (4) at once.",
         "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store",
         "secret ZAI), bound to the platform Worker itself.",
@@ -139,6 +140,7 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "BLOB_WRITE_THROUGH": "on",
           "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}"

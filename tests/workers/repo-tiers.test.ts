@@ -212,3 +212,79 @@ it('reads of files a burst just landed come from R2, never from the commit shard
   expect(ops.store_staged_objects ?? 0).toBe(0);
   expect(ops.repo_staged_objects ?? 0).toBe(0);
 });
+
+/** `local` whose commit-shard records and R2 cache-tier blob puts are observed: each shard
+ * record notes how many such puts were in flight when it started. Each put is held
+ * `holdMs`, so one started before a record is still in flight for it. */
+function watchedWrites(holdMs: number) {
+  const real = bindings.OBJECTS;
+  const shards = local.COMMIT_SHARDS as DurableObjectNamespace;
+  let putting = 0;
+  const puts: string[] = [];
+  const records: number[] = [];
+  const env = {
+    ...local,
+    OBJECTS: {
+      get: (key: string, ...rest: any[]) => (real.get as any)(key, ...rest),
+      head: (key: string) => real.head(key),
+      delete: (keys: any) => real.delete(keys),
+      list: (options: any) => real.list(options),
+      put: async (key: string, ...rest: any[]) => {
+        if (!(key.includes('/objects/') && rest[1]?.customMetadata?.kind === 'blob'))
+          return (real.put as any)(key, ...rest);
+        puts.push(key);
+        putting++;
+        try {
+          await new Promise((done) => setTimeout(done, holdMs));
+          return await (real.put as any)(key, ...rest);
+        } finally {
+          putting--;
+        }
+      },
+    },
+    COMMIT_SHARDS: {
+      idFromName: (name: string) => shards.idFromName(name),
+      get: (id: DurableObjectId) => {
+        const stub = shards.get(id);
+        return {
+          fetch: (url: string, init: RequestInit) => {
+            if (JSON.parse(String(init.body)).op === 'store_record') records.push(putting);
+            return stub.fetch(url, init);
+          },
+        };
+      },
+    },
+  } as unknown as Env;
+  return { env, puts, records };
+}
+
+it("writes a commit's blobs through to R2 only after the commit's own I/O", async () => {
+  const { owner, id, repo } = await repoWith('writeafter', local);
+  const { env, puts, records } = watchedWrites(300);
+  const after: Promise<unknown>[] = [];
+  const made = await withWaitUntil(
+    (work) => after.push(work),
+    () => api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('late/w.txt', 'written after\n')], message: 'w', author } }, env),
+  );
+  expect(made.status).toBe(200);
+  expect(made.body.staged).toBe(true);
+  await Promise.all(after);
+  // An R2 put holds one of the invocation's six connections: one started beside the shard
+  // record shares the commit's own budget (a 256-blob commit: all six, beside the record,
+  // the check dispatch and the drain request).
+  expect(records).toEqual([0]);
+  expect(puts.length).toBe(1);
+  expect(puts[0].startsWith(`platform/v1/${id}/objects/`)).toBe(true);
+  expect(await bindings.OBJECTS.head(puts[0])).not.toBeNull();
+});
+
+it('BLOB_WRITE_THROUGH=off leaves a commit\'s blobs to the shard drain', async () => {
+  const { owner, repo } = await repoWith('writeoff', local);
+  const { env, puts } = watchedWrites(0);
+  const off = { ...env, BLOB_WRITE_THROUGH: 'off' } as unknown as Env;
+  const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('off/w.txt', 'left to the drain\n')], message: 'w', author } }, off);
+  expect(made.status).toBe(200);
+  expect(made.body.staged).toBe(true);
+  expect(puts).toEqual([]);
+  expect(queued.some((m) => m.kind === 'platform_objects')).toBe(true);
+});
