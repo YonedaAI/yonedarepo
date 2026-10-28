@@ -4,7 +4,7 @@
 //! client's shallow commits stop what it is known to hold, and a fetch may want a commit
 //! (or, in version 2, a blob by id) only when a branch or tag reaches it.
 use super::*;
-use yoneda_core::git_object::{ObjectId, Signature};
+use yoneda_core::git_object::{ObjectId, Signature, TzOffset};
 
 /// main's root then five pushed commits on top, oldest first: `[root, c1, …, c5]`.
 fn chain() -> (Harness, Vec<String>, String) {
@@ -20,7 +20,7 @@ fn chain() -> (Harness, Vec<String>, String) {
         name: "Dev".into(),
         email: "dev@example.com".into(),
         seconds: 1_700_000_000,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let mut ids = vec![root];
     let mut items = Vec::new();

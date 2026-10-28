@@ -11,7 +11,7 @@ use crate::git::Git;
 use crate::snapshot;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use yoneda_core::git_object::{Commit, ObjectId, ObjectKind, Signature, write_pack};
+use yoneda_core::git_object::{Commit, ObjectId, ObjectKind, Signature, TzOffset, write_pack};
 
 /// Commits converted per call; older history is cut there (the oldest converted commit
 /// becomes a root). Contents are unaffected; `yoneda log` reads the full history.
@@ -65,7 +65,7 @@ pub fn local_commit(id: &str, info: &Info, parents: &[String]) -> Result<Commit>
         name,
         email: EMAIL.into(),
         seconds: info.landed_ms.unwrap_or(0) / 1000,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let message = info.message.as_deref().unwrap_or("Platform commit");
     let message = format!("{}\n\nYoneda-Commit: {id}\n", message.trim_end());
