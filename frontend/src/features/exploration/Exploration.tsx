@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { type RunSample, runSamples } from '../../../../shared/run-samples';
 import { Dialog } from '../../components/Dialog';
+import { withoutRuns } from '../../hooks/repositorySnapshot';
 import { api } from '../../lib/api';
 import type { Snapshot } from '../../lib/types';
 import { actionErrorMessage, sendOwnerAction } from './ownerAction';
@@ -26,7 +27,7 @@ const RunDetail = lazy(() =>
 
 export function Exploration({
   reviewer = false,
-  snapshot,
+  snapshot: loaded,
   onChange,
   onError,
   onProviders,
@@ -48,6 +49,9 @@ export function Exploration({
 }) {
   const [busy, setBusy] = useState(false);
   const [runId, setRunId] = useState(initialRunId);
+  // A deleted run leaves at once, even when no later history page proves it gone.
+  const [deletedRuns, setDeletedRuns] = useState<ReadonlySet<string>>(() => new Set());
+  const snapshot = useMemo(() => withoutRuns(loaded, deletedRuns), [loaded, deletedRuns]);
   const [composing, setComposing] = useState(false);
   const [restartId, setRestartId] = useState('');
   const [branchSource, setBranchSource] = useState<InitialRun>();
@@ -220,6 +224,12 @@ export function Exploration({
                   setComposing(true);
                 }}
                 onCancel={() => void act('cancel_run', { run_id: run.id })}
+                onDelete={() =>
+                  void act('delete_run', { run_id: run.id }, async () => {
+                    setDeletedRuns((previous) => new Set(previous).add(run.id));
+                    setRunId('');
+                  })
+                }
                 onComparisonAction={act}
                 onRefresh={onChange}
                 onAccept={(candidate, rationale, alternatives) =>

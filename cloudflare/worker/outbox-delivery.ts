@@ -1,5 +1,6 @@
 import { archiveDueHistory } from './history-archive';
 import { deliverDeletion } from './repository-deletion';
+import { deliverRunDeletion } from './run-deletion';
 import type { Env, Envelope, Json } from './types';
 
 export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
@@ -20,6 +21,8 @@ export async function deliverOutbox(env: Env, repo: string, entries: Json[]) {
           .run();
       } else if (entry.kind === 'archive_due') {
         await archiveDueHistory(env, repo);
+      } else if (entry.kind === 'run_delete') {
+        await deliverRunDeletion(env, repo, entry);
       } else if (['workspace_delete', 'delete_artifact'].includes(entry.kind)) {
         await deliverDeletion(env, repo, entry);
       } else if (entry.kind === 'stop') {
