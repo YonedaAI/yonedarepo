@@ -10,9 +10,10 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
 /// `change` subscribes to every change request event (`change.opened`, `change.commented`,
-/// `change.landed`, `change.closed`).
-pub const EVENTS: [&str; 7] = [
-    "land", "merged", "refused", "branch", "tag", "check", "change",
+/// `change.landed`, `change.closed`); `release` to `release.published` and
+/// `release.deleted`.
+pub const EVENTS: [&str; 8] = [
+    "land", "merged", "refused", "branch", "tag", "check", "change", "release",
 ];
 const MAX_HOOKS: i64 = 20;
 /// Delivery attempts kept per hook for `GET /hooks/:id/deliveries`.

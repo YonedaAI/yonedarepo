@@ -1224,7 +1224,7 @@
   },
   {
     "name": "git_tag",
-    "description": "Create a lightweight tag (refs/tags/<name>) at a recorded commit. Tags are immutable: creating an existing tag at the same commit is a no-op, at another commit returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs, served to git clone and mirrored to the object store. Annotated tags are not supported.",
+    "description": "Create a tag (refs/tags/<name>) at a recorded commit; with message, an annotated tag (the platform builds the tag object, tagged by tagger or the caller). Tags are immutable: creating the same tag again is a no-op, a different one under an existing name returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs (annotated tags under annotated, ref name to tag object id), served to git clone (with the peeled commit) and mirrored to the object store. Annotated tags pushed with git push are accepted too. REST: POST /tags.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1235,6 +1235,31 @@
         "commit": {
           "type": "string",
           "pattern": "^[0-9a-f]{40}$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8000,
+          "description": "Tag message: makes an annotated tag"
+        },
+        "tagger": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "email": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "name",
+            "email"
+          ],
+          "additionalProperties": false,
+          "description": "Tagger identity of an annotated tag (default: the caller)"
         }
       },
       "required": [
@@ -2101,6 +2126,137 @@
         "landed_commit",
         "comment_count"
       ]
+    }
+  },
+  {
+    "name": "git_release_create",
+    "description": "Publish a release for an existing tag: a title and notes, then assets with git_release_asset_upload. One release per tag (ALREADY_EXISTS otherwise). Needs the write and land scopes and a whole-repository credential. Sends the release.published webhook event. REST: POST /releases.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 16000
+        }
+      },
+      "required": [
+        "tag",
+        "title"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_release_list",
+    "description": "List releases, newest first, each with its tag, commit and asset count. REST: GET /releases.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_release_show",
+    "description": "One release: title, notes, tagged commit, assets (name, size, sha256, content type) and, for an annotated tag, its tag object id, message and tagger. REST: GET /releases/:tag.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_release_delete",
+    "description": "Delete a release and its assets; the tag stays (tags never move or disappear). Needs the write and land scopes. Sends the release.deleted webhook event. REST: DELETE /releases/:tag.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_release_asset_upload",
+    "description": "Attach a file to a release (at most 4 MiB here as base64; up to 25 MiB with REST PUT /releases/:tag/assets/:name and the raw bytes as the body). Assets are immutable: a name is used once per release (ALREADY_EXISTS), at most 20 per release. Answers the recorded size and sha256. Needs the write and land scopes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_+-][A-Za-z0-9._+-]{0,199}$",
+          "description": "Asset file name: letters, digits, '.', '_', '-', '+'"
+        },
+        "content_b64": {
+          "type": "string",
+          "description": "The file's bytes in base64"
+        },
+        "content_type": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "tag",
+        "name",
+        "content_b64"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_release_asset_download",
+    "description": "Read a release asset (at most 4 MiB here; larger ones with REST GET /releases/:tag/assets/:name, which answers the recorded sha256 in x-yoneda-sha256). Answers the bytes in base64 with the recorded size and sha256.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string",
+          "description": "Tag name, e.g. v1.2.0 (or refs/tags/v1.2.0)"
+        },
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_+-][A-Za-z0-9._+-]{0,199}$",
+          "description": "Asset file name: letters, digits, '.', '_', '-', '+'"
+        }
+      },
+      "required": [
+        "tag",
+        "name"
+      ],
+      "additionalProperties": false
     }
   },
   {
