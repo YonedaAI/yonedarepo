@@ -18,6 +18,9 @@
 // files in ~/.config/yonedarepo/:
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
 //   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
+// Git over SSH (26, opt-in with --ssh: tools/staging/ssh-flow.mjs, through the platform's
+// cloudflared ssh_config on the tunnel front door, else at --ssh-host; skipped while /health
+// says SSH is off).
 // Usage: node tools/staging-realworld.mjs [--only 0,6,7] [--skip-bursts] [--big-files N]
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,21,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
@@ -54,8 +57,10 @@
 //          owner's POST /compact until nothing is due, check the bound and reads at version 5)
 //        node tools/staging-realworld.mjs --lfs [--lfs-mb 200]
 //          (= --only 0,25: Git LFS with stock git-lfs; the file size is --lfs-mb MiB)
+//        node tools/staging-realworld.mjs --ssh [--ssh-host ssh.dev.yonedarepo.com] [--ssh-port 22]
+//          (= --only 0,26: Git over SSH with stock git and OpenSSH; needs the second account)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,9 +72,10 @@ import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
-import { Recorder, Session, accountSession, kitCredentials, readEnvFile } from './staging/client.mjs';
+import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount } from './staging/client.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
 import { lfsFlow } from './staging/lfs-flow.mjs';
+import { sshFlow } from './staging/ssh-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
 import { orgsFlow } from './staging/orgs-flow.mjs';
@@ -112,6 +118,10 @@ const { values } = parseArgs({
     // The Git LFS gate alone (items 0 and 25), and item 25's file size in MiB.
     lfs: { type: 'boolean', default: false },
     'lfs-mb': { type: 'string', default: '200' },
+    // The Git over SSH gate alone (items 0 and 26), at the SSH front door's host and port.
+    ssh: { type: 'boolean', default: false },
+    'ssh-host': { type: 'string', default: 'ssh.dev.yonedarepo.com' },
+    'ssh-port': { type: 'string', default: '22' },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
@@ -120,7 +130,9 @@ const { values } = parseArgs({
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const only = values.orgs
+const only = values.ssh
+  ? new Set(['0', '26'])
+  : values.orgs
   ? new Set(['0', '24'])
   : values.lfs
   ? new Set(['0', '25'])
@@ -142,7 +154,7 @@ const only = values.orgs
 // The model check needs the platform's review key, the webhook gate a receiver and the
 // members, forks (22) and orgs (24) gates a second account, so a full kit run leaves them out
 // unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -199,6 +211,15 @@ await step('23', 'Annotated tag push + fresh clone (cat-file -t = tag), release 
 await step('25', `Git LFS: track *.bin, push ${values['lfs-mb']} MiB to R2, fresh clone sha256 matches, read-only upload refused`, (m) =>
   lfsFlow({ api: values.api, platform: platformAccount, mb: Number(values['lfs-mb']) }, m),
 );
+await step('26', `Git over SSH at ${values['ssh-host']}:${values['ssh-port']}: v2, partial and shallow clones, push, delete, refusals, removal stops an open session`, async (m) => {
+  const health = await new Session(values.platform).get('/health');
+  if (!health.ssh) return { skip: 'Git over SSH is off on this platform (SSH_FRONT_DOOR)' };
+  // The tunnel front door: the flow uses the platform's ssh_config, whose ProxyCommand is cloudflared.
+  if (health.ssh === 'tunnel' && spawnSync('cloudflared', ['--version']).status !== 0)
+    return { skip: 'cloudflared is not installed (brew install cloudflared); the tunnel front door needs it' };
+  const { session: other } = await secondAccount(values.origin, kit);
+  return sshFlow({ platform: platformAccount, other, sshHost: values['ssh-host'], sshPort: Number(values['ssh-port']) }, m);
+});
 
 const execFileAsync = promisify(execFile);
 /** `<what>_errors` and `<what>_failures` of a bench section, when it has any. */
@@ -261,7 +282,7 @@ if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
 const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);

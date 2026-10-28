@@ -16,6 +16,14 @@
 // Git LFS (/git/<repo>.git/info/lfs) hands out presigned R2 URLs on the OBJECTS bucket's S3 API
 // (LFS_S3_ENDPOINT, LFS_S3_BUCKET). Secrets: LFS_S3_ACCESS_KEY_ID / LFS_S3_SECRET_ACCESS_KEY, the
 // S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.
+// Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,
+// its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.
+// SSH_FRONT_DOOR=off. tunnel: the container also runs cloudflared (SSH_TUNNEL_TOKEN, a remotely
+// managed tunnel whose route sends ssh.yonedarepo.com to ssh://localhost:2222, with no Access application so
+// `cloudflared access ssh` connects without a login); the cron below keeps it running (about $7 a
+// month on basic). connect: inbound TCP to this Worker (Spectrum, private beta). off: no container.
+// Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY
+// (base64 of OpenSSH host key files, generated once and kept). SSH_TUNNEL_TOKEN joins the secrets when prod turns the tunnel on.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -48,6 +56,21 @@
       "image_build_context": "..",
       "instance_type": "standard-1",
       "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "SshGateway",
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
+      "image": "./ssh-gateway/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "basic",
+      "max_instances": 2,
       "rollout_step_percentage": [
         100
       ]
@@ -86,6 +109,10 @@
       {
         "class_name": "LandCombiner",
         "name": "LAND_COMBINERS"
+      },
+      {
+        "class_name": "SshGateway",
+        "name": "SSH_GATEWAYS"
       }
     ]
   },
@@ -119,6 +146,12 @@
         "LandCombiner"
       ],
       "tag": "v4"
+    },
+    {
+      "new_sqlite_classes": [
+        "SshGateway"
+      ],
+      "tag": "v5"
     }
   ],
   "name": "yonedarepo-prod-platform",
@@ -203,6 +236,11 @@
       "service": "yonedarepo-prod-superfan"
     }
   ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
   "vars": {
     "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
     "BLOB_WRITE_THROUGH": "off",
@@ -210,6 +248,8 @@
     "LFS_S3_BUCKET": "yonedarepo-prod-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PUSH_BUNDLES": "on",
+    "SSH_FRONT_DOOR": "off",
+    "SSH_HOST": "ssh.yonedarepo.com",
     "WEB_ORIGIN": "https://yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
   },

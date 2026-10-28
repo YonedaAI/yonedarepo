@@ -1,7 +1,7 @@
 # Runbook
 
-Operating the YonedaRepo source platform: stock Git, model checks, local setup, environments
-and deploys, the real-world kit, and recovery.
+Operating the YonedaRepo source platform: stock Git (HTTPS and SSH), model checks, local setup,
+environments and deploys, the real-world kit, and recovery.
 
 ## Stock Git over HTTPS
 
@@ -17,6 +17,33 @@ A push lists working branches as usual but never protected ones (`main`, `releas
 Working branches move by compare-and-swap on the value Git saw (`--force` works there; a branch that moved meanwhile is `fetch first`); `--atomic` moves all of them in one transaction or none, and cannot include a protected branch. Every object is verified before anything is recorded and refs move only after the commits are recorded under their own ids, so a push that fails or is cut off leaves refs and the log unchanged. A file carrying a credential refuses the whole push with `secret detected in <path>:<line>` (owner exceptions: policy `secret_allow`). Limits per push: 64 MiB of pack, 40,000 objects, 16 MiB per object; larger pushes use `git-remote-yoneda`. Lightweight tags (`git tag v1 && git push origin v1`, or `POST /repos/:id/tags {name, commit}`, MCP `git_tag`) need `write` and `land`, are created once and never move or disappear (a forced push or `--delete` of a tag is refused), are mirrored to the object store like `main`, and are cloned and fetched like branches; annotated tags (`git tag -a`) are refused. Over protocol v2, partial clones (`--filter=blob:none`; a checkout then fetches the files it needs by id) and shallow ones (`--depth`, `--deepen`, `--unshallow`) are served; other filters, `--shallow-since` and `--shallow-exclude` are refused with a `remote error`. A fetch may want only commits and files a branch or tag reaches (otherwise `not our ref`), up to 100,000 wants over v2 (a partial clone's checkout asks for every file it lacks at once) and 10,000 over v0; one fetch sends at most 40,000 objects, as each is one R2 read within the Worker's 50,000 subrequests. Not served yet: annotated tags, push options, and fetching history imported into Artifacts (use the helper). The platform Worker sets `limits.subrequests=50000` because each Git object sent or received is one R2 read or write.
 
 A push to a working branch with no open change request prints `open a change: yoneda change create <branch>`. Approving a change is a review of its head commit by an account other than the head's author: the platform refuses an author's own review, also through a repository token the author created (a token reviews for the account that made it).
+
+## Stock Git over SSH
+
+`git clone ssh://git@<ssh host>/<repo-id>.git` (user `git`, public-key authentication only) with a key added under Settings → SSH keys, `yoneda ssh-key add ~/.ssh/id_ed25519.pub` or `POST /api/v1/ssh-keys {title, key}` (Ed25519, ECDSA P-256/384/521, RSA ≥ 2048 bits; a key belongs to one account at a time). A key acts as its account with `repo:read` to fetch and `repo:read`, `repo:write` and `repo:land` to push; removing it refuses the open session's next request and every new connection at once. Fetches need protocol version 2 (Git 2.26+ default; v0 is refused with how to switch); pushes are v0 as over HTTPS, delete-only pushes included. `ssh -T git@<ssh host>` greets the account.
+
+How it runs: one `SshGateway` container (`cloudflare/ssh-gateway/Dockerfile`: crate `backend/crates/yoneda-ssh-gateway`, its own workspace, plus cloudflared) verifies the key's signature, asks `POST /internal/ssh/lookup` for its account, takes a ten-minute `ysh_` token for one repository and service from `POST /internal/ssh/session` (both with an HS256 JWT signed with `SSH_GATEWAY_SECRET`), and bridges Git's SSH transport onto `/git/<repo>.git` smart HTTP; it reaches the platform only through the Worker itself. `SSH_FRONT_DOOR` picks how clients reach it; `/health` reports it as `ssh` (`tunnel`, `connect` or null), and `GET /api/v1/ssh-keys` returns `ssh: {front_door, host, clone_url, ssh_config}` for clients.
+
+**Tunnel front door (`tunnel`, dev).** The gateway runs `cloudflared tunnel run` beside itself with `SSH_TUNNEL_TOKEN` (as `TUNNEL_TOKEN` in its environment, HTTP/2 transport) and restarts it if it exits. Setup, once per environment:
+
+1. Create a remotely managed tunnel (Networking → Tunnels), add a published application route: hostname `ssh.dev.yonedarepo.com` (prod `ssh.yonedarepo.com`), service type SSH, URL `localhost:2222` (the gateway's port inside its container).
+2. Do **not** add an Access application for that hostname (and keep wildcard Access apps off it). Without one, `cloudflared access ssh` connects straight through: it dials the hostname first and only runs the Access login when the edge answers with an Access redirect (cloudflared `carrier/websocket.go`, `createWebsocketStream`). The gateway's key check is then the only authentication, as with any Git host.
+3. Put the tunnel token in the secrets file as `SSH_TUNNEL_TOKEN` and deploy.
+
+The platform Worker's cron (`* * * * *`) calls the gateway's `keepAlive`: it starts the container after a deploy or crash (at most a minute of outage) and the container never sleeps while the tunnel is its front door, so exactly one gateway (`ssh-gateway-0`) runs. Cost: basic instance (1/4 vCPU, 1 GiB, 4 GB) always on is 730 GiB-hours of memory and 2,920 GB-hours of disk a month, about $6.35 + $0.69 after the included 25 GiB-hours and 200 GB-hours (if checks have not used them), plus active CPU only (an idle gateway uses little); about $7 a month per environment. `lite` (1/16 vCPU, 256 MiB) would be about $1.75 but leaves little memory for concurrent clones. Tunnels themselves cost nothing.
+
+Users, once per machine: install cloudflared, then add to `~/.ssh/config` (printed by `yoneda ssh-key add` and shown under Settings → SSH keys):
+
+```
+Host ssh.yonedarepo.com
+  ProxyCommand cloudflared access ssh --hostname %h
+```
+
+then `git clone ssh://git@ssh.yonedarepo.com/<repo-id>.git`.
+
+**Inbound TCP front door (`connect`).** Spectrum to a Worker is a private beta: point a port-22 Spectrum application at the platform Worker and set `SSH_FRONT_DOOR=connect`; the Worker's `connect()` handler pipes the socket to the gateway's port. No client setup beyond the key.
+
+Secrets: `SSH_GATEWAY_SECRET` (32+ random characters), `SSH_HOST_ED25519_KEY` / `SSH_HOST_ECDSA_KEY` (`ssh-keygen -t ed25519 -N '' -f k && base64 < k`, generated once and kept: new host keys break every client's `known_hosts`), `SSH_TUNNEL_TOKEN`. Locally, `node tests/ssh/e2e.mjs [--direct] [--docker]` runs the kit's flow against `wrangler dev` and the gateway (native or its image for this machine): by default through the platform's tunnel `ssh_config` with `nc` standing in for cloudflared; kit item 26 (`--ssh`) uses the real cloudflared against the live tunnel.
 
 ## Model checks
 
@@ -101,7 +128,7 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, `hooks`, `members`, `reads` and `22`, which need a review key, a receiver or the second account and run only when named. Options:
 
 - `--only 0,6,7` runs the listed items; `--skip-bursts` leaves out 8–10.
-- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`: one gate with item 0.
+- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`, `--ssh [--ssh-host <host>] [--ssh-port 22]` (item 26, skipped while the SSH front door is off): one gate with item 0.
 - `--api <origin>` is the platform API host for the CLI items (default `https://api.dev.yonedarepo.com`); `--origin`, `--platform` and `--client` name the front, platform and bench Workers.
 - `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits. Every item deletes the repositories it creates, pass or fail (the fanout bench too), so leftovers come only from runs killed mid-item or from runs before this change (2026-10-27): `kit-clone`, `kit-check`, `kit-burst`, `fanout`.
 

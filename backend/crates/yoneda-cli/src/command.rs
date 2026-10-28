@@ -10,6 +10,7 @@ account
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
   setup claude|codex|gemini                              a coding agent's skill files and MCP config
+  ssh-key add [--title <t>] <file.pub|->  | ssh-key list | ssh-key rm <id>   keys for Git over SSH
 
 organizations (owners manage members and teams; a repository grants a team by
 `team:<org>/<team>` as a member)
@@ -143,6 +144,20 @@ pub enum OrgCommand {
         org: String,
         team: String,
         account: String,
+    },
+}
+
+/// `yoneda ssh-key …`: the account's SSH public keys (Git over SSH).
+#[derive(Debug, PartialEq, Eq)]
+pub enum SshKeyCommand {
+    /// A public key read from `source` (a path, or `-` for stdin).
+    Add {
+        source: String,
+        title: Option<String>,
+    },
+    List,
+    Remove {
+        id: String,
     },
 }
 
@@ -310,6 +325,10 @@ pub enum Command {
     Org {
         origin: Option<String>,
         command: OrgCommand,
+    },
+    SshKey {
+        origin: Option<String>,
+        command: SshKeyCommand,
     },
     Setup {
         agent: Agent,

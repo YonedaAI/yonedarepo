@@ -206,13 +206,13 @@ fn copy_dir(src: &Path, dest: &Path, top: bool) -> Result<()> {
 }
 
 /// `config` with every runtime container deploying `image` instead of building a Dockerfile.
-/// A container with its own named `images` (the sandbox agent) keeps its Dockerfile.
+/// A container with its own image (`inventory::own_image`) keeps its Dockerfile.
 pub(crate) fn with_image(mut config: Value, image: &str) -> Value {
     if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut) {
         for container in containers
             .iter_mut()
+            .filter(|c| !crate::infra::inventory::own_image(c))
             .filter_map(Value::as_object_mut)
-            .filter(|c| !c.contains_key("images"))
         {
             container.insert("image".into(), Value::String(image.into()));
             container.remove("image_build_context");
