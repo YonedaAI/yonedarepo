@@ -2,8 +2,8 @@
 //! commits a fetch must send. Stock Git reads and writes whole repositories, so a
 //! path-restricted grant is refused outright, as for `clone`.
 use super::auth::Actor;
-use super::git_shallow;
 use super::rows::{self, RecordedGraph, Settings};
+use super::{git_shallow, git_wanted};
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -65,7 +65,8 @@ const COMMON: u8 = 2;
 /// round) skips the walk. A shallow fetch (`shallows`, `depth`, `deepen_relative`) is cut
 /// as `git_shallow` plans and answers its `shallow` and `unshallow` lines. With `objects`
 /// (protocol v2, where a partial clone fetches missing blobs by id), wants that are not
-/// commits are listed as `objects` for the adapter to read from this repository's store.
+/// commits are listed as `objects` for the adapter to read from this repository's store,
+/// each only if a branch or tag reaches it (`git_wanted`).
 pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let wants = ids(c, "wants", HAVES)?;
@@ -102,6 +103,7 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     if c["common_only"] == true {
         return Ok(json!({ "common": common }));
     }
+    git_wanted::require_reachable(db, &graph, &objects)?;
     let shallow = git_shallow::plan(db, &graph, c, &wanted)?;
     for id in shallow.client.iter().chain(&shallow.starts) {
         let mark = if shallow.client.contains(id) {

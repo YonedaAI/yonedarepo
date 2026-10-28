@@ -54,7 +54,8 @@ export const bigClone = ({ api, platform }, metrics) =>
       GIT_CONFIG_KEY_0: 'http.extraHeader',
       GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.token}`,
     };
-    writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Staging kit\n\temail = kit@yonedarepo.invalid\n');
+    // No background repack after a fetch: it races `git fsck` on the packs.
+    writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Staging kit\n\temail = kit@yonedarepo.invalid\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n');
     const git = (args, cwd = dir) => {
       try {
         return execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).trim();
