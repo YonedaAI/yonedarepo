@@ -11,6 +11,7 @@ import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
 import { uploadPack } from './repo-git-upload';
 import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
+import { guardInherited } from './repo-inherit';
 import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -85,8 +86,12 @@ async function serve(req: Request, env: Env): Promise<Response> {
     const v2 = service === 'git-upload-pack' && wantsV2(req);
     if (action === 'info/refs') return v2 ? advertiseV2() : await advertise(ctx, service);
     const body = requestBody(req);
-    if (service === 'git-receive-pack')
+    if (service === 'git-receive-pack') {
+      // What a push omits must be held already; a fork's inherited objects count only for
+      // readers of its parent (repo-inherit).
+      guardInherited(ctx, objects);
       return await receivePack(ctx, objects, body, access.secret_allow ?? []);
+    }
     return v2 ? await uploadPackV2(ctx, objects, body) : await uploadPack(ctx, objects, body);
   } catch (e: any) {
     // A push refused because the authority was overloaded moved nothing (receivePack

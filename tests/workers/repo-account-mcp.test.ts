@@ -46,13 +46,13 @@ it('initializes and lists account tools plus every platform tool with a required
   });
   expect((await mcp(owner, 'notifications/initialized', undefined, null)).status).toBe(202);
   const listed = (await mcp(owner, 'tools/list')).body.result.tools as any[];
-  // Repository management, then the ten organization tools.
-  expect(listed).toHaveLength(tools.length + 13);
+  // Repository management, then the eleven organization tools.
+  expect(listed).toHaveLength(tools.length + 14);
   const names = listed.map((t) => t.name);
   expect(names.slice(0, 3)).toEqual(['repo_list', 'repo_create', 'repo_delete']);
-  expect(names.slice(3, 13).every((n: string) => n.startsWith('org_'))).toBe(true);
+  expect(names.slice(3, 14).every((n: string) => n.startsWith('org_'))).toBe(true);
   for (const tool of tools) expect(names).toContain(tool.name);
-  for (const tool of listed.slice(13)) {
+  for (const tool of listed.slice(14)) {
     expect(tool.inputSchema.properties.repo.type).toBe('string');
     expect(tool.inputSchema.required).toContain('repo');
   }

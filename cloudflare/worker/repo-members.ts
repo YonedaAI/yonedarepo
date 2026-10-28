@@ -1,10 +1,11 @@
 // Repository members: other accounts, or organizations' teams (`team:<org>/<team>`), that
 // use a repository with a role (read, write, land or admin). The authority decides who may
-// manage whom; this adapter checks that an invited account or team exists (its
-// WorkspaceAuthority, or the org's), keeps the D1 membership index that lists shared
-// repositories, and marks the published head stale so a change of access reaches stateless
-// reads at once.
+// manage whom; this adapter checks that an invited account exists (its WorkspaceAuthority),
+// grants a team by its current id (from the org's authority, so a later team reusing the
+// name gets nothing), keeps the D1 membership index that lists shared repositories, and
+// marks the published head stale so a change of access reaches stateless reads at once.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
+import { teamKey } from './platform-org-access';
 import { refreshHead } from './repo-head';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { workspace } from './workspace';
@@ -31,26 +32,38 @@ export const memberOperations = {
     const team = TEAM_ENTRY.exec(account);
     const found = team
       ? await workspace(ctx.env, team[1], { op: 'team_exists', team: team[2] }).catch((e) => {
-          if (e?.code === 'NOT_FOUND') return { exists: false };
+          if (e?.code === 'NOT_FOUND') return { exists: false } as Json;
           throw e;
         })
       : await workspace(ctx.env, account, { op: 'account_exists' });
     if (found.exists !== true)
       throw new ApiError('NOT_FOUND', `No ${team ? 'team' : 'account'} named ${account}`);
-    const put = await ctx.call({ op: 'repo_member_put', account, role: a.role });
-    await ctx.env.INDEX.prepare(
-      'INSERT INTO platform_members(repo,account,role) VALUES(?,?,?) ON CONFLICT(repo,account) DO UPDATE SET role=excluded.role',
-    )
-      .bind(ctx.repo, put.account, put.role)
-      .run();
+    const key = team ? teamKey(team[1], { name: team[2], id: found.id }) : account;
+    const put = await ctx.call({ op: 'repo_member_put', account: key, role: a.role });
+    const index =
+      'INSERT INTO platform_members(repo,account,role) VALUES(?,?,?) ON CONFLICT(repo,account) DO UPDATE SET role=excluded.role';
+    await ctx.env.INDEX.batch([
+      ctx.env.INDEX.prepare(index).bind(ctx.repo, put.key, put.role),
+      ...(put.replaced as string[]).map((stale) =>
+        ctx.env.INDEX.prepare('DELETE FROM platform_members WHERE repo=? AND account=?').bind(
+          ctx.repo,
+          stale,
+        ),
+      ),
+    ]);
     await refreshHead(ctx.env, ctx.repo, true);
     return put;
   },
   git_member_remove: async (ctx: RepoContext, a: Json) => {
     const removed = await ctx.call({ op: 'repo_member_remove', account: accountArg(a.account) });
-    await ctx.env.INDEX.prepare('DELETE FROM platform_members WHERE repo=? AND account=?')
-      .bind(ctx.repo, removed.account)
-      .run();
+    await ctx.env.INDEX.batch(
+      (removed.keys as string[]).map((key) =>
+        ctx.env.INDEX.prepare('DELETE FROM platform_members WHERE repo=? AND account=?').bind(
+          ctx.repo,
+          key,
+        ),
+      ),
+    );
     await refreshHead(ctx.env, ctx.repo, true);
     return removed;
   },

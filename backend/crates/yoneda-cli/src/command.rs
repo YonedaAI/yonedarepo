@@ -8,11 +8,14 @@ account
   logout [--origin <url>]
   repo create <name> [--owner <org>] | repo list | repo delete <id> --confirm <name>
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
+  repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
   setup claude|codex|gemini                              a coding agent's skill files and MCP config
 
 organizations (owners manage members and teams; a repository grants a team by
 `team:<org>/<team>` as a member)
   org list | org create <name> | org show <org> | org repos <org>
+  org delete <org> --confirm <org>   (owners; only once it owns no repositories; the name
+                                      is retired for good)
   org member add <org> <account> [--role owner|member] | org member remove <org> <account>
   org team create|delete <org> <team>
   org team add|remove <org> <team> <account>
@@ -22,6 +25,7 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   rebase <branch> [--onto <b>]        replay the branch onto main's head (or <b>'s) on the server
   review approve|reject <sha> [-m <reason>]
   change create [<branch>] [--title <t>] [-m <body>]   open a change request (default: this branch)
+  change create [<branch>] --to-parent ...  in a fork: propose the branch to the parent's main
   change list [--status open|landed|closed|all]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
@@ -87,6 +91,13 @@ pub enum RepoCommand {
         name: Option<String>,
         batch_files: usize,
     },
+    /// A fork of repository `id`, owned by the caller's account or organization `owner`.
+    Fork {
+        id: String,
+        name: Option<String>,
+        /// An organization to own it (the caller must be one of its owners).
+        owner: Option<String>,
+    },
 }
 
 /// `yoneda org …`: organizations, their members and teams.
@@ -101,6 +112,10 @@ pub enum OrgCommand {
     },
     Repos {
         org: String,
+    },
+    Delete {
+        org: String,
+        confirm: String,
     },
     MemberAdd {
         org: String,
@@ -230,6 +245,8 @@ pub enum ChangeCommand {
         branch: Option<String>,
         title: Option<String>,
         body: Option<String>,
+        /// In a fork: open the change on the parent, proposing this fork's branch.
+        to_parent: bool,
     },
     List {
         status: Option<String>,

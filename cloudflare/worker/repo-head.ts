@@ -8,7 +8,7 @@
 // revoked token or removed member is refused everywhere within ACCESS_MS of the change's
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
 import { rpcValue } from './durable';
-import { teamEntries } from './org-access';
+import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';

@@ -8,8 +8,8 @@ import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
-import { orgAccess } from './org-access';
-import { orgsRoute } from './orgs';
+import { orgAccess } from './platform-org-access';
+import { orgsRoute } from './platform-orgs';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { breakGlass } from './repo-break-glass';
@@ -110,7 +110,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   )
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'orgs')
-    return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req));
+    return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
   if (parts.length === 1 && req.method === 'POST')
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
@@ -225,6 +225,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
   if (resource === 'changes') return changesRoute(ctx, req, sha, sub, () => bodyOf(req));
   if (resource === 'lfs' && !sha) return lfsRoute(ctx, req.method, () => bodyOf(req));
+  if (resource === 'fork' && !sha && post) return run('git_fork', await bodyOf(req));
   if (resource === 'releases') return releasesRoute(ctx, req, parts.slice(3), () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.

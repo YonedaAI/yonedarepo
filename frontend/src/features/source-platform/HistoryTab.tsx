@@ -55,9 +55,8 @@ export function HistoryTab({
             key={ref}
             repo={route.repo}
             branch={ref}
-            onOpened={(change) =>
-              navigate({ view: 'change', repo: route.repo, number: change.number })
-            }
+            parent={status?.parent?.repo}
+            onOpened={(change, repo) => navigate({ view: 'change', repo, number: change.number })}
           />
         )}
       </div>
