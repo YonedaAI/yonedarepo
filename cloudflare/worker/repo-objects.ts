@@ -3,7 +3,7 @@
 // immutable, so a cache entry keyed by id never needs invalidation; keys are per
 // repository so access follows repository auth.
 import { deferred } from './background';
-import { fromBundles, platformCall } from './repo-bundles';
+import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from './repo-bundles';
 import { compute } from './repo-compute';
 import { stagedInShardOf, stagedInShards } from './repo-shards';
 import {
@@ -163,7 +163,7 @@ export class RepoObjects {
     // Accepted but not yet in R2: the authority still holds the staged copy. A staged copy
     // is dropped only after its R2 write, so a miss there means R2 has it now.
     const ofKind = (o: CachedObject | null | undefined) => (o?.kind === kind ? o : null);
-    let object: CachedObject | null = ofKind(await this.staged(id));
+    let object: CachedObject | null = ofKind(await this.staged(id, kind));
     object ??= await this.recorded(id, kind);
     if (!object) {
       if (kind === 'tree') {
@@ -188,15 +188,17 @@ export class RepoObjects {
     return { bytes: this.encode(object), tier: 'store' };
   }
 
-  /** The store of record's copy (raw Git content in R2, alone or in a push's bundle),
-   * parsed. */
+  /** The store of record's copy (raw Git content in R2, or in a push's bundle this
+   * isolate has located; the authority locates the rest with the staged read), parsed. */
   private async recorded(id: string, kind: ObjectKind): Promise<CachedObject | null> {
     const raw = await this.env.OBJECTS.get(this.rawKey(id));
-    let bytes: Uint8Array | null =
-      raw?.customMetadata?.kind === kind ? new Uint8Array(await raw.arrayBuffer()) : null;
-    bytes ??= (await fromBundles(this.env, this.repo, [{ id, kind }])).get(id) ?? null;
-    if (!bytes) return null;
-    const data_b64 = toBase64(bytes);
+    if (raw?.customMetadata?.kind === kind) return this.parsed(id, kind, await raw.arrayBuffer());
+    const bundled = (await readKnown(this.env, this.repo, [{ id, kind }])).get(id);
+    return bundled ? this.parsed(id, kind, bundled) : null;
+  }
+
+  private parsed(id: string, kind: ObjectKind, bytes: ArrayBuffer | Uint8Array) {
+    const data_b64 = toBase64(new Uint8Array(bytes));
     return compute({ op: 'parse_objects', objects: [{ id, kind, data_b64 }] })
       .objects[0] as CachedObject;
   }
@@ -208,69 +210,63 @@ export class RepoObjects {
   }
 
   /**
-   * Raw content of objects for a pack: the store of record (R2: bundles, then one object
-   * per key), then the authority's staged copy for objects still in flight. Missing ones
-   * are left out.
+   * Raw content of objects for a pack, once per id: the store of record (R2: bundles where
+   * the repository holds any, then one object per key), then the authority's staged copy
+   * or bundle location for objects still missing. Missing ones are left out. Bundled bytes
+   * come in ranges of `SMALL_RANGE`: callers hold every result at once.
    */
-  async raw(wanted: { id: string; kind: string }[]): Promise<RawObject[]> {
-    const bundled = await fromBundles(this.env, this.repo, wanted);
-    const found: RawObject[] = [];
-    const rest: { id: string; kind: string }[] = [];
-    for (const w of wanted) {
-      const data = bundled.get(w.id);
-      if (data)
-        found.push({ id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
-      else rest.push(w);
-    }
-    const absent: { id: string; kind: string }[] = [];
-    for (let i = 0; i < rest.length; i += CACHE_CHUNK) {
-      await Promise.all(
-        rest.slice(i, i + CACHE_CHUNK).map(async (w) => {
-          const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
-          if (stored)
-            found.push({
-              id: w.id,
-              kind: w.kind as RawObject['kind'],
-              data_b64: toBase64(new Uint8Array(await stored.arrayBuffer())),
-            });
-          else absent.push(w);
-        }),
-      );
-    }
+  async raw(asked: { id: string; kind: string }[]): Promise<RawObject[]> {
+    const wanted = [...new Map(asked.map((w) => [w.id, w])).values()];
+    const found = new Map<string, RawObject>();
+    const add = (w: { id: string; kind: string }, data: Uint8Array) =>
+      found.set(w.id, { id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
+    const missing = (list: typeof wanted) => list.filter((w) => !found.has(w.id));
+    const fromR2 = async (list: typeof wanted) => {
+      for (let i = 0; i < list.length; i += CACHE_CHUNK)
+        await Promise.all(
+          list.slice(i, i + CACHE_CHUNK).map(async (w) => {
+            const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
+            if (stored) add(w, new Uint8Array(await stored.arrayBuffer()));
+          }),
+        );
+    };
+    const bundled = await readBundled(this.env, this.repo, wanted, SMALL_RANGE);
+    for (const w of wanted) if (bundled.has(w.id)) add(w, bundled.get(w.id) as Uint8Array);
+    await fromR2(missing(wanted));
+    const absent = missing(wanted);
     for (let i = 0; i < absent.length; i += 64) {
-      const ids = absent.slice(i, i + 64).map((w) => w.id);
-      const here = (await this.stagedCall({ ids, raw: true })) as RawObject[];
-      const sharded = (await stagedInShards(
-        this.env,
-        this.repo,
-        ids.filter((id) => !here.some((o) => o.id === id)),
-        true,
-      )) as RawObject[];
-      found.push(...here, ...sharded);
+      const chunk = absent.slice(i, i + 64);
+      const answer = await this.stagedCall({
+        ids: chunk.map((w) => w.id),
+        raw: true,
+        locate: true,
+      });
+      for (const o of answer.objects as RawObject[]) found.set(o.id, o);
+      const located = await readKnown(this.env, this.repo, chunk, answer.located, SMALL_RANGE);
+      for (const w of chunk) if (located.has(w.id)) add(w, located.get(w.id) as Uint8Array);
+      const ids = missing(chunk).map((w) => w.id);
+      for (const o of (await stagedInShards(this.env, this.repo, ids, true)) as RawObject[])
+        found.set(o.id, o);
       // A staged copy is dropped only after its R2 write: look in R2 once more.
-      const held = new Set([...here, ...sharded].map((o) => o.id));
-      for (const id of ids.filter((i) => !held.has(i))) {
-        const stored = await this.env.OBJECTS.get(this.rawKey(id));
-        if (stored)
-          found.push({
-            id,
-            kind: stored.customMetadata?.kind as RawObject['kind'],
-            data_b64: toBase64(new Uint8Array(await stored.arrayBuffer())),
-          });
-      }
+      await fromR2(missing(chunk));
     }
-    return found;
+    return [...found.values()];
   }
 
-  /** The authority's staged copy of an accepted object (read as the platform: callers
-   * reach this tier only through the same authorization as the object store). */
-  private async staged(id: string): Promise<CachedObject | null> {
-    return ((await this.stagedCall({ ids: [id] })) as CachedObject[])[0] ?? null;
+  /** The authority's staged copy of an accepted object, or its place in a bundle (read as
+   * the platform: callers reach this tier only through the same authorization as the
+   * object store). */
+  private async staged(id: string, kind: ObjectKind): Promise<CachedObject | null> {
+    const answer = await this.stagedCall({ ids: [id], locate: true });
+    const held = (answer.objects as CachedObject[])[0];
+    if (held) return held;
+    const bundled = (await readKnown(this.env, this.repo, [{ id, kind }], answer.located)).get(id);
+    return bundled ? this.parsed(id, kind, bundled) : null;
   }
 
-  private async stagedCall(args: { ids: string[]; raw?: true }): Promise<unknown[]> {
+  private async stagedCall(args: { ids: string[]; raw?: true; locate?: true }) {
     const value = await platformCall(this.env, this.repo, { op: 'repo_staged_objects', ...args });
-    return value.objects ?? [];
+    return { objects: (value.objects ?? []) as unknown[], located: value.located as Location[] };
   }
 
   /** Tree `id`'s entries; `stagedWith` names a commit that may hold it staged in its shard

@@ -6,6 +6,10 @@
 // back in a few ranged reads. The bundle is durable before its index rows, and the rows
 // before any commit naming the objects is recorded: a push that dies between them leaves
 // an unreferenced bundle, never a row or commit without its bytes.
+//
+// Readers ask the authority where objects are only for repositories known to hold bundles:
+// a single read that missed R2 asks in the staged-object call it makes anyway, so a
+// repository without bundles (API commits under a burst) costs its authority nothing more.
 import { putBytes } from './repo-stores';
 import type { Env } from './types';
 
@@ -25,9 +29,67 @@ const READ_WIDTH = 3;
 /** Neighbours closer than this are read in one range, of at most RANGE bytes. */
 const GAP = 64 * 1024;
 export const RANGE = 8 * 1024 * 1024;
-/** Per-isolate locations (content-addressed: they never change), by repository and id. */
-const memo = new Map<string, Location>();
-const MEMO_ENTRIES = 50_000;
+/** Ranged bytes per read for callers that hold every result at once (the projection). */
+export const SMALL_RANGE = 1024 * 1024;
+
+/**
+ * Object locations by repository and id, least recently used leaving first (about 300
+ * bytes each), and the repositories known to hold bundles. Both are content-addressed
+ * facts: a location never changes and index rows outlive no repository.
+ */
+export class LocationMemo {
+  #places = new Map<string, Location>();
+  #repos = new Set<string>();
+
+  constructor(private readonly limit: number) {}
+
+  get size() {
+    return this.#places.size;
+  }
+
+  get(repo: string, id: string) {
+    const key = `${repo}/${id}`;
+    const place = this.#places.get(key);
+    if (place) {
+      this.#places.delete(key);
+      this.#places.set(key, place);
+    }
+    return place;
+  }
+
+  set(repo: string, place: Location) {
+    this.bundled(repo);
+    this.#places.delete(`${repo}/${place.id}`);
+    this.#places.set(`${repo}/${place.id}`, place);
+    for (const oldest of this.#places.keys()) {
+      if (this.#places.size <= this.limit) break;
+      this.#places.delete(oldest);
+    }
+  }
+
+  /** Notes that `repo` holds bundles. */
+  bundled(repo: string) {
+    this.#repos.delete(repo);
+    this.#repos.add(repo);
+    for (const oldest of this.#repos) {
+      if (this.#repos.size <= REPOS) break;
+      this.#repos.delete(oldest);
+    }
+  }
+
+  holds(repo: string) {
+    return this.#repos.has(repo);
+  }
+
+  clear() {
+    this.#places.clear();
+    this.#repos.clear();
+  }
+}
+const REPOS = 1_024;
+
+/** This isolate's locations: ~8k objects, a few MB (50k entries measured ~15 MB). */
+export const isolateLocations = new LocationMemo(8_192);
 
 export const bundlesOn = (env: Env) => env.PUSH_BUNDLES === 'on';
 export const bundleKey = (repo: string, bundle: string) => `platform/v1/${repo}/bundles/${bundle}`;
@@ -49,11 +111,6 @@ export async function platformCall(env: Env, repo: string, command: Json): Promi
 async function inWidth<T>(items: T[], width: number, work: (item: T) => Promise<void>) {
   for (let i = 0; i < items.length; i += width)
     await Promise.all(items.slice(i, i + width).map(work));
-}
-
-function remember(repo: string, location: Location) {
-  if (memo.size >= MEMO_ENTRIES) memo.clear();
-  memo.set(`${repo}/${location.id}`, location);
 }
 
 /**
@@ -80,18 +137,35 @@ export async function storeBundle(
       bundle,
       objects: located.slice(i, i + INDEX_OBJECTS),
     });
-  for (const l of located) remember(repo, { ...l, bundle });
+  for (const l of located) isolateLocations.set(repo, { ...l, bundle });
+}
+
+/** Whether this isolate knows `repo` holds bundles (its status says so, or it read one). */
+const holdsBundles = (repo: string) => isolateLocations.holds(repo);
+export const noteBundles = (repo: string) => isolateLocations.bundled(repo);
+
+/** Of `found` (locations answered for `wanted`), those of the kind asked, by id. */
+function ofKind(wanted: Wanted[], found: Map<string, Location>) {
+  const kinds = new Map(wanted.map((w) => [w.id, w.kind]));
+  for (const [id, l] of found) if (kinds.get(id) !== l.kind) found.delete(id);
+  return found;
+}
+
+/** Where the memo says bundles hold `wanted`, with no I/O. */
+function remembered(repo: string, wanted: Wanted[]) {
+  const found = new Map<string, Location>();
+  for (const { id } of wanted) {
+    const known = isolateLocations.get(repo, id);
+    if (known) found.set(id, known);
+  }
+  return ofKind(wanted, found);
 }
 
 /** Where the bundles hold `wanted` (of the kind asked); objects not bundled are absent. */
 export async function locate(env: Env, repo: string, wanted: Wanted[]) {
-  const found = new Map<string, Location>();
+  const found = remembered(repo, wanted);
   const ask: string[] = [];
-  for (const { id } of wanted) {
-    const known = memo.get(`${repo}/${id}`);
-    if (known) found.set(id, known);
-    else if (!found.has(id)) ask.push(id);
-  }
+  for (const { id } of wanted) if (!found.has(id)) ask.push(id);
   const unique = [...new Set(ask)];
   const chunks: string[][] = [];
   for (let i = 0; i < unique.length; i += LOCATE_IDS) chunks.push(unique.slice(i, i + LOCATE_IDS));
@@ -99,17 +173,16 @@ export async function locate(env: Env, repo: string, wanted: Wanted[]) {
     const { located } = await platformCall(env, repo, { op: 'repo_bundle_locate', ids });
     for (const l of located as Location[]) {
       found.set(l.id, l);
-      remember(repo, l);
+      isolateLocations.set(repo, l);
     }
   });
-  const kinds = new Map(wanted.map((w) => [w.id, w.kind]));
-  for (const [id, l] of found) if (kinds.get(id) !== l.kind) found.delete(id);
-  return found;
+  return ofKind(wanted, found);
 }
 
-/** The content of `located` objects, by id: neighbours share one ranged read, and every
- * frame header read with its content must name the object the index says it holds. */
-export async function readLocated(env: Env, repo: string, located: Location[]) {
+/** The content of `located` objects, by id: neighbours share one ranged read of at most
+ * `range` bytes, and every frame header read with its content must name the object the
+ * index says it holds. */
+export async function readLocated(env: Env, repo: string, located: Location[], range = RANGE) {
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
   );
@@ -118,7 +191,7 @@ export async function readLocated(env: Env, repo: string, located: Location[]) {
     const last = ranges.at(-1);
     const start = l.at - HEADER;
     const end = l.at + l.size;
-    if (last && last.bundle === l.bundle && start - last.end <= GAP && end - last.start <= RANGE) {
+    if (last && last.bundle === l.bundle && start - last.end <= GAP && end - last.start <= range) {
       last.end = Math.max(last.end, end);
       last.members.push(l);
     } else ranges.push({ bundle: l.bundle, start, end, members: [l] });
@@ -149,7 +222,27 @@ export async function readLocated(env: Env, repo: string, located: Location[]) {
 }
 
 /** The content of whichever of `wanted` the bundles hold, by id. */
-export async function fromBundles(env: Env, repo: string, wanted: Wanted[]) {
+export async function fromBundles(env: Env, repo: string, wanted: Wanted[], range = RANGE) {
   if (wanted.length === 0) return new Map<string, Uint8Array>();
-  return readLocated(env, repo, [...(await locate(env, repo, wanted)).values()]);
+  return readLocated(env, repo, [...(await locate(env, repo, wanted)).values()], range);
+}
+
+/** The content of whichever of `wanted` this isolate has located, with `located` (the rows a
+ * staged read answered) remembered first: no locate call. */
+export function readKnown(
+  env: Env,
+  repo: string,
+  wanted: Wanted[],
+  located: Location[] = [],
+  range = RANGE,
+) {
+  for (const l of located) isolateLocations.set(repo, l);
+  return readLocated(env, repo, [...remembered(repo, wanted).values()], range);
+}
+
+/** `fromBundles` where `repo` is known to hold bundles, else `readKnown`. */
+export function readBundled(env: Env, repo: string, wanted: Wanted[], range = RANGE) {
+  return holdsBundles(repo)
+    ? fromBundles(env, repo, wanted, range)
+    : readKnown(env, repo, wanted, [], range);
 }
