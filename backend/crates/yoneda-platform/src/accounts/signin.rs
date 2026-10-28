@@ -1,5 +1,4 @@
 use super::*;
-use crate::storage::{create, hash};
 use argon2::{Algorithm, Argon2, Params, Version};
 use subtle::ConstantTimeEq;
 const LIFETIME: i64 = 7 * 24 * 60 * 60 * 1000;
@@ -9,7 +8,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
         "signup" => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
-            if get(db, TABLE, "account").is_ok() {
+            if account(db).is_ok() {
                 return Err(Error::new(
                     "ALREADY_EXISTS",
                     "Username or email unavailable",
@@ -17,16 +16,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             let verifier = verifier(c)?;
             let a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
-            create(db, TABLE, "account", &a)?;
+            put(db, "account", &a)?;
             session(db, c, now)?;
             audit(db, "account.created", now, json!({"username":username}))?;
             Ok(public_account(&a))
         }
         "session" => {
             let key = format!("session:{}", hash(c, "session_hash", &[64])?);
-            let valid = super::reviewer::valid(db, now)?
-                && get(db, TABLE, &key)
-                    .is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
+            let valid = super::access::valid(db, now)?
+                && get(db, &key).is_ok_and(|s| s["expires"].as_i64().is_some_and(|at| at > now));
             if valid {
                 Ok(public_account(&account(db)?))
             } else {
@@ -34,7 +32,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
         }
         // Whether this account was signed up (the platform invites members by account).
-        "account_exists" => Ok(json!({"exists": get(db, TABLE, "account").is_ok()})),
+        "account_exists" => Ok(json!({"exists": account(db).is_ok()})),
         "logout" => {
             db.query(
                 "DELETE FROM workspace_records WHERE id=?",
@@ -49,7 +47,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let Ok(mut a) = account(db) else {
                 return Ok(json!({"authenticated":false}));
             };
-            if !super::reviewer::valid(db, now)? || !allow_attempt(db, now)? {
+            if !super::access::valid(db, now)? || !allow_attempt(db, now)? {
                 return Ok(json!({"authenticated":false,"limited":true}));
             }
             let recovery = c["op"] == "recover";
@@ -103,7 +101,7 @@ fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
     )
 }
 fn allow_attempt<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
-    let mut rate = get(db, TABLE, "login_rate").unwrap_or(json!({"start":now,"count":0}));
+    let mut rate = get(db, "login_rate").unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + 60_000 <= now {
         rate = json!({"start":now,"count":0});
     }

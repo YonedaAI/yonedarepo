@@ -1,27 +1,20 @@
-//! Personal workspace authority. Only trusted Worker adapters can call these commands.
-use crate::storage::{SqlStore, bad, get, save, string};
+//! The account authority (one WorkspaceAuthority Durable Object per account, and one per
+//! device login code): sign-in sessions, personal access tokens and device login. Only
+//! trusted Worker adapters can call these commands.
+use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
-use yoneda_agents_core::{Error, Result};
-mod accounts;
-mod budget;
+use yoneda_core::{Error, Result};
+mod access;
 mod device;
-mod grants;
-mod project_dispatch;
-mod project_platform;
-mod project_setup;
-mod project_visibility;
-mod projects;
-mod provider_model_alias;
-mod providers;
-mod reviewer;
-mod spend;
+mod signin;
 #[cfg(test)]
-#[path = "spend/tests.rs"]
-mod spend_tests;
+mod tests;
 mod tokens;
-pub(super) const TABLE: &str = "workspace_records";
+#[cfg(test)]
+mod tokens_tests;
+const TABLE: &str = "workspace_records";
 
-/// Apply the workspace schema and execute a command in one synchronous transaction.
+/// Apply the account schema and execute a command in one synchronous transaction.
 /// Passwords enter only the transient command; stored verifiers use Argon2id.
 pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value> {
     migrate(store)?;
@@ -31,25 +24,8 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .as_i64()
             .ok_or_else(|| bad("Trusted clock required"))?;
         match string(&command, "op")?.as_str() {
-            "project_set_visibility" => project_visibility::handle(&db, &command, now),
-            "workspace_spend_status"
-            | "workspace_spend_configure"
-            | "workspace_spend_reserve"
-            | "workspace_spend_settle" => spend::handle(&db, &command, now),
-            "reviewer_configure" | "reviewer_status" | "reviewer_revoke" => {
-                reviewer::handle(&db, &command, now)
-            }
             "signup" | "login" | "session" | "logout" | "recover" | "account_exists" => {
-                accounts::handle(&db, &command, now)
-            }
-            "settings"
-            | "provider_put"
-            | "provider_update"
-            | "provider_delete"
-            | "provider_model_alias"
-            | "provider_secret" => providers::handle(&db, &command, now),
-            "budget_status" | "budget_reserve" | "budget_settle" => {
-                budget::handle(&db, &command, now)
+                signin::handle(&db, &command, now)
             }
             "pat_create" | "pat_list" | "pat_check" | "pat_revoke" => {
                 tokens::handle(&db, &command, now)
@@ -57,32 +33,16 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "device_create" | "device_approve" | "device_poll" => {
                 device::handle(&db, &command, now)
             }
-            "grants" | "grant_issue" | "grant_check" | "grant_revoke" => {
-                grants::handle(&db, &command, now)
-            }
-            "project_dispatches" => project_dispatch::pending(&db, now),
-            "projects"
-            | "project_reserve"
-            | "project_update"
-            | "project_get"
-            | "project_delete"
-            | "project_claim"
-            | "project_progress"
-            | "project_retry"
-            | "project_schedule"
-            | "project_dispatch_sent"
-            | "project_platform_bind"
-            | "project_platform_credential" => projects::handle(&db, &command, now),
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
         }
     }))
 }
-/// Digest-pinned, forward-only workspace migrations (version, SQL), applied in order.
+/// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
 const MIGRATIONS: [(i64, &str); 2] = [
-    (1, include_str!("../migrations/workspace/0001_accounts.sql")),
+    (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
-        include_str!("../migrations/workspace/0002_account_tokens.sql"),
+        include_str!("accounts/migrations/0002_account_tokens.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
@@ -104,7 +64,7 @@ fn migrate<S: SqlStore>(store: &S) -> Result<()> {
             ));
         }
         for (version, sql) in MIGRATIONS {
-            let digest = yoneda_agents_core::digest(sql.as_bytes());
+            let digest = yoneda_core::digest(sql.as_bytes());
             if let Some(row) = applied.iter().find(|r| r["version"] == version) {
                 if row["digest"] != digest {
                     return Err(Error::new(
@@ -126,19 +86,47 @@ fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     }))?;
     Ok(())
 }
-pub(super) fn audit<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> Result<()> {
+fn audit<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> Result<()> {
     db.query(
         "INSERT INTO workspace_events(kind,at,data) VALUES(?,?,?)",
         &[json!(kind), json!(now), json!(data.to_string())],
     )?;
     Ok(())
 }
-pub(super) fn account<S: SqlStore>(db: &S) -> Result<Value> {
-    get(db, TABLE, "account")
+/// A stored record by id (`account`, `session:<digest>`, `login_rate`).
+fn get<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
+    let rows = db.query(
+        &format!("SELECT payload FROM {TABLE} WHERE id=?"),
+        &[json!(id)],
+    )?;
+    let row = rows
+        .first()
+        .ok_or_else(|| Error::new("NOT_FOUND", format!("Unknown record {id}")))?;
+    serde_json::from_str(
+        row["payload"]
+            .as_str()
+            .ok_or_else(|| bad("Corrupt payload"))?,
+    )
+    .map_err(|e| Error::new("DATABASE", e.to_string()))
 }
-pub(super) fn public_account(account: &Value) -> Value {
-    json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"],"reviewer":account["reviewer"]})
+fn put<S: SqlStore>(db: &S, id: &str, value: &Value) -> Result<()> {
+    db.query(
+        &format!("INSERT INTO {TABLE}(id,payload) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload"),
+        &[json!(id), json!(value.to_string())],
+    )?;
+    Ok(())
 }
-pub(super) fn put<S: SqlStore>(db: &S, id: &str, value: &Value) -> Result<()> {
-    save(db, TABLE, id, value)
+/// A hex digest field of one of the given lengths.
+fn hash(v: &Value, key: &str, lengths: &[usize]) -> Result<String> {
+    let s = string(v, key)?;
+    if !lengths.contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(bad(&format!("Invalid {key} digest")));
+    }
+    Ok(s)
+}
+fn account<S: SqlStore>(db: &S) -> Result<Value> {
+    get(db, "account")
+}
+fn public_account(account: &Value) -> Value {
+    json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"]})
 }

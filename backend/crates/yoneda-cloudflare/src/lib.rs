@@ -3,31 +3,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, prelude::*};
 use worker::{SqlStorageValue, Storage};
-use yoneda_agents_core::{Error, Result};
-use yoneda_app::SqlStore;
-pub mod conflict;
+use yoneda_core::{Error, Result};
+use yoneda_store::SqlStore;
 
 // SDK interop only: transactionSync is not exposed by workers-rs 0.8.7.
 #[wasm_bindgen(
-    inline_js = "export function transaction(storage, action) { return storage.transactionSync(() => { const r = JSON.parse(action()); if (r.error) throw new Error(JSON.stringify(r.error)); return r.value; }); } export async function deliver(env, repo, items) { return JSON.stringify(await env.SELF.deliver(repo, JSON.parse(items))); } export async function enqueue_projects(env, owner, items) { return JSON.stringify(await env.SELF.enqueueProjects(owner, JSON.parse(items))); }"
+    inline_js = "export function transaction(storage, action) { return storage.transactionSync(() => { const r = JSON.parse(action()); if (r.error) throw new Error(JSON.stringify(r.error)); return r.value; }); }"
 )]
 extern "C" {
     #[wasm_bindgen(catch)]
     fn transaction(
         storage: &JsValue,
         action: &js_sys::Function,
-    ) -> std::result::Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch)]
-    pub async fn deliver(
-        env: &JsValue,
-        repo: &str,
-        items: &str,
-    ) -> std::result::Result<JsValue, JsValue>;
-    #[wasm_bindgen(catch)]
-    pub async fn enqueue_projects(
-        env: &JsValue,
-        owner: &str,
-        items: &str,
     ) -> std::result::Result<JsValue, JsValue>;
 }
 

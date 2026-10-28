@@ -2,7 +2,7 @@
 //! SHA-256 digests of the secret are stored; the Worker hands the secret out once. Every
 //! request is checked here (no caching), so a revocation or expiry takes effect at once.
 use super::*;
-use crate::storage::{hash, number};
+use crate::storage::number;
 
 /// Account scopes a token may hold; `repo:admin` covers owner operations.
 pub(super) const SCOPES: [&str; 5] = [
