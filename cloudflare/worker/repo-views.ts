@@ -4,9 +4,10 @@
 // subsystem narrative with a dependency map. Rust compute builds both.
 import { fileAt, handleOf } from './repo-code';
 import { compute } from './repo-compute';
-import { revisionFiles } from './repo-contracts';
 import { decide, outside } from './repo-grants';
 import { type Json, type RepoContext, target } from './repo-ops';
+import { timed } from './repo-timing';
+import { revisionFiles } from './repo-view-facts';
 
 /** Agent view: the symbol's source, contract, callers, callees and members, with handles. */
 export async function agentView(ctx: RepoContext, args: Json) {
@@ -46,9 +47,11 @@ export async function agentView(ctx: RepoContext, args: Json) {
 /** Human view of the subsystems under directory `path` (default: the repository root). */
 export async function humanView(ctx: RepoContext, args: Json) {
   const path = String(args.path ?? '').replace(/^\/+|\/+$/g, '');
-  const view = await decide(ctx, [path], [path]);
+  const [view, where] = await Promise.all([
+    decide(ctx, [path], [path]),
+    timed('view.target', () => target(ctx, args.commit ?? args.ref, args.at)),
+  ]);
   if (path && !view.paths[0] && !view.dirs[0]) throw outside();
-  const where = await target(ctx, args.commit ?? args.ref, args.at);
   const { files, records, truncated, limit } = await revisionFiles(
     ctx,
     where.tree,

@@ -13,6 +13,7 @@ import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { searchSegments, segmentsIn } from './repo-search-index';
 import { writeSeed } from './repo-seed';
 import { timed } from './repo-timing';
+import { viewFacts } from './repo-view-facts';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
@@ -144,6 +145,8 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
   // A push's bundles are then read in bulk, not one staged read per file.
   if ((await ctx.status()).bundled) noteBundles(envelope.repo_id);
   const segments = await searchSegments(ctx, head.tree);
+  // The head's overview facts; a failure only costs the first view its speed.
+  await viewFacts(ctx, String(head.tree)).catch(() => {});
   // Warm-start seed for check runs on nearby commits; a failure only costs them speed.
   const at = { commit: String(head.commit), tree: String(head.tree) };
   await writeSeed(env, envelope.repo_id, await ctx.objects(), envelope.job_id, at).catch(() => {});
