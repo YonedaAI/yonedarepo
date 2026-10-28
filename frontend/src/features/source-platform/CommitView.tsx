@@ -10,6 +10,7 @@ import {
 } from './CommitGates';
 import { CommitRepairs } from './CommitRepairs';
 import { CommitSessions } from './CommitSessions';
+import { useReadOnly } from './repoAccess';
 import { Failure, Loading } from './SourceStatus';
 import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
@@ -32,6 +33,8 @@ export function CommitView({
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [notice, setNotice] = useState('');
   const [target, setTarget] = useState('main');
+  // A public reader sees the gates, checks and reviews, never review, land or revert.
+  const readOnly = useReadOnly();
   async function act(
     label: string,
     path: string,
@@ -85,66 +88,68 @@ export function CommitView({
       </header>
       <section className="source-gates" aria-label="Landing gates">
         <GateSummary gates={gates} classes={d.review_classes} landings={d.landings} />
-        <div className="source-actions">
-          <ReviewButtons
-            disabled={!!busy}
-            onReview={(decision, reason) =>
-              act(
-                decision,
-                `/commits/${commit}/reviews`,
-                { decision, reason },
-                decision === 'approve' ? 'Approved.' : 'Rejected.',
-              )
-            }
-          />
-          <button
-            type="button"
-            className="quiet"
-            disabled={!!busy}
-            onClick={() =>
-              act('checks', `/commits/${commit}/check-runs`, {}, (r) =>
-                r.runs?.length
-                  ? `Checks: ${r.runs.map((x: any) => `${x.name} ${x.status}`).join(', ')}.`
-                  : 'This repository has no check runners.',
-              )
-            }
-          >
-            Run checks
-          </button>
-          <button
-            type="button"
-            className="quiet"
-            disabled={!!busy}
-            onClick={async () => {
-              setBusy('revert');
-              setError('');
-              try {
-                const made = await sourceApi(`/repos/${repo}/commits/${commit}/revert`, {
-                  body: { ref: target },
-                });
-                onNavigate({ view: 'commit', repo, commit: made.commit });
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy('');
+        {!readOnly && (
+          <div className="source-actions">
+            <ReviewButtons
+              disabled={!!busy}
+              onReview={(decision, reason) =>
+                act(
+                  decision,
+                  `/commits/${commit}/reviews`,
+                  { decision, reason },
+                  decision === 'approve' ? 'Approved.' : 'Rejected.',
+                )
               }
-            }}
-          >
-            Revert
-          </button>
-          <input
-            aria-label="Branch to land on"
-            value={target}
-            onChange={(e) => setTarget(e.target.value)}
-          />
-          <button
-            type="button"
-            disabled={!!busy || !gates.ready}
-            onClick={() => act('land', '/land', { ref: target, commit }, `Landed on ${target}.`)}
-          >
-            {busy === 'land' ? 'Landing…' : 'Land'}
-          </button>
-        </div>
+            />
+            <button
+              type="button"
+              className="quiet"
+              disabled={!!busy}
+              onClick={() =>
+                act('checks', `/commits/${commit}/check-runs`, {}, (r) =>
+                  r.runs?.length
+                    ? `Checks: ${r.runs.map((x: any) => `${x.name} ${x.status}`).join(', ')}.`
+                    : 'This repository has no check runners.',
+                )
+              }
+            >
+              Run checks
+            </button>
+            <button
+              type="button"
+              className="quiet"
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy('revert');
+                setError('');
+                try {
+                  const made = await sourceApi(`/repos/${repo}/commits/${commit}/revert`, {
+                    body: { ref: target },
+                  });
+                  onNavigate({ view: 'commit', repo, commit: made.commit });
+                } catch (e) {
+                  setError((e as Error).message);
+                } finally {
+                  setBusy('');
+                }
+              }}
+            >
+              Revert
+            </button>
+            <input
+              aria-label="Branch to land on"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={!!busy || !gates.ready}
+              onClick={() => act('land', '/land', { ref: target, commit }, `Landed on ${target}.`)}
+            >
+              {busy === 'land' ? 'Landing…' : 'Land'}
+            </button>
+          </div>
+        )}
         <BreakGlass
           repo={repo}
           commit={commit}

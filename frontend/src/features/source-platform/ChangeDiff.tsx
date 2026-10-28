@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { type CommentInput, Composer, LineThread } from './ChangeThread';
 import { type Anchor, anchorKey, rowAnchor, type Thread } from './changeModel';
 import { type DiffChange, DiffFiles, type LineRow } from './DiffFiles';
+import { useReadOnly } from './repoAccess';
 
 export function ChangeDiff({
   changes,
@@ -21,8 +22,10 @@ export function ChangeDiff({
   onPosted: () => void;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  // A public reader gets plain line numbers: nothing to comment with.
+  const readOnly = useReadOnly();
   const anchorOf = (path: string, row: LineRow): Anchor | null =>
-    head ? { commit: head, path, ...rowAnchor(row) } : null;
+    head && !readOnly ? { commit: head, path, ...rowAnchor(row) } : null;
   return (
     <DiffFiles
       changes={changes}

@@ -1,8 +1,10 @@
-// The one app shell: sidebar, header and account menu around every page (home, a
-// repository's tabs, account settings and device login).
+// The one app shell: sidebar, header and account menu around every page (home, Explore, a
+// repository's tabs, account settings and device login). A signed-out visitor may open
+// Explore and any public repository; nothing there asks them to sign in first.
 import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
+import { ExplorePage } from './features/explore/ExplorePage';
 import { HomePage } from './features/shell/HomePage';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
@@ -26,12 +28,20 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState('');
   const [tick, setTick] = useState(0);
+  // The open repository's name as its status gives it: another account's public repository
+  // is in no sidebar row. (Its Public badge is beside the page heading, not repeated here.)
+  const [shown, setShown] = useState<{ repo: string; name: string }>();
+  const onLoaded = useCallback(
+    (loaded: { repo: string; name: string }) => setShown({ repo: loaded.repo, name: loaded.name }),
+    [],
+  );
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const rows = repoRows(platform.data?.repos ?? []);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
   const row = repo ? rows.find((r) => r.repo === repo) : undefined;
+  const loaded = shown && shown.repo === repo ? shown : undefined;
   useEffect(() => {
     if (!session.sessionEnded) return;
     setPanel(null);
@@ -46,13 +56,15 @@ export function App() {
   const title =
     route.view === 'home'
       ? 'All repositories'
-      : route.view === 'settings'
-        ? 'Settings'
-        : route.view === 'device'
-          ? 'Approve a device'
-          : route.view === 'org'
-            ? route.org
-            : (row?.name ?? repo ?? '');
+      : route.view === 'explore'
+        ? 'Explore'
+        : route.view === 'settings'
+          ? 'Settings'
+          : route.view === 'device'
+            ? 'Approve a device'
+            : route.view === 'org'
+              ? route.org
+              : (row?.name ?? loaded?.name ?? repo ?? '');
   return (
     <div className="app">
       <a className="skip-link" href="#workspace">
@@ -66,6 +78,7 @@ export function App() {
         orgs={orgs.data?.orgs ?? []}
         current={repo}
         currentOrg={route.view === 'org' ? route.org : undefined}
+        exploring={route.view === 'explore'}
         navigate={navigate}
         onNew={() => setCreating(true)}
       />
@@ -127,6 +140,9 @@ export function App() {
                 onNew={() => setCreating(true)}
               />
             )}
+            {route.view === 'explore' && (
+              <ExplorePage authenticated={session.authenticated} navigate={navigate} />
+            )}
             {route.view === 'settings' && (
               <AccountSettings
                 identity={session.identity}
@@ -150,10 +166,14 @@ export function App() {
             )}
             {'repo' in route && (
               <RepoPage
-                key={`${route.repo}:${tick}`}
+                // A sign-in or sign-out changes who is asking: read the status again.
+                key={`${route.repo}:${tick}:${session.identity?.username ?? ''}`}
                 route={route}
                 name={row?.name}
+                authenticated={session.authenticated}
                 navigate={navigate}
+                onSignIn={() => setPanel('account')}
+                onLoaded={onLoaded}
                 onDeleted={() => {
                   platform.reload();
                   navigate({ view: 'home' });
