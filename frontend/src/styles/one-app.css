@@ -115,6 +115,15 @@ a.chip:hover {
   border-color: var(--blue);
   color: var(--blue);
 }
+/* Fork sits beside the chips at their height, not a full-size button's. */
+.repo-head button.fork-button {
+  min-height: 0;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: inherit;
+}
 .repo-tabs {
   display: flex;
   gap: 4px;
