@@ -35,14 +35,25 @@ export async function connect(url, client) {
     return value;
   };
 
-  /** Sends one request to the bench client; null when it did not answer 200. */
+  /** Sends one request to the bench client; `{failed}` says how it did not answer 200 (its
+   * status and body, e.g. a Cloudflare error page, or why the fetch itself failed). */
   async function invoke(body) {
-    const response = await fetch(client, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-bench-key': process.env.BENCH_KEY ?? '' },
-      body: JSON.stringify({ target: url, ...body }),
-    }).catch(() => null);
-    if (response?.status !== 200) return { failed: `bench client answered ${response?.status ?? 'nothing'}` };
+    const started = Date.now();
+    const after = () => `after ${Date.now() - started} ms`;
+    let response;
+    try {
+      response = await fetch(client, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-bench-key': process.env.BENCH_KEY ?? '' },
+        body: JSON.stringify({ target: url, ...body }),
+      });
+    } catch (e) {
+      return { failed: `bench client fetch failed ${after()}: ${e?.cause?.code ?? e?.name ?? ''} ${String(e?.cause?.message ?? e?.message ?? e)}`.slice(0, 300) };
+    }
+    if (response.status !== 200) {
+      const text = (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200);
+      return { failed: `bench client answered ${response.status} ${after()}: ${text}` };
+    }
     return response.json();
   }
 
@@ -55,7 +66,7 @@ export async function connect(url, client) {
         const reply = await invoke({ repo, writers: batch });
         // A bench client invocation that failed outright counts its writers as failed.
         if (reply.failed) {
-          const failed = { status: 0, error: 'BENCH_CLIENT', message: reply.failed };
+          const failed = { status: 0, error: 'BENCH_CLIENT', message: reply.failed, started_at: Date.now() };
           return batch.map((w) => (w.read || w.get ? { read: { ...failed, ok: false } } : { commit: failed, land: null }));
         }
         return reply.results;
