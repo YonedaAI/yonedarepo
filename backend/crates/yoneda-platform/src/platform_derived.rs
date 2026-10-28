@@ -9,7 +9,7 @@ use yoneda_core::{
     Error, Result,
     blame::blame,
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
-    search::{Segment, build_segment, grep},
+    search::{MAX_INDEXED_BYTES, Segment, build_segment, grep},
 };
 
 const MAX_PARTITION_FILES: usize = 20_000;
@@ -91,7 +91,9 @@ fn files(
 }
 
 /// A partition's segment, with paths relative to the partition root: the key is the tree
-/// id alone, so the segment must not depend on the directory the tree sits at.
+/// id alone, so the segment must not depend on the directory the tree sits at. `sizes`
+/// (`{id: bytes}`, what the adapter knows) spares reading files too large to index; the
+/// segment is the same either way.
 pub fn index_partition(c: &Value) -> Result<Value> {
     let trees = supplied_trees(c)?;
     let tree = ObjectId::parse(&string(c, "tree")?)?;
@@ -105,8 +107,14 @@ pub fn index_partition(c: &Value) -> Result<Value> {
     let mut need = BTreeSet::new();
     let mut contents = Vec::with_capacity(listed.len());
     for (path, id) in listed {
+        // A file the adapter knows is too large to index is listed by path, unread.
+        let size = c["sizes"].get(id.hex()).and_then(Value::as_u64);
+        if size.is_some_and(|n| n > MAX_INDEXED_BYTES as u64) {
+            contents.push((path, id, None));
+            continue;
+        }
         match verified_blob(c, &id)? {
-            Some(data) => contents.push((path, id, data)),
+            Some(data) => contents.push((path, id, Some(data))),
             None => {
                 need.insert(id);
             }

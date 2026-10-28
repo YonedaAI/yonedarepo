@@ -7,7 +7,15 @@
 import { transient } from './durable';
 import { compute } from './repo-compute';
 import { UploadSession } from './repo-git-sessions';
-import { CHUNK, errLine, REQUEST_BYTES, RESULT, readAll, sendPack } from './repo-git-upload';
+import {
+  CHUNK,
+  errLine,
+  type PackStats,
+  REQUEST_BYTES,
+  RESULT,
+  readAll,
+  sendPack,
+} from './repo-git-upload';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
 
@@ -35,6 +43,7 @@ export async function uploadPackV2(
   ctx: RepoContext,
   objects: RepoObjects,
   body: ReadableStream<Uint8Array>,
+  stats?: PackStats,
 ): Promise<Response> {
   const bytes = await readAll(body, REQUEST_BYTES);
   try {
@@ -46,7 +55,7 @@ export async function uploadPackV2(
         compute({ op: 'git_ls_refs', refs, annotated, symrefs, peel, prefixes }).body_b64,
       );
     }
-    return await serveFetch(ctx, objects, request);
+    return await serveFetch(ctx, objects, request, stats);
   } catch (e: any) {
     // Nothing is sent yet: an overloaded authority is an HTTP 503 Git can retry.
     if (transient(e)) throw e;
@@ -56,7 +65,12 @@ export async function uploadPackV2(
 
 /** A `fetch`: a negotiation round without a common commit answers NAK; otherwise the
  * acknowledgments (when still negotiating, ending `ready`), the shallow-info, and the pack. */
-async function serveFetch(ctx: RepoContext, objects: RepoObjects, request: Json) {
+async function serveFetch(
+  ctx: RepoContext,
+  objects: RepoObjects,
+  request: Json,
+  stats?: PackStats,
+) {
   const negotiating = !request.done && request.haves.length > 0;
   const walk = { op: 'repo_git_walk', wants: request.wants, haves: request.haves, objects: true };
   if (negotiating) {
@@ -77,5 +91,5 @@ async function serveFetch(ctx: RepoContext, objects: RepoObjects, request: Json)
     unshallow: walked.unshallow,
   });
   const session = UploadSession.open({ ...walked, omit_blobs: request.omit_blobs });
-  return sendPack(fromBase64(head.body_b64), session, objects, CHUNK);
+  return sendPack(fromBase64(head.body_b64), session, objects, CHUNK, stats);
 }
