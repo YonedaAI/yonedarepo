@@ -11,7 +11,7 @@ import { fromBase64, toBase64 } from '../../cloudflare/worker/repo-objects';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, countingOps, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, countingOps, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -38,7 +38,7 @@ async function history(parent: string, commits: number) {
   for (let i = 0; i < commits; i++) {
     const blob = await object('blob', text.encode(`${`file ${i} `.repeat(20_000)}\n`));
     files.push(['100644', `n${i}.txt`, blob.id]);
-    const f = await tree(files);
+    const f = await tree([...files].sort(([, a], [, b]) => (a < b ? -1 : 1)));
     const e = await tree([['40000', 'f', f.id]]);
     const d = await tree([['40000', 'e', e.id]]);
     const log = await object('blob', text.encode(`${files.map(([, name]) => name).join('\n')}\n`));
@@ -90,13 +90,14 @@ async function bundleReads(repo: string, run: () => Promise<unknown>) {
   }
 }
 
-it('clones a pushed history in a few bundle reads per directory level', async () => {
-  const cookie = await signup('history_reads');
-  const created = await api('/repos', { cookie }, { body: { name: 'history-reads', policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } }, on);
+/** A new repository with `commits` commits of `history` pushed to main in one push. */
+async function pushedHistory(name: string, commits: number) {
+  const cookie = await signup(name);
+  const created = await api('/repos', { cookie }, { body: { name, policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } }, on);
   const repo = created.body.id as string;
   const { token } = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read', 'write', 'land'] } }, on)).body;
   const main = (await api(`/repos/${repo}/refs`, { cookie }, {}, on)).body.refs['refs/heads/main'] as string;
-  const objects = await history(main, 8);
+  const objects = await history(main, commits);
   const tip = objects[0].id;
   const { push_b64 } = compute({
     op: 'branch_push',
@@ -107,6 +108,29 @@ it('clones a pushed history in a few bundle reads per directory level', async ()
   });
   const pushed = await request(repo, token, 'git-receive-pack', fromBase64(push_b64));
   expect(new TextDecoder().decode(pushed)).toContain('ok refs/heads/main');
+  return { cookie, repo, token, tip };
+}
+
+it('keeps the commits and trees of a large push in bundles of their own', async () => {
+  // 60 commits: 420 objects, more than a push stages.
+  const { repo } = await pushedHistory('history_split', 60);
+  const listed = await bindings.OBJECTS.list({ prefix: `platform/v1/${repo}/bundles/` });
+  expect(listed.objects.length).toBeGreaterThan(1);
+  const kinds: string[] = [];
+  for (const { key } of listed.objects) {
+    const bytes = new Uint8Array(await ((await bindings.OBJECTS.get(key)) as R2ObjectBody).arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    const held = new Set<number>();
+    for (let at = 0; at < bytes.length; at += 25 + view.getUint32(at + 21)) held.add(bytes[at]);
+    kinds.push([...held].sort().join(''));
+  }
+  // Commits (1) and trees (2) apart from files (3).
+  expect(kinds.every((k) => k === '3' || !k.includes('3'))).toBe(true);
+  expect(kinds).toContain('3');
+});
+
+it('clones a pushed history in a few bundle reads per directory level', async () => {
+  const { cookie, repo, token, tip } = await pushedHistory('history_reads', 8);
 
   // Everything: 9 commits, 1 + 8 * 4 trees, 1 + 8 * 2 files. Five walk rounds (a directory
   // level each, then the last) and the commits and files: a read or two each.
@@ -122,6 +146,9 @@ it('clones a pushed history in a few bundle reads per directory level', async ()
   });
   const line = /yoneda-timing (.*)\n/.exec(new TextDecoder('latin1').decode(timed))?.[1] ?? '';
   expect(line).toMatch(/entries=59 /);
+  // Walk and pack reads each report what they read against what they wanted.
+  expect(line).toMatch(/walk_reads=\d+ walk_read=[\d.]+MiB walk_wanted=[\d.]+MiB walk_bundles=1 walk_span=/);
+  expect(line).toMatch(/ reads=\d+ read=[\d.]+MiB wanted=[\d.]+MiB bundles=1 span=/);
   expect(Number(/deltas=(\d+)/.exec(line)?.[1])).toBeGreaterThanOrEqual(4);
   // A partial clone: the same walk, and the commits (no files).
   const partial = await bundleReads(repo, async () => (count = await fetchV2(repo, token, [`want ${tip}`, 'filter blob:none', 'done'])));
