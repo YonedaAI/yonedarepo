@@ -114,20 +114,22 @@ export function NewRepositoryDialog({
         </label>
         <fieldset className="visibility-choice" disabled={busy}>
           <legend>Visibility</legend>
+          {/* Each radio is named by its label alone ("Private", "Public"); the help text is
+              its description, outside the label, so no other control's name says "Owner". */}
           {VISIBILITIES.map((v) => (
-            <label key={v}>
-              <input
-                type="radio"
-                name="visibility"
-                value={v}
-                defaultChecked={v === 'private'}
-                aria-describedby={`visibility-${v}-help`}
-              />
-              <span>
+            <div key={v} className="visibility-option">
+              <label>
+                <input
+                  type="radio"
+                  name="visibility"
+                  value={v}
+                  defaultChecked={v === 'private'}
+                  aria-describedby={`visibility-${v}-help`}
+                />
                 <strong>{VISIBILITY_LABELS[v]}</strong>
-                <small id={`visibility-${v}-help`}>{VISIBILITY_HELP[v]}</small>
-              </span>
-            </label>
+              </label>
+              <small id={`visibility-${v}-help`}>{VISIBILITY_HELP[v]}</small>
+            </div>
           ))}
         </fieldset>
         {error && (
