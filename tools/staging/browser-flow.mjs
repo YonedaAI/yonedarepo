@@ -21,7 +21,7 @@ import { chromium } from 'playwright-core';
 import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
-import { b64, Session, secondAccount, sleep } from './client.mjs';
+import { b64, Session, secondAccount, sleep, until } from './client.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -215,13 +215,21 @@ export async function branchesPage(page, account, id, shot, m) {
   await form.getByRole('button', { name: 'Create branch' }).click();
   const table = page.getByRole('table', { name: 'Branches' });
   await table.getByRole('cell', { name, exact: true }).waitFor();
-  const created = await refs();
+  // The API's refs read may answer from a copy up to ACCESS_MS (1 s) old; wait it out.
+  const created = await until(async () => {
+    const r = await refs();
+    return r[`refs/heads/${name}`] ? r : null;
+  }, { timeoutMs: 5_000, intervalMs: 250, what: 'the branch made in the page in the API refs' });
   assert.equal(created[`refs/heads/${name}`], created['refs/heads/main'], 'the branch made in the page is not on main');
   await shot('source-branch-created');
   page.once('dialog', (dialog) => dialog.accept());
   await table.getByRole('button', { name: `Delete branch ${name}` }).click();
   await table.getByRole('cell', { name, exact: true }).waitFor({ state: 'detached' });
-  assert.equal((await refs())[`refs/heads/${name}`], undefined, 'the branch deleted in the page is still served');
+  await until(async () => (await refs())[`refs/heads/${name}`] === undefined, {
+    timeoutMs: 5_000,
+    intervalMs: 250,
+    what: 'the branch deleted in the page to leave the API refs',
+  });
   m.branch_ui = 'created,deleted';
 }
 
