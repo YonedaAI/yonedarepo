@@ -8,13 +8,15 @@
 // partial (blob:none) and a shallow clone; push of a branch and of main; a delete-only push;
 // a version 0 fetch, a command other than Git's, an unknown repository and (with `other`)
 // another account's key are refused; a key removed while a session is open stops that
-// session's next request, and new connections. Keys never leave the temporary directory.
+// session's next request, and new connections. Keys never leave the temporary directory; the
+// repository and the account's keys are deleted afterwards, pass or fail.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { b64 } from './client.mjs';
+import { withRepos } from './platform-flow.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const pkt = (text) => `${(text.length + 4).toString(16).padStart(4, '0')}${text}`;
@@ -48,7 +50,11 @@ function reader(stream) {
   };
 }
 
-export async function sshFlow({ platform, other, sshHost, sshPort = 22, proxyOverride }, metrics) {
+export function sshFlow(options, metrics) {
+  return withRepos(options.platform, (newRepo) => sshChecks(options, newRepo, metrics));
+}
+
+async function sshChecks({ platform, other, sshHost, sshPort = 22, proxyOverride }, newRepo, metrics) {
   const dir = mkdtempSync(join(tmpdir(), 'yoneda-ssh-'));
   const known = keypair(dir, 'known');
   const unknown = keypair(dir, 'unknown');
@@ -88,9 +94,8 @@ export async function sshFlow({ platform, other, sshHost, sshPort = 22, proxyOve
   };
   const keys = [];
   try {
-    const name = `kit-ssh-${Date.now()}`;
     const files = [{ path: 'README.md', content_b64: b64('# ssh kit\n') }, { path: 'src/a.txt', content_b64: b64('a\n') }];
-    const repo = await platform.post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author });
+    const repo = await newRepo('kit-ssh', { required_checks: [], approvals: 0 }, files);
     const added = await platform.post('/ssh-keys', { title: 'kit', key: known.public });
     keys.push(added.id);
     metrics.fingerprint = added.fingerprint;
