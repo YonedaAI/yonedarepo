@@ -886,7 +886,7 @@
   },
   {
     "name": "git_session_record",
-    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, and an optional transcript_ref (a URL or opaque id; transcripts are never uploaded). Posting the same record again answers the first.",
+    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, and an optional transcript_ref (a URL or opaque id; transcripts are never uploaded), and an optional session_id naming the coding session (e.g. opencode:ses_…) so its records across commits tie together. Posting the same record again answers the first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -915,6 +915,10 @@
         "read_set_digest": {
           "type": "string",
           "pattern": "^[0-9a-f]{64}$"
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
         }
       },
       "required": [
@@ -927,7 +931,7 @@
   },
   {
     "name": "git_sessions",
-    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, who recorded each and when.",
+    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, session_id, who recorded each and when.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -939,6 +943,64 @@
       "required": [
         "commit"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_sessions_recent",
+    "description": "The repository's session records newest first (default 20, at most 50): commit, its message's first line, cli, model, summary, session_id, who recorded each and when. Pass next as before for the following page, or session_id for one coding session's records.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "before": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_context",
+    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "changes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        },
+        "contracts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        }
+      },
       "additionalProperties": false
     }
   },

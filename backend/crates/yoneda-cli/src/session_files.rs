@@ -2,7 +2,12 @@
 //! - `reads`: the repo-relative files read since the last push (agent hooks or `yoneda
 //!   reads add`), one per line. A push declares them as its read set and clears them.
 //! - `pushed`: the commits pushed since the last session record, one `<commit> <reads
-//!   digest>` per line. The agent's turn-end hook posts a session record for each.
+//!   digest, or - when none were declared> [<session id>]` per line. The agent's turn-end
+//!   hook posts a session record for each of its own session's (and for unattributed ones).
+//!
+//! The session id comes from the agent's environment: `YONEDA_SESSION_ID` (the Claude
+//! Code plugin exports it at session start), else opencode's `OPENCODE_SESSION_ID`, which
+//! opencode sets for every shell command a session runs.
 use crate::error::{Context, Result};
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -13,6 +18,53 @@ pub const MAX_READS: usize = 2_000;
 pub const MAX_READ_BYTES: usize = 64 * 1024;
 /// One `-o` value stays well inside a pkt-line (65516 bytes).
 const OPTION_BYTES: usize = 32 * 1024;
+
+/// The coding session this process runs for, from its environment.
+pub fn current_session() -> Option<String> {
+    let var = |name: &str| {
+        std::env::var(name)
+            .ok()
+            .map(|v| v.trim().to_owned())
+            .filter(|v| !v.is_empty() && !v.contains(char::is_whitespace))
+    };
+    var("YONEDA_SESSION_ID")
+        .or_else(|| var("OPENCODE_SESSION_ID").map(|id| format!("opencode:{id}")))
+}
+
+/// A pushed commit waiting for its session record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pushed {
+    pub commit: String,
+    /// The declared reads' digest, when the push declared any.
+    pub reads: Option<String>,
+    pub session: Option<String>,
+}
+
+impl Pushed {
+    fn parse(line: &str) -> Self {
+        let mut words = line.split_whitespace();
+        let commit = words.next().unwrap_or_default().to_owned();
+        let reads = words
+            .next()
+            .filter(|d| *d != "-" && !d.is_empty())
+            .map(str::to_owned);
+        let session = words.next().map(str::to_owned);
+        Self {
+            commit,
+            reads,
+            session,
+        }
+    }
+
+    fn line(&self) -> String {
+        let mut line = format!("{} {}", self.commit, self.reads.as_deref().unwrap_or("-"));
+        if let Some(session) = &self.session {
+            line.push(' ');
+            line.push_str(session);
+        }
+        line
+    }
+}
 
 pub struct SessionFiles {
     dir: PathBuf,
@@ -90,31 +142,52 @@ impl SessionFiles {
         self.remove("reads")
     }
 
-    /// Notes `commits` as pushed with `reads` declared.
-    pub fn note_pushed(&self, commits: &[String], reads: &[String]) -> Result<()> {
-        let digest = reads_digest(reads);
-        let lines: Vec<String> = commits.iter().map(|c| format!("{c} {digest}")).collect();
+    /// Notes `commits` as pushed with `reads` declared, by `session` when known.
+    pub fn note_pushed(
+        &self,
+        commits: &[String],
+        reads: &[String],
+        session: Option<&str>,
+    ) -> Result<()> {
+        let digest = (!reads.is_empty()).then(|| reads_digest(reads));
+        let lines: Vec<String> = commits
+            .iter()
+            .map(|c| {
+                Pushed {
+                    commit: c.clone(),
+                    reads: digest.clone(),
+                    session: session.map(str::to_owned),
+                }
+                .line()
+            })
+            .collect();
         self.append("pushed", &lines)
     }
 
-    /// Notes one pushed commit again (its session record is retried later).
-    pub fn note_pushed_digest(&self, commit: &str, digest: &str) -> Result<()> {
-        self.append("pushed", &[format!("{commit} {digest}")])
+    /// Notes pushed commits again (their session records are retried later).
+    pub fn note_again(&self, pushed: &[Pushed]) -> Result<()> {
+        let lines: Vec<String> = pushed.iter().map(Pushed::line).collect();
+        self.append("pushed", &lines)
     }
 
-    /// The pushed commits not recorded yet (`(commit, reads digest)`), removed from the
-    /// file: a session record is posted at most once per push.
-    pub fn take_pushed(&self) -> Result<Vec<(String, String)>> {
-        let lines = self.lines("pushed")?;
+    /// The pushed commits of `session` (and those no session claimed) not recorded yet,
+    /// once each, removed from the file; another session's stay for it. A session record
+    /// is posted at most once per push.
+    pub fn take_pushed(&self, session: Option<&str>) -> Result<Vec<Pushed>> {
+        let all: Vec<Pushed> = self
+            .lines("pushed")?
+            .iter()
+            .map(|l| Pushed::parse(l))
+            .collect();
         self.remove("pushed")?;
-        let mut seen = BTreeSet::new();
-        Ok(lines
+        let (mine, others): (Vec<Pushed>, Vec<Pushed>) = all
             .into_iter()
-            .filter_map(|l| {
-                let (commit, digest) = l.split_once(' ').unwrap_or((&l, ""));
-                seen.insert(commit.to_owned())
-                    .then(|| (commit.to_owned(), digest.to_owned()))
-            })
+            .partition(|p| p.session.is_none() || p.session.as_deref() == session);
+        self.note_again(&others)?;
+        let mut seen = BTreeSet::new();
+        Ok(mine
+            .into_iter()
+            .filter(|p| !p.commit.is_empty() && seen.insert(p.commit.clone()))
             .collect())
     }
 }
@@ -187,16 +260,36 @@ mod tests {
         assert_eq!(files.add_reads(&strings(&["b.rs", "a.rs", "b.rs"]))?, 2);
         assert_eq!(files.add_reads(&strings(&["a.rs", "c.rs"]))?, 1);
         assert_eq!(files.reads()?, ["a.rs", "b.rs", "c.rs"]);
-        files.note_pushed(&strings(&["c1", "c2"]), &files.reads()?)?;
+        files.note_pushed(&strings(&["c1", "c2"]), &files.reads()?, None)?;
         files.clear_reads()?;
         assert!(files.reads()?.is_empty());
-        let pushed = files.take_pushed()?;
+        let pushed = files.take_pushed(None)?;
         assert_eq!(pushed.len(), 2);
         assert_eq!(
-            pushed[0].1,
-            reads_digest(&strings(&["c.rs", "a.rs", "b.rs"]))
+            pushed[0].reads.as_deref(),
+            Some(reads_digest(&strings(&["c.rs", "a.rs", "b.rs"])).as_str())
         );
-        assert!(files.take_pushed()?.is_empty());
+        assert!(files.take_pushed(None)?.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn each_session_takes_its_own_pushes_and_the_unclaimed() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let files = SessionFiles::new(dir.path());
+        files.note_pushed(&strings(&["a1"]), &strings(&["x"]), Some("opencode:s1"))?;
+        files.note_pushed(&strings(&["b1"]), &[], Some("opencode:s2"))?;
+        files.note_pushed(&strings(&["u1", "a1"]), &[], None)?;
+        // A line from before session ids: `<commit> <digest>`.
+        files.append("pushed", &[format!("old {}", "e".repeat(64))])?;
+        let mine = files.take_pushed(Some("opencode:s1"))?;
+        let commits: Vec<&str> = mine.iter().map(|p| p.commit.as_str()).collect();
+        assert_eq!(commits, ["a1", "u1", "old"]);
+        assert!(mine[0].reads.is_some() && mine[1].reads.is_none());
+        let theirs = files.take_pushed(Some("opencode:s2"))?;
+        assert_eq!(theirs.len(), 1);
+        assert_eq!(theirs[0].session.as_deref(), Some("opencode:s2"));
+        assert!(files.take_pushed(Some("opencode:s2"))?.is_empty());
         Ok(())
     }
 

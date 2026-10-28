@@ -1,4 +1,4 @@
-// The platform Worker alone for the local SSH end-to-end test (tests/ssh/e2e.mjs): served by
+// The platform Worker alone for the local end-to-end tests (tests/ssh/e2e.mjs, tests/agents/e2e.mjs): served by
 // `wrangler dev`, with objects in local R2 and a fixed local-only gateway secret. Nothing here
 // is deployed.
 {

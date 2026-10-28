@@ -59,6 +59,16 @@
 //          (= --only 0,25: Git LFS with stock git-lfs; the file size is --lfs-mb MiB)
 //        node tools/staging-realworld.mjs --ssh [--ssh-host ssh.dev.yonedarepo.com] [--ssh-port 22]
 //          (= --only 0,26: Git over SSH with stock git and OpenSSH; needs the second account)
+//        node tools/staging-realworld.mjs --git-semantics [--ssh]
+//          (= --only 0,12,13,18,21,23,27,17 [+26]: L1 of the agent e2e strategy, no model; 27 is
+//          tools/staging/git-semantics-flow.mjs, the rest the existing items it builds on)
+//        node tools/staging-realworld.mjs --agent-hooks
+//          (= --only 0,12,28,17: L2, the Claude Code and opencode plugin hooks against the
+//          platform with recorded-shape payloads, no model: tools/staging/agent-hooks-flow.mjs)
+//        node tools/staging-realworld.mjs --agents 4 [--agents-wave2 2] [--agent-model <provider/model>]
+//          [--agent-timeout 600] [--agent-budget 2]
+//          (= --only 0,12,29,17: L3, real opencode agents in parallel, paid; needs opencode on
+//          PATH with its model's credentials: tools/staging/agent-run-flow.mjs)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -73,7 +83,10 @@ import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount } from './staging/client.mjs';
+import { agentHooks } from './staging/agent-hooks-flow.mjs';
+import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
+import { gitSemantics } from './staging/git-semantics-flow.mjs';
 import { lfsFlow } from './staging/lfs-flow.mjs';
 import { sshFlow } from './staging/ssh-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
@@ -124,13 +137,28 @@ const { values } = parseArgs({
     'ssh-port': { type: 'string', default: '22' },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
+    // Agent e2e gates: L1 Git semantics (27 with the items it builds on), L2 plugin hooks (28),
+    // L3 real opencode agents (29: --agents N first-wave agents, then --agents-wave2 more).
+    'git-semantics': { type: 'boolean', default: false },
+    'agent-hooks': { type: 'boolean', default: false },
+    agents: { type: 'string' },
+    'agents-wave2': { type: 'string', default: '2' },
+    'agent-model': { type: 'string', default: 'zai-coding-plan/glm-5.3' },
+    'agent-timeout': { type: 'string', default: '600' },
+    'agent-budget': { type: 'string', default: '2' },
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
     browser: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const only = values.ssh
+const only = values['git-semantics']
+  ? new Set(['0', '12', '13', '18', '21', '23', '27', '17', ...(values.ssh ? ['26'] : [])])
+  : values['agent-hooks']
+  ? new Set(['0', '12', '28', '17'])
+  : values.agents
+  ? new Set(['0', '12', '29', '17'])
+  : values.ssh
   ? new Set(['0', '26'])
   : values.orgs
   ? new Set(['0', '24'])
@@ -152,9 +180,9 @@ const only = values.ssh
             ? new Set(values.only.split(','))
             : null;
 // The model check needs the platform's review key, the webhook gate a receiver and the
-// members, forks (22) and orgs (24) gates a second account, so a full kit run leaves them out
-// unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+// members, forks (22) and orgs (24) gates a second account, and real agents (29) spend on a
+// model, so a full kit run leaves them out unless named.
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -257,7 +285,7 @@ await step('9', '1000-writer burst (platform API)', (m) => fanout(1000, m));
 await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
   BENCH_KEY ? manyRepoBurst(platformAccount, { client: values.client, key: BENCH_KEY, target: values.platform }, m) : { skip: 'BENCH_KEY not in staging-bench.env' },
 );
-if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {
@@ -269,6 +297,24 @@ if (['12', '13', '14', '15', '16', '17', '18', '21'].some(wanted)) {
     // Before 17, whose cleanup deletes its repository too.
     await step('18', 'CLI: change request (branch, open, line comment, approve, land, landed)', (m) => cliChangeRequest(cli, kit, m));
     await step('21', 'CLI: server-side rebase (linear in a clone, conflict refused, repo deleted)', (m) => cliRebase(cli, m));
+    await step('27', 'Git semantics (L1): v2/partial/shallow clones, branch, rebase, merge, cherry-pick, revert, tag, conflict, change, MCP, LFS', (m) =>
+      gitSemantics(cli, { platform: platformAccount }, m),
+    );
+    await step('28', 'Agent hooks (L2): Claude Code and opencode plugins start with context, record reads and sessions', (m) => agentHooks(cli, m));
+    await step('29', `Real agents (L3): ${values.agents ?? 0} + ${values['agents-wave2']} opencode agents (${values['agent-model']}) in parallel on one repository`, (m) =>
+      agentRun(
+        cli,
+        {
+          root,
+          agents: Number(values.agents),
+          wave2: Number(values['agents-wave2']),
+          model: values['agent-model'],
+          timeoutS: Number(values['agent-timeout']),
+          budgetUsd: Number(values['agent-budget']),
+        },
+        m,
+      ),
+    );
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
@@ -283,7 +329,8 @@ const evidence = { schema: 1, origin: values.origin, platform: values.platform, 
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const prefix = { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
+const gate = values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : null;
+const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);
