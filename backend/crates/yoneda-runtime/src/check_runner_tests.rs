@@ -118,6 +118,36 @@ async fn rejects_escaping_or_duplicate_paths_and_bad_limits() {
 }
 
 #[tokio::test]
+async fn keeps_symlinks_inside_the_root() {
+    for (files, code) in [
+        (vec![file("link", "symlink", "../../etc/passwd")], "INVALID_INPUT"),
+        (vec![file("link", "symlink", "/etc/passwd")], "INVALID_INPUT"),
+        (vec![file("link", "symlink", "")], "INVALID_INPUT"),
+        (
+            // Defense in depth: a tree cannot pair `foo` with `foo/x`, but the writer
+            // refuses to follow a symlink an earlier entry planted either way.
+            vec![file("foo", "symlink", "bar"), file("foo/x", "blob", "")],
+            "INVALID_INPUT",
+        ),
+    ] {
+        let error = run(request(&["true"], 5, files)).await.unwrap_err();
+        assert_eq!(error.code, code, "{}", error.message);
+    }
+    // A target that resolves back inside the root is a plain tree entry.
+    let kept = run(request(
+        &["true"],
+        5,
+        vec![
+            file("peer", "blob", "x"),
+            file("dir/up", "symlink", "../peer"),
+        ],
+    ))
+    .await
+    .unwrap();
+    assert_eq!(kept["outcome"], "pass");
+}
+
+#[tokio::test]
 async fn server_requires_its_bearer_secret() {
     let app = crate::check_server::router("s3cret".into());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

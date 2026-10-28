@@ -38,7 +38,8 @@ fn invalid(message: impl Into<String>) -> Error {
 }
 
 /// Writes the commit's files under `root`. Paths are validated like any untrusted
-/// archive: no absolute paths, `..`, `.git` or duplicate entries.
+/// archive: no absolute paths, `..`, `.git` or duplicate entries. Symlink targets stay
+/// inside `root`, and no written path may pass through a symlink an earlier entry planted.
 pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
     if files.len() > MAX_FILES {
         return Err(invalid("Too many files for a check"));
@@ -58,6 +59,19 @@ pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
             return Err(invalid("Check files exceed the size limit"));
         }
         let target = root.join(&file.path);
+        let mut at = root.to_path_buf();
+        for component in Path::new(&file.path).parent().unwrap_or(Path::new("")) {
+            at.push(component);
+            if std::fs::symlink_metadata(&at)
+                .map(|m| m.file_type().is_symlink())
+                .unwrap_or(false)
+            {
+                return Err(invalid(format!(
+                    "{} passes through the symlink {:?}",
+                    file.path, component
+                )));
+            }
+        }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(err)?;
         }
@@ -75,12 +89,39 @@ pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
             "symlink" => {
                 let link =
                     String::from_utf8(data).map_err(|_| invalid("Symlink target is not UTF-8"))?;
+                let parent = Path::new(&file.path).parent().unwrap_or(Path::new(""));
+                if !stays_inside_root(parent, &link) {
+                    return Err(invalid(format!(
+                        "Symlink target escapes the check root: {link:?}"
+                    )));
+                }
                 std::os::unix::fs::symlink(link, &target).map_err(err)?;
             }
             other => return Err(invalid(format!("Unsupported entry type {other}"))),
         }
     }
     Ok(())
+}
+
+/// Whether a symlink at `link_dir` (repo-relative) with `target` resolves to a location
+/// still under the root: `target` must be relative and not climb past `link_dir`.
+fn stays_inside_root(link_dir: &Path, target: &str) -> bool {
+    if target.is_empty() || Path::new(target).is_absolute() {
+        return false;
+    }
+    let mut depth = link_dir.components().count();
+    for component in Path::new(target).components() {
+        match component {
+            std::path::Component::Normal(_) => depth += 1,
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => match depth.checked_sub(1) {
+                Some(shallower) => depth = shallower,
+                None => return false,
+            },
+            std::path::Component::RootDir | std::path::Component::Prefix(_) => return false,
+        }
+    }
+    true
 }
 
 /// Hands the materialized tree to the unprivileged check UID (deployed: runtime is root).

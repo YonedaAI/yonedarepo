@@ -62,6 +62,7 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
         .iter()
         .map(|change| {
             let path = string(change, "path")?;
+            yoneda_core::validate_path(&path)?;
             let expect = expectation(change)?;
             if change["delete"] == true {
                 return Ok(Change {
