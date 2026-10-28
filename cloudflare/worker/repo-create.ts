@@ -19,7 +19,7 @@ import type { Env } from './types';
  * repositories (asked of the org's authority at once, never from a cached answer); members
  * get access through teams or membership afterwards.
  */
-async function owning(
+export async function owning(
   env: Env,
   auth: Credentials,
   body: Json,
@@ -79,10 +79,15 @@ async function issueTokens(ctx: RepoContext, requested: unknown) {
   return { tokens };
 }
 
+/** A new repository id: `r` and 20 hex digits. */
+export function newRepoId() {
+  const random = crypto.getRandomValues(new Uint8Array(10));
+  return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await owning(env, requester, body);
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const id = newRepoId();
   const store = newStore(env, `yr-${id}`);
   await store.create();
   const ctx = new RepoContext(env, id, caller(env, id, auth));
@@ -124,8 +129,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
     throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
   const branch = typeof body.branch === 'string' && body.branch ? body.branch : 'main';
   const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  const id = `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
+  const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   await ctx.call({

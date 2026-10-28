@@ -7,6 +7,7 @@ import { archivedObjects } from './repo-archive';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside } from './repo-grants';
+import { guardInherited } from './repo-inherit';
 import {
   type CachedObject,
   parseStore,
@@ -38,7 +39,8 @@ export type Credentials =
         | 'commits'
         | 'purge'
         | 'hooks'
-        | 'compact';
+        | 'compact'
+        | 'fork';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_system'];
@@ -280,6 +282,8 @@ export async function getObjects(ctx: RepoContext, args: Json) {
   if (!Number.isSafeInteger(start) || start < 0 || start > wanted.length)
     throw new ApiError('INVALID_INPUT', 'after is outside the request');
   const objects = await ctx.objects();
+  // Ids named by the caller: a fork serves inherited ones only to readers of its parent.
+  guardInherited(ctx, objects);
   const grant = await decide(ctx, []);
   if (grant.restricted) await authorizeObjects(ctx, wanted, args.commit);
   // `raw`: commits as their exact Git content (`data_b64`) from the store of record, so a

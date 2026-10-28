@@ -14,8 +14,8 @@ pub fn repo(rest: &[String]) -> Result<Command> {
         &["origin", "confirm", "name", "batch-files", "owner"],
         &[],
     )?;
-    if p.flag("owner").is_some() && sub != "create" {
-        return Err(Error::usage("only repo create takes --owner"));
+    if p.flag("owner").is_some() && sub != "create" && sub != "fork" {
+        return Err(Error::usage("only repo create and repo fork take --owner"));
     }
     let command = match sub.as_str() {
         "create" => RepoCommand::Create {
@@ -40,6 +40,11 @@ pub fn repo(rest: &[String]) -> Result<Command> {
                 Some(n) => usize::try_from(n).unwrap_or(usize::MAX),
                 None => crate::import::BATCH_FILES,
             },
+        },
+        "fork" => RepoCommand::Fork {
+            id: p.exactly(1, "repo fork <id>")?[0].clone(),
+            name: p.flag("name"),
+            owner: p.flag("owner"),
         },
         other => return Err(Error::usage(format!("unknown repo command {other:?}"))),
     };
@@ -214,7 +219,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         &rest,
         &with(&["title", "message", "status", "path", "line", "side"]),
-        &["resolve"],
+        &["resolve", "to-parent"],
     )?;
     let number = || -> Result<u64> {
         p.exactly(1, &format!("change {sub} <number>"))?[0]
@@ -231,6 +236,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
                 branch: p.positional.first().cloned(),
                 title: p.flag("title"),
                 body: p.flag("message"),
+                to_parent: p.on("to-parent"),
             }
         }
         "list" => {

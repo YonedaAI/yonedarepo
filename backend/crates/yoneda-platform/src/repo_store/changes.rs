@@ -17,7 +17,7 @@ pub const MAX_BODY: usize = 8000;
 const TIMELINE: u64 = 100;
 
 const CHANGE: &str = "SELECT c.number,c.title,c.body,c.branch,c.base,c.author,c.status,c.created_at,\
-     c.updated_at,c.landed_version,c.landed_commit,\
+     c.updated_at,c.landed_version,c.landed_commit,c.source_repo,c.source_branch,\
      (SELECT commit_id FROM refs WHERE name='refs/heads/'||c.branch) AS branch_head,\
      (SELECT COUNT(*) FROM change_comments k WHERE k.change_number=c.number) AS comment_count \
      FROM changes c";
@@ -114,10 +114,19 @@ fn already_open(branch: &str, number: i64) -> Error {
     )
 }
 
-/// `repo_change_create {branch, title, body?}`.
+/// `repo_change_create {branch, title, body?, source_repo?, source_branch?}`: a change from
+/// a fork names the fork and its branch, and proposes the mirror `forks/<fork>/<branch>`.
 pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let branch = working_branch(db, c["branch"].as_str().unwrap_or_default())?;
+    let source = (c["source_repo"].as_str(), c["source_branch"].as_str());
+    if let (Some(repo), from) = source
+        && from.is_none_or(|from| branch != format!("forks/{repo}/{from}"))
+    {
+        return Err(bad(
+            "A change from a fork proposes the fork branch's mirror",
+        ));
+    }
     let title = text(c, "title", MAX_TITLE)?.ok_or_else(|| bad("A change needs a title"))?;
     if title.chars().any(char::is_control) {
         return Err(bad("title must be one line"));
@@ -128,8 +137,8 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     }
     let now = number(c, "now")?;
     db.query(
-        "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at) VALUES(?,?,?,'main',?,'open',?,?)",
-        &[json!(title), json!(body), json!(branch), json!(actor.principal), json!(now), json!(now)],
+        "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at,source_repo,source_branch) VALUES(?,?,?,'main',?,'open',?,?,?,?)",
+        &[json!(title), json!(body), json!(branch), json!(actor.principal), json!(now), json!(now), json!(source.0), json!(source.1)],
     )?;
     let number = db.query("SELECT last_insert_rowid() AS n", &[])?[0]["n"]
         .as_i64()

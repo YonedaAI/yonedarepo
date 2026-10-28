@@ -23,7 +23,7 @@ impl std::fmt::Debug for Token {
 }
 
 /// The request header that carries a token.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Header {
     Authorization(String),
     Cookie(String),
