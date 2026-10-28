@@ -12,6 +12,7 @@ import { receivePack } from './repo-git-receive';
 import { uploadPack } from './repo-git-upload';
 import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
 import { guardInherited } from './repo-inherit';
+import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { timed, withTimings } from './repo-timing';
@@ -65,6 +66,8 @@ export async function gitHttp(req: Request, env: Env): Promise<Response> {
 
 async function serve(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
+  // Git LFS (repo-lfs.ts) under the same URL and credentials.
+  if (isLfsPath(url.pathname)) return lfsHttp(req, env, gitCredentials);
   const match = PATH.exec(url.pathname);
   if (!match) return refusal(404, 'Not a Git repository URL: use /git/<repository id>.git');
   const [, repo, action] = match;

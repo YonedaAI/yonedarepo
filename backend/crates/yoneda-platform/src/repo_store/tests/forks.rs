@@ -334,3 +334,42 @@ fn upgrades_from_the_bundles_schema_with_no_parent_and_no_forks() {
         migrations.last().unwrap().0
     );
 }
+
+#[test]
+fn a_forks_lfs_downloads_name_its_parent_and_its_quota_is_its_own() {
+    let (parent, _) = seeded();
+    let fork = fork(&parent);
+    let object = json!([{"oid": "ab".repeat(32), "size": 10}]);
+    parent.ok(
+        AGENT,
+        json!({"op":"repo_lfs_batch","operation":"upload","objects":object}),
+    );
+    parent.ok(
+        AGENT,
+        json!({"op":"repo_lfs_store","oid":"ab".repeat(32),"size":10}),
+    );
+    // The fork lacks it and names where the adapter may look (with the caller's own access).
+    let down = fork.ok(
+        AGENT,
+        json!({"op":"repo_lfs_batch","operation":"download","objects":object}),
+    );
+    assert_eq!(down["objects"][0]["error"]["code"], 404);
+    assert_eq!(down["parent"], PARENT_ID);
+    let up = fork.ok(
+        AGENT,
+        json!({"op":"repo_lfs_batch","operation":"upload","objects":object}),
+    );
+    assert_eq!(up["parent"], Value::Null);
+    // The parent's object is not the fork's: nothing of it counts against the fork's quota.
+    assert_eq!(
+        fork.ok(OWNER, json!({"op":"repo_lfs_usage"}))["stored_bytes"],
+        0
+    );
+    assert_eq!(
+        parent.ok(
+            OWNER,
+            json!({"op":"repo_lfs_batch","operation":"download","objects":object})
+        )["parent"],
+        Value::Null
+    );
+}
