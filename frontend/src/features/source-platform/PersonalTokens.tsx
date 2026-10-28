@@ -202,7 +202,7 @@ export function PersonalTokens({
   }
 
   return (
-    <section aria-labelledby="pat-heading">
+    <section id="personal-tokens" aria-labelledby="pat-heading">
       <h2 id="pat-heading">Personal access tokens</h2>
       <p className="source-meta">
         For agents and CI across your repositories. <code>yoneda login</code> creates its own

@@ -19,6 +19,23 @@ function describe(r: BreakGlassRecord, commit: string) {
   return `reverted by ${shortSha(r.commit_id ?? '')}`;
 }
 
+/** What break glass did to this commit, for the record. */
+export function BreakGlassRecords({
+  commit,
+  records,
+}: {
+  commit: string;
+  records: BreakGlassRecord[];
+}) {
+  return records.map((r) => (
+    <p key={r.seq} className="source-break-glass-record">
+      <span className="source-badge-danger">Break-glass</span> {describe(r, commit)} on{' '}
+      {(r.refname ?? '').replace(/^refs\/heads\//, '')} by {r.actor} · {when(r.created_at)} —{' '}
+      {r.reason}
+    </p>
+  ));
+}
+
 /**
  * Owner recovery when automation is broken: land past failing or pending checks, or revert
  * a landed commit. The server refuses anyone but a signed-in human owner; this control only
@@ -73,13 +90,7 @@ export function BreakGlass({
   }
   return (
     <section className="source-break-glass" aria-label="Break-glass recovery">
-      {records.map((r) => (
-        <p key={r.seq} className="source-break-glass-record">
-          <span className="source-badge-danger">Break-glass</span> {describe(r, commit)} on{' '}
-          {(r.refname ?? '').replace(/^refs\/heads\//, '')} by {r.actor} · {when(r.created_at)} —{' '}
-          {r.reason}
-        </p>
-      ))}
+      <BreakGlassRecords commit={commit} records={records} />
       {head === undefined ? (
         <button type="button" className="quiet" onClick={open}>
           Break glass…
