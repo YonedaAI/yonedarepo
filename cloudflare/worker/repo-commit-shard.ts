@@ -96,6 +96,8 @@ export async function commitInShard(
       if (e?.code === 'SECRET_DETECTED') return null;
       throw e;
     }
+    // Symlinks by blob id never reach a shard (see `shardable`); the authority reads them.
+    if (step.need_blobs) return null;
     if (!step.need_trees) {
       built = step;
       continue;

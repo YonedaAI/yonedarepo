@@ -119,10 +119,11 @@ impl Harness {
         extra: Value,
     ) -> yoneda_core::Result<String> {
         let mut trees = serde_json::Map::new();
+        let mut supplied_blobs = json!({});
         loop {
             let mut command = json!({
                 "op": "repo_prepare_commit", "parent": parent, "base_version": base_version,
-                "changes": changes, "read_set": read_set, "trees": trees,
+                "changes": changes, "read_set": read_set, "trees": trees, "blobs": supplied_blobs,
                 "message": "change", "author": {"name": "Agent", "email": "agent@example.com"},
             });
             for (key, value) in extra.as_object().into_iter().flatten() {
@@ -134,6 +135,14 @@ impl Harness {
                 for id in need {
                     let id = id.as_str().unwrap();
                     trees.insert(id.into(), self.tree_json(id));
+                }
+                continue;
+            }
+            if let Some(need) = prepared["need_blobs"].as_array() {
+                assert!(!need.is_empty());
+                for id in need {
+                    let id = id.as_str().unwrap();
+                    supplied_blobs[id] = json!(STANDARD.encode(&self.objects.borrow()[id].1));
                 }
                 continue;
             }
@@ -1619,5 +1628,6 @@ mod self_review;
 mod sessions;
 mod shards;
 mod staging;
+mod symlink_refs;
 mod tags;
 mod tool_schemas;

@@ -9,7 +9,7 @@ use super::tree_cache;
 use crate::storage::{SqlStore, bad, number};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use build::{Parent, build, frontier, objects_json, supplied_trees};
-use changes::{changes, known_blob};
+use changes::{changes, known_blob, unread_symlinks};
 use serde_json::{Value, json};
 use yoneda_core::{
     Error, Result,
@@ -51,6 +51,13 @@ pub fn prepare<S: SqlStore>(
     let parent = parent.map(|id| rows::recorded(db, &id)).transpose()?;
     let root = parent.as_ref().map(|p| p.tree);
     let changes = changes(c, &settings.policy.secret_allow)?;
+    let need_blobs = unread_symlinks(&changes, c)?;
+    if !need_blobs.is_empty() {
+        return Ok(json!({
+            "need_blobs": need_blobs,
+            "parent": parent.as_ref().map(|p| p.id), "base_version": base_version,
+        }));
+    }
     let mut trees = supplied_trees(c)?;
     let supplied = trees
         .0

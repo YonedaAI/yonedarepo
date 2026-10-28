@@ -71,9 +71,7 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
                     expect,
                 });
             }
-            // A referenced blob is already in the repository (a merge or revert re-placing
-            // it), so its symlink target is not re-checked: a writer could push the same
-            // symlink over Git, and the check runner refuses escaping targets either way.
+            // A referenced blob's symlink target is checked by `unread_symlinks`.
             if change.get("blob").is_some() {
                 let blob = Content::Known(object_id(change, "blob")?);
                 return Ok(Change {
@@ -115,6 +113,24 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
             })
         })
         .collect()
+}
+
+/// Symlinks placed by blob id (merges, reverts, any client) get the same target check as
+/// sent ones. Their bytes come from the adapter (`blobs`, verified against their ids);
+/// returns the ids it has yet to supply.
+pub(crate) fn unread_symlinks(changes: &[Change], c: &Value) -> Result<Vec<ObjectId>> {
+    let mut need: Vec<ObjectId> = Vec::new();
+    for change in changes {
+        let Some((FileMode::Symlink, Content::Known(id))) = &change.target else {
+            continue;
+        };
+        match crate::platform_derived::verified_blob(c, id)? {
+            Some(target) => yoneda_core::validate_symlink(&change.path, &target)?,
+            None if !need.contains(id) => need.push(*id),
+            None => {}
+        }
+    }
+    Ok(need)
 }
 
 /// A referenced blob must already be in this repository's object store: it was written
