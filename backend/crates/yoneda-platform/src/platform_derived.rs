@@ -9,7 +9,7 @@ use yoneda_core::{
     Error, Result,
     blame::{BlameLine, blame},
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
-    search::{MAX_INDEXED_BYTES, Segment, build_segment, grep},
+    search::{MAX_INDEXED_BYTES, StoredSegment, build_segment, grep},
 };
 
 /// Files one directory may list for indexing (its index is built in chunks).
@@ -144,14 +144,32 @@ pub fn index_files(c: &Value) -> Result<Value> {
     if !need.is_empty() {
         return Ok(json!({ "need_blobs": need }));
     }
-    Ok(json!({ "segment": build_segment(&contents) }))
+    let segment = build_segment(&contents).encode()?;
+    Ok(json!({ "segment_b64": STANDARD.encode(segment) }))
 }
 
+/// `search_segment`: of a stored segment (`segment_b64`) under `prefix`, the files that may
+/// hold `query` and the files whose content is not searched, with why.
 pub fn search_segment(c: &Value) -> Result<Value> {
-    let segment: Segment =
-        serde_json::from_value(c["segment"].clone()).map_err(|_| bad("Invalid segment"))?;
+    let bytes = STANDARD
+        .decode(string(c, "segment_b64")?)
+        .map_err(|_| bad("segment_b64 is not base64"))?;
+    let segment = StoredSegment::open(&bytes)?;
     let prefix = c["prefix"].as_str().unwrap_or_default();
-    Ok(json!({ "candidates": segment.candidates(prefix, &string(c, "query")?) }))
+    let at = |path: &str| match prefix {
+        "" => path.to_owned(),
+        _ => format!("{prefix}/{path}"),
+    };
+    let unindexed: Vec<Value> = segment
+        .files
+        .iter()
+        .filter(|f| !f.indexed)
+        .map(|f| json!({ "path": at(&f.path), "reason": f.skipped.as_deref().unwrap_or("not indexed") }))
+        .collect();
+    Ok(json!({
+        "candidates": segment.candidates(prefix, &string(c, "query")?)?,
+        "unindexed": unindexed,
+    }))
 }
 
 pub fn grep_blob(c: &Value) -> Result<Value> {
