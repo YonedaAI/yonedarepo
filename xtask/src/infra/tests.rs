@@ -132,6 +132,7 @@ fn ephemeral_env_shares_nothing_with_dev() {
             worker.role
         );
         assert_eq!(config["workers_dev"], json!(true));
+        assert!(!worker.secrets.iter().any(|s| s.starts_with("LFS_S3_")));
         for container in config["containers"].as_array().into_iter().flatten() {
             assert_eq!(container["max_instances"], json!(1));
         }

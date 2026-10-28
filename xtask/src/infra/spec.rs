@@ -139,6 +139,8 @@ impl Spec {
         self.check_instances = self.check_instances.map(|_| 1);
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
+            // Its generated secrets file has no R2 S3 key pair: Git LFS answers 501 there.
+            worker.secrets.retain(|s| !s.starts_with("LFS_S3_"));
             worker.notes = vec![format!(
                 "Ephemeral stack {}: removed by `cargo xtask infra down --env {} --confirm --purge`.",
                 env.name(),
