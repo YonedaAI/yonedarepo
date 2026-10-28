@@ -5,15 +5,15 @@ fn template() -> Value {
 }
 fn manifest() -> Value {
     json!({"name":"my-platform","account_id":"a".repeat(32),"namespace":"my-namespace",
-        "database_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb","sites_url":"https://my-platform-sites.mine.workers.dev"})
+        "database_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"})
 }
 
 #[test]
 fn portable_configuration_replaces_foreign_identities_and_preserves_history_with_new_paths() {
     let template = template();
     let migrations = template["migrations"].clone();
-    let (platform, sites) = configs(template, &manifest());
-    let text = format!("{platform}{sites}");
+    let platform = configs(template, &manifest());
+    let text = platform.to_string();
     for foreign in [
         "f011d0ee",
         "182c0b3e",
@@ -33,16 +33,14 @@ fn portable_configuration_replaces_foreign_identities_and_preserves_history_with
     );
     assert_eq!(platform["containers"][0]["image_build_context"], "../../..");
     assert_eq!(
-        platform["containers"][1]["images"]["agent"],
-        json!({"dockerfile":"../../../cloudflare/sandbox/Dockerfile","build_context":"../../.."})
-    );
-    assert_eq!(
         platform["d1_databases"][0]["migrations_dir"],
         "../../../cloudflare/migrations"
     );
-    assert_eq!(sites["main"], "../../../cloudflare/sites/index.ts");
     assert_eq!(platform["d1_databases"][0]["binding"], "INDEX");
-    assert_eq!(sites["services"][0]["service"], platform["name"]);
+    assert_eq!(
+        platform["queues"]["producers"][0]["queue"],
+        "my-platform-platform"
+    );
     assert!(platform.get("secrets_store_secrets").is_none());
     assert!(!slug("../prod"));
     assert!(!slug("a;curl"));
@@ -54,7 +52,7 @@ fn repeat_configure_changes_only_known_legacy_paths_and_retains_settings_and_sta
     let dir = root.path().join(directory("my-platform").unwrap());
     std::fs::create_dir_all(&dir).unwrap();
     save_configs(&dir, &manifest(), template()).unwrap();
-    let (mut platform, mut sites) = configs(template(), &manifest());
+    let mut platform = configs(template(), &manifest());
     platform["main"] = json!("../../../worker/index.ts");
     platform["assets"]["directory"] = json!("../../../web/dist");
     platform["containers"][0]["image"] = json!("../../../containers/Dockerfile");
@@ -71,16 +69,9 @@ fn repeat_configure_changes_only_known_legacy_paths_and_retains_settings_and_sta
         .as_array_mut()
         .unwrap()
         .push(json!({"tag":"custom-v3","renamed_classes":[{"from":"Old","to":"New"}]}));
-    sites["main"] = json!("../../../sites/index.ts");
-    sites["routes"] = json!([{"pattern":"sites.example/*","zone_name":"example"}]);
     std::fs::write(
         dir.join("platform.json"),
         serde_json::to_vec_pretty(&platform).unwrap(),
-    )
-    .unwrap();
-    std::fs::write(
-        dir.join("sites.json"),
-        serde_json::to_vec_pretty(&sites).unwrap(),
     )
     .unwrap();
     std::fs::create_dir_all(dir.join("state")).unwrap();
@@ -93,17 +84,11 @@ fn repeat_configure_changes_only_known_legacy_paths_and_retains_settings_and_sta
         json!("../../../cloudflare/containers/Dockerfile");
     expected_platform["d1_databases"][0]["migrations_dir"] =
         json!("../../../cloudflare/migrations");
-    let mut expected_sites = sites;
-    expected_sites["main"] = json!("../../../cloudflare/sites/index.ts");
     save_configs(&dir, &manifest(), template()).unwrap();
     let first = std::fs::read(dir.join("platform.json")).unwrap();
     assert_eq!(
         serde_json::from_slice::<Value>(&first).unwrap(),
         expected_platform
-    );
-    assert_eq!(
-        serde_json::from_slice::<Value>(&std::fs::read(dir.join("sites.json")).unwrap()).unwrap(),
-        expected_sites
     );
     save_configs(&dir, &manifest(), template()).unwrap();
     assert_eq!(std::fs::read(dir.join("platform.json")).unwrap(), first);
@@ -125,14 +110,14 @@ fn repeat_configure_changes_only_known_legacy_paths_and_retains_settings_and_sta
 fn custom_paths_and_missing_sections_are_preserved_during_known_path_upgrade() {
     let mut config =
         json!({"main":"../../../worker/index.ts","assets":{"directory":"../../../custom-assets"}});
-    assert!(upgrade_paths(&mut config, false));
+    assert!(upgrade_paths(&mut config));
     assert_eq!(
         config,
         json!({"main":"../../../cloudflare/worker/index.ts","assets":{"directory":"../../../custom-assets"}})
     );
-    assert!(!upgrade_paths(&mut config, false));
+    assert!(!upgrade_paths(&mut config));
     let mut custom = json!({"main":"../../../custom/worker.ts","routes":["example/*"]});
     let before = custom.clone();
-    assert!(!upgrade_paths(&mut custom, false));
+    assert!(!upgrade_paths(&mut custom));
     assert_eq!(custom, before);
 }
