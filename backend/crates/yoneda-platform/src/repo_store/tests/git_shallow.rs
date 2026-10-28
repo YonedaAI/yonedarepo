@@ -121,7 +121,7 @@ fn deepen_relative_counts_from_the_client_shallows_and_unshallows_them() {
     let full = h.ok(
         AGENT,
         json!({"op":"repo_git_walk","wants":[c[5]],"haves":[c[5]],"shallows":[c[3]],
-               "depth":yoneda_core::git_object::INFINITE_DEPTH}),
+               "depth":yoneda_core::transport::INFINITE_DEPTH}),
     );
     assert_eq!(sent(&full), [c[2].clone(), c[1].clone(), c[0].clone()]);
     assert_eq!(full["unshallow"], json!([c[3]]));

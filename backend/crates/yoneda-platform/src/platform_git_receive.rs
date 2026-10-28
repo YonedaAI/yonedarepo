@@ -10,10 +10,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Result,
-    git_object::{
-        AnnotatedTag, CommandList, ObjectId, ObjectKind, PackLimits, PackReader, RefCommand,
-        command_list,
-    },
+    git_object::{AnnotatedTag, ObjectId, ObjectKind, PackLimits, PackReader},
+    transport::{CommandList, RefCommand, command_list},
 };
 
 /// Larger pushes go through `git-remote-yoneda`, which uploads commit by commit.

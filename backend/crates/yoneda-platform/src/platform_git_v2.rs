@@ -8,7 +8,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Result,
-    git_object::{FetchHead, ObjectId, V2Command, ls_refs_answer, v2_capabilities, v2_request},
+    git_object::ObjectId,
+    transport::{FetchHead, V2Command, ls_refs_answer, v2_capabilities, v2_request},
 };
 
 const MAIN: &str = "refs/heads/main";
@@ -105,7 +106,7 @@ pub fn fetch_head(c: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use yoneda_core::git_object::{DELIM, FLUSH, pkt_line};
+    use yoneda_core::transport::{DELIM, FLUSH, pkt_line};
 
     fn text(answer: Value) -> String {
         String::from_utf8(
