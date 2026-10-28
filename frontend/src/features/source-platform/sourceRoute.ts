@@ -16,8 +16,7 @@ export const REPO_SETTINGS_SECTIONS = [
 export type RepoSettingsSection = (typeof REPO_SETTINGS_SECTIONS)[number];
 
 export type SourceRoute =
-  /** `project` is the workspace's older `/?repo=<project>` link, followed to its Runs tab. */
-  | { view: 'home'; project?: string }
+  | { view: 'home' }
   | { view: 'settings' }
   | { view: 'device'; code: string }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
@@ -28,12 +27,11 @@ export type SourceRoute =
   | { view: 'search'; repo: string; query: string }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
-  | { view: 'runs'; repo: string; run?: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
 /** The repository tabs; `transactions` and `commit` belong to History, `overview` to Code,
  * `change` to Changes. */
-export type RepoTab = 'code' | 'history' | 'changes' | 'runs' | 'search' | 'settings';
+export type RepoTab = 'code' | 'history' | 'changes' | 'search' | 'settings';
 
 const REPO = /^r[0-9a-f]{20}$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -48,10 +46,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
   if (root === 'settings' && !repo) return { view: 'settings' };
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
-  if (root !== 'source' || !repo || !REPO.test(repo)) {
-    const project = params.get('repo');
-    return project ? { view: 'home', project } : { view: 'home' };
-  }
+  if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
@@ -59,10 +54,6 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (view === 'members') return { view: 'repo-settings', repo, section: 'members' };
   if (view === 'settings')
     return { view: 'repo-settings', repo, section: isSection(rest[0]) ? rest[0] : 'rules' };
-  if (view === 'runs') {
-    const run = params.get('run');
-    return run ? { view: 'runs', repo, run } : { view: 'runs', repo };
-  }
   if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
   if (view === 'changes') {
     const number = Number(rest[0]);
@@ -84,8 +75,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 }
 
 export function formatSourceRoute(route: SourceRoute): string {
-  if (route.view === 'home')
-    return route.project ? `/?repo=${encodeURIComponent(route.project)}` : '/';
+  if (route.view === 'home') return '/';
   if (route.view === 'settings') return '/settings';
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
@@ -97,8 +87,6 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'transactions') return `${base}/transactions`;
   if (route.view === 'repo-settings')
     return route.section === 'rules' ? `${base}/settings` : `${base}/settings/${route.section}`;
-  if (route.view === 'runs')
-    return route.run ? `${base}/runs?run=${encodeURIComponent(route.run)}` : `${base}/runs`;
   if (route.view === 'search')
     return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
@@ -131,8 +119,6 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'changes':
     case 'change':
       return 'changes';
-    case 'runs':
-      return 'runs';
     case 'search':
       return 'search';
     case 'repo-settings':
@@ -147,7 +133,6 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'code') return { view: 'files', repo, path: '', ref: 'main' };
   if (tab === 'history') return { view: 'history', repo, ref: 'main' };
   if (tab === 'changes') return { view: 'changes', repo };
-  if (tab === 'runs') return { view: 'runs', repo };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };
 }

@@ -2,49 +2,50 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
-import { useRepository } from '../../hooks/useRepository';
+import { type Session, useSession } from '../../hooks/useSession';
 import { api, onUnauthorized } from '../../lib/api';
 
-vi.mock('../../hooks/useRepository', () => ({ useRepository: vi.fn() }));
+vi.mock('../../hooks/useSession', () => ({ useSession: vi.fn() }));
 afterEach(() => vi.unstubAllGlobals());
 
-function signedOut(sessionEnded: boolean) {
+function signedOut(sessionEnded: boolean): Session {
   return {
     authenticated: false,
     sessionEnded,
     identity: null,
-    repositories: [],
-    snapshot: null,
-    project: undefined,
-    id: '',
     loading: false,
-    // A late child request can still report the rejection after the workspace was cleared.
-    error: 'Sign in to your workspace',
-    refresh: vi.fn(),
-    discover: vi.fn(),
+    error: '',
     setError: vi.fn(),
-    setId: vi.fn(),
-  } as unknown as ReturnType<typeof useRepository>;
+    discover: vi.fn(),
+    signOut: vi.fn(),
+  };
 }
 const count = (html: string, text: string) => html.split(text).length - 1;
 
 describe('ended session', () => {
   it('replaces the workspace with a single sign-in state', () => {
-    vi.mocked(useRepository).mockReturnValue(signedOut(true));
+    vi.mocked(useSession).mockReturnValue(signedOut(true));
     const html = renderToStaticMarkup(createElement(App));
     expect(html).toContain('Your session ended');
     expect(count(html, 'class="account-tabs"')).toBe(1);
-    expect(html).toContain('Have a reviewer access key?');
     expect(html).not.toContain('welcome-onboarding');
     expect(html).not.toContain('An API-first, Git-like');
     expect(html).not.toContain('role="alert"');
   });
 
   it('keeps the ordinary welcome for a visitor who was never signed in', () => {
-    vi.mocked(useRepository).mockReturnValue(signedOut(false));
+    vi.mocked(useSession).mockReturnValue(signedOut(false));
     const html = renderToStaticMarkup(createElement(App));
     expect(html).not.toContain('Your session ended');
     expect(html).toContain('welcome-onboarding');
+    expect(html).toContain('class="account-tabs"');
+  });
+
+  it('shows no agent-run controls anywhere in the signed-out shell', () => {
+    vi.mocked(useSession).mockReturnValue(signedOut(false));
+    const html = renderToStaticMarkup(createElement(App));
+    for (const gone of ['Connect Agents', 'Start a Run', 'Agent runs', 'Administrator access'])
+      expect(html).not.toContain(gone);
   });
 
   it('reports a rejected session from any API call, but not other failures', async () => {

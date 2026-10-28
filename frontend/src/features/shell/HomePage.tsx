@@ -1,28 +1,38 @@
-// Home (`/`): sign-in and onboarding, a project still being set up, or every repository.
+// Home (`/`): sign-in and onboarding, or every repository the account can use.
 import { ArrowRight, GitBranch, Plus } from 'lucide-react';
-import type { useRepository } from '../../hooks/useRepository';
+import type { Session } from '../../hooks/useSession';
 import { WorkspaceWelcome } from '../workspace/WorkspaceWelcome';
 import type { RepoRow } from './repoRows';
 import { linkTo, type Navigate } from './useRoute';
 
 export function HomePage({
-  state,
+  session,
   rows,
-  setupProject,
+  rowsLoading,
+  rowsError,
+  onRetry,
   navigate,
   onNew,
-  onProviders,
 }: {
-  state: ReturnType<typeof useRepository>;
+  session: Session;
   rows: RepoRow[];
-  /** A project link (`/?repo=`) to a project whose setup has not finished. */
-  setupProject: boolean;
+  rowsLoading: boolean;
+  rowsError: string;
+  onRetry: () => void;
   navigate: Navigate;
   onNew: () => void;
-  onProviders: () => void;
 }) {
-  if (!state.authenticated || setupProject || (!rows.length && !state.loading))
-    return <WorkspaceWelcome state={state} onProject={onNew} onProviders={onProviders} />;
+  if (!session.authenticated || !rows.length)
+    return (
+      <WorkspaceWelcome
+        authenticated={session.authenticated}
+        loading={session.loading || (session.authenticated && rowsLoading)}
+        error={session.error || rowsError}
+        onRetry={onRetry}
+        onSignedIn={() => void session.discover()}
+        onNew={onNew}
+      />
+    );
   return (
     <section className="home-repos" aria-labelledby="home-heading">
       <div className="page-heading">
@@ -32,30 +42,14 @@ export function HomePage({
           New repository
         </button>
       </div>
-      {!rows.length && <p className="source-empty">Loading repositories…</p>}
       <ul className="home-repo-list">
         {rows.map((row) => (
-          <li key={row.key}>
-            <a
-              {...linkTo(
-                row.repo
-                  ? { view: 'files', repo: row.repo, path: '', ref: 'main' }
-                  : { view: 'home', project: row.project?.id },
-                navigate,
-              )}
-            >
+          <li key={row.repo}>
+            <a {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, navigate)}>
               <GitBranch size={18} aria-hidden="true" />
               <span className="home-repo-text">
                 <strong className="home-repo-name">{row.name}</strong>
-                <small className="home-repo-meta">
-                  {[
-                    row.project ? 'agent runs' : 'git',
-                    row.shared,
-                    row.project && row.project.status !== 'ready' ? row.project.status : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </small>
+                <small className="home-repo-meta">{row.shared ?? 'yours'}</small>
               </span>
               <ArrowRight size={16} aria-hidden="true" />
             </a>

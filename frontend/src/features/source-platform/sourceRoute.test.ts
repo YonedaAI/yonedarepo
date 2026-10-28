@@ -15,7 +15,6 @@ describe('source routes', () => {
   it('round-trips every view', () => {
     const routes: SourceRoute[] = [
       { view: 'home' },
-      { view: 'home', project: 'my-site' },
       { view: 'settings' },
       { view: 'files', repo, path: '', ref: 'main' },
       { view: 'files', repo, path: 'src/a b.rs', ref: 'feature/x', at: 3 },
@@ -26,8 +25,6 @@ describe('source routes', () => {
       { view: 'search', repo, query: 'retry with' },
       { view: 'overview', repo, path: '', ref: 'main' },
       { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
-      { view: 'runs', repo },
-      { view: 'runs', repo, run: 'run-1' },
       { view: 'changes', repo },
       { view: 'change', repo, number: 12 },
       { view: 'repo-settings', repo, section: 'rules' },
@@ -69,7 +66,7 @@ describe('repository tabs', () => {
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
     expect(routeTab({ view: 'change', repo, number: 3 })).toBe('changes');
     expect(routeTab({ view: 'settings' })).toBeUndefined();
-    for (const tab of ['code', 'history', 'changes', 'runs', 'search', 'settings'] as const)
+    for (const tab of ['code', 'history', 'changes', 'search', 'settings'] as const)
       expect(routeTab(tabRoute(tab, repo))).toBe(tab);
   });
 });

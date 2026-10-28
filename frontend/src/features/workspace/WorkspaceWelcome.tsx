@@ -1,6 +1,7 @@
+// Home before any repository: the product and sign-in when signed out, loading or a failed
+// read, and the first "New repository" when the account has none.
 import {
   ArrowRight,
-  Bot,
   Download,
   GitBranch,
   History,
@@ -8,51 +9,37 @@ import {
   Network,
   Plus,
 } from 'lucide-react';
-import type { useRepository } from '../../hooks/useRepository';
 import { AccountPanel } from './AccountPanel';
-import { ReviewerAccess } from './ReviewerAccess';
-import { SetupProgress } from './SetupProgress';
 
 export function WorkspaceWelcome({
-  reviewer = false,
-  state,
-  onProject,
-  onProviders,
+  authenticated,
+  loading,
+  error,
+  onRetry,
+  onSignedIn,
+  onNew,
 }: {
-  reviewer?: boolean;
-  state: ReturnType<typeof useRepository>;
-  onProject: () => void;
-  onProviders: () => void;
+  authenticated: boolean;
+  loading: boolean;
+  error: string;
+  onRetry: () => void;
+  onSignedIn: () => void;
+  onNew: () => void;
 }) {
-  if (state.project && ['provisioning', 'failed'].includes(state.project.status))
-    return (
-      <SetupProgress
-        reviewer={reviewer}
-        key={state.id}
-        project={state.project}
-        error={state.error}
-        onRetry={state.retrySetup}
-        onRefresh={state.refresh}
-      />
-    );
-  if (state.loading || state.id)
+  if (loading || error)
     return (
       <section className="workspace-loading" aria-live="polite">
-        {state.error ? <GitBranch size={28} /> : <LoaderCircle size={28} className="spin" />}
-        <h1>{state.error ? 'Could not open your workspace' : 'Opening your workspace'}</h1>
-        <p>{state.error || 'Loading repositories and recorded context…'}</p>
-        {state.error && (
-          <button
-            type="button"
-            disabled={state.loading}
-            onClick={() => void (state.id ? state.refresh() : state.discover())}
-          >
+        {error ? <GitBranch size={28} /> : <LoaderCircle size={28} className="spin" />}
+        <h1>{error ? 'Could not open your workspace' : 'Opening your workspace'}</h1>
+        <p>{error || 'Loading repositories…'}</p>
+        {error && (
+          <button type="button" disabled={loading} onClick={onRetry}>
             Retry connection
           </button>
         )}
       </section>
     );
-  if (!state.authenticated)
+  if (!authenticated)
     return (
       <section className="welcome-onboarding">
         <div className="welcome-story">
@@ -87,24 +74,8 @@ export function WorkspaceWelcome({
           <p className="welcome-note">Bring your agent. Give the next one a head start.</p>
         </div>
         <div className="welcome-access">
-          <ReviewerAccess
-            onConnected={() => {
-              void state.discover();
-            }}
-          />
-          <AccountPanel
-            onConnected={() => {
-              void state.discover();
-            }}
-          />
+          <AccountPanel onConnected={onSignedIn} />
         </div>
-      </section>
-    );
-  if (reviewer)
-    return (
-      <section className="workspace-start">
-        <h1>Your reviewer sandbox</h1>
-        <p>Your funded sandbox will appear here when it is ready.</p>
       </section>
     );
   return (
@@ -112,39 +83,17 @@ export function WorkspaceWelcome({
       <div className="intent-symbol">
         <GitBranch size={28} />
       </div>
-      <h1>
-        A new project.
-        <br />A shared starting point.
-      </h1>
-      <p>Create a repository, give your agents a brief, and explore what they build together.</p>
-      <div className="workspace-start-actions">
-        <button type="button" onClick={onProject}>
-          <Plus size={17} />
-          Add repository
-        </button>
-      </div>
-      <div className="getting-started">
-        <div>
-          <GitBranch size={21} />
-          <h2>Your source</h2>
-          <p>Start from a website template or import a public repository.</p>
-        </div>
-        <button type="button" onClick={onProviders}>
-          <Bot size={21} />
-          <strong>Your agents</strong>
-          <span>Connect a provider for hosted runs.</span>
-          <ArrowRight size={16} />
-        </button>
-        <div>
-          <Network size={21} />
-          <h2>Your context</h2>
-          <p>Keep intent, alternatives and evidence connected to the code.</p>
-        </div>
-      </div>
-      <p className="welcome-note">
-        Choose <strong>Connect Agents</strong> in the sidebar to set up hosted agents or connect
-        your own agent.
+      <h1>Your first repository.</h1>
+      <p>
+        Create one here, then clone and push with Git, or connect an agent through the CLI or MCP.
+        Commits are checked, reviewed and landed on the server.
       </p>
+      <div className="workspace-start-actions">
+        <button type="button" onClick={onNew}>
+          <Plus size={17} />
+          New repository
+        </button>
+      </div>
     </section>
   );
 }
