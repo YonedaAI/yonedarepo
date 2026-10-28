@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { until } from './client.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
@@ -50,7 +51,16 @@ export async function cliRebase(kit, metrics) {
   ];
   const moved = await api.post(`/repos/${repo}/commits`, { ref: 'main', changes, message: 'Kit: main moves', author });
   assert.equal((await api.post(`/repos/${repo}/land`, { ref: 'main', commit: moved.commit })).landed, true, 'main did not move');
-  const main = (await refs())['refs/heads/main'];
+  // Batched landing projects protected main as its own Git commit: wait until Git serves
+  // the main the API reports, so the rebase and the clone below see the same main.
+  const main = await until(
+    async () => {
+      const apiMain = (await refs())['refs/heads/main'];
+      const served = (await kit.gitOk(dir, 'ls-remote', 'origin', 'refs/heads/main')).split(/\s/)[0];
+      return apiMain && apiMain === served && apiMain;
+    },
+    { timeoutMs: 180_000, intervalMs: 2000, what: 'main projected' },
+  );
 
   const rebased = await kit.yonedaOk(['rebase', 'kit-topic'], { cwd: dir });
   metrics.rebase_ms = rebased.ms;
