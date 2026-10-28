@@ -7,13 +7,14 @@
 // page (the platform refuses an author's own approval); the page and the API must both read it
 // back landed. A second branch, cut from main before that landing, is then behind main: its
 // Change page's "Rebase on main" replays it onto main. Releases, forks and organizations follow
-// (browser-collab-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// (browser-collab-flow.mjs), then tokens and deleting an org (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
+import { adminPages } from './browser-admin-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep } from './client.mjs';
 
@@ -74,6 +75,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     await releasePages(page, { account, repo, shot }, m);
     await forkPages(page, { account, repo, shot, cleanup }, m);
     await orgPages(page, { account, member: landed.member, shot, cleanup }, m);
+    await adminPages(page, { api, account, repo, shot, cleanup, secrets }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
