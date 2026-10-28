@@ -4,7 +4,7 @@
 //! prepare builds it, and recorded wherever its writer's commits live.
 use crate::platform_objects::supplied_trees;
 use crate::repo_store::prepare::build::{Parent, Trees, build, frontier, objects_json};
-use crate::repo_store::prepare::changes::changes;
+use crate::repo_store::prepare::changes::{changes, unread_symlinks};
 use crate::storage::{bad, number, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -33,6 +33,10 @@ pub fn build_commit(c: &Value) -> Result<Value> {
         .map(parent)
         .collect::<Result<Vec<_>>>()?;
     let changes = changes(c, &[])?;
+    let need_blobs = unread_symlinks(&changes, c)?;
+    if !need_blobs.is_empty() {
+        return Ok(json!({ "need_blobs": need_blobs }));
+    }
     let trees = Trees(supplied_trees(c)?);
     let paths: Vec<&str> = changes.iter().map(|ch| ch.path.as_str()).collect();
     let missing = frontier(first.as_ref().map(|p| p.tree), &paths, &trees);

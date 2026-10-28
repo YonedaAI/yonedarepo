@@ -1,7 +1,6 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { Policy } from '../repo-settings/policy';
 import type { CommitDetail, Gates } from './CommitGates';
 import { GateSummary } from './CommitGates';
 import { CommitLanding } from './CommitLanding';
@@ -22,8 +21,8 @@ const owner: Viewer = { owner: true, role: null };
 const lander: Viewer = { owner: false, role: 'land' };
 const writer: Viewer = { owner: false, role: 'write' };
 const reader: Viewer = { owner: false, role: 'read' };
-const noChecks: Policy = { required_checks: [], approvals: 0 };
-const withChecks: Policy = { required_checks: ['test'], approvals: 0 };
+const noChecks: RepoStatus['policy'] = { required_checks: [], approvals: 0 };
+const withChecks: RepoStatus['policy'] = { required_checks: ['test'], approvals: 0 };
 const landed = [{ refname: 'refs/heads/main', version: 2, landed_at: 1_700_000_000_000 }];
 
 const detail = (over: Partial<CommitDetail> = {}): CommitDetail => ({
@@ -45,12 +44,23 @@ const detail = (over: Partial<CommitDetail> = {}): CommitDetail => ({
 const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   name: 'demo',
   version: 2,
+  owner: 'kit',
+  object_store: 'r2',
   policy,
-  viewer,
+  policy_digest: 'd'.repeat(64),
+  viewer: { principal: 'user:kit', public: false, ...viewer },
   refs: [
     { name: 'refs/heads/main', commit_id: 'b'.repeat(40), version: 2 },
     { name: 'refs/heads/dev', commit_id: 'c'.repeat(40), version: 1 },
   ],
+  projections: [],
+  objects: {},
+  bundled: false,
+  automation: null,
+  parent: null,
+  forks: 0,
+  grant: null,
+  visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>
   renderToStaticMarkup(

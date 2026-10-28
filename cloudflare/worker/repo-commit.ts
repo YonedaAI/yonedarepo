@@ -19,6 +19,9 @@ import { dispatchObjects } from './repo-projection';
 import { putRaw } from './repo-stores';
 import { timed } from './repo-timing';
 
+/** The longest symlink target the platform accepts (yoneda_core::validate_symlink). */
+const MAX_SYMLINK_TARGET_BYTES = 512;
+
 /** How a commit treats a lost queue: `best_effort` reports undispatched check runs instead
  * of failing (they stay queued in the authority and are re-dispatched on request). */
 export type Dispatch = 'required' | 'best_effort';
@@ -47,6 +50,8 @@ export async function commit(
       : { parent: null, base_version: body.base_version ?? 0 };
   let objects = given;
   const trees: Record<string, TreeEntry[]> = {};
+  // Symlinks placed by blob id: the authority checks their targets in these bytes.
+  const blobs: Record<string, string> = {};
   for (let round = 0; round < 64; round++) {
     const prepared = await ctx.call({
       op: 'repo_prepare_commit',
@@ -59,10 +64,24 @@ export async function commit(
       ...(body.merge_parent ? { merge_parent: body.merge_parent } : {}),
       ...(body.merge_parents ? { merge_parents: body.merge_parents } : {}),
       trees,
+      blobs,
       stage: true,
     });
     objects ??= ctx.adopt(prepared.object_store);
     const store = objects;
+    if (prepared.need_blobs) {
+      base = { parent: prepared.parent, base_version: prepared.base_version };
+      await Promise.all(
+        (prepared.need_blobs as string[]).map(async (id) => {
+          const target = await store.blob(id);
+          // Anything longer is refused anyway; it is not worth sending to the authority.
+          if (target.length > MAX_SYMLINK_TARGET_BYTES)
+            throw new ApiError('UNSAFE_PATH', `Blob ${id} is too long for a symlink target`);
+          blobs[id] = toBase64(target);
+        }),
+      );
+      continue;
+    }
     if (prepared.need_trees) {
       base = { parent: prepared.parent, base_version: prepared.base_version };
       await timed('trees', () =>

@@ -194,6 +194,13 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
         // Duplicate delivery of the same attempt's result is harmless.
         return Ok(json!({ "run_id": id, "status": row["status"], "already": true }));
     }
+    if outcome != "error" {
+        let commit = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
+        let runner: Runner = serde_json::from_str(row["runner"].as_str().unwrap_or_default())
+            .map_err(|_| rows::corrupt("runner"))?;
+        let tree = rows::recorded(db, &commit)?.tree;
+        super::check_evidence::ran_on(&c["evidence"], &commit, &tree, &runner)?;
+    }
     let evidence = serde_json::to_string(&c["evidence"]).map_err(|e| bad(&e.to_string()))?;
     if evidence.len() > 16 * 1024 {
         return Err(bad("Check evidence exceeds 16 KiB; store logs as objects"));

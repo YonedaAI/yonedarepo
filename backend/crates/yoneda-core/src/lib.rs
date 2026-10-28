@@ -58,6 +58,49 @@ pub fn validate_path(path: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Whether a symlink at repo path `path` pointing at `target` resolves under the root:
+/// `target` is relative and its `..` steps never climb above the root. Empty and `.`
+/// components are skipped, as `std::path::Path::components` does.
+pub fn symlink_stays_inside(path: &str, target: &str) -> bool {
+    if target.is_empty() || target.starts_with('/') {
+        return false;
+    }
+    let real = |c: &&str| !c.is_empty() && *c != ".";
+    let mut depth = path.split('/').filter(real).count().saturating_sub(1);
+    for component in target.split('/').filter(real) {
+        if component == ".." {
+            let Some(shallower) = depth.checked_sub(1) else {
+                return false;
+            };
+            depth = shallower;
+        } else {
+            depth += 1;
+        }
+    }
+    true
+}
+/// A symlink's target as the platform accepts it: a path in [`validate_path`]'s alphabet
+/// (no `\`, NUL, `:` or `.git` component, at most 512 bytes) that stays inside the
+/// repository. Git itself accepts any target; checkouts and checks must not follow one out.
+pub fn validate_symlink(path: &str, target: &[u8]) -> Result<()> {
+    let target = std::str::from_utf8(target).ok();
+    let safe = target.filter(|t| {
+        t.len() <= 512
+            && !t.contains(['\\', '\0', ':'])
+            && !t.split('/').any(|c| c.eq_ignore_ascii_case(".git"))
+            && symlink_stays_inside(path, t)
+    });
+    if safe.is_none() {
+        return Err(Error::new(
+            "UNSAFE_PATH",
+            format!(
+                "{path} is a symlink whose target {:?} leaves the repository; use a relative target inside it, or a regular file",
+                target.unwrap_or("(not UTF-8)")
+            ),
+        ));
+    }
+    Ok(())
+}
 /// Lowercase hex of raw bytes (digest outputs no longer implement `LowerHex` in sha2 0.11).
 pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -145,6 +188,46 @@ mod tests {
         ] {
             assert!(validate_path(path).is_err(), "{path:?}");
         }
+    }
+    #[test]
+    fn symlinks_must_resolve_inside_the_repository() {
+        for (path, target) in [
+            ("link", "README.md"),
+            ("docs/link", "../README.md"),
+            ("a/b/link", "../../c"),
+            ("a/link", "./b/../c"),
+            ("a/link", "b//c/"),
+        ] {
+            assert!(symlink_stays_inside(path, target), "{path} -> {target}");
+            assert!(
+                validate_symlink(path, target.as_bytes()).is_ok(),
+                "{path} -> {target}"
+            );
+        }
+        for (path, target) in [
+            ("link", "../x"),
+            ("docs/link", "../../x"),
+            ("a/link", "b/../../../x"),
+            ("link", "/etc/passwd"),
+            ("link", ""),
+        ] {
+            assert!(!symlink_stays_inside(path, target), "{path} -> {target}");
+        }
+        for target in [
+            &b"../x"[..],
+            b"/etc/passwd",
+            b"",
+            b".git/config",
+            b"a/.GIT/hooks",
+            b"a\\b",
+            b"c:x",
+            b"a\0b",
+            b"\xff",
+        ] {
+            let error = validate_symlink("link", target).unwrap_err();
+            assert_eq!(error.code, "UNSAFE_PATH", "{target:?}");
+        }
+        assert!(validate_symlink("link", "a/".repeat(300).as_bytes()).is_err());
     }
     #[test]
     fn evidence_hash_matches_standard_sha256() {

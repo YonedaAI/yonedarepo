@@ -36,7 +36,8 @@ fn released_claims_requeue_the_run_without_spending_attempts() {
     }
     // Only the holder's epoch releases, only while running; only the platform (or the owner,
     // as for claims) may.
-    let epoch = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["epoch"].clone();
+    let claim = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}));
+    let epoch = claim["epoch"].clone();
     let stale = json!({"op":"repo_check_release","run_id":run,"epoch":7});
     assert_eq!(h.ok(SYSTEM, stale)["released"], false);
     let release = json!({"op":"repo_check_release","run_id":run,"epoch":epoch});
@@ -45,7 +46,7 @@ fn released_claims_requeue_the_run_without_spending_attempts() {
     }
     h.ok(
         SYSTEM,
-        json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,"outcome":"pass","evidence":{}}),
+        json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,"outcome":"pass","evidence":ran_on(&claim)}),
     );
     assert_eq!(h.ok(SYSTEM, release)["released"], false);
     let shown = h.ok(SYSTEM, json!({"op":"repo_check_run","run_id":run}));

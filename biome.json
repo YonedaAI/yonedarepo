@@ -7,6 +7,7 @@
       "cloudflare/superfan/**",
       "frontend/src/**",
       "shared/**",
+      "!shared/contracts/**",
       "!**/wasm.d.ts"
     ]
   },
