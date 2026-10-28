@@ -8,7 +8,7 @@
 
 import { transient } from './durable';
 import { compute } from './repo-compute';
-import { rawObjects, treesFor } from './repo-git-objects';
+import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -130,11 +130,12 @@ export function errLine(head: Uint8Array, e: any) {
 
 /** Lists what to send, reading the trees each commit's diff needs. */
 export async function enumerate(session: UploadSession, objects: RepoObjects) {
+  const seen = new SeenTrees();
   let step = session.step({});
   for (let round = 0; step.need_trees; round++) {
     if (round >= WALK_ROUNDS)
       throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-    const trees = await treesFor(objects, step.need_trees as string[]);
+    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen);
     step = session.step({ trees });
   }
   return step;
