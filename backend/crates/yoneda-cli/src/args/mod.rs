@@ -4,6 +4,7 @@
 mod docs;
 mod org;
 mod parser;
+mod ssh_key;
 mod sub;
 
 pub use crate::command::*;
@@ -97,6 +98,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         },
         "repo" => sub::repo(rest)?,
         "org" => org::org(rest)?,
+        "ssh-key" => ssh_key::ssh_key(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
         "log" | "grep" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,

@@ -14,6 +14,7 @@ import {
   revokePat,
 } from '../source-platform/PersonalTokens';
 import { Failure, Loading } from '../source-platform/SourceStatus';
+import { SshKeys } from '../source-platform/SshKeys';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
 import { type Loaded, useSource } from '../source-platform/useSource';
@@ -127,6 +128,7 @@ export function AccountSettings({
         {error && <Failure error={error} />}
       </section>
       <PersonalTokens repos={repos} tokens={tokens} />
+      <SshKeys />
       {orgs && navigate && <AccountOrgs orgs={orgs} navigate={navigate} />}
     </div>
   );
