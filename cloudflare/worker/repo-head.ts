@@ -4,8 +4,9 @@
 // landing re-checks access and validates the base against the log, and a reader that
 // passes the version it landed at waits until the head reaches it. Access is bounded: the
 // holder reloads before an access change answers, the isolate that served the change drops
-// its copy, and every other isolate decides on a copy at most ACCESS_MS old, so a revoked
-// token or removed member is refused everywhere within ACCESS_MS of the change's answer.
+// its copy, and every other isolate decides on a copy fetched at most ACCESS_MS ago, so a
+// revoked token or removed member is refused everywhere within ACCESS_MS of the change's
+// answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
@@ -78,27 +79,32 @@ async function headOf(env: Env, repo: string, minVersion: number): Promise<Json>
   const cached = heads.get(repo);
   if (cached && cached.head.version >= minVersion && Date.now() - cached.at < ACCESS_MS)
     return cached.head;
-  let head = await fetchInto(env, repo, minVersion);
-  // The holder answers below `minVersion` only when its reload is behind: once more.
-  if (head.version < minVersion) head = await fetchInto(env, repo, minVersion);
+  const fetched = await fetchInto(env, repo, minVersion);
+  let head = fetched.head;
+  // The holder answers below `minVersion` only when its reload is behind, and a shared
+  // fetch may have started too long ago to decide on: once more.
+  if (head.version < minVersion || Date.now() - fetched.at >= ACCESS_MS)
+    head = (await fetchInto(env, repo, minVersion)).head;
   if (head.version < minVersion)
     throw new ApiError('STALE_READ', `main has not reached version ${minVersion} yet; retry`);
   return head;
 }
 
-/** Fetches main's head and caches it. Fetches that need no newer version than the copy
- * share one call (the holder answers it from memory); one that needs a landing waits for
- * the holder to reach it, alone. With a cached copy, only the overlay entries newer than it
- * travel, and the access snapshot only when it changed. */
-async function fetchInto(env: Env, repo: string, minVersion: number): Promise<Json> {
+/** Fetches main's head and caches it, dated when the fetch started (`at`). Fetches that
+ * need no newer version than the copy share one call (the holder answers it from memory);
+ * one that needs a landing waits for the holder to reach it, alone. With a cached copy,
+ * only the overlay entries newer than it travel, and the access snapshot only when it
+ * changed. */
+async function fetchInto(env: Env, repo: string, minVersion: number) {
   const shared = holder(env, repo);
   const prev = heads.get(repo)?.head;
   const key = minVersion > (prev?.version ?? 0) ? `head:${repo}@${minVersion}` : `head:${repo}`;
-  const head = await once(key, async () => {
+  const { head, at } = await once(key, async () => {
+    const at = Date.now();
     if (!shared) {
       const full = await fetchHead(env, repo);
       accesses.set(repo, accessOf(full));
-      return withoutTokens(full);
+      return { head: withoutTokens(full), at };
     }
     const base = heads.get(repo)?.head;
     const { access, ...next } = await shared.head(
@@ -108,17 +114,18 @@ async function fetchInto(env: Env, repo: string, minVersion: number): Promise<Js
       accesses.get(repo)?.version ?? null,
     );
     if (access) accesses.set(repo, access);
-    if (!base || next.overlay_since === null || next.overlay_since === undefined) return next;
+    if (!base || next.overlay_since === null || next.overlay_since === undefined)
+      return { head: next, at };
     const kept = (base.overlay as Json[]).filter(
       (e) => e.version > (next.projected_version ?? 0) && e.version <= next.overlay_since,
     );
-    return { ...next, overlay: [...kept, ...next.overlay] };
+    return { head: { ...next, overlay: [...kept, ...next.overlay] }, at };
   });
   const cached = heads.get(repo);
-  if (!cached || cached.head.version <= head.version) heads.set(repo, { head, at: Date.now() });
+  if (!cached || cached.head.version <= head.version) heads.set(repo, { head, at });
   const reached = landings.get(repo)?.filter((l) => l.version > head.version);
   if (reached) landings.set(repo, reached);
-  return head;
+  return { head: head as Json, at: at as number };
 }
 
 async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
@@ -191,6 +198,17 @@ export async function refreshHead(env: Env, repo: string, access = false) {
   await holder(env, repo)
     ?.refresh(repo, access)
     .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
+}
+
+/** After the authority became a tombstone: drops main's published head everywhere before
+ * the deletion answers. The holder must drop it (a failure fails the deletion, which is
+ * retried), and every other isolate's copy was fetched before that, so it has expired once
+ * ACCESS_MS has passed: no read that starts after the answer decides on a live head. */
+export async function dropDeletedHead(env: Env, repo: string) {
+  noteWrite(repo);
+  heads.delete(repo);
+  await holder(env, repo)?.refresh(repo, true);
+  await new Promise((resolve) => setTimeout(resolve, ACCESS_MS));
 }
 
 /** The trees along `paths` from root tree `root`, from the repository's head holder in
