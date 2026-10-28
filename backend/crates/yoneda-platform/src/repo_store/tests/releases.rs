@@ -209,7 +209,10 @@ fn releases_need_a_tag_land_scope_and_keep_assets_within_caps() {
     // Deleting answers the asset names to remove; the tag stays.
     let delete = json!({"op":"repo_release_delete","tag":"v1"});
     assert_eq!(code(h.run(CI, delete.clone())), "FORBIDDEN");
-    assert_eq!(h.ok(OWNER, delete)["assets"], json!(["app.zip"]));
+    assert_eq!(
+        h.ok(OWNER, delete)["assets"],
+        json!([{ "name": "app.zip", "sha256": sha }])
+    );
     assert!(
         h.ok(CI, json!({"op":"repo_releases"}))["releases"]
             .as_array()
