@@ -71,6 +71,9 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
                     expect,
                 });
             }
+            // A referenced blob is already in the repository (a merge or revert re-placing
+            // it), so its symlink target is not re-checked: a writer could push the same
+            // symlink over Git, and the check runner refuses escaping targets either way.
             if change.get("blob").is_some() {
                 let blob = Content::Known(object_id(change, "blob")?);
                 return Ok(Change {
@@ -93,6 +96,10 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
             let content = STANDARD
                 .decode(encoded)
                 .map_err(|_| bad("content_b64 is not base64"))?;
+            let mode = file_mode(change)?;
+            if mode == FileMode::Symlink {
+                yoneda_core::validate_symlink(&path, &content)?;
+            }
             crate::secret_scan::scan(&path, &content, allow)?;
             total += content.len();
             if content.len() > MAX_FILE_BYTES || total > MAX_TOTAL_BYTES {
@@ -103,7 +110,7 @@ pub(crate) fn changes(c: &Value, allow: &[SecretAllow]) -> Result<Vec<Change>> {
             }
             Ok(Change {
                 path,
-                target: Some((file_mode(change)?, Content::Bytes(content))),
+                target: Some((mode, Content::Bytes(content))),
                 expect,
             })
         })
