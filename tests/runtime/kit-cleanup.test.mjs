@@ -1,8 +1,10 @@
 // The kit and the fanout bench delete every repository they create, pass or fail.
 import assert from 'node:assert/strict';
+import { createServer } from 'node:net';
 import { test } from 'node:test';
 import { connect } from '../../tools/fanout-bench/driver.mjs';
 import { withRepos } from '../../tools/staging/platform-flow.mjs';
+import { sshFlow } from '../../tools/staging/ssh-flow.mjs';
 
 /** A platform Session stand-in: creations get ids, deletions are recorded (or refused). */
 function fakePlatform({ refuseDelete = false } = {}) {
@@ -17,6 +19,15 @@ function fakePlatform({ refuseDelete = false } = {}) {
       return refuseDelete ? { ok: false, status: 403, body: { error: { code: 'FORBIDDEN' } } } : { ok: true, status: 200, body: {} };
     },
   };
+}
+
+/** A local port nothing listens on. */
+async function closedPort() {
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  await new Promise((resolve) => server.close(resolve));
+  return port;
 }
 
 test('an item deletes the repositories it made when it passes', async () => {
@@ -49,6 +60,22 @@ test('a passing item that leaked a repository fails', async () => {
     withRepos(platform, (newRepo) => newRepo('kit-a', {}, [])),
     /Left repositories: kit-a-\d+ \(403 FORBIDDEN\)/,
   );
+});
+
+test('the SSH item (26) deletes its repository and its key when it fails', async () => {
+  const platform = fakePlatform();
+  const removed = [];
+  const keys = { post: async () => ({ id: 'k1', fingerprint: 'SHA256:kit', ssh: {} }) };
+  const session = {
+    ...platform,
+    post: (path, body) => (path === '/ssh-keys' ? keys.post() : platform.post(path, body)),
+    call: async (method, path) => removed.push(`${method} ${path}`),
+  };
+  // Nothing answers SSH there, so the first check (`ssh -T` greets the account) fails.
+  await assert.rejects(sshFlow({ platform: session, sshHost: '127.0.0.1', sshPort: await closedPort() }, {}));
+  assert.equal(platform.deleted.length, 1);
+  assert.match(platform.deleted[0], /^\/repos\/r0{19}1\?confirm=kit-ssh-\d+$/);
+  assert.deepEqual(removed, ['DELETE /ssh-keys/k1']);
 });
 
 test('the bench deletes the repositories it created and reports any it could not', async (t) => {
