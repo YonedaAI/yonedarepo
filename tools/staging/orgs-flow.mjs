@@ -4,7 +4,10 @@
 // (no repository access from that alone) and then the team, and pushes a branch with stock
 // Git through a personal token limited to the org. Removing it from the team must refuse
 // its next push within the access bound (ACCESS_MS, 1 s): a push may still pass only if it
-// starts inside the bound, and one started after it must be refused. The token reaches Git
+// starts inside the bound, and one started after it must be refused. Team changes reach
+// other isolates within the same bound (cloudflare/worker/platform-org-access.ts), so the
+// listing after joining is polled up to it, the clone starts once it has passed, and the
+// REST read after removal starts past it too. The token reaches Git
 // only through the environment (http.extraHeader), never an argument; it is revoked, the
 // repository deleted and then the org (refused while it still owns the repository; its name
 // is retired for good).
@@ -15,7 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { b64, secondAccount, sleep } from './client.mjs';
+import { b64, secondAccount, sleep, until } from './client.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 /** The published access bound (cloudflare/worker/repo-head.ts ACCESS_MS). */
@@ -43,11 +46,20 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
     pat = await member.post('/tokens', { name: `kit-orgs-${Date.now()}`, scopes: ['repo:read', 'repo:write'], org, expires_days: 1 });
 
     await platform.post(`/orgs/${org}/teams/devs/members`, { account: memberName });
+    const added = performance.now();
     const shown = await member.get(`/orgs/${org}`);
     assert.equal(shown.role, 'member', 'the member sees the org');
     assert.deepEqual(shown.teams.find((t) => t.name === 'devs')?.members, [memberName], 'team membership shows');
-    const listed = (await member.get('/repos')).repos.find((r) => r.id === repo.id);
-    assert.equal(listed?.owner, org, 'the org repository is listed through the team');
+    const listed = await until(async () => (await member.get('/repos')).repos.find((r) => r.id === repo.id), {
+      timeoutMs: Math.max(0, added + ACCESS_MS + 250 - performance.now()),
+      intervalMs: 250,
+      what: `the org repository listed through the team within ${ACCESS_MS} ms`,
+    });
+    metrics.team_listed_ms = Math.round(performance.now() - added);
+    assert.equal(listed.owner, org, 'the org repository is listed through the team');
+    // Another isolate may still decide on its copy from before the team: past the bound, none does.
+    const settle = added + ACCESS_MS - performance.now();
+    if (settle > 0) await sleep(settle);
 
     const env = {
       ...process.env,
@@ -99,6 +111,11 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
     }
     metrics.attempts = attempts;
     assert.ok(attempts.at(-1).refused, `never refused after removal: ${JSON.stringify(attempts)}`);
+    // A push refused at once may have reached the isolate that served the removal; a REST
+    // read elsewhere may pass until the bound, and must be refused from then on.
+    const past = removed + ACCESS_MS - performance.now();
+    if (past > 0) await sleep(past);
+    metrics.rest_started_ms = Math.round(performance.now() - removed);
     assert.equal(await status(member, 'GET', `${path}/refs`), 403, 'REST refused after removal');
   } finally {
     rmSync(dir, { recursive: true, force: true });
