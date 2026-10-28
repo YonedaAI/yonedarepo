@@ -13,6 +13,7 @@ mod pack_header;
 mod pack_reader;
 mod pack_walk;
 mod protocol;
+mod protocol_v2;
 mod push_batch;
 mod rewrite;
 mod smart_http;
@@ -28,6 +29,10 @@ pub use pack_reader::PackReader;
 pub use protocol::{
     HIDDEN_REF_PREFIX, ReceivedPush, hidden_ref, parse_receive_pack_request, receive_pack_delete,
     receive_pack_outcome, receive_pack_report, receive_pack_request, verify_receive_pack_report,
+};
+pub use protocol_v2::{
+    DELIM, FetchArgs, FetchHead, INFINITE_DEPTH, LsRefs, V2Command, ls_refs_answer,
+    v2_capabilities, v2_request,
 };
 pub use push_batch::{combine_receive_pack_requests, split_receive_pack_report};
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};

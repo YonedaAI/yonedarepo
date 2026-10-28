@@ -3,7 +3,7 @@
 //! A hidden ref is released when the commit is safely reachable from a projected branch,
 //! or when unlanded work expired. Pinned commits and in-flight work are never released.
 //! Staged commits never get a hidden ref (they reach Artifacts with a protected ref).
-use super::rows;
+use super::super::rows;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Result, git_object::ObjectId};

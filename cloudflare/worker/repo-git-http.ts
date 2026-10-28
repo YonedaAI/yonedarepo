@@ -1,5 +1,6 @@
-// Stock Git over HTTPS (smart HTTP v0, stateless RPC) at /git/<repo>.git: clone and fetch
-// (upload-pack) and push (receive-pack) without the remote helper. Credentials are a
+// Stock Git over HTTPS (smart HTTP, stateless RPC) at /git/<repo>.git: clone and fetch
+// (upload-pack; protocol version 2 when Git asks for it, with partial and shallow clones)
+// and push (receive-pack, version 0) without the remote helper. Credentials are a
 // repository or personal token as the Basic password (any user name) or a bearer header;
 // a 401 asks Git's credential helper for one. The authority decides access per request:
 // read to fetch, write to push, and never a path-restricted grant.
@@ -9,6 +10,7 @@ import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
 import { uploadPack } from './repo-git-upload';
+import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { timed, withTimings } from './repo-timing';
@@ -77,11 +79,12 @@ async function serve(req: Request, env: Env): Promise<Response> {
     // Access first, so a refusal is an HTTP status Git reports, not a broken protocol.
     const access = await ctx.call({ op: 'repo_git_access', service });
     const objects = ctx.adopt(access.object_store);
-    if (action === 'info/refs') return await advertise(ctx, service);
+    const v2 = service === 'git-upload-pack' && wantsV2(req);
+    if (action === 'info/refs') return v2 ? advertiseV2() : await advertise(ctx, service);
     const body = requestBody(req);
-    return service === 'git-upload-pack'
-      ? await uploadPack(ctx, objects, body)
-      : await receivePack(ctx, objects, body, access.secret_allow ?? []);
+    if (service === 'git-receive-pack')
+      return await receivePack(ctx, objects, body, access.secret_allow ?? []);
+    return v2 ? await uploadPackV2(ctx, objects, body) : await uploadPack(ctx, objects, body);
   } catch (e: any) {
     // A push refused because the authority was overloaded moved nothing (receivePack
     // throws only then), so Git gets a status it reports instead of a per-ref refusal.
