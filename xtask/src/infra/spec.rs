@@ -3,6 +3,7 @@
 //! A spec holds one wrangler config fragment per Worker, in cutover order. Strings may use
 //! `{prefix}`, `{account_id}`, `{subdomain}`, `{zone}` and the spec's own `vars`; D1
 //! `database_id`s come from the lock, so resource identities are never hand-edited.
+use super::retired::Retired;
 use super::template::{expand, substitute};
 use crate::process::Result;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,9 @@ pub(crate) const SPEC_DIR: &str = "infra/envs";
 /// Generated configs live next to the hand-written ones, so relative paths stay identical.
 pub(crate) const CONFIG_DIR: &str = "cloudflare";
 const EPHEMERAL_RATE_LIMIT: &str = "2900";
+/// Lock entry of a D1 database the spec declares but `infra up` has not created yet. Configs
+/// generate with it; a deploy refuses it (deploy_env::run).
+pub(crate) const PENDING_D1: &str = "pending";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Spec {
@@ -36,6 +40,9 @@ pub(crate) struct Spec {
     #[serde(default)]
     pub check_instances: Option<u64>,
     pub workers: Vec<WorkerSpec>,
+    /// The env's previous names: `infra plan` orphans, deleted by `infra prune`.
+    #[serde(default, skip_serializing_if = "Retired::is_empty")]
+    pub retired: Retired,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -128,6 +135,7 @@ impl Spec {
         );
         self.prefix = prefix;
         self.workers.retain(|w| w.ephemeral);
+        self.retired = Retired::default();
         self.check_instances = self.check_instances.map(|_| 1);
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);

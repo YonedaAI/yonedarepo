@@ -3,23 +3,332 @@
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
   "zone": "yonedarepo.com",
   "workers_subdomain": "mlong-f01",
-  "prefix": "yonedarepo-dev",
+  "prefix": "yonedarepo-prod",
   "ref": "main",
   "secrets_file": "~/.config/yonedarepo/prod.env",
-  "vars": {},
+  "vars": {
+    "origin": "https://yonedarepo.com",
+    "ratelimit": "1001"
+  },
+  "check_instances": 4,
   "workers": [
     {
-      "role": "app",
-      "file": "wrangler.prod.jsonc",
+      "role": "superfan",
+      "file": "wrangler.prod-superfan.jsonc",
       "notes": [
-        "Today's live production (old single-Worker layout), as last deployed on 2026-10-15 from",
-        "the private .local/deploy/production/platform.json: a prebuilt runtime image, one container",
-        "class and the api-source-v1 transport vars. cloudflare/wrangler.jsonc is the next, unreleased",
-        "version of this Worker; the N8 cutover replaces this whole spec with the platform/agents/sites",
-        "layout of infra/envs/dev.json.",
-        "In source only (not deployed): migration v4 deletes the old harness classes ExecutionContainer",
-        "and SourceWorkspaceAuthority. Agent attempts run only in AgentSandbox, which this spec does not bind.",
-        "api.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the apps Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device)."
+        "Production superfan: the same cheap-model watcher as wrangler.superfan.jsonc, receiving the",
+        "production platform Worker's tail events (yonedarepo-prod-platform names it in tail_consumers),",
+        "with its own ledger and a $1/day cap. The hourly watch needs the platform's Durable Object",
+        "namespace, queue and container ids, which exist only after the first deploy, and",
+        "cloudflare/superfan/config.ts watches only yonedarepo-platform-dev; until both change, it runs",
+        "on tail events alone. Secrets, set from stdin (~/.config/yonedarepo/prod.env):",
+        "CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only",
+        "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
+        "Deployed first: the production platform names this Worker in tail_consumers."
+      ],
+      "secrets": [
+        "CF_ANALYTICS_TOKEN",
+        "SUPERFAN_READ_TOKEN"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-superfan",
+        "main": "superfan/index.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "7 * * * *"
+          ]
+        },
+        "vars": {
+          "CF_ACCOUNT_ID": "{account_id}",
+          "WATCH_SCRIPT": "{prefix}-platform",
+          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "TELEMETRY_SOURCE": "cloudflare",
+          "SUPERFAN_MODEL": "mimo-v2.6-flash",
+          "MIMO_TOKEN_PLAN_REGION": "sgp",
+          "DAILY_CAP_MICROUSD": "1000000"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "LEDGER",
+              "class_name": "SuperfanLedger"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "SuperfanLedger"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "role": "platform",
+      "file": "wrangler.prod-platform.jsonc",
+      "notes": [
+        "Production platform Worker (yonedarepo.com): the same source platform as dev's",
+        "(infra/envs/dev.json), with its own Durable Object namespaces, Artifacts namespace, R2, D1,",
+        "queues, workflow, check containers and secrets. Browsers reach it through the agent Worker's",
+        "/api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom",
+        "Domain plus the exact route, which wins over the sites Worker's *.yonedarepo.com route);",
+        "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
+        "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
+        "VAULT_KEY    64 hex characters, shared with yonedarepo-prod-agents",
+        "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
+        "Check runs: one per invocation, up to check_instances (4) at once.",
+        "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store",
+        "secret ZAI), bound to the platform Worker itself; it never reads an agent-layer connection.",
+        "The production superfan (wrangler.prod-superfan.jsonc) receives this Worker's tail events."
+      ],
+      "secrets": [
+        "OWNER_TOKEN",
+        "VAULT_KEY"
+      ],
+      "health": "yonedarepo-platform",
+      "config": {
+        "name": "{prefix}-platform",
+        "main": "worker/platform-index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "limits": {
+          "subrequests": 50000
+        },
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        },
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
+        "assets": {
+          "directory": "../frontend/dist",
+          "binding": "ASSETS",
+          "not_found_handling": "single-page-application",
+          "run_worker_first": true
+        },
+        "vars": {
+          "ARTIFACTS_NAMESPACE": "{prefix}",
+          "LAND_MODE": "batch",
+          "WEB_ORIGIN": "{origin}",
+          "WORKERS_SUBDOMAIN": "{subdomain}"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "REVIEW_MODEL_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          }
+        ],
+        "artifacts": [
+          {
+            "binding": "ARTIFACTS",
+            "namespace": "{prefix}",
+            "remote": true
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority"
+            },
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository"
+            },
+            {
+              "name": "CHECK_RUNNERS",
+              "class_name": "CheckContainer"
+            },
+            {
+              "name": "OBJECT_PUSHES",
+              "class_name": "ObjectPushQueue"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "SourceRepository",
+              "WorkspaceAuthority",
+              "CheckContainer"
+            ]
+          },
+          {
+            "tag": "v2",
+            "new_sqlite_classes": [
+              "ObjectPushQueue"
+            ]
+          },
+          {
+            "tag": "v3",
+            "new_sqlite_classes": [
+              "CommitShard"
+            ]
+          },
+          {
+            "tag": "v4",
+            "new_sqlite_classes": [
+              "LandCombiner"
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "class_name": "CheckContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index",
+            "migrations_dir": "migrations"
+          }
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "PLATFORM_QUEUE",
+              "queue": "{prefix}-platform-jobs"
+            },
+            {
+              "binding": "PLATFORM_CHECKS",
+              "queue": "{prefix}-platform-checks"
+            }
+          ],
+          "consumers": [
+            {
+              "queue": "{prefix}-platform-jobs",
+              "max_batch_size": 10,
+              "max_batch_timeout": 1,
+              "max_concurrency": 20,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-platform-dead-letter"
+            },
+            {
+              "queue": "{prefix}-platform-checks",
+              "max_batch_size": 1,
+              "max_retries": 3,
+              "dead_letter_queue": "{prefix}-platform-dead-letter"
+            }
+          ]
+        },
+        "workflows": [
+          {
+            "name": "{prefix}-platform-import",
+            "binding": "PLATFORM_IMPORT",
+            "class_name": "PlatformImportWorkflow"
+          }
+        ],
+        "ratelimits": [
+          {
+            "name": "AUTH_LIMITER",
+            "namespace_id": "{ratelimit}",
+            "simple": {
+              "limit": 30,
+              "period": 60
+            }
+          }
+        ],
+        "services": [
+          {
+            "binding": "SELF",
+            "service": "{prefix}-platform"
+          }
+        ],
+        "routes": [
+          {
+            "pattern": "api.yonedarepo.com",
+            "custom_domain": true
+          },
+          {
+            "pattern": "https://api.yonedarepo.com/*",
+            "zone_name": "yonedarepo.com"
+          }
+        ]
+      }
+    },
+    {
+      "role": "agents",
+      "file": "wrangler.prod-agents.jsonc",
+      "notes": [
+        "Production agent-layer Worker: the front of yonedarepo.com (frontend, agent API, remote MCP).",
+        "It reaches only the production platform, through the PLATFORM service binding (`/api/v1` is",
+        "proxied there on the same origin) and the WORKSPACES script binding. Its stores, containers",
+        "and secrets are its own. Website previews are served by yonedarepo-prod-sites on",
+        "apps.yonedarepo.com (SITE_ORIGIN); executable app previews (cloudflare/apps) are off, as on",
+        "dev: APPS and APP_ORIGIN are unset.",
+        "Only the cheap providers have keys (ZAI glm-5.3-flash, MiMo mimo-v2.6-flash); Codex and",
+        "Claude have no binding and fail closed with PROVIDER_MISSING. MANAGED_PROVIDER_KEYS lets the",
+        "owner bind those two store keys to a named account as managed connections",
+        "(POST /api/admin/providers/managed). Secrets, set from stdin:",
+        "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
+        "VAULT_KEY    64 hex characters, shared with yonedarepo-prod-platform",
+        "The sites Worker's `https://*.yonedarepo.com/*` route would otherwise win on www: on one",
+        "hostname a route takes precedence over a Custom Domain, and the most specific route pattern",
+        "wins. The apex is not matched by `*.`, so it needs no route.",
+        "Sandbox runs (runtime sandbox-cli-v1): one AgentSandbox Durable Object per attempt starts",
+        "sandbox/Dockerfile with Internet off; SandboxOutbound adds the provider key and the project",
+        "token. Model requests go through the AI Gateway named in SANDBOX_AI_GATEWAY (custom",
+        "providers custom-zai and custom-mimo; one-time setup in docs/runbook.md). The sandbox clones",
+        "from SANDBOX_PLATFORM_ORIGIN."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -27,13 +336,21 @@
       ],
       "health": "yonedarepo",
       "config": {
-        "name": "yonedarepo-dev",
-        "main": "worker/index.ts",
+        "name": "{prefix}-agents",
+        "main": "worker/agents-index.ts",
         "compatibility_date": "2026-10-07",
         "compatibility_flags": [
           "nodejs_compat"
         ],
+        "limits": {
+          "subrequests": 50000
+        },
         "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        },
         "routes": [
           {
             "pattern": "yonedarepo.com",
@@ -46,17 +363,8 @@
           {
             "pattern": "https://www.yonedarepo.com/*",
             "zone_name": "yonedarepo.com"
-          },
-          {
-            "pattern": "api.yonedarepo.com",
-            "custom_domain": true
-          },
-          {
-            "pattern": "https://api.yonedarepo.com/*",
-            "zone_name": "yonedarepo.com"
           }
         ],
-        "preview_urls": false,
         "observability": {
           "enabled": true
         },
@@ -67,45 +375,29 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
-          "ARTIFACTS_NAMESPACE": "yoneda-dev",
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "ARTIFACTS_NAMESPACE": "{prefix}",
           "CODEX_MODEL": "gpt-5.6-luna",
           "CLAUDE_MODEL": "claude-sonnet-5-5",
           "MIMO_MODEL": "mimo-v2.6-flash",
           "ZAI_MODEL": "glm-5.3-flash",
           "STARTER_REPO": "yoneda-website-starter",
-          "SITE_ORIGIN": "https://yonedarepo-sites-dev.mlong-f01.workers.dev",
-          "APP_ORIGIN": "https://apps.yonedarepo.com",
-          "GUIDED_TASK_BOARD_STARTER_REPO": "yoneda-guided-task-board-v1-20261014",
-          "GUIDED_TASK_BOARD_BUNDLE_DIGEST": "c7c3237e3ef948795dffefabc9596eacfcbb8a37761892f172741d6d145f16e7",
-          "SOURCE_TRANSPORT": "api-source-v1",
-          "SOURCE_TRANSPORT_REPOS": "repo-a3539621c7688c6daa032a6dbe215624,repo-360b2d50b40360240a27de47010ff5a6,repo-b456284f131158a49db378989ba3edc9,repo-1996880d7eb888f611a21ee79a26a346",
-          "SOURCE_GUIDED_ENABLED": "false",
-          "GUIDED_TASK_BOARD_V2_STARTER_REPO": "yoneda-guided-task-board-v1-20261014",
-          "GUIDED_TASK_BOARD_V2_BUNDLE_DIGEST": "08917410fcce7555dfc6274788203c36c9acbaf917ec7eb283dafd7ac38eecbe",
-          "WEB_ORIGIN": "https://yonedarepo.com"
+          "SITE_ORIGIN": "https://apps.{zone}",
+          "MANAGED_PROVIDER_KEYS": "secrets-store",
+          "SANDBOX_PLATFORM_ORIGIN": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "SANDBOX_AI_GATEWAY": "{account_id}/{prefix}"
         },
         "services": [
           {
             "binding": "SELF",
-            "service": "yonedarepo-dev"
+            "service": "{prefix}-agents"
           },
           {
-            "binding": "APPS",
-            "service": "yonedarepo-apps-dev"
+            "binding": "PLATFORM",
+            "service": "{prefix}-platform"
           }
         ],
         "secrets_store_secrets": [
-          {
-            "binding": "OPENAI_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "Codex"
-          },
-          {
-            "binding": "ANTHROPIC_KEY",
-            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
-            "secret_name": "Claude"
-          },
           {
             "binding": "MIMO_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
@@ -120,7 +412,7 @@
         "artifacts": [
           {
             "binding": "ARTIFACTS",
-            "namespace": "yoneda-dev",
+            "namespace": "{prefix}",
             "remote": true
           }
         ],
@@ -136,7 +428,12 @@
             },
             {
               "name": "WORKSPACES",
-              "class_name": "WorkspaceAuthority"
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "AGENT_SANDBOX",
+              "class_name": "AgentSandbox"
             }
           ]
         },
@@ -146,39 +443,46 @@
             "new_sqlite_classes": [
               "RepositoryAuthority",
               "LiveRoom",
-              "ExecutionContainer"
+              "ExecutionContainer",
+              "SourceWorkspaceAuthority"
             ]
           },
           {
             "tag": "v2",
             "new_sqlite_classes": [
-              "WorkspaceAuthority"
+              "AgentSandbox"
             ]
           },
           {
             "tag": "v3",
-            "new_sqlite_classes": [
-              "SourceWorkspaceAuthority"
-            ]
-          },
-          {
-            "tag": "v4",
             "deleted_classes": [
               "ExecutionContainer",
               "SourceWorkspaceAuthority"
             ]
           }
         ],
+        "containers": [
+          {
+            "class_name": "AgentSandbox",
+            "scheduling_policy": "durable_object",
+            "images": {
+              "agent": {
+                "dockerfile": "./sandbox/Dockerfile",
+                "build_context": ".."
+              }
+            }
+          }
+        ],
         "r2_buckets": [
           {
             "binding": "OBJECTS",
-            "bucket_name": "yonedarepo-dev-objects"
+            "bucket_name": "{prefix}-agents-objects"
           }
         ],
         "d1_databases": [
           {
             "binding": "INDEX",
-            "database_name": "yonedarepo-dev-index",
+            "database_name": "{prefix}-agents-index",
             "migrations_dir": "migrations"
           }
         ],
@@ -186,101 +490,71 @@
           "producers": [
             {
               "binding": "AGENT_QUEUE",
-              "queue": "yoneda-dev-agent"
+              "queue": "{prefix}-agents-agent"
             },
             {
               "binding": "CAPTURE_QUEUE",
-              "queue": "yoneda-dev-capture"
+              "queue": "{prefix}-agents-capture"
             },
             {
               "binding": "EVALUATE_QUEUE",
-              "queue": "yoneda-dev-evaluate"
-            },
-            {
-              "binding": "PUBLISH_QUEUE",
-              "queue": "yoneda-dev-publish"
+              "queue": "{prefix}-agents-evaluate"
             }
           ],
           "consumers": [
             {
-              "queue": "yoneda-dev-agent",
+              "queue": "{prefix}-agents-agent",
               "max_batch_size": 1,
               "max_retries": 3,
-              "dead_letter_queue": "yoneda-dev-dead-letter"
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
             },
             {
-              "queue": "yoneda-dev-capture",
+              "queue": "{prefix}-agents-capture",
               "max_batch_size": 1,
               "max_retries": 3,
-              "dead_letter_queue": "yoneda-dev-dead-letter"
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
             },
             {
-              "queue": "yoneda-dev-evaluate",
+              "queue": "{prefix}-agents-evaluate",
               "max_batch_size": 1,
               "max_retries": 3,
-              "dead_letter_queue": "yoneda-dev-dead-letter"
-            },
-            {
-              "queue": "yoneda-dev-publish",
-              "max_batch_size": 1,
-              "max_retries": 3,
-              "dead_letter_queue": "yoneda-dev-dead-letter"
+              "dead_letter_queue": "{prefix}-agents-dead-letter"
             }
           ]
         },
         "ratelimits": [
           {
             "name": "AUTH_LIMITER",
-            "namespace_id": "1001",
+            "namespace_id": "{ratelimit}",
             "simple": {
               "limit": 30,
               "period": 60
             }
           }
-        ],
-        "limits": {
-          "subrequests": 50000
-        }
+        ]
       }
     },
     {
       "role": "sites",
-      "file": "wrangler.sites.jsonc",
-      "notes": [],
+      "file": "wrangler.prod-sites.jsonc",
+      "notes": [
+        "Production website previews (cloudflare/sites): signed previews /v/<digest>/<token>/ and",
+        "published sites /p/<repo>/, read from the agent Worker's bucket and authorized through its",
+        "PLATFORM service binding. It takes over the hosts of the retired apps Worker",
+        "(yonedarepo-apps-dev): apps.yonedarepo.com (the agent Worker's SITE_ORIGIN) and the",
+        "`https://*.yonedarepo.com/*` route, so any subdomain without its own exact route answers",
+        "here and fails closed with 404 (www, api, dev and api.dev keep exact routes; the apex is not",
+        "matched). Unlike the apps Worker it serves no executable apps and no per-app preview-<hash>",
+        "origins: preview content is isolated by its CSP sandbox (opaque origin), not by hostname."
+      ],
       "secrets": [],
       "config": {
-        "name": "yonedarepo-sites-dev",
+        "name": "{prefix}-sites",
         "main": "sites/index.ts",
         "compatibility_date": "2026-10-07",
         "compatibility_flags": [
           "nodejs_compat"
         ],
-        "r2_buckets": [
-          {
-            "binding": "OBJECTS",
-            "bucket_name": "yonedarepo-dev-objects"
-          }
-        ],
-        "services": [
-          {
-            "binding": "PLATFORM",
-            "service": "yonedarepo-dev"
-          }
-        ],
-        "observability": {
-          "enabled": true
-        }
-      }
-    },
-    {
-      "role": "apps",
-      "file": "wrangler.apps.jsonc",
-      "notes": [],
-      "secrets": [],
-      "config": {
-        "name": "yonedarepo-apps-dev",
-        "main": "apps/index.ts",
-        "compatibility_date": "2026-10-12",
         "workers_dev": false,
         "preview_urls": false,
         "routes": [
@@ -293,48 +567,56 @@
             "zone_name": "yonedarepo.com"
           }
         ],
-        "vars": {
-          "APP_DOMAIN": "yonedarepo.com",
-          "APP_ORIGIN": "https://apps.yonedarepo.com",
-          "PLATFORM_ORIGIN": "https://yonedarepo.com"
-        },
-        "services": [
-          {
-            "binding": "PLATFORM",
-            "service": "yonedarepo-dev"
-          }
-        ],
-        "worker_loaders": [
-          {
-            "binding": "LOADER"
-          }
-        ],
-        "durable_objects": {
-          "bindings": [
-            {
-              "name": "APP_RUNNERS",
-              "class_name": "AppRunner"
-            }
-          ]
-        },
-        "migrations": [
-          {
-            "tag": "v1",
-            "new_sqlite_classes": [
-              "AppRunner"
-            ]
-          }
-        ],
         "r2_buckets": [
           {
             "binding": "OBJECTS",
-            "bucket_name": "yonedarepo-dev-objects"
+            "bucket_name": "{prefix}-agents-objects"
           }
         ],
-        "limits": {
-          "cpu_ms": 50
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-agents"
+          }
+        ],
+        "observability": {
+          "enabled": true
         }
       }
     }
-  ]
+  ],
+  "retired": {
+    "notes": [
+      "The Oct 14 single-Worker production (cloudflare/wrangler.jsonc layout) and its apps and sites",
+      "Workers, from .local/deploy/production/platform.json and the old prod.json. Exact names only:",
+      "the dev env is named yonedarepo-dev-* after the cutover, so no prefix may be used here.",
+      "Its Durable Objects (and the ExecutionContainer app) go with the Worker; the Artifacts",
+      "namespace has no delete, so prune empties it."
+    ],
+    "workers": [
+      "yonedarepo-dev",
+      "yonedarepo-apps-dev",
+      "yonedarepo-sites-dev"
+    ],
+    "containers": [
+      "yonedarepo-dev-executioncontainer"
+    ],
+    "queues": [
+      "yoneda-dev-agent",
+      "yoneda-dev-capture",
+      "yoneda-dev-evaluate",
+      "yoneda-dev-publish",
+      "yoneda-dev-platform",
+      "yoneda-dev-dead-letter"
+    ],
+    "d1": [
+      "yonedarepo-dev-index"
+    ],
+    "r2": [
+      "yonedarepo-dev-objects"
+    ],
+    "artifacts": [
+      "yoneda-dev"
+    ]
+  }
 }
