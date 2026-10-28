@@ -33,6 +33,8 @@ pub(crate) struct Deployable {
     pub secrets: Vec<String>,
     pub health: Option<(String, String)>,
     pub has_containers: bool,
+    /// Always-on container applications (by application name) and what a rollout drops.
+    pub always_on: BTreeMap<String, String>,
 }
 
 pub(crate) fn deployables(spec: &Spec, lock: &Lock) -> Result<Vec<Deployable>> {
@@ -53,10 +55,20 @@ fn deployable(spec: &Spec, worker: &WorkerSpec, config: Value) -> Result<Deploya
         None => None,
     };
     let has_containers = items(&config, "/containers").next().is_some();
+    let declared = containers(&config);
+    let mut always_on = BTreeMap::new();
+    for (class, drops) in &worker.always_on {
+        let app = format!("{name}-{}", class.to_lowercase());
+        if !declared.contains_key(&app) {
+            return Err(format!("{name}: always-on container {class} is not declared").into());
+        }
+        always_on.insert(app, drops.clone());
+    }
     Ok(Deployable {
         role: worker.role.clone(),
         config_path: format!("{}/{}", super::spec::CONFIG_DIR, worker.file),
         has_containers,
+        always_on,
         secrets: worker.secrets.clone(),
         health,
         name,

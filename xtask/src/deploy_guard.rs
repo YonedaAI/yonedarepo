@@ -3,6 +3,7 @@
 use crate::infra::spec::{Env, Lock, PENDING_D1, Spec};
 use crate::process::Result;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -162,6 +163,29 @@ pub(crate) fn busy_gate(what: &str, active: u64, options: &Options) -> Result<()
         "Stopping before {what}: {active} container instance(s) are active (not just starting) and this kills their runs. Retry when idle, or pass --allow-active."
     )
     .into())
+}
+
+/// The busy instances the gates count: always-on container apps (`always_on` in the env
+/// spec: they run without work, so a rollout kills no runs) are left out, each running one
+/// with a note of what the rollout drops.
+pub(crate) fn counted(
+    busy: Vec<(String, u64)>,
+    always_on: &BTreeMap<String, String>,
+) -> (Vec<(String, u64)>, Vec<String>) {
+    let (on, counted): (Vec<_>, Vec<_>) = busy
+        .into_iter()
+        .partition(|(app, _)| always_on.contains_key(app));
+    let notes = on
+        .iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(app, _)| {
+            format!(
+                "Note: {app} is always on (not counted as busy); {} drop during the rollout.",
+                always_on[app]
+            )
+        })
+        .collect();
+    (counted, notes)
 }
 
 /// A workstation deploy of dev that changes a container app's image restarts its instances

@@ -453,6 +453,72 @@ fn busy_containers_stop_a_workstation_rollout_unless_allowed() {
 }
 
 #[test]
+fn the_always_on_ssh_gateway_never_stops_a_rollout_but_is_noted() {
+    const GATEWAY: &str = "yonedarepo-dev-platform-sshgateway";
+    let platform = dev_workers()
+        .into_iter()
+        .find(|w| w.role == "platform")
+        .unwrap();
+    assert_eq!(
+        platform.always_on.get(GATEWAY).map(String::as_str),
+        Some("open SSH sessions")
+    );
+    let prod_platform = prod_workers()
+        .into_iter()
+        .find(|w| w.role == "platform")
+        .unwrap();
+    assert!(
+        prod_platform
+            .always_on
+            .keys()
+            .all(|app| app.ends_with("-sshgateway"))
+    );
+    assert_eq!(prod_platform.always_on.len(), 1);
+
+    // The gateway's one instance (its tunnel) is not busy work; a busy check still is.
+    let live = vec![(CHECK.to_owned(), 0), (GATEWAY.to_owned(), 1)];
+    let (busy, notes) = guard::counted(live, &platform.always_on);
+    assert_eq!(busy, vec![(CHECK.to_owned(), 0)]);
+    assert_eq!(notes.len(), 1);
+    assert!(
+        notes[0].contains(GATEWAY) && notes[0].contains("open SSH sessions drop"),
+        "{notes:?}"
+    );
+    guard::rollout_gate(&busy, &Options::default()).unwrap();
+    let live = vec![(CHECK.to_owned(), 2), (GATEWAY.to_owned(), 1)];
+    let (busy, _) = guard::counted(live, &platform.always_on);
+    let error = guard::rollout_gate(&busy, &Options::default())
+        .unwrap_err()
+        .to_string();
+    assert!(
+        error.contains(&format!("{CHECK}: 2")) && !error.contains(GATEWAY),
+        "{error}"
+    );
+    // An idle gateway drops nothing, so it gets no note.
+    let (_, notes) = guard::counted(vec![(GATEWAY.to_owned(), 0)], &platform.always_on);
+    assert!(notes.is_empty());
+}
+
+#[test]
+fn an_always_on_class_must_be_a_declared_container() {
+    let mut spec: serde_json::Value =
+        serde_json::from_str(include_str!("../../../infra/envs/dev.json")).unwrap();
+    let platform = spec["workers"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|w| w["role"] == "platform")
+        .unwrap();
+    platform["always_on"] = json!({"SshGatewayTypo": "open SSH sessions"});
+    let lock =
+        serde_json::from_str::<Lock>(include_str!("../../../infra/envs/dev.lock.json")).unwrap();
+    let error = inventory::deployables(&Spec::parse(&spec.to_string()).unwrap(), &lock)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("SshGatewayTypo is not declared"), "{error}");
+}
+
+#[test]
 fn ci_skips_its_deploy_only_when_every_worker_already_runs_the_commit() {
     let live = |platform: Option<&str>, agents: Option<&str>| {
         vec![
@@ -599,19 +665,21 @@ fn the_summary_shows_which_container_apps_rolled_out() {
     let workers = dev_workers();
     let platform = workers.iter().find(|w| w.role == "platform").unwrap();
     let app = "yonedarepo-dev-platform-checkcontainer".to_string();
-    let before = BTreeMap::from([(app.clone(), 1)]);
-    let after = BTreeMap::from([(app.clone(), 2)]);
+    // Every declared app is listed, the SSH gateway too (its own image: often no rollout).
+    let gateway = "yonedarepo-dev-platform-sshgateway".to_string();
+    let before = BTreeMap::from([(app.clone(), 1), (gateway.clone(), 7)]);
+    let after = BTreeMap::from([(app.clone(), 2), (gateway.clone(), 7)]);
     assert_eq!(
         rollouts(platform, Some(&before), Some(&after)),
-        format!("{app} v1 -> v2 (rolled out)")
+        format!("{app} v1 -> v2 (rolled out); {gateway} v7 (no rollout)")
     );
     assert_eq!(
         rollouts(platform, Some(&before), Some(&before)),
-        format!("{app} v1 (no rollout)")
+        format!("{app} v1 (no rollout); {gateway} v7 (no rollout)")
     );
     assert_eq!(
         rollouts(platform, None, None),
-        format!("{app} ? (no rollout)")
+        format!("{app} ? (no rollout); {gateway} ? (no rollout)")
     );
     let front = workers.iter().find(|w| w.role == "agents").unwrap();
     assert_eq!(rollouts(front, Some(&before), Some(&after)), "-");

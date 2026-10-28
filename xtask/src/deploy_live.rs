@@ -57,12 +57,25 @@ pub(crate) fn container_versions(account_id: &str) -> Result<BTreeMap<String, u6
         .collect())
 }
 
-/// Busy instances (active or assigned) of the Worker's containers.
-pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> {
-    Ok(busy_instances(account_id, config)?
+/// Busy instances (active or assigned) of the Worker's containers the gates count.
+pub(crate) fn active_instances(account_id: &str, worker: &Deployable) -> Result<u64> {
+    Ok(gated_instances(account_id, worker)?
         .iter()
         .map(|(_, count)| count)
         .sum())
+}
+
+/// The Worker's container apps with their busy instance counts, always-on apps left out
+/// (with a note of what a rollout drops on each running one).
+pub(crate) fn gated_instances(account_id: &str, worker: &Deployable) -> Result<Vec<(String, u64)>> {
+    let (busy, notes) = guard::counted(
+        busy_instances(account_id, &worker.config)?,
+        &worker.always_on,
+    );
+    for note in notes {
+        println!("{note}");
+    }
+    Ok(busy)
 }
 
 /// Each declared container application of the Worker with its busy instance count.
@@ -166,7 +179,7 @@ pub(crate) async fn rollback(args: &[String]) -> Result<()> {
     let message = format!("cargo xtask rollback --env {}", env.name());
     for worker in workers.iter().rev() {
         if env.is_prod() && worker.has_containers {
-            let active = active_instances(&spec.account_id, &worker.config)?;
+            let active = active_instances(&spec.account_id, worker)?;
             guard::active_gate(&env, &worker.name, active, &options)?;
         }
         if options.dry_run {
