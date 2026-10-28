@@ -12,6 +12,7 @@ account
 
 repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>])
   land [--branch <b>]                 land the branch's head on main
+  rebase <branch> [--onto <b>]        replay the branch onto main's head (or <b>'s) on the server
   review approve|reject <sha> [-m <reason>]
   change create [<branch>] [--title <t>] [-m <body>]   open a change request (default: this branch)
   change list [--status open|landed|closed|all]
@@ -228,6 +229,11 @@ pub enum Command {
     Land {
         target: Target,
         branch: Option<String>,
+    },
+    Rebase {
+        target: Target,
+        branch: String,
+        onto: Option<String>,
     },
     Review {
         target: Target,
