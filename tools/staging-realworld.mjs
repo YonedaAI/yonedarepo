@@ -168,7 +168,7 @@ if (['12', '13', '14', '15', '16', '17', '18'].some(wanted)) {
     await step('15', 'Account MCP with a PAT (round trip, allowlist)', (m) => accountMcp(cli, repo, m));
     await step('16', 'Server-side reads at a version (log, grep, blame --at)', (m) => serverReads(cli, repo, m));
     // Before 17, whose cleanup deletes its repository too.
-    await step('18', 'CLI: change request (branch, open, line comment, approve, land, landed)', (m) => cliChangeRequest(cli, m));
+    await step('18', 'CLI: change request (branch, open, line comment, approve, land, landed)', (m) => cliChangeRequest(cli, kit, m));
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
