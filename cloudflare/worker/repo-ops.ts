@@ -2,7 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson } from './durable';
-import type { OrgAccess } from './org-access';
+import type { OrgAccess } from './platform-org-access';
 import { archivedObjects } from './repo-archive';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';

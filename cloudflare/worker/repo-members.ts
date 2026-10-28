@@ -5,7 +5,7 @@
 // name gets nothing), keeps the D1 membership index that lists shared repositories, and
 // marks the published head stale so a change of access reaches stateless reads at once.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
-import { teamKey } from './org-access';
+import { teamKey } from './platform-org-access';
 import { refreshHead } from './repo-head';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { workspace } from './workspace';
