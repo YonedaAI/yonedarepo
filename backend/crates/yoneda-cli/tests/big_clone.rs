@@ -213,15 +213,33 @@ fn partial_and_shallow_clones_over_protocol_v2() -> TestResult {
     big_checkout(&platform)
 }
 
+/// Push and lazy checkout of many small files alone, timed: `YONEDA_BIG_FILES` files
+/// (default 10,200). Run with `cargo test -p yoneda-cli --test big_clone big_files_bench --
+/// --include-ignored --nocapture`.
+#[test]
+#[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli --test big_clone -- --include-ignored"]
+fn big_files_bench() -> TestResult {
+    let files = std::env::var("YONEDA_BIG_FILES")
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(BIG);
+    big_checkout_of(&Platform::start()?, files)
+}
+
+const BIG: usize = 10_200;
+
 /// A partial clone's checkout of 10,200 files: Git wants every one in one fetch.
 fn big_checkout(platform: &Platform) -> TestResult {
-    const BIG: usize = 10_200;
+    big_checkout_of(platform, BIG)
+}
+
+fn big_checkout_of(platform: &Platform, big: usize) -> TestResult {
     let (repo, token) = platform.repo(&[("README.md", "# big\n")])?;
     let url = format!("{}/git/{repo}.git", platform.origin);
     let writer = client(platform, "big-writer", &token)?;
     writer.git(&writer.home, &["clone", "-q", &url, "src"])?;
     let src = writer.home.join("src");
-    for i in 0..BIG {
+    for i in 0..big {
         let path = src.join(format!("big/d{:03}/f{i}.txt", i % 100));
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -230,11 +248,16 @@ fn big_checkout(platform: &Platform) -> TestResult {
     }
     writer.git(&src, &["add", "-A"])?;
     writer.git(&src, &["commit", "-q", "-m", "many files"])?;
+    let started = std::time::Instant::now();
     let out = writer.git_output(&src, &["push", "-q", "origin", "main"])?;
     check(
         out.status.success(),
         &format!("big push: {}", String::from_utf8_lossy(&out.stderr)),
     )?;
+    eprintln!(
+        "push of {big} new files: {} ms",
+        started.elapsed().as_millis()
+    );
     let reader = client(platform, "big-reader", &token)?;
     let home = reader.home.clone();
     reader.git(
@@ -256,13 +279,15 @@ fn big_checkout(platform: &Platform) -> TestResult {
         &format!("big checkout: {}", String::from_utf8_lossy(&out.stderr)),
     )?;
     eprintln!(
-        "checkout of {BIG} lazily fetched files: {} ms",
+        "checkout of {big} lazily fetched files: {} ms",
         started.elapsed().as_millis()
     );
     let listed = reader.git(&dir, &["ls-files"])?.lines().count();
-    check(listed == BIG + 1, &format!("{listed} files checked out"))?;
-    let sample = std::fs::read_to_string(dir.join("big/d042/f10142.txt")).unwrap_or_default();
-    check(sample == "file 10142\n", "a fetched file")?;
+    check(listed == big + 1, &format!("{listed} files checked out"))?;
+    let last = big - 1;
+    let sample = std::fs::read_to_string(dir.join(format!("big/d{:03}/f{last}.txt", last % 100)))
+        .unwrap_or_default();
+    check(sample == format!("file {last}\n"), "a fetched file")?;
     fsck(&reader, &dir, "big checkout")
 }
 
