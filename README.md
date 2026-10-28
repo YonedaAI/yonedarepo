@@ -2,7 +2,7 @@
 
 A Git-compatible source platform built for agents and other API clients. Clients never clone: they read, commit, merge and land through an HTTP API and MCP, and every write becomes a server-side commit with real Git object ids. It runs entirely on Cloudflare.
 
-[Try it at yonedarepo.com](https://yonedarepo.com/) · [Submission](docs/submission.md) · [Architecture](docs/current-state-architecture.md) · [Release evidence](docs/release-evidence.md)
+[Try it at yonedarepo.com](https://yonedarepo.com/) · [Architecture](docs/architecture.md) · [MCP, tokens and the CLI](docs/remote-mcp.md) · [Runbook](docs/runbook.md) · [Submission](docs/submission.md)
 
 ## What the platform does
 
@@ -12,14 +12,15 @@ A Git-compatible source platform built for agents and other API clients. Clients
 - **Compute next to the data.** Code search that re-indexes only changed directories, blame and path history, symbols and symbol edits that reject stale handles, contracts derived from signatures and doc comments, an agent view (a symbol with its contract, callers and callees) and a human view (a generated subsystem overview), and a work planner that groups reference cycles and schedules only independent work in parallel.
 - **Review and checks.** Checks run in Containers on the exact commit. Comment-, docs- and formatting-only changes can be auto-approved; anything unparseable needs a human. Gates apply to protected refs only (`main`, `release`, `release/*`); unprotected refs land with `write`, like a branch move.
 - **Scoped access.** Tokens can be limited to directories, enforced on every read, search and cache path. A human-only break-glass path can land, revert or pause automation when checks or agents are down; it is never exposed over MCP.
+- **Change requests.** Propose landing a branch on `main`, discuss it with line comments, approve the head (never your own commit) and land it, from the web app, the CLI (`yoneda change`), REST or MCP.
 
 Agents use the platform as clients, through Git, the `yoneda` CLI and MCP.
 
 ## Try it
 
-- Sign up at [yonedarepo.com](https://yonedarepo.com/) and save the recovery code.
+- Sign up at [yonedarepo.com](https://yonedarepo.com/), save the recovery code and choose **New repository**. Each repository has Code, History, Changes, Search and Settings.
 - Create a personal access token, or sign in from a terminal with `yoneda login` (device login).
-- Clone and push with stock Git, or point an agent's MCP client at `/api/v1/mcp`.
+- Clone and push with stock Git, or point an agent's MCP client at `/api/v1/mcp`. See [MCP, tokens and the CLI](docs/remote-mcp.md).
 
 ## Architecture
 
@@ -81,7 +82,7 @@ Details: [runbook](docs/runbook.md) · [public metadata and custom domains](docs
 ## Repository
 
 ```text
-frontend/            Browser app (React 19, React Flow)
+frontend/            Browser app (React 19)
 backend/crates/
   yoneda-core/       Shared contracts: Git object model, transaction log, merge and validation
   yoneda-store/      SQL store trait and the native SQLite store
