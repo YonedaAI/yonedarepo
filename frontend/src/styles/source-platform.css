@@ -21,6 +21,13 @@
   align-items: center;
   color: var(--muted);
 }
+/* The Code tab's branch and version pickers: compact, as wide as the chosen value. */
+.source-toolbar .source-version select {
+  field-sizing: content;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
 .source-meta,
 .source-empty,
 .source-note {
