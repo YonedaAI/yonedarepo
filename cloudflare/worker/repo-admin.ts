@@ -3,6 +3,7 @@
 // repository tokens revoked), removes the D1 listing row, drops main's published head in
 // every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store. Every step is idempotent, so a
 // retried delete repeats whatever a failed attempt left undone.
+import { teamEntries } from './org-access';
 import { dropDeletedHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -19,23 +20,43 @@ export function accountOf(auth: Credentials): string {
 
 type Listed = { id: string; name: string; created_at: number; owner: string; role: string };
 
-/** `GET /repos`: the account's own repositories and those it is a member of, newest first,
- * each with its owner and the account's role (a token's allowlist narrows them). */
+const RANK = ['read', 'write', 'land', 'admin', 'owner'];
+
+/** `GET /repos`: the account's own repositories, those of the orgs it owns, and those
+ * shared with it or one of its teams, newest first, each with its owner and the account's
+ * highest role (a token's allowlist and org limit narrow them). */
 export async function listRepositories(env: Env, auth: Credentials) {
   const account = accountOf(auth);
+  const orgs =
+    '_session' in auth ? auth._session.orgs : '_pat' in auth ? auth._pat.orgs : undefined;
+  const owned = Object.entries(orgs ?? {})
+    .filter(([, a]) => a.role === 'owner')
+    .map(([org]) => org);
+  const entries = [account, ...teamEntries(orgs)];
+  const marks = (list: string[], from: number) => list.map((_, i) => `?${from + i}`).join(',');
   const listed = await env.INDEX.prepare(
-    `SELECT id,name,created_at,workspace AS owner,'owner' AS role FROM platform_repos WHERE workspace=?1
+    `SELECT id,name,created_at,workspace AS owner,'owner' AS role FROM platform_repos
+       WHERE workspace IN (${marks([account, ...owned], 1)})
      UNION ALL
      SELECT r.id,r.name,r.created_at,r.workspace AS owner,m.role FROM platform_members m
-       JOIN platform_repos r ON r.id=m.repo WHERE m.account=?1
-     ORDER BY created_at DESC LIMIT 200`,
+       JOIN platform_repos r ON r.id=m.repo WHERE m.account IN (${marks(entries, owned.length + 2)})
+     ORDER BY created_at DESC LIMIT 400`,
   )
-    .bind(account)
+    .bind(account, ...owned, ...entries)
     .all<Listed>();
+  // A repository reached several ways (directly and through teams) is listed once, by its
+  // highest role.
+  const best = new Map<string, Listed>();
+  for (const r of listed.results) {
+    const seen = best.get(r.id);
+    if (!seen || RANK.indexOf(r.role) > RANK.indexOf(seen.role)) best.set(r.id, r);
+  }
   const allowed = '_pat' in auth ? auth._pat.repos : null;
-  return {
-    repos: allowed ? listed.results.filter((r) => allowed.includes(r.id)) : listed.results,
-  };
+  const org = '_pat' in auth ? auth._pat.org : null;
+  const repos = [...best.values()]
+    .filter((r) => (!allowed || allowed.includes(r.id)) && (!org || r.owner === org))
+    .slice(0, 200);
+  return { repos };
 }
 
 /** `DELETE /repos/:id?confirm=<name>`: the owner (session or repo:admin token) only, never

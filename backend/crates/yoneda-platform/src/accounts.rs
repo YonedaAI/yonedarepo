@@ -6,7 +6,11 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod access;
 mod device;
+mod orgs;
+#[cfg(test)]
+mod orgs_tests;
 mod signin;
+mod teams;
 #[cfg(test)]
 mod tests;
 mod tokens;
@@ -33,17 +37,23 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             "device_create" | "device_approve" | "device_poll" => {
                 device::handle(&db, &command, now)
             }
+            "org_create" | "org_access" | "team_exists" | "org_show" | "org_member_put"
+            | "org_member_remove" | "team_create" | "team_delete" | "team_member_put"
+            | "team_member_remove" | "org_hint_add" | "org_hint_remove" => {
+                orgs::handle(&db, &command, now)
+            }
             _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
         }
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 2] = [
+const MIGRATIONS: [(i64, &str); 3] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
         include_str!("accounts/migrations/0002_account_tokens.sql"),
     ),
+    (3, include_str!("accounts/migrations/0003_orgs.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;
@@ -124,8 +134,15 @@ fn hash(v: &Value, key: &str, lengths: &[usize]) -> Result<String> {
     }
     Ok(s)
 }
+/// The person this authority holds (never an org: nobody signs in as one).
 fn account<S: SqlStore>(db: &S) -> Result<Value> {
-    get(db, "account")
+    get(db, "account").and_then(|a| {
+        if a["kind"] == "org" {
+            Err(Error::new("NOT_FOUND", "Unknown record account"))
+        } else {
+            Ok(a)
+        }
+    })
 }
 fn public_account(account: &Value) -> Value {
     json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"]})
