@@ -4,4 +4,4 @@
 -- makes one private, so a lagging row can only hide a public repository from discovery,
 -- never list a private one.
 ALTER TABLE platform_repos ADD COLUMN visibility TEXT NOT NULL DEFAULT 'private';
-CREATE INDEX IF NOT EXISTS platform_repos_public ON platform_repos(visibility, created_at)
+CREATE INDEX IF NOT EXISTS platform_repos_public ON platform_repos(visibility, created_at);
