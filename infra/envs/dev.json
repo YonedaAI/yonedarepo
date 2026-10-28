@@ -16,10 +16,13 @@
       "role": "superfan",
       "file": "wrangler.dev-superfan.jsonc",
       "notes": [
-        "Dev superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the",
-        "dev platform Worker (yonedarepo-dev-platform, dev.yonedarepo.com stack) with its own",
-        "ledger and a $1/day cap. Like prod's, it runs on tail events only: the hourly watch needs the platform's namespace, queue and container ids (known after the first deploy) and cloudflare/superfan/config.ts watches only yonedarepo-platform-dev. Secrets, set from stdin:",
-        "CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only",
+        "Dev superfan: the cheap-model watcher (cloudflare/superfan) of the dev platform Worker",
+        "(yonedarepo-dev-platform), with its own ledger and a $1/day cap. It keeps the platform's tail",
+        "events and, hourly, reads the GraphQL Analytics API. The Durable Object namespace, queue and",
+        "CheckContainer ids it queries are looked up by name at run time (no ids in this config), so",
+        "CF_ANALYTICS_TOKEN needs Account Analytics Read plus Workers Scripts Read, Queues Read and",
+        "Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):",
+        "CF_ANALYTICS_TOKEN  API token with the read permissions above",
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
         "Deployed first: the dev platform names this Worker in tail_consumers."
       ],
@@ -85,12 +88,11 @@
       "role": "platform",
       "file": "wrangler.dev-platform.jsonc",
       "notes": [
-        "Dev platform Worker (dev.yonedarepo.com stack): the same source platform as",
-        "wrangler.platform.jsonc, with its own Durable Object namespaces, Artifacts namespace, R2,",
+        "Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own",
+        "Durable Object namespaces, Artifacts namespace, R2,",
         "D1, queues, workflow, check containers and secrets, so it shares nothing with production",
-        "(yonedarepo-prod-*) or platform-dev. Browsers reach it through the dev agent Worker's",
+        "(yonedarepo-prod-*). Browsers reach it through the dev agent Worker's",
         "/api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.",
-        "Keep this file in step with wrangler.platform.jsonc. Secrets, set from stdin:",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
         "VAULT_KEY    64 hex characters, shared with yonedarepo-dev-agents",
         "Run next to the data: a commit makes about ten round trips to its repository's",
@@ -99,7 +101,7 @@
         "The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail",
         "events: outcomes, logs, exceptions and CPU/wall time, with no API token.",
         "Batched landing, with commits beginning from and main reads served by the published",
-        "head. No LAND_MODE_OVERRIDE: per-request mode headers are for platform-dev benches only.",
+        "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
         "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route, which wins over the prod sites Worker's *.yonedarepo.com route); WEB_ORIGIN is where people approve device logins (/device).",
@@ -313,7 +315,7 @@
       "file": "wrangler.dev-agents.jsonc",
       "notes": [
         "Dev agent-layer Worker: the front of the dev.yonedarepo.com stack (frontend, agent API,",
-        "remote MCP). Same code as wrangler.agents.jsonc; it reaches only the dev platform, through",
+        "remote MCP). It reaches only the dev platform, through",
         "the PLATFORM service binding (`/api/v1` is proxied there on the same origin) and the",
         "WORKSPACES script binding. Its stores, containers and secrets are its own. Executable app",
         "previews (cloudflare/apps) are off: APPS and APP_ORIGIN are unset.",
@@ -323,7 +325,6 @@
         "(POST /api/admin/providers/managed); prod sets it too.",
         "Spend: the owner workspace allowance is set to 5_000_000 microusd after deploy",
         "(POST /api/admin/workspace/allowance); it is a total, not a daily reset.",
-        "Keep this file in step with wrangler.agents.jsonc. Secrets, set from stdin:",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
         "VAULT_KEY    64 hex characters, shared with yonedarepo-dev-platform",
         "The prod sites Worker's `https://*.yonedarepo.com/*` route would otherwise win: on one hostname a",
@@ -627,9 +628,46 @@
   "retired": {
     "notes": [
       "The dev stack's previous names (yonedarepo-staging-*: Workers, container apps, queues, D1,",
-      "R2, workflow, Artifacts namespace yonedarepo-staging). Renamed 2026-10-27; dev data was",
-      "not carried over. No current name starts with yonedarepo-staging, so a prefix is safe here."
+      "R2, workflow, Artifacts namespace yonedarepo-staging), renamed 2026-10-27 without its data.",
+      "No current name starts with yonedarepo-staging, so a prefix is safe here.",
+      "Also the hand-written platform-dev stack (wrangler.platform/agents/superfan/eval.jsonc, deleted",
+      "2026-10-27), by exact name: its Workers and what only they bound. The Basin pipeline stream",
+      "of platform-dev (CHANGELOG) is not a kind prune knows; delete it by hand."
     ],
-    "prefix": "yonedarepo-staging"
+    "prefix": "yonedarepo-staging",
+    "workers": [
+      "yonedarepo-platform-dev",
+      "yonedarepo-agents-dev",
+      "yonedarepo-superfan-dev",
+      "yonedarepo-eval-dev"
+    ],
+    "containers": [
+      "yonedarepo-platform-dev-checkcontainer",
+      "yonedarepo-agents-dev-agentsandbox"
+    ],
+    "queues": [
+      "yonedarepo-platform-dev-jobs",
+      "yonedarepo-platform-dev-checks",
+      "yonedarepo-platform-dev-dead-letter",
+      "yonedarepo-agents-dev-agent",
+      "yonedarepo-agents-dev-capture",
+      "yonedarepo-agents-dev-evaluate",
+      "yonedarepo-agents-dev-dead-letter"
+    ],
+    "workflows": [
+      "yonedarepo-platform-dev-import"
+    ],
+    "d1": [
+      "yonedarepo-platform-dev-index",
+      "yonedarepo-agents-dev-index"
+    ],
+    "r2": [
+      "yonedarepo-platform-dev-objects",
+      "yonedarepo-platform-dev-analytics",
+      "yonedarepo-agents-dev-objects"
+    ],
+    "artifacts": [
+      "yoneda-platform-dev"
+    ]
   }
 }

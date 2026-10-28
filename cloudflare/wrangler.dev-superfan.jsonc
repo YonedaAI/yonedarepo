@@ -1,8 +1,11 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
-// Dev superfan: the same cheap-model watcher as wrangler.superfan.jsonc, pointed at the
-// dev platform Worker (yonedarepo-dev-platform, dev.yonedarepo.com stack) with its own
-// ledger and a $1/day cap. Like prod's, it runs on tail events only: the hourly watch needs the platform's namespace, queue and container ids (known after the first deploy) and cloudflare/superfan/config.ts watches only yonedarepo-platform-dev. Secrets, set from stdin:
-// CF_ANALYTICS_TOKEN  API token with Account > Account Analytics > Read only
+// Dev superfan: the cheap-model watcher (cloudflare/superfan) of the dev platform Worker
+// (yonedarepo-dev-platform), with its own ledger and a $1/day cap. It keeps the platform's tail
+// events and, hourly, reads the GraphQL Analytics API. The Durable Object namespace, queue and
+// CheckContainer ids it queries are looked up by name at run time (no ids in this config), so
+// CF_ANALYTICS_TOKEN needs Account Analytics Read plus Workers Scripts Read, Queues Read and
+// Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):
+// CF_ANALYTICS_TOKEN  API token with the read permissions above
 // SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
 // Deployed first: the dev platform names this Worker in tail_consumers.
 {
