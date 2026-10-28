@@ -33,5 +33,8 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
     return error('NOT_FOUND', 'Not part of the source platform', 404);
   if (url.pathname === '/' || url.pathname === '')
     return Response.redirect(new URL('/source', url).toString(), 302);
+  // The public repositories' listing lives in the web app.
+  if (url.pathname === '/explore')
+    return Response.redirect(new URL('/source/explore', url).toString(), 302);
   return env.ASSETS.fetch(req);
 }

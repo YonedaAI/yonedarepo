@@ -21,7 +21,14 @@ export function accountOf(auth: Credentials): string {
   throw new ApiError('FORBIDDEN', 'Repository tokens are scoped to one repository');
 }
 
-type Listed = { id: string; name: string; created_at: number; owner: string; role: string };
+type Listed = {
+  id: string;
+  name: string;
+  created_at: number;
+  owner: string;
+  role: string;
+  visibility: string;
+};
 
 const RANK = ['read', 'write', 'land', 'admin', 'owner'];
 
@@ -38,10 +45,10 @@ export async function listRepositories(env: Env, auth: Credentials) {
   const entries = [account, ...teamEntries(orgs)];
   const marks = (list: string[], from: number) => list.map((_, i) => `?${from + i}`).join(',');
   const listed = await env.INDEX.prepare(
-    `SELECT id,name,created_at,workspace AS owner,'owner' AS role FROM platform_repos
+    `SELECT id,name,created_at,workspace AS owner,'owner' AS role,visibility FROM platform_repos
        WHERE workspace IN (${marks([account, ...owned], 1)})
      UNION ALL
-     SELECT r.id,r.name,r.created_at,r.workspace AS owner,m.role FROM platform_members m
+     SELECT r.id,r.name,r.created_at,r.workspace AS owner,m.role,r.visibility FROM platform_members m
        JOIN platform_repos r ON r.id=m.repo WHERE m.account IN (${marks(entries, owned.length + 2)})
      ORDER BY created_at DESC LIMIT 400`,
   )

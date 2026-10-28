@@ -41,6 +41,8 @@ export interface Env {
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
   AUTH_LIMITER?: RateLimit;
+  /** Requests without credentials (public repositories), per client address. */
+  PUBLIC_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;

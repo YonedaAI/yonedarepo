@@ -241,8 +241,8 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
             .collect()
     };
     let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
-    assert_eq!(prod, BTreeSet::from(["1001".to_owned()]));
-    assert_eq!(dev, BTreeSet::from(["2001".to_owned()]));
+    assert_eq!(prod, BTreeSet::from(["1001".to_owned(), "1002".to_owned()]));
+    assert_eq!(dev, BTreeSet::from(["2001".to_owned(), "2002".to_owned()]));
 }
 
 #[test]
