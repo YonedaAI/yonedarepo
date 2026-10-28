@@ -1,26 +1,31 @@
 // The agent e2e gates without a model, locally: `wrangler dev` serves the platform Worker
 // (tests/ssh/wrangler.jsonc), a fresh account gets a personal token, and the kit's items run
 // against it with this checkout's `yoneda` build: 27 (Git semantics: stock git, the CLI and
-// MCP) and 28 (the Claude Code and opencode plugin hooks). No network beyond localhost, no
-// provider keys; LFS is left to the live kit (its uploads go to presigned R2 URLs).
-// Usage: cargo build -p yoneda-cli && node tests/agents/e2e.mjs [--only 27|28] [--cli-bin <dir>]
+// MCP) and 28 (the Claude Code and opencode plugin hooks); with --fake-agents N, item 29's
+// parallel-agent run with tests/agents/fake-opencode.mjs as `opencode` (scripted agents, the
+// real yoneda plugin, no model). No network beyond localhost, no provider keys; LFS is left
+// to the live kit (its uploads go to presigned R2 URLs).
+// Usage: cargo build -p yoneda-cli && node tests/agents/e2e.mjs [--only 27,28] [--fake-agents 4]
+//          [--cli-bin <dir>]
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { agentHooks } from '../../tools/staging/agent-hooks-flow.mjs';
+import { agentRun } from '../../tools/staging/agent-run-flow.mjs';
 import { CliKit, PAT_SCOPES } from '../../tools/staging/cli-tools.mjs';
 import { Recorder, Session, sleep } from '../../tools/staging/client.mjs';
 import { gitSemantics } from '../../tools/staging/git-semantics-flow.mjs';
 
-const { values } = parseArgs({ options: { only: { type: 'string' }, 'cli-bin': { type: 'string' } } });
+const { values } = parseArgs({ options: { only: { type: 'string' }, 'cli-bin': { type: 'string' }, 'fake-agents': { type: 'string' } } });
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const config = join(root, 'tests/ssh/wrangler.jsonc');
 const wrangler = join(root, 'node_modules/.bin/wrangler');
-const wanted = (id) => !values.only || values.only.split(',').includes(id);
+const fakeAgents = Number(values['fake-agents'] ?? 0);
+const wanted = (id) => (id === '29' ? fakeAgents > 0 : !values.only || values.only.split(',').includes(id));
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -59,6 +64,14 @@ try {
   try {
     if (wanted('27')) await rec.step('27', 'Git semantics: stock git, yoneda CLI and MCP', (m) => gitSemantics(kit, { lfs: false }, m));
     if (wanted('28')) await rec.step('28', 'Agent hooks: Claude Code and opencode plugins, sessions API', (m) => agentHooks(kit, m));
+    if (wanted('29')) {
+      const bin = join(dir, 'fake-bin');
+      execFileSync('mkdir', ['-p', bin]);
+      writeFileSync(join(bin, 'opencode'), `#!/bin/sh\nexec node '${join(root, 'tests/agents/fake-opencode.mjs')}' "$@"\n`);
+      chmodSync(join(bin, 'opencode'), 0o755);
+      process.env.PATH = `${bin}:${process.env.PATH}`;
+      await rec.step('29', `Parallel agents (scripted, no model): ${fakeAgents} + 2`, (m) => agentRun(kit, { root, agents: fakeAgents, wave2: 2, model: 'fake/scripted', timeoutS: 120 }, m));
+    }
   } finally {
     kit.dispose();
   }
