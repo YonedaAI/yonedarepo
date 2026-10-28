@@ -1,7 +1,9 @@
 // "Open change" for a branch: propose landing it on main (POST /changes). Main and release
 // branches cannot be proposed, and a branch has at most one open change; the server says so.
+// On a fork the change may target the parent's main instead (the fork's main too).
 import { type FormEvent, useState } from 'react';
 import type { Change } from './changeModel';
+import { type ChangeTarget, changeRequest } from './forks';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 
@@ -16,30 +18,36 @@ export function proposable(ref: string): string | null {
 export function OpenChangeButton({
   repo,
   branch: ref,
+  parent,
   onOpened,
 }: {
   repo: string;
   /** Branch name or `refs/heads/...`; nothing renders for main or a release branch. */
   branch: string;
-  onOpened: (change: Change) => void;
+  /** The parent repository, when `repo` is a fork. */
+  parent?: string;
+  /** The change and the repository it was opened on. */
+  onOpened: (change: Change, repo: string) => void;
 }) {
-  const branch = proposable(ref);
+  const local = proposable(ref);
+  const branch = local ?? (parent && /^(refs\/heads\/)?main$/.test(ref) ? 'main' : null);
+  const [target, setTarget] = useState<ChangeTarget>(local ? 'here' : 'parent');
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (!branch) return null;
+  const proposed = branch;
   async function create(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError('');
     try {
-      const change = await sourceApi<Change>(`/repos/${repo}/changes`, {
-        body: { branch, title: title.trim(), body: body.trim() || undefined },
-      });
+      const request = changeRequest(repo, parent, target, { branch: proposed, title, body });
+      const change = await sourceApi<Change>(request.path, { body: request.body });
       setOpen(false);
-      onOpened(change);
+      onOpened(change, request.repo);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -69,8 +77,25 @@ export function OpenChangeButton({
       }}
     >
       <p className="source-meta">
-        Propose landing <code>{branch}</code> on <code>main</code>.
+        Propose landing <code>{branch}</code> on <code>main</code>
+        {target === 'parent' ? (
+          <>
+            {' '}
+            of the parent <code>{parent}</code>
+          </>
+        ) : null}
+        .
       </p>
+      {parent && local && (
+        <fieldset className="segmented">
+          <legend className="sr-only">Land on</legend>
+          {(['here', 'parent'] as const).map((t) => (
+            <button key={t} type="button" aria-pressed={target === t} onClick={() => setTarget(t)}>
+              {t === 'here' ? 'This repository' : `Parent ${parent}`}
+            </button>
+          ))}
+        </fieldset>
+      )}
       <label className="source-field">
         Title
         <input

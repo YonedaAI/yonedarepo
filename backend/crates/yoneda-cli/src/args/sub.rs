@@ -32,6 +32,10 @@ pub fn repo(rest: &[String]) -> Result<Command> {
                 None => crate::import::BATCH_FILES,
             },
         },
+        "fork" => RepoCommand::Fork {
+            id: p.exactly(1, "repo fork <id>")?[0].clone(),
+            name: p.flag("name"),
+        },
         other => return Err(Error::usage(format!("unknown repo command {other:?}"))),
     };
     Ok(Command::Repo {
@@ -205,7 +209,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         &rest,
         &with(&["title", "message", "status", "path", "line", "side"]),
-        &["resolve"],
+        &["resolve", "to-parent"],
     )?;
     let number = || -> Result<u64> {
         p.exactly(1, &format!("change {sub} <number>"))?[0]
@@ -222,6 +226,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
                 branch: p.positional.first().cloned(),
                 title: p.flag("title"),
                 body: p.flag("message"),
+                to_parent: p.on("to-parent"),
             }
         }
         "list" => {

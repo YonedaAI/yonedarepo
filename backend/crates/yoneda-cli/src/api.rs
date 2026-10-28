@@ -128,6 +128,19 @@ impl Api {
         })
     }
 
+    /// Repository `repo`'s API on the same origin, with the same credential (a fork's parent).
+    pub fn sibling(&self, repo: &str) -> Result<Self> {
+        let parent = self.base.rsplit_once('/').map(|(p, _)| p);
+        match parent {
+            Some(parent) if valid_repo_id(repo) && parent.ends_with("/repos") => Ok(Self {
+                http: self.http.clone(),
+                base: format!("{parent}/{repo}"),
+                header: self.header.clone(),
+            }),
+            _ => Err(Error::new(format!("{repo:?} is not a repository id"))),
+        }
+    }
+
     /// The account-level API (`<origin>/api/v1`): repositories and device login.
     /// `token` is `None` only for the device flow, which runs before there is one.
     pub fn account(origin: &str, token: Option<&Token>) -> Result<Self> {
@@ -406,6 +419,23 @@ pub fn encode(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sibling_is_another_repository_on_the_same_origin() -> Result<()> {
+        let fork = Api::account("https://api.example", None)?.sibling("r00000000000000000f01");
+        // The account API is not a repository's: no sibling.
+        assert!(fork.is_err());
+        let token = crate::credentials::Token::new("yrp_secret")?;
+        let fork = Api::new("https://api.example", "r00000000000000000f01", &token)?;
+        let parent = fork.sibling("r00000000000000000a01")?;
+        assert_eq!(
+            parent.base,
+            "https://api.example/api/v1/repos/r00000000000000000a01"
+        );
+        assert_eq!(parent.header, fork.header);
+        assert!(fork.sibling("../tokens").is_err());
+        Ok(())
+    }
 
     #[test]
     fn encodes_unicode_query_values() {
