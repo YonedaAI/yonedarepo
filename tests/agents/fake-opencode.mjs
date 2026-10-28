@@ -6,6 +6,8 @@
 // in src/util.js, one CHANGELOG line), commits and pushes with OPENCODE_SESSION_ID as opencode
 // would, and on a refusal pulls with rebase, keeps both sides of each conflict and pushes
 // again. It ends the session (the plugin records it) and prints JSON events with a cost.
+// Like `opencode run`, it works in $PWD, not in the process's working directory (the cause of
+// the 2026-10-28 escape: agents spawned with only `cwd` set worked in the operator's checkout).
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,7 +23,7 @@ const text = args.at(-1);
 const agent = text.match(/Task (\w+):/)[1];
 const fn = text.match(/Name it (\w+)\./)[1];
 const line = text.match(/end of CHANGELOG\.md: (.+)/)[1].trim();
-const cwd = process.cwd();
+const cwd = process.env.PWD || process.cwd();
 const sessionID = `ses_fake_${agent}_${Date.now().toString(36)}`;
 const event = (value) => console.log(JSON.stringify(value));
 
