@@ -35,6 +35,7 @@ mod platform_symbols;
 mod platform_views;
 pub(crate) mod repo_store;
 mod secret_scan;
+pub mod shared_contracts;
 
 pub use accounts::execute_workspace;
 pub use commit_store::{execute_commit_store, migrate_commit_store};

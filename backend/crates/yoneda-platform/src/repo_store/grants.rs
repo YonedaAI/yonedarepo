@@ -129,9 +129,6 @@ pub fn precheck<S: crate::storage::SqlStore>(
 
 /// Removes paths outside the grant from read results.
 pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
-    if op == "repo_status" {
-        result["grant"] = serde_json::json!(grant);
-    }
     if grant.is_none() {
         return result;
     }

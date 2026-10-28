@@ -2835,6 +2835,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "yoneda-platform",
 ]
 
 [[package]]
@@ -2913,6 +2914,7 @@ dependencies = [
  "oxc_parser",
  "oxc_span",
  "proc-macro2",
+ "schemars",
  "serde",
  "serde_json",
  "sha2",

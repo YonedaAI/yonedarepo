@@ -1,7 +1,6 @@
 //! Snapshot-consistent reads. `at` pins a log version; refs at a past version are rebuilt
 //! by replaying the hash-chained log, so time travel also verifies history integrity.
 use super::{
-    auth::Actor,
     land::gates,
     rows::{self, Settings, branch_ref, current_version, object_id},
 };
@@ -61,31 +60,6 @@ pub(super) fn refs_at<S: SqlStore>(
     let tail = rows::entries(db, from.version, version, None)?;
     let projected = super::projection_plan::projected_between(db, from.version, version)?;
     Ok(replay_projected(&from, &tail, &projected)?.refs)
-}
-
-/// The repository's status, with who is asking (`viewer`).
-pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result<Value> {
-    let refs = db.query(
-        "SELECT name,commit_id AS commit_id,version FROM refs ORDER BY name",
-        &[],
-    )?;
-    Ok(json!({
-        "version": current_version(db)?,
-        "name": settings.name,
-        "owner": settings.owner,
-        "object_store": settings.object_store,
-        "policy": settings.policy,
-        "policy_digest": settings.policy_digest,
-        "refs": refs,
-        "projections": super::projection::list(db)?,
-        "objects": super::staging::status(db)?,
-        "bundled": super::pushed::bundles::any(db)?,
-        "automation": super::break_glass::state(db)?,
-        "parent": settings.parent.as_ref().map(|(repo, version)| json!({ "repo": repo, "version": version })),
-        "forks": super::forks::count(db)?,
-        "viewer": { "principal": actor.principal, "owner": actor.owner,
-            "role": actor.member.map(super::members::Role::as_str) },
-    }))
 }
 
 pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {

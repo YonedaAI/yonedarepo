@@ -18,7 +18,7 @@ type Route = Extract<SourceRoute, { view: 'files' }>;
 const README = /^readme(\.(md|markdown))?$/i;
 
 /** The ref the API reads: a branch name, or a tag's commit (tags never move). */
-export function apiRef(ref: string, refs: RepoStatus['refs']): string | undefined {
+export function apiRef(ref: string, refs: RepoStatus['refs'] | undefined): string | undefined {
   if (!ref.startsWith('refs/tags/')) return ref;
   return refs?.find((r) => r.name === ref)?.commit_id;
 }
