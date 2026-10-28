@@ -116,6 +116,27 @@ impl Prebuilt {
         registry_ref(spec, &self.local_tag(spec))
     }
 
+    /// Refuses a frontend built for another API origin (or none): its Git, CLI and MCP lines
+    /// would send people to a host that does not serve them. Vite inlines the origin as a
+    /// string literal, so it must appear in one of the built scripts.
+    pub(crate) fn check_api_origin(&self, origin: &str) -> Result<()> {
+        let assets = self.dir.join(FRONTEND).join("assets");
+        let built_for = std::fs::read_dir(&assets)
+            .map_err(|error| format!("Refusing: no prebuilt {FRONTEND}/assets ({error})."))?
+            .filter_map(|entry| entry.ok().map(|e| e.path()))
+            .filter(|path| path.extension().is_some_and(|ext| ext == "js"))
+            .any(|path| std::fs::read_to_string(path).is_ok_and(|js| js.contains(origin)));
+        if built_for {
+            Ok(())
+        } else {
+            Err(format!(
+                "Refusing: prebuilt {FRONTEND} was not built with {}={origin}.",
+                crate::infra::api_origin::FRONTEND_VAR
+            )
+            .into())
+        }
+    }
+
     /// Installs the Wasm and frontend where wrangler bundles them from, loads the image and
     /// confirms the archive holds the recorded image id. Local only.
     pub(crate) fn install(&self, spec: &Spec) -> Result<()> {

@@ -159,7 +159,12 @@ jobs:
       - run: pnpm test:superfan
       - run: pnpm test:runtime
       - run: pnpm test:frontend
-      - run: pnpm --dir frontend build
+      # The dev deploy installs this build: point its Git, CLI and MCP lines at the dev platform
+      # host (infra/api_origin.rs; `deploy --prebuilt` refuses a build for another origin).
+      - name: Frontend build for the dev platform API
+        run: |
+          host=$(jq -re '.workers[] | select(.role == "platform") | .config.routes[] | select(.custom_domain) | .pattern' infra/envs/dev.json)
+          VITE_YONEDA_API_ORIGIN="https://$host" pnpm --dir frontend build
       - name: Stamp the frontend build with its commit
         if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
         run: echo "$GITHUB_SHA" > frontend/dist/REVISION

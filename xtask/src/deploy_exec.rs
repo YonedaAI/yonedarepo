@@ -76,7 +76,7 @@ impl Run<'_> {
             (self.env, self.spec, self.workers, self.options, self.head);
         match step {
             Step::BuildWasm => crate::commands::build_wasm()?,
-            Step::BuildFrontend => frontend_build()?,
+            Step::BuildFrontend => frontend_build(&crate::infra::api_origin::api_origin(spec)?)?,
             Step::InstallPrebuilt => prebuilt(self.prebuilt)?.install(spec)?,
             Step::BuildImage => {
                 let id = crate::deploy_registry::build_local(spec)?;
@@ -218,8 +218,9 @@ impl Timings {
     }
 }
 
-/// Builds the frontend without pnpm (worktrees symlink node_modules).
-pub(crate) fn frontend_build() -> Result<()> {
+/// Builds the frontend without pnpm (worktrees symlink node_modules), pointing its Git, CLI
+/// and MCP lines at the env's platform API origin.
+pub(crate) fn frontend_build(api_origin: &str) -> Result<()> {
     for (program, args) in [
         ("node_modules/.bin/tsc", vec!["-b"]),
         ("node_modules/.bin/vite", vec!["build"]),
@@ -227,6 +228,7 @@ pub(crate) fn frontend_build() -> Result<()> {
         let status = std::process::Command::new(program)
             .args(&args)
             .current_dir(crate::layout::FRONTEND)
+            .env(crate::infra::api_origin::FRONTEND_VAR, api_origin)
             .status()
             .map_err(|error| format!("Cannot start frontend {program}: {error}"))?;
         if !status.success() {
