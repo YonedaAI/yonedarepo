@@ -63,6 +63,11 @@ pub(crate) struct WorkerSpec {
     /// such as a watcher wired to one env's resource ids, opt out).
     #[serde(default = "yes")]
     pub ephemeral: bool,
+    /// Container classes that stay up without work (the SSH gateway keeps its tunnel open),
+    /// each with what a rollout drops: the busy-container gates do not count them, since a
+    /// rollout kills no runs on them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub always_on: BTreeMap<String, String>,
     pub config: Value,
 }
 
@@ -139,8 +144,11 @@ impl Spec {
         self.check_instances = self.check_instances.map(|_| 1);
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
-            // Its generated secrets file has no R2 S3 key pair: Git LFS answers 501 there.
-            worker.secrets.retain(|s| !s.starts_with("LFS_S3_"));
+            // Its generated secrets file has no R2 S3 key pair: Git LFS answers 501 there. Git
+            // over SSH stays off: the host name, tunnel and host keys belong to one env.
+            worker
+                .secrets
+                .retain(|s| !s.starts_with("LFS_S3_") && !s.starts_with("SSH_"));
             worker.notes = vec![format!(
                 "Ephemeral stack {}: removed by `cargo xtask infra down --env {} --confirm --purge`.",
                 env.name(),
@@ -150,6 +158,12 @@ impl Spec {
                 config.remove("routes");
                 config.remove("tail_consumers");
                 config.insert("workers_dev".into(), json!(true));
+                if let Some(vars) = config.get_mut("vars").and_then(Value::as_object_mut) {
+                    vars.remove("SSH_HOST");
+                    if vars.contains_key("SSH_FRONT_DOOR") {
+                        vars.insert("SSH_FRONT_DOOR".into(), json!("off"));
+                    }
+                }
                 if let Some(containers) = config.get_mut("containers").and_then(Value::as_array_mut)
                 {
                     for container in containers {
