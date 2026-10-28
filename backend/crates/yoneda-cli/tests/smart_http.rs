@@ -342,6 +342,61 @@ fn clone_push_branch_and_main(w: &World) -> TestResult {
     )
 }
 
+/// Change requests from the command line: a pushed branch suggests one, `yoneda change`
+/// opens, shows, comments on and lands it, and landing marks it landed.
+fn change_requests(w: &World) -> TestResult {
+    let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
+    let mut c = w.client("changes", &token)?;
+    let dir = w.clone(&c, &repo, "work")?;
+    c.token = token;
+    c.git(&dir, &["checkout", "-q", "-b", "feature"])?;
+    let head = c.commit(&dir, "Add b", &[("b.txt", "b\n")])?;
+    let out = push(&c, &dir, &["origin", "feature"])?;
+    check(
+        out.status.success() && text(&out).contains("open a change: yoneda change create feature"),
+        &text(&out),
+    )?;
+    let opened = c.ok(&dir, &["change", "create"])?;
+    check(
+        opened.contains("#1 [open] Add b (feature -> main)"),
+        &opened,
+    )?;
+    check(
+        c.ok(&dir, &["change", "list"])?.contains("#1 [open]"),
+        "listed",
+    )?;
+    let said = c.ok(
+        &dir,
+        &[
+            "change", "comment", "1", "-m", "Why b?", "--path", "b.txt", "--line", "1", "--side",
+            "new",
+        ],
+    )?;
+    check(said.contains("Commented on change #1"), &said)?;
+    let shown = c.ok(&dir, &["change", "show", "1"])?;
+    check(
+        shown.contains(&format!("head {head}"))
+            && shown.contains("ready to land")
+            && shown.contains("add b.txt")
+            && shown.contains("on b.txt:1 (new)"),
+        &shown,
+    )?;
+    let landed = c.ok(&dir, &["change", "land", "1"])?;
+    check(landed.contains("Landed change #1"), &landed)?;
+    let change = w
+        .platform
+        .owner_call("GET", &format!("/repos/{repo}/changes/1"), None)?;
+    check(
+        change["status"] == "landed" && change["landed_commit"] == head.as_str(),
+        &change.to_string(),
+    )?;
+    let again = c.yoneda(&dir, &["change", "land", "1"])?;
+    check(
+        !again.status.success(),
+        "a landed change does not land again",
+    )
+}
+
 /// Lightweight tags: `git push origin v1` creates one, a fresh clone has it, and it never
 /// moves or disappears; an annotated tag is refused.
 fn tags_push_and_clone(w: &World) -> TestResult {
@@ -827,5 +882,6 @@ fn stock_git_over_https() -> TestResult {
     cut_off_push_moves_nothing(&w).map_err(|e| format!("cut off: {e}"))?;
     pack_missing_a_file_moves_nothing(&w).map_err(|e| format!("missing: {e}"))?;
     pushed_secret_is_refused(&w).map_err(|e| format!("secret: {e}"))?;
-    hundred_files_push_and_fresh_clone(&w).map_err(|e| format!("hundred: {e}"))
+    hundred_files_push_and_fresh_clone(&w).map_err(|e| format!("hundred: {e}"))?;
+    change_requests(&w).map_err(|e| format!("changes: {e}"))
 }

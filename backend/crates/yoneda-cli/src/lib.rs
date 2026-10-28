@@ -7,6 +7,7 @@ pub mod api;
 pub mod args;
 mod attempt;
 mod brief;
+mod change_cmd;
 mod changes;
 mod checkout;
 mod chunk;
