@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendPage,
+  changeSessionsPath,
+  groupByCommit,
   type ContractRecord,
   groupContracts,
   groupSessions,
@@ -84,6 +86,17 @@ describe('agent pages', () => {
       ['#3', 3, [3]],
       ['#1', 1, [1]],
     ]);
+  });
+
+  it('groups records by commit, the commit of the newest record first', () => {
+    const record = (id: number, commit: string) =>
+      ({ id, commit, subject: `s${commit}` }) as SessionRecord;
+    const groups = groupByCommit([record(5, 'b'), record(4, 'a'), record(3, 'b')]);
+    expect(groups.map((g) => [g.commit, g.subject, g.records.map((r) => r.id)])).toEqual([
+      ['b', 'sb', [5, 3]],
+      ['a', 'sa', [4]],
+    ]);
+    expect(changeSessionsPath(repo, 'h', null)).toBe(`/repos/${repo}/sessions?head=h&limit=200`);
   });
 
   it('appends a page without repeating rows', () => {

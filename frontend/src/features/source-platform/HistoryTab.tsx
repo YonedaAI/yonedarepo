@@ -1,12 +1,14 @@
-// The History tab: a branch's commits, or every landed version of the transaction log.
+// The History tab: a branch's commits, every landed version of the transaction log, or the
+// branches and tags (managed here by the write role and above).
+import { RepoBranches } from '../repo-settings/RepoBranches';
 import type { Navigate } from '../shell/useRoute';
 import { OpenChangeButton } from './OpenChange';
 import { RepoHistory } from './RepoHistory';
 import { RepoTransactions } from './RepoTransactions';
-import type { RepoStatus } from './repoStatus';
+import { canMoveBranches, type RepoStatus } from './repoStatus';
 import type { SourceRoute } from './sourceRoute';
 
-type Route = Extract<SourceRoute, { view: 'history' | 'transactions' }>;
+type Route = Extract<SourceRoute, { view: 'history' | 'transactions' | 'branches' }>;
 
 export function HistoryTab({
   route,
@@ -34,6 +36,7 @@ export function HistoryTab({
           <legend className="sr-only">Show</legend>
           {toggle('history', 'Commits', { view: 'history', repo: route.repo, ref })}
           {toggle('transactions', 'Landed versions', { view: 'transactions', repo: route.repo })}
+          {toggle('branches', 'Branches and tags', { view: 'branches', repo: route.repo })}
         </fieldset>
         {segment === 'history' && branches.length > 1 && (
           <label className="source-version">
@@ -60,10 +63,14 @@ export function HistoryTab({
           />
         )}
       </div>
-      {route.view === 'history' ? (
+      {route.view === 'history' && (
         <RepoHistory repo={route.repo} refName={route.ref} onNavigate={navigate} />
-      ) : (
+      )}
+      {route.view === 'transactions' && (
         <RepoTransactions repo={route.repo} onNavigate={navigate} />
+      )}
+      {route.view === 'branches' && (
+        <RepoBranches repo={route.repo} canWrite={canMoveBranches(status?.viewer)} />
       )}
     </section>
   );

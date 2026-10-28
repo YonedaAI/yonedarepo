@@ -141,3 +141,31 @@ export function groupSessions(records: SessionRecord[]): SessionGroup[] {
   }
   return [...groups.values()];
 }
+
+/** The sessions behind the commits a change introduces: those `head` reaches and its merge
+ * base with main does not (no base: unrelated histories, so all of head's). */
+export function changeSessionsPath(repo: string, head: string, base: string | null) {
+  const query = new URLSearchParams({ head, limit: '200' });
+  if (base) query.set('base', base);
+  return `/repos/${repo}/sessions?${query}`;
+}
+
+/** One commit and the sessions recorded for it, newest first. */
+export type CommitSessionGroup = { commit: string; subject: string; records: SessionRecord[] };
+
+/** Groups records by commit, the commit with the newest record first. Keeps the newest-first
+ * order of `records` within each commit. */
+export function groupByCommit(records: SessionRecord[]): CommitSessionGroup[] {
+  const groups = new Map<string, CommitSessionGroup>();
+  for (const record of records) {
+    const group = groups.get(record.commit);
+    if (group) group.records.push(record);
+    else
+      groups.set(record.commit, {
+        commit: record.commit,
+        subject: record.subject,
+        records: [record],
+      });
+  }
+  return [...groups.values()];
+}

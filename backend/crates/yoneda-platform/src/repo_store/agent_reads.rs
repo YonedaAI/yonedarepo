@@ -4,17 +4,15 @@
 //! read-only. Sessions, pins and bisects describe whole commits, so a path-restricted token
 //! reads none of them; contract records are filtered to the grant (`grants::redact`).
 use super::auth::Actor;
-use super::rows::{self, branch_ref, corrupt};
+use super::rows::{branch_ref, corrupt};
+use super::session_range::{commit_param, range};
 use super::sessions::whole_repository;
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
-use std::collections::HashSet;
-use yoneda_core::{Error, Result, git_object::ObjectId};
+use yoneda_core::{Error, Result};
 
 const DEFAULT_LIMIT: u64 = 50;
 const MAX_LIMIT: u64 = 200;
-/// Commits walked back from a branch head when filtering sessions by branch.
-const BRANCH_SCAN: usize = 2000;
 /// Declared reads shown with one session.
 const MAX_READS: usize = 500;
 const SESSION_COLUMNS: &str = "s.id,s.commit_id,s.cli,s.model,s.summary,s.prompt_digest,\
@@ -62,26 +60,6 @@ fn session(row: &Value) -> Result<Value> {
     }))
 }
 
-/// Commits reachable from `refname`'s last projected head (a landing still projecting
-/// joins once it is projected), at most `BRANCH_SCAN` of them, and whether the walk stopped
-/// early.
-fn reachable<S: SqlStore>(db: &S, refname: &str) -> Result<(HashSet<String>, bool)> {
-    let mut seen = HashSet::new();
-    let mut queue: Vec<ObjectId> = rows::projected_ref(db, refname)?.into_iter().collect();
-    while let Some(id) = queue.pop() {
-        if seen.len() >= BRANCH_SCAN {
-            return Ok((seen, true));
-        }
-        if !seen.insert(id.hex()) {
-            continue;
-        }
-        if let Some(row) = rows::commit_row(db, &id)? {
-            queue.extend(row.parents);
-        }
-    }
-    Ok((seen, false))
-}
-
 fn filter_value(c: &Value, key: &str) -> Result<Option<String>> {
     match &c[key] {
         Value::Null => Ok(None),
@@ -91,8 +69,10 @@ fn filter_value(c: &Value, key: &str) -> Result<Option<String>> {
     }
 }
 
-/// `repo_session_list`: `{cli?, model?, ref?, before?, limit?}`. Session records newest
-/// first, a `next` cursor when more remain, and the CLIs and models seen (for filters).
+/// `repo_session_list`: `{cli?, model?, ref?, head?, base?, before?, limit?}`. Session
+/// records newest first, a `next` cursor when more remain, and the CLIs and models seen (for
+/// filters). `ref` or `head` (a commit) keeps the commits they reach, less what `base` reaches:
+/// a change's head and merge base give the sessions behind the commits it introduces.
 pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let cli = filter_value(c, "cli")?;
@@ -101,12 +81,15 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
         Some(name) => Some(branch_ref(&json!({ "ref": name }))?),
         None => None,
     };
-    let (on_branch, truncated) = match &branch {
-        Some(refname) => {
-            let (set, cut) = reachable(db, refname)?;
-            (Some(set), cut)
-        }
-        None => (None, false),
+    let head = commit_param(c, "head")?;
+    let base = commit_param(c, "base")?;
+    let (on_branch, truncated) = if branch.is_some() || head.is_some() {
+        let found = range(db, branch.as_deref(), head, base)?;
+        (Some(found.commits), found.truncated)
+    } else if base.is_some() {
+        return Err(bad("base needs ref or head"));
+    } else {
+        (None, false)
     };
     let limit = limit(c);
     let mut cursor = before(c)?;
@@ -163,7 +146,7 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
         .flatten();
     Ok(json!({
         "sessions": sessions, "next": next, "clis": distinct("cli")?, "models": distinct("model")?,
-        "ref": branch, "branch_scan_truncated": truncated,
+        "ref": branch, "head": head, "base": base, "branch_scan_truncated": truncated,
     }))
 }
 

@@ -17,6 +17,11 @@ export type RepoStatus = {
   forks?: number;
 };
 
+/** Whether the viewer may create and delete branches and create tags: the write role and
+ * above (the server decides each request; this only hides controls). */
+export const canMoveBranches = (viewer: Viewer | undefined) =>
+  Boolean(viewer && (viewer.owner || (viewer.role !== null && viewer.role !== 'read')));
+
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
 /** What landing on main needs, in words: approvals, auto-approved classes and checks. */

@@ -1,6 +1,6 @@
-// Branches and tags: create a working branch from another branch, delete one (never `main`),
-// and create a tag (annotated with a message) on a branch's commit. Git pushes do the same;
-// this is the browser's way.
+// Branches and tags (under History): create a working branch from another branch, delete one
+// (never `main`), and create a tag (annotated with a message) on a branch's commit. Git pushes
+// do the same; this is the browser's way. Only the write role and above see the controls.
 import { type FormEvent, useState } from 'react';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { shortSha, sourceApi } from '../source-platform/sourceApi';
@@ -19,12 +19,19 @@ import {
 
 type Refs = Loaded<{ refs: Record<string, string> }>;
 
-export function BranchTable({ refs, onDelete }: { refs: Refs; onDelete: (row: RefRow) => void }) {
+export function BranchTable({
+  refs,
+  onDelete,
+}: {
+  refs: Refs;
+  /** Absent for viewers who may not delete branches. */
+  onDelete?: (row: RefRow) => void;
+}) {
   if (refs.loading && !refs.data) return <Loading what="branches" />;
   if (refs.error) return <Failure error={refs.error} onRetry={refs.reload} />;
   const rows = branchRows(refs.data?.refs);
   if (rows.length === 0)
-    return <p className="source-empty">No branches yet. Push one or create it below.</p>;
+    return <p className="source-empty">No branches yet.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table" aria-label="Branches">
@@ -32,9 +39,11 @@ export function BranchTable({ refs, onDelete }: { refs: Refs; onDelete: (row: Re
           <tr>
             <th>Branch</th>
             <th>Commit</th>
-            <th>
-              <span className="sr-only">Actions</span>
-            </th>
+            {onDelete && (
+              <th>
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -44,20 +53,22 @@ export function BranchTable({ refs, onDelete }: { refs: Refs; onDelete: (row: Re
               <td>
                 <code>{shortSha(b.commit)}</code>
               </td>
-              <td>
-                {b.name === PROTECTED_BRANCH ? (
-                  <span className="source-meta">protected</span>
-                ) : (
-                  <button
-                    type="button"
-                    className="quiet"
-                    aria-label={`Delete branch ${b.name}`}
-                    onClick={() => onDelete(b)}
-                  >
-                    Delete
-                  </button>
-                )}
-              </td>
+              {onDelete && (
+                <td>
+                  {b.name === PROTECTED_BRANCH ? (
+                    <span className="source-meta">protected</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="quiet"
+                      aria-label={`Delete branch ${b.name}`}
+                      onClick={() => onDelete(b)}
+                    >
+                      Delete
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -69,7 +80,7 @@ export function BranchTable({ refs, onDelete }: { refs: Refs; onDelete: (row: Re
 export function TagTable({ refs }: { refs: Refs }) {
   if (!refs.data) return null;
   const rows = tagRows(refs.data.refs);
-  if (rows.length === 0) return <p className="source-empty">No tags yet. Create one below.</p>;
+  if (rows.length === 0) return <p className="source-empty">No tags yet.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table" aria-label="Tags">
@@ -158,7 +169,7 @@ function StartFrom({
   );
 }
 
-export function RepoBranches({ repo }: { repo: string }) {
+export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boolean }) {
   const refs = useSource<{ refs: Record<string, string> }>(`/repos/${repo}/refs`);
   const { busy, error, run } = useChange(refs.reload);
   const [branch, setBranch] = useState('');
@@ -193,15 +204,16 @@ export function RepoBranches({ repo }: { repo: string }) {
     void run(() => sourceApi(`/repos/${repo}/refs/batch`, { body: deleteBranchBody(row) }));
   }
 
-  const canStart = branches.length > 0;
+  const canStart = canWrite && branches.length > 0;
   return (
     <section aria-labelledby="branches-heading">
       <h2 id="branches-heading">Branches and tags</h2>
       <p className="source-meta">
         Working branches move freely; <code>{PROTECTED_BRANCH}</code> moves only by landing. Tags
         never move once created.
+        {!canWrite && ' Creating and deleting them needs the write role.'}
       </p>
-      <BranchTable refs={refs} onDelete={remove} />
+      <BranchTable refs={refs} onDelete={canWrite ? remove : undefined} />
       {canStart && (
         <form onSubmit={createBranch} className="source-token-form" aria-label="Create a branch">
           <RefName

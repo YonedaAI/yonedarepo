@@ -56,6 +56,7 @@ mod releases;
 mod reviewers;
 mod rows;
 mod runner;
+mod session_range;
 mod sessions;
 pub(crate) mod staging;
 mod store_lineage;
