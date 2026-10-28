@@ -168,6 +168,11 @@ impl Harness {
 fn file(path: &str, text: &str) -> Value {
     json!({"path": path, "content_b64": STANDARD.encode(text)})
 }
+/// Evidence naming what a claimed run ran against (`claim`: its `repo_check_claim` answer).
+fn ran_on(claim: &Value) -> Value {
+    json!({"commit": claim["commit"], "tree": claim["tree"], "files_sha256": "0".repeat(64)})
+}
+
 fn code(result: yoneda_core::Result<Value>) -> String {
     result.err().map(|e| e.code).unwrap_or_else(|| "OK".into())
 }
@@ -602,10 +607,12 @@ fn platform_check_runs_are_fenced_by_epoch_and_bound_to_policy() {
         2
     );
     let complete = |epoch: u64, outcome: &str| {
+        let mut evidence = ran_on(&claimed);
+        evidence["log"] = json!("platform/v1/r/checks/x");
         h.run(
             SYSTEM,
             json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,
-            "outcome":outcome,"evidence":{"exit_code":0,"log":"platform/v1/r/checks/x"}}),
+            "outcome":outcome,"evidence":evidence}),
         )
     };
     assert_eq!(code(complete(1, "pass")), "STALE_EPOCH");
@@ -1193,9 +1200,9 @@ fn path_history_bisect_and_vacuum_follow_the_log() {
         let commit = step["testing"].as_str().unwrap().to_owned();
         let index = chain.iter().position(|c| *c == commit).unwrap();
         let run = step["runs"][0]["id"].as_str().unwrap().to_owned();
-        let epoch = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}))["epoch"].clone();
+        let claim = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}));
         let outcome = if index >= 5 { "fail" } else { "pass" };
-        let done = h.ok(SYSTEM, json!({"op":"repo_check_complete","run_id":run,"epoch":epoch,"outcome":outcome,"evidence":{}}));
+        let done = h.ok(SYSTEM, json!({"op":"repo_check_complete","run_id":run,"epoch":claim["epoch"],"outcome":outcome,"evidence":ran_on(&claim)}));
         assert_eq!(done["bisects"], json!([id]));
         step = h.ok(SYSTEM, json!({"op":"repo_bisect_step","id":id}));
         tested += 1;
@@ -1588,6 +1595,7 @@ mod change_bases;
 mod change_records;
 mod changes;
 mod changesets;
+mod check_evidence;
 mod check_posters;
 mod check_release;
 mod checkpoints;
