@@ -1,19 +1,38 @@
-// Kit item 30 (`--dogfood`), the Git half: the private workspace every Git and CLI process of
+// Kit item 30 (`--realuser`), the Git half: the private workspace every Git and CLI process of
 // the run uses, then the owner's repository cloned every way a person clones it (smart HTTP
 // full, partial with a lazy checkout, shallow then deepened, the yoneda:: remote helper, SSH
 // through the platform's ssh_config with a throwaway key) and everyday Git on scratch branches
 // (branch, commit, push, pull --rebase over a server-side commit, cherry-pick, revert, an
 // opt-in annotated tag, branch delete). Tokens reach Git and the CLI only through the
-// environment; every write goes to a `dogfood/<ts>-*` branch (dogfood-plan.mjs `scratch`).
+// environment; every write goes to a `realuser/<ts>-*` branch (realuser-plan.mjs `scratch`).
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { scratch, scratchRefs, timedSteps } from './dogfood-plan.mjs';
+import { scratch, scratchRefs, timedSteps } from './realuser-plan.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
-export const AUTHOR = { name: 'Dogfood kit', email: 'dogfood@yonedarepo.invalid' };
+/** GET /refs is a snapshot up to 2 x REFS_MS (2 s) old for a reader in another isolate
+ * (repo-snapshots.ts): a ref this run just moved is polled for up to that bound. */
+export const REFS_BOUND_MS = 2500;
+
+/** `refname`'s commit on the platform once it is `expected` (undefined: absent), polling
+ * within `REFS_BOUND_MS`; else whatever it last read. `seen.lag_ms` keeps the longest wait. */
+export async function settledRef(owner, repo, refname, expected, seen = {}) {
+  const started = performance.now();
+  for (;;) {
+    const value = (await owner.get(`/repos/${repo}/refs`)).refs[refname];
+    const waited = Math.round(performance.now() - started);
+    if (value === expected || waited > REFS_BOUND_MS) {
+      if (value === expected) seen.lag_ms = Math.max(seen.lag_ms ?? 0, waited);
+      return value;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+export const AUTHOR = { name: 'Real-user kit', email: 'realuser@yonedarepo.invalid' };
 
 /** A 0700 temporary directory with its own Git config; processes get a token only per call. */
 export class Workspace {
@@ -21,7 +40,7 @@ export class Workspace {
     this.api = api.replace(/\/$/, '');
     this.bin = bin;
     this.scrub = scrub;
-    this.dir = mkdtempSync(join(tmpdir(), 'yoneda-dogfood-'));
+    this.dir = mkdtempSync(join(tmpdir(), 'yoneda-realuser-'));
     chmodSync(this.dir, 0o700);
     this.gitConfig = join(this.dir, 'gitconfig');
     // No background maintenance: it races `git fsck` and the timings.
@@ -75,7 +94,7 @@ async function objectBytes(ws, dir) {
 }
 
 /** 30.1: every clone of the owner's repository; `ctx.mint(step)` is a read token for it. */
-export async function dogfoodClones(ctx, metrics) {
+export async function realuserClones(ctx, metrics) {
   const { ws, repo, mint, owner, platformHealth } = ctx;
   const token = await mint('clone', ['read']);
   const url = `${ws.api}/git/${repo}.git`;
@@ -128,8 +147,8 @@ async function sshClone({ ws, repo, owner, platformHealth }, metrics) {
   if (!platformHealth.ssh) return { skip: 'Git over SSH is off on this platform' };
   if (platformHealth.ssh === 'tunnel' && spawnSync('cloudflared', ['--version']).status !== 0) return { skip: 'cloudflared is not installed' };
   const key = ws.path('ssh-key');
-  spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'dogfood', '-f', key]);
-  const added = await owner.post('/ssh-keys', { title: `dogfood-${Date.now()}`, key: readFileSync(`${key}.pub`, 'utf8').trim() });
+  spawnSync('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-C', 'realuser', '-f', key]);
+  const added = await owner.post('/ssh-keys', { title: `realuser-${Date.now()}`, key: readFileSync(`${key}.pub`, 'utf8').trim() });
   try {
     const config = added.ssh?.ssh_config ? ws.path('ssh_config') : '/dev/null';
     if (added.ssh?.ssh_config) writeFileSync(config, added.ssh.ssh_config);
@@ -152,19 +171,19 @@ function write(dir, path, text) {
 }
 
 /** 30.2: everyday Git on scratch branches of the owner's repository. */
-export async function dogfoodEveryday(ctx, metrics) {
+export async function realuserEveryday(ctx, metrics) {
   const { ws, repo, ts, owner, mint } = ctx;
   const token = await mint('git', ['read', 'write']);
   const refs = scratchRefs(ts);
   const url = `${ws.api}/git/${repo}.git`;
   const dir = ws.path('work');
   const git = (...args) => ws.git(dir, token, ...args);
-  const remoteHead = async (branch) => (await owner.get(`/repos/${repo}/refs`)).refs[`refs/heads/${scratch(branch, ts)}`];
+  const remoteHead = (branch, expected) => settledRef(owner, repo, `refs/heads/${scratch(branch, ts)}`, expected, metrics);
   /** Pushes `local` to the scratch branch `branch` and requires the platform to hold it. */
   const push = async (local, branch, ...flags) => {
     const done = await ws.ok('git', ['push', '-q', ...flags, 'origin', `${local}:refs/heads/${scratch(branch, ts)}`], { cwd: dir, token });
     const sha = await git('rev-parse', local);
-    assert.equal(await remoteHead(branch), sha, `${branch} on the platform is not the pushed commit`);
+    assert.equal(await remoteHead(branch, sha), sha, `${branch} on the platform is not the pushed commit (after ${REFS_BOUND_MS} ms)`);
     return done.ms;
   };
   const commit = async (path, text, message) => {
@@ -183,46 +202,46 @@ export async function dogfoodEveryday(ctx, metrics) {
       ['push scratch base', () => push('origin/main', refs.base)],
       ['branch, commit, push', async () => {
         await git('switch', '-q', '-c', refs.work, 'origin/main');
-        noted = await commit('.dogfood/notes.md', `dogfood ${ts}: first line\n`, `dogfood ${ts}: note`);
+        noted = await commit('.realuser/notes.md', `realuser ${ts}: first line\n`, `realuser ${ts}: note`);
         metrics.push_ms = await push('HEAD', refs.work);
       }],
       ['pull --rebase over a server-side commit', async () => {
         const server = await owner.post(`/repos/${repo}/commits`, {
           ref: scratch(refs.work, ts),
-          changes: [{ path: '.dogfood/server.md', content_b64: b64(`server-side commit ${ts}\n`) }],
-          message: `dogfood ${ts}: server-side commit`,
+          changes: [{ path: '.realuser/server.md', content_b64: b64(`server-side commit ${ts}\n`) }],
+          message: `realuser ${ts}: server-side commit`,
           author: AUTHOR,
         });
         await owner.post(`/repos/${repo}/land`, { ref: scratch(refs.work, ts), commit: server.commit });
-        await commit('.dogfood/notes.md', 'second line\n', `dogfood ${ts}: second note`);
+        await commit('.realuser/notes.md', 'second line\n', `realuser ${ts}: second note`);
         metrics.pull_rebase_ms = (await ws.ok('git', ['pull', '-q', '--rebase', 'origin', refs.work], { cwd: dir, token })).ms;
         await git('merge-base', '--is-ancestor', server.commit, 'HEAD');
         assert.equal(await git('rev-list', '--merges', '--count', `${server.commit}..HEAD`), '0', 'the rebase made a merge');
-        assert.ok(existsSync(join(dir, '.dogfood/server.md')), 'the server-side file is not in the clone');
+        assert.ok(existsSync(join(dir, '.realuser/server.md')), 'the server-side file is not in the clone');
         await push('HEAD', refs.work);
       }],
       ['cherry-pick onto another branch', async () => {
         await git('switch', '-q', '-c', refs.pick, 'origin/main');
         await git('cherry-pick', noted);
         await push('HEAD', refs.pick);
-        assert.match(readFileSync(join(dir, '.dogfood/notes.md'), 'utf8'), /first line/);
+        assert.match(readFileSync(join(dir, '.realuser/notes.md'), 'utf8'), /first line/);
       }],
       ['revert and push', async () => {
         await git('switch', '-q', refs.work);
         await git('revert', '--no-edit', 'HEAD');
         await push('HEAD', refs.work);
-        assert.ok(!readFileSync(join(dir, '.dogfood/notes.md'), 'utf8').includes('second line'), 'the revert left the line');
+        assert.ok(!readFileSync(join(dir, '.realuser/notes.md'), 'utf8').includes('second line'), 'the revert left the line');
       }],
       ['annotated tag (opt-in: tags are permanent)', async () => {
-        if (!ctx.tag) return { skip: 'tags cannot be deleted on the platform; --dogfood-tag pushes a permanent one' };
-        await git('tag', '-a', scratch(refs.tag, ts), '-m', `dogfood ${ts}`);
+        if (!ctx.tag) return { skip: 'tags cannot be deleted on the platform; --realuser-tag pushes a permanent one' };
+        await git('tag', '-a', scratch(refs.tag, ts), '-m', `realuser ${ts}`);
         await ws.ok('git', ['push', '-q', 'origin', `refs/tags/${refs.tag}`], { cwd: dir, token });
         const served = (await ws.ok('git', ['ls-remote', 'origin', `refs/tags/${refs.tag}`], { cwd: dir, token })).stdout;
         assert.ok(served.includes(await git('rev-parse', refs.tag)), 'the tag object is not served');
       }],
       ['delete a branch', async () => {
         await ws.ok('git', ['push', '-q', 'origin', '--delete', scratch(refs.pick, ts)], { cwd: dir, token });
-        assert.equal(await remoteHead(refs.pick), undefined, `${refs.pick} is still there`);
+        assert.equal(await remoteHead(refs.pick, undefined), undefined, `${refs.pick} is still there`);
       }],
     ],
     ws.scrub,

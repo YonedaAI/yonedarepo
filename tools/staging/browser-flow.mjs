@@ -10,17 +10,18 @@
 // back landed. A second branch, cut from main before that landing, is then behind main: its
 // Change page's "Rebase on main" replays it onto main. The Agents tab then shows a session
 // recorded by API (browser-agent-flow.mjs). Releases, forks and organizations follow
-// (browser-collab-flow.mjs), then tokens and deleting an org (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// (browser-collab-flow.mjs), then tokens, deleting an org and a repository deleted while its
+// page is open (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
-import { adminPages } from './browser-admin-flow.mjs';
+import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
-import { b64, Session, secondAccount, sleep } from './client.mjs';
+import { b64, Session, secondAccount, sleep, until } from './client.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -81,6 +82,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     await forkPages(page, { account, repo, shot, cleanup }, m);
     await orgPages(page, { account, member: landed.member, shot, cleanup }, m);
     await adminPages(page, { api, account, repo, shot, cleanup, secrets }, m);
+    await deletedRepoPage(page, { origin, account, shot, cleanup }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
@@ -145,11 +147,11 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
   await page.locator('.clone-menu > summary').click();
   const cloneMenu = page.locator('.clone-dropdown');
-  await cloneMenu.getByText('HTTPS (token as password)').waitFor();
+  await cloneLines(page, cloneMenu, { api, id, name }, 'the Clone menu');
   const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
   if (ssh?.front_door && ssh.host) {
     m.ssh_clone = await sshBlock.locator('code').innerText();
-    assert.equal(m.ssh_clone, `git clone ssh://git@${ssh.host}/${id}.git`, 'the Clone menu SSH line');
+    assert.equal(m.ssh_clone, `git clone ssh://git@${ssh.host}/${id}.git ${name}`, 'the Clone menu SSH line');
     if (ssh.front_door === 'tunnel')
       await cloneMenu.getByRole('link', { name: 'Settings → SSH keys' }).waitFor();
   } else {
@@ -174,16 +176,31 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
   // Git, the CLI and MCP live on the platform API host, never the app's own origin.
-  const copied = (label) => page.locator('.source-copy', { has: page.getByText(label, { exact: true }) }).locator('code').innerText();
-  m.clone_url = await copied('HTTPS');
-  assert.ok(m.clone_url.startsWith(`git clone ${api}/git/${id}.git`), `the HTTPS clone line is not on ${api}: ${m.clone_url}`);
-  assert.ok((await copied('clone')).startsWith(`git clone yoneda::${api}/${id}`), `the yoneda:: clone line is not on ${api}`);
+  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name }, 'Connect');
   await shot('source-connect');
   await accountSettings(page);
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
   await shot('account-settings');
   m.source_pages = 'code,history,branches,changes,settings,connect,account-settings';
   return { id, name };
+}
+
+/**
+ * The clone commands in `scope` (Clone menu or Connect): the recommended yoneda remote helper
+ * first with its one-time `yoneda login` on the API origin, then HTTPS pointing at Settings →
+ * Personal tokens; each a whole command into a directory named after the repository.
+ */
+export async function cloneLines(page, scope, { api, id, name }, what) {
+  const blocks = scope.locator('.source-copy');
+  await blocks.first().waitFor();
+  const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
+  assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS (needs a personal token as the password)'], `${what}: clone entries out of order`);
+  assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
+  const https = await blocks.nth(1).locator('code').innerText();
+  assert.equal(https, `git clone ${api}/git/${id}.git ${name}`, `${what}: the HTTPS line`);
+  await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).waitFor();
+  assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings#personal-tokens', `${what}: the personal token link`);
+  return https;
 }
 
 /** History → "Branches and tags": create a branch from main in the page, then delete it; the
@@ -198,13 +215,21 @@ export async function branchesPage(page, account, id, shot, m) {
   await form.getByRole('button', { name: 'Create branch' }).click();
   const table = page.getByRole('table', { name: 'Branches' });
   await table.getByRole('cell', { name, exact: true }).waitFor();
-  const created = await refs();
+  // The API's refs read may answer from a copy up to ACCESS_MS (1 s) old; wait it out.
+  const created = await until(async () => {
+    const r = await refs();
+    return r[`refs/heads/${name}`] ? r : null;
+  }, { timeoutMs: 5_000, intervalMs: 250, what: 'the branch made in the page in the API refs' });
   assert.equal(created[`refs/heads/${name}`], created['refs/heads/main'], 'the branch made in the page is not on main');
   await shot('source-branch-created');
   page.once('dialog', (dialog) => dialog.accept());
   await table.getByRole('button', { name: `Delete branch ${name}` }).click();
   await table.getByRole('cell', { name, exact: true }).waitFor({ state: 'detached' });
-  assert.equal((await refs())[`refs/heads/${name}`], undefined, 'the branch deleted in the page is still served');
+  await until(async () => (await refs())[`refs/heads/${name}`] === undefined, {
+    timeoutMs: 5_000,
+    intervalMs: 250,
+    what: 'the branch deleted in the page to leave the API refs',
+  });
   m.branch_ui = 'created,deleted';
 }
 

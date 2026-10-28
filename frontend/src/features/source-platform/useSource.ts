@@ -6,6 +6,8 @@ export type Loaded<T> = {
   error?: string;
   /** The HTTP status of a failed read (404 tells "missing or private" apart from a fault). */
   errorStatus?: number;
+  /** The platform's error code (e.g. NOT_FOUND) when the read failed. */
+  code?: string;
   loading: boolean;
   reload: () => void;
 };
@@ -16,6 +18,7 @@ export function useSource<T = any>(path: string | null): Loaded<T> {
     data?: T;
     error?: string;
     errorStatus?: number;
+    code?: string;
     loading: boolean;
   }>({
     loading: path !== null,
@@ -25,16 +28,24 @@ export function useSource<T = any>(path: string | null): Loaded<T> {
   useEffect(() => {
     if (path === null) return;
     const controller = new AbortController();
-    setState((s) => ({ ...s, loading: true, error: undefined, errorStatus: undefined }));
+    setState((s) => ({
+      ...s,
+      loading: true,
+      error: undefined,
+      errorStatus: undefined,
+      code: undefined,
+    }));
     sourceApi<T>(path, { signal: controller.signal })
       .then((data) => setState({ data, loading: false }))
       .catch((e) => {
-        if (!controller.signal.aborted)
-          setState({
-            error: e.message,
-            errorStatus: e instanceof SourceApiError ? e.status : undefined,
-            loading: false,
-          });
+        if (controller.signal.aborted) return;
+        const failed = e instanceof SourceApiError ? e : undefined;
+        setState({
+          error: e.message,
+          errorStatus: failed?.status,
+          code: failed?.code,
+          loading: false,
+        });
       });
     return () => controller.abort();
   }, [path, tick]);

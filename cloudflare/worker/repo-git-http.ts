@@ -14,7 +14,7 @@ import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
-import { uploadPack } from './repo-git-upload';
+import { PackStats, uploadPack } from './repo-git-upload';
 import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
 import { guardInherited } from './repo-inherit';
 import { isLfsPath, lfsHttp } from './repo-lfs';
@@ -112,7 +112,11 @@ async function serve(req: Request, env: Env): Promise<Response> {
       guardInherited(ctx, objects);
       return await receivePack(ctx, objects, body, access.secret_allow ?? []);
     }
-    return v2 ? await uploadPackV2(ctx, objects, body) : await uploadPack(ctx, objects, body);
+    // A client asking for timings gets them after the pack (PackStats).
+    const stats = req.headers.get('x-yoneda-timing') === '1' ? new PackStats() : undefined;
+    return v2
+      ? await uploadPackV2(ctx, objects, body, stats)
+      : await uploadPack(ctx, objects, body, stats);
   } catch (e: any) {
     // A push refused because the authority was overloaded moved nothing (receivePack
     // throws only then), so Git gets a status it reports instead of a per-ref refusal.

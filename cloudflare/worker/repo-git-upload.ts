@@ -7,6 +7,7 @@
 // (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
+import type { ReadStats } from './repo-bundles';
 import { compute } from './repo-compute';
 import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
@@ -53,6 +54,7 @@ export async function uploadPack(
   ctx: RepoContext,
   objects: RepoObjects,
   body: ReadableStream<Uint8Array>,
+  stats?: PackStats,
 ): Promise<Response> {
   const request = compute({
     op: 'git_upload_request',
@@ -75,7 +77,7 @@ export async function uploadPack(
   );
   if (!request.done) return new Response(ack, { headers: RESULT });
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
-  return sendPack(ack, UploadSession.open(walk), objects, band);
+  return sendPack(ack, UploadSession.open(walk), objects, band, stats);
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
@@ -87,16 +89,19 @@ export async function sendPack(
   session: UploadSession,
   objects: RepoObjects,
   band: number,
+  stats?: PackStats,
 ): Promise<Response> {
   let listed: Json;
   try {
+    const started = performance.now();
     listed = await enumerate(session, objects);
+    if (stats) stats.walk = performance.now() - started;
   } catch (e: any) {
     session.close();
     if (transient(e)) throw e;
     return errLine(head, e);
   }
-  const chunks = packChunks(session, objects, listed);
+  const chunks = packChunks(session, objects, listed, stats);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(head);
@@ -105,6 +110,7 @@ export async function sendPack(
       try {
         const next = await chunks.next();
         if (next.done) {
+          if (band && stats) controller.enqueue(sideBand(2, stats.line(), band));
           if (band) controller.enqueue(new TextEncoder().encode('0000'));
           controller.close();
         } else controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
@@ -144,11 +150,17 @@ export async function enumerate(session: UploadSession, objects: RepoObjects) {
 /** The pack, in pieces of about `CHUNK` bytes: header, trees and tag objects (from the
  * session), then
  * blobs and commits read in groups (`rawObjects`), then the trailer. Closes the session. */
-async function* packChunks(session: UploadSession, objects: RepoObjects, listed: Json) {
+async function* packChunks(
+  session: UploadSession,
+  objects: RepoObjects,
+  listed: Json,
+  stats?: PackStats,
+) {
   try {
     let pending: Uint8Array[] = [session.start()];
     let size = pending[0].length;
     const add = function* (entry: Uint8Array) {
+      stats?.sent(entry);
       pending.push(entry);
       size += entry.length;
       if (size >= CHUNK) {
@@ -160,7 +172,9 @@ async function* packChunks(session: UploadSession, objects: RepoObjects, listed:
     for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
     // Annotated tag objects travel with the walk.
     for (const id of (listed.tags ?? []) as string[]) yield* add(session.entry('tag', id));
-    for await (const group of rawObjects(objects, listed.fetch)) {
+    let asked = performance.now();
+    for await (const group of rawObjects(objects, listed.fetch, stats?.reads)) {
+      if (stats) stats.waited += performance.now() - asked;
       for (const { id, kind, data } of group) {
         if (!data)
           throw new ApiError(
@@ -169,13 +183,58 @@ async function* packChunks(session: UploadSession, objects: RepoObjects, listed:
               ? `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`
               : `${kind} ${id} is missing from the object store`,
           );
+        if (stats) stats.raw += data.length;
         yield* add(session.entry(kind, id, data));
       }
+      asked = performance.now();
     }
     pending.push(session.finish());
     yield concat(pending);
   } finally {
     session.close();
+  }
+}
+
+/**
+ * Where a fetch's time went, sent after the pack as a progress line (Git prints it as
+ * `remote: yoneda-timing ...`) to a client that asks with `x-yoneda-timing: 1` (Git's
+ * http.extraHeader). Workers clocks advance only across I/O, so these are waits: `walk`
+ * (enumerating, before the pack), `read_wait` (the pack waiting on ranged reads) and
+ * `stream` (the pack, start to end). CPU (hashing, zlib, deltas) is in the Worker's
+ * metrics; `stream` less `read_wait` is mostly that and the client taking the bytes.
+ */
+export class PackStats {
+  private readonly started = performance.now();
+  walk = 0;
+  waited = 0;
+  raw = 0;
+  readonly reads: ReadStats = { reads: 0, bytes: 0 };
+  private entries = 0;
+  private deltas = 0;
+  private bytes = 0;
+
+  /** Counts a pack entry (REF_DELTA entries are type 7). */
+  sent(entry: Uint8Array) {
+    this.entries++;
+    this.bytes += entry.length;
+    if (((entry[0] >> 4) & 7) === 7) this.deltas++;
+  }
+
+  line() {
+    const ms = (n: number) => Math.round(n);
+    const mib = (n: number) => (n / 1048576).toFixed(1);
+    const fields = [
+      `walk=${ms(this.walk)}ms`,
+      `entries=${this.entries}`,
+      `deltas=${this.deltas}`,
+      `raw=${mib(this.raw)}MiB`,
+      `sent=${mib(this.bytes)}MiB`,
+      `reads=${this.reads.reads}`,
+      `read=${mib(this.reads.bytes)}MiB`,
+      `read_wait=${ms(this.waited)}ms`,
+      `stream=${ms(performance.now() - this.started - this.walk)}ms`,
+    ];
+    return new TextEncoder().encode(`yoneda-timing ${fields.join(' ')}\n`);
   }
 }
 

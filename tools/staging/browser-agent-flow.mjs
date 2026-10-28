@@ -1,7 +1,8 @@
 // Browser gate, agent pages (part of kit item `browser`): one session is recorded on main's
 // head by API (as the Yoneda plugin or `yoneda session record` would), then the Agents tab
 // lists it, the CLI filter keeps it, its page shows the summary, commit and declared reads,
-// and the commit page links back to it. The Contracts, Pins and Bisects sections show their
+// and the commit page links back to it and, main's head having landed, shows only where it
+// landed and Revert. The Contracts, Pins and Bisects sections show their
 // empty states (the kit records none).
 import assert from 'node:assert/strict';
 import { see } from './browser-collab-flow.mjs';
@@ -44,6 +45,17 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   const sessions = page.getByRole('region', { name: 'Sessions', exact: true });
   await see(sessions.getByRole('link', { name: /opencode/ }), 'the session link on the commit page');
   await shot('agents-commit-sessions');
+
+  // main's head has landed: the panel says where, when and by whom, and offers Revert only.
+  const gates = page.getByRole('region', { name: 'Landing gates' });
+  await see(gates.getByText(/^Landed on main at v\d+ · .+ · by \S+/), 'the landed line on a landed commit');
+  await see(gates.getByRole('button', { name: 'Revert' }), 'Revert on a landed commit');
+  for (const name of ['Approve', 'Reject', /^Land/, 'Break glass…'])
+    assert.equal(await gates.getByRole('button', { name }).count(), 0, `a landed commit offers ${name}`);
+  assert.equal(await gates.locator('summary', { hasText: 'More' }).count(), 0, 'a landed commit has a More menu');
+  assert.equal(await gates.getByRole('combobox').count(), 0, 'a landed commit offers a branch to land on');
+  assert.equal(await gates.getByText(/Ready to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
+  m.landed_commit_panel = 'landed line, Revert only';
 
   for (const [section, empty] of [
     ['contracts', /^No contracts recorded yet\./],

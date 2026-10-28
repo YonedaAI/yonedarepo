@@ -1,8 +1,7 @@
 // The Code tab's toolbar and summary: branch and tag picker, Clone, and the latest commit.
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
-import { httpsUrl } from './ConnectPanel';
-import { cloneCommand } from './connect';
+import { CloneCommands } from './ConnectPanel';
 import { ago, principalName } from './fileActivity';
 import { Failure } from './SourceStatus';
 import { shortSha } from './sourceApi';
@@ -56,8 +55,16 @@ export function BranchPicker({
 
 /** The SSH clone line when Git over SSH is open, and on the Cloudflare Tunnel front door a
  * pointer to the one-time client setup (Settings → SSH keys); nothing while it is off. */
-export function SshCloneLine({ access, repo }: { access?: SshAccess; repo: string }) {
-  const command = sshCloneCommand(access, repo);
+export function SshCloneLine({
+  access,
+  repo,
+  name,
+}: {
+  access?: SshAccess;
+  repo: string;
+  name?: string;
+}) {
+  const command = sshCloneCommand(access, repo, name);
   if (!command) return null;
   return (
     <>
@@ -73,12 +80,13 @@ export function SshCloneLine({ access, repo }: { access?: SshAccess; repo: strin
 }
 
 /** Asks the platform how SSH is reached (only once the menu opens). */
-function SshClone({ repo }: { repo: string }) {
+function SshClone({ repo, name }: { repo: string; name?: string }) {
   const ssh = useSource<{ ssh?: SshAccess }>('/ssh-keys');
-  return <SshCloneLine access={ssh.data?.ssh} repo={repo} />;
+  return <SshCloneLine access={ssh.data?.ssh} repo={repo} name={name} />;
 }
 
-/** "Clone": the HTTPS, SSH (when open) and yoneda remote URLs with copy buttons. */
+/** "Clone": whole `git clone` commands with copy buttons, each into a directory named after
+ * the repository: the yoneda remote helper (recommended), HTTPS and SSH (when open). */
 export function CloneButton({
   repo,
   name,
@@ -105,9 +113,8 @@ export function CloneButton({
         Clone
       </summary>
       <div className="clone-dropdown">
-        <CopyBlock label="HTTPS (token as password)" text={httpsUrl(origin, repo)} />
-        {open && <SshClone repo={repo} />}
-        <CopyBlock label="yoneda remote helper" text={cloneCommand(origin, repo, name)} />
+        <CloneCommands repo={repo} name={name} origin={origin} />
+        {open && <SshClone repo={repo} name={name} />}
       </div>
     </details>
   );

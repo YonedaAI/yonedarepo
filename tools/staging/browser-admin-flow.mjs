@@ -4,12 +4,14 @@
 // removes it from the page), which then reads that org but no repository outside it, and is
 // revoked from its row (the API refuses it afterwards). The repository's Settings →
 // Repository tokens does the same for a path-limited repository token. Finally the org page's
-// "Delete organization" (typed-name confirm) retires the org. The API is used only to check
-// the tokens and read results back; cleanup revokes and deletes whatever a failure left.
+// "Delete organization" (typed-name confirm) retires the org. A repository deleted by API
+// while its page is open must turn into one "Repository not found" page and leave the sidebar.
+// The API is used only to check the tokens, delete and read results back; cleanup revokes and
+// deletes whatever a failure left.
 import assert from 'node:assert/strict';
 import { Session, sleep, until } from './client.mjs';
 import { see, railOrg } from './browser-collab-flow.mjs';
-import { accountSettings, settle } from './browser-flow.mjs';
+import { accountSettings, newRepository, settle } from './browser-flow.mjs';
 
 /** Accepts the next window.confirm (revoking asks first). */
 const acceptConfirm = (page) => page.once('dialog', (dialog) => dialog.accept());
@@ -131,4 +133,52 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   await shot('org-deleted');
   m.org_deleted_in_ui = org;
+}
+
+/**
+ * A repository deleted while its page is open: created in the shell, opened on History,
+ * then deleted by API. The next read (the Changes tab) answers GONE, and the page must show
+ * one "Repository not found" page (no error boxes) and drop it from the sidebar. A stale link
+ * to one of its sub-routes shows the same page.
+ */
+export async function deletedRepoPage(page, { origin, account, shot, cleanup }, m) {
+  const name = `kit-gone-${Date.now()}`;
+  await page.goto(origin);
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST');
+  await newRepository(page, name);
+  const response = await created;
+  assert.ok(response.ok(), `Create repository: HTTP ${response.status()}`);
+  const { id } = await response.json();
+  const remove = () => account.raw('DELETE', `/api/v1/repos/${id}?confirm=${encodeURIComponent(name)}`);
+  let deleted = false;
+  cleanup.push(async () => {
+    if (!deleted) await remove();
+  });
+  const rail = page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true });
+  await rail.waitFor();
+  await page.waitForURL(`**/source/${id}`);
+  const tabs = page.getByRole('navigation', { name: 'Repository' });
+  await tabs.getByRole('link', { name: 'History' }).click();
+  await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
+  const done = await remove();
+  assert.ok(done.ok, `Delete repository: ${done.status} ${done.body?.error?.code ?? ''}`);
+  deleted = true;
+  const notFound = page.getByRole('region', { name: 'Repository not found' });
+  const expectNotFound = async (what) => {
+    await notFound.getByRole('heading', { level: 1, name: 'Repository not found' }).waitFor();
+    await notFound.getByText("This repository doesn't exist or was deleted, or you don't have access.").waitFor();
+    await notFound.getByRole('link', { name: 'Repositories', exact: true }).waitFor();
+    await notFound.getByRole('button', { name: 'New repository' }).waitFor();
+    assert.equal(await page.getByRole('alert').count(), 0, `${what}: error boxes beside the not-found page`);
+    assert.equal(await tabs.count(), 0, `${what}: the repository tabs are still shown`);
+  };
+  await tabs.getByRole('link', { name: 'Changes' }).click();
+  await expectNotFound('deleted while open');
+  await rail.waitFor({ state: 'detached' });
+  await shot('repo-deleted-while-open');
+  await page.goto(`${origin}/source/${id}/agents`);
+  await expectNotFound('a stale link');
+  assert.equal(await rail.count(), 0, `${name} is back in the sidebar`);
+  await shot('repo-stale-link');
+  m.repo_not_found = 'deleted-while-open,stale-sub-route';
 }

@@ -62,7 +62,7 @@ export function ChangeGates({
         </p>
       )}
       {commit && status !== 'landed' && (
-        <GateSummary gates={commit.gates} classes={commit.review_classes} landings={[]} />
+        <GateSummary gates={commit.gates} classes={commit.review_classes} />
       )}
       {commit && commit.reviews.length > 0 && (
         <ul className="source-reviews" aria-label="Reviews of the head commit">

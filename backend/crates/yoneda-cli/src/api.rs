@@ -198,6 +198,15 @@ impl Api {
         &self,
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<Value, Failure> {
+        let bytes = self.answer_bytes(request).await?;
+        Ok(serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    }
+
+    /// Sends `request` with this client's credentials; the answer's bytes or the API error.
+    async fn answer_bytes(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> std::result::Result<Vec<u8>, Failure> {
         let request = match &self.header {
             Header::Authorization(value) => request.header("authorization", value),
             Header::Cookie(value) => request.header("cookie", value),
@@ -213,16 +222,18 @@ impl Api {
         };
         let response = request.send().await.map_err(unreachable)?;
         let status = response.status().as_u16();
+        // Named in the error, so a failure says which request it was (never a credential).
+        let path = response.url().path().to_owned();
         let retry_after = response
             .headers()
             .get(reqwest::header::RETRY_AFTER)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.trim().parse::<u64>().ok());
         let bytes = response.bytes().await.map_err(unreachable)?;
-        let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         if (200..300).contains(&status) {
-            return Ok(value);
+            return Ok(bytes.to_vec());
         }
+        let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         let error = &value["error"];
         Err(Failure {
             status,
@@ -230,10 +241,25 @@ impl Api {
             message: error["message"]
                 .as_str()
                 .map(str::to_owned)
-                .unwrap_or_else(|| format!("HTTP {status}")),
+                .unwrap_or_else(|| format!("HTTP {status} from {path}")),
             details: error["details"].clone(),
             retry_after,
         })
+    }
+
+    /// A GET whose answer is raw bytes (a large blob), retried like any read.
+    pub async fn get_bytes(&self, path: &str) -> std::result::Result<Vec<u8>, Failure> {
+        let mut attempt = 0;
+        loop {
+            let request = self.http.get(format!("{}{path}", self.base));
+            match self.answer_bytes(request).await {
+                Err(failure) if attempt < RETRIES && transient(&failure) => {
+                    attempt += 1;
+                    tokio::time::sleep(backoff(&failure, attempt)).await;
+                }
+                result => return result,
+            }
+        }
     }
 
     pub async fn get(&self, path: &str) -> std::result::Result<Value, Failure> {

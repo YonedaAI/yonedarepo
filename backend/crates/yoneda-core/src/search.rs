@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Files larger than this are listed but not indexed (searched only by path).
-pub const MAX_INDEXED_BYTES: usize = 1024 * 1024;
+pub const MAX_INDEXED_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentFile {
@@ -19,6 +19,9 @@ pub struct SegmentFile {
     pub id: ObjectId,
     /// False for binary or oversized files: never content candidates.
     pub indexed: bool,
+    /// Why an unindexed file's content is not searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,24 +46,32 @@ fn hex(gram: &[u8; 3]) -> String {
     format!("{:02x}{:02x}{:02x}", gram[0], gram[1], gram[2])
 }
 
-/// Builds a segment from a partition's files (path, blob id, content).
-pub fn build_segment(files: &[(String, ObjectId, Vec<u8>)]) -> Segment {
+/// Builds a segment from a partition's files (path, blob id, content; `None` for a file
+/// known to be over `MAX_INDEXED_BYTES`, listed by path only as if its content were read).
+pub fn build_segment(files: &[(String, ObjectId, Option<Vec<u8>>)]) -> Segment {
     let mut segment = Segment::default();
     for (index, (path, id, data)) in files.iter().enumerate() {
-        let indexed = data.len() <= MAX_INDEXED_BYTES && !is_binary(data);
+        let skipped = match data.as_deref() {
+            Some(d) if d.len() <= MAX_INDEXED_BYTES && !is_binary(d) => None,
+            Some(d) if d.len() <= MAX_INDEXED_BYTES => Some("binary".to_string()),
+            _ => Some(format!(
+                "larger than {} MiB",
+                MAX_INDEXED_BYTES / (1024 * 1024)
+            )),
+        };
         segment.files.push(SegmentFile {
             path: path.clone(),
             id: *id,
-            indexed,
+            indexed: skipped.is_none(),
+            skipped: skipped.clone(),
         });
-        if indexed {
-            for gram in trigrams(&fold(data)) {
-                segment
-                    .grams
-                    .entry(hex(&gram))
-                    .or_default()
-                    .push(index as u32);
-            }
+        let content = data.as_deref().filter(|_| skipped.is_none());
+        for gram in content.map(|d| trigrams(&fold(d))).unwrap_or_default() {
+            segment
+                .grams
+                .entry(hex(&gram))
+                .or_default()
+                .push(index as u32);
         }
     }
     segment
@@ -151,7 +162,7 @@ mod tests {
             (
                 p.to_string(),
                 hash_object(ObjectKind::Blob, t.as_bytes()),
-                t.as_bytes().to_vec(),
+                Some(t.as_bytes().to_vec()),
             )
         };
         build_segment(&[

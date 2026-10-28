@@ -7,8 +7,7 @@ import { archivedObjects } from './repo-archive';
 import { noteBundles } from './repo-bundles';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
-import { decide, keepAllowed, outside } from './repo-grants';
-import { guardInherited } from './repo-inherit';
+import { decide, keepAllowed } from './repo-grants';
 import {
   type CachedObject,
   parseStore,
@@ -211,7 +210,7 @@ export class RepoContext {
   }
 }
 
-const SHA = /^[0-9a-f]{40}$/;
+export const SHA = /^[0-9a-f]{40}$/;
 const at = (value: unknown) =>
   value === undefined || value === null || value === '' ? {} : { at: Number(value) };
 
@@ -252,102 +251,6 @@ export async function withTrees(
     );
   }
   throw new ApiError('INVALID_INPUT', 'Paths are nested too deeply');
-}
-
-const OBJECT_BUDGET = 8 * 1024 * 1024;
-const OBJECT_KINDS = ['tree', 'blob', 'commit'];
-
-/**
- * A path-restricted caller may fetch only objects it can name by path inside its grant at
- * a commit (no lookups by bare id, which would be a content oracle). Commit objects carry
- * only ids and are allowed.
- */
-async function authorizeObjects(ctx: RepoContext, wanted: Json[], commitId: unknown) {
-  if (!SHA.test(String(commitId ?? '')))
-    throw new ApiError('FORBIDDEN', 'Path-restricted callers fetch objects by commit and path');
-  const where = await ctx.call({ op: 'repo_commit', commit: commitId });
-  const objects = await ctx.objects();
-  for (const object of wanted) {
-    if (object.kind === 'commit') continue;
-    const path = String(object.path ?? '');
-    if (!path || !(await decide(ctx, [path])).paths[0]) throw outside();
-    const entry = await walk(objects, where.tree, path).catch(() => null);
-    const kind = entry?.type === 'tree' ? 'tree' : 'blob';
-    if (!entry || entry.id !== object.id || kind !== object.kind) throw outside();
-  }
-}
-
-/**
- * Batch, resumable object fetch (Scion GetObjects): immutable objects by id and kind, in
- * request order, up to a response budget. `next` resumes after the last object served,
- * so an interrupted client never refetches what it already has.
- */
-export async function getObjects(ctx: RepoContext, args: Json) {
-  const wanted = args.objects;
-  if (
-    !Array.isArray(wanted) ||
-    wanted.length === 0 ||
-    wanted.length > 10_000 ||
-    !wanted.every((o) => SHA.test(o?.id) && OBJECT_KINDS.includes(o?.kind))
-  )
-    throw new ApiError('INVALID_INPUT', 'objects must be 1-10000 {id, kind} entries');
-  const start = Number(args.after ?? 0);
-  if (!Number.isSafeInteger(start) || start < 0 || start > wanted.length)
-    throw new ApiError('INVALID_INPUT', 'after is outside the request');
-  const objects = await ctx.objects();
-  // Ids named by the caller: a fork serves inherited ones only to readers of its parent.
-  guardInherited(ctx, objects);
-  const grant = await decide(ctx, []);
-  if (grant.restricted) await authorizeObjects(ctx, wanted, args.commit);
-  // `raw`: commits as their exact Git content (`data_b64`) from the store of record, so a
-  // client writes the platform's commit byte for byte. A commit only the object store
-  // holds (imported history) keeps the tree-and-parents form. Path-restricted callers get
-  // that form too: a message may name paths outside their grant.
-  const raw = args.raw === true && !grant.restricted;
-  const served: Json[] = [];
-  const missing: string[] = [];
-  let bytes = 0;
-  let index = start;
-  while (index < wanted.length) {
-    const batch = wanted.slice(index, index + 16);
-    const commits = raw ? batch.filter((o: Json) => o.kind === 'commit') : [];
-    const exact = new Map(
-      (commits.length ? await objects.raw(commits) : [])
-        .filter((o) => o.kind === 'commit')
-        .map((o) => [o.id, o]),
-    );
-    const read = await Promise.all(
-      batch.map((o: Json) =>
-        o.kind === 'commit' && exact.has(o.id)
-          ? exact.get(o.id)
-          : objects.object(o.id, o.kind).catch((e) => {
-              if (e?.code === 'NOT_FOUND') return null;
-              throw e;
-            }),
-      ),
-    );
-    let stop = false;
-    for (const [offset, object] of read.entries()) {
-      if (!object) missing.push(batch[offset].id);
-      else {
-        const size = JSON.stringify(object).length;
-        if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
-          stop = true;
-          break;
-        }
-        bytes += size;
-        served.push(object);
-      }
-      index++;
-    }
-    if (stop) break;
-  }
-  return {
-    objects: served,
-    missing,
-    next: index < wanted.length ? index : null,
-    tiers: objects.hits,
-  };
 }
 
 const PATCH_FILES = 200;
