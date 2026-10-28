@@ -2,6 +2,7 @@
 // in the SshGateway container) verifies a client's key signature, then asks here:
 //   POST /internal/ssh/lookup  {fingerprint}                         -> {account, key_id}
 //   POST /internal/ssh/session {account, key_id, fingerprint, repo, service} -> {token}
+//   POST /internal/ssh/status  {event, detail}  (logged: cloudflared's state)
 // Both carry an HS256 JWT signed with SSH_GATEWAY_SECRET (issuer yoneda-ssh-gateway,
 // audience yoneda-platform, at most two minutes old). The session token (`ysh_…`, ten
 // minutes) is the gateway's bearer on this Worker's smart-HTTP endpoints for exactly one
@@ -138,6 +139,16 @@ export async function sshInternal(req: Request, env: Env): Promise<Response> {
     body = await req.json<Json>();
   } catch {
     return error('INVALID_INPUT', 'JSON body required', 400);
+  }
+  if (url.pathname === '/internal/ssh/status') {
+    // The gateway's own state (cloudflared started or exited, with its output's tail), so
+    // it shows in `wrangler tail` beside the platform's events.
+    const event = String(body.event ?? '');
+    if (!/^(gateway|tunnel)\.[a-z_]{1,32}$/.test(event))
+      return error('INVALID_INPUT', 'Unknown gateway event', 400);
+    const detail = typeof body.detail === 'object' && body.detail ? body.detail : {};
+    console.log(JSON.stringify({ event: `ssh.${event}`, ...detail }).slice(0, 4000));
+    return response({ recorded: true });
   }
   const fingerprint = String(body.fingerprint ?? '');
   if (!FINGERPRINT.test(fingerprint)) return error('INVALID_INPUT', 'Invalid fingerprint', 400);

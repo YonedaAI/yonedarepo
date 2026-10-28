@@ -22,6 +22,7 @@ it('forwards only the gateway paths to the platform', async () => {
   const forwarded = [
     ['POST', '/internal/ssh/lookup'],
     ['POST', '/internal/ssh/session'],
+    ['POST', '/internal/ssh/status'],
     ['GET', `/git/${REPO}.git/info/refs?service=git-upload-pack`],
     ['POST', `/git/${REPO}.git/git-upload-pack`],
     ['POST', `/git/${REPO}/git-receive-pack`],
@@ -69,16 +70,16 @@ it('takes inbound TCP only on the connect front door, and keeps the gateway aliv
   let closed = 0;
   const asked: string[] = [];
   const socket = { close: async () => void closed++ } as unknown as Socket;
-  const stub = { keepAlive: async () => asked.push('keepAlive'), connect: () => asked.push('connect') };
+  const stub = { keepAlive: async () => (asked.push('keepAlive'), { started: true }), connect: () => asked.push('connect') };
   const namespace = { idFromName: (name: string) => (asked.push(name), name), get: () => stub };
   for (const door of [undefined, 'off', 'tunnel']) await sshFrontDoor(socket, { SSH_FRONT_DOOR: door, SSH_GATEWAYS: namespace } as unknown as Env);
   await sshFrontDoor(socket, { SSH_FRONT_DOOR: 'connect' } as unknown as Env);
   expect([closed, asked]).toEqual([4, []]);
-  for (const door of [undefined, 'off', 'connect']) await sshKeepAlive({ SSH_FRONT_DOOR: door, SSH_GATEWAYS: namespace } as unknown as Env);
+  for (const door of [undefined, 'off', 'connect']) await sshKeepAlive({ SSH_FRONT_DOOR: door, SSH_GATEWAYS: namespace } as unknown as Env, 'cron');
   expect(asked).toEqual([]);
-  await sshKeepAlive({ SSH_FRONT_DOOR: 'tunnel', SSH_GATEWAYS: namespace } as unknown as Env);
+  await sshKeepAlive({ SSH_FRONT_DOOR: 'tunnel', SSH_GATEWAYS: namespace } as unknown as Env, 'cron');
   expect(asked).toEqual(['ssh-gateway-0', 'keepAlive']);
   // A failed keep-alive is logged, never thrown into the cron.
   const failing = { ...namespace, get: () => ({ keepAlive: async () => Promise.reject(new Error('capacity')) }) };
-  await sshKeepAlive({ SSH_FRONT_DOOR: 'tunnel', SSH_GATEWAYS: failing } as unknown as Env);
+  await sshKeepAlive({ SSH_FRONT_DOOR: 'tunnel', SSH_GATEWAYS: failing } as unknown as Env, 'health');
 });

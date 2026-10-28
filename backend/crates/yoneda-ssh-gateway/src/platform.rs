@@ -122,6 +122,19 @@ impl Platform {
             .await?)
     }
 
+    /// Reports the gateway's own state (`gateway.*`, `tunnel.*`) to the platform's log; best
+    /// effort, a few seconds at most, never failing the caller.
+    pub async fn report(&self, event: &str, detail: serde_json::Value) {
+        let sent = tokio::time::timeout(
+            Duration::from_secs(5),
+            self.internal("status", json!({ "event": event, "detail": detail })),
+        )
+        .await;
+        if !matches!(sent, Ok(Ok(ref r)) if r.status().is_success()) {
+            tracing::warn!(event, "report.failed");
+        }
+    }
+
     /// The account and key a verified public key belongs to, or `None`.
     pub async fn lookup(&self, fingerprint: &str) -> Result<Option<Identity>, PlatformError> {
         let response = self
