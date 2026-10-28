@@ -38,6 +38,12 @@ pub(crate) enum Step {
     MoveHosts {
         worker: usize,
     },
+    /// Detach the live Worker's queue consumers its new config no longer declares (a dry
+    /// run only lists them).
+    DetachConsumers {
+        worker: usize,
+        dry_run: bool,
+    },
     Deploy {
         worker: usize,
         dry_run: bool,
@@ -60,7 +66,7 @@ impl Step {
             | Self::PushImage
             | Self::RecordImage
             | Self::MoveHosts { .. } => true,
-            Self::Deploy { dry_run, .. } => !dry_run,
+            Self::Deploy { dry_run, .. } | Self::DetachConsumers { dry_run, .. } => !dry_run,
             Self::BuildWasm
             | Self::BuildFrontend
             | Self::InstallPrebuilt
@@ -203,6 +209,7 @@ pub(crate) async fn run(
     if host_token.is_some() && !options.dry_run {
         plan = with_host_moves(plan, &workers);
     }
+    plan = with_consumer_detach(plan);
     if options.dry_run && plan.iter().any(Step::mutates_remote) {
         return Err("Internal error: the dry-run plan contains a remote change".into());
     }
@@ -257,6 +264,18 @@ pub(crate) fn with_host_moves(plan: Vec<Step>, workers: &[Deployable]) -> Vec<St
             && !inventory::routes(&workers[worker].config).is_empty()
         {
             out.push(Step::MoveHosts { worker });
+        }
+        out.push(step);
+    }
+    out
+}
+
+/// Inserts a stale-consumer detach right before every Worker deploy (after its host move).
+pub(crate) fn with_consumer_detach(plan: Vec<Step>) -> Vec<Step> {
+    let mut out = Vec::with_capacity(plan.len() * 2);
+    for step in plan {
+        if let Step::Deploy { worker, dry_run } = step {
+            out.push(Step::DetachConsumers { worker, dry_run });
         }
         out.push(step);
     }
