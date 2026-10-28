@@ -63,6 +63,11 @@ pub(crate) struct WorkerSpec {
     /// such as a watcher wired to one env's resource ids, opt out).
     #[serde(default = "yes")]
     pub ephemeral: bool,
+    /// Container classes that stay up without work (the SSH gateway keeps its tunnel open),
+    /// each with what a rollout drops: the busy-container gates do not count them, since a
+    /// rollout kills no runs on them.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub always_on: BTreeMap<String, String>,
     pub config: Value,
 }
 
