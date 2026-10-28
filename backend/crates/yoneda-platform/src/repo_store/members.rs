@@ -239,7 +239,10 @@ pub fn remove<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
         ));
     }
     for key in &keys {
-        db.query("DELETE FROM members WHERE account=?", std::slice::from_ref(key))?;
+        db.query(
+            "DELETE FROM members WHERE account=?",
+            std::slice::from_ref(key),
+        )?;
     }
     Ok(json!({ "account": t.shown, "removed": true, "keys": keys }))
 }
