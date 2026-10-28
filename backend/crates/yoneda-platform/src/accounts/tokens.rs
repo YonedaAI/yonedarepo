@@ -1,6 +1,7 @@
 //! Personal access tokens (`ypat_…`): account-wide credentials for CLIs and agents. Only
 //! SHA-256 digests of the secret are stored; the Worker hands the secret out once. Every
 //! request is checked here (no caching), so a revocation or expiry takes effect at once.
+use super::op::TokenOp;
 use super::*;
 use crate::storage::number;
 
@@ -18,10 +19,10 @@ const REPO_LIMIT: usize = 100;
 /// `last_used_at` is written at most this often, so checks rarely write.
 const USE_RESOLUTION: i64 = 60_000;
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    match string(c, "op")?.as_str() {
-        "pat_create" => create(db, c, now),
-        "pat_list" => {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> Result<Value> {
+    match op {
+        TokenOp::Create => create(db, c, now),
+        TokenOp::List => {
             account(db)?;
             let rows = db.query(
                 "SELECT * FROM account_tokens WHERE revoked_at IS NULL ORDER BY created_at,id",
@@ -29,7 +30,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"tokens": rows.iter().map(public).collect::<Result<Vec<_>>>()?}))
         }
-        "pat_check" => {
+        TokenOp::Check => {
             let row = db
                 .query(
                     "SELECT * FROM account_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",
@@ -51,7 +52,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             }
             Ok(checked)
         }
-        "pat_revoke" => {
+        TokenOp::Revoke => {
             account(db)?;
             let id = string(c, "id")?;
             let found = db.query(
@@ -68,7 +69,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             audit(db, "pat.revoked", now, json!({"id":id}))?;
             Ok(json!({"id":id,"revoked":true}))
         }
-        _ => Err(bad("Unknown token command")),
     }
 }
 

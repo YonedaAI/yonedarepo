@@ -80,7 +80,7 @@ it('holds personal tokens to their scopes, repository allowlist and expiry', asy
 
   // Another account's token reaches none of these repositories.
   const stranger = await issue(await signup('pat_stranger'), { name: 's', scopes: ['repo:admin', 'repo:read'] });
-  expect((await api(`/repos/${a}`, { token: stranger.token })).status).toBe(403);
+  expect((await api(`/repos/${a}`, { token: stranger.token })).status).toBe(404);
   expect((await api('/repos', { token: stranger.token })).body.repos).toEqual([]);
 
   // Expired tokens are refused at once (no cache), as is a malformed one.

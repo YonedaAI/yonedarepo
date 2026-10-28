@@ -36,7 +36,7 @@ fn sig(name: &str, email: &str, seconds: i64, offset: &str) -> Signature {
         name: name.into(),
         email: email.into(),
         seconds,
-        offset: offset.into(),
+        offset: offset.parse().unwrap(),
     }
 }
 
@@ -57,7 +57,7 @@ fn a_replayed_commit_is_byte_identical_to_the_local_one() -> Result<()> {
     assert_eq!(built.objects[0].2, expected.encode());
     // Decoding the stored object gives back exactly what was asked for.
     let decoded = Commit::decode(&built.objects[0].2)?;
-    assert_eq!(decoded.committer()?.offset, "-0700");
+    assert_eq!(decoded.committer()?.offset.to_string(), "-0700");
     Ok(())
 }
 

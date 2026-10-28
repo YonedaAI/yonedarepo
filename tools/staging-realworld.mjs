@@ -70,6 +70,11 @@
 //          (= --only 0,12,29,17: L3, real opencode agents in parallel, paid, each in its own
 //          Docker sandbox; needs Docker and the host opencode's stored credential for the
 //          model's provider: tools/staging/agent-run-flow.mjs)
+//        node tools/staging-realworld.mjs --visibility
+//          (= --only 0,31: a public repository cloned by stock Git with no credentials at all,
+//          read through the API and its page without a session, listed by /explore; made
+//          private, anonymous reads and fetches are refused within the 1 s access bound:
+//          tools/staging/visibility-flow.mjs)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 //        set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
 //        node tools/staging-realworld.mjs --realuser [--realuser-repo claude-code] [--import <name>=<https url|path>]...
@@ -106,6 +111,7 @@ import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
 import { realuser } from './staging/realuser-flow.mjs';
 import { cliRebase } from './staging/rebase-flow.mjs';
 import { releasesFlow } from './staging/releases-flow.mjs';
+import { visibilityFlow } from './staging/visibility-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
 
@@ -160,6 +166,8 @@ const { values } = parseArgs({
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
     browser: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
+    // The public/private repositories gate alone (items 0 and 31).
+    visibility: { type: 'boolean', default: false },
     // Item 30: the owner's account on open-source test repositories (no kit account or files).
     realuser: { type: 'boolean', default: false },
     dogfood: { type: 'boolean', default: false },
@@ -182,6 +190,8 @@ const only = values['git-semantics']
   ? new Set(['0', '12', '29', '17'])
   : values.ssh
   ? new Set(['0', '26'])
+  : values.visibility
+  ? new Set(['0', '31'])
   : values.orgs
   ? new Set(['0', '24'])
   : values.lfs
@@ -251,6 +261,9 @@ await step('reads', 'Declared reads: a stale read is refused on a plain git push
 );
 await step('browser', 'Browser: sign in, source pages, a change landed, releases, forks and orgs in the UI', (m) =>
   browserFlow({ origin: values.origin, api: values.api, kit, root, headed: values.headed }, m),
+);
+await step('31', 'Visibility: anonymous stock-Git clone and page of a public repository; private refuses within 1 s', (m) =>
+  visibilityFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
@@ -356,9 +369,9 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(want
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
 const gate = values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : null;
-const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
+const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);

@@ -30,8 +30,11 @@ const READ_WIDTH = 3;
 /** Neighbours closer than this are read in one range, of at most RANGE bytes. */
 const GAP = 64 * 1024;
 /** The gap bridged where reads are many and sequential (a clone's walk and pack): a ranged
- * read waits ~60-80 ms (hosted), far longer than a MiB takes to arrive, so a pushed
- * history's scattered trees and files cost a few long reads, not one read each. */
+ * read waits ~130 ms (hosted, 2026-10-28), far longer than a MiB takes to arrive, so a
+ * pushed history's scattered trees and files cost a few long reads, not one read each.
+ * Bridging over-reads (dev read 91 MiB for 0.6 MB of commits interleaved with files), but
+ * reading those commits one range each would wait far longer; keeping them together in
+ * their own bundles (repo-git-receive) is what makes such reads small. */
 export const WIDE_GAP = 1024 * 1024;
 export const RANGE = 8 * 1024 * 1024;
 /** Ranged bytes per read for callers that hold every result at once (the projection). */
@@ -186,8 +189,39 @@ export async function locate(env: Env, repo: string, wanted: Wanted[]) {
   return ofKind(wanted, found);
 }
 
-/** Ranged reads made and bytes they returned. */
-export type ReadStats = { reads: number; bytes: number };
+/**
+ * What a phase's ranged reads cost against what they were for: reads made, bytes they
+ * returned, bytes of the objects wanted from them, and per bundle the span from the first
+ * to the last wanted byte. `bytes` far above `wanted` is gaps bridged; `span` far above
+ * `wanted` is wanted objects scattered among others.
+ */
+export class ReadStats {
+  reads = 0;
+  bytes = 0;
+  wanted = 0;
+  private readonly spans = new Map<string, [number, number]>();
+
+  read(bundle: string, start: number, end: number, members: Location[]) {
+    this.reads++;
+    this.bytes += end - start;
+    for (const m of members) this.wanted += HEADER + m.size;
+    const [first, last] = this.spans.get(bundle) ?? [start, end];
+    this.spans.set(bundle, [Math.min(first, start), Math.max(last, end)]);
+  }
+
+  /** `<prefix>reads= read= wanted= bundles= span=` (sizes in MiB). */
+  fields(prefix = '') {
+    const mib = (n: number) => (n / 1048576).toFixed(1);
+    const span = [...this.spans.values()].reduce((n, [first, last]) => n + last - first, 0);
+    return [
+      `${prefix}reads=${this.reads}`,
+      `${prefix}read=${mib(this.bytes)}MiB`,
+      `${prefix}wanted=${mib(this.wanted)}MiB`,
+      `${prefix}bundles=${this.spans.size}`,
+      `${prefix}span=${mib(span)}MiB`,
+    ];
+  }
+}
 
 /** How `readLocated` reads: neighbours closer than `gap` share a range; `copy` keeps
  * copies (not views pinning whole ranges); `frame` sees every object in each range read;
@@ -229,10 +263,7 @@ export async function readLocated(
         range: { offset: r.start, length: r.end - r.start },
       }),
     );
-    if (stats) {
-      stats.reads++;
-      stats.bytes += r.end - r.start;
-    }
+    stats?.read(r.bundle, r.start, r.end, r.members);
     if (!object)
       throw Object.assign(new Error(`Object bundle ${r.bundle} is missing`), { code: 'NOT_FOUND' });
     const bytes = new Uint8Array(await object.arrayBuffer());

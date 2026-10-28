@@ -1,5 +1,5 @@
 // Bundles: with PUSH_BUNDLES=on a large stock Git push writes its objects as one R2 bundle
-// per batch, indexed by the authority, instead of one R2 object per Git object. Every
+// per batch (its commits and trees apart from its files), indexed by the authority, instead of one R2 object per Git object. Every
 // reader serves them (file reads, a v2 partial clone's lazy fetch, a thin follow-up push,
 // the Artifacts projection), compaction and vacuum leave them readable, a repository
 // delete purges them, and a push that dies between the bundle and its index leaves only
@@ -102,13 +102,13 @@ const bundleKeys = async (repo: string) =>
   (await bindings.OBJECTS.list({ prefix: `platform/v1/${repo}/bundles/` })).objects.map((o) => o.key);
 const keysOf = (calls: unknown[][], part: string) => calls.map(([key]) => String(key)).filter((k) => k.includes(part));
 
-it('writes a large push as one bundle and serves it to every reader', async () => {
+it('writes a large push as bundles (commits and trees, then files) and serves them to every reader', async () => {
   const puts = vi.spyOn(scoped.OBJECTS, 'put');
   const { repo, cookie, token, refs, blobs, commit, tree } = await bundledPush('bundled');
   expect((await refs())['refs/heads/main']).toBe(commit.id);
   expect(keysOf(puts.mock.calls, '/git/')).toEqual([]);
-  expect(keysOf(puts.mock.calls, '/bundles/')).toHaveLength(1);
-  expect(await bundleKeys(repo)).toHaveLength(1);
+  expect(keysOf(puts.mock.calls, '/bundles/')).toHaveLength(2);
+  expect(await bundleKeys(repo)).toHaveLength(2);
   puts.mockRestore();
 
   // File reads, and a partial clone: commits and trees, then every file by id in one
@@ -189,7 +189,7 @@ it('leaves only an unreferenced bundle when a push dies before or while indexing
   expect(await bundleKeys(repo)).toEqual([]);
   expect(await indexed()).toEqual([]);
 
-  // The process dies after the bundle is durable, before the authority indexes it.
+  // The process dies after the first bundle is durable, before the authority indexes it.
   const repos = bindings.SOURCE_REPOS;
   const dying = {
     ...on,
@@ -212,9 +212,9 @@ it('leaves only an unreferenced bundle when a push dies before or while indexing
   expect(await refs()).toEqual(before);
   expect((await api(`/repos/${repo}/commits/${commit.id}`, { token }, {}, on)).status).toBe(404);
 
-  // Pushing again writes the same bundle (content-addressed) and records the commit.
+  // Pushing again writes the same bundles (content-addressed) and records the commit.
   expect(await push(on, repo, token, 'refs/heads/bulk', null, objects)).toContain('ok refs/heads/bulk');
-  expect(await bundleKeys(repo)).toHaveLength(1);
+  expect(await bundleKeys(repo)).toHaveLength(2);
   expect(await indexed()).toHaveLength(302);
   expect((await refs())['refs/heads/bulk']).toBe(commit.id);
 });
@@ -222,7 +222,7 @@ it('leaves only an unreferenced bundle when a push dies before or while indexing
 it('purges a deleted repository bundles with the rest of its objects', async () => {
   const local = { ...on, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
   const { repo, cookie } = await bundledPush('bundle_delete', local);
-  expect(await bundleKeys(repo)).toHaveLength(1);
+  expect(await bundleKeys(repo)).toHaveLength(2);
   expect((await api(`/repos/${repo}?confirm=bundle_delete`, { cookie }, { method: 'DELETE' }, local)).body).toEqual({ deleted: true });
   const purge = queued.find((m) => m.kind === 'platform_purge' && m.repo_id === repo);
   await platformJob(local, { body: purge, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
@@ -232,7 +232,7 @@ it('purges a deleted repository bundles with the rest of its objects', async () 
 
 it('keeps bundled objects readable after log compaction and vacuum', async () => {
   const { repo, cookie, token, blobs, commit } = await bundledPush('bundle_maintenance');
-  expect(await bundleKeys(repo)).toHaveLength(1);
+  expect(await bundleKeys(repo)).toHaveLength(2);
   const owner = { cookie };
   // Grow the log past one segment (1,024 versions), then compact all but 64 of them.
   let version = (await api(`/repos/${repo}`, owner, {}, on)).body.version as number;

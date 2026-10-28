@@ -1,6 +1,7 @@
 //! Typed access to platform tables.
 pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
+pub use super::visibility::Visibility;
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{
@@ -20,6 +21,8 @@ pub struct Settings {
     pub deleted_at: Option<i64>,
     /// The repository this one was forked from, and the parent's version at the fork.
     pub parent: Option<(String, u64)>,
+    /// Who reads it besides its owner and members (`visibility`).
+    pub visibility: Visibility,
 }
 
 pub struct CommitRow {
@@ -61,11 +64,12 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         ));
     }
     let (parent, parent_version) = super::forks::parent_of(c)?;
+    let visibility = Visibility::from_command(c)?;
     db.query(
-        "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at,parent,parent_version) VALUES('repository',?,?,?,?,?,?,?,?,?)",
-        &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone(), json!(parent), json!(parent_version)],
+        "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at,parent,parent_version,visibility) VALUES('repository',?,?,?,?,?,?,?,?,?,?)",
+        &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone(), json!(parent), json!(parent_version), json!(visibility.as_str())],
     )?;
-    Ok(json!({ "initialized": true, "policy_digest": digest }))
+    Ok(json!({ "initialized": true, "policy_digest": digest, "visibility": visibility.as_str() }))
 }
 
 pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
@@ -94,6 +98,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
                 row["parent_version"].as_u64().unwrap_or_default(),
             )
         }),
+        visibility: Visibility::parse(&text("visibility")?)?,
     })
 }
 

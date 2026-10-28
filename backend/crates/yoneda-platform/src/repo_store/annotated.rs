@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::{AnnotatedTag, ObjectId, ObjectKind, Signature, hash_object},
+    git_object::{AnnotatedTag, ObjectId, ObjectKind, Signature, TzOffset, hash_object},
 };
 
 /// Longest message of a tag the platform builds (`git_tag` with `message`).
@@ -95,7 +95,7 @@ pub(super) fn built(c: &Value, refname: &str, principal: &str) -> Result<Option<
         name: field("name").unwrap_or_else(|| principal.to_owned()),
         email: field("email").unwrap_or_else(|| TAGGER_EMAIL.to_owned()),
         seconds,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let name = refname.strip_prefix("refs/tags/").unwrap_or(refname);
     let tag = AnnotatedTag::new(commit, name, tagger, &message)?;

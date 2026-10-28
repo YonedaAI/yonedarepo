@@ -13,7 +13,8 @@ use changes::{changes, known_blob, unread_symlinks};
 use serde_json::{Value, json};
 use yoneda_core::{
     Error, Result,
-    git_object::{ObjectId, encode_tree, hidden_ref, receive_pack_request, write_pack},
+    git_object::{ObjectId, encode_tree, write_pack},
+    transport::{hidden_ref, receive_pack_request},
 };
 
 const PREPARED_TTL_MS: i64 = 60 * 60 * 1000;

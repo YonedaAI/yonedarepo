@@ -5,7 +5,7 @@
 //! `release` hooks, and its tables arrive by an additive migration.
 use super::*;
 use crate::storage::SqlStore;
-use yoneda_core::git_object::{AnnotatedTag, Signature};
+use yoneda_core::git_object::{AnnotatedTag, Signature, TzOffset};
 
 const HOOKS: &str = "platform:hooks";
 
@@ -14,7 +14,7 @@ fn tag_bytes(commit: &str, name: &str) -> Vec<u8> {
         name: "Ada".into(),
         email: "ada@example.com".into(),
         seconds: 1_700_000_000,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let commit = yoneda_core::git_object::ObjectId::parse(commit).unwrap();
     AnnotatedTag::new(commit, name, who, "first release")

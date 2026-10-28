@@ -13,6 +13,7 @@ import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { searchSegments, segmentsIn } from './repo-search-index';
 import { writeSeed } from './repo-seed';
 import { timed } from './repo-timing';
+import { viewFacts } from './repo-view-facts';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
@@ -48,20 +49,19 @@ export async function search(ctx: RepoContext, args: Json) {
       skipped.push({ path: index.partition.prefix || '/', reason: index.refused });
     }
   for await (const { partition, segment } of segmentsIn(ctx, indexes)) {
-    const at = (path: string) => (partition.prefix ? `${partition.prefix}/${path}` : path);
-    const unindexed = (segment.files as Json[])
-      .filter((f) => !f.indexed && under(at(f.path)))
-      .map((f) => ({ path: at(f.path), reason: f.skipped ?? 'not indexed' }));
-    for (const file of await keepAllowed(ctx, unindexed)) {
-      skippedCount++;
-      if (skipped.length < SKIPPED_LISTED) skipped.push(file);
-    }
-    const { candidates } = compute({
+    const { candidates, unindexed } = compute({
       op: 'search_segment',
-      segment,
+      segment_b64: toBase64(segment),
       prefix: partition.prefix,
       query,
     });
+    for (const file of await keepAllowed(
+      ctx,
+      (unindexed as Json[]).filter((f) => under(f.path)),
+    )) {
+      skippedCount++;
+      if (skipped.length < SKIPPED_LISTED) skipped.push(file);
+    }
     for (const file of await keepAllowed(ctx, candidates as Json[]))
       if (under(file.path)) files.push(file);
   }
@@ -144,6 +144,8 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
   // A push's bundles are then read in bulk, not one staged read per file.
   if ((await ctx.status()).bundled) noteBundles(envelope.repo_id);
   const segments = await searchSegments(ctx, head.tree);
+  // The head's overview facts; a failure only costs the first view its speed.
+  await viewFacts(ctx, String(head.tree)).catch(() => {});
   // Warm-start seed for check runs on nearby commits; a failure only costs them speed.
   const at = { commit: String(head.commit), tree: String(head.tree) };
   await writeSeed(env, envelope.repo_id, await ctx.objects(), envelope.job_id, at).catch(() => {});

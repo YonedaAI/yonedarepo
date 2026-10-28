@@ -16,6 +16,7 @@ import {
 } from './changeModel';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
+import { useReadOnly } from './repoAccess';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import { formatSourceRoute } from './sourceRoute';
@@ -69,6 +70,7 @@ export function ChangeView({
   navigate?: Navigate;
 }) {
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
+  const readOnly = useReadOnly();
   const c = detail.data;
   const grouped = useMemo(
     () => c && groupComments(c.comments, c.head, diffAnchors(c.diff?.changes ?? [])),
@@ -137,7 +139,9 @@ export function ChangeView({
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
       <ChangeGates repo={repo} change={c} onChanged={refresh} />
-      {c.status === 'open' && c.head && <RebaseButton repo={repo} change={c} onChanged={refresh} />}
+      {!readOnly && c.status === 'open' && c.head && (
+        <RebaseButton repo={repo} change={c} onChanged={refresh} />
+      )}
       {c.head && navigate && (
         <ChangeSessions
           repo={repo}

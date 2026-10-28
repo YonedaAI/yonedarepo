@@ -91,5 +91,6 @@ async function serveFetch(
     unshallow: walked.unshallow,
   });
   const session = UploadSession.open({ ...walked, omit_blobs: request.omit_blobs });
-  return sendPack(fromBase64(head.body_b64), session, objects, CHUNK, stats);
+  const commits = (walked.commits as Json[]).map((c) => String(c.commit));
+  return sendPack(fromBase64(head.body_b64), session, objects, CHUNK, stats, commits);
 }

@@ -2,7 +2,7 @@
 //! generates `shared/contracts/repo-status.ts` (`cargo xtask contracts`).
 use super::auth::Actor;
 use super::members::Role;
-use super::rows::{self, Policy, Settings};
+use super::rows::{self, Policy, Settings, Visibility};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,8 @@ pub struct RepoStatus {
     pub parent: Option<ForkParent>,
     /// How many forks read this repository's objects (it is deleted only after them).
     pub forks: u64,
+    /// Who may read: members only, or anyone.
+    pub visibility: Visibility,
     pub viewer: Viewer,
     /// The paths a path-scoped token may read (null: the whole repository).
     pub grant: Option<Vec<String>>,
@@ -77,6 +79,8 @@ pub struct Viewer {
     pub principal: String,
     pub owner: bool,
     pub role: Option<Role>,
+    /// Reading a public repository as neither owner nor member.
+    pub public: bool,
 }
 
 fn typed<T: serde::de::DeserializeOwned>(rows: Vec<Value>, table: &str) -> Result<Vec<T>> {
@@ -108,10 +112,12 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
             version: *version,
         }),
         forks: super::forks::count(db)?,
+        visibility: settings.visibility,
         viewer: Viewer {
             principal: actor.principal.clone(),
             owner: actor.owner,
             role: actor.member,
+            public: actor.public,
         },
         grant: actor.grant.clone(),
     })

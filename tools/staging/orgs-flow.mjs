@@ -42,7 +42,7 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
     assert.equal((await member.get('/repos')).repos.some((r) => r.id === repo.id), false, 'not listed for a stranger');
     await platform.post(`${path}/members`, { account: `team:${org}/devs`, role: 'write' });
     await platform.post(`/orgs/${org}/members`, { account: memberName, role: 'member' });
-    assert.equal(await status(member, 'GET', `${path}/refs`), 403, 'org membership alone grants no repository access');
+    assert.equal(await status(member, 'GET', `${path}/refs`), 404, 'org membership alone grants no repository access');
     pat = await member.post('/tokens', { name: `kit-orgs-${Date.now()}`, scopes: ['repo:read', 'repo:write'], org, expires_days: 1 });
 
     await platform.post(`/orgs/${org}/teams/devs/members`, { account: memberName });
@@ -103,7 +103,7 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
       const result = push(`after-${attempts.length}`);
       attempts.push({ started_ms: started, refused: !result.ok, ...(result.ok ? {} : { refusal: result.out.slice(-160) }) });
       if (!result.ok) {
-        assert.match(result.out, /403|FORBIDDEN|another workspace|not allowed|member/i, `refused for access: ${result.out}`);
+        assert.match(result.out, /403|404|FORBIDDEN|NOT_FOUND|not found|not allowed|member/i, `refused for access: ${result.out}`);
         metrics.revoke_ms = Math.round(performance.now() - removed);
         break;
       }
@@ -116,7 +116,7 @@ export async function orgsFlow({ origin, api, kit, platform }, metrics) {
     const past = removed + ACCESS_MS - performance.now();
     if (past > 0) await sleep(past);
     metrics.rest_started_ms = Math.round(performance.now() - removed);
-    assert.equal(await status(member, 'GET', `${path}/refs`), 403, 'REST refused after removal');
+    assert.equal(await status(member, 'GET', `${path}/refs`), 404, 'REST refused (not found) after removal');
   } finally {
     rmSync(dir, { recursive: true, force: true });
     if (pat) await member.raw('DELETE', `/tokens/${pat.id}`);

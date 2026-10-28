@@ -4,7 +4,7 @@
 //! client's shallow commits stop what it is known to hold, and a fetch may want a commit
 //! (or, in version 2, a blob by id) only when a branch or tag reaches it.
 use super::*;
-use yoneda_core::git_object::{ObjectId, Signature};
+use yoneda_core::git_object::{ObjectId, Signature, TzOffset};
 
 /// main's root then five pushed commits on top, oldest first: `[root, c1, …, c5]`.
 fn chain() -> (Harness, Vec<String>, String) {
@@ -20,7 +20,7 @@ fn chain() -> (Harness, Vec<String>, String) {
         name: "Dev".into(),
         email: "dev@example.com".into(),
         seconds: 1_700_000_000,
-        offset: "+0000".into(),
+        offset: TzOffset::UTC,
     };
     let mut ids = vec![root];
     let mut items = Vec::new();
@@ -121,7 +121,7 @@ fn deepen_relative_counts_from_the_client_shallows_and_unshallows_them() {
     let full = h.ok(
         AGENT,
         json!({"op":"repo_git_walk","wants":[c[5]],"haves":[c[5]],"shallows":[c[3]],
-               "depth":yoneda_core::git_object::INFINITE_DEPTH}),
+               "depth":yoneda_core::transport::INFINITE_DEPTH}),
     );
     assert_eq!(sent(&full), [c[2].clone(), c[1].clone(), c[0].clone()]);
     assert_eq!(full["unshallow"], json!([c[3]]));

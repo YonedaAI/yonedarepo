@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod access;
 mod device;
+mod op;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
@@ -30,26 +31,13 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
         let now = command["now"]
             .as_i64()
             .ok_or_else(|| bad("Trusted clock required"))?;
-        match string(&command, "op")?.as_str() {
-            "signup" | "login" | "session" | "logout" | "recover" | "account_exists" => {
-                signin::handle(&db, &command, now)
-            }
-            "pat_create" | "pat_list" | "pat_check" | "pat_revoke" => {
-                tokens::handle(&db, &command, now)
-            }
-            "ssh_key_add" | "ssh_key_list" | "ssh_key_check" | "ssh_key_remove"
-            | "ssh_fp_claim" | "ssh_fp_get" | "ssh_fp_release" => {
-                ssh_keys::handle(&db, &command, now)
-            }
-            "device_create" | "device_approve" | "device_poll" => {
-                device::handle(&db, &command, now)
-            }
-            "org_create" | "org_access" | "team_exists" | "org_show" | "org_delete"
-            | "org_member_put" | "org_member_remove" | "team_create" | "team_delete"
-            | "team_member_put" | "team_member_remove" | "org_hint_add" | "org_hint_remove" => {
-                orgs::handle(&db, &command, now)
-            }
-            _ => Err(Error::new("NOT_FOUND", "Unknown workspace operation")),
+        match op::AccountOp::parse(&command)? {
+            op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
+            op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
+            op::AccountOp::Ssh(op) => ssh_keys::handle(&db, &command, op, now),
+            op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
+            op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
+            op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
         }
     }))
 }
