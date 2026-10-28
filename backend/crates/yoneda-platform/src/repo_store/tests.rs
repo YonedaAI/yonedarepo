@@ -423,7 +423,7 @@ fn untrusted_adapter_inputs_are_verified() {
         &h.db,
         json!({"op":"repo_status","_session":{"workspace":"ws-2","principal":OWNER},"now":1}),
     );
-    assert_eq!(code(foreign), "FORBIDDEN");
+    assert_eq!(code(foreign), "NOT_FOUND");
     let guessed = execute_repo_store(
         &h.db,
         json!({"op":"repo_status","_token":"guess-0123456789abcdef0123456789","now":1}),
@@ -1611,3 +1611,4 @@ mod shards;
 mod staging;
 mod tags;
 mod tool_schemas;
+mod visibility;
