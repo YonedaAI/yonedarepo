@@ -3,7 +3,7 @@
 // staged objects in its commit shard. Nothing is written to the authority, which adopts
 // the commit when it first needs it. Merges, replays of known blobs and commits too large
 // to stage keep the authority's prepare path.
-import { deferred } from './background';
+import { afterAnswer, deferred } from './background';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
@@ -129,8 +129,10 @@ export async function commitInShard(
   if (raw.length > STAGE_OBJECTS || bytes > STAGE_BYTES) return null;
   noteBuilt(built.commit, paths);
   const all = built.objects as CachedObject[];
-  // Written through at commit time: this colo's first reads are served from the edge.
-  const edge = timed('cache', () => store.cache(all, 'edge'));
+  // Written through at commit time so this colo's first reads are served from the edge,
+  // but after the answer: the edge is an optimization (reads fall back to R2 and the
+  // shard), and a slow Cache API put held commits for seconds (commit p95 18.7 s, 10-28).
+  const edge = afterAnswer(() => timed('cache', () => store.cache(all, 'edge')));
   const [classes, symbols] = await timed('derive', () =>
     Promise.all([
       // Review classes gate semantic auto-approval; a failure leaves the commit
