@@ -14,7 +14,7 @@
 // files in ~/.config/yonedarepo/:
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
 //   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
-// Usage: node tools/staging-realworld.mjs [--only 0,6,7] [--skip-bursts]
+// Usage: node tools/staging-realworld.mjs [--only 0,6,7] [--skip-bursts] [--big-files N]
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,18,21,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
 //        node tools/staging-realworld.mjs --model-check
@@ -68,6 +68,8 @@ const { values } = parseArgs({
     // The platform API's own host, for the CLI items (yoneda::<api>/<repo> remotes, account MCP).
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     'cli-bin': { type: 'string' },
+    // Item 19's big checkout: files in the one commit a partial clone then checks out.
+    'big-files': { type: 'string', default: '12000' },
     'cleanup-repos': { type: 'string' },
     only: { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
@@ -146,7 +148,7 @@ await step('browser', 'Browser: sign in, source pages, a change request approved
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
 await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), shallow, deepen, fsck', (m) =>
-  bigClone({ api: values.api, platform: platformAccount }, m),
+  bigClone({ api: values.api, platform: platformAccount, bigFiles: Number(values['big-files']) }, m),
 );
 await step('model', 'Model check: vulnerable commit fails and cannot land, the fix passes and lands', (m) => modelCheck(platformAccount, m));
 await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 from R2', (m) =>

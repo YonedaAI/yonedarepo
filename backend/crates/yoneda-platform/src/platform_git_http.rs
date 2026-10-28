@@ -76,12 +76,20 @@ pub fn advertise(c: &Value) -> Result<Value> {
     Ok(json!({ "body_b64": STANDARD.encode(advertisement(&service, &refs, &capabilities)) }))
 }
 
+/// An upload-pack request body (`body_b64`). Not a `string` field: a negotiation round or
+/// a checkout's wants run to megabytes, bounded by the adapter's request limit.
+pub(crate) fn request_body(c: &Value) -> Result<Vec<u8>> {
+    let encoded = c["body_b64"]
+        .as_str()
+        .ok_or_else(|| bad("Missing or invalid body_b64"))?;
+    STANDARD
+        .decode(encoded)
+        .map_err(|_| bad("body_b64 is not base64"))
+}
+
 /// `git_upload_request`: an upload-pack request body → `{wants, haves, capabilities, done}`.
 pub fn parse_upload(c: &Value) -> Result<Value> {
-    let body = STANDARD
-        .decode(string(c, "body_b64")?)
-        .map_err(|_| bad("body_b64 is not base64"))?;
-    let request = upload_request(&body)?;
+    let request = upload_request(&request_body(c)?)?;
     Ok(json!({
         "wants": request.wants, "haves": request.haves,
         "capabilities": request.capabilities, "done": request.done,
@@ -148,6 +156,19 @@ pub fn report(c: &Value) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_long_negotiation() {
+        // A stateless round resends every common have: well past 16 KiB.
+        let mut body = pkt_line(format!("want {} side-band-64k\n", "a".repeat(40)).as_bytes());
+        body.extend_from_slice(FLUSH);
+        for i in 0..1_000u32 {
+            body.extend(pkt_line(format!("have {:040x}\n", i + 1).as_bytes()));
+        }
+        body.extend(pkt_line(b"done\n"));
+        let parsed = parse_upload(&json!({ "body_b64": STANDARD.encode(body) })).unwrap();
+        assert_eq!(parsed["haves"].as_array().unwrap().len(), 1_000);
+    }
 
     #[test]
     fn advertises_head_as_main_and_reports_on_side_band() {

@@ -2,11 +2,14 @@
 // 2, Git's default): a repository of 200 files and 10 commits pushed from a clone, then a
 // partial clone (`--filter=blob:none`) whose checkout fetches main's files lazily by id and
 // whose packs must be under 10% of a full clone's, a shallow clone (`--depth 1`) deepened by
-// 5 and unshallowed, and `git fsck` clean on each. The repository is deleted afterwards,
+// 5 and unshallowed, and `git fsck` clean on each. Then a big checkout: one commit adds
+// `bigFiles` small files (`--big-files N`, default 12000; 0 skips it) and a partial clone's
+// checkout fetches them all lazily, with its wall time, bytes, fetch requests and the
+// authority's walk time from Server-Timing recorded. The repository is deleted afterwards,
 // pass or fail. The repository token reaches Git only through the environment
 // (http.extraHeader), never an argument. Zero model spend.
 //
-// Usage: node tools/staging-realworld.mjs --only 0,19 [--origin <front>] [--api <platform host>]
+// Usage: node tools/staging-realworld.mjs --only 0,19 [--big-files N] [--origin <front>] [--api <platform host>]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -40,7 +43,7 @@ function packBytes(dir) {
     .reduce((n, f) => n + statSync(join(packs, f)).size, 0);
 }
 
-export const bigClone = ({ api, platform }, metrics) =>
+export const bigClone = ({ api, platform, bigFiles = 12_000 }, metrics) =>
   withRepos(platform, async (newRepo) => {
     const repo = await newRepo('kit-bigclone', { required_checks: [], approvals: 0 }, [{ path: 'README.md', content_b64: b64('# big clone\n') }]);
     const minted = await platform.post(`/repos/${repo.id}/tokens`, { name: 'kit-git', scopes: ['read', 'write', 'land'] });
@@ -56,9 +59,9 @@ export const bigClone = ({ api, platform }, metrics) =>
     };
     // No background repack after a fetch: it races `git fsck` on the packs.
     writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Staging kit\n\temail = kit@yonedarepo.invalid\n[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n');
-    const git = (args, cwd = dir) => {
+    const git = (args, cwd = dir, extra = {}) => {
       try {
-        return execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).trim();
+        return execFileSync('git', args, { cwd, env: { ...env, ...extra }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 << 20 }).trim();
       } catch (e) {
         throw new Error(`git ${args.join(' ')}: ${`${e.stdout ?? ''}${e.stderr ?? e.message}`.slice(-600)}`);
       }
@@ -121,8 +124,45 @@ export const bigClone = ({ api, platform }, metrics) =>
       git(['fetch', '-q', '--unshallow'], shallow);
       assert.equal(count(shallow), history, 'unshallowed');
       fsck(shallow);
+      if (bigFiles > 0) bigCheckout({ git, dir, remote, src, bigFiles, metrics });
       metrics.repo = repo.id;
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+/** One commit of `bigFiles` small files, then a partial clone's checkout of all of them
+ * (Git wants every missing file in one fetch). Server-Timing comes from Git's own trace,
+ * of which only `server-timing` headers are read (Git redacts credentials in it). */
+function bigCheckout({ git, dir, remote, src, bigFiles, metrics }) {
+  for (let i = 0; i < bigFiles; i++) {
+    const path = join(src, 'big', `d${String(i % 100).padStart(3, '0')}`, `f${i}.txt`);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `file ${i}\n`);
+  }
+  git(['add', '-A'], src);
+  git(['commit', '-q', '-m', `${bigFiles} files`], src);
+  let started = performance.now();
+  git(['push', '-q', 'origin', 'main'], src);
+  metrics.big_push_ms = Math.round(performance.now() - started);
+  const clone = join(dir, 'big');
+  git(['clone', '-q', '--filter=blob:none', '--no-checkout', remote, 'big']);
+  const before = packBytes(clone);
+  const trace = join(dir, 'big-trace.log');
+  started = performance.now();
+  git(['checkout', '-q', 'main'], clone, { GIT_TRACE_CURL: trace, GIT_TRACE_CURL_NO_DATA: '1' });
+  metrics.big_files = bigFiles;
+  metrics.big_checkout_ms = Math.round(performance.now() - started);
+  metrics.big_checkout_bytes = packBytes(clone) - before;
+  const lines = readFileSync(trace, 'utf8').split('\n');
+  metrics.big_fetches = lines.filter((l) => /Send header: POST .*git-upload-pack/.test(l)).length;
+  const timings = lines.filter((l) => /Recv header: server-timing:/i.test(l)).map((l) => l.replace(/^.*server-timing:\s*/i, ''));
+  const sum = (name) =>
+    Math.round(timings.flatMap((t) => [...t.matchAll(new RegExp(`${name.replace('.', '\\.')};dur=([0-9.]+)`, 'g'))]).reduce((n, m) => n + Number(m[1]), 0));
+  metrics.big_walk_ms = sum('do.repo_git_walk');
+  metrics.big_access_ms = sum('do.repo_git_access');
+  metrics.big_server_timing = timings.at(-1)?.slice(0, 300) ?? null;
+  assert.equal(git(['ls-files'], clone).split('\n').filter((p) => p.startsWith('big/')).length, bigFiles, 'every file checked out');
+  assert.equal(readFileSync(join(clone, 'big/d007/f7.txt'), 'utf8'), 'file 7\n', 'a lazily fetched file');
+  git(['fsck', '--no-progress'], clone);
+}
