@@ -6,6 +6,7 @@
 // the same files takes the merge path.
 
 import { deferred } from './background';
+import { rpcValue } from './durable';
 import { awaitProjection, type LandMode, landMode } from './repo-changesets';
 import { forgetHead } from './repo-head';
 import { pollLanding } from './repo-land-poll';
@@ -150,7 +151,9 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, own: Js
   const deadline = Date.now() + LAND_DEADLINE_MS;
   while (Date.now() < deadline) {
     const out = await timed('land.submit', () =>
-      combiner.submit(ctx.repo, ref, item, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+      rpcValue(
+        combiner.submit(ctx.repo, ref, item, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+      ),
     ).catch((e) => {
       if (e instanceof ApiError) throw e;
       return undefined; // the combiner cannot be reached
@@ -199,7 +202,9 @@ async function awaitTicket(
     try {
       while (Date.now() < deadline) {
         const settled = await timed('land.wait', () =>
-          combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+          rpcValue(
+            combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
+          ),
         );
         if (settled) return outcome(sha, settled);
       }

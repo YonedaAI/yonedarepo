@@ -156,6 +156,9 @@ await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 fro
 );
 
 const execFileAsync = promisify(execFile);
+/** `<what>_errors` and `<what>_failures` of a bench section, when it has any. */
+const failureMetrics = (what, section) =>
+  section.errors?.length ? { [`${what}_errors`]: Object.fromEntries(section.errors), [`${what}_failures`]: section.failures } : {};
 async function fanout(writers, m) {
   if (!BENCH_KEY) return { skip: 'BENCH_KEY not in staging-bench.env' };
   const env = { ...process.env, YONEDA_USERNAME: kit.KIT_USERNAME, YONEDA_PASSWORD: kit.KIT_PASSWORD, BENCH_KEY };
@@ -169,6 +172,15 @@ async function fanout(writers, m) {
     lands_per_s: (result.land.ok / (result.elapsed_ms / 1000)).toFixed(1),
     land_p95_ms: result.land.client.p95_ms,
     commit_p95_ms: result.commit.client.p95_ms,
+    read_p95_ms: result.read.client.p95_ms,
+    read_max_ms: result.read.client.max_ms,
+    // So a failed run explains itself: each failure kind counted (`<status> <code>:
+    // <message>`), the first failures with when they started, how long they took and their
+    // Server-Timing, and the phases of the failed reads.
+    ...failureMetrics('commit', result.commit),
+    ...failureMetrics('land', result.land),
+    ...failureMetrics('read', result.read),
+    read_failed_phases: Object.fromEntries(Object.entries(result.read.failed_phases ?? {}).map(([k, v]) => [k, `${v.p50_ms}/${v.max_ms}`])),
   });
   if (result.land.ok !== writers || result.read.correct !== writers) throw new Error(`${result.land.ok}/${writers} landed, ${result.read.correct}/${writers} read back`);
 }

@@ -290,8 +290,9 @@ export class RepoObjects {
     for (const [id, entries] of Object.entries(trees)) this.trees.set(this.repo, id, entries);
   }
 
-  blob(id: string): Promise<Uint8Array> {
-    return this.read(id, 'blob');
+  /** Blob `id`; `stagedWith` names a commit that may hold it staged in its shard. */
+  blob(id: string, stagedWith?: string): Promise<Uint8Array> {
+    return this.read(id, 'blob', stagedWith);
   }
 
   /** One object in the structured form clients receive from `objects`. */

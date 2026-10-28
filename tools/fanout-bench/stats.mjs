@@ -4,6 +4,8 @@
 import { latency } from '../load-metrics.mjs';
 
 export const ok = (r) => r?.status === 200;
+/** A failed record: not 200, or (a read) answered 200 with the wrong content. */
+const failed = (r) => r && (!ok(r) || r.ok === false);
 export const stat = (rows, key) => latency(rows.filter((r) => ok(r) && r[key] !== null).map((r) => r[key]));
 
 /** p50/p95/p99/max of `values` (nearest rank). */
@@ -17,11 +19,30 @@ export function percentiles(values) {
 /** Failed records counted by `<status> <code>: <message>`. */
 export function errors(rows) {
   const counts = {};
-  for (const r of rows.filter((r) => r && !ok(r))) {
+  for (const r of rows.filter(failed)) {
     const key = `${r.status} ${r.error}: ${r.message ?? ''}`;
     counts[key] = (counts[key] ?? 0) + 1;
   }
   return Object.entries(counts);
+}
+
+/** Up to `limit` failed records as they were answered, the first first: when each started
+ * (ms after the first record), how long it took, and its Server-Timing, so a failure that
+ * is a slow answer shows where the time went. */
+export function failures(rows, limit = 10) {
+  const first = Math.min(...rows.filter(Boolean).map((r) => r.started_at ?? Infinity));
+  return rows
+    .filter(failed)
+    .sort((a, b) => (a.started_at ?? 0) - (b.started_at ?? 0))
+    .slice(0, limit)
+    .map((r) => ({
+      at_ms: Number.isFinite(first) && r.started_at !== undefined ? r.started_at - first : null,
+      ms: r.ms ?? null,
+      status: r.status,
+      error: r.error ?? null,
+      message: r.message ?? null,
+      timing: r.timing || null,
+    }));
 }
 
 /** Per Server-Timing phase: latency of its total across requests. */

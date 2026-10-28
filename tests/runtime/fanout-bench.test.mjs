@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseOpen, schedule } from '../../tools/fanout-bench/open-loop.js';
 import { loggedReads, overlaps, violations } from '../../tools/fanout-bench/skew.mjs';
+import { errors, failures } from '../../tools/fanout-bench/stats.mjs';
 import { estimate, summarizeStep } from '../../tools/fanout-bench/sustained.mjs';
 
 const MAIN = 'refs/heads/main';
@@ -117,4 +118,28 @@ test('the estimate counts a commit and a land per arrival, plus tokens', () => {
   assert.equal(planned.max_shards, 800);
   assert.ok(estimate({ rates: [50, 100, 200, 400, 800], step_s: 600, per_shard: 1 }).requests < 2_000_000);
   assert.ok(estimate({ rates: [50, 100, 200, 400, 800, 1600], step_s: 600, per_shard: 1 }).requests > 2_000_000);
+});
+
+test('read failures are counted and sampled with when they started, how long they took and their timing', () => {
+  const reads = [
+    { started_at: 100, status: 200, ms: 40, ok: true, timing: 'total;dur=30' },
+    { started_at: 130, status: 409, ms: 48_000, ok: false, error: 'STALE_READ', message: 'main has not reached version 7 yet; retry', timing: 'head.fetch;dur=47000,total;dur=47990' },
+    { started_at: 110, status: 200, ms: 20, ok: false, error: 'WRONG_CONTENT', timing: 'total;dur=15' },
+    { started_at: 120, status: 0, ok: false, error: 'BENCH_CLIENT', message: 'bench client answered 503 after 30001 ms: error code: 1102' },
+  ];
+  // A 200 with the wrong content is a failure too.
+  assert.deepEqual(errors(reads), [
+    ['409 STALE_READ: main has not reached version 7 yet; retry', 1],
+    ['200 WRONG_CONTENT: ', 1],
+    ['0 BENCH_CLIENT: bench client answered 503 after 30001 ms: error code: 1102', 1],
+  ]);
+  assert.deepEqual(
+    failures(reads).map((f) => [f.at_ms, f.status, f.error, f.ms, f.timing]),
+    [
+      [10, 200, 'WRONG_CONTENT', 20, 'total;dur=15'],
+      [20, 0, 'BENCH_CLIENT', null, null],
+      [30, 409, 'STALE_READ', 48_000, 'head.fetch;dur=47000,total;dur=47990'],
+    ],
+  );
+  assert.equal(failures(reads, 1).length, 1);
 });

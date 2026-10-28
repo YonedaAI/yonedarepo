@@ -3,41 +3,55 @@
 // fetches only the blobs that differ, instead of one tiered read per file. Seeds are a cache:
 // a missing, oversized or stale one only means the run reads everything itself.
 import type { CheckJob } from './check-container';
+import { blobWaves } from './repo-object-waves';
 import { type RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
 import { ApiError, type Json, withTrees } from './repo-ops';
 import type { Env } from './types';
 
 const MAX_FILES = 100_000;
 const MAX_BYTES = 192 * 1024 * 1024;
-/** Seeds are skipped above this size; reading them would cost more than they save. */
-const MAX_SEED_BYTES = 64 * 1024 * 1024;
+/** Seeds are skipped above this size: a seed's files and its JSON are held at once, in a
+ * jobs consumer isolate of 128 MB that may run another job beside it. */
+const MAX_SEED_BYTES = 16 * 1024 * 1024;
 
 type SeedFile = CheckJob['files'][number] & { id: string };
 type Seed = { commit: string; tree: string; files: SeedFile[] };
 
 const seedKey = (repo: string, ref: string) =>
   `platform/v1/${repo}/seeds/${encodeURIComponent(ref)}.json`;
+const tooLarge = () => new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
 
-/** Every file under `tree`, read through the object tiers. */
+/** Every file under `tree`: its trees walked, then its blobs read a wave at a time. */
 export async function treeFiles(objects: RepoObjects, tree: string, limit = MAX_BYTES) {
-  const out: SeedFile[] = [];
-  let bytes = 0;
+  const listed: Omit<SeedFile, 'data_b64'>[] = [];
   const visit = async (id: string, prefix: string) => {
     const entries: TreeEntry[] = await objects.tree(id);
     for (const entry of entries) {
       const path = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.type === 'tree') await visit(entry.id, path);
       else if (entry.type !== 'gitlink') {
-        const data = await objects.blob(entry.id);
-        bytes += data.length;
-        if (out.length >= MAX_FILES || bytes > limit)
-          throw new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
-        out.push({ path, type: entry.type, id: entry.id, data_b64: toBase64(data) });
+        if (listed.length >= MAX_FILES) throw tooLarge();
+        listed.push({ path, type: entry.type, id: entry.id });
       }
     }
   };
   await visit(tree, '');
-  return out;
+  const data = new Map<string, string>();
+  const sizes = new Map<string, number>();
+  let unique = 0;
+  for await (const wave of blobWaves(
+    objects,
+    listed.map((f) => f.id),
+  ))
+    for (const [id, bytes] of wave) {
+      unique += bytes.length;
+      if (unique > limit) throw tooLarge();
+      data.set(id, toBase64(bytes));
+      sizes.set(id, bytes.length);
+    }
+  // Files sharing content are shipped (and counted) once each.
+  if (listed.reduce((n, f) => n + (sizes.get(f.id) ?? 0), 0) > limit) throw tooLarge();
+  return listed.map((f) => ({ ...f, data_b64: data.get(f.id) as string }));
 }
 
 /** Writes the seed for `ref` at `head` (best effort: an oversized tree gets no seed). */
