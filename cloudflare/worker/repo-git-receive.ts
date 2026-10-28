@@ -11,10 +11,11 @@
 
 import { deferred } from './background';
 import { transient } from './durable';
+import { bundlesOn, locate, storeBundle } from './repo-bundles';
 import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
 import { type Command, moveAll, moveOne, type Outcome, reason, refusal } from './repo-git-moves';
-import { inBatches, rawObject, treeFor } from './repo-git-objects';
+import { inBatches, rawObject, treeFor, treesFor } from './repo-git-objects';
 import { ReceiveSession } from './repo-git-sessions';
 import { notifyHooks } from './repo-hooks';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
@@ -135,7 +136,8 @@ function refuseAll(outcomes: Outcome, why: string) {
  * small push sends its objects with the record,
  * so the authority stages them in the same transaction (R2 writes are a subrequest each,
  * a few at a time, and take most of a push's time); the projector writes them to R2 after
- * the answer, as for commits built here. A larger one is written to R2 first. */
+ * the answer, as for commits built here. A larger one is written to R2 first: a bundle per
+ * batch with `PUSH_BUNDLES=on` (repo-bundles), else one R2 object per Git object. */
 async function store(
   ctx: RepoContext,
   objects: RepoObjects,
@@ -157,17 +159,23 @@ async function store(
     } else verified = step;
   }
   if (!verified) throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-  let batch = framed(session.objects(WRITE_BUDGET));
+  let frames = session.objects(WRITE_BUDGET);
+  let batch = framed(frames);
   const bytes = batch.reduce((n, o) => n + o.data.length, 0);
   const staged =
     batch.length === verified.objects && batch.length <= STAGE_OBJECTS && bytes <= STAGE_BYTES;
   const data = new Map(staged ? batch.map((o) => [o.id, toBase64(o.data)]) : []);
+  // A bundle per batch (one R2 write, then its index), or one R2 object per Git object.
+  const bundled = bundlesOn(ctx.env);
   while (!staged && batch.length > 0) {
     const started = performance.now();
-    for (let i = 0; i < batch.length; i += WRITES)
-      await putRawBytes(ctx.env, (id) => objects.rawKey(id), batch.slice(i, i + WRITES));
-    record('git.write', performance.now() - started, batch.length);
-    batch = framed(session.objects(WRITE_BUDGET));
+    if (bundled) await storeBundle(ctx.env, ctx.repo, frames, batch);
+    else
+      for (let i = 0; i < batch.length; i += WRITES)
+        await putRawBytes(ctx.env, (id) => objects.rawKey(id), batch.slice(i, i + WRITES));
+    record(bundled ? 'git.bundle' : 'git.write', performance.now() - started, batch.length);
+    frames = session.objects(WRITE_BUDGET);
+    batch = framed(frames);
   }
   const commits: Json[] = (verified.commits as Json[]).map((c) => ({
     ...c,
@@ -217,7 +225,7 @@ async function supply(ctx: RepoContext, objects: RepoObjects, need: Json): Promi
     return { commits };
   }
   if (need.trees) {
-    const trees = await inBatches(need.trees as string[], READS, (id) =>
+    const trees = await treesFor(objects, need.trees as string[], (id) =>
       treeFor(objects, id).catch((e) => {
         if (e?.code === 'NOT_FOUND') throw missing(`tree ${id}`);
         throw e;
@@ -225,11 +233,26 @@ async function supply(ctx: RepoContext, objects: RepoObjects, need: Json): Promi
     );
     return { trees };
   }
-  const present = await inBatches(need.objects as string[], READS, async (id) => {
-    const head = await ctx.env.OBJECTS.head(objects.rawKey(id));
-    if (head?.customMetadata?.kind === 'blob' || (await rawObject(objects, id, 'blob'))) return id;
-    throw missing(`file ${id}`);
-  });
+  // Files a bundle holds are present without reading them.
+  const asked = need.objects as string[];
+  const held = await locate(
+    ctx.env,
+    ctx.repo,
+    asked.map((id) => ({ id, kind: 'blob' })),
+  );
+  const present = [...held.keys()];
+  present.push(
+    ...(await inBatches(
+      asked.filter((id) => !held.has(id)),
+      READS,
+      async (id) => {
+        const head = await ctx.env.OBJECTS.head(objects.rawKey(id));
+        if (head?.customMetadata?.kind === 'blob' || (await rawObject(objects, id, 'blob')))
+          return id;
+        throw missing(`file ${id}`);
+      },
+    )),
+  );
   return { present };
 }
 

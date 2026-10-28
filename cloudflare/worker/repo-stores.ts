@@ -216,6 +216,11 @@ export function putRawBytes(
   return Promise.all(objects.map((o) => writeOnce(env, key(o.id), o.kind, () => o.data)));
 }
 
+/** One object under `key` (a push's bundle), written like `putRaw`. */
+export function putBytes(env: Env, key: string, kind: string, body: Uint8Array) {
+  return writeOnce(env, key, kind, () => body);
+}
+
 function writeOnce(env: Env, key: string, kind: string, body: () => Uint8Array | string) {
   if (written.has(key)) return Promise.resolve();
   let write = writing.get(key);

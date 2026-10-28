@@ -73,6 +73,8 @@ impl Platform {
             }
         }
         let (port, inspector) = (free_port()?, free_port()?);
+        // Bundled pushes as on dev; `YONEDA_PUSH_BUNDLES=off` benches the per-object path.
+        let bundles = std::env::var("YONEDA_PUSH_BUNDLES").unwrap_or_else(|_| "on".into());
         let owner = uuid::Uuid::new_v4().simple().to_string();
         let log = std::fs::File::create(scratch.path().join("wrangler.log"))
             .map_err(|e| e.to_string())?;
@@ -93,6 +95,7 @@ impl Platform {
                 "--var",
                 "LAND_MODE:batch",
             ])
+            .args(["--var", &format!("PUSH_BUNDLES:{bundles}")])
             .args(["--var", &format!("OWNER_TOKEN:{owner}")])
             .stdin(Stdio::null())
             .stdout(log.try_clone().map_err(|e| e.to_string())?)

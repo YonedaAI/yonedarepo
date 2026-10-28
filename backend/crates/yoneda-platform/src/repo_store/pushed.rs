@@ -1,12 +1,15 @@
 //! Commits pushed with stock Git, recorded under their own ids. The adapter has verified
 //! the pack (every object hashed, every tree and blob a new commit names either in the pack
-//! or already here) and either written the objects to R2, the store of record, or (a small
-//! push) sent them here to be staged: accepted with the commit in one transaction and
+//! or already here) and either written the objects to R2, the store of record (one bundle
+//! per batch of objects, indexed here first: `bundles`), or (a small push) sent them here
+//! to be staged: accepted with the commit in one transaction and
 //! written to R2 by the projector afterwards, as for commits built here. This store checks
 //! what it can itself: each commit's bytes hash to its id, and its parents are recorded
 //! (earlier in the same call counts). The base version is derived here, never taken from
 //! the client. Recording moves no ref and writes no log entry. A pushed tip carries the
 //! read set the push declared (`-o yoneda.reads=…`), which landing validates.
+pub(super) mod bundles;
+
 use super::auth::Actor;
 use super::rows::{self, CommitRow, Settings, object_id};
 use crate::storage::{SqlStore, bad, number};
