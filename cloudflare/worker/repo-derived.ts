@@ -4,19 +4,21 @@
 // are ever indexed. Builds run eagerly after landing (queue) and lazily on demand.
 // A segment's paths are relative to its partition, and each read passes the partition's
 // prefix, so a renamed or duplicated directory reuses the segment under its own path.
-import { noteBundles } from './repo-bundles';
+import { noteBundles, RANGE, readBundled, WIDE_GAP } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
 import { blobWaves, inWaves } from './repo-object-waves';
-import { type CachedObject, toBase64 } from './repo-objects';
+import { type CachedObject, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { writeSeed } from './repo-seed';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
+/** Candidate files whose content one grep wave reads. */
+const GREP_WAVE = 128;
 /** `{ at }` when the caller asked for an earlier log version (time travel). */
 const asOf = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
@@ -50,8 +52,14 @@ export async function withObjects(
   };
   for (let round = 0; round <= 256; round++) {
     const result = compute({ ...input, trees, blobs });
-    if (result.need_trees) await inWaves(result.need_trees as string[], tree);
-    else if (result.need_blobs) {
+    if (result.need_trees) {
+      const need = (result.need_trees as string[]).filter((id) => !held.has(id));
+      Object.assign(trees, await bundledTrees(objects, need));
+      await inWaves(
+        (result.need_trees as string[]).filter((id) => !(id in trees)),
+        tree,
+      );
+    } else if (result.need_blobs) {
       const read: string[] = [];
       for (const id of result.need_blobs as string[]) {
         const object = held.get(id);
@@ -63,6 +71,27 @@ export async function withObjects(
     } else return result;
   }
   throw new ApiError('INVALID_INPUT', 'Too many object rounds');
+}
+
+/** Of trees `ids`, the entries of those a repository's bundles hold that this isolate has
+ * not parsed yet, in a few ranged reads (a cold isolate otherwise walks the read tiers
+ * once per directory). Each is checked against its id; the rest are left out. */
+async function bundledTrees(objects: RepoObjects, ids: string[]) {
+  const found: Json = {};
+  const unread = ids.filter((id) => !objects.remembered(id));
+  const bundled = await readBundled(
+    objects.env,
+    objects.repo,
+    unread.map((id) => ({ id, kind: 'tree' })),
+    RANGE,
+    { gap: WIDE_GAP, copy: true },
+  );
+  if (bundled.size === 0) return found;
+  const raw = [...bundled].map(([id, data]) => ({ id, kind: 'tree', data_b64: toBase64(data) }));
+  for (const tree of compute({ op: 'parse_objects', objects: raw }).objects as Json[])
+    if (bundled.has(tree.id)) found[tree.id] = tree.entries;
+  objects.remember(found);
+  return found;
 }
 
 // `search/v2`: segments hold partition-relative paths. v1 segments named the directory
@@ -125,6 +154,10 @@ export async function search(ctx: RepoContext, args: Json) {
   const limit = Math.min(Number(args.limit ?? 50) || 50, MAX_RESULTS);
   const results: Json[] = [];
   const skipped: string[] = [];
+  // Candidates of every partition first (grants filter them before any content is read or
+  // counted), then their files a wave at a time in a few ranged reads, in order, until the
+  // limit: read one by one, each file waited on its own walk down the read tiers.
+  const files: Json[] = [];
   for (const entry of segments) {
     if (entry.too_large) {
       skipped.push(entry.partition.prefix || '/');
@@ -136,17 +169,25 @@ export async function search(ctx: RepoContext, args: Json) {
       prefix: entry.partition.prefix,
       query,
     });
-    // Grants filter candidates before any content is read or counted.
-    for (const file of await keepAllowed(ctx, candidates as Json[])) {
-      if (prefix && !String(file.path).startsWith(prefix)) continue;
+    for (const file of await keepAllowed(ctx, candidates as Json[]))
+      if (!prefix || String(file.path).startsWith(prefix)) files.push(file);
+  }
+  for (let i = 0; i < files.length && results.length < limit; i += GREP_WAVE) {
+    const wave = files.slice(i, i + GREP_WAVE);
+    const content = new Map<string, Uint8Array>();
+    const indexed = wave.filter((f) => f.indexed).map((f) => String(f.id));
+    for await (const read of blobWaves(objects, indexed))
+      for (const [id, data] of read) content.set(id, data);
+    for (const file of wave) {
       if (results.length >= limit) break;
-      const lines = file.indexed
+      const data = content.get(file.id);
+      const lines = data
         ? compute({
             op: 'grep',
             id: file.id,
             query,
             ignore_case: args.ignore_case === true,
-            blobs: { [file.id]: toBase64(await objects.blob(file.id)) },
+            blobs: { [file.id]: toBase64(data) },
           }).lines
         : [];
       const pathHit = String(file.path).toLowerCase().includes(query.toLowerCase());

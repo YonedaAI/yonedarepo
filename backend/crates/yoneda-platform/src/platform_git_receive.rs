@@ -33,7 +33,7 @@ pub struct ReceiveSession {
     reads: Vec<String>,
     pack: Option<PackReader>,
     verifier: Verifier,
-    /// Verified objects to store, in order, and how many were handed out.
+    /// Verified objects to store, in bundle order, and how many were handed out.
     writes: Vec<(ObjectId, ObjectKind)>,
     written: usize,
 }
@@ -178,6 +178,14 @@ impl ReceiveSession {
             Step::Need(need) => Ok(json!({ "need": need })),
             Step::Done(verified) => {
                 self.writes = verified.iter().flat_map(|v| v.objects.clone()).collect();
+                // Commits, then trees, then files: a clone's walk reads every commit, then
+                // trees a directory level per round, so those sit together in the first
+                // bundles and not one ranged read apart between the files.
+                self.writes.sort_by_key(|(_, kind)| match kind {
+                    ObjectKind::Commit => 0,
+                    ObjectKind::Tree => 1,
+                    _ => 2,
+                });
                 self.written = 0;
                 let mut commits = Vec::with_capacity(verified.len());
                 for v in verified {
