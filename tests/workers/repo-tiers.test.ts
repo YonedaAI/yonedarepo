@@ -2,6 +2,7 @@
 // object store) and what a failing cache tier does to the origin. Measurements, labelled:
 // local workerd with R2 standing in for the object store.
 import { expect, it, vi } from 'vitest';
+import { withWaitUntil } from '../../cloudflare/worker/background';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import type { Env } from '../../cloudflare/worker/types';
@@ -110,4 +111,57 @@ it('measures origin reads when many requests miss the same object at once', asyn
   expect(origin).toBeGreaterThanOrEqual(1);
   expect(origin).toBeLessThanOrEqual(20);
   console.log(JSON.stringify({ measured: 'concurrent cold misses, same object (local workerd)', requests: 20, origin_reads: origin }));
+});
+
+it('answers cold reads without waiting on a stalled edge tier', async () => {
+  const { owner, id, repo, blobs } = await repoWith('edgestall', local);
+  // Only the origin holds the first blob; R2 holds the second (a read from the origin
+  // filled it), and its edge copy is gone.
+  const edgeOf = (blob: { id: string }) => new Request(`https://objects.yoneda.internal/${id}/${blob.id}`);
+  await caches.default.delete(edgeOf(blobs[1]));
+  expect(await read(owner, repo, blobs.slice(1, 2), local)).toEqual({ edge: 0, r2: 0, store: 1 });
+  await caches.default.delete(edgeOf(blobs[1]));
+  await evict(id, blobs.slice(0, 1));
+  // Hosted burst read-back (2026-10-28): Cache API calls of 24-33 s (`cache.edge`) held
+  // reads, and every read of the same object in the isolate waited on the one that filled.
+  const stall = () => new Promise<undefined>((done) => setTimeout(() => done(undefined), 3_000));
+  vi.spyOn(caches.default, 'match').mockImplementation(stall);
+  vi.spyOn(caches.default, 'put').mockImplementation(stall);
+  const after: Promise<unknown>[] = [];
+  try {
+    const started = Date.now();
+    const tiers = await withWaitUntil(
+      (work) => after.push(work),
+      () => read(owner, repo, blobs.slice(0, 2), local),
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(tiers).toEqual({ edge: 0, r2: 1, store: 1 });
+    expect(after.length).toBeGreaterThan(0); // the fills, after the answer
+  } finally {
+    await Promise.all(after);
+  }
+});
+
+it('a read sharing another read of the same object does not wait for its cache fills', async () => {
+  const { owner, id, repo, blobs } = await repoWith('edgejoin', local);
+  await evict(id, blobs.slice(0, 1));
+  vi.spyOn(caches.default, 'match').mockResolvedValue(undefined);
+  const put = vi
+    .spyOn(caches.default, 'put')
+    .mockImplementation(() => new Promise<undefined>((done) => setTimeout(() => done(undefined), 3_000)));
+  // A job (no waitUntil: it writes its fills before it goes on) reads the object first; a
+  // request in the same isolate asks for it while the job's fill is under way.
+  const job = read(owner, repo, blobs.slice(0, 1), local);
+  await vi.waitFor(() => expect(put).toHaveBeenCalled());
+  const after: Promise<unknown>[] = [];
+  try {
+    const started = Date.now();
+    await withWaitUntil(
+      (work) => after.push(work),
+      () => read(owner, repo, blobs.slice(0, 1), local),
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+  } finally {
+    await Promise.all([job, ...after]);
+  }
 });
