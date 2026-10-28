@@ -1,7 +1,9 @@
 // Branches and tags (under History): create a working branch from another branch, delete one
 // (never `main`), and create a tag (annotated with a message) on a branch's commit. Git pushes
 // do the same; this is the browser's way. Only the write role and above see the controls.
-import { type FormEvent, useState } from 'react';
+// Each change shows at once from its own answer; the refs are read again at the change's
+// version (`min_version`), and once more after the read bound while a read still predates it.
+import { type FormEvent, useEffect, useState } from 'react';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { shortSha, sourceApi } from '../source-platform/sourceApi';
 import { useChange } from '../source-platform/useChange';
@@ -9,15 +11,46 @@ import { type Loaded, useSource } from '../source-platform/useSource';
 import {
   branchRows,
   createBranchBody,
+  createdEdit,
   createTagBody,
   deleteBranchBody,
+  deletedEdit,
   PROTECTED_BRANCH,
+  pendingEdits,
+  READ_LAG_MS,
+  type RefEdit,
   type RefRow,
+  type RefsAnswer,
   refNameProblem,
   tagRows,
+  withEdits,
 } from './refModel';
 
-type Refs = Loaded<{ refs: Record<string, string> }>;
+type Refs = Loaded<RefsAnswer>;
+
+/** The repository's refs with this viewer's own changes applied until a read includes them.
+ * `record` takes a change's edit; the refs are then read at its version or newer. */
+function useEditedRefs(repo: string) {
+  // Kept with the repository they were made in, so another repository starts clean.
+  const [made, setMade] = useState<{ repo: string; edits: RefEdit[] }>({ repo, edits: [] });
+  const edits = made.repo === repo ? made.edits : [];
+  const floor = Math.max(0, ...edits.map((e) => e.version));
+  const read = useSource<RefsAnswer>(`/repos/${repo}/refs${floor ? `?min_version=${floor}` : ''}`);
+  const behind = pendingEdits(read.data, edits).length > 0;
+  const { loading, error, reload } = read;
+  // A read that still predates an edit (a platform without `min_version`) is retried once
+  // the read bound has passed; a failed read waits for the viewer's Retry.
+  useEffect(() => {
+    if (!behind || loading || error) return;
+    const timer = setTimeout(reload, READ_LAG_MS);
+    return () => clearTimeout(timer);
+  }, [behind, loading, error, reload]);
+  const refs: Refs = { ...read, data: withEdits(read.data, edits) };
+  const record = (edit: RefEdit | null) => {
+    if (edit) setMade((m) => ({ repo, edits: [...(m.repo === repo ? m.edits : []), edit] }));
+  };
+  return { refs, record };
+}
 
 export function BranchTable({
   refs,
@@ -30,8 +63,7 @@ export function BranchTable({
   if (refs.loading && !refs.data) return <Loading what="branches" />;
   if (refs.error) return <Failure error={refs.error} onRetry={refs.reload} />;
   const rows = branchRows(refs.data?.refs);
-  if (rows.length === 0)
-    return <p className="source-empty">No branches yet.</p>;
+  if (rows.length === 0) return <p className="source-empty">No branches yet.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table" aria-label="Branches">
@@ -170,7 +202,7 @@ function StartFrom({
 }
 
 export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boolean }) {
-  const refs = useSource<{ refs: Record<string, string> }>(`/repos/${repo}/refs`);
+  const { refs, record } = useEditedRefs(repo);
   const { busy, error, run } = useChange(refs.reload);
   const [branch, setBranch] = useState('');
   const [branchFrom, setBranchFrom] = useState(PROTECTED_BRANCH);
@@ -187,21 +219,28 @@ export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boole
     const commit = commitOf(pick(branchFrom));
     if (!commit) return;
     const body = createBranchBody(branch, commit);
-    if (await run(() => sourceApi(`/repos/${repo}/branches`, { body }))) setBranch('');
+    const create = () => sourceApi(`/repos/${repo}/branches`, { body }).then(createdEdit);
+    if (await run(() => create().then(record))) setBranch('');
   }
   async function createTag(event: FormEvent) {
     event.preventDefault();
     const commit = commitOf(pick(tagFrom));
     if (!commit) return;
     const body = createTagBody(tag, commit, message);
-    if (await run(() => sourceApi(`/repos/${repo}/tags`, { body }))) {
+    const create = () => sourceApi(`/repos/${repo}/tags`, { body }).then(createdEdit);
+    if (await run(() => create().then(record))) {
       setTag('');
       setMessage('');
     }
   }
   function remove(row: RefRow) {
     if (!window.confirm(`Delete branch ${row.name}?`)) return;
-    void run(() => sourceApi(`/repos/${repo}/refs/batch`, { body: deleteBranchBody(row) }));
+    const body = deleteBranchBody(row);
+    void run(() =>
+      sourceApi(`/repos/${repo}/refs/batch`, { body }).then((answer) =>
+        record(deletedEdit(row, answer)),
+      ),
+    );
   }
 
   const canStart = canWrite && branches.length > 0;
