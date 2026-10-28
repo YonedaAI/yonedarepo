@@ -133,6 +133,10 @@ fn ephemeral_env_shares_nothing_with_dev() {
         );
         assert_eq!(config["workers_dev"], json!(true));
         assert!(!worker.secrets.iter().any(|s| s.starts_with("LFS_S3_")));
+        assert!(!worker.secrets.iter().any(|s| s.starts_with("SSH_")));
+        if let Some(door) = config["vars"].get("SSH_FRONT_DOOR") {
+            assert_eq!(door, "off", "Git over SSH is off in {}", worker.role);
+        }
         for container in config["containers"].as_array().into_iter().flatten() {
             assert_eq!(container["max_instances"], json!(1));
         }
@@ -415,10 +419,16 @@ mod plan_diff {
             .find(|r| r.name == "yonedarepo-dev-platform" && r.kind == "worker")
             .unwrap();
         assert_eq!(platform.action, Action::Drift);
+        let declared = workers
+            .iter()
+            .find(|w| w.name == "yonedarepo-dev-platform")
+            .and_then(|w| inventory::last_migration_tag(&w.config))
+            .unwrap();
+        let tag = format!("DO migration tag: declared {declared}, live v3");
         for needle in [
             "compatibility_date",
             "binding ROGUE_MODE (plain_text) not declared",
-            "DO migration tag: declared v4",
+            tag.as_str(),
         ] {
             assert!(
                 platform.detail.contains(needle),
