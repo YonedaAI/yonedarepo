@@ -209,6 +209,13 @@ fn dev_retires_the_platform_dev_stack_by_exact_name() {
         (Kind::D1, "yonedarepo-agents-dev-index"),
         (Kind::R2, "yonedarepo-platform-dev-analytics"),
         (Kind::Artifacts, "yoneda-platform-dev"),
+        (Kind::Worker, "yonedarepo-acceptance"),
+        (Kind::Worker, "yonedarepo-acceptance-sites"),
+        (Kind::Worker, "yonedarepo-bench-client"),
+        (Kind::Container, "yonedarepo-acceptance-executioncontainer"),
+        (Kind::Queue, "yonedarepo-acceptance-publish"),
+        (Kind::D1, "yonedarepo-acceptance-index"),
+        (Kind::R2, "yonedarepo-acceptance-objects"),
     ] {
         assert!(retired.matches(kind, name), "{name}");
     }
