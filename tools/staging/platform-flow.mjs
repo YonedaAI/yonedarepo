@@ -14,8 +14,37 @@ import { b64, until } from './client.mjs';
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const wrangler = (args) => execFileSync('node_modules/.bin/wrangler', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
 
-async function newRepo(platform, name, policy, files) {
-  return platform.post('/repos', { name: `${name}-${Date.now()}`, policy, files, author });
+/**
+ * Runs `body(newRepo)` and deletes every repository `newRepo` made afterwards, pass or fail.
+ * A failed deletion fails an item that otherwise passed (it leaked a repository) but never
+ * replaces the item's own error.
+ */
+export async function withRepos(platform, body) {
+  const made = [];
+  const newRepo = async (prefix, policy, files) => {
+    const name = `${prefix}-${Date.now()}`;
+    const repo = await platform.post('/repos', { name, policy, files, author });
+    made.push({ id: repo.id, name });
+    return repo;
+  };
+  let failure = null;
+  try {
+    return await body(newRepo);
+  } catch (error) {
+    failure = error;
+    throw error;
+  } finally {
+    const left = [];
+    for (const { id, name } of made) {
+      const done = await platform.raw('DELETE', `/repos/${id}?confirm=${encodeURIComponent(name)}`).catch((e) => ({ ok: false, status: e.message }));
+      if (!done.ok) left.push(`${name} (${[done.status, done.body?.error?.code].filter(Boolean).join(' ')})`);
+    }
+    if (left.length) {
+      const message = `Left repositories: ${left.join(', ')}`;
+      if (failure) console.error(message);
+      else throw new Error(message);
+    }
+  }
 }
 
 /** Every regular file of `commit`, walked through the API: path → { bytes, executable }. */
@@ -32,9 +61,11 @@ async function apiTree(platform, repo, commit, path = '', files = new Map()) {
   return files;
 }
 
-export async function cloneMatchesApi(platform, metrics) {
+export const cloneMatchesApi = (platform, metrics) => withRepos(platform, (newRepo) => cloneCheck(platform, newRepo, metrics));
+
+async function cloneCheck(platform, newRepo, metrics) {
   const binary = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
-  const repo = await newRepo(platform, 'kit-clone', { required_checks: [], approvals: 0 }, [
+  const repo = await newRepo('kit-clone', { required_checks: [], approvals: 0 }, [
     { path: 'README.md', content_b64: b64('# Clone check\n') },
     { path: 'bin/run.sh', content_b64: b64('#!/bin/sh\necho staged\n'), executable: true },
     { path: 'assets/bytes.bin', content_b64: binary.toString('base64') },
@@ -84,9 +115,11 @@ function liveCheckContainers() {
   return JSON.parse(wrangler(['containers', 'instances', app.id, '--json'])).filter((i) => i.state !== 'inactive');
 }
 
-export async function containerCheck(platform, metrics) {
+export const containerCheck = (platform, metrics) => withRepos(platform, (newRepo) => checkRun(platform, newRepo, metrics));
+
+async function checkRun(platform, newRepo, metrics) {
   const policy = { required_checks: ['unit'], approvals: 0, runners: { unit: { command: ['sh', '-c', 'test -f README.md && echo staged-ok'], timeout_seconds: 300 } } };
-  const repo = await newRepo(platform, 'kit-check', policy, [{ path: 'README.md', content_b64: b64('# Check\n') }]);
+  const repo = await newRepo('kit-check', policy, [{ path: 'README.md', content_b64: b64('# Check\n') }]);
   const made = await platform.post(`/repos/${repo.id}/commits`, { ref: 'main', changes: [{ path: 'src/a.txt', content_b64: b64('a\n') }], message: 'Kit check commit', author });
   let run = made.check_runs?.find((r) => r.name === 'unit');
   run ??= (await platform.post(`/repos/${repo.id}/commits/${made.commit}/check-runs`, { name: 'unit' })).runs[0];
@@ -123,11 +156,13 @@ async function bench(client, key, target, jobs) {
   return replies.flat();
 }
 
-export async function manyRepoBurst(platform, { client, key, target, repos = 20, writers = 10 }, metrics) {
+export const manyRepoBurst = (platform, options, metrics) => withRepos(platform, (newRepo) => burstRepos(platform, newRepo, options, metrics));
+
+async function burstRepos(platform, newRepo, { client, key, target, repos = 20, writers = 10 }, metrics) {
   const policy = { required_checks: [], approvals: 0 };
   const made = await Promise.all(
     Array.from({ length: repos }, async (_, r) => {
-      const repo = await newRepo(platform, `kit-burst${r}`, policy, [{ path: 'README.md', content_b64: b64('# burst\n') }]);
+      const repo = await newRepo(`kit-burst${r}`, policy, [{ path: 'README.md', content_b64: b64('# burst\n') }]);
       const { token } = await platform.post(`/repos/${repo.id}/tokens`, { name: 'burst', scopes: ['read', 'write', 'land'] });
       return { id: repo.id, token };
     }),
