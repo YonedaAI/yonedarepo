@@ -3,6 +3,7 @@ use crate::deploy_env::Step;
 use crate::deploy_guard::{self as guard, Options};
 use crate::deploy_prebuilt::{Prebuilt, prebuilt};
 use crate::infra::inventory::Deployable;
+use crate::infra::retired::Kind;
 use crate::infra::spec::{Env, Spec};
 use crate::infra::wrangler::{self, table};
 use crate::process::Result;
@@ -21,6 +22,8 @@ pub(crate) struct Run<'a> {
     pub image: Option<String>,
     /// The runtime inputs hash at HEAD, when already computed.
     pub inputs: Option<String>,
+    /// API token for host moves (`infra up` only); never printed.
+    pub host_token: Option<&'a str>,
     pub timings: Timings,
 }
 
@@ -52,7 +55,9 @@ impl Run<'_> {
             Step::RecordImage => "record runtime inputs".into(),
             Step::Migrate { database, .. } => format!("D1 migrations {database}"),
             Step::ActiveGate { worker } => format!("busy containers {}", name(worker)),
+            Step::RetiredGate => "busy containers of retired Workers".into(),
             Step::RolloutGate => "rollout gate (busy containers)".into(),
+            Step::MoveHosts { worker } => format!("move hosts to {}", name(worker)),
             Step::Deploy { worker, dry_run } => {
                 format!(
                     "deploy {}{}",
@@ -109,6 +114,23 @@ impl Run<'_> {
                     &workers[worker].config,
                 )?;
                 guard::active_gate(env, &workers[worker].name, active, options)?;
+            }
+            Step::RetiredGate => {
+                let retired = &spec.retired;
+                if !retired.is_empty() {
+                    let busy = crate::deploy_live::busy_apps(&spec.account_id, |name| {
+                        retired.matches(Kind::Container, name)
+                    })?;
+                    let active = busy.iter().map(|(_, count)| count).sum();
+                    guard::active_gate(env, "the cutover (retired Workers)", active, options)?;
+                }
+            }
+            Step::MoveHosts { worker } => {
+                let token = self.host_token.ok_or("Host moves need an API token")?;
+                let moves = crate::infra::hosts::detach(spec, token, &workers[worker]).await?;
+                if moves.is_empty() {
+                    println!("Host moves: none for {}.", workers[worker].name);
+                }
             }
             Step::RolloutGate => {
                 let mut busy = Vec::new();

@@ -25,9 +25,18 @@ fn committed(file: &str) -> Value {
         "wrangler.staging-bench.jsonc" => {
             include_str!("../../../cloudflare/wrangler.staging-bench.jsonc")
         }
-        "wrangler.prod.jsonc" => include_str!("../../../cloudflare/wrangler.prod.jsonc"),
-        "wrangler.sites.jsonc" => include_str!("../../../cloudflare/wrangler.sites.jsonc"),
-        "wrangler.apps.jsonc" => include_str!("../../../cloudflare/wrangler.apps.jsonc"),
+        "wrangler.prod-superfan.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-superfan.jsonc")
+        }
+        "wrangler.prod-platform.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-platform.jsonc")
+        }
+        "wrangler.prod-agents.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-agents.jsonc")
+        }
+        "wrangler.prod-sites.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-sites.jsonc")
+        }
         other => panic!("no golden for {other}"),
     };
     jsonc::parse(text).unwrap()
@@ -70,7 +79,7 @@ fn dev_spec_regenerates_the_committed_staging_configs() {
 }
 
 #[test]
-fn prod_spec_regenerates_todays_production_configs() {
+fn prod_spec_regenerates_the_committed_prod_configs() {
     let spec = Spec::parse(PROD).unwrap();
     for (worker, config) in spec.configs(&lock(PROD_LOCK)).unwrap() {
         assert_eq!(
@@ -80,18 +89,20 @@ fn prod_spec_regenerates_todays_production_configs() {
             worker.file
         );
     }
-    let names: Vec<String> = spec
-        .workers
-        .iter()
-        .map(|w| w.config["name"].as_str().unwrap().into())
-        .collect();
     assert_eq!(
-        names,
+        spec.worker_names().unwrap(),
         [
-            "yonedarepo-dev",
-            "yonedarepo-sites-dev",
-            "yonedarepo-apps-dev"
-        ]
+            "yonedarepo-prod-superfan",
+            "yonedarepo-prod-platform",
+            "yonedarepo-prod-agents",
+            "yonedarepo-prod-sites"
+        ],
+        "the platform's tail consumer first, then platform, agents, sites; no bench in prod"
+    );
+    let files: Vec<&str> = spec.workers.iter().map(|w| w.file.as_str()).collect();
+    assert!(
+        files.iter().all(|f| f.starts_with("wrangler.prod-")),
+        "{files:?}"
     );
 }
 
@@ -110,6 +121,7 @@ fn ephemeral_env_shares_nothing_with_dev() {
     let env = Env::parse("ephemeral-t1").unwrap();
     let spec = Spec::parse(DEV).unwrap().ephemeral(&env);
     assert_eq!(spec.prefix, "yonedarepo-eph-t1");
+    assert!(spec.retired.is_empty(), "an ephemeral stack never prunes");
     assert_eq!(spec.git_ref, None);
     assert_eq!(spec.secrets_file, ".local/infra/ephemeral-t1/secrets.env");
     let mut ephemeral_lock = Lock::default();
@@ -575,10 +587,7 @@ fn check_capacity_is_one_number_for_containers_and_their_consumer() {
         .unwrap()
         .ephemeral(&Env::parse("ephemeral-c").unwrap());
     assert_eq!(ephemeral.check_instances, Some(1));
-    assert!(
-        Spec::parse(PROD).unwrap().check_instances.is_none(),
-        "prod runs no CheckContainer today"
-    );
+    assert_eq!(Spec::parse(PROD).unwrap().check_instances, Some(4));
 }
 
 #[test]

@@ -1,6 +1,6 @@
 use crate::{
-    layout::{DevelopmentPaths, FRONTEND, PLATFORM_CONFIG, SITES_CONFIG, WORKER_CRATE},
-    process::{Result, deploy_token, ensure_token, run},
+    layout::{DevelopmentPaths, FRONTEND, WORKER_CRATE},
+    process::{Result, ensure_token, run},
 };
 pub async fn execute(args: Vec<String>) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or("help");
@@ -97,15 +97,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             )
             .await
         }
-        // With --env: the spec-driven deploy. Without: the old-layout production deploy,
-        // kept until the N8 cutover.
-        "deploy" => match crate::deploy_env::mode(&args)? {
-            crate::deploy_env::Mode::Spec => crate::deploy_env::deploy(&args).await,
-            crate::deploy_env::Mode::Legacy => {
-                crate::deploy_env::legacy_preflight(&args).await?;
-                legacy_deploy()
-            }
-        },
+        "deploy" => crate::deploy_env::deploy(&args).await,
         "rollback" => crate::deploy_live::rollback(&args).await,
         "status" => crate::deploy_live::status(&args).await,
         "live-check" => crate::deploy_live::live_check(&args).await,
@@ -123,7 +115,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         }
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs. deploy --env prod-legacy --confirm: the old single-Worker production deploy.\nLocal check uses no paid inference."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|runtime-image|infra|seed-template> [--url URL]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy CI's tested Wasm, frontend and runtime image instead of building. live-check --env dev: CI skips its deploy when /health already shows HEAD. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs.\nLocal check uses no paid inference."
             );
             Ok(())
         }
@@ -138,27 +130,4 @@ pub(crate) fn build_wasm() -> Result<()> {
         return Err("Wasm build failed".into());
     }
     Ok(())
-}
-
-/// The old single-Worker production deploy (cloudflare/wrangler.jsonc + sites). Note that
-/// cloudflare/wrangler.jsonc is not what production runs today (see infra/envs/prod.json),
-/// so this path is reachable only as `deploy --env prod-legacy --confirm` behind the prod
-/// guards, until the N8 cutover removes it.
-fn legacy_deploy() -> Result<()> {
-    ensure_token()?;
-    build_wasm()?;
-    run("pnpm", &["--dir", FRONTEND, "build"])?;
-    deploy_token()?;
-    crate::cloudflare::wrangler(
-        std::path::Path::new(PLATFORM_CONFIG),
-        &[
-            "d1",
-            "migrations",
-            "apply",
-            "yonedarepo-dev-index",
-            "--remote",
-        ],
-    )?;
-    crate::cloudflare::wrangler(std::path::Path::new(PLATFORM_CONFIG), &["deploy"])?;
-    crate::cloudflare::wrangler(std::path::Path::new(SITES_CONFIG), &["deploy"])
 }

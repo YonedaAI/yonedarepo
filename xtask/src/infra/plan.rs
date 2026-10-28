@@ -2,7 +2,8 @@
 use super::drift::worker_drift;
 use super::inventory::{self, Deployable};
 use super::live::Live;
-use super::spec::{Env, Lock, Spec};
+use super::retired::{self, Kind};
+use super::spec::{Env, Lock, PENDING_D1, Spec};
 use super::wrangler::table;
 use crate::process::Result;
 use std::collections::BTreeSet;
@@ -14,6 +15,8 @@ pub(crate) enum Action {
     Drift,
     /// Live, named under the env's prefix, but not declared.
     Extra,
+    /// Live under one of the env's retired names (spec `retired`); `infra prune` deletes it.
+    Orphan,
     /// Its section could not be read; nothing is claimed about it.
     Unknown,
 }
@@ -25,6 +28,7 @@ impl Action {
             Self::Unchanged => "unchanged",
             Self::Drift => "DRIFT",
             Self::Extra => "extra",
+            Self::Orphan => "orphan",
             Self::Unknown => "UNVERIFIED",
         }
     }
@@ -47,13 +51,15 @@ fn row(kind: &'static str, name: &str, action: Action, detail: impl Into<String>
     }
 }
 
-/// The lock a plan or apply works with: recorded ids, else live ids, else "" (to create).
+/// The lock a plan or apply works with: recorded ids, else live ids, else "" (to create). A
+/// `pending` entry counts as not recorded.
 pub(crate) fn effective_lock(spec: &Spec, lock: &Lock, live: &Live) -> Result<Lock> {
     let mut out = Lock::default();
     for name in spec.d1_names()? {
         let id = lock
             .d1
             .get(&name)
+            .filter(|id| id.as_str() != PENDING_D1)
             .or(live.d1.get(&name))
             .cloned()
             .unwrap_or_default();
@@ -223,8 +229,10 @@ fn extras(spec: &Spec, workers: &[Deployable], live: &Live) -> Vec<Row> {
     }
     let mut rows = Vec::new();
     let mut check = |kind: &'static str, names: Vec<&String>| {
+        let retired =
+            |name: &str| Kind::from_label(kind).is_some_and(|k| spec.retired.matches(k, name));
         for name in names {
-            if owned(name) && !declared.contains(name) {
+            if owned(name) && !declared.contains(name) && !retired(name) {
                 rows.push(row(kind, name, Action::Extra, "not in the spec"));
             }
         }
@@ -257,12 +265,13 @@ pub(crate) fn print(env: &Env, rows: &[Row], live: &Live) -> usize {
     );
     let count = |a: Action| rows.iter().filter(|r| r.action == a).count();
     println!(
-        "\n{}: {} create, {} unchanged, {} drift, {} extra, {} unverified",
+        "\n{}: {} create, {} unchanged, {} drift, {} extra, {} orphan, {} unverified",
         env.name(),
         count(Action::Create),
         count(Action::Unchanged),
         count(Action::Drift),
         count(Action::Extra),
+        count(Action::Orphan),
         count(Action::Unknown)
     );
     for error in &live.errors {
@@ -275,9 +284,16 @@ pub(crate) async fn command(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;
     let lock = Lock::load(&env)?;
-    let live = super::live::read(&spec, super::live::token(args)?, &spec.worker_names()?).await;
+    let mut live = super::live::read(&spec, super::live::token(args)?, &spec.worker_names()?).await;
+    retired::read_artifacts(&spec, &mut live);
     let workers = inventory::deployables(&spec, &effective_lock(&spec, &lock, &live)?)?;
-    let unsettled = print(&env, &diff(&spec, &lock, &workers, &live), &live);
+    let mut rows = diff(&spec, &lock, &workers, &live);
+    rows.extend(retired::orphans(
+        &spec.retired,
+        &retired::protected(&workers)?,
+        &live,
+    ));
+    let unsettled = print(&env, &rows, &live);
     if unsettled > 0 && args.iter().any(|a| a == "--strict") {
         return Err(format!("{unsettled} drifted or unverified item(s)").into());
     }

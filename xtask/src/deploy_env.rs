@@ -23,12 +23,31 @@ pub(crate) enum Step {
     BuildImage,
     PushImage,
     RecordImage,
-    Migrate { database: String, config: String },
-    ActiveGate { worker: usize },
+    Migrate {
+        database: String,
+        config: String,
+    },
+    ActiveGate {
+        worker: usize,
+    },
+    /// Prod: busy instances of the container apps the spec's `retired` Workers left behind
+    /// (the cutover takes their hosts, so their runs end too).
+    RetiredGate,
     RolloutGate,
-    Deploy { worker: usize, dry_run: bool },
-    Secrets { worker: usize },
-    Health { worker: usize },
+    /// `infra up`: detach the Worker's hosts from whichever other Worker holds them.
+    MoveHosts {
+        worker: usize,
+    },
+    Deploy {
+        worker: usize,
+        dry_run: bool,
+    },
+    Secrets {
+        worker: usize,
+    },
+    Health {
+        worker: usize,
+    },
     Smoke,
 }
 
@@ -36,15 +55,18 @@ impl Step {
     /// Whether the step changes anything remote (dry runs must contain none).
     pub(crate) fn mutates_remote(&self) -> bool {
         match self {
-            Self::Migrate { .. } | Self::Secrets { .. } | Self::PushImage | Self::RecordImage => {
-                true
-            }
+            Self::Migrate { .. }
+            | Self::Secrets { .. }
+            | Self::PushImage
+            | Self::RecordImage
+            | Self::MoveHosts { .. } => true,
             Self::Deploy { dry_run, .. } => !dry_run,
             Self::BuildWasm
             | Self::BuildFrontend
             | Self::InstallPrebuilt
             | Self::BuildImage
             | Self::ActiveGate { .. }
+            | Self::RetiredGate
             | Self::RolloutGate
             | Self::Health { .. }
             | Self::Smoke => false,
@@ -105,6 +127,9 @@ pub(crate) fn steps(
         }
     }
     let mut rollout_pending = matches!(source, Source::Local(plan) if !plan.rollouts().is_empty());
+    if env.is_prod() {
+        steps.push(Step::RetiredGate);
+    }
     for (index, worker) in workers.iter().enumerate() {
         if env.is_prod() && worker.has_containers {
             steps.push(Step::ActiveGate { worker: index });
@@ -130,35 +155,6 @@ pub(crate) fn steps(
     steps
 }
 
-/// Which deploy a command line asks for. There is no default: an env is always named.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Mode {
-    Spec,
-    Legacy,
-}
-
-pub(crate) const LEGACY_ENV: &str = "prod-legacy";
-
-pub(crate) fn mode(args: &[String]) -> Result<Mode> {
-    match args.windows(2).find(|v| v[0] == "--env").map(|v| v[1].as_str()) {
-        None => Err("Usage: cargo xtask deploy --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active] [--prebuilt <dir>]\n       cargo xtask deploy --env prod-legacy --confirm  (old single-Worker production deploy)\nRefusing: name an environment.".into()),
-        Some(LEGACY_ENV) => Ok(Mode::Legacy),
-        Some(_) => Ok(Mode::Spec),
-    }
-}
-
-/// The legacy production deploy passes the same guards as `--env prod`.
-pub(crate) async fn legacy_preflight(args: &[String]) -> Result<()> {
-    let options = Options::from_args(args)?;
-    if options.dry_run || options.prebuilt.is_some() {
-        return Err("The legacy deploy has no dry run and no --prebuilt.".into());
-    }
-    let spec = Spec::load(&Env::Prod)?;
-    let mut facts = guard::git_facts(&spec)?;
-    prod_facts(&mut facts).await?;
-    guard::preflight(&Env::Prod, &spec, &facts, &options)
-}
-
 pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;
@@ -168,32 +164,24 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     if smoke && (env != Env::Dev || options.dry_run) {
         return Err("--agent-smoke runs only after a real `deploy --env dev`.".into());
     }
-    run(&env, &spec, &lock, &options).await?;
+    run(&env, &spec, &lock, &options, None).await?;
     if smoke {
-        agent_smoke()?;
+        crate::deploy_live::agent_smoke()?;
     }
     Ok(())
 }
 
-/// `--agent-smoke` (off by default): after the deploy, one cheap hosted agent on a fresh kit
-/// project must reach a checked candidate (`tools/staging/agent-smoke.mjs`; spends real model
-/// money, target under $0.01; kit credentials from ~/.config/yonedarepo).
-fn agent_smoke() -> Result<()> {
-    let status = std::process::Command::new("node")
-        .args(["tools/staging-realworld.mjs", "--agent-smoke"])
-        .status()
-        .map_err(|error| format!("Cannot start the agent smoke: {error}"))?;
-    if status.success() {
-        println!("AGENT SMOKE: PASS");
-        Ok(())
-    } else {
-        println!("AGENT SMOKE: FAIL ({status})");
-        Err("The deploy finished but the agent smoke failed; see its output above.".into())
-    }
-}
-
 /// Deploys `spec` with the given D1 identities (`infra up` passes the lock it just built).
-pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) -> Result<()> {
+/// With `host_token` (`infra up`), each Worker's hosts are first detached from any other
+/// Worker that holds them.
+pub(crate) async fn run(
+    env: &Env,
+    spec: &Spec,
+    lock: &Lock,
+    options: &Options,
+    host_token: Option<&str>,
+) -> Result<()> {
+    guard::refuse_pending(env, lock)?;
     let workers = inventory::deployables(spec, lock)?;
     let mut timings = Timings::default();
     let started = Instant::now();
@@ -219,7 +207,10 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
         }
         (None, _) => (Source::Dockerfile, None, None),
     };
-    let plan = steps(env, &workers, options.dry_run, &source);
+    let mut plan = steps(env, &workers, options.dry_run, &source);
+    if host_token.is_some() && !options.dry_run {
+        plan = with_host_moves(plan, &workers);
+    }
     if options.dry_run && plan.iter().any(Step::mutates_remote) {
         return Err("Internal error: the dry-run plan contains a remote change".into());
     }
@@ -233,6 +224,7 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
         prebuilt: prebuilt.as_ref(),
         image,
         inputs,
+        host_token,
         timings,
     };
     let versions = |dry_run: bool| {
@@ -244,7 +236,11 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
     let outcome = run.execute(plan, &mut summary).await;
     let after = versions(options.dry_run);
     for (index, row) in summary.iter_mut() {
-        row.push(rollouts(&workers[*index], before.as_ref(), after.as_ref()));
+        row.push(crate::deploy_live::rollouts(
+            &workers[*index],
+            before.as_ref(),
+            after.as_ref(),
+        ));
     }
     table(
         &format!("deploy {} at {}", env.name(), short(&head)),
@@ -261,31 +257,18 @@ pub(crate) async fn run(env: &Env, spec: &Spec, lock: &Lock, options: &Options) 
     outcome
 }
 
-/// Each container application with its version before and after the deploy (a new version
-/// means a rollout; versions unknown in a dry run or when the listing failed).
-pub(crate) fn rollouts(
-    worker: &Deployable,
-    before: Option<&BTreeMap<String, u64>>,
-    after: Option<&BTreeMap<String, u64>>,
-) -> String {
-    let apps: Vec<String> = inventory::containers(&worker.config)
-        .into_keys()
-        .map(|app| {
-            let version = |map: Option<&BTreeMap<String, u64>>| {
-                map.and_then(|m| m.get(&app))
-                    .map_or("?".to_owned(), |v| format!("v{v}"))
-            };
-            match (version(before), version(after)) {
-                (b, a) if b == a => format!("{app} {a} (no rollout)"),
-                (b, a) => format!("{app} {b} -> {a} (rolled out)"),
-            }
-        })
-        .collect();
-    if apps.is_empty() {
-        "-".into()
-    } else {
-        apps.join("; ")
+/// Inserts a host move right before the deploy of every Worker that declares routes.
+pub(crate) fn with_host_moves(plan: Vec<Step>, workers: &[Deployable]) -> Vec<Step> {
+    let mut out = Vec::with_capacity(plan.len() + workers.len());
+    for step in plan {
+        if let Step::Deploy { worker, .. } = step
+            && !inventory::routes(&workers[worker].config).is_empty()
+        {
+            out.push(Step::MoveHosts { worker });
+        }
+        out.push(step);
     }
+    out
 }
 
 async fn prod_facts(facts: &mut Facts) -> Result<()> {

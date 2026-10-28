@@ -1,0 +1,216 @@
+// Generated from infra/envs/prod.json by `cargo xtask infra up`; edit the spec, not this file.
+// Production platform Worker (yonedarepo.com): the same source platform as dev's
+// (infra/envs/dev.json), with its own Durable Object namespaces, Artifacts namespace, R2, D1,
+// queues, workflow, check containers and secrets. Browsers reach it through the agent Worker's
+// /api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom
+// Domain plus the exact route, which wins over the sites Worker's *.yonedarepo.com route);
+// WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:
+// OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
+// VAULT_KEY    64 hex characters, shared with yonedarepo-prod-agents
+// Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
+// Check runs: one per invocation, up to check_instances (4) at once.
+// Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store
+// secret ZAI), bound to the platform Worker itself; it never reads an agent-layer connection.
+// The production superfan (wrangler.prod-superfan.jsonc) receives this Worker's tail events.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "yonedarepo-prod",
+      "remote": true
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "containers": [
+    {
+      "class_name": "CheckContainer",
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "standard-1",
+      "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "INDEX",
+      "database_id": "pending",
+      "database_name": "yonedarepo-prod-platform-index",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "WorkspaceAuthority",
+        "name": "WORKSPACES"
+      },
+      {
+        "class_name": "SourceRepository",
+        "name": "SOURCE_REPOS"
+      },
+      {
+        "class_name": "CheckContainer",
+        "name": "CHECK_RUNNERS"
+      },
+      {
+        "class_name": "ObjectPushQueue",
+        "name": "OBJECT_PUSHES"
+      },
+      {
+        "class_name": "CommitShard",
+        "name": "COMMIT_SHARDS"
+      },
+      {
+        "class_name": "LandCombiner",
+        "name": "LAND_COMBINERS"
+      }
+    ]
+  },
+  "limits": {
+    "subrequests": 50000
+  },
+  "main": "worker/platform-index.ts",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "SourceRepository",
+        "WorkspaceAuthority",
+        "CheckContainer"
+      ],
+      "tag": "v1"
+    },
+    {
+      "new_sqlite_classes": [
+        "ObjectPushQueue"
+      ],
+      "tag": "v2"
+    },
+    {
+      "new_sqlite_classes": [
+        "CommitShard"
+      ],
+      "tag": "v3"
+    },
+    {
+      "new_sqlite_classes": [
+        "LandCombiner"
+      ],
+      "tag": "v4"
+    }
+  ],
+  "name": "yonedarepo-prod-platform",
+  "observability": {
+    "enabled": true
+  },
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
+  "preview_urls": false,
+  "queues": {
+    "consumers": [
+      {
+        "dead_letter_queue": "yonedarepo-prod-platform-dead-letter",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_concurrency": 20,
+        "max_retries": 3,
+        "queue": "yonedarepo-prod-platform-jobs"
+      },
+      {
+        "dead_letter_queue": "yonedarepo-prod-platform-dead-letter",
+        "max_batch_size": 1,
+        "max_concurrency": 4,
+        "max_retries": 3,
+        "queue": "yonedarepo-prod-platform-checks"
+      }
+    ],
+    "producers": [
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yonedarepo-prod-platform-jobs"
+      },
+      {
+        "binding": "PLATFORM_CHECKS",
+        "queue": "yonedarepo-prod-platform-checks"
+      }
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-prod-platform-objects"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    }
+  ],
+  "routes": [
+    {
+      "custom_domain": true,
+      "pattern": "api.yonedarepo.com"
+    },
+    {
+      "pattern": "https://api.yonedarepo.com/*",
+      "zone_name": "yonedarepo.com"
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "REVIEW_MODEL_KEY",
+      "secret_name": "ZAI",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    }
+  ],
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-prod-platform"
+    }
+  ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-prod-superfan"
+    }
+  ],
+  "vars": {
+    "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
+    "LAND_MODE": "batch",
+    "WEB_ORIGIN": "https://yonedarepo.com",
+    "WORKERS_SUBDOMAIN": "mlong-f01"
+  },
+  "workers_dev": true,
+  "workflows": [
+    {
+      "binding": "PLATFORM_IMPORT",
+      "class_name": "PlatformImportWorkflow",
+      "name": "yonedarepo-prod-platform-import"
+    }
+  ]
+}

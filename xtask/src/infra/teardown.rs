@@ -182,26 +182,8 @@ fn artifacts_repos(
         .collect();
     let mut repos = Vec::new();
     for namespace in namespaces {
-        let listing = wrangler::output(
-            &spec.account_id,
-            &[
-                "artifacts",
-                "repos",
-                "list",
-                "--namespace",
-                &namespace,
-                "--json",
-            ],
-        )
-        .and_then(|out| Ok(serde_json::from_slice::<Value>(&out)?));
-        match listing {
-            Ok(list) => repos.extend(
-                list.as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|r| r["name"].as_str())
-                    .map(|name| (namespace.clone(), name.to_owned())),
-            ),
+        match super::retired::artifacts_repos(&spec.account_id, &namespace) {
+            Ok(list) => repos.extend(list.into_iter().map(|name| (namespace.clone(), name))),
             Err(error) => failures.push(format!("Artifacts {namespace}: {error}")),
         }
     }

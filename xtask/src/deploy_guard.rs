@@ -1,6 +1,6 @@
 //! Deploy guards. Decisions are pure functions over gathered facts, so every refusal is
 //! unit-tested without Git state or network access.
-use crate::infra::spec::{Env, Spec};
+use crate::infra::spec::{Env, Lock, PENDING_D1, Spec};
 use crate::process::Result;
 use serde_json::Value;
 use std::path::Path;
@@ -85,7 +85,14 @@ pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options
     evidence_passes(facts.evidence.as_ref(), &facts.head)
 }
 
-/// The kit must have run against this exact commit and passed every item.
+/// The kit's browser gate (tools/staging/browser-flow.mjs). Like every item in the evidence, it
+/// must pass when present; while the kit can still run without it, its absence is allowed.
+/// Set to true once every kit run records it.
+pub(crate) const BROWSER_ITEM: &str = "browser";
+pub(crate) const BROWSER_REQUIRED: bool = false;
+
+/// The kit must have run against this exact commit and passed every item it lists: item 0
+/// (live revisions) always, the browser item whenever it is present.
 pub(crate) fn evidence_passes(evidence: Option<&Value>, head: &str) -> Result<()> {
     let evidence = evidence.ok_or(
         "Refusing prod: no real-world kit evidence in .local/staging/. Run `node tools/staging-realworld.mjs` against dev.",
@@ -107,6 +114,12 @@ pub(crate) fn evidence_passes(evidence: Option<&Value>, head: &str) -> Result<()
         )
         .into());
     }
+    if BROWSER_REQUIRED && !items.iter().any(|item| item["id"] == BROWSER_ITEM) {
+        return Err(format!(
+            "Refusing prod: the newest kit evidence has no {BROWSER_ITEM} item. Run the kit with --browser."
+        )
+        .into());
+    }
     if let Some(item) = items.iter().find(|item| item["status"] != "pass") {
         return Err(format!(
             "Refusing prod: kit item {} ({}) is {}, not pass.",
@@ -119,13 +132,34 @@ pub(crate) fn evidence_passes(evidence: Option<&Value>, head: &str) -> Result<()
     Ok(())
 }
 
+/// A D1 database the lock marks `pending` does not exist yet; deploying would bind nothing.
+pub(crate) fn refuse_pending(env: &Env, lock: &Lock) -> Result<()> {
+    match lock.d1.iter().find(|(_, id)| id.as_str() == PENDING_D1) {
+        Some((name, _)) => Err(format!(
+            "D1 {name} is not created yet (lock says {PENDING_D1}): run `cargo xtask infra up --env {}` first.",
+            env.name()
+        )
+        .into()),
+        None => Ok(()),
+    }
+}
+
 /// Prod only: a container rollout restarts instances and kills their runs.
 pub(crate) fn active_gate(env: &Env, worker: &str, active: u64, options: &Options) -> Result<()> {
-    if active == 0 || !env.is_prod() || options.allow_active {
+    if !env.is_prod() {
+        return Ok(());
+    }
+    busy_gate(worker, active, options)
+}
+
+/// Busy container instances stop whatever comes next (a rollout, a cutover, a deletion),
+/// unless `--allow-active`.
+pub(crate) fn busy_gate(what: &str, active: u64, options: &Options) -> Result<()> {
+    if active == 0 || options.allow_active {
         return Ok(());
     }
     Err(format!(
-        "Stopping before {worker}: {active} container instance(s) are busy and a rollout kills their runs. Retry when idle, or pass --allow-active."
+        "Stopping before {what}: {active} container instance(s) are busy and this kills their runs. Retry when idle, or pass --allow-active."
     )
     .into())
 }
