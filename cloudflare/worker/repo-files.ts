@@ -40,18 +40,27 @@ export async function listTree(ctx: RepoContext, args: Json) {
 }
 
 /** A path's entry at main's published head: from the latest changeset that wrote it
- * (walked in its landed commit's tree), else from the projected head. */
-async function publishedEntry(objects: RepoObjects, head: Json, path: string) {
+ * (walked in its landed commit's tree), else from the projected head. `stagedWith` is
+ * that changeset's commit, whose shard holds its objects until they drain to R2: a read
+ * that misses the caches asks that one shard, not the authority and all 64 shards. */
+async function publishedEntry(
+  objects: RepoObjects,
+  head: Json,
+  path: string,
+): Promise<{ entry: TreeEntry; stagedWith?: string }> {
   const changed = [...(head.overlay as Json[])]
     .reverse()
     .find((c) => c.paths.some((p: Json) => p.path === path));
-  if (!changed) return walk(objects, head.head.tree, path);
+  if (!changed) return { entry: await walk(objects, head.head.tree, path) };
+  const stagedWith = typeof changed.commit === 'string' ? changed.commit : undefined;
   const touch = changed.paths.find((p: Json) => p.path === path);
   if (!touch.blob) throw new ApiError('NOT_FOUND', `${path} does not exist`);
   // The log recorded the mode: the blob is read by id, no tree walk.
-  if (touch.mode)
-    return { name: path.split('/').pop() ?? path, type: touch.mode, id: touch.blob } as TreeEntry;
-  return walk(objects, changed.tree, path);
+  if (touch.mode) {
+    const name = path.split('/').pop() ?? path;
+    return { entry: { name, type: touch.mode, id: touch.blob }, stagedWith };
+  }
+  return { entry: await walk(objects, changed.tree, path), stagedWith };
 }
 
 /** A file at a commit, at a branch and version, or (by default) at main's published head,
@@ -70,10 +79,10 @@ export async function readFile(ctx: RepoContext, args: Json) {
   await requirePath(ctx, path);
   if (fromHead && main) {
     const objects = await ctx.objects();
-    const entry = await publishedEntry(objects, ctx.published as Json, path);
+    const { entry, stagedWith } = await publishedEntry(objects, ctx.published as Json, path);
     if (!['blob', 'exec'].includes(entry.type))
       throw new ApiError('NOT_FOUND', `${path} is not a file`);
-    const bytes = await objects.blob(entry.id);
+    const bytes = await objects.blob(entry.id, stagedWith);
     const head = ctx.published as Json;
     return {
       version: head.version,
