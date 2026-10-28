@@ -1,11 +1,12 @@
 // A repository's Settings tab (owner and admins): landing rules, checks, secret exceptions,
-// webhooks, members, repository tokens, the LFS quota, connect, and deleting it. Branches and
+// webhooks, members, repository tokens, the LFS quota, visibility, connect, and deleting it. Branches and
 // tags are under History, where the write role reaches them too.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ConnectPanel, DeleteRepository } from '../source-platform/ConnectPanel';
 import { currentApiOrigin } from '../source-platform/connect';
 import { RepoMembers } from '../source-platform/RepoMembers';
 import { RepoTokens } from '../source-platform/RepoTokens';
+import { repoAccess } from '../source-platform/repoAccess';
 import type { RepoStatus } from '../source-platform/repoStatus';
 import { Loading } from '../source-platform/SourceStatus';
 import type { RepoSettingsSection } from '../source-platform/sourceRoute';
@@ -15,6 +16,7 @@ import { LfsSettings } from './LfsSettings';
 import { PolicyForm } from './PolicyForm';
 import { RepoWebhooks } from './RepoWebhooks';
 import { SecretExceptions } from './SecretExceptions';
+import { VisibilitySettings } from './VisibilitySettings';
 
 export const SECTION_TITLES: Record<RepoSettingsSection, string> = {
   rules: 'Landing rules',
@@ -24,6 +26,7 @@ export const SECTION_TITLES: Record<RepoSettingsSection, string> = {
   members: 'Members',
   tokens: 'Repository tokens',
   lfs: 'Large files (LFS)',
+  visibility: 'Visibility',
   connect: 'Connect',
   delete: 'Delete repository',
 };
@@ -44,7 +47,10 @@ export function RepoSettings({
   onDeleted: () => void;
 }) {
   if (!status) return <Loading what="settings" />;
-  if (!status.viewer?.owner)
+  // A signed-out reader is always a public reader (`viewer.public`), so the status alone
+  // decides here: only the owner and admins pass.
+  const access = repoAccess(status.viewer, true);
+  if (!access.settings)
     return (
       <p className="source-empty">Only the owner and admins see this repository&apos;s settings.</p>
     );
@@ -96,6 +102,15 @@ export function RepoSettings({
         {section === 'members' && <RepoMembers repo={repo} viewer={status.viewer} />}
         {section === 'tokens' && <RepoTokens repo={repo} />}
         {section === 'lfs' && <LfsSettings repo={repo} />}
+        {section === 'visibility' && (
+          <VisibilitySettings
+            repo={repo}
+            name={status.name}
+            visibility={status.visibility ?? 'private'}
+            canChange={access.visibility}
+            onChanged={onPolicySaved}
+          />
+        )}
         {section === 'connect' && (
           <ConnectPanel repo={repo} name={status.name} origin={currentApiOrigin()} />
         )}

@@ -83,8 +83,9 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         "automation": super::break_glass::state(db)?,
         "parent": settings.parent.as_ref().map(|(repo, version)| json!({ "repo": repo, "version": version })),
         "forks": super::forks::count(db)?,
+        "visibility": settings.visibility.as_str(),
         "viewer": { "principal": actor.principal, "owner": actor.owner,
-            "role": actor.member.map(super::members::Role::as_str) },
+            "role": actor.member.map(super::members::Role::as_str), "public": actor.public },
     }))
 }
 

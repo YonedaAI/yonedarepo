@@ -28,6 +28,15 @@ import { downloadBlob } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
+import {
+  ANONYMOUS,
+  anonymousRead,
+  capped,
+  explore,
+  isExplore,
+  limitAnonymous,
+  setVisibility,
+} from './repo-public';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { timed, withTimings } from './repo-timing';
 import { branchesRoute, operations } from './repo-tools';
@@ -144,8 +153,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (get && resource === 'tree') return run('git_ls_tree', query);
   if (get && resource === 'blob') return run('git_cat_file', query);
   if (get && resource === 'search')
-    return run('git_grep', { ...query, ignore_case: query.ignore_case === 'true' });
-  if (get && resource === 'blame') return run('git_blame', query);
+    return run('git_grep', { ...capped(auth, query), ignore_case: query.ignore_case === 'true' });
+  if (get && resource === 'blame') return run('git_blame', capped(auth, query));
   const records = get ? agentRecords(ctx, resource, sha, sub, query) : undefined;
   if (records) return records;
   if (get && resource === 'symbols') return run('symbol_list', query);
@@ -210,6 +219,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return { import: `import-${repo}`, ...status };
   }
   // Access changes republish main's head (begins and reads decide access from it).
+  if (resource === 'visibility' && req.method === 'PUT')
+    return setVisibility(ctx, await bodyOf(req));
   if (resource === 'policy' && req.method === 'PUT')
     return withHeadRefresh(
       env,
@@ -311,8 +322,24 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(() => bodyOf(req).then((body) => deviceCode(req, env, body, url)));
   if (req.method === 'POST' && url.pathname === '/api/v1/device/token')
     return answer(() => bodyOf(req).then((body) => deviceToken(req, env, body)));
-  const auth = await timed('auth', () => credentials(req, env));
-  if (!auth) return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
+  // The public listing answers everyone alike, signed in or not (rate limited without
+  // credentials, like every anonymous read).
+  if (isExplore(url) && req.method === 'GET')
+    return answer(async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return explore(env, url.searchParams);
+    });
+  const signed = await timed('auth', () => credentials(req, env));
+  // Without credentials, reads go on as anonymous (public repositories only, rate limited);
+  // a token that is refused (expired, revoked, malformed) never falls back to anonymous.
+  if (!signed && (req.headers.has('authorization') || !anonymousRead(req, url)))
+    return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
+  if (!signed) {
+    const limited = await limitAnonymous(env, req, url.pathname).catch(failure);
+    if (limited) return limited;
+  }
+  const auth = signed ?? ANONYMOUS;
   const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);
   // MCP is the agent surface: it never carries a human marker, so break-glass (which is not
   // an MCP tool either) stays unreachable through it.

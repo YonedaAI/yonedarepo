@@ -123,25 +123,30 @@ pub fn store(path: &Path, origin: &str, token: &Token) -> Result<()> {
 /// The token for `origin`: `YONEDA_TOKEN` (`env`) wins; a stored token must belong to
 /// the same origin.
 pub fn load(path: &Path, origin: &str, env: Option<String>) -> Result<Token> {
-    if let Some(value) = env.filter(|v| !v.trim().is_empty()) {
-        return Token::new(&value);
-    }
-    let missing = || {
+    load_optional(path, origin, env)?.ok_or_else(|| {
         Error::new(format!(
             "No token for {origin}: set YONEDA_TOKEN or run `yoneda login --origin {origin}`"
         ))
-    };
+    })
+}
+
+/// The token for `origin` as `load` finds it, or `None` when there is none (a caller that
+/// may go on without one: reading a public repository).
+pub fn load_optional(path: &Path, origin: &str, env: Option<String>) -> Result<Option<Token>> {
+    if let Some(value) = env.filter(|v| !v.trim().is_empty()) {
+        return Token::new(&value).map(Some);
+    }
     let raw = match std::fs::read(path) {
         Ok(raw) => raw,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(missing()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::new(format!("reading {}: {e}", path.display()))),
     };
     let stored: Stored =
         serde_json::from_slice(&raw).context(format!("parsing {}", path.display()))?;
     if normalize_origin(&stored.origin)? != origin {
-        return Err(missing());
+        return Ok(None);
     }
-    Token::new(&stored.token)
+    Token::new(&stored.token).map(Some)
 }
 
 /// Deletes the stored token when it belongs to `origin` (any origin when `None`);
@@ -191,6 +196,10 @@ mod tests {
             Header::Authorization("Bearer yrp_secret".into())
         );
         assert!(load(&path, "https://b.example", None).is_err());
+        // Callers that may go on without a token (public reads) get none, not an error.
+        assert!(load_optional(&path, "https://b.example", None)?.is_none());
+        assert!(load_optional(&dir.path().join("missing"), "https://a.example", None)?.is_none());
+        assert!(load_optional(&path, "https://a.example", None)?.is_some());
         let env = load(&path, "https://b.example", Some("yrp_env".into()))?;
         assert_eq!(env.header(), Header::Authorization("Bearer yrp_env".into()));
         assert!(!format!("{token:?}").contains("secret"));
