@@ -3,6 +3,25 @@
 //! to the object cache (diffs, merges, search, blame, symbols, review classes, contracts
 //! and the agent and human views), plus the account authority (sessions, personal access
 //! tokens, device login).
+//!
+//! # Seams
+//!
+//! - **Core below.** Only pure `yoneda_core` contracts are used (`git_object`, `transport`,
+//!   `txlog`, `merge`, `textdiff`, `search`, `blame`, `account` and the error and digest
+//!   primitives; `tests/runtime/platform-boundary.test.mjs` enforces the list). The platform
+//!   relies on their invariants: object ids are the SHA-1 of the
+//!   exact Git encoding, so an id names its bytes; txlog entries are hash-chained
+//!   (`txlog::chain_digest`), so a version names its whole history; receive-pack bodies
+//!   carry an expected-old id per ref, so the object store refuses a stale ref update.
+//! - **Store beside.** Durable state enters only through [`yoneda_store::SqlStore`]: each
+//!   repository command runs in one store transaction (`execute_migrated`), so refs, txlog
+//!   entries and events commit together.
+//! - **Adapter above.** Every other input arrives as a JSON command from the Worker
+//!   (`yoneda-worker`): principal, workspace and time are set by the authenticating adapter,
+//!   and object bytes the adapter fetched from the object tiers arrive as arguments. The
+//!   platform performs no network I/O; it answers with what to write (pack bodies, pushes)
+//!   and the adapter writes it and reports back (readback before recording, expected-old on
+//!   every ref move).
 mod accounts;
 mod commit_store;
 mod platform_access;
