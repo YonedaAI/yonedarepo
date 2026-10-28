@@ -177,6 +177,8 @@ const writing = new Map<string, Promise<void>>();
 const written = new Set<string>();
 const WRITTEN_KEYS = 50_000;
 const sameObjectBusy = (e: unknown) => /\b10058\b/.test(String((e as Error)?.message ?? e));
+/** R2's transient internal error: the same bytes are written again. */
+const internalError = (e: unknown) => /\b10001\b/.test(String((e as Error)?.message ?? e));
 
 /** A Git object's raw content (no header), as the store of record keeps it. */
 export type RawObject = { id: string; kind: 'commit' | 'tree' | 'blob'; data_b64: string };
@@ -186,6 +188,7 @@ export type RawObject = { id: string; kind: 'commit' | 'tree' | 'blob'; data_b64
  * the same blob), and R2 allows one write per key at a time (10058): a write already in
  * flight here is joined, a key written here is skipped, and a 10058 counts as written
  * once the object is readable (another writer holds identical bytes), else it is retried.
+ * R2's transient internal error (10001) is retried the same way.
  */
 export function putObjects(env: Env, key: (id: string) => string, objects: CachedObject[]) {
   return Promise.all(
@@ -234,8 +237,9 @@ async function putOnce(env: Env, key: string, kind: string, body: Uint8Array | s
         });
       break;
     } catch (e) {
-      if (!sameObjectBusy(e) || attempt >= 3) throw e;
-      if (await env.OBJECTS.head(key)) break;
+      const busy = sameObjectBusy(e);
+      if ((!busy && !internalError(e)) || attempt >= 3) throw e;
+      if (busy && (await env.OBJECTS.head(key))) break;
       await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)));
     }
   }
