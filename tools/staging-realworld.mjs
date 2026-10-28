@@ -6,7 +6,8 @@
 // device flow, `yoneda repo`, plain git through git-remote-yoneda (concurrent pushes,
 // conflicts, atomic and killed pushes), the account MCP with a PAT, `--at` reads, a change
 // request (18: open, comment, approve, land), a server-side rebase (21: linear in a clone,
-// a conflict refused with its paths) and cleanup. They need
+// a conflict refused with its paths), cleanup, and log compaction (20: 20,000 versions, a
+// bounded SQL tail, `log --at 5` from the R2 segment). The CLI items need
 // `cargo build -p yoneda-cli --release` (`--cli-bin` names another directory). Prints a
 // pass/fail table and writes evidence to .local/staging/. Credentials come only from 0600
 // files in ~/.config/yonedarepo/:
@@ -34,6 +35,9 @@
 //          login form, opens a new repository's pages, and approves and lands a change request
 //          on its Change page; zero model spend. Needs Google Chrome; screenshots in
 //          .local/staging/browser-<ts>/. Also part of the full kit)
+//        node tools/staging-realworld.mjs --only 0,20 [--compaction-versions 20000]
+//          (log compaction: grow a repository's log through POST /refs/batch, compact with the
+//          owner's POST /compact until nothing is due, check the bound and reads at version 5)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -41,6 +45,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { browserFlow } from './staging/browser-flow.mjs';
+import { compactionFlow } from './staging/compaction-flow.mjs';
 import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
@@ -64,6 +69,8 @@ const { values } = parseArgs({
     'cleanup-repos': { type: 'string' },
     only: { type: 'string' },
     'skip-bursts': { type: 'boolean', default: false },
+    // Item 20's log length (the bound is 10,000 versions plus a 1,024-version segment).
+    'compaction-versions': { type: 'string', default: '20000' },
     // Prod smoke: prod hosts, evidence prod-smoke-*.json (never realworld*, the prod deploy
     // guard's dev evidence). Pass --only with the items.
     prod: { type: 'boolean', default: false },
@@ -137,6 +144,9 @@ await step('browser', 'Browser: sign in, source pages, a change request approved
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
 await step('model', 'Model check: vulnerable commit fails and cannot land, the fix passes and lands', (m) => modelCheck(platformAccount, m));
+await step('20', 'Log compaction: 20k versions, bounded SQL tail, log --at 5 from R2', (m) =>
+  compactionFlow(platformAccount, m, { versions: Number(values['compaction-versions']) }),
+);
 
 const execFileAsync = promisify(execFile);
 async function fanout(writers, m) {

@@ -5,6 +5,7 @@
 // A segment's paths are relative to its partition, and each read passes the partition's
 // prefix, so a renamed or duplicated directory reuses the segment under its own path.
 import { emitChangeLog } from './repo-changelog';
+import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
@@ -167,6 +168,8 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
   // Warm-start seed for check runs on nearby commits; a failure only costs them speed.
   const at = { commit: String(head.commit), tree: String(head.tree) };
   await writeSeed(env, envelope.repo_id, await ctx.objects(), envelope.job_id, at).catch(() => {});
+  // Keeps the authority's log a bounded tail; never throws.
+  await compactAfterLanding(env, envelope.repo_id, Number(head.version));
   return segments;
 }
 
