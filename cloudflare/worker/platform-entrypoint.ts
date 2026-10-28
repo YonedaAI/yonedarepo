@@ -45,7 +45,15 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
-      batch.messages.map((message) => platformJob(this.env, message).catch(() => message.retry())),
+      batch.messages.map((message) =>
+        platformJob(this.env, message).catch((e) => {
+          // Which job failed and why, for `wrangler tail`; the queue retries it.
+          const { kind, repo_id, job_id } = message.body;
+          const error = String(e?.message ?? e).slice(0, 200);
+          console.error(JSON.stringify({ event: 'job.failed', kind, repo_id, job_id, error }));
+          message.retry();
+        }),
+      ),
     );
   }
 }
