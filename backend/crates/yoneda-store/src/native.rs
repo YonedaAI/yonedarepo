@@ -18,11 +18,24 @@ impl NativeStore {
         ))))
     }
 }
+/// Durable Object SQLite binds at most 100 parameters per statement; the native store
+/// refuses more too, so tests catch a query that only fails once deployed.
+const MAX_PARAMS: usize = 100;
+
 fn db_error(e: rusqlite::Error) -> Error {
     Error::new("DATABASE", e.to_string())
 }
 impl SqlStore for NativeStore {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>> {
+        if params.len() > MAX_PARAMS {
+            return Err(Error::new(
+                "DATABASE",
+                format!(
+                    "too many SQL variables: {} bound, at most {MAX_PARAMS}",
+                    params.len()
+                ),
+            ));
+        }
         let connection = self.0.borrow();
         let values: Vec<_> = params
             .iter()

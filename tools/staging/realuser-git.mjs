@@ -13,6 +13,25 @@ import { dirname, join } from 'node:path';
 import { scratch, scratchRefs, timedSteps } from './realuser-plan.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
+/** GET /refs is a snapshot up to 2 x REFS_MS (2 s) old for a reader in another isolate
+ * (repo-snapshots.ts): a ref this run just moved is polled for up to that bound. */
+export const REFS_BOUND_MS = 2500;
+
+/** `refname`'s commit on the platform once it is `expected` (undefined: absent), polling
+ * within `REFS_BOUND_MS`; else whatever it last read. `seen.lag_ms` keeps the longest wait. */
+export async function settledRef(owner, repo, refname, expected, seen = {}) {
+  const started = performance.now();
+  for (;;) {
+    const value = (await owner.get(`/repos/${repo}/refs`)).refs[refname];
+    const waited = Math.round(performance.now() - started);
+    if (value === expected || waited > REFS_BOUND_MS) {
+      if (value === expected) seen.lag_ms = Math.max(seen.lag_ms ?? 0, waited);
+      return value;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
 export const AUTHOR = { name: 'Real-user kit', email: 'realuser@yonedarepo.invalid' };
 
 /** A 0700 temporary directory with its own Git config; processes get a token only per call. */
@@ -159,12 +178,12 @@ export async function realuserEveryday(ctx, metrics) {
   const url = `${ws.api}/git/${repo}.git`;
   const dir = ws.path('work');
   const git = (...args) => ws.git(dir, token, ...args);
-  const remoteHead = async (branch) => (await owner.get(`/repos/${repo}/refs`)).refs[`refs/heads/${scratch(branch, ts)}`];
+  const remoteHead = (branch, expected) => settledRef(owner, repo, `refs/heads/${scratch(branch, ts)}`, expected, metrics);
   /** Pushes `local` to the scratch branch `branch` and requires the platform to hold it. */
   const push = async (local, branch, ...flags) => {
     const done = await ws.ok('git', ['push', '-q', ...flags, 'origin', `${local}:refs/heads/${scratch(branch, ts)}`], { cwd: dir, token });
     const sha = await git('rev-parse', local);
-    assert.equal(await remoteHead(branch), sha, `${branch} on the platform is not the pushed commit`);
+    assert.equal(await remoteHead(branch, sha), sha, `${branch} on the platform is not the pushed commit (after ${REFS_BOUND_MS} ms)`);
     return done.ms;
   };
   const commit = async (path, text, message) => {
@@ -222,7 +241,7 @@ export async function realuserEveryday(ctx, metrics) {
       }],
       ['delete a branch', async () => {
         await ws.ok('git', ['push', '-q', 'origin', '--delete', scratch(refs.pick, ts)], { cwd: dir, token });
-        assert.equal(await remoteHead(refs.pick), undefined, `${refs.pick} is still there`);
+        assert.equal(await remoteHead(refs.pick, undefined), undefined, `${refs.pick} is still there`);
       }],
     ],
     ws.scrub,
