@@ -2,17 +2,17 @@
 // drives the served app as a person does, with zero model spend. It signs the kit account in
 // through the real login form, creates a repository with the shell's "New repository" dialog,
 // opens its Code, History, Changes (the empty list) and Settings (Landing rules, Connect) tabs
-// and the account Settings page. Then a change request is opened by API on a branch committed
-// by a repository token (another principal than the kit account, so the account may approve
-// it), and the kit account approves and lands it in the Change page; the page and the API must
-// both read it back landed. Each step's screenshot goes to .local/staging/browser-<ts>/; a
+// and the account Settings page. Then the second kit account (a member at write) commits on a
+// branch by API, the kit account opens a change for it and approves and lands it in the Change
+// page (the platform refuses an author's own approval); the page and the API must both read it
+// back landed. Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
-import { b64, Session, sleep } from './client.mjs';
+import { b64, Session, secondAccount, sleep } from './client.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -66,7 +66,7 @@ export async function browserFlow({ origin, kit, root, headed = false }, m) {
     await shot('signed-in');
     const account = new Session(origin, { cookie: cookieHeader(await context.cookies(origin)) });
     const repo = await sourcePages(page, origin, account, { shot, cleanup }, m);
-    secrets.push(...(await changeLanded(page, origin, account, repo, { shot, cleanup }, m)));
+    await changeLanded(page, { origin, kit, account, repo, shot }, m);
   } catch (error) {
     await page.screenshot({ path: join(dir, 'failure.png'), fullPage: true }).catch(() => {});
     const text = await page.locator('body').innerText().catch((e) => `page text unavailable: ${e.message}`);
@@ -145,24 +145,24 @@ export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
 }
 
 /**
- * A change request landed in the UI. A write-only repository token commits docs/browser-gate.md
- * on a new branch (so its author is not the kit account); the kit account opens the change by
- * API, then approves and lands it on the Change page. Returns the token, for scrubbing.
+ * A change request landed in the UI. The second kit account, a member at write, commits
+ * docs/browser-gate.md on a new branch, so the kit account is not its author and may approve
+ * it; the kit account opens the change by API, then approves and lands it on the Change page.
+ * The member goes with the repository when it is deleted.
  */
-export async function changeLanded(page, origin, account, { id }, { shot, cleanup }, m) {
+export async function changeLanded(page, { origin, kit, account, repo: { id }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
-  const writer = await account.post(api('/tokens'), { name: 'kit-browser-writer', scopes: ['read', 'write'] });
-  cleanup.push(() => account.call('DELETE', api('/tokens/kit-browser-writer')));
-  const asWriter = new Session(origin, { bearer: writer.token });
-  const made = await asWriter.post(api('/commits'), {
+  const member = await secondAccount(origin, kit);
+  await account.post(api('/members'), { account: member.name, role: 'write' });
+  const made = await member.session.post(`/repos/${id}/commits`, {
     ref: 'main',
     changes: [{ path: 'docs/browser-gate.md', content_b64: b64('Added by the browser gate.\n') }],
     message: 'Browser gate: add a note',
     author,
   });
-  await asWriter.post(api('/branches'), { ref: 'kit-browser', commit: made.commit, expected: null });
+  await member.session.post(`/repos/${id}/branches`, { ref: 'kit-browser', commit: made.commit, expected: null });
   const change = await account.post(api('/changes'), { branch: 'kit-browser', title: 'Browser gate change' });
-  Object.assign(m, { change: change.number, head: made.commit });
+  Object.assign(m, { change: change.number, head: made.commit, author: member.name });
 
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
@@ -182,5 +182,4 @@ export async function changeLanded(page, origin, account, { id }, { shot, cleanu
   Object.assign(m, { change_status: after.status, landed_version: after.landed_version });
   assert.equal(after.status, 'landed', `the change is ${after.status} after landing in the UI`);
   assert.equal(after.landed_commit, made.commit, 'the change landed another commit');
-  return [writer.token];
 }
