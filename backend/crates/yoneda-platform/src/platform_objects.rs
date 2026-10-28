@@ -7,24 +7,11 @@ use std::collections::{HashMap, HashSet};
 use yoneda_core::{Error, Result, git_object::*};
 
 pub fn mode(kind: &str) -> Result<FileMode> {
-    Ok(match kind {
-        "tree" => FileMode::Tree,
-        "blob" => FileMode::Blob,
-        "exec" => FileMode::Executable,
-        "symlink" => FileMode::Symlink,
-        "gitlink" => FileMode::Gitlink,
-        _ => return Err(bad("Unknown tree entry type")),
-    })
+    FileMode::from_wire(kind).map_err(|_| bad("Unknown tree entry type"))
 }
 
 pub fn entry_type(mode: FileMode) -> &'static str {
-    match mode {
-        FileMode::Tree => "tree",
-        FileMode::Blob => "blob",
-        FileMode::Executable => "exec",
-        FileMode::Symlink => "symlink",
-        FileMode::Gitlink => "gitlink",
-    }
+    mode.as_str()
 }
 
 pub fn entries_json(entries: &[TreeEntry]) -> Value {
