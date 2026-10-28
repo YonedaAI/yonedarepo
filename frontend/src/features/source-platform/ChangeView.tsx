@@ -4,8 +4,8 @@ import { useMemo } from 'react';
 import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
-import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
 import { ChangeSessions } from './ChangeSessions';
+import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
 import {
   type ChangeDetail,
   type ConversationItem,
