@@ -45,6 +45,17 @@ export function failures(rows, limit = 10) {
     }));
 }
 
+/** The `limit` slowest correct records, the slowest first, with when each started and its
+ * Server-Timing: the phases of a slow answer, which a percentile over all of them hides. */
+export function slowest(rows, limit = 5) {
+  const first = Math.min(...rows.filter(Boolean).map((r) => r.started_at ?? Infinity));
+  return rows
+    .filter((r) => ok(r) && r.ok !== false)
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, limit)
+    .map((r) => ({ at_ms: Number.isFinite(first) ? r.started_at - first : null, ms: r.ms, timing: r.timing || null }));
+}
+
 /** Per Server-Timing phase: latency of its total across requests. */
 export function phases(rows, failed = false) {
   const all = {};

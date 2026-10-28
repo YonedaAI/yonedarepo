@@ -74,14 +74,15 @@ export async function commitAndLand(target, repo, w, timeoutMs) {
 }
 
 /** One reader: `w.get` (a path under the repository, e.g. `/refs`) must answer 200; a blob
- * read (`w.path`, read-your-writes from `w.version`) must also return `w.content`. */
-export async function read(target, repo, w) {
+ * read (`w.path`, read-your-writes from `w.version`) must also return `w.content`. A read
+ * past `timeoutMs` fails alone (CLIENT_TIMEOUT), not with its whole invocation. */
+export async function read(target, repo, w, timeoutMs) {
   if (w.get !== undefined && !/^\/[a-z-]+(\?[\w.%=&/-]*)?$/.test(String(w.get)))
     return { read: { started_at: Date.now(), status: 0, ms: 0, server: null, timing: '', ok: false, error: 'BAD_READ', message: 'get must be /<resource>?<query>' } };
   const url = w.get
     ? `${target}/api/v1/repos/${repo}${w.get}`
     : `${target}/api/v1/repos/${repo}/blob?path=${encodeURIComponent(w.path)}${w.version ? `&min_version=${w.version}` : ''}`;
-  const r = await timed(url, { headers: headers(w) });
+  const r = await timed(url, { headers: headers(w) }, timeoutMs);
   const content = w.content === undefined || r.body.content === w.content;
   const ok = r.status === 200 && content;
   return { read: { ...r, ok, error: r.body?.error?.code ?? (r.status === 200 && !content ? 'WRONG_CONTENT' : undefined), message: r.body?.error?.message?.slice(0, 120), body: undefined } };
