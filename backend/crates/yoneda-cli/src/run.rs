@@ -74,6 +74,11 @@ async fn run(command: Command) -> Result<()> {
         Command::Land { target, branch } => {
             repo_ops::land(&target::resolve(&target)?, branch.as_deref()).await
         }
+        Command::Rebase {
+            target,
+            branch,
+            onto,
+        } => repo_ops::rebase(&target::resolve(&target)?, &branch, onto.as_deref()).await,
         Command::Review {
             target,
             approve,
