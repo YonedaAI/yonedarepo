@@ -1,8 +1,9 @@
-//! Change requests: a working branch proposed for landing on `main`, with a conversation.
-//! The change holds no commits of its own: its head is the branch's current commit, so a
-//! push moves it and approvals (reviews of the head commit) follow the head as they do for
-//! any commit. Landing that head on `main` marks the change landed in the landing's own
-//! transaction (`landed`). A change describes the whole repository, so path-restricted
+//! Change requests: a working branch proposed for landing on a base branch (`main` unless
+//! another existing branch is named), with a conversation. The change holds no commits of
+//! its own: its head is the branch's current commit, so a push moves it and approvals
+//! (reviews of the head commit) follow the head as they do for any commit. Landing that head
+//! on the base (by `repo_land`, whose gates apply when the base is protected, or by a branch
+//! move to it) marks the change landed in that transaction (`landed`). A change describes the whole repository, so path-restricted
 //! credentials can neither read nor write one.
 use super::auth::Actor;
 use super::rows::{self, branch_ref};
@@ -107,6 +108,20 @@ fn working_branch<S: SqlStore>(db: &S, name: &str) -> Result<String> {
     Ok(refname["refs/heads/".len()..].to_owned())
 }
 
+/// The short name of the existing branch `name` a change on `branch` lands on (default
+/// `main`); never the change's own branch.
+fn base_branch<S: SqlStore>(db: &S, name: Option<&str>, branch: &str) -> Result<String> {
+    let refname = branch_ref(&json!({ "ref": name.unwrap_or("main") }))?;
+    let base = refname["refs/heads/".len()..].to_owned();
+    if base == branch {
+        return Err(bad("A change cannot land a branch on itself"));
+    }
+    if rows::projected_ref(db, &refname)?.is_none() {
+        return Err(Error::new("NOT_FOUND", format!("No base branch {base}")));
+    }
+    Ok(base)
+}
+
 fn already_open(branch: &str, number: i64) -> Error {
     Error::new(
         "ALREADY_EXISTS",
@@ -114,11 +129,13 @@ fn already_open(branch: &str, number: i64) -> Error {
     )
 }
 
-/// `repo_change_create {branch, title, body?, source_repo?, source_branch?}`: a change from
-/// a fork names the fork and its branch, and proposes the mirror `forks/<fork>/<branch>`.
+/// `repo_change_create {branch, base?, title, body?, source_repo?, source_branch?}`: `base`
+/// (default main) must be another existing branch. A change from a fork names the fork and
+/// its branch, and proposes the mirror `forks/<fork>/<branch>`.
 pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let branch = working_branch(db, c["branch"].as_str().unwrap_or_default())?;
+    let base = base_branch(db, c["base"].as_str(), &branch)?;
     let source = (c["source_repo"].as_str(), c["source_branch"].as_str());
     if let (Some(repo), from) = source
         && from.is_none_or(|from| branch != format!("forks/{repo}/{from}"))
@@ -137,8 +154,8 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     }
     let now = number(c, "now")?;
     db.query(
-        "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at,source_repo,source_branch) VALUES(?,?,?,'main',?,'open',?,?,?,?)",
-        &[json!(title), json!(body), json!(branch), json!(actor.principal), json!(now), json!(now), json!(source.0), json!(source.1)],
+        "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at,source_repo,source_branch) VALUES(?,?,?,?,?,'open',?,?,?,?)",
+        &[json!(title), json!(body), json!(branch), json!(base), json!(actor.principal), json!(now), json!(now), json!(source.0), json!(source.1)],
     )?;
     let number = db.query("SELECT last_insert_rowid() AS n", &[])?[0]["n"]
         .as_i64()
@@ -190,30 +207,16 @@ pub fn show<S: SqlStore>(
         None => Value::Null,
     };
     change["comments"] = json!(super::change_comments::of(db, &change["number"])?);
-    let refname = format!(
+    // Landing on a protected base needs the head's gates; any other base moves with `write`.
+    change["base_protected"] = json!(rows::protected(&format!(
         "refs/heads/{}",
-        change["branch"].as_str().unwrap_or_default()
-    );
-    let moves = db.query(
-        "SELECT entry FROM txlog WHERE refname=? ORDER BY version DESC LIMIT ?",
-        &[json!(refname), json!(TIMELINE)],
-    )?;
-    let mut timeline = Vec::with_capacity(moves.len());
-    for row in moves {
-        let entry: yoneda_core::txlog::TxEntry =
-            serde_json::from_str(row["entry"].as_str().unwrap_or_default())
-                .map_err(|_| rows::corrupt("log entry"))?;
-        let action = match (entry.old, entry.new) {
-            (_, None) => "deleted",
-            (None, _) => "created",
-            _ => "moved",
-        };
-        timeline.push(
-            json!({ "version": entry.version, "action": action, "before": entry.old,
-            "after": entry.new, "actor": entry.actor, "at": entry.committed_at_ms }),
-        );
-    }
-    change["timeline"] = json!(timeline);
+        change["base"].as_str().unwrap_or_default()
+    )));
+    change["timeline"] = json!(super::change_comments::timeline(
+        db,
+        change["branch"].as_str().unwrap_or_default(),
+        TIMELINE
+    )?);
     Ok(change)
 }
 
@@ -245,6 +248,7 @@ pub fn set_open<S: SqlStore>(db: &S, c: &Value, actor: &Actor, open: bool) -> Re
     let branch = change["branch"].as_str().unwrap_or_default();
     if open {
         working_branch(db, branch)?;
+        base_branch(db, change["base"].as_str(), branch)?;
         if let Some(number) = open_on(db, branch)? {
             return Err(already_open(branch, number));
         }

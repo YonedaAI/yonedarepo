@@ -1,7 +1,8 @@
 // Change requests: the adapter half. The authority owns changes, comments and the landing
 // that marks a change landed (repo_store/changes.rs); this module routes the operations,
 // adds the diff (object storage) to `show`, and sends the hook fan-out after events.
-// Approval is `git_review` on the head commit and landing is `git_land` on main.
+// Approval is `git_review` on the head commit and landing is `git_land` of the head on the
+// change's base (main unless the change named another branch).
 import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
 import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
@@ -12,8 +13,8 @@ const changeNumber = (value: unknown) => {
   return n;
 };
 
-/** The change's diff from its merge base with main to its head; a landed change compares
- * against main just before it landed, where the head was not yet merged. */
+/** The change's diff from its merge base with its base branch to its head; a landed change
+ * compares against the base just before it landed, where the head was not yet merged. */
 function changeDiff(ctx: RepoContext, change: Json, patch: boolean) {
   if (!change.head) return null;
   const before = change.status === 'landed' ? { at: Number(change.landed_version) - 1 } : {};
@@ -35,7 +36,13 @@ export const changeOperations = {
       ctx,
       a.fork
         ? openForkChange(ctx, a)
-        : ctx.call({ op: 'repo_change_create', branch: a.branch, title: a.title, body: a.body }),
+        : ctx.call({
+            op: 'repo_change_create',
+            branch: a.branch,
+            base: a.base ?? null,
+            title: a.title,
+            body: a.body,
+          }),
     ),
   git_change_list: (ctx: RepoContext, a: Json) =>
     ctx.call({

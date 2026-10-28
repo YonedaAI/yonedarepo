@@ -61,15 +61,15 @@ pub async fn land(t: &Resolved, branch: Option<&str>) -> Result<()> {
             "the platform has no branch {branch}; git push it first"
         ))
     })?;
-    land_head(t, &branch, &head).await
+    land_head(t, &branch, &head, "main").await
 }
 
-/// Lands `head` on main (`what` names it in the report); a conflict names its paths.
-pub async fn land_head(t: &Resolved, what: &str, head: &str) -> Result<()> {
-    match t.api.land("main", head).await {
+/// Lands `head` on `base` (`what` names it in the report); a conflict names its paths.
+pub async fn land_head(t: &Resolved, what: &str, head: &str, base: &str) -> Result<()> {
+    match t.api.land(base, head).await {
         Ok(landed) => {
             println!(
-                "Landed {what} ({head}) on main at version {}{}",
+                "Landed {what} ({head}) on {base} at version {}{}",
                 landed["version"],
                 if landed.get("merge").is_some() {
                     " (merged)"

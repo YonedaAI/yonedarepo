@@ -13,7 +13,8 @@ export type Change = {
   title: string;
   body: string;
   branch: string;
-  base: 'main';
+  /** The branch the change lands on (main unless another was chosen). */
+  base: string;
   author: string;
   status: ChangeStatus;
   head: string | null;
@@ -57,7 +58,9 @@ export type ChangeDetail = Change & {
   timeline: Push[];
   /** Why the fork branch's latest pushes could not be carried here (the change still shows). */
   source_error?: string;
-  /** From the merge base with main (null: unrelated histories) to the head, as git_diff answers. */
+  /** Landing on the base needs the head's gates (main, release); other bases move with write. */
+  base_protected?: boolean;
+  /** From the merge base with the base branch (null: unrelated histories) to the head, as git_diff answers. */
   diff: { base: DiffEnd | null; head: DiffEnd; changes: DiffChange[] } | null;
 };
 

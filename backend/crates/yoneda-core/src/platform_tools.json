@@ -1428,13 +1428,17 @@
   },
   {
     "name": "git_change_create",
-    "description": "Open a change request: propose landing a branch on main. The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: main, commit: head}; a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. From a fork: pass `fork` (the fork's id) and a branch of the fork; this needs only read here and write on the fork, the branch's new commits are carried into this repository and the change proposes their mirror forks/<fork>/<branch> (it follows later pushes when shown). REST: POST /changes.",
+    "description": "Open a change request: propose landing a branch on a base branch (`base`, default main; another existing branch). The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: <base>, commit: head} (approvals and required checks gate a protected base such as main; another base takes the write scope); a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. From a fork: pass `fork` (the fork's id) and a branch of the fork; this needs only read here and write on the fork, the branch's new commits are carried into this repository and the change proposes their mirror forks/<fork>/<branch> (it follows later pushes when shown). REST: POST /changes.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "branch": {
           "type": "string",
           "description": "Branch name, e.g. fix-retry (or refs/heads/fix-retry)"
+        },
+        "base": {
+          "type": "string",
+          "description": "The branch to land on (default main); must exist and differ from branch"
         },
         "title": {
           "type": "string",
@@ -1476,9 +1480,7 @@
         },
         "base": {
           "type": "string",
-          "enum": [
-            "main"
-          ]
+          "description": "The branch the change lands on (main unless another was named)"
         },
         "author": {
           "type": "string",
@@ -1614,9 +1616,7 @@
             },
             "base": {
               "type": "string",
-              "enum": [
-                "main"
-              ]
+              "description": "The branch the change lands on (main unless another was named)"
             },
             "author": {
               "type": "string",
@@ -1732,6 +1732,10 @@
           ],
           "description": "git_show's answer for head (null when the change has no head)"
         },
+        "base_protected": {
+          "type": "boolean",
+          "description": "Whether landing on the base needs the head's gates (main and release branches); another base lands with the write scope"
+        },
         "comments": {
           "type": "array",
           "items": {
@@ -1756,7 +1760,8 @@
         "head_commit",
         "comments",
         "timeline",
-        "diff"
+        "diff",
+        "base_protected"
       ],
       "$defs": {
         "change": {
@@ -1778,9 +1783,7 @@
             },
             "base": {
               "type": "string",
-              "enum": [
-                "main"
-              ]
+              "description": "The branch the change lands on (main unless another was named)"
             },
             "author": {
               "type": "string",
@@ -2138,9 +2141,7 @@
         },
         "base": {
           "type": "string",
-          "enum": [
-            "main"
-          ]
+          "description": "The branch the change lands on (main unless another was named)"
         },
         "author": {
           "type": "string",
@@ -2255,9 +2256,7 @@
         },
         "base": {
           "type": "string",
-          "enum": [
-            "main"
-          ]
+          "description": "The branch the change lands on (main unless another was named)"
         },
         "author": {
           "type": "string",
