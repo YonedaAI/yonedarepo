@@ -128,6 +128,20 @@ impl Api {
         })
     }
 
+    /// Repository `repo`'s API without credentials: reads of a public repository only.
+    pub fn anonymous(origin: &str, repo: &str) -> Result<Self> {
+        if !valid_repo_id(repo) {
+            return Err(Error::usage(format!(
+                "{repo:?} is not a repository id (r + 20 hex)"
+            )));
+        }
+        Ok(Self {
+            http: client()?,
+            base: format!("{origin}/api/v1/repos/{repo}"),
+            header: Header::None,
+        })
+    }
+
     /// Repository `repo`'s API on the same origin, with the same credential (a fork's parent).
     pub fn sibling(&self, repo: &str) -> Result<Self> {
         let parent = self.base.rsplit_once('/').map(|(p, _)| p);

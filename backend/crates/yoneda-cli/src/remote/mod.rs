@@ -77,13 +77,19 @@ impl Session {
         } else {
             cwd.join(git_dir)
         };
-        let token = credentials::load(
+        // Without a token the helper still fetches a public repository; the platform asks
+        // for credentials (401) for anything else.
+        let token = credentials::load_optional(
             &credentials::default_path()?,
             &url.origin,
             std::env::var("YONEDA_TOKEN").ok(),
         )?;
+        let api = match &token {
+            Some(token) => Api::new(&url.origin, &url.repo, token)?,
+            None => Api::anonymous(&url.origin, &url.repo)?,
+        };
         Ok(Self {
-            api: Api::new(&url.origin, &url.repo, &token)?,
+            api,
             git: Git::with_git_dir(&cwd, &git_dir),
             map: CommitMap::open(&git_dir, &url.repo)?,
             heads: MainHeads::open(&git_dir, &url.repo)?,

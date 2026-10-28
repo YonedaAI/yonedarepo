@@ -245,10 +245,34 @@ mod tests {
                 origin: None,
                 command: RepoCommand::Create {
                     name: "web".into(),
-                    owner: Some("acme".into())
+                    owner: Some("acme".into()),
+                    public: false
                 }
             })
         );
+        assert_eq!(
+            parsed("repo create site --public").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Create {
+                    name: "site".into(),
+                    owner: None,
+                    public: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo visibility r1 private").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Visibility {
+                    id: "r1".into(),
+                    public: false
+                }
+            })
+        );
+        assert!(parsed("repo visibility r1 internal").is_err());
+        assert!(parsed("repo list --public").is_err());
         assert_eq!(
             parsed("repo delete r1 --confirm demo").ok(),
             Some(Command::Repo {
