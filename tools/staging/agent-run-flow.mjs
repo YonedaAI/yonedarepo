@@ -28,7 +28,7 @@ const b64 = (text) => Buffer.from(text).toString('base64');
 
 /** Runs one agent's container to completion, the time limit or `budget.abort`; returns its
  * outcome. The model credential (if any) is the container's stdin. */
-function runAgent({ task, name, cwd, env, credential, scrub, args, evidence, timeoutMs, budget }) {
+export function runAgent({ task, name, cwd, env, credential, scrub, args, evidence, timeoutMs, budget }) {
   return new Promise((done) => {
     const started = performance.now();
     const child = spawn('docker', args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -66,7 +66,7 @@ function runAgent({ task, name, cwd, env, credential, scrub, args, evidence, tim
 }
 
 /** The spend across agents; past `limit` dollars every run is told to stop. */
-function spendBudget(limit) {
+export function spendBudget(limit) {
   const spent = new Map();
   const listeners = new Set();
   let aborted = false;
