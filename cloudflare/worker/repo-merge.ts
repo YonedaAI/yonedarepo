@@ -231,7 +231,7 @@ export async function moved(ctx: RepoContext, ref: string) {
 }
 
 /** Conflict details, refused outright if any conflict lies outside the caller's grant. */
-async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
+export async function scopedConflict(ctx: RepoContext, conflicts: Json[]) {
   const visible = await keepAllowed(ctx, conflicts);
   return visible.length === conflicts.length ? conflictError(conflicts) : outside();
 }

@@ -71,7 +71,11 @@ const detail = (over: object = {}, ready = false) => ({
   },
   comments: [],
   timeline: [{ version: 3, action: 'moved', before: older, after: head, actor: 'user:ada', at: 4 }],
-  diff: { base: older, head, changes: [{ path: 'src/a.ts', op: 'modify', patch }] },
+  diff: {
+    base: { commit: older, tree: 't' },
+    head: { commit: head, tree: 't' },
+    changes: [{ path: 'src/a.ts', op: 'modify', patch }],
+  },
   ...over,
 });
 const view = () => html(ChangeView, { repo, number: 7 });

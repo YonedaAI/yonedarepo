@@ -16,6 +16,7 @@ import { explicitMerge } from './repo-merge';
 import { ApiError, diff, getObjects, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
+import { rebase } from './repo-rebase';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { readRefs } from './repo-snapshots';
 import { agentView } from './repo-views';
@@ -110,6 +111,7 @@ export const operations: Record<string, Operation> = {
   git_merge: explicitMerge,
   git_revert: (ctx, a) => replay(ctx, a, 'revert'),
   git_cherry_pick: (ctx, a) => replay(ctx, a, 'pick'),
+  git_rebase: rebase,
   git_branch: async (ctx, a) => {
     const moved = await ctx.call({
       op: 'repo_branch_set',
@@ -142,3 +144,13 @@ export const operations: Record<string, Operation> = {
     );
   },
 };
+
+/** `POST branches` (create or move one) and `POST branches/<name>/rebase`; a name may hold
+ * slashes, as path segments or encoded. */
+export async function branchesRoute(ctx: RepoContext, path: string[], body: () => Promise<Json>) {
+  if (path.length > 1 && path.at(-1) === 'rebase') {
+    const branch = path.slice(0, -1).map(decodeURIComponent).join('/');
+    return operations.git_rebase(ctx, { ...(await body().catch(() => ({}))), branch });
+  }
+  return operations.git_branch(ctx, await body());
+}

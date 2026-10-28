@@ -107,6 +107,15 @@ pub fn parse(args: &[String]) -> Result<Command> {
                 branch: p.flag("branch"),
             }
         }
+        "rebase" => {
+            let p = Parsed::new(rest, &with(&["onto"]), &[])?;
+            let branch = p.exactly(1, "rebase <branch> [--onto <b>]")?[0].clone();
+            Command::Rebase {
+                target: p.target(),
+                branch,
+                onto: p.flag("onto"),
+            }
+        }
         "review" => review(rest)?,
         "policy" => policy(rest)?,
         "conflicts" => {
@@ -243,6 +252,18 @@ mod tests {
                 }
             })
         );
+        assert_eq!(
+            parsed("rebase topic/x --onto release --repo r2").ok(),
+            Some(Command::Rebase {
+                target: Target {
+                    origin: None,
+                    repo: Some("r2".into())
+                },
+                branch: "topic/x".into(),
+                onto: Some("release".into())
+            })
+        );
+        assert!(parsed("rebase").is_err());
         assert_eq!(
             parsed("review reject abc -m nope --repo r2").ok(),
             Some(Command::Review {
