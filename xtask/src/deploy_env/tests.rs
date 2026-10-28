@@ -1,4 +1,4 @@
-use super::{Source, Step, steps, with_host_moves};
+use super::{Source, Step, steps, with_consumer_detach, with_host_moves};
 use crate::deploy_guard::{self as guard, Facts, Options};
 use crate::deploy_image::ImagePlan;
 use crate::deploy_live::rollouts;
@@ -504,7 +504,7 @@ fn busy_containers_stop_prod_unless_allowed() {
     assert!(
         error
             .to_string()
-            .contains("2 container instance(s) are busy")
+            .contains("2 container instance(s) are active")
     );
     guard::active_gate(&Env::Prod, "yonedarepo-dev", 0, &confirmed()).unwrap();
     let allow = Options {
@@ -615,4 +615,43 @@ fn the_summary_shows_which_container_apps_rolled_out() {
     );
     let front = workers.iter().find(|w| w.role == "agents").unwrap();
     assert_eq!(rollouts(front, Some(&before), Some(&after)), "-");
+}
+
+#[test]
+fn stale_queue_consumers_are_detached_right_before_each_deploy_and_only_listed_in_a_dry_run() {
+    for dry_run in [false, true] {
+        let workers = prod_workers();
+        let plan = with_consumer_detach(steps(&Env::Prod, &workers, dry_run, &Source::Dockerfile));
+        for index in 0..workers.len() {
+            let deploy = plan
+                .iter()
+                .position(|s| {
+                    *s == Step::Deploy {
+                        worker: index,
+                        dry_run,
+                    }
+                })
+                .unwrap();
+            assert_eq!(
+                plan[deploy - 1],
+                Step::DetachConsumers {
+                    worker: index,
+                    dry_run
+                },
+                "{plan:?}"
+            );
+        }
+        assert_eq!(
+            plan.iter().any(Step::mutates_remote),
+            !dry_run,
+            "a dry run detaches nothing: {plan:?}"
+        );
+    }
+}
+
+#[test]
+fn instances_still_starting_are_reported_but_not_busy() {
+    let info = json!({"health": {"instances": {"active": 1, "assigned": 2, "starting": 4, "scheduling": 1, "stopped": 9}}});
+    assert_eq!(crate::deploy_live::instance_counts(&info), (3, 5));
+    assert_eq!(crate::deploy_live::instance_counts(&json!({})), (0, 0));
 }

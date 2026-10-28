@@ -117,6 +117,15 @@ pub(crate) fn load(env_name: &str, account_id: &str) -> Result<Origin> {
     Ok(origin)
 }
 
+/// The token this process deploys with: `CLOUDFLARE_API_TOKEN`, else the loaded file token.
+/// `None` when wrangler authenticates by its own login.
+pub(crate) fn current() -> Option<String> {
+    std::env::var(TOKEN_VAR)
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| FILE_TOKEN.get().map(|Token(token)| token.clone()))
+}
+
 /// Gives a child process the file token, when one was loaded.
 pub(crate) fn apply(command: &mut Command) {
     if let Some(Token(token)) = FILE_TOKEN.get() {
