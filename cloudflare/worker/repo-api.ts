@@ -10,6 +10,7 @@ import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
+import { sshKeyRoute } from './platform-ssh-keys';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { breakGlass } from './repo-break-glass';
@@ -102,6 +103,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] === 'tokens' && parts.length <= 2)
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));
+  if (parts[0] === 'ssh-keys' && parts.length <= 2)
+    return sshKeyRoute(env, auth, req.method, parts[1], () => bodyOf(req));
   if (
     parts[0] === 'device' &&
     parts[1] === 'approve' &&
