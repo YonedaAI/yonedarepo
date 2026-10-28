@@ -310,9 +310,7 @@ describe('sessions behind a change', () => {
       data: list([session(3, head, 'second'), session(2, older, 'first'), session(1, head, 'x')]),
     });
     const page = sessions();
-    expect(state.paths).toContain(
-      `/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`,
-    );
+    expect(state.paths).toContain(`/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`);
     expect(page.indexOf('second')).toBeLessThan(page.indexOf('first'));
     expect(page.match(/<h4>/g)).toHaveLength(2);
     expect(page).toContain('summary 1');

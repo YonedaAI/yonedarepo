@@ -47,9 +47,7 @@ export function CommitSessions({
   navigate: Navigate;
   heading?: string;
 }) {
-  const loaded = useSource<{ sessions: Listed[] }>(
-    `/repos/${repo}/commits/${commit}/sessions`,
-  );
+  const loaded = useSource<{ sessions: Listed[] }>(`/repos/${repo}/commits/${commit}/sessions`);
   return (
     <section aria-label={heading}>
       <h3>{heading}</h3>
