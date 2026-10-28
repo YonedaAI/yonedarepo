@@ -16,6 +16,9 @@ pub mod transport;
 pub mod txlog;
 /// MCP tools of the source platform (`/api/v1/repos/:id/mcp`), named after Git verbs.
 pub const PLATFORM_MCP_TOOLS: &str = include_str!("platform_tools.json");
+/// Provider registry shared with the TypeScript side through `shared/`; this JSON is the
+/// single source of truth.
+pub const PROVIDER_REGISTRY: &str = include_str!("provider_registry.json");
 pub mod blame;
 pub mod merge;
 #[cfg(test)]
@@ -105,6 +108,24 @@ mod tests {
             assert!(!tool["description"].as_str().unwrap().is_empty());
             assert_eq!(tool["inputSchema"]["type"], "object");
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);
+        }
+    }
+    #[test]
+    fn provider_registry_entries_carry_the_required_contract_keys() {
+        let providers: Vec<serde_json::Value> = serde_json::from_str(PROVIDER_REGISTRY).unwrap();
+        assert!(!providers.is_empty());
+        for provider in &providers {
+            for key in [
+                "id",
+                "name",
+                "harness",
+                "protocol",
+                "api_base",
+                "default_model",
+                "models",
+            ] {
+                assert!(provider.get(key).is_some(), "{key} missing in {provider:?}");
+            }
         }
     }
     #[test]
