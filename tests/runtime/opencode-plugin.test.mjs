@@ -107,3 +107,31 @@ test('does nothing without the yoneda CLI', async () => {
     else process.env.YONEDA_BIN = saved;
   }
 });
+
+test('with YONEDA_AGENT_WORKDIR, a session in any other directory is refused every call', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yoneda-opencode-'));
+  const fake = fakeYoneda(dir);
+  const log = join(dir, 'hooks.jsonl');
+  const saved = { bin: process.env.YONEDA_BIN, workdir: process.env.YONEDA_AGENT_WORKDIR, log: process.env.YONEDA_HOOK_LOG };
+  Object.assign(process.env, { YONEDA_BIN: fake.bin, YONEDA_AGENT_WORKDIR: '/work', YONEDA_HOOK_LOG: log });
+  try {
+    // opencode took the operator's checkout from $PWD (2026-10-28).
+    const misplaced = fakeOpencode('/Users/operator/yonedarepo');
+    await plugin.default.setup(misplaced.ctx);
+    await assert.rejects(misplaced.hooks['session.context'](modelCall('s1')), /is not \/work; refusing/);
+    for (const tool of ['shell', 'bash', 'read', 'edit', 'write'])
+      await assert.rejects(misplaced.hooks['tool.execute.before']({ tool, sessionID: 's1', input: { command: 'git push origin main' } }), /refusing/);
+    assert.equal(misplaced.hooks['tool.execute.after'], undefined);
+    assert.match(readFileSync(log, 'utf8'), /"event":"opencode-guard".*"cwd":"\/Users\/operator\/yonedarepo","expected":"\/work"/);
+
+    const pinned = fakeOpencode('/work/');
+    await plugin.default.setup(pinned.ctx);
+    await pinned.hooks['tool.execute.before']({ tool: 'read', sessionID: 's2', input: { path: 'x' } });
+    assert.equal(readFileSync(log, 'utf8').match(/opencode-guard/g).length, 1, 'the clone itself is allowed');
+  } finally {
+    for (const [name, value] of [['YONEDA_BIN', saved.bin], ['YONEDA_AGENT_WORKDIR', saved.workdir], ['YONEDA_HOOK_LOG', saved.log]])
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

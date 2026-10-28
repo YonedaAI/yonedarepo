@@ -4,7 +4,7 @@
 // context).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { costOf, MAX_AGENTS, opencodeArgs, opencodeConfig, printable, prompt, tasks, verdict } from '../../tools/staging/agent-run-plan.mjs';
+import { costOf, MAX_AGENTS, opencodeArgs, printable, prompt, tasks, verdict } from '../../tools/staging/agent-run-plan.mjs';
 
 test('each agent gets its own function, and waves never repeat one', () => {
   const first = tasks(4, 1);
@@ -22,13 +22,10 @@ test('each agent gets its own function, and waves never repeat one', () => {
   assert.match(text, /Never force-push/);
 });
 
-test('the printed command names environment variables, never their values', () => {
+test('the opencode command, quoted for the evidence file', () => {
   const args = opencodeArgs({ model: 'zai-coding-plan/glm-5.3', title: 'kit w1a1', text: "add it's" });
   assert.deepEqual(args.slice(0, 7), ['run', '--standalone', '--auto', '--format', 'json', '--model', 'zai-coding-plan/glm-5.3']);
-  const line = printable({ dir: '/tmp/a b', envNames: ['YONEDA_TOKEN', 'OPENCODE_CONFIG_CONTENT'], args });
-  assert.equal(line, "cd '/tmp/a b' && YONEDA_TOKEN=… OPENCODE_CONFIG_CONTENT=… opencode run --standalone --auto --format json --model zai-coding-plan/glm-5.3 --title 'kit w1a1' 'add it'\\''s'");
-  assert.deepEqual(JSON.parse(opencodeConfig('/p/yoneda', false)), { plugins: [{ package: '/p/yoneda' }] });
-  assert.deepEqual(JSON.parse(opencodeConfig('/p/yoneda', true)), {});
+  assert.equal(printable(['opencode', ...args]), "opencode run --standalone --auto --format json --model zai-coding-plan/glm-5.3 --title 'kit w1a1' 'add it'\\''s'");
 });
 
 test('a run costs the highest cost each message reported, summed', () => {

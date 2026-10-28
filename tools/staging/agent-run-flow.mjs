@@ -1,47 +1,47 @@
-// Item 29 of the staging kit (L3 of the agent e2e strategy, real agents, paid): N local
-// opencode agents (GLM by default) in separate yoneda:: clones of one fresh repository, each
-// adding its own function to src/util.js and its own line to CHANGELOG.md (overlapping files)
-// and pushing to main at the same time; then a second wave does the same. Each agent runs
-// `opencode run --standalone` with the yoneda plugin from this checkout (session context,
-// declared reads, session records) and its own repository token. Afterwards a fresh clone of
-// main must hold every agent's function and line (no lost writes), no merge commit made in a
-// clone (server merges of concurrent pushes are the platform's), a session record on every
-// agent commit, and each second-wave agent's start context must name a first-wave session.
-// Caps: a per-agent time limit and a spend budget over every agent's reported cost (the runs
-// are killed when it is exceeded). Evidence per agent in .local/staging/agents-<ts>/: the
-// exact command (environment names only), opencode's JSON events and the plugin's hook log.
-// The repository is deleted.
+// Item 29 of the staging kit (L3 of the agent e2e strategy, real agents, paid): N opencode
+// agents (GLM by default) in separate yoneda:: clones of one fresh repository, each adding its
+// own function to src/util.js and its own line to CHANGELOG.md (overlapping files) and pushing
+// to main at the same time; then a second wave does the same. Each agent runs
+// `opencode run --standalone` with the yoneda plugin (session context, declared reads, session
+// records) and its own repository token, only ever in its own sandbox container
+// (agent-sandbox.mjs): its clone is the only host path it sees, it gets no host environment,
+// configuration or credential but the model's (on stdin), and egress cannot reach the host or
+// the LAN. The host checkouts and their remotes are snapshotted before the agents start and
+// compared afterwards: any change fails the item loudly. Afterwards a fresh clone of main must
+// hold every agent's function and line (no lost writes), no merge commit made in a clone
+// (server merges of concurrent pushes are the platform's), a session record on every agent
+// commit, and each second-wave agent's start context must name a first-wave session.
+// Caps: a per-agent time limit and a spend budget over every agent's reported cost (the
+// containers are killed when it is exceeded). Evidence per agent in .local/staging/agents-<ts>/:
+// the exact docker command (environment names only), opencode's JSON events and the plugin's
+// hook log. The repository is deleted.
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { costOf, opencodeArgs, opencodeConfig, printable, prompt, tasks, verdict } from './agent-run-plan.mjs';
+import { costOf, opencodeArgs, printable, prompt, tasks, verdict } from './agent-run-plan.mjs';
+import { clientEnv, FAKE_OPENCODE, GUARD_EXIT, HOOK_LOG, hostDrift, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from './agent-sandbox.mjs';
+import { buildSandbox, dockerAvailable, hostState, modelCredential } from './agent-sandbox-host.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
-const NO_SESSION = { YONEDA_SESSION_ID: '', OPENCODE_SESSION_ID: '' };
 
-/** Whether the yoneda plugin is installed in opencode's global plugin directory. */
-function installedGlobally() {
-  const base = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
-  return existsSync(join(base, 'opencode/plugins/yoneda/index.ts'));
-}
-
-/** Runs one agent to completion, the time limit or `budget.abort`; returns its outcome. */
-function runAgent({ task, dir, env, scrub, args, evidence, timeoutMs, budget }) {
+/** Runs one agent's container to completion, the time limit or `budget.abort`; returns its
+ * outcome. The model credential (if any) is the container's stdin. */
+function runAgent({ task, name, cwd, env, credential, scrub, args, evidence, timeoutMs, budget }) {
   return new Promise((done) => {
     const started = performance.now();
-    const child = spawn('opencode', args, { cwd: dir, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('docker', args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
+    child.stdin.on('error', () => {});
+    child.stdin.end(credential ?? '');
     const lines = [];
     let partial = '';
     let stderr = '';
     let reason = null;
     const kill = (why) => {
       reason ??= why;
-      try {
-        process.kill(-child.pid, 'SIGKILL');
-      } catch {}
+      spawnSync('docker', ['kill', name], { env, stdio: 'ignore' });
+      child.kill('SIGKILL');
     };
     const timer = setTimeout(() => kill(`time limit ${timeoutMs / 1000} s`), timeoutMs);
     const offBudget = budget.onAbort(() => kill('spend budget reached'));
@@ -91,12 +91,45 @@ function spendBudget(limit) {
   };
 }
 
-/** 29: `agents` agents, then `wave2` more, on one repository; see the header. */
-export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeoutS = 600, budgetUsd = 2 }, metrics) {
+/** The host checkouts' and remotes' changes since `before`, as problems ([] when none). */
+async function hostProblems(before, watched) {
+  try {
+    return hostDrift(before, await hostState(watched));
+  } catch (e) {
+    return [`the host could not be re-checked after the run: ${e.message}`];
+  }
+}
+
+/**
+ * 29: `agents` agents, then `wave2` more, on one repository; see the header. `fake`: the image's
+ * scripted stand-in for opencode instead of opencode (tests/agents/e2e.mjs, no model).
+ */
+export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeoutS = 600, budgetUsd = 2, fake = false }, metrics) {
   if (!kit.token) return { skip: 'No PAT (item 12)' };
-  const version = spawnSync('opencode', ['--version'], { encoding: 'utf8' });
-  if (version.status !== 0) return { skip: 'opencode is not on PATH' };
-  Object.assign(metrics, { opencode: version.stdout.trim(), model, agents, wave2, time_limit_s: timeoutS, budget_usd: budgetUsd });
+  if (!dockerAvailable()) return { skip: 'Docker is not available, and agents run only in the sandbox' };
+  const credential = fake ? null : await modelCredential(model, kit.dir);
+  const sandbox = await buildSandbox(root);
+  Object.assign(metrics, { opencode: fake ? 'scripted (fake-opencode)' : sandbox.opencode, sandbox: sandbox.image.slice(0, 19), model, agents, wave2, time_limit_s: timeoutS, budget_usd: budgetUsd });
+  // Every checkout this process could be confused with, and their remotes, before any agent.
+  const watched = [root, process.cwd(), process.env.PWD];
+  const before = await hostState(watched);
+  metrics.host_checkouts = Object.keys(before.checkouts).length;
+  metrics.host_remotes = Object.keys(before.remotes).length;
+  const containers = [];
+  try {
+    await agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image: sandbox.image, containers }, metrics);
+  } finally {
+    for (const name of containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    const drift = await hostProblems(before, watched);
+    metrics.host_unchanged = drift.length === 0;
+    if (drift.length) {
+      console.error(`\n!!! HOST CHANGED DURING THE AGENT RUN (item 29) !!!\n${drift.map((d) => `  - ${d}`).join('\n')}\n`);
+      assert.fail(`HOST CHANGED during the agent run: ${drift.join('; ')}`);
+    }
+  }
+}
+
+async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image, containers }, metrics) {
   const api = kit.pat();
   const name = `kit-agents-${Date.now()}`;
   const files = [
@@ -109,12 +142,13 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   const evidence = join(root, `.local/staging/agents-${Date.now()}`);
   mkdirSync(evidence, { recursive: true });
   metrics.evidence = evidence;
-  const pluginDir = join(root, 'plugins/opencode/yoneda');
-  const config = opencodeConfig(pluginDir, installedGlobally());
+  const { origin, hostPort } = sandboxOrigin(kit.api);
+  const remote = kit.remote(repo, origin);
   const budget = spendBudget(budgetUsd);
-  const tokens = [];
+  const secrets = credential ? JSON.parse(credential).map((e) => e.value?.key ?? e.value?.access).filter(Boolean) : [];
+  const scrub = (text) => secrets.reduce((t, secret) => t.split(secret).join('[secret]'), kit.scrub(text));
 
-  /** One wave: clones and repository tokens, then every agent at once. */
+  /** One wave: clones and repository tokens, then every agent's container at once. */
   const wave = async (list) => {
     const runs = [];
     for (const task of list) {
@@ -122,29 +156,27 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
       await kit.ok('git', ['clone', '-q', kit.remote(repo), dir]);
       await kit.gitOk(dir, 'config', 'user.name', `Kit agent ${task.agent}`);
       await kit.gitOk(dir, 'config', 'user.email', task.email);
+      // The URL the platform has from inside the container; the sandbox refuses any other.
+      await kit.gitOk(dir, 'remote', 'set-url', 'origin', remote);
       const minted = await api.post(`/repos/${repo}/tokens`, { name: `kit-${task.agent}`, scopes: ['read', 'write', 'land'] });
-      tokens.push(minted.token);
-      // opencode keeps its own configuration and credentials (no XDG_CONFIG_HOME override);
-      // the CLI and Git get this agent's repository token and the kit's Git config.
-      const extra = {
-        ...NO_SESSION,
-        PATH: `${kit.bin}:${process.env.PATH}`,
-        GIT_CONFIG_GLOBAL: kit.gitConfig,
-        GIT_CONFIG_NOSYSTEM: '1',
-        GIT_TERMINAL_PROMPT: '0',
-        YONEDA_ORIGIN: kit.api,
-        YONEDA_TOKEN: minted.token,
-        YONEDA_HOOK_LOG: join(evidence, `${task.agent}.hooks.jsonl`),
-        OPENCODE_CONFIG_CONTENT: config,
-      };
-      const scrub = (text) => tokens.reduce((t, secret) => t.split(secret).join('[token]'), kit.scrub(text));
-      const args = opencodeArgs({ model, title: `kit ${task.agent}`, text: prompt(task) });
-      const command = printable({ dir, envNames: Object.keys(extra), args });
-      writeFileSync(join(evidence, `${task.agent}.command.txt`), `${command}\n`);
-      console.log(`  ${task.agent}: ${command}`);
-      runs.push({ task, dir, env: { ...process.env, ...extra }, scrub, args, evidence, timeoutMs: timeoutS * 1000, budget });
+      secrets.push(minted.token);
+      const env = sandboxEnv({ origin, token: minted.token, remote, hostPort, credential });
+      const container = `yoneda-kit-${task.agent}-${Date.now().toString(36)}`;
+      containers.push(container);
+      const command = [...(fake ? FAKE_OPENCODE : ['opencode']), ...opencodeArgs({ model, title: `kit ${task.agent}`, text: prompt(task) })];
+      const args = sandboxArgs({ name: container, clone: realpathSync(dir), env, command, image });
+      const line = printable(['docker', ...args]);
+      writeFileSync(join(evidence, `${task.agent}.command.txt`), `${line}\n`);
+      console.log(`  ${task.agent}: ${line.slice(0, 300)}…`);
+      runs.push({ task, name: container, cwd: kit.path(), env: clientEnv(process.env, env), credential, scrub, args, evidence, timeoutMs: timeoutS * 1000, budget });
     }
-    return Promise.all(runs.map(runAgent));
+    const done = await Promise.all(runs.map(runAgent));
+    // The plugin's hook log, written inside the clone (the container's only mount).
+    for (const { task } of runs) {
+      const log = join(kit.path(`agent-${task.agent}`), HOOK_LOG.slice(WORKDIR.length + 1));
+      if (existsSync(log)) writeFileSync(join(evidence, `${task.agent}.hooks.jsonl`), scrub(readFileSync(log, 'utf8')));
+    }
+    return done;
   };
 
   const first = tasks(agents, 1);
@@ -197,5 +229,10 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   if (silent.length) judged.problems.unshift(`the yoneda plugin made no hook call in ${silent.map((t) => t.agent).join(', ')} (not loaded?)`);
   const failed = outcomes.filter((o) => o.killed || o.code !== 0);
   if (failed.length) judged.problems.unshift(`${failed.length} agent run(s) did not finish: ${failed.map((o) => `${o.agent} ${o.killed ?? `exit ${o.code}`} ${o.stderr.split('\n').pop()}`).join('; ')}`);
+  // A sandbox guard refusal: the clone or opencode's directory was not what the kit set up.
+  const guarded = outcomes.filter((o) => o.code === GUARD_EXIT).map((o) => o.agent);
+  for (const t of all)
+    if (existsSync(join(evidence, `${t.agent}.hooks.jsonl`)) && readFileSync(join(evidence, `${t.agent}.hooks.jsonl`), 'utf8').includes('"event":"opencode-guard"')) guarded.push(t.agent);
+  if (guarded.length) judged.problems.unshift(`the sandbox guard refused ${[...new Set(guarded)].join(', ')} (wrong clone, origin or directory)`);
   assert.ok(judged.problems.length === 0, judged.problems.join('; '));
 }

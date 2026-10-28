@@ -48,17 +48,11 @@ export function opencodeArgs({ model, title, text }) {
   return ['run', '--standalone', '--auto', '--format', 'json', '--model', model, '--title', title, text];
 }
 
-/** The opencode configuration a run gets through OPENCODE_CONFIG_CONTENT: the plugin from
- * this checkout, unless it is installed globally already (two copies of one id fail). */
-export function opencodeConfig(pluginDir, installed) {
-  return JSON.stringify(installed ? {} : { plugins: [{ package: pluginDir }] });
-}
-
 const quote = (arg) => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", "'\\''")}'`);
 
-/** The command line to print and keep as evidence: environment names only, never values. */
-export function printable({ dir, envNames, args }) {
-  return `cd ${quote(dir)} && ${envNames.map((n) => `${n}=…`).join(' ')} opencode ${args.map(quote).join(' ')}`;
+/** The command line to print and keep as evidence (its arguments carry no secret value). */
+export function printable(argv) {
+  return argv.map(quote).join(' ');
 }
 
 /** Dollars an opencode JSON event stream reports: each message's highest `cost` (messages

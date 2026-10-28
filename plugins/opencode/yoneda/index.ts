@@ -16,6 +16,9 @@
 //     under `opencode:<sessionID>`.
 // Outside such a clone, or without the yoneda CLI on PATH, it does nothing. A hook failure
 // never blocks the session (only a push refusal does, by design).
+// With YONEDA_AGENT_WORKDIR set (the staging kit's agent sandbox), a session whose directory
+// is anything else is refused every tool call and model call: opencode takes its directory
+// from $PWD, so a wrong one means the agent would work in someone else's checkout.
 // Install: `yoneda setup opencode` (this file to ~/.config/opencode/plugins/yoneda/, the
 // MCP server into opencode.json), or see ../AGENTS.md.
 import { spawn } from 'node:child_process';
@@ -136,6 +139,18 @@ export default {
   id: 'yoneda',
   async setup(ctx: Context) {
     const cwd = ctx.location.directory;
+    const pinned = process.env.YONEDA_AGENT_WORKDIR;
+    if (pinned && cwd.replace(/\/$/, '') !== pinned.replace(/\/$/, '')) {
+      const refusal = `yoneda: this session's directory ${cwd} is not ${pinned}; refusing to work here`;
+      logHook({ event: 'opencode-guard', payload: { cwd, expected: pinned }, output: refusal });
+      console.error(refusal);
+      const refuse = async () => {
+        throw new Error(refusal);
+      };
+      await ctx.session.hook('context', refuse);
+      await ctx.tool.hook('execute.before', refuse);
+      return async () => {};
+    }
     const contexts = new Map<string, Promise<string>>();
     const models = new Map<string, string>();
     const stops = new Map<string, Promise<void>>();
