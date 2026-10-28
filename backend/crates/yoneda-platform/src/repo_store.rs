@@ -10,7 +10,10 @@ pub(crate) mod auth;
 mod bisect;
 mod branches;
 mod break_glass;
+mod change_comments;
+mod change_hooks;
 mod change_records;
+mod changes;
 mod changesets;
 mod checkpoints;
 mod checks;
@@ -95,6 +98,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         }
         "repo_check" => actor.require("check"),
         "repo_session_record" => actor.require("write"),
+        "repo_change_create" | "repo_change_close" | "repo_change_reopen" => actor.require("write"),
+        // Reviewers discuss a change as well as writers.
+        "repo_change_comment" => actor.require_any(&["write", "review"]),
         "repo_check_request" | "repo_bisect_start" => actor.require_any(&["write", "check"]),
         // The check executor advances bisects as results arrive.
         "repo_bisect_step" => actor.require_any(&["write", "check", "system"]),
@@ -218,6 +224,12 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_check_request" => checks::request_op(db, c, principal, &settings),
         "repo_session_record" => sessions::record(db, c, &actor),
         "repo_sessions" => sessions::list(db, c, &actor),
+        "repo_change_create" => changes::create(db, c, &actor),
+        "repo_changes" => changes::list(db, c, &actor),
+        "repo_change_show" => changes::show(db, c, &actor, &settings),
+        "repo_change_comment" => change_comments::comment(db, c, &actor),
+        "repo_change_close" => changes::set_open(db, c, &actor, false),
+        "repo_change_reopen" => changes::set_open(db, c, &actor, true),
         "repo_check_claim" => checks::claim(db, c),
         "repo_check_release" => checks::release(db, c),
         "repo_check_run" => checks::run_op(db, c),

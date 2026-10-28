@@ -4,6 +4,7 @@
 //! commit, which lands as one log entry, so 100 concurrent landings cost a few round
 //! trips instead of 100 racing merges. The lease orders merge construction; it never
 //! blocks commits, reads or other branches.
+use super::changes;
 use super::land::append;
 use super::land_tickets::{finish, status};
 use super::merging::{self, MERGE_PRINCIPAL};
@@ -216,6 +217,7 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
                         "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING",
                         &[json!(commit.id.hex()), json!(refname), entry["version"].clone(), json!(now)],
                     )?;
+                    changes::landed(db, &commit.id, &refname, current_version(db)?, now)?;
                 }
                 entry
             }

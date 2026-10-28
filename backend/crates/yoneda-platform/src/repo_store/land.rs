@@ -1,8 +1,8 @@
 //! Landing moves a branch with a compare-and-swap and appends one hash-chained log entry.
 //! There is no merge lock: if the branch moved, `merging` decides between a conflict
 //! (stale read), a platform merge commit, or a stale parent.
-use super::merging;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
+use super::{changes, merging};
 use crate::storage::{SqlStore, number};
 use serde_json::{Value, json};
 use yoneda_core::{
@@ -174,6 +174,7 @@ pub(super) fn write_entry_with<S: SqlStore>(
             json!(entry.committed_at_ms),
         ],
     )?;
+    changes::landed(db, &commit.id, refname, version, entry.committed_at_ms)?;
     Ok(entry)
 }
 
@@ -280,6 +281,13 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
                 result["version"].clone(),
                 c["now"].clone(),
             ],
+        )?;
+        changes::landed(
+            db,
+            &commit.id,
+            &refname,
+            current_version(db)?,
+            number(c, "now")?,
         )?;
         result["merged"] = json!(commit.id);
         return Ok(result);
