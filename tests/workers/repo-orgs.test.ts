@@ -116,6 +116,23 @@ it('an org team member pushes and leaving the team refuses them within the acces
   expect((await api(`${repo}?confirm=app`, alice, { method: 'DELETE' })).body).toMatchObject({ deleted: true });
 });
 
+it('an org-limited token lists only its organization', async () => {
+  const carol = { cookie: await signup('orgs_carol') };
+  for (const name of ['carol_one', 'carol_two']) await api('/orgs', carol, { body: { name } });
+  const token = async (org?: string) =>
+    (await api('/tokens', carol, { body: { name: `t-${org ?? 'all'}`, scopes: ['repo:read'], ...(org ? { org } : {}) } })).body
+      .token as string;
+  const limited = await api('/orgs', { token: await token('carol_one') });
+  expect(limited.status).toBe(200);
+  expect(limited.body.orgs).toEqual([{ org: 'carol_one', role: 'owner' }]);
+  const all = await api('/orgs', { token: await token() });
+  expect(all.body.orgs.map((o: any) => o.org).sort()).toEqual(['carol_one', 'carol_two']);
+  // Still limited everywhere else: the other org, and creating one.
+  const one = await token('carol_one');
+  expect((await api('/orgs/carol_two', { token: one })).status).toBe(403);
+  expect((await api('/orgs', { token: one }, { body: { name: 'carol_three' } })).status).toBe(403);
+});
+
 it('serves organizations over the account MCP', async () => {
   const carol = { cookie: await signup('orgs_carol') };
   await signup('orgs_dave');
