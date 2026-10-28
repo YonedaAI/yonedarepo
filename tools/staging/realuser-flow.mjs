@@ -26,6 +26,27 @@ import { realuserChange, realuserReads } from './realuser-product.mjs';
 
 const PROTECTED = ['refs/heads/main', 'refs/heads/dev'];
 
+/** `repo`'s refs as of its current log version: GET /refs alone is a snapshot up to 2 s old
+ * (repo-snapshots.ts), which named branches this run had just deleted as left over. */
+async function freshRefs(owner, repo) {
+  const { version } = await owner.get(`/repos/${repo}`);
+  return (await owner.get(`/repos/${repo}/refs?min_version=${version}`)).refs;
+}
+
+/** Deletes this run's scratch branches of `repo` at their current heads (one retry when a
+ * head moved in between); returns how many, or throws with the platform's refusal. */
+export async function deleteScratch(owner, repo, ts) {
+  for (let attempt = 1; ; attempt++) {
+    const left = leftovers(await freshRefs(owner, repo), ts).filter((l) => l.ref.startsWith('refs/heads/'));
+    for (const { ref } of left) scratch(ref, ts);
+    if (!left.length) return 0;
+    const done = await owner.raw('POST', `/repos/${repo}/refs/batch`, { updates: left.map(({ ref, commit }) => ({ ref, commit: null, expected: commit })) });
+    if (done.ok) return left.length;
+    const refusal = `${done.status} ${done.body?.error?.code ?? ''} ${done.body?.error?.message ?? ''}`.trim();
+    if (attempt >= 2 || done.body?.error?.code !== 'STALE_HEAD') throw new Error(`refs/batch refused: ${refusal}`);
+  }
+}
+
 /** Signs the owner in (never signs up); returns the cookie. */
 async function ownerLogin(origin, username, password) {
   const login = await new Session(origin).raw('POST', '/api/auth/login', { username, password });
@@ -151,17 +172,14 @@ async function cleanup(ctx, { before, protectedBefore, revoke, root }, m) {
   m.branches_deleted = 0;
   for (const repo of ctx.touched)
     await attempt(`delete scratch branches of ${repo}`, async () => {
-      const left = leftovers((await owner.get(`/repos/${repo}/refs`)).refs, ts).filter((l) => l.ref.startsWith('refs/heads/'));
-      for (const { ref } of left) scratch(ref, ts);
-      if (left.length) await owner.post(`/repos/${repo}/refs/batch`, { updates: left.map(({ ref, commit }) => ({ ref, commit: null, expected: commit })) });
-      m.branches_deleted += left.length;
+      m.branches_deleted += await deleteScratch(owner, repo, ts);
     });
   await attempt('delete tokens', revoke);
   const tags = [];
   const warnings = [];
   for (const [repo, was] of protectedBefore)
     await attempt(`check ${repo}`, async () => {
-      const refs = (await owner.get(`/repos/${repo}/refs`)).refs;
+      const refs = await freshRefs(owner, repo);
       const { entries } = await owner.get(`/repos/${repo}/txlog?after=${was.version}&limit=500`);
       const moved = protectedMoves({ repo, refs: PROTECTED, was: was.refs, now: refs, entries, ts });
       problems.push(...moved.problems);
