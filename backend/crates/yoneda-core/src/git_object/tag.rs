@@ -114,7 +114,7 @@ mod tests {
             name: "Ada".into(),
             email: "ada@example.com".into(),
             seconds: 1_700_000_000,
-            offset: "+0000".into(),
+            offset: crate::git_object::TzOffset::UTC,
         }
     }
 

@@ -17,11 +17,12 @@ mod protocol;
 mod protocol_v2;
 mod push_batch;
 mod rewrite;
+mod signature;
 mod smart_http;
 mod tag;
 mod tree;
 
-pub use commit::{Commit, Signature};
+pub use commit::{Commit, CommitHeader};
 pub use delta::{apply_delta, delta_result_size};
 pub use delta_encode::encode_delta;
 pub use diff::{TreeChange, Walk, diff_trees};
@@ -39,6 +40,7 @@ pub use protocol_v2::{
 };
 pub use push_batch::{combine_receive_pack_requests, split_receive_pack_report};
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};
+pub use signature::{Signature, TzOffset};
 pub use smart_http::{
     CommandList, FLUSH, Packet, RefCommand, UploadRequest, advertisement, command_list, next_pkt,
     pkt_line, report_status, side_band, upload_request, valid_ref_name,

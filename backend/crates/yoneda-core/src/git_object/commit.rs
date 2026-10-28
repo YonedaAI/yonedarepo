@@ -1,57 +1,92 @@
-use super::{ObjectId, ObjectKind, hash_object, invalid};
+use super::{ObjectId, ObjectKind, Signature, hash_object, invalid};
 use crate::Result;
+use std::borrow::Cow;
 
-/// An author or committer identity line: `Name <email> <seconds> <+hhmm>`.
+/// One commit header, named as Git names it. Values are the header text with continuation
+/// lines joined by `\n`.
+///
+/// Decoding is lossless, so a header keeps the exact bytes that make the commit's id:
+/// - `Author` and `Committer` keep their validated line rather than a [`Signature`], since
+///   Git writes spellings (a zero-padded time) that re-encoding one would change;
+///   [`Commit::author`] and [`Commit::committer`] parse it.
+/// - `Other` holds unrecognised headers and the value of a recognised one that does not fit
+///   its variant (an `encoding` that is not UTF-8, a second `tree` that is not an id),
+///   which Git keeps rather than refuses.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Signature {
-    pub name: String,
-    pub email: String,
-    pub seconds: i64,
-    /// Timezone offset exactly as Git writes it, e.g. `+0100`.
-    pub offset: String,
+pub enum CommitHeader {
+    Tree(ObjectId),
+    Parent(ObjectId),
+    Author(String),
+    Committer(String),
+    Encoding(String),
+    /// An embedded signed tag of a merged parent.
+    Mergetag(Vec<u8>),
+    Gpgsig(Vec<u8>),
+    GpgsigSha256(Vec<u8>),
+    Other(String, Vec<u8>),
 }
 
-impl Signature {
-    pub(super) fn encode(&self) -> Result<String> {
-        let unsafe_text = |s: &str| s.contains(['<', '>', '\n', '\0']);
-        if unsafe_text(&self.name) || unsafe_text(&self.email) || self.name.trim() != self.name {
-            return Err(invalid(
-                "Signature name or email contains reserved characters",
-            ));
+impl CommitHeader {
+    pub fn key(&self) -> &str {
+        match self {
+            Self::Tree(_) => "tree",
+            Self::Parent(_) => "parent",
+            Self::Author(_) => "author",
+            Self::Committer(_) => "committer",
+            Self::Encoding(_) => "encoding",
+            Self::Mergetag(_) => "mergetag",
+            Self::Gpgsig(_) => "gpgsig",
+            Self::GpgsigSha256(_) => "gpgsig-sha256",
+            Self::Other(key, _) => key,
         }
-        let offset = self.offset.as_bytes();
-        if offset.len() != 5
-            || !matches!(offset[0], b'+' | b'-')
-            || !offset[1..].iter().all(u8::is_ascii_digit)
-        {
-            return Err(invalid("Signature offset must look like +hhmm"));
-        }
-        Ok(format!(
-            "{} <{}> {} {}",
-            self.name, self.email, self.seconds, self.offset
-        ))
     }
-    pub(super) fn parse(line: &str) -> Result<Self> {
-        let bad = || invalid("Malformed signature line");
-        let (ident, when) = line.rsplit_once("> ").ok_or_else(bad)?;
-        let (name, email) = ident.rsplit_once(" <").ok_or_else(bad)?;
-        let (seconds, offset) = when.split_once(' ').ok_or_else(bad)?;
-        let signature = Self {
-            name: name.to_owned(),
-            email: email.to_owned(),
-            seconds: seconds.parse().map_err(|_| bad())?,
-            offset: offset.to_owned(),
-        };
-        signature.encode()?;
-        Ok(signature)
+
+    pub fn value(&self) -> Cow<'_, [u8]> {
+        match self {
+            Self::Tree(id) | Self::Parent(id) => Cow::Owned(id.hex().into_bytes()),
+            Self::Author(text) | Self::Committer(text) | Self::Encoding(text) => {
+                Cow::Borrowed(text.as_bytes())
+            }
+            Self::Mergetag(value)
+            | Self::Gpgsig(value)
+            | Self::GpgsigSha256(value)
+            | Self::Other(_, value) => Cow::Borrowed(value),
+        }
+    }
+
+    /// Types a decoded header. `first` marks the header that must be the commit's tree.
+    fn decode(key: String, value: Vec<u8>, first: bool) -> Result<Self> {
+        let id = |value: &[u8]| ObjectId::parse(text(value)?);
+        Ok(match key.as_str() {
+            "tree" if first => Self::Tree(id(&value)?),
+            "tree" => match id(&value) {
+                Ok(tree) => Self::Tree(tree),
+                Err(_) => Self::Other(key, value),
+            },
+            "parent" => Self::Parent(id(&value)?),
+            "author" => Self::Author(text(&value)?.to_owned()),
+            "committer" => Self::Committer(text(&value)?.to_owned()),
+            "encoding" => match String::from_utf8(value) {
+                Ok(encoding) => Self::Encoding(encoding),
+                Err(e) => Self::Other(key, e.into_bytes()),
+            },
+            "mergetag" => Self::Mergetag(value),
+            "gpgsig" => Self::Gpgsig(value),
+            "gpgsig-sha256" => Self::GpgsigSha256(value),
+            _ => Self::Other(key, value),
+        })
     }
 }
 
-/// A commit kept as its ordered raw headers and message, so decoding is lossless
+fn text(value: &[u8]) -> Result<&str> {
+    std::str::from_utf8(value).map_err(|_| invalid("Commit header value must be UTF-8"))
+}
+
+/// A commit kept as its ordered typed headers and message, so decoding is lossless
 /// (including `gpgsig`, `encoding` and other headers YonedaRepo does not interpret).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Commit {
-    headers: Vec<(String, Vec<u8>)>,
+    headers: Vec<CommitHeader>,
     message: Vec<u8>,
 }
 
@@ -64,12 +99,10 @@ impl Commit {
         committer: &Signature,
         message: &str,
     ) -> Result<Self> {
-        let mut headers = vec![("tree".to_owned(), tree.hex().into_bytes())];
-        for parent in parents {
-            headers.push(("parent".to_owned(), parent.hex().into_bytes()));
-        }
-        headers.push(("author".to_owned(), author.encode()?.into_bytes()));
-        headers.push(("committer".to_owned(), committer.encode()?.into_bytes()));
+        let mut headers = vec![CommitHeader::Tree(tree)];
+        headers.extend(parents.iter().copied().map(CommitHeader::Parent));
+        headers.push(CommitHeader::Author(author.encode()?));
+        headers.push(CommitHeader::Committer(committer.encode()?));
         let mut message = message.as_bytes().to_vec();
         if !message.ends_with(b"\n") {
             message.push(b'\n');
@@ -82,10 +115,10 @@ impl Commit {
             .windows(2)
             .position(|w| w == b"\n\n")
             .ok_or_else(|| invalid("Commit lacks a header terminator"))?;
-        let mut headers: Vec<(String, Vec<u8>)> = Vec::new();
+        let mut raw: Vec<(String, Vec<u8>)> = Vec::new();
         for line in data[..split].split(|&b| b == b'\n') {
             if let Some(continuation) = line.strip_prefix(b" ") {
-                let (_, value) = headers
+                let (_, value) = raw
                     .last_mut()
                     .ok_or_else(|| invalid("Commit starts with a continuation line"))?;
                 value.push(b'\n');
@@ -98,14 +131,18 @@ impl Commit {
                 .ok_or_else(|| invalid("Commit header lacks a value"))?;
             let key = std::str::from_utf8(&line[..space])
                 .map_err(|_| invalid("Commit header key must be UTF-8"))?;
-            headers.push((key.to_owned(), line[space + 1..].to_vec()));
+            raw.push((key.to_owned(), line[space + 1..].to_vec()));
         }
+        let headers = raw
+            .into_iter()
+            .enumerate()
+            .map(|(i, (key, value))| CommitHeader::decode(key, value, i == 0))
+            .collect::<Result<_>>()?;
         let commit = Self {
             headers,
             message: data[split + 2..].to_vec(),
         };
         commit.tree()?;
-        commit.parents()?;
         commit.author()?;
         commit.committer()?;
         Ok(commit)
@@ -113,10 +150,10 @@ impl Commit {
 
     pub fn encode(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        for (key, value) in &self.headers {
-            out.extend_from_slice(key.as_bytes());
+        for header in &self.headers {
+            out.extend_from_slice(header.key().as_bytes());
             out.push(b' ');
-            for (i, line) in value.split(|&b| b == b'\n').enumerate() {
+            for (i, line) in header.value().split(|&b| b == b'\n').enumerate() {
                 if i > 0 {
                     out.extend_from_slice(b"\n ");
                 }
@@ -133,39 +170,46 @@ impl Commit {
         hash_object(ObjectKind::Commit, &self.encode())
     }
 
-    fn header(&self, key: &str) -> impl Iterator<Item = &[u8]> {
-        self.headers
-            .iter()
-            .filter(move |(k, _)| k == key)
-            .map(|(_, v)| v.as_slice())
-    }
-    fn text(value: &[u8]) -> Result<&str> {
-        std::str::from_utf8(value).map_err(|_| invalid("Commit header value must be UTF-8"))
+    /// The headers in object order.
+    pub fn headers(&self) -> &[CommitHeader] {
+        &self.headers
     }
 
     pub fn tree(&self) -> Result<ObjectId> {
         match self.headers.first() {
-            Some((key, value)) if key == "tree" => ObjectId::parse(Self::text(value)?),
+            Some(CommitHeader::Tree(tree)) => Ok(*tree),
             _ => Err(invalid("Commit must start with a tree header")),
         }
     }
+    /// Every `parent` header was validated when the commit was built or decoded.
     pub fn parents(&self) -> Result<Vec<ObjectId>> {
-        self.header("parent")
-            .map(|v| ObjectId::parse(Self::text(v)?))
-            .collect()
+        Ok(self
+            .headers
+            .iter()
+            .filter_map(|h| match h {
+                CommitHeader::Parent(id) => Some(*id),
+                _ => None,
+            })
+            .collect())
     }
-    fn signature(&self, key: &str) -> Result<Signature> {
-        let mut values = self.header(key);
+    fn signature(&self, key: &str, line: fn(&CommitHeader) -> Option<&str>) -> Result<Signature> {
+        let mut values = self.headers.iter().filter_map(line);
         match (values.next(), values.next()) {
-            (Some(value), None) => Signature::parse(Self::text(value)?),
+            (Some(value), None) => Signature::parse(value),
             _ => Err(invalid(format!("Commit needs exactly one {key} header"))),
         }
     }
     pub fn author(&self) -> Result<Signature> {
-        self.signature("author")
+        self.signature("author", |h| match h {
+            CommitHeader::Author(line) => Some(line),
+            _ => None,
+        })
     }
     pub fn committer(&self) -> Result<Signature> {
-        self.signature("committer")
+        self.signature("committer", |h| match h {
+            CommitHeader::Committer(line) => Some(line),
+            _ => None,
+        })
     }
     pub fn message(&self) -> &[u8] {
         &self.message
@@ -190,3 +234,7 @@ impl Commit {
             .collect()
     }
 }
+
+#[cfg(test)]
+#[path = "commit_tests.rs"]
+mod tests;
