@@ -1,19 +1,20 @@
-// Kit item 30 (`--dogfood`), the product half: a change request on the owner's repository
-// based on a scratch branch (session record, line comment, approval, change page data),
-// landed through the change on that base, a server-side rebase of a branch behind the base,
-// and the reads a person makes on a real codebase (search, blame, history, Overview, a file at
-// an older version, a compare), each timed. main is never a change's base here.
+// Kit item 30 (`--realuser`), the product half: a change request on a test repository based
+// on a scratch branch (session record, line comment, approval, change page data), landed
+// through the change on that base, a server-side rebase of a branch behind the base, and the
+// reads a person makes on a real codebase of any language (search for a common identifier,
+// blame the README and the largest text file, history, Overview, a file at an older version
+// and commit, a compare), each timed. main is never a change's base here.
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUTHOR } from './dogfood-git.mjs';
-import { largestFile, olderVersion, scratch, scratchRefs, timedSteps } from './dogfood-plan.mjs';
+import { AUTHOR } from './realuser-git.mjs';
+import { commonIdentifier, olderVersion, readTargets, scratch, scratchRefs, timedSteps } from './realuser-plan.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
 const q = (params) => new URLSearchParams(params).toString();
 
 /** 30.3: open, comment, approve, change page data, land on a scratch base, server-side rebase. */
-export async function dogfoodChange(ctx, metrics) {
+export async function realuserChange(ctx, metrics) {
   const { ws, repo, ts, owner, mint } = ctx;
   const token = await mint('change', ['read', 'write']);
   const refs = scratchRefs(ts);
@@ -23,7 +24,7 @@ export async function dogfoodChange(ctx, metrics) {
   const headOf = async (branch) => (await owner.get(`${path}/refs`)).refs[`refs/heads/${scratch(branch, ts)}`];
   const pushTo = async (branch) => (await ws.ok('git', ['push', '-q', 'origin', `HEAD:refs/heads/${scratch(branch, ts)}`], { cwd: dir, token })).ms;
   const commitFile = async (file, text, message) => {
-    mkdirSync(join(dir, '.dogfood'), { recursive: true });
+    mkdirSync(join(dir, '.realuser'), { recursive: true });
     writeFileSync(join(dir, file), text);
     await git('add', file);
     await git('commit', '-q', '-m', message);
@@ -45,22 +46,22 @@ export async function dogfoodChange(ctx, metrics) {
         main = await git('rev-parse', 'origin/main');
         await git('switch', '-q', '-c', refs.change, 'origin/main');
         await pushTo(refs.changeBase);
-        head = await commitFile('.dogfood/change.md', `dogfood ${ts}: a scratch change\n`, `dogfood ${ts}: scratch change`);
+        head = await commitFile('.realuser/change.md', `realuser ${ts}: a scratch change\n`, `realuser ${ts}: scratch change`);
         await pushTo(refs.change);
         assert.equal(await headOf(refs.change), head);
       }],
       ['record a session on the head', async () => {
-        await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'dogfood', model: 'none', summary: `Dogfood ${ts}: a scratch change on the owner repository.` });
+        await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'realuser', model: 'none', summary: `Real-user ${ts}: a scratch change on the owner repository.` });
       }],
       ['open the change', async () => {
         const base = scratch(refs.changeBase, ts);
-        const opened = await timed('open_ms', () => owner.post(`${path}/changes`, { branch: scratch(refs.change, ts), base, title: `Dogfood ${ts}`, body: 'Scratch change from the dogfood kit, landed on its scratch base.' }));
-        ctx.changes.push(opened.number);
+        const opened = await timed('open_ms', () => owner.post(`${path}/changes`, { branch: scratch(refs.change, ts), base, title: `Real-user ${ts}`, body: 'Scratch change from the realuser kit, landed on its scratch base.' }));
+        ctx.changes.push({ repo, number: opened.number });
         metrics.change = opened.number;
         metrics.change_base = opened.base;
         assert.equal(opened.base, base, 'the change was not opened on its scratch base');
       }],
-      ['line comment', () => timed('comment_ms', () => owner.post(`${path}/changes/${metrics.change}/comments`, { body: 'Dogfood: does this read well?', path: '.dogfood/change.md', line: 1, side: 'new' }))],
+      ['line comment', () => timed('comment_ms', () => owner.post(`${path}/changes/${metrics.change}/comments`, { body: 'Real-user: does this read well?', path: '.realuser/change.md', line: 1, side: 'new' }))],
       // The head was pushed by a repository token the owner minted, so it is that token's
       // work and the owner may approve it (deliberate: agents push with tokens the owner
       // mints and the human approves them; reviewers.rs). Only the owner's own pushes, by
@@ -74,12 +75,12 @@ export async function dogfoodChange(ctx, metrics) {
         const change = await timed('change_page_ms', () => owner.get(`${path}/changes/${metrics.change}?patch=1`));
         const paths = (change.diff?.changes ?? []).map((c) => c.path);
         metrics.change_paths = paths.join(',');
-        assert.ok(paths.includes('.dogfood/change.md') && paths.every((p) => p.startsWith('.dogfood/')), `the change diff is ${paths.join(', ')}`);
+        assert.ok(paths.includes('.realuser/change.md') && paths.every((p) => p.startsWith('.realuser/')), `the change diff is ${paths.join(', ')}`);
         metrics.gates = JSON.stringify(change.head_commit?.gates ?? null).slice(0, 300);
         metrics.comments = change.comment_count;
         assert.equal(change.base_protected, false, 'the scratch base reads as protected');
         const { sessions } = await timed('change_sessions_ms', () => owner.get(`${path}/sessions?${q({ head, base: main, limit: 200 })}`));
-        assert.ok(sessions.some((s) => s.summary?.startsWith(`Dogfood ${ts}`)), 'the recorded session is not on the change page');
+        assert.ok(sessions.some((s) => s.summary?.startsWith(`Real-user ${ts}`)), 'the recorded session is not on the change page');
       }],
       ['land the change on its scratch base', async () => {
         const change = await owner.get(`${path}/changes/${metrics.change}`);
@@ -92,9 +93,9 @@ export async function dogfoodChange(ctx, metrics) {
       }],
       ['server-side rebase of a branch behind its base', async () => {
         await git('switch', '-q', '-c', refs.behind, head);
-        const behind = await commitFile('.dogfood/behind.md', `behind ${ts}\n`, `dogfood ${ts}: behind`);
+        const behind = await commitFile('.realuser/behind.md', `behind ${ts}\n`, `realuser ${ts}: behind`);
         await pushTo(refs.behind);
-        const moved = await owner.post(`${path}/commits`, { ref: scratch(refs.changeBase, ts), changes: [{ path: '.dogfood/base-moved.md', content_b64: b64(`base moved ${ts}\n`) }], message: `dogfood ${ts}: base moves`, author: AUTHOR });
+        const moved = await owner.post(`${path}/commits`, { ref: scratch(refs.changeBase, ts), changes: [{ path: '.realuser/base-moved.md', content_b64: b64(`base moved ${ts}\n`) }], message: `realuser ${ts}: base moves`, author: AUTHOR });
         await owner.post(`${path}/land`, { ref: scratch(refs.changeBase, ts), commit: moved.commit });
         const branch = scratch(refs.behind, ts).split('/').map(encodeURIComponent).join('/');
         const rebased = await timed('rebase_ms', () => owner.post(`${path}/branches/${branch}/rebase`, { onto: scratch(refs.changeBase, ts) }));
@@ -108,8 +109,9 @@ export async function dogfoodChange(ctx, metrics) {
   );
 }
 
-/** 30.4: reads on the real codebase, each timed (ms) into `metrics.reads`. */
-export async function dogfoodReads(ctx, metrics) {
+/** 30.4: reads a person makes on the repository, each timed (ms) into `metrics.reads`. What
+ * to blame and search for comes from the repository itself (any language). */
+export async function realuserReads(ctx, metrics) {
   const { ws, repo, owner } = ctx;
   const path = `/repos/${repo}`;
   metrics.reads = {};
@@ -121,29 +123,36 @@ export async function dogfoodReads(ctx, metrics) {
     return body;
   };
   // Sizes only from the full clone: `ls-tree -l` in a blob:none clone fetches every blob.
-  const dir = ctx.full ?? ws.path('change');
-  const big = ctx.full ? largestFile(await ws.git(dir, null, 'ls-tree', '-r', '-l', 'origin/main')) : null;
+  if (!ctx.full) return { skip: 'no full clone (30.1) to choose what to read' };
+  const dir = ctx.full;
+  const { readme, largest } = readTargets(await ws.git(dir, null, 'ls-tree', '-r', '-l', 'origin/main'));
+  if (!readme || !largest) return { skip: 'no text files on main' };
+  const term = commonIdentifier(await ws.git(dir, null, 'show', `origin/main:${largest.path}`));
   const cli = existsSync(join(ws.bin, 'yoneda')) ? await ctx.mint('reads', ['read']) : null;
   const status = await owner.get(path);
-  const at = olderVersion(status.version);
-  Object.assign(metrics, { version: status.version, read_at: at, big_rust: big ? `${big.path} (${big.bytes} B)` : 'none' });
-  const older = await ws.git(dir, null, 'rev-list', '-n', '1', '--skip', '50', '--first-parent', 'origin/main');
+  // An imported repository has no main before its import's version: read at or after it.
+  const first = (await owner.get(`${path}/txlog?${q({ after: 0, limit: 50 })}`)).entries?.find((e) => e.refname === 'refs/heads/main')?.version ?? 1;
+  const at = Math.max(first, olderVersion(status.version));
+  const commits = Number(await ws.git(dir, null, 'rev-list', '--count', '--first-parent', 'origin/main'));
+  const older = await ws.git(dir, null, 'rev-list', '-n', '1', '--skip', String(Math.min(50, commits - 1)), '--first-parent', 'origin/main');
+  Object.assign(metrics, { version: status.version, read_at: at, readme, largest: `${largest.path} (${largest.bytes} B)`, search_term: term });
   await timedSteps(
     metrics,
     [
-      ['search fn land', () => read('search_fn_land', `/search?${q({ query: 'fn land', ref: 'main' })}`, (b) => assert.ok(b.results?.length > 0, 'no hit for fn land'))],
-      ['blame README.md', () => read('blame_readme', `/blame?${q({ path: 'README.md', ref: 'main' })}`)],
-      ['blame the largest Rust file', () => (big ? read('blame_big_rust', `/blame?${q({ path: big.path, ref: 'main' })}`) : { skip: 'no Rust file' })],
+      ['search a common identifier', () => (term ? read('search', `/search?${q({ query: term, ref: 'main' })}`, (b) => assert.ok(b.results?.length > 0, `no hit for ${term}`)) : { skip: 'no identifier' })],
+      ['blame the README', () => read('blame_readme', `/blame?${q({ path: readme, ref: 'main' })}`)],
+      ['blame the largest text file', () => read('blame_largest', `/blame?${q({ path: largest.path, ref: 'main' })}`)],
       ['history (log 100)', () => read('log_100', `/log?${q({ ref: 'main', limit: 100 })}`, (b) => assert.ok((b.commits ?? []).length > 0, 'empty log'))],
-      ['path history README.md', () => read('log_readme', `/log?${q({ ref: 'main', path: 'README.md', limit: 50 })}`)],
+      ['path history of the README', () => read('log_readme', `/log?${q({ ref: 'main', path: readme, limit: 50 })}`)],
       ['Overview / code map', () => read('overview', `/views/human?${q({ path: '', ref: 'main' })}`, (b) => assert.ok(b.dependency_map, 'no dependency map'))],
-      ['file at an older version (--at)', () => read('blob_at', `/blob?${q({ path: 'README.md', ref: 'main', at: String(at) })}`)],
-      ['compare main~50..main', () => read('compare', `/diff?${q({ base: older, head: 'main' })}`, (b) => (metrics.compare_files = b.changes?.length))],
+      ['file at an older version (--at)', () => read('blob_at', `/blob?${q({ path: readme, ref: 'main', at: String(at) })}`)],
+      ['file at an older commit', () => read('blob_commit', `/blob?${q({ path: readme, commit: older })}`)],
+      ['compare an older commit..main', () => read('compare', `/diff?${q({ base: older, head: 'main' })}`, (b) => (metrics.compare_files = b.changes?.length))],
       ['CLI grep and blame --at', async () => {
         if (!cli) return { skip: `no yoneda in ${ws.bin}` };
         const at_ = ['--repo', repo, '--at', String(at)];
-        metrics.reads.cli_grep_at = (await ws.ok('yoneda', ['grep', 'fn land', ...at_], { token: cli })).ms;
-        metrics.reads.cli_blame_at = (await ws.ok('yoneda', ['blame', 'README.md', ...at_], { token: cli })).ms;
+        if (term) metrics.reads.cli_grep_at = (await ws.ok('yoneda', ['grep', term, ...at_], { token: cli })).ms;
+        metrics.reads.cli_blame_at = (await ws.ok('yoneda', ['blame', readme, ...at_], { token: cli })).ms;
       }],
     ],
     ws.scrub,
