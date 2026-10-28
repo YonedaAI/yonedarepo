@@ -32,6 +32,7 @@ mod hooks;
 mod land;
 mod land_queue;
 mod land_tickets;
+mod maintenance;
 pub(crate) mod members;
 mod merging;
 pub(crate) mod migration;
@@ -117,9 +118,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "FORBIDDEN",
             "Only the platform reads change records",
         )),
-        "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
-            Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
-        ),
+        op if maintenance::owns(op) => maintenance::authorize(&actor, op),
         "repo_check_claim"
         | "repo_check_release"
         | "repo_check_complete"
@@ -206,8 +205,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_bisect_start" => bisect::start(db, c, principal, &settings),
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         "repo_pin" => vacuum::pin(db, c, principal),
-        "repo_vacuum_plan" => vacuum::plan(db, c),
-        "repo_vacuum_done" => vacuum::done(db, c),
+        op if maintenance::owns(op) => maintenance::run(db, c, op),
         // The store travels with the answer, so the adapter needs no status read first.
         "repo_prepare_commit" => {
             prepare::prepare(db, c, principal, &settings).map(|mut prepared| {

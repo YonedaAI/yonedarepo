@@ -43,6 +43,15 @@ fn cursor<S: SqlStore>(db: &S) -> Result<Option<(u64, i64)>> {
         }))
 }
 
+/// The version webhook fan-out still has to read after, while any hook is active (log
+/// compaction keeps those entries).
+pub(super) fn held_version<S: SqlStore>(db: &S) -> Result<Option<u64>> {
+    if hooks::active(db)?.is_empty() {
+        return Ok(None);
+    }
+    Ok(cursor(db)?.map(|(version, _)| version))
+}
+
 fn save_cursor<S: SqlStore>(db: &S, version: u64, ticket: i64) -> Result<()> {
     db.query(
         "INSERT INTO hook_cursor(id,version,ticket) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version,ticket=excluded.ticket",
