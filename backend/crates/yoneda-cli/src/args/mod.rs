@@ -331,7 +331,45 @@ mod tests {
                 command: ChangeCommand::Create {
                     branch: Some("fix".into()),
                     title: Some("Retry".into()),
-                    body: Some("why".into())
+                    body: Some("why".into()),
+                    to_parent: false
+                }
+            })
+        );
+        assert_eq!(
+            parsed("change create fix --to-parent --repo r2").ok(),
+            Some(Command::Change {
+                target: Target {
+                    origin: None,
+                    repo: Some("r2".into())
+                },
+                command: ChangeCommand::Create {
+                    branch: Some("fix".into()),
+                    title: None,
+                    body: None,
+                    to_parent: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo fork r1 --name mine").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Fork {
+                    id: "r1".into(),
+                    name: Some("mine".into()),
+                    owner: None
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo fork r1 --owner acme").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Fork {
+                    id: "r1".into(),
+                    name: None,
+                    owner: Some("acme".into())
                 }
             })
         );
@@ -464,6 +502,16 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("org delete acme --confirm acme").ok(),
+            Some(Command::Org {
+                origin: None,
+                command: OrgCommand::Delete {
+                    org: "acme".into(),
+                    confirm: "acme".into()
+                }
+            })
+        );
+        assert_eq!(
             parsed("org show acme --origin https://y").ok(),
             Some(Command::Org {
                 origin: Some("https://y".into()),
@@ -488,6 +536,7 @@ mod tests {
             "log --at soon",
             "setup vim",
             "repo import d --batch-files 0",
+            "repo fork",
             "change show",
             "change show 0",
             "change land x",
@@ -510,6 +559,7 @@ mod tests {
             "org team add acme devs",
             "org team rename acme devs x",
             "org delete acme",
+            "org show acme --confirm acme",
         ] {
             assert_eq!(
                 parsed(line).map_err(|e| e.exit_code).err(),

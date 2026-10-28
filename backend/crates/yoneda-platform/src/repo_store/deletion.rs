@@ -33,10 +33,19 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
         json!({
             "deleted": true, "already": already, "name": settings.name,
             "object_store": settings.object_store,
+            "parent": settings.parent.as_ref().map(|(repo, _)| repo),
         })
     };
     if settings.deleted_at.is_some() {
         return Ok(answer(true));
+    }
+    // Forks read this repository's objects: they go first.
+    let forks = super::forks::count(db)?;
+    if forks > 0 {
+        return Err(Error::new(
+            "CONFLICT",
+            format!("This repository has {forks} fork(s); delete them first"),
+        ));
     }
     let now = number(c, "now")?;
     db.query(

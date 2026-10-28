@@ -21,6 +21,8 @@ mod checks;
 mod classes;
 mod contracts;
 mod deletion;
+mod fork_copy;
+mod forks;
 mod git_http;
 mod git_shallow;
 mod git_wanted;
@@ -112,6 +114,9 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         }
         "repo_check" => actor.require("check"),
         "repo_session_record" => actor.require("write"),
+        // A change from a fork proposes the parent's mirror of a fork branch (`forks`):
+        // the fork's writer needs only read here.
+        "repo_change_create" if c["source_repo"].is_string() => actor.require("read"),
         "repo_change_create" | "repo_change_close" | "repo_change_reopen" => actor.require("write"),
         // Reviewers discuss a change as well as writers.
         "repo_change_comment" => actor.require_any(&["write", "review"]),
@@ -131,6 +136,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         )),
         op if maintenance::owns(op) => maintenance::authorize(&actor, op),
         op if lfs::owns(op) => lfs::authorize(&actor, op, c),
+        op if forks::owns(op) => forks::authorize(&actor, op),
         "repo_check_claim"
         | "repo_check_release"
         | "repo_check_complete"
@@ -218,6 +224,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_bisect_step" => bisect::step_op(db, c, principal, &settings),
         op if maintenance::owns(op) => maintenance::run(db, c, op, principal),
         op if lfs::owns(op) => lfs::run(db, c, op, &actor),
+        op if forks::owns(op) => forks::run(db, c, op, &actor, &settings),
         // The store travels with the answer, so the adapter needs no status read first.
         "repo_prepare_commit" => {
             prepare::prepare(db, c, principal, &settings).map(|mut prepared| {

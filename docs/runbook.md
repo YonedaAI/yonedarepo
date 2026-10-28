@@ -96,11 +96,12 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 | `hooks` | A webhook's signed deliveries to the bench Worker's `/hooks/<box>`: one scripted failure retried, log order, an unsafe target refused, delete |
 | `members` | The second account reads, pushes and lands by role with stock Git and REST, and is refused at once when removed |
 | `reads` | Stock Git over smart HTTP: a push declaring a read that changed meanwhile is refused as a read conflict, lands after `git pull`, and its session record reads back |
+| `22` | Forks: the second account, refused a fork without read, forks a repository it reads, pushes a branch to the fork with stock Git and opens a change on the parent from it; the owner approves and lands it; a fresh clone of the parent holds the commit and its bytes; the parent refuses deletion (409) until the fork is deleted |
 
-A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, `hooks`, `members` and `reads`, which need a review key, a receiver or the second account and run only when named. Options:
+A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, `hooks`, `members`, `reads` and `22`, which need a review key, a receiver or the second account and run only when named. Options:
 
 - `--only 0,6,7` runs the listed items; `--skip-bursts` leaves out 8–10.
-- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--reads-sessions`: one gate with item 0.
+- `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`: one gate with item 0.
 - `--api <origin>` is the platform API host for the CLI items (default `https://api.dev.yonedarepo.com`); `--origin`, `--platform` and `--client` name the front, platform and bench Workers.
 - `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits. Every item deletes the repositories it creates, pass or fail (the fanout bench too), so leftovers come only from runs killed mid-item or from runs before this change (2026-10-27): `kit-clone`, `kit-check`, `kit-burst`, `fanout`.
 

@@ -3,10 +3,13 @@
 // repository tokens revoked), removes the D1 listing row, drops main's published head in
 // every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store. Every step is idempotent, so a
 // retried delete repeats whatever a failed attempt left undone.
-import { teamEntries } from './org-access';
+
+import { teamEntries } from './platform-org-access';
+import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
+import { ownSpec } from './repo-stores';
 import type { Env } from './types';
 
 export { requirePatScope };
@@ -65,7 +68,9 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   requirePatScope(auth, 'repo:admin');
   if (!confirm) throw new ApiError('INVALID_INPUT', "confirm must be the repository's name");
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
-  await ctx.call({ op: 'repo_delete', confirm });
+  const deleted = await ctx.call({ op: 'repo_delete', confirm });
+  // A fork's parent stops counting it (the parent refuses deletion while forks remain).
+  if (deleted.parent) await forgetFork(env, deleted.parent, repo);
   await env.INDEX.batch([
     env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
@@ -96,7 +101,8 @@ async function purgePrefix(env: Env, prefix: string) {
 export async function purgeRepository(env: Env, repo: string) {
   const target: Json = await caller(env, repo, { _system: 'purge' })({ op: 'repo_purge_target' });
   await purgePrefix(env, `platform/v1/${repo}/`);
-  const store = String(target.object_store ?? '');
+  // A fork purges its own store, never the parent's it inherits from.
+  const store = ownSpec(String(target.object_store ?? ''));
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);
   if (r2) await purgePrefix(env, `store/v1/${r2[1]}/`);
   const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(store);

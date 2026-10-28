@@ -245,3 +245,23 @@ describe('diff files', () => {
     expect(html(DiffFiles, { changes: [] })).toContain('No file changes');
   });
 });
+
+describe('a change from a fork', () => {
+  it('names the fork branch it follows and why the latest pushes are missing', () => {
+    const fork = 'r00000000000000000f01';
+    state.value = loaded({
+      data: detail({
+        branch: `forks/${fork}/feature`,
+        source_repo: fork,
+        source_branch: 'feature',
+        source_error: 'TOO_LARGE: too many commits',
+      }),
+    });
+    const page = view();
+    expect(page).toContain(`href="/source/${fork}/history?ref=feature"`);
+    expect(page).toContain(`${fork}:feature`);
+    expect(page).toContain('TOO_LARGE: too many commits');
+    state.value = loaded({ data: detail() });
+    expect(view()).not.toContain('from fork');
+  });
+});

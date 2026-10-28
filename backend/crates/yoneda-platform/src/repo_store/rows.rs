@@ -18,6 +18,8 @@ pub struct Settings {
     pub policy_digest: String,
     /// When the repository was deleted (a tombstone); `None` while it is live.
     pub deleted_at: Option<i64>,
+    /// The repository this one was forked from, and the parent's version at the fork.
+    pub parent: Option<(String, u64)>,
 }
 
 pub struct CommitRow {
@@ -58,9 +60,10 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "Repository names are 1-100 characters of [A-Za-z0-9._-]",
         ));
     }
+    let (parent, parent_version) = super::forks::parent_of(c)?;
     db.query(
-        "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at) VALUES('repository',?,?,?,?,?,?,?)",
-        &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone()],
+        "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at,parent,parent_version) VALUES('repository',?,?,?,?,?,?,?,?,?)",
+        &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone(), json!(parent), json!(parent_version)],
     )?;
     Ok(json!({ "initialized": true, "policy_digest": digest }))
 }
@@ -85,6 +88,12 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         policy: serde_json::from_str(&text("policy")?).map_err(|_| corrupt("policy"))?,
         policy_digest: text("policy_digest")?,
         deleted_at: row["deleted_at"].as_i64(),
+        parent: row["parent"].as_str().map(|p| {
+            (
+                p.to_owned(),
+                row["parent_version"].as_u64().unwrap_or_default(),
+            )
+        }),
     })
 }
 

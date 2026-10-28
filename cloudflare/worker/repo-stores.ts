@@ -35,6 +35,8 @@ export interface ObjectStore {
   readBlob(id: string): Promise<Uint8Array | null>;
   /** A read-only `git clone` remote and short-lived token, where the store supports it. */
   cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
+  /** A fork's store: the parent repository and store its objects fall back to. */
+  readonly inherits?: { repo: string; spec: string };
 }
 
 /** Per-isolate: a repository's remote never changes. */
@@ -261,8 +263,52 @@ export function newStore(env: Env, name: string): ObjectStore {
     : new ArtifactsStore(env, name);
 }
 
-/** Parses a recorded store: `artifacts:<namespace>/<name>` or `r2:<name>`. */
+/**
+ * A fork's own store, named `name`: an Artifacts fork of the parent's own store when that
+ * is Artifacts (it then holds the parent's projected branches: `inherited`), else a new,
+ * empty store of this deployment's kind.
+ */
+export async function forkStore(env: Env, parentSpec: string, name: string) {
+  const parent = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(ownSpec(parentSpec));
+  if (parent && parent[1] === env.ARTIFACTS_NAMESPACE && env.PLATFORM_OBJECT_STORE !== 'r2') {
+    using repo = await env.ARTIFACTS.get(parent[2]);
+    // The fork's initial write token stays here and is dropped, as for create().
+    await rpcValue(repo.fork(name, { defaultBranchOnly: false }));
+    return { spec: new ArtifactsStore(env, name).spec, inherited: true };
+  }
+  const store = newStore(env, name);
+  await store.create();
+  return { spec: store.spec, inherited: false };
+}
+
+/** Forks of forks nest their parents' specs; this many levels at most. */
+export const FORK_DEPTH = 4;
+const FORK = /^fork:/;
+
+/** A fork's store spec: its own store and its parent's (repository and spec), whose
+ * objects it inherits (repo-objects reads fall back to them; nothing is copied). */
+export function forkSpec(parent: string, parentSpec: string, own: string) {
+  return `fork:${JSON.stringify({ parent, store: parentSpec, own })}`;
+}
+
+/** How many fork levels `spec` nests (0: not a fork). */
+export const forkDepth = (spec: string) => spec.match(/fork:/g)?.length ?? 0;
+
+/** The store a repository writes and purges: a fork's own, never its parent's. */
+export function ownSpec(spec: string): string {
+  return FORK.test(spec) ? String(JSON.parse(spec.slice(5)).own) : spec;
+}
+
+/** Parses a recorded store: `artifacts:<namespace>/<name>`, `r2:<name>`, or a fork's
+ * (`forkSpec`): its own store, carrying the parent it inherits from. */
 export function parseStore(env: Env, spec: string): ObjectStore {
+  if (FORK.test(spec)) {
+    const fork = JSON.parse(spec.slice(5));
+    if (!/^r[0-9a-f]{20}$/.test(fork.parent) || forkDepth(spec) > FORK_DEPTH || FORK.test(fork.own))
+      throw new Error('Repository object store is not a valid fork');
+    const own = parseStore(env, fork.own);
+    return Object.assign(own, { inherits: { repo: fork.parent, spec: String(fork.store) } });
+  }
   const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(spec);
   if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
     return new ArtifactsStore(env, artifacts[2]);
