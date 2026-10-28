@@ -157,7 +157,6 @@ describe('settings tab', () => {
     navigate: () => {},
     onPolicySaved: () => {},
     onDeleted: () => {},
-    onDeleteProject: () => {},
   };
   it('is the owner and admins only', () => {
     expect(html(RepoSettings, { ...props, section: 'rules', status: undefined })).toContain(
@@ -180,12 +179,6 @@ describe('settings tab', () => {
     expect(secrets).toContain('<option value="github-pat">');
     const danger = html(RepoSettings, { ...props, section: 'delete' });
     expect(danger).toContain('<strong>demo</strong>');
-    const withProject = html(RepoSettings, {
-      ...props,
-      section: 'delete',
-      project: { id: 'p', name: 'Site' },
-    });
-    expect(withProject).toContain('Remove the agent project');
-    expect(withProject).not.toContain('Delete this repository');
+    expect(danger).not.toContain('agent project');
   });
 });

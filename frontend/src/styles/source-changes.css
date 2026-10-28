@@ -23,9 +23,6 @@
   padding: 10px 0;
   border-bottom: 1px solid var(--line);
 }
-.source-changes .source-change-status {
-  justify-self: start;
-}
 .source-changes li > .source-meta {
   grid-column: 2;
   overflow-wrap: anywhere;
@@ -40,6 +37,9 @@
   padding: 1px 8px;
   border-radius: 10px;
   text-transform: capitalize;
+}
+.source-changes .source-change-status {
+  justify-self: start;
 }
 .source-change-open {
   background: #e9f7ef;

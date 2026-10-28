@@ -17,7 +17,6 @@ const TABS: { id: RepoTab; label: string; Icon: typeof Code2 }[] = [
   { id: 'code', label: 'Code', Icon: Code2 },
   { id: 'history', label: 'History', Icon: History },
   { id: 'changes', label: 'Changes', Icon: GitPullRequest },
-  { id: 'runs', label: 'Runs', Icon: GitCommitVertical },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
@@ -42,19 +41,16 @@ function arrowKeys(event: KeyboardEvent<HTMLElement>) {
 export function RepoTabs({
   repo,
   current,
-  runs,
   settings,
   navigate,
 }: {
   repo: string;
   current?: RepoTab;
-  /** Runs exist only for a repository with an agent project. */
-  runs: boolean;
   /** Settings are the owner's and admins'. */
   settings: boolean;
   navigate: Navigate;
 }) {
-  const shown = TABS.filter((t) => (t.id !== 'runs' || runs) && (t.id !== 'settings' || settings));
+  const shown = TABS.filter((t) => t.id !== 'settings' || settings);
   return (
     <nav className="repo-tabs" aria-label="Repository" onKeyDown={arrowKeys}>
       {shown.map(({ id, label, Icon }) => (
