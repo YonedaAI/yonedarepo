@@ -17,6 +17,7 @@ import {
   olderVersion,
   parseImports,
   pickRepo,
+  protectedMoves,
   readTargets,
   scratch,
   scratchRefs,
@@ -24,6 +25,7 @@ import {
   textFiles,
   timedSteps,
 } from '../../tools/staging/realuser-plan.mjs';
+import { settledRef } from '../../tools/staging/realuser-git.mjs';
 
 const TS = '1761600000000';
 
@@ -153,4 +155,31 @@ test('agents are judged on branch, diff, session on the change and the landed ch
   assert.match(agentProblems(task, { ...good, listed: [] })[0], /not listed on its change/);
   assert.match(agentProblems(task, { ...good, status: 'open' })[0], /is open, not landed/);
   assert.match(agentProblems(task, { ...good, status: undefined })[0], /not opened/);
+});
+
+test('protected refs: a missing dev is unchanged, an outside move warns, a move by this run fails', () => {
+  const refs = ['refs/heads/main', 'refs/heads/dev'];
+  const was = { 'refs/heads/main': 'a', 'refs/heads/dev': null };
+  const same = protectedMoves({ repo: 'r1', refs, was, now: { 'refs/heads/main': 'a' }, ts: TS });
+  assert.deepEqual(same, { problems: [], warnings: [] });
+  const owner = [{ refname: 'refs/heads/main', actor: 'user:owner', new: 'b' }];
+  const outside = protectedMoves({ repo: 'r1', refs, was, now: { 'refs/heads/main': 'b' }, entries: owner, ts: TS });
+  assert.deepEqual(outside.problems, []);
+  assert.match(outside.warnings[0], /r1 refs\/heads\/main moved during the run: a -> b by user:owner, not this run/);
+  const ours = [{ refname: 'refs/heads/main', actor: `token:realuser-${TS}-git`, new: 'b' }];
+  assert.match(protectedMoves({ repo: 'r1', refs, was, now: { 'refs/heads/main': 'b' }, entries: ours, ts: TS }).problems[0], /by this run/);
+  assert.match(protectedMoves({ repo: 'r1', refs, was, now: { 'refs/heads/main': 'b' }, entries: [], ts: TS }).problems[0], /no log entry/);
+});
+
+test('a ref just moved is polled within the refs snapshot bound', async () => {
+  let reads = 0;
+  const owner = { get: async () => ({ refs: ++reads < 3 ? {} : { 'refs/heads/x': 'c' } }) };
+  const seen = {};
+  assert.equal(await settledRef(owner, 'r1', 'refs/heads/x', 'c', seen), 'c');
+  assert.equal(reads, 3);
+  assert.ok(seen.lag_ms >= 150, `lag ${seen.lag_ms}`);
+  const never = { get: async () => ({ refs: {} }) };
+  const started = Date.now();
+  assert.equal(await settledRef(never, 'r1', 'refs/heads/x', 'c'), undefined);
+  assert.ok(Date.now() - started >= 2500, 'gave up before the bound');
 });

@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AUTHOR } from './realuser-git.mjs';
+import { AUTHOR, settledRef } from './realuser-git.mjs';
 import { commonIdentifier, olderVersion, readTargets, scratch, scratchRefs, timedSteps } from './realuser-plan.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
@@ -21,7 +21,7 @@ export async function realuserChange(ctx, metrics) {
   const path = `/repos/${repo}`;
   const dir = ws.path('change');
   const git = (...args) => ws.git(dir, token, ...args);
-  const headOf = async (branch) => (await owner.get(`${path}/refs`)).refs[`refs/heads/${scratch(branch, ts)}`];
+  const headOf = (branch, expected) => settledRef(owner, repo, `refs/heads/${scratch(branch, ts)}`, expected, metrics);
   const pushTo = async (branch) => (await ws.ok('git', ['push', '-q', 'origin', `HEAD:refs/heads/${scratch(branch, ts)}`], { cwd: dir, token })).ms;
   const commitFile = async (file, text, message) => {
     mkdirSync(join(dir, '.realuser'), { recursive: true });
@@ -48,7 +48,7 @@ export async function realuserChange(ctx, metrics) {
         await pushTo(refs.changeBase);
         head = await commitFile('.realuser/change.md', `realuser ${ts}: a scratch change\n`, `realuser ${ts}: scratch change`);
         await pushTo(refs.change);
-        assert.equal(await headOf(refs.change), head);
+        assert.equal(await headOf(refs.change, head), head);
       }],
       ['record a session on the head', async () => {
         await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'realuser', model: 'none', summary: `Real-user ${ts}: a scratch change on the owner repository.` });
@@ -86,7 +86,7 @@ export async function realuserChange(ctx, metrics) {
         const change = await owner.get(`${path}/changes/${metrics.change}`);
         const landed = await timed('land_ms', () => owner.post(`${path}/land`, { ref: scratch(change.base, ts), commit: change.head }));
         metrics.land_version = landed.version;
-        assert.equal(await headOf(refs.changeBase), head, 'the scratch base is not the change head');
+        assert.equal(await headOf(refs.changeBase, head), head, 'the scratch base is not the change head');
         const after = await owner.get(`${path}/changes/${metrics.change}`);
         metrics.change_status = after.status;
         assert.deepEqual([after.status, after.landed_commit], ['landed', head], 'landing the head on its base did not land the change');
