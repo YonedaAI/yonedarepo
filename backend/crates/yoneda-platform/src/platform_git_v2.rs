@@ -3,8 +3,7 @@
 //! `ls-refs` answer and the sections before a fetch's pack. Partial (`filter blob:none`)
 //! and shallow (`deepen`) fetches are served on version 2 alone; a client that does not
 //! ask for it keeps version 0 (`platform_git_http`).
-use crate::platform_git_http::AGENT;
-use crate::storage::{bad, string};
+use crate::platform_git_http::{AGENT, request_body};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
@@ -35,10 +34,7 @@ pub fn capabilities(_: &Value) -> Result<Value> {
 /// `git_v2_request`: a request body → `{command: "ls-refs", symrefs, prefixes}` or
 /// `{command: "fetch", wants, haves, shallows, depth, deepen_relative, omit_blobs, done}`.
 pub fn request(c: &Value) -> Result<Value> {
-    let body = STANDARD
-        .decode(string(c, "body_b64")?)
-        .map_err(|_| bad("body_b64 is not base64"))?;
-    Ok(match v2_request(&body)? {
+    Ok(match v2_request(&request_body(c)?)? {
         V2Command::LsRefs(r) => json!({
             "command": "ls-refs", "symrefs": r.symrefs, "prefixes": r.prefixes,
         }),
@@ -112,6 +108,19 @@ mod tests {
                 .unwrap(),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn parses_a_checkout_sized_request() {
+        // A partial clone's checkout wants every file it lacks in one request.
+        let mut body = [pkt_line(b"command=fetch\n"), DELIM.to_vec()].concat();
+        for i in 0..12_000u32 {
+            body.extend(pkt_line(format!("want {:040x}\n", i + 1).as_bytes()));
+        }
+        body.extend(pkt_line(b"done\n"));
+        body.extend_from_slice(FLUSH);
+        let parsed = request(&json!({ "body_b64": STANDARD.encode(body) })).unwrap();
+        assert_eq!(parsed["wants"].as_array().unwrap().len(), 12_000);
     }
 
     #[test]

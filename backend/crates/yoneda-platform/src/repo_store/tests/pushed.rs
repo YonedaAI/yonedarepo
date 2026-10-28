@@ -89,7 +89,14 @@ fn pushed_commits_keep_their_ids_and_branches_delete_by_compare_and_swap() {
     let main = batch(json!([{ "ref": "main", "commit": null, "expected": root }]));
     assert_eq!(code(main), "FORBIDDEN");
 
-    // A fetch of `second` by a client holding the root sends both pushed commits.
+    // `second` is on no branch now: a fetch may not want it. Back on one, a fetch of it by
+    // a client holding the root sends both pushed commits.
+    let hidden = h.run(
+        AGENT,
+        json!({"op":"repo_git_walk","wants":[second],"haves":[root]}),
+    );
+    assert_eq!(code(hidden), "NOT_FOUND");
+    batch(json!([{ "ref": "feature", "commit": second, "expected": null }])).unwrap();
     let walk = h.ok(
         AGENT,
         json!({"op":"repo_git_walk","wants":[second],"haves":[root, "e".repeat(40)]}),
