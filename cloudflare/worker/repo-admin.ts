@@ -4,7 +4,7 @@
 // every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store. Every step is idempotent, so a
 // retried delete repeats whatever a failed attempt left undone.
 
-import { teamEntries } from './org-access';
+import { teamEntries } from './platform-org-access';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
