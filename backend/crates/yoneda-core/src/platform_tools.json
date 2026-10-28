@@ -1224,7 +1224,7 @@
   },
   {
     "name": "git_tag",
-    "description": "Create a tag (refs/tags/<name>) at a recorded commit; with message, an annotated tag (the platform builds the tag object, tagged by tagger or the caller). Tags are immutable: creating the same tag again is a no-op, a different one under an existing name returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs (annotated tags under annotated, ref name to tag object id), served to git clone (with the peeled commit) and mirrored to the object store. Annotated tags pushed with git push are accepted too. REST: POST /tags.",
+    "description": "Create a tag (refs/tags/<name>) at a recorded commit; with message, an annotated tag (the platform builds the tag object, tagged by tagger or the caller). Tags are immutable: creating the same tag again is a no-op, a different one under an existing name returns ALREADY_EXISTS, and no tool moves or deletes one. Requires the write and land scopes. The tag is logged like a branch move, listed by git_refs (annotated tags under annotated, ref name to tag object id), served to git clone (with the peeled commit) and mirrored to the object store. Annotated tags pushed with git push are accepted too, as is a tag object given as object_b64. REST: GET /tags/<name> answers a tag's commit and its tag object (data_b64) when annotated. REST: POST /tags.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1260,6 +1260,10 @@
           ],
           "additionalProperties": false,
           "description": "Tagger identity of an annotated tag (default: the caller)"
+        },
+        "object_b64": {
+          "type": "string",
+          "description": "An annotated tag object made elsewhere (git tag -a), base64: kept byte for byte; it must tag commit"
         }
       },
       "required": [

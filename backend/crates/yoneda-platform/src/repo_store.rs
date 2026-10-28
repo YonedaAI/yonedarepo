@@ -252,6 +252,7 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_rebase_plan" => rebase::plan(db, c),
         "repo_branch_batch" => branches::batch(db, c, principal),
         "repo_tag_create" => tags::create(db, c, principal),
+        "repo_tag_show" => annotated::tag_show(db, c),
         "repo_release_create" => releases::create(db, c, &actor),
         "repo_releases" => releases::list(db, c, &actor),
         "repo_release_show" => releases::show(db, c, &actor),

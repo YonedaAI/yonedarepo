@@ -132,6 +132,8 @@ export const operations: Record<string, Operation> = {
       commit: a.commit,
       message: a.message ?? null,
       tagger: a.tagger ?? null,
+      // Or an annotated tag object made elsewhere (e.g. `git tag -a`), kept as is.
+      tag: a.object_b64 ? { data_b64: a.object_b64 } : null,
     });
     if (!created.already)
       await Promise.all([dispatchProjection(ctx.env, ctx.repo), notifyHooks(ctx.env, ctx.repo)]);
