@@ -121,3 +121,21 @@ proptest! {
         prop_assert_eq!(read.into_iter().map(|(_, d)| d).collect::<Vec<_>>(), objects);
     }
 }
+
+proptest! {
+    /// Any target, from a base by any edits, is rebuilt exactly from its delta.
+    #[test]
+    fn deltas_rebuild_their_target(
+        base in prop::collection::vec(prop::sample::select(b"ab\n".to_vec()), 0..600),
+        edits in prop::collection::vec((0usize..600, 0usize..40, prop::collection::vec(any::<u8>(), 0..40)), 0..6),
+    ) {
+        let mut target = base.clone();
+        for (at, cut, insert) in edits {
+            let at = at.min(target.len());
+            let end = (at + cut).min(target.len());
+            target.splice(at..end, insert);
+        }
+        let delta = encode_delta(&base, &target, usize::MAX).unwrap();
+        prop_assert_eq!(apply_delta(&base, &delta, target.len()).unwrap(), target);
+    }
+}

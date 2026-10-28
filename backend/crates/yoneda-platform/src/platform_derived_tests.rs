@@ -85,3 +85,38 @@ fn renamed_and_duplicated_directories_share_a_key_and_a_segment_but_not_paths() 
     assert_eq!(p3[0]["key"], p3[1]["key"]);
     assert_eq!(found3, ["a/retry.rs", "b/retry.rs"]);
 }
+
+#[test]
+fn files_known_too_large_are_listed_unread_with_the_same_segment() {
+    let small = b"fn retry_with_backoff() {}\n".to_vec();
+    let large = vec![b'x'; yoneda_core::search::MAX_INDEXED_BYTES + 1];
+    let (small_id, large_id) = (
+        hash_object(ObjectKind::Blob, &small),
+        hash_object(ObjectKind::Blob, &large),
+    );
+    let (root, root_json) = tree(&[
+        ("big.txt", FileMode::Blob, large_id),
+        ("retry.rs", FileMode::Blob, small_id),
+    ]);
+    let trees = json!({ root.hex(): root_json });
+    let index = |blobs: Value, sizes: Value| {
+        compute(
+            json!({ "op": "index_partition", "tree": root, "shallow": true,
+                        "trees": trees, "blobs": blobs, "sizes": sizes }),
+        )
+        .unwrap()
+    };
+    let read = index(
+        json!({ small_id.hex(): STANDARD.encode(&small), large_id.hex(): STANDARD.encode(&large) }),
+        json!({}),
+    );
+    // Knowing the large file's size, only the small one is asked for.
+    let sized = json!({ large_id.hex(): large.len() });
+    assert_eq!(
+        index(json!({}), sized.clone())["need_blobs"],
+        json!([small_id])
+    );
+    let unread = index(json!({ small_id.hex(): STANDARD.encode(&small) }), sized);
+    assert_eq!(unread["segment"], read["segment"]);
+    assert_eq!(read["segment"]["files"][0]["indexed"], false);
+}
