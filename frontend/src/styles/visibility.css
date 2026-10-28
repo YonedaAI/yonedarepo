@@ -35,31 +35,33 @@
   padding: 0;
   margin-bottom: 8px;
 }
-.new-repository .visibility-choice label {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
+.new-repository .visibility-option {
+  display: grid;
+  gap: 2px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  cursor: pointer;
 }
-.new-repository .visibility-choice label:has(input:checked) {
+.new-repository .visibility-option:has(input:checked) {
   border-color: var(--blue);
   background: #f5f8ff;
 }
-.new-repository .visibility-choice label:has(input:focus-visible) {
+.new-repository .visibility-option:has(input:focus-visible) {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
+}
+.new-repository .visibility-option label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
 }
 .visibility-choice input {
   margin: 3px 0 0;
 }
-.visibility-choice span {
-  display: grid;
-  gap: 2px;
-}
-.visibility-choice small {
+/* The help sits under the label text, past the radio. */
+.visibility-option small {
+  padding-left: 23px;
   color: var(--muted);
 }
 /* Settings → Visibility */
