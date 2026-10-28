@@ -2,9 +2,12 @@
 //! hidden refs) and log compaction (moving old versions to the object store).
 pub(super) mod archive;
 mod compaction;
+pub(super) mod supplied;
 use super::{auth::Actor, vacuum};
 use crate::storage::SqlStore;
 use serde_json::Value;
+/// Archived log objects a command carries are visible to its checks for that command.
+pub(super) use supplied::scoped;
 use yoneda_core::{Error, Result};
 
 const OPS: [&str; 5] = [

@@ -177,15 +177,11 @@ pub fn entries<S: SqlStore>(
     until: u64,
     refname: Option<&str>,
 ) -> Result<Vec<TxEntry>> {
-    // Archived versions are not in this table: a caller needing them fails closed.
+    // Archived versions come from the segments the command carries (or it asks for them).
     let floor = super::maintenance::archive::floor(db)?;
+    let mut archived = Vec::new();
     if after < floor && until > after {
-        return Err(Error::new(
-            "TXLOG_COMPACTED",
-            format!(
-                "Log versions up to {floor} are archived; this needs the log after version {after} (rebase onto a newer version)"
-            ),
-        ));
+        archived = super::maintenance::archive::entries(db, after, until.min(floor), refname)?;
     }
     let rows = match refname {
         Some(name) => db.query(
@@ -197,12 +193,11 @@ pub fn entries<S: SqlStore>(
             &[json!(after), json!(until)],
         )?,
     };
-    rows.iter()
-        .map(|row| {
-            serde_json::from_str(row["entry"].as_str().unwrap_or_default())
-                .map_err(|_| corrupt("log entry"))
-        })
-        .collect()
+    let retained = rows.iter().map(|row| {
+        serde_json::from_str(row["entry"].as_str().unwrap_or_default())
+            .map_err(|_| corrupt("log entry"))
+    });
+    archived.into_iter().map(Ok).chain(retained).collect()
 }
 
 /// Protected refs (Scion: refs only for main and releases) move only by landing an

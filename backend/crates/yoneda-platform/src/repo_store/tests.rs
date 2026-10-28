@@ -1587,6 +1587,7 @@ mod check_posters;
 mod check_release;
 mod checkpoints;
 mod compaction;
+mod compaction_writes;
 mod hooks;
 mod land_cas;
 mod land_shapes;
