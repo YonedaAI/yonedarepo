@@ -1,5 +1,7 @@
 # YonedaRepo — Agent-First Repository: submission
 
+> The demo workspace (agent runs) was removed on 2026-10-27; it is preserved on branch `agent-run-workspaces`.
+
 An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.
 
 Entry for Cloudflare's [Build the Next-Gen Git Platform](https://blog.cloudflare.com/next-git-platform-on-cloudflare/) competition. Source: [MagnetonIO/yonedarepo](https://github.com/MagnetonIO/yonedarepo) (Apache-2.0).
@@ -63,7 +65,7 @@ Until those entries are filled in, only the build stage above is hosted evidence
 
 ## Architecture on Cloudflare
 
-Diagram and component table: [current-state architecture](current-state-architecture.md). Rust owns domain rules, the transactional ledger, the native runtime, MCP, capture and evaluation. TypeScript is the browser and a thin adapter for Cloudflare SDK capabilities absent from workers-rs.
+Diagram and component table: [current-state architecture](https://github.com/YonedaAI/yonedarepo/blob/agent-run-workspaces/docs/current-state-architecture.md). Rust owns domain rules, the transactional ledger, the native runtime, MCP, capture and evaluation. TypeScript is the browser and a thin adapter for Cloudflare SDK capabilities absent from workers-rs.
 
 | Cloudflare product | Role |
 |---|---|

@@ -23,8 +23,7 @@ def export(revision: str, destination: Path) -> None:
     (destination / "context").mkdir(exist_ok=True)
     (destination / "context" / "README.md").write_text(
         "# Public design context\n\n"
-        "Read [the architecture](../docs/architecture.md), "
-        "[product plan](../docs/product-mvp-plan.md), "
+        "Read [the architecture](../docs/architecture.md) "
         "and [release evidence](../docs/release-evidence.md).\n\n"
         "Raw private drafting conversations are omitted from this public snapshot. "
         "The platform implementation and its Apache-2.0 license are included.\n"

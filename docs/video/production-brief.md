@@ -68,7 +68,7 @@ actual captures. Preserve all statements about recorded evidence and limitations
 
 The new UI captures and the older Garden evidence belong to different views and times. Keep the chapter labels clear. The Garden choice was owner-directed in chat and entered through the website by the implementer. Field Notes' first publication was automated development verification; its checked follow-up remains unpublished. Do not animate a new selection or inference run that did not happen.
 
-The script keeps current limits visible: static hosting, no automatic semantic merge, no clarification pause/resume, and no paid Gemini acceptance. Five configured providers does not mean five demonstrated successful hosted runs. [Release evidence](../release-evidence.md) and [current workflow verification](../ui-workflow-evidence.md) support the product claims.
+The script keeps current limits visible: static hosting, no automatic semantic merge, no clarification pause/resume, and no paid Gemini acceptance. Five configured providers does not mean five demonstrated successful hosted runs. [Release evidence](../release-evidence.md) and [current workflow verification](https://github.com/YonedaAI/yonedarepo/blob/agent-run-workspaces/docs/ui-workflow-evidence.md) support the product claims.
 
 ## Offline assembly
 
