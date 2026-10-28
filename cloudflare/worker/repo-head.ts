@@ -7,6 +7,7 @@
 // its copy, and every other isolate decides on a copy fetched at most ACCESS_MS ago, so a
 // revoked token or removed member is refused everywhere within ACCESS_MS of the change's
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
+import { rpcValue } from './durable';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
@@ -107,11 +108,8 @@ async function fetchInto(env: Env, repo: string, minVersion: number) {
       return { head: withoutTokens(full), at };
     }
     const base = heads.get(repo)?.head;
-    const { access, ...next } = await shared.head(
-      repo,
-      minVersion,
-      base?.version,
-      accesses.get(repo)?.version ?? null,
+    const { access, ...next } = await rpcValue(
+      shared.head(repo, minVersion, base?.version, accesses.get(repo)?.version ?? null),
     );
     if (access) accesses.set(repo, access);
     if (!base || next.overlay_since === null || next.overlay_since === undefined)
@@ -133,7 +131,7 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   if (cached && cached.version === head.access_version) return cached;
   const shared = holder(env, repo);
   const access = await once(`access:${repo}`, async () =>
-    shared ? shared.access(repo) : accessOf(await fetchHead(env, repo)),
+    shared ? rpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
   );
   accesses.set(repo, access);
   return access;
@@ -223,7 +221,7 @@ export async function headTrees(
 ): Promise<Record<string, TreeEntry[]> | null> {
   const shared = holder(env, repo);
   if (!shared) return null;
-  return shared.trees(repo, root, paths, commit).catch((e) => {
+  return rpcValue(shared.trees(repo, root, paths, commit)).catch((e) => {
     console.warn(`head trees failed: ${e?.message ?? e}`);
     return null;
   });

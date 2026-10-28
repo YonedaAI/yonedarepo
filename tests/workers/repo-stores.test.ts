@@ -1,9 +1,10 @@
 // Content-addressed writes: concurrent commits write the same object ids, and R2 allows one
 // write per key at a time (error 10058). A shared write is joined, and a 10058 on an object
 // that is (or becomes) readable is success, never a failed commit. R2's transient internal
-// error (10001) and service-unavailable (10043) are retried.
+// error (10001) and service-unavailable (10043) are retried. Every object an Artifacts or
+// push-queue RPC answers is disposed once read.
 import { expect, it } from 'vitest';
-import { putObjects } from '../../cloudflare/worker/repo-stores';
+import { parseStore, putObjects } from '../../cloudflare/worker/repo-stores';
 import type { Env } from '../../cloudflare/worker/types';
 import { bindings } from './repo-fixture';
 
@@ -70,4 +71,32 @@ it('retries service unavailable (10043)', async () => {
   const k = key(`unavailable-${crypto.randomUUID()}`);
   await putObjects(env, k, [blob('9'.repeat(40))]);
   expect(stored.has(k('9'.repeat(40)))).toBe(true);
+});
+
+it('disposes every object an Artifacts or push-queue RPC answers', async () => {
+  const disposed: string[] = [];
+  const answer = <T extends object>(name: string, value: T) =>
+    Object.assign(value, { [Symbol.dispose]: () => void disposed.push(name) });
+  const repo = {
+    [Symbol.dispose]: () => void disposed.push('repo'),
+    info: async () => answer('info', { remote: 'https://artifacts.test/disposing' }),
+    createToken: async () => answer('token', { plaintext: 'write-token' }),
+    readCommit: async () => answer('commit', { treeHash: 't'.repeat(40), parents: [] }),
+    readTree: async () => answer('tree', [{ name: 'a', type: 'blob', hash: 'b'.repeat(40) }]),
+    readBlob: async () => answer('blob', new Blob(['bytes'])),
+  };
+  const env = {
+    ARTIFACTS_NAMESPACE: 'ns',
+    ARTIFACTS: { get: async () => repo },
+    OBJECT_PUSHES: {
+      idFromName: (name: string) => name,
+      get: () => ({ push: async () => answer('push', { report: new Uint8Array([1]), waited_ms: 0, sent_ms: 0, batch: 1 }) }),
+    },
+  } as unknown as Env;
+  const store = parseStore(env, 'artifacts:ns/disposing');
+  expect(await store.push(new Uint8Array())).toEqual(new Uint8Array([1]));
+  expect(await store.readCommit('c'.repeat(40))).toEqual({ tree: 't'.repeat(40), parents: [] });
+  expect(await store.readTree('t'.repeat(40))).toEqual([{ name: 'a', type: 'blob', id: 'b'.repeat(40) }]);
+  expect(new TextDecoder().decode((await store.readBlob('b'.repeat(40))) ?? undefined)).toBe('bytes');
+  expect(disposed.sort()).toEqual(['blob', 'commit', 'info', 'push', 'repo', 'repo', 'repo', 'repo', 'token', 'tree']);
 });
