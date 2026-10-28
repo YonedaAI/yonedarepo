@@ -1,28 +1,34 @@
 import { ChevronRight, GitBranch, RefreshCw } from 'lucide-react';
 import { short } from '../../lib/api';
 import type { AccountIdentity, Repository } from '../../lib/types';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { AccountMenu } from './AccountMenu';
-import { RepositoryActions } from './RepositoryActions';
 
+/** The shell's header: where you are, the current repository's published head, refresh and
+ * the account menu. */
 export function WorkspaceHeader({
-  reviewer = false,
-  repository,
+  title,
+  project,
   loading,
   onRefresh,
-  onDelete,
   authenticated,
   identity,
+  navigate = () => {},
+  onConnect,
   onSignIn,
   onSignOut,
   onError,
 }: {
-  reviewer?: boolean;
-  repository?: Repository;
+  /** The current page or repository; the breadcrumb ends here. */
+  title: string;
+  /** The current repository's agent project, whose published head the header shows. */
+  project?: Repository;
   loading: boolean;
   onRefresh: () => void;
-  onDelete: (repository: Repository) => void;
   authenticated: boolean;
   identity: AccountIdentity | null;
+  navigate?: Navigate;
+  onConnect?: () => void;
   onSignIn: () => void;
   onSignOut: () => Promise<void>;
   onError: (message: string) => void;
@@ -30,34 +36,38 @@ export function WorkspaceHeader({
   return (
     <header className="workspace-header">
       <div className="workspace-breadcrumb">
-        <span>Workspace</span>
-        <ChevronRight size={14} />
+        <a {...linkTo({ view: 'home' }, navigate)}>Repositories</a>
+        <ChevronRight size={14} aria-hidden="true" />
         <strong>
-          <GitBranch size={16} />
-          {repository?.name ?? 'Overview'}
+          <GitBranch size={16} aria-hidden="true" />
+          {title}
         </strong>
       </div>
       <div className="header-actions">
-        {repository?.published_commit && (
+        {project?.published_commit && (
           <span className="published-revision" title="Canonical published source revision">
             <i />
-            Published <code>{short(repository.published_commit)}</code>
+            Published <code>{short(project.published_commit)}</code>
           </span>
-        )}
-        {repository && !reviewer && (
-          <RepositoryActions repository={repository} onDelete={onDelete} />
         )}
         <button
           type="button"
           className="icon-button"
-          aria-label="Refresh workspace"
+          aria-label={`Refresh ${title}`}
+          title="Refresh"
           disabled={loading}
           onClick={onRefresh}
         >
           <RefreshCw size={16} className={loading ? 'spin' : ''} />
         </button>
         {authenticated ? (
-          <AccountMenu identity={identity} onSignOut={onSignOut} onError={onError} />
+          <AccountMenu
+            identity={identity}
+            navigate={navigate}
+            onConnect={onConnect}
+            onSignOut={onSignOut}
+            onError={onError}
+          />
         ) : (
           <button type="button" className="quiet" disabled={loading} onClick={onSignIn}>
             Sign in

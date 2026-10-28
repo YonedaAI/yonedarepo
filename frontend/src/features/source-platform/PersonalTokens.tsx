@@ -18,7 +18,7 @@ import {
   ScopeChecks,
   ShownOnce,
 } from './TokenParts';
-import { type Loaded, useSource } from './useSource';
+import type { Loaded } from './useSource';
 
 export type Pat = {
   id: string;
@@ -83,8 +83,32 @@ export function PatTable({
   );
 }
 
-export function PersonalTokens({ repos }: { repos: RepoSummary[] }) {
-  const tokens = useSource<{ tokens: Pat[] }>('/tokens');
+/** Token names `yoneda login` gives the tokens it creates (its device `client_name`). */
+export const DEVICE_CLIENTS = ['yoneda-cli'];
+export const isDeviceLogin = (token: Pat) => DEVICE_CLIENTS.includes(token.name);
+
+/** Only `which` of the account's tokens, keeping the read's state. */
+export const onlyTokens = (
+  tokens: Loaded<{ tokens: Pat[] }>,
+  which: (token: Pat) => boolean,
+): Loaded<{ tokens: Pat[] }> =>
+  tokens.data ? { ...tokens, data: { tokens: tokens.data.tokens.filter(which) } } : tokens;
+
+/** Revokes a personal token after confirming, then re-reads the list. */
+export async function revokePat(token: Pat, tokens: Loaded<unknown>, what = 'Clients using it') {
+  if (!window.confirm(`Revoke ${token.name}? ${what} stop working immediately.`)) return;
+  await sourceApi(`/tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
+  tokens.reload();
+}
+
+export function PersonalTokens({
+  repos,
+  tokens: all,
+}: {
+  repos: RepoSummary[];
+  tokens: Loaded<{ tokens: Pat[] }>;
+}) {
+  const tokens = onlyTokens(all, (t) => !isDeviceLogin(t));
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<PatScope[]>(DEFAULT_PAT_SCOPES);
   const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
@@ -116,11 +140,9 @@ export function PersonalTokens({ repos }: { repos: RepoSummary[] }) {
     }
   }
   async function revoke(token: Pat) {
-    if (!window.confirm(`Revoke ${token.name}? Clients using it stop working immediately.`)) return;
     setError('');
     try {
-      await sourceApi(`/tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
-      tokens.reload();
+      await revokePat(token, tokens);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -130,8 +152,8 @@ export function PersonalTokens({ repos }: { repos: RepoSummary[] }) {
     <section aria-labelledby="pat-heading">
       <h2 id="pat-heading">Personal access tokens</h2>
       <p className="source-meta">
-        For the yoneda CLI and agents across your repositories. <code>yoneda login</code> creates
-        one through the browser; create one here for a cloud agent or CI.
+        For agents and CI across your repositories. <code>yoneda login</code> creates its own
+        through the browser (listed under Signed-in CLIs); create one here for a cloud agent.
       </p>
       <PatTable tokens={tokens} repos={repos} onRevoke={revoke} />
       {secret ? (

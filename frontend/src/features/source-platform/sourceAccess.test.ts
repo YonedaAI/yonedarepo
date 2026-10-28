@@ -1,5 +1,6 @@
-// Tokens, device approval and the Connect panel, rendered as the server would see them:
-// loading, signed out, failed, empty and populated states.
+// Account settings (tokens, signed-in CLIs), repository tokens, device approval and the
+// Connect panel, rendered as the server would see them: loading, signed out, failed, empty
+// and populated states.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,8 +12,8 @@ vi.mock('./useSource', () => ({ useSource: () => state.value }));
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
 const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
 const { PatTable } = await import('./PersonalTokens');
-const { RepoTokenTable } = await import('./RepoTokens');
-const { TokensPage } = await import('./TokensPage');
+const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
+const { AccountSettings, CliTable } = await import('../account-settings/AccountSettings');
 const { SourceApiError } = await import('./sourceApi');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
@@ -67,18 +68,27 @@ describe('personal access tokens', () => {
     });
     expect(open).toContain('<td>all</td>');
   });
-  it('waits for the account, asks a signed-out visitor to sign in, then offers both token kinds', () => {
-    expect(html(TokensPage, {})).toContain('Loading your account');
+  it('settles the account page: signed out, then CLIs apart from personal tokens', () => {
+    const identity = { role: 'user', username: 'ada' };
+    expect(html(AccountSettings, { identity, repos })).toContain('Loading signed-in CLIs');
     state.value = signedOut;
-    expect(html(TokensPage, {})).toContain('You are signed out');
-    state.value = loaded({ data: { repos, tokens: [] } });
-    const page = html(TokensPage, {});
-    expect(page).toContain('Personal access tokens');
-    expect(page).toContain('Repository tokens');
+    expect(html(AccountSettings, { identity, repos })).toContain('You are signed out');
+    const cli = { ...pat, id: 'pat_cli', name: 'yoneda-cli', repos: null };
+    state.value = loaded({ data: { tokens: [pat, cli] } });
+    const page = html(AccountSettings, { identity, repos });
+    expect(page).toContain('<code>ada</code>');
+    expect(page).toContain('Signed-in CLIs');
+    expect(page).toContain('<td>yoneda-cli</td>');
+    expect(page).toContain('>Sign out</button>');
+    expect(page.match(/<td>yoneda-cli<\/td>/g)).toHaveLength(1);
+    expect(page).toContain('<td>ci</td>');
     // Default scopes are read, write and land; admin is opt-in.
     expect(page.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
     expect(page).toContain('All repositories, including ones created later.');
     expect(page).toContain('<option value="30" selected="">30 days</option>');
+    expect(
+      html(CliTable, { tokens: loaded({ data: { tokens: [] } }), onSignOut: () => {}, now }),
+    ).toContain('No CLI is signed in');
   });
 });
 
@@ -102,6 +112,13 @@ describe('repository tokens', () => {
     expect(
       html(RepoTokenTable, { tokens: loaded({ loading: true }), onRevoke: () => {} }),
     ).toContain('Loading repository tokens');
+  });
+  it('manages the tokens of the repository it belongs to', () => {
+    state.value = loaded({ data: { tokens: [] } });
+    const page = html(RepoTokens, { repo });
+    expect(page).toContain('No repository tokens');
+    expect(page).toContain('Create repository token');
+    expect(page).not.toContain('<select id="repo-token-repo"');
   });
 });
 
@@ -138,8 +155,10 @@ describe('device approval', () => {
 
 describe('connect panel', () => {
   it('shows clone, CLI, MCP, Claude Code and Codex snippets from the configured origin', () => {
-    const panel = html(ConnectPanel, { repo, name: 'demo', origin: api, onDeleted: () => {} });
+    const panel = html(ConnectPanel, { repo, name: 'demo', origin: api });
+    expect(panel).toContain(`git clone ${api}/git/${repo}.git demo`);
     expect(panel).toContain(`git clone yoneda::${api}/${repo} demo`);
+    expect(panel).toContain(`Repository id <code>${repo}</code>`);
     expect(panel).toContain('cargo install --path backend/crates/yoneda-cli');
     expect(panel).toContain(`${api}/api/v1/mcp`);
     expect(panel).toContain('/plugin install yoneda@yoneda');
