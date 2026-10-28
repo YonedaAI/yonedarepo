@@ -2,7 +2,7 @@
 // repository's object store (repo-stores), and verified pushes to it. Objects are
 // immutable, so a cache entry keyed by id never needs invalidation; keys are per
 // repository so access follows repository auth.
-import { deferred } from './background';
+import { afterAnswer } from './background';
 import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from './repo-bundles';
 import { compute } from './repo-compute';
 import { stagedInShardOf, stagedInShards } from './repo-shards';
@@ -40,9 +40,14 @@ export type ObjectKind = 'tree' | 'blob' | 'commit';
 /** Reads served per tier, for the S12 hit-rate gate: edge (Cache API), R2, object store. */
 export type TierHits = { edge: number; r2: number; store: number };
 type Tier = keyof TierHits;
+/** A walk's answer, and its fills of the tiers above (pending only without a waitUntil). */
+type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown> };
 /** Object reads in flight in this isolate, by repository, kind and id. */
-const inFlight = new Map<string, Promise<{ bytes: Uint8Array; tier: Tier }>>();
+const inFlight = new Map<string, Promise<Walked>>();
 const EDGE_ORIGIN = 'https://objects.yoneda.internal';
+/** How long a read waits for the edge before asking R2. An edge hit answers in
+ * milliseconds; hosted burst read-backs (2026-10-28) saw Cache API calls of 24-33 s. */
+const EDGE_WAIT_MS = 500;
 
 /**
  * Tiered, content-addressed reads: parsed trees in memory -> Cache API (per colo; it
@@ -109,83 +114,104 @@ export class RepoObjects {
   }
 
   /** Raw tier bytes for `id` (JSON for trees/commits, content for blobs). Concurrent
-   * reads of one object in this isolate share one walk down the tiers. */
+   * reads of one object in this isolate share one walk down the tiers; only the read that
+   * started it waits for its fills (`read.joined`: the time a read waited on another's). */
   private async read(id: string, kind: ObjectKind, stagedWith?: string): Promise<Uint8Array> {
     const key = `${this.repo}/${kind}/${id}`;
-    let reading = inFlight.get(key);
+    const shared = inFlight.get(key);
+    let reading = shared;
     if (!reading) {
       reading = this.walk(id, kind, stagedWith).finally(() => inFlight.delete(key));
       inFlight.set(key, reading);
     }
-    const { bytes, tier } = await reading;
+    const { bytes, tier, filled } = shared
+      ? await timed('read.joined', () => shared)
+      : await reading;
+    if (!shared) await filled;
     this.hits[tier]++;
     return bytes;
   }
 
-  /** Fills the tiers above the one that served `object`: the edge at once, R2 after the
-   * response when the request lends its waitUntil (an R2 write costs a reader ~200 ms). */
-  private async fill(object: CachedObject) {
-    const r2 = () => timed('cache.r2', () => putObjects(this.env, (id) => this.key(id), [object]));
-    if (!deferred(r2)) await r2();
-    await this.cache([object], 'edge');
+  /** Fills the tiers above the one that served `object`, after the answer when the request
+   * lends its waitUntil (an R2 write costs a reader ~200 ms; a Cache API put took up to
+   * 33 s in hosted burst read-backs), else in the promise answered. */
+  private fill(object: CachedObject) {
+    return afterAnswer(() => this.cache([object]));
   }
 
-  private async walk(
-    id: string,
-    kind: ObjectKind,
-    stagedWith?: string,
-  ): Promise<{ bytes: Uint8Array; tier: Tier }> {
-    const edge = await caches.default.match(this.edgeKey(id)).catch(() => undefined);
-    if (edge && edge.headers.get('x-kind') === kind)
-      return { bytes: new Uint8Array(await edge.arrayBuffer()), tier: 'edge' };
-    const cached = await this.env.OBJECTS.get(this.key(id));
+  /** The edge copy of `id`, or null on a miss, a failure or a lookup slower than
+   * EDGE_WAIT_MS (the edge tier is an optimization: R2 answers instead). */
+  private async edgeHit(id: string, kind: ObjectKind): Promise<Uint8Array | null> {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const late = new Promise<null>((done) => {
+      timer = setTimeout(() => done(null), EDGE_WAIT_MS);
+    });
+    const lookup = caches.default
+      .match(this.edgeKey(id))
+      .then(async (hit) =>
+        hit && hit.headers.get('x-kind') === kind ? new Uint8Array(await hit.arrayBuffer()) : null,
+      )
+      .catch(() => null);
+    try {
+      return await Promise.race([lookup, late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Each tier a cold read asks is timed (`read.*`), so a slow read shows where it waited. */
+  private async walk(id: string, kind: ObjectKind, stagedWith?: string): Promise<Walked> {
+    const edge = await timed('read.edge', () => this.edgeHit(id, kind));
+    if (edge) return { bytes: edge, tier: 'edge', filled: Promise.resolve() };
+    const cached = await timed('read.r2', () => this.env.OBJECTS.get(this.key(id)));
     if (cached && (cached.customMetadata?.kind ?? kind) === kind) {
       const bytes = new Uint8Array(await cached.arrayBuffer());
-      await this.edgePut(id, kind, bytes);
-      return { bytes, tier: 'r2' };
+      const filled = afterAnswer(() => timed('cache.edge', () => this.edgePut(id, kind, bytes)));
+      return { bytes, tier: 'r2', filled };
     }
-    const fromRaw = await this.recorded(id, kind);
-    if (fromRaw) {
-      await this.fill(fromRaw);
-      return { bytes: this.encode(fromRaw), tier: 'r2' };
-    }
+    const fromRaw = await timed('read.raw', () => this.recorded(id, kind));
+    if (fromRaw) return { bytes: this.encode(fromRaw), tier: 'r2', filled: this.fill(fromRaw) };
     // Staged with a commit the caller names (one shard), before the tiers that ask the
     // authority, the object store or every shard.
     if (stagedWith) {
-      const [held] = (await stagedInShardOf(this.env, this.repo, stagedWith, [
-        id,
-      ])) as CachedObject[];
-      if (held?.kind === kind) {
-        await this.fill(held);
-        return { bytes: this.encode(held), tier: 'store' };
-      }
+      const [held] = (await timed('read.shard', () =>
+        stagedInShardOf(this.env, this.repo, stagedWith, [id]),
+      )) as CachedObject[];
+      if (held?.kind === kind)
+        return { bytes: this.encode(held), tier: 'store', filled: this.fill(held) };
     }
     // Accepted but not yet in R2: the authority still holds the staged copy. A staged copy
     // is dropped only after its R2 write, so a miss there means R2 has it now.
     const ofKind = (o: CachedObject | null | undefined) => (o?.kind === kind ? o : null);
-    let object: CachedObject | null = ofKind(await this.staged(id, kind));
-    object ??= await this.recorded(id, kind);
-    if (!object) {
-      if (kind === 'tree') {
-        const entries = await this.store.readTree(id);
-        object = entries && { id, kind, entries };
-      } else if (kind === 'blob') {
-        const bytes = await this.store.readBlob(id);
-        object = bytes && { id, kind, data_b64: toBase64(bytes) };
-      } else {
+    let object: CachedObject | null = ofKind(
+      await timed('read.staged', () => this.staged(id, kind)),
+    );
+    object ??= await timed('read.raw', () => this.recorded(id, kind));
+    if (!object)
+      object = await timed('read.store', async () => {
+        if (kind === 'tree') {
+          const entries = await this.store.readTree(id);
+          return entries && { id, kind, entries };
+        }
+        if (kind === 'blob') {
+          const bytes = await this.store.readBlob(id);
+          return bytes && { id, kind, data_b64: toBase64(bytes) };
+        }
         const commit = await this.store.readCommit(id);
-        object = commit && { id, kind, ...commit };
-      }
-    }
+        return commit && { id, kind, ...commit };
+      });
     // Commit shards last: finding a staged object there means asking every shard, and
     // imported objects (in Artifacts only) must not pay that on each first read.
     if (!object) {
-      object = ofKind((await stagedInShards(this.env, this.repo, [id]))[0] as CachedObject);
-      object ??= await this.recorded(id, kind);
+      object = ofKind(
+        (
+          await timed('read.shards', () => stagedInShards(this.env, this.repo, [id]))
+        )[0] as CachedObject,
+      );
+      object ??= await timed('read.raw', () => this.recorded(id, kind));
     }
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
-    await this.fill(object);
-    return { bytes: this.encode(object), tier: 'store' };
+    return { bytes: this.encode(object), tier: 'store', filled: this.fill(object) };
   }
 
   /** The store of record's copy (raw Git content in R2, or in a push's bundle this

@@ -4,7 +4,7 @@
 // projection lagged each landing.
 import { b64 } from './driver.mjs';
 import { latency } from '../load-metrics.mjs';
-import { errors, failures, landPeak, landRate, ok, phases, shardLoad, stat } from './stats.mjs';
+import { errors, failures, landPeak, landRate, ok, phases, shardLoad, slowest, stat } from './stats.mjs';
 
 /** Waits (up to 5 min) until every changeset is projected; lag = projected - landed. */
 async function projectionLag(session, repo) {
@@ -40,6 +40,7 @@ function readSummary(rows) {
     correct: rows.length - wrong.length,
     errors: errors(rows),
     failures: failures(rows),
+    slowest: slowest(rows),
     phases: phases(rows, true),
     failed_phases: phases(wrong, true),
   };

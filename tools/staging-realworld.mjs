@@ -174,6 +174,8 @@ async function fanout(writers, m) {
     commit_p95_ms: result.commit.client.p95_ms,
     read_p95_ms: result.read.client.p95_ms,
     read_max_ms: result.read.client.max_ms,
+    // Where the slowest correct reads waited (their Server-Timing `read.*` phases).
+    read_slowest: result.read.slowest,
     // So a failed run explains itself: each failure kind counted (`<status> <code>:
     // <message>`), the first failures with when they started, how long they took and their
     // Server-Timing, and the phases of the failed reads.

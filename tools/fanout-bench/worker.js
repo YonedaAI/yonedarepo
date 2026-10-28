@@ -9,6 +9,9 @@ import { openLoop, parseOpen } from './open-loop.js';
 import { commitAndLand, read } from './requests.js';
 
 const json = (value, status = 200) => Response.json(value, { status });
+// A read slower than this fails alone: one stuck read held its invocation's other four past
+// the driver's 300 s header timeout (item 9, 2026-10-28), losing all five results.
+const READ_TIMEOUT_MS = 60_000;
 // The deployed client reaches only public addresses (global_fetch_strictly_public); a local
 // run of it may target a local platform.
 const TARGET = /^(https:\/\/[a-z0-9.-]+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/;
@@ -80,7 +83,7 @@ export default {
     }
     if (!Array.isArray(writers) || writers.length > 5) return json({ error: 'bad request' }, 400);
     const results = await Promise.all(
-      writers.map((w) => (w.read || w.get ? read(target, repo, w) : commitAndLand(target, repo, w))),
+      writers.map((w) => (w.read || w.get ? read(target, repo, w, READ_TIMEOUT_MS) : commitAndLand(target, repo, w))),
     );
     return json({ results });
   },
