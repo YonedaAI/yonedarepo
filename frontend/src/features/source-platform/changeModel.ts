@@ -22,6 +22,9 @@ export type Change = {
   landed_version: number | null;
   landed_commit: string | null;
   comment_count: number;
+  /** A change from a fork: the fork and its branch (mirrored here as `forks/<fork>/<branch>`). */
+  source_repo?: string | null;
+  source_branch?: string | null;
 };
 
 export type Side = 'old' | 'new';
@@ -52,6 +55,8 @@ export type ChangeDetail = Change & {
   head_commit: CommitDetail | null;
   comments: ChangeComment[];
   timeline: Push[];
+  /** Why the fork branch's latest pushes could not be carried here (the change still shows). */
+  source_error?: string;
   /** From the merge base with main (null: unrelated histories) to the head, as git_diff answers. */
   diff: { base: DiffEnd | null; head: DiffEnd; changes: DiffChange[] } | null;
 };

@@ -16,6 +16,7 @@ import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
+import { formatSourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 const PUSHED = { created: 'pushed the branch', moved: 'pushed', deleted: 'deleted the branch' };
@@ -107,6 +108,27 @@ export function ChangeView({
             </>
           )}
         </p>
+        {c.source_repo && (
+          <p className="source-meta">
+            from fork{' '}
+            <a
+              href={formatSourceRoute({
+                view: 'history',
+                repo: c.source_repo,
+                ref: c.source_branch ?? 'main',
+              })}
+            >
+              <code>
+                {c.source_repo}:{c.source_branch}
+              </code>
+            </a>
+          </p>
+        )}
+        {c.source_error && (
+          <p role="alert" className="source-error">
+            The fork branch's latest pushes could not be brought here: {c.source_error}
+          </p>
+        )}
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
       <ChangeGates repo={repo} change={c} onChanged={refresh} />
