@@ -4,6 +4,7 @@
 import { durableJson } from './durable';
 import type { OrgAccess } from './platform-org-access';
 import { archivedObjects } from './repo-archive';
+import { noteBundles } from './repo-bundles';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside } from './repo-grants';
@@ -195,6 +196,8 @@ export class RepoContext {
   async objects() {
     if (!this.cached) {
       const status = await this.status();
+      // Its bundles are then read in bulk, not one staged read per object, in any isolate.
+      if (status.bundled) noteBundles(this.repo);
       this.adopt(status.object_store);
     }
     return this.cached as RepoObjects;
