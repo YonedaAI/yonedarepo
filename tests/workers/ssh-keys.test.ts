@@ -65,6 +65,7 @@ it('adds, lists and removes SSH keys; a key belongs to one account at a time', a
   expect(added.body.id).toMatch(/^ssh_[0-9a-f]{16}$/);
   const listed = await api('/ssh-keys', { cookie: alice });
   expect(listed.body.keys.map((k: any) => k.id)).toEqual([added.body.id]);
+  expect(listed.body.ssh).toEqual({ front_door: null, host: null, clone_url: null, ssh_config: null });
   expect(JSON.stringify(listed.body)).not.toContain('AAAAC3');
 
   expect((await api('/ssh-keys', { cookie: alice }, { body: { title: 'again', key: ED25519 } })).status).toBe(409);
@@ -146,4 +147,20 @@ it('holds a session token to its repository and service, and refuses it once the
   expect((await git(`${mine}.git/git-upload-pack`, fetch, 'POST')).status).toBe(401);
   expect((await git(`${mine}.git/info/refs?service=git-receive-pack`, push)).status).toBe(401);
   expect((await internal('lookup', { fingerprint: FINGERPRINT })).status).toBe(404);
+});
+
+it('tells clients how to reach Git over SSH through the tunnel', async () => {
+  const cookie = await signup('ssh_setup');
+  const tunnel = { ...scoped, SSH_FRONT_DOOR: 'tunnel', SSH_HOST: 'ssh.dev.yonedarepo.com' } as Env;
+  const added = await api('/ssh-keys', { cookie }, { body: { title: 'laptop', key: ED25519 } }, tunnel);
+  const expected = {
+    front_door: 'tunnel',
+    host: 'ssh.dev.yonedarepo.com',
+    clone_url: 'ssh://git@ssh.dev.yonedarepo.com/<repository id>.git',
+    ssh_config: 'Host ssh.dev.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
+  };
+  expect(added.body.ssh).toEqual(expected);
+  expect((await api('/ssh-keys', { cookie }, {}, tunnel)).body.ssh).toEqual(expected);
+  const connect = { ...tunnel, SSH_FRONT_DOOR: 'connect' } as Env;
+  expect((await api('/ssh-keys', { cookie }, {}, connect)).body.ssh).toMatchObject({ front_door: 'connect', ssh_config: null });
 });

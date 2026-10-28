@@ -1,10 +1,10 @@
-// Worker entrypoint for the source platform alone: HTTP, inbound TCP for Git over SSH (off
-// until the front door opens; platform-ssh-gateway.ts), plus its own queue jobs (checks, object and
-// ref projection, derived data, webhooks). No agent runs, harnesses, providers or budgets.
+// Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
+// TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
+// jobs (checks, object and ref projection, derived data, webhooks). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
 import { platformFetch } from './platform-routes';
-import { sshFrontDoor } from './platform-ssh-gateway';
+import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
@@ -47,6 +47,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   /** Inbound TCP: Git over SSH, through the SSH gateway container. */
   connect(socket: Socket) {
     return sshFrontDoor(socket, this.env);
+  }
+  /** Every minute: keeps the SSH gateway (and its tunnel) running. */
+  scheduled() {
+    return sshKeepAlive(this.env);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {

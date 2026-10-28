@@ -9,6 +9,7 @@ pub mod config;
 pub mod pkt;
 pub mod platform;
 pub mod server;
+pub mod tunnel;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -34,6 +35,10 @@ pub async fn serve(config: config::Config) -> std::io::Result<()> {
         tokio::spawn(health(TcpListener::bind(address).await?));
     }
     tracing::info!(listen = %config.ssh_listen, "ssh.listening");
+    // The Cloudflare Tunnel front door, once SSH is listening for it.
+    let tunnel = config
+        .cloudflared
+        .map(|binary| tokio::spawn(tunnel::supervise(binary)));
     let slots = Arc::new(Semaphore::new(CONNECTIONS));
     let stop = shutdown();
     tokio::pin!(stop);
@@ -53,6 +58,10 @@ pub async fn serve(config: config::Config) -> std::io::Result<()> {
         });
     }
     tracing::info!("ssh.draining");
+    // New connections stop at the tunnel first; open ones drain below.
+    if let Some(tunnel) = tunnel {
+        tunnel.abort();
+    }
     let _ = tokio::time::timeout(DRAIN, slots.acquire_many(CONNECTIONS as u32)).await;
     Ok(())
 }

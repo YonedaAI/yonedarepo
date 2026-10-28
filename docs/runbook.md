@@ -22,9 +22,28 @@ A push to a working branch with no open change request prints `open a change: yo
 
 `git clone ssh://git@<ssh host>/<repo-id>.git` (user `git`, public-key authentication only) with a key added under Settings → SSH keys, `yoneda ssh-key add ~/.ssh/id_ed25519.pub` or `POST /api/v1/ssh-keys {title, key}` (Ed25519, ECDSA P-256/384/521, RSA ≥ 2048 bits; a key belongs to one account at a time). A key acts as its account with `repo:read` to fetch and `repo:read`, `repo:write` and `repo:land` to push; removing it refuses the open session's next request and every new connection at once. Fetches need protocol version 2 (Git 2.26+ default; v0 is refused with how to switch); pushes are v0 as over HTTPS, delete-only pushes included. `ssh -T git@<ssh host>` greets the account.
 
-How it runs: inbound TCP reaches the platform Worker's `connect()` handler, which pipes it to an `SshGateway` container (`cloudflare/ssh-gateway/Dockerfile`, crate `backend/crates/yoneda-ssh-gateway`, its own workspace). The gateway verifies the key's signature, asks `POST /internal/ssh/lookup` for its account, takes a ten-minute `ysh_` token for one repository and service from `POST /internal/ssh/session` (both with an HS256 JWT signed with `SSH_GATEWAY_SECRET`), and bridges Git's SSH transport onto `/git/<repo>.git` smart HTTP; its only egress is the Worker itself. Secrets: `SSH_GATEWAY_SECRET` (32+ random characters) and `SSH_HOST_ED25519_KEY` / `SSH_HOST_ECDSA_KEY` (`ssh-keygen -t ed25519 -N '' -f k && base64 < k`, generated once and kept: new host keys break every client's `known_hosts`).
+How it runs: one `SshGateway` container (`cloudflare/ssh-gateway/Dockerfile`: crate `backend/crates/yoneda-ssh-gateway`, its own workspace, plus cloudflared) verifies the key's signature, asks `POST /internal/ssh/lookup` for its account, takes a ten-minute `ysh_` token for one repository and service from `POST /internal/ssh/session` (both with an HS256 JWT signed with `SSH_GATEWAY_SECRET`), and bridges Git's SSH transport onto `/git/<repo>.git` smart HTTP; it reaches the platform only through the Worker itself. `SSH_FRONT_DOOR` picks how clients reach it; `/health` reports it as `ssh` (`tunnel`, `connect` or null), and `GET /api/v1/ssh-keys` returns `ssh: {front_door, host, clone_url, ssh_config}` for clients.
 
-**Front door.** Public inbound TCP into Workers is not generally available (Spectrum to a Worker is a private beta), so `SSH_FRONT_DOOR` is `off` and no gateway container starts; `/health` reports `ssh: false` and kit item 26 skips. When access is granted: point a Spectrum TCP application on port 22 at the platform Worker, set `SSH_FRONT_DOOR=on`, deploy, then `node tools/staging-realworld.mjs --ssh --ssh-host <host>`. Locally, `node tests/ssh/e2e.mjs [--docker]` runs the same flow against `wrangler dev` and the gateway (native or its image).
+**Tunnel front door (`tunnel`, dev).** The gateway runs `cloudflared tunnel run` beside itself with `SSH_TUNNEL_TOKEN` (as `TUNNEL_TOKEN` in its environment, HTTP/2 transport) and restarts it if it exits. Setup, once per environment:
+
+1. Create a remotely managed tunnel (Networking → Tunnels), add a published application route: hostname `ssh.dev.yonedarepo.com` (prod `ssh.yonedarepo.com`), service type SSH, URL `localhost:2222` (the gateway's port inside its container).
+2. Do **not** add an Access application for that hostname (and keep wildcard Access apps off it). Without one, `cloudflared access ssh` connects straight through: it dials the hostname first and only runs the Access login when the edge answers with an Access redirect (cloudflared `carrier/websocket.go`, `createWebsocketStream`). The gateway's key check is then the only authentication, as with any Git host.
+3. Put the tunnel token in the secrets file as `SSH_TUNNEL_TOKEN` and deploy.
+
+The platform Worker's cron (`* * * * *`) calls the gateway's `keepAlive`: it starts the container after a deploy or crash (at most a minute of outage) and the container never sleeps while the tunnel is its front door, so exactly one gateway (`ssh-gateway-0`) runs. Cost: basic instance (1/4 vCPU, 1 GiB, 4 GB) always on is 730 GiB-hours of memory and 2,920 GB-hours of disk a month, about $6.35 + $0.69 after the included 25 GiB-hours and 200 GB-hours (if checks have not used them), plus active CPU only (an idle gateway uses little); about $7 a month per environment. `lite` (1/16 vCPU, 256 MiB) would be about $1.75 but leaves little memory for concurrent clones. Tunnels themselves cost nothing.
+
+Users, once per machine: install cloudflared, then add to `~/.ssh/config` (printed by `yoneda ssh-key add` and shown under Settings → SSH keys):
+
+```
+Host ssh.yonedarepo.com
+  ProxyCommand cloudflared access ssh --hostname %h
+```
+
+then `git clone ssh://git@ssh.yonedarepo.com/<repo-id>.git`.
+
+**Inbound TCP front door (`connect`).** Spectrum to a Worker is a private beta: point a port-22 Spectrum application at the platform Worker and set `SSH_FRONT_DOOR=connect`; the Worker's `connect()` handler pipes the socket to the gateway's port. No client setup beyond the key.
+
+Secrets: `SSH_GATEWAY_SECRET` (32+ random characters), `SSH_HOST_ED25519_KEY` / `SSH_HOST_ECDSA_KEY` (`ssh-keygen -t ed25519 -N '' -f k && base64 < k`, generated once and kept: new host keys break every client's `known_hosts`), `SSH_TUNNEL_TOKEN`. Locally, `node tests/ssh/e2e.mjs [--direct] [--docker]` runs the kit's flow against `wrangler dev` and the gateway (native or its image for this machine): by default through the platform's tunnel `ssh_config` with `nc` standing in for cloudflared; kit item 26 (`--ssh`) uses the real cloudflared against the live tunnel.
 
 ## Model checks
 
