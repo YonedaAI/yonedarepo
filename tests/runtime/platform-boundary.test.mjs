@@ -33,7 +33,7 @@ test('platform adapter modules import only platform and neutral modules', async 
   for (const file of files) {
     const source = await readFile(`${worker}/${file}`, 'utf8');
     for (const [, target] of source.matchAll(/from '(\.[^']+)'/g)) {
-      const allowed = neutral.has(target) || /^\.\/((repo|platform)-[a-z-]+|account-mcp)$/.test(target);
+      const allowed = neutral.has(target) || /^\.\/((repo|platform)-[a-z0-9-]+|account-mcp)$/.test(target);
       assert.ok(allowed, `${file} imports ${target}`);
     }
   }
