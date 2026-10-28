@@ -4,6 +4,9 @@ import type { RepoRow } from '../shell/repoRows';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { OrgSummary } from '../source-platform/orgModel';
 
+/** A row's spoken name: "acme, owner", not the name and its small label run together. */
+export const labelled = (name: string, label?: string) => (label ? `${name}, ${label}` : undefined);
+
 export function WorkspaceRail({
   authenticated,
   loading,
@@ -56,11 +59,13 @@ export function WorkspaceRail({
         <nav className="repository-list" aria-label="Repositories">
           <p className="nav-label">Repositories</p>
           {rows.map((row) => (
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
             <a
               key={row.repo}
               className={row.repo === current ? 'active' : ''}
               aria-current={row.repo === current ? 'page' : undefined}
               title={row.shared ? `${row.name} (${row.shared})` : row.name}
+              aria-label={labelled(row.name, row.shared)}
               {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, close)}
             >
               <GitBranch size={17} aria-hidden="true" />
@@ -96,10 +101,12 @@ export function WorkspaceRail({
           <nav className="repository-list" aria-label="Organizations">
             <p className="nav-label">Organizations</p>
             {orgs.map((o) => (
+              // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
               <a
                 key={o.org}
                 className={o.org === currentOrg ? 'active' : ''}
                 aria-current={o.org === currentOrg ? 'page' : undefined}
+                aria-label={labelled(o.org, o.role)}
                 {...linkTo({ view: 'org', org: o.org }, close)}
               >
                 <Building2 size={17} aria-hidden="true" />
