@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseOpen, schedule } from '../../tools/fanout-bench/open-loop.js';
 import { loggedReads, overlaps, violations } from '../../tools/fanout-bench/skew.mjs';
-import { errors, failures } from '../../tools/fanout-bench/stats.mjs';
+import { errors, failures, slowest } from '../../tools/fanout-bench/stats.mjs';
 import { estimate, summarizeStep } from '../../tools/fanout-bench/sustained.mjs';
 
 const MAIN = 'refs/heads/main';
@@ -142,4 +142,20 @@ test('read failures are counted and sampled with when they started, how long the
     ],
   );
   assert.equal(failures(reads, 1).length, 1);
+});
+
+test('the slowest correct reads are kept with their timing, the slowest first', () => {
+  const reads = [
+    { started_at: 100, status: 200, ms: 40, ok: true, timing: 'total;dur=30' },
+    { started_at: 105, status: 200, ms: 26_000, ok: true, timing: 'read.joined;dur=25900,total;dur=25950' },
+    { started_at: 110, status: 504, ms: 90_000, ok: false, error: 'CLIENT_TIMEOUT' },
+    { started_at: 120, status: 200, ms: 9_000, ok: true, timing: 'read.shards;dur=8800,total;dur=8900' },
+  ];
+  assert.deepEqual(
+    slowest(reads, 2).map((r) => [r.at_ms, r.ms, r.timing]),
+    [
+      [5, 26_000, 'read.joined;dur=25900,total;dur=25950'],
+      [20, 9_000, 'read.shards;dur=8800,total;dur=8900'],
+    ],
+  );
 });
