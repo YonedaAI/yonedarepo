@@ -2,6 +2,7 @@
 //! elsewhere, the platform builds the same Git object (so the same id).
 use super::*;
 use crate::repo_store::prepare::changes::changes as parse_changes;
+use base64::{Engine, engine::general_purpose::STANDARD};
 
 const NOW_MS: i64 = 1_800_000_000_123;
 
@@ -96,4 +97,32 @@ fn refuses_malformed_signatures() {
     ] {
         assert!(added(&request(bad.clone())).is_err(), "{bad}");
     }
+}
+
+#[test]
+fn symlinks_must_point_inside_the_repository() -> Result<()> {
+    let link = |path: &str, target: &str| {
+        request(json!({ "changes": [
+            {"path": "a.txt", "content_b64": "YQo="},
+            {"path": path, "type": "symlink", "content_b64": STANDARD.encode(target)},
+        ]}))
+    };
+    let built = added(&link("docs/readme", "../a.txt"))?;
+    assert!(
+        built
+            .touches
+            .iter()
+            .any(|t| t.path == "docs/readme" && t.mode == Some(FileMode::Symlink))
+    );
+    for (path, target) in [
+        ("docs/escape", "../../etc/passwd"),
+        ("abs", "/etc/passwd"),
+        ("empty", ""),
+        ("git", ".git/config"),
+        ("slash", "a\\b"),
+    ] {
+        let error = added(&link(path, target)).err().map(|e| e.code);
+        assert_eq!(error.as_deref(), Some("UNSAFE_PATH"), "{path} -> {target}");
+    }
+    Ok(())
 }
