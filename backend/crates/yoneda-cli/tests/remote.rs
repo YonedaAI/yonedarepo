@@ -1002,6 +1002,79 @@ fn resumed_team_merge_lands(w: &World) -> TestResult {
     support::team::resumed_merge_lands(&w.platform, &repo, &w.url(&repo), &a, &b)
 }
 
+/// `repo create --public`: anyone clones it without credentials, through the helper and
+/// with stock Git; made private, both are refused; nobody writes without a token.
+fn public_repositories_read_without_credentials(w: &World) -> TestResult {
+    let owner = w.client("public-owner", &w.platform.owner)?;
+    let origin = &w.proxy.origin;
+    let made = owner.ok(
+        &owner.home,
+        &["repo", "create", "open", "--public", "--origin", origin],
+    )?;
+    check(made.starts_with("Created public open"), &made)?;
+    let id = repo_id(&made)?.to_owned();
+    let listed = owner.ok(&owner.home, &["repo", "list", "--origin", origin])?;
+    check(listed.contains(&format!("{id}  open  public")), &listed)?;
+    let seeded = owner.home.join("seed");
+    owner.git(&owner.home, &["clone", "-q", &w.url(&id), "seed"])?;
+    owner.commit(&seeded, "first", &[("README.md", "# open\n")])?;
+    owner.git(&seeded, &["push", "-q", "origin", "HEAD:main"])?;
+
+    // No token anywhere: an empty YONEDA_TOKEN and a fresh HOME.
+    let anonymous = w.client("public-reader", "")?;
+    anonymous.git(&anonymous.home, &["clone", "-q", &w.url(&id), "helper"])?;
+    check(
+        read(&anonymous.home, "helper/README.md") == "# open\n",
+        "helper clone",
+    )?;
+    let stock = format!("{}/git/{id}.git", w.platform.origin);
+    anonymous.git(&anonymous.home, &["clone", "-q", &stock, "stock"])?;
+    check(
+        read(&anonymous.home, "stock/README.md") == "# open\n",
+        "stock clone",
+    )?;
+    let helper = anonymous.home.join("helper");
+    anonymous.commit(&helper, "nope", &[("x.txt", "x\n")])?;
+    let pushed = anonymous.git_output(&helper, &["push", "-q", "origin", "HEAD:main"])?;
+    check(!pushed.status.success(), "an anonymous push is refused")?;
+
+    owner.ok(
+        &owner.home,
+        &["repo", "visibility", &id, "private", "--origin", origin],
+    )?;
+    let refused = anonymous.git_output(&anonymous.home, &["clone", "-q", &w.url(&id), "late"])?;
+    check(
+        !refused.status.success(),
+        "helper clone of a private repository",
+    )?;
+    let refused = anonymous.git_output(
+        &anonymous.home,
+        &[
+            "-c",
+            "credential.helper=",
+            "-c",
+            "core.askPass=true",
+            "clone",
+            "-q",
+            &stock,
+            "late2",
+        ],
+    )?;
+    check(
+        !refused.status.success(),
+        "stock clone of a private repository",
+    )?;
+    Ok(())
+}
+
+#[test]
+#[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli -- --include-ignored"]
+fn public_repositories_clone_without_credentials() -> TestResult {
+    let platform = Platform::start()?;
+    let proxy = Proxy::start(&platform.origin)?;
+    public_repositories_read_without_credentials(&World { platform, proxy })
+}
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli -- --include-ignored"]
 fn git_works_through_the_remote_helper() -> TestResult {

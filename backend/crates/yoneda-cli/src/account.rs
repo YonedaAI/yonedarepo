@@ -1,5 +1,5 @@
-//! `yoneda repo create|list|delete|import|fork`: repositories on the caller's account (or,
-//! with `--owner`, on an organization it owns).
+//! `yoneda repo create|list|delete|import|fork|visibility`: repositories on the caller's
+//! account (or, with `--owner`, on an organization it owns).
 use crate::command::RepoCommand;
 use crate::error::{Error, Result};
 use crate::remote::url::RemoteUrl;
@@ -24,8 +24,14 @@ fn clone_hint(origin: &str, repo: &str) -> String {
 pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
     let (origin, api) = target::account_api(origin)?;
     match command {
-        RepoCommand::Create { name, owner } => {
-            let mut body = json!({ "name": name, "policy": *SOLO_POLICY });
+        RepoCommand::Create {
+            name,
+            owner,
+            public,
+        } => {
+            let visibility = if public { "public" } else { "private" };
+            let mut body =
+                json!({ "name": name, "policy": *SOLO_POLICY, "visibility": visibility });
             if let Some(owner) = &owner {
                 body["owner"] = json!(owner);
             }
@@ -33,7 +39,10 @@ pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
             let id = created["id"]
                 .as_str()
                 .ok_or_else(|| Error::new("the platform returned no repository id"))?;
-            println!("Created {name} ({id})\n  {}", clone_hint(&origin, id));
+            println!(
+                "Created {visibility} {name} ({id})\n  {}",
+                clone_hint(&origin, id)
+            );
         }
         RepoCommand::List => {
             let listed = api.get("/repos").await?;
@@ -43,12 +52,25 @@ pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
             }
             for repo in repos {
                 println!(
-                    "{}  {}  {}",
+                    "{}  {}  {}  {}",
                     repo["id"].as_str().unwrap_or("?"),
                     repo["name"].as_str().unwrap_or(""),
+                    repo["visibility"].as_str().unwrap_or("private"),
                     repo["created_at"]
                 );
             }
+        }
+        RepoCommand::Visibility { id, public } => {
+            if !crate::api::valid_repo_id(&id) {
+                return Err(Error::usage(format!("{id:?} is not a repository id")));
+            }
+            let visibility = if public { "public" } else { "private" };
+            api.put(
+                &format!("/repos/{id}/visibility"),
+                &json!({ "visibility": visibility }),
+            )
+            .await?;
+            println!("{id} is now {visibility}");
         }
         RepoCommand::Delete { id, confirm } => {
             let path = format!("/repos/{id}?confirm={}", crate::api::encode(&confirm));

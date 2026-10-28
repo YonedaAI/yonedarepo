@@ -37,8 +37,9 @@ export async function commitInShard(
   body: Json,
   dispatch: 'required' | 'best_effort',
 ) {
-  // On main, a commit may begin from the published head: no authority call (landing
-  // re-checks access and validates the base against the log).
+  // On main, a commit may begin from the published head: no authority call and no
+  // optimistic-concurrency check until landing, which re-checks access and validates the
+  // base against the log.
   const onMain = !body.parent && ['main', 'refs/heads/main'].includes(body.ref);
   const paths = body.changes.map((c: Json) => c?.path);
   const fromHead =

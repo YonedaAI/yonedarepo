@@ -78,11 +78,11 @@ fn a_team_entry_grants_its_role_and_leaving_the_team_revokes_it() {
     let other = json!({"other": {"role": "member", "teams": [{"name": "devs", "id": 7}]}});
     assert_eq!(
         code(with_orgs(&h, "bob", other, status.clone())),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     assert_eq!(
         code(with_orgs(&h, "bob", devs(json!([])), status.clone())),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     // The highest role wins: a direct read row does not cap the team's write.
     put(&h, "bob", "read").unwrap();
@@ -153,7 +153,7 @@ fn org_owners_act_as_the_owner_of_the_orgs_repositories() {
     );
     assert_eq!(
         code(with_orgs(&h, "carl", member, admin.clone())),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     assert_eq!(
         code(with_orgs(&h, "alice", owner.clone(), branch(&root, "a"))),
@@ -167,7 +167,7 @@ fn org_owners_act_as_the_owner_of_the_orgs_repositories() {
     let elsewhere = json!({"acme": {"role": "owner", "teams": []}});
     assert_eq!(
         code(pat(&h, "alice", json!({"orgs": elsewhere}), admin)),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
 }
 
@@ -212,12 +212,12 @@ fn a_grant_belongs_to_one_team_not_to_a_later_team_of_the_same_name() {
     };
     assert_eq!(as_team(7, "a"), "OK");
     // Team 7 was deleted and devs re-created as team 9: its members hold nothing here.
-    assert_eq!(as_team(9, "b"), "FORBIDDEN");
+    assert_eq!(as_team(9, "b"), "NOT_FOUND");
     // Granting team 9 replaces the stale grant; removing by name clears every grant to devs.
     let granted = put(&h, "team:acme/devs#9", "read").unwrap();
     assert_eq!(granted["replaced"], json!(["team:acme/devs#7"]));
     assert_eq!(granted["previous"], "write");
-    assert_eq!(as_team(7, "c"), "FORBIDDEN");
+    assert_eq!(as_team(7, "c"), "NOT_FOUND");
     let removed = h.ok(
         OWNER,
         json!({"op":"repo_member_remove","account":"team:acme/devs"}),

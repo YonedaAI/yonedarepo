@@ -72,7 +72,7 @@ it('an org team member pushes and leaving the team refuses them within the acces
   await api('/orgs/acme/teams', alice, { body: { name: 'devs' } });
   await api('/orgs/acme/teams/devs/members', alice, { body: { account: 'orgs_bob' } });
   expect((await api('/orgs', bob)).body.orgs).toEqual([{ org: 'acme', role: 'member' }]);
-  expect((await api(`${repo}/refs`, bob)).status).toBe(403);
+  expect((await api(`${repo}/refs`, bob)).status).toBe(404);
   expect((await api('/orgs/acme/repos', bob)).body.repos).toEqual([]);
 
   // The repository grants the team write; only existing teams can be named.
@@ -92,8 +92,8 @@ it('an org team member pushes and leaving the team refuses them within the acces
 
   // Leaving the team: refused at once by the isolate that served the change.
   expect((await api('/orgs/acme/teams/devs/members/orgs_bob', alice, { method: 'DELETE' })).body).toMatchObject({ removed: true });
-  expect((await push(id, pat, 'refs/heads/bob2', await commitOf(main, 'bob 2'))).status).toBe(403);
-  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(403);
+  expect((await push(id, pat, 'refs/heads/bob2', await commitOf(main, 'bob 2'))).status).toBe(404);
+  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(404);
 
   // Another isolate (a change it did not serve) decides on its copy for under ACCESS_MS,
   // then asks the org again.
@@ -103,8 +103,8 @@ it('an org team member pushes and leaving the team refuses them within the acces
   expect((await api(`${repo}/tree?path=`, bob)).status).toBe(200);
   const real = Date.now;
   vi.spyOn(Date, 'now').mockImplementation(() => real() + ACCESS_MS);
-  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(403);
-  expect((await push(id, pat, 'refs/heads/bob3', await commitOf(main, 'bob 3'))).status).toBe(403);
+  expect((await api(`${repo}/tree?path=`, bob)).status).toBe(404);
+  expect((await push(id, pat, 'refs/heads/bob3', await commitOf(main, 'bob 3'))).status).toBe(404);
   vi.restoreAllMocks();
 
   // Org owners act as the repository owner; leaving the org drops it from the listing.
@@ -181,14 +181,14 @@ it('a deleted team takes its grants with it: a new team of the same name starts 
   // Re-created under the same name, with finn in it: the old repository grant is not his.
   await api('/orgs/gamma/teams', erin, { body: { name: 'devs' } });
   await api('/orgs/gamma/teams/devs/members', erin, { body: { account: 'orgs_finn' } });
-  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(403);
+  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(404);
   expect((await api('/repos', finn)).body.repos).toEqual([]);
   // Granting the new team works, and replaces the stale row; removing by name clears it.
   await api(`/repos/${id}/members`, erin, { body: { account: 'team:gamma/devs', role: 'read' } });
   expect((await api(`/repos/${id}/refs`, finn)).status).toBe(200);
   expect((await api(`/repos/${id}/members`, erin)).body.members).toEqual([expect.objectContaining({ account: 'team:gamma/devs', role: 'read' })]);
   expect((await api(`/repos/${id}/members/${encodeURIComponent('team:gamma/devs')}`, erin, { method: 'DELETE' })).body).toMatchObject({ removed: true });
-  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(403);
+  expect((await api(`/repos/${id}/refs`, finn)).status).toBe(404);
 });
 
 it('a team change another isolate served reaches listing and reads within the access bound', async () => {
@@ -200,7 +200,7 @@ it('a team change another isolate served reaches listing and reads within the ac
   await api(`/repos/${id}/members`, hana, { body: { account: 'team:delta/devs', role: 'write' } });
   await api('/orgs/delta/members', hana, { body: { account: 'orgs_ivan', role: 'member' } });
   // This isolate now holds ivan's org answer: a member of delta in no team.
-  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(404);
   const real = Date.now;
   const later = (ms: number) => vi.spyOn(Date, 'now').mockImplementation(() => real() + ms);
 
@@ -208,7 +208,7 @@ it('a team change another isolate served reaches listing and reads within the ac
   // team for under ACCESS_MS (the kit's listing right after the add), then asks the org.
   await workspace(scoped, 'delta', { op: 'team_member_put', actor: 'orgs_hana', team: 'devs', account: 'orgs_ivan', now: real() });
   expect((await api('/repos', ivan)).body.repos).toEqual([]);
-  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(404);
   later(ACCESS_MS);
   expect((await api('/repos', ivan)).body.repos).toEqual([expect.objectContaining({ id, owner: 'delta', role: 'write' })]);
   expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(200);
@@ -221,7 +221,7 @@ it('a team change another isolate served reaches listing and reads within the ac
   await workspace(scoped, 'delta', { op: 'team_member_remove', actor: 'orgs_hana', team: 'devs', account: 'orgs_ivan', now: real() });
   expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(200);
   later(2 * ACCESS_MS);
-  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(404);
   expect((await api('/repos', ivan)).body.repos).toEqual([]);
   vi.restoreAllMocks();
 });

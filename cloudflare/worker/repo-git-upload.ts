@@ -7,9 +7,12 @@
 // (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
-import type { ReadStats } from './repo-bundles';
+import { ReadStats, type Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
+
+type Read = Wanted & { data: Uint8Array | null };
+
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -20,6 +23,8 @@ export const RESULT = {
 };
 export const REQUEST_BYTES = 8 * 1024 * 1024;
 const WALK_ROUNDS = 64;
+/** Commits read while the walk runs, at most (each is held until the pack is written). */
+const EARLY_COMMITS = 20_000;
 /** Pack bytes gathered before they are sent (one side-band packet at most). */
 export const CHUNK = 65515;
 
@@ -77,7 +82,8 @@ export async function uploadPack(
   );
   if (!request.done) return new Response(ack, { headers: RESULT });
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
-  return sendPack(ack, UploadSession.open(walk), objects, band, stats);
+  const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
+  return sendPack(ack, UploadSession.open(walk), objects, band, stats, commits);
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
@@ -90,18 +96,29 @@ export async function sendPack(
   objects: RepoObjects,
   band: number,
   stats?: PackStats,
+  commits: string[] = [],
 ): Promise<Response> {
   let listed: Json;
+  // The commits the walk names are read while their trees are walked.
+  const early: Promise<Read[]> =
+    commits.length <= EARLY_COMMITS
+      ? readWhole(
+          objects,
+          commits.map((id) => ({ id, kind: 'commit' })),
+          stats?.reads,
+        )
+      : Promise.resolve([]);
+  early.catch(() => {});
   try {
     const started = performance.now();
-    listed = await enumerate(session, objects);
+    listed = await enumerate(session, objects, stats?.walkReads);
     if (stats) stats.walk = performance.now() - started;
   } catch (e: any) {
     session.close();
     if (transient(e)) throw e;
     return errLine(head, e);
   }
-  const chunks = packChunks(session, objects, listed, stats);
+  const chunks = packChunks(session, objects, listed, early, stats);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(head);
@@ -135,25 +152,33 @@ export function errLine(head: Uint8Array, e: any) {
 }
 
 /** Lists what to send, reading the trees each commit's diff needs. */
-export async function enumerate(session: UploadSession, objects: RepoObjects) {
+export async function enumerate(session: UploadSession, objects: RepoObjects, stats?: ReadStats) {
   const seen = new SeenTrees();
   let step = session.step({});
   for (let round = 0; step.need_trees; round++) {
     if (round >= WALK_ROUNDS)
       throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen);
+    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
     step = session.step({ trees });
   }
   return step;
 }
 
+/** `wanted` read whole (`rawObjects`). */
+async function readWhole(objects: RepoObjects, wanted: Wanted[], stats?: ReadStats) {
+  const read: Read[] = [];
+  for await (const group of rawObjects(objects, wanted, stats)) read.push(...group);
+  return read;
+}
+
 /** The pack, in pieces of about `CHUNK` bytes: header, trees and tag objects (from the
- * session), then
- * blobs and commits read in groups (`rawObjects`), then the trailer. Closes the session. */
+ * session), then the commits read `early`, then the other commits and blobs read in
+ * groups (`rawObjects`), then the trailer. Closes the session. */
 async function* packChunks(
   session: UploadSession,
   objects: RepoObjects,
   listed: Json,
+  early: Promise<Read[]>,
   stats?: PackStats,
 ) {
   try {
@@ -169,12 +194,7 @@ async function* packChunks(
         size = 0;
       }
     };
-    for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
-    // Annotated tag objects travel with the walk.
-    for (const id of (listed.tags ?? []) as string[]) yield* add(session.entry('tag', id));
-    let asked = performance.now();
-    for await (const group of rawObjects(objects, listed.fetch, stats?.reads)) {
-      if (stats) stats.waited += performance.now() - asked;
+    const write = function* (group: Read[]) {
       for (const { id, kind, data } of group) {
         if (!data)
           throw new ApiError(
@@ -186,6 +206,20 @@ async function* packChunks(
         if (stats) stats.raw += data.length;
         yield* add(session.entry(kind, id, data));
       }
+    };
+    for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
+    // Annotated tag objects travel with the walk.
+    for (const id of (listed.tags ?? []) as string[]) yield* add(session.entry('tag', id));
+    let asked = performance.now();
+    const ahead = await early;
+    if (stats) stats.waited += performance.now() - asked;
+    yield* write(ahead);
+    const sent = new Set(ahead.map((o) => o.id));
+    asked = performance.now();
+    const rest = (listed.fetch as Wanted[]).filter((w) => !sent.has(w.id));
+    for await (const group of rawObjects(objects, rest, stats?.reads)) {
+      if (stats) stats.waited += performance.now() - asked;
+      yield* write(group);
       asked = performance.now();
     }
     pending.push(session.finish());
@@ -208,7 +242,9 @@ export class PackStats {
   walk = 0;
   waited = 0;
   raw = 0;
-  readonly reads: ReadStats = { reads: 0, bytes: 0 };
+  /** The walk's ranged reads (trees) and the pack's (commits and files). */
+  readonly walkReads = new ReadStats();
+  readonly reads = new ReadStats();
   private entries = 0;
   private deltas = 0;
   private bytes = 0;
@@ -229,8 +265,8 @@ export class PackStats {
       `deltas=${this.deltas}`,
       `raw=${mib(this.raw)}MiB`,
       `sent=${mib(this.bytes)}MiB`,
-      `reads=${this.reads.reads}`,
-      `read=${mib(this.reads.bytes)}MiB`,
+      ...this.walkReads.fields('walk_'),
+      ...this.reads.fields(),
       `read_wait=${ms(this.waited)}ms`,
       `stream=${ms(performance.now() - this.started - this.walk)}ms`,
     ];

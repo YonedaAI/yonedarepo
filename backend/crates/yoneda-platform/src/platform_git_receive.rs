@@ -2,7 +2,8 @@
 //! streams in (command list, then the pack, resolved as it arrives), verification asks the
 //! adapter for what only the repository holds, and the verified objects stream out for the
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
-//! applies the ref updates through the authority's compare-and-swap paths.
+//! applies the ref updates through the authority's compare-and-swap paths, with each
+//! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
 use crate::platform_git_verify::{Step, Verifier};
 use crate::platform_objects::supplied_tree;
 use crate::storage::{bad, string};
@@ -10,15 +11,16 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Result,
-    git_object::{
-        AnnotatedTag, CommandList, ObjectId, ObjectKind, PackLimits, PackReader, RefCommand,
-        command_list,
-    },
+    git_object::{AnnotatedTag, ObjectId, ObjectKind, PackLimits, PackReader},
+    transport::{CommandList, RefCommand, command_list},
 };
 
 /// Larger pushes go through `git-remote-yoneda`, which uploads commit by commit.
 pub const MAX_PACK_BYTES: usize = 64 * 1024 * 1024;
 const MAX_COMMAND_BYTES: usize = 1024 * 1024;
+/// Pushes of more objects than the adapter stages in its authority (STAGE_OBJECTS in
+/// repo-git-receive.ts) keep their commits and trees out of their files' bundles.
+const SPLIT_OBJECTS: usize = 256;
 pub const LIMITS: PackLimits = PackLimits {
     max_objects: 40_000,
     max_object_bytes: 16 * 1024 * 1024,
@@ -213,10 +215,16 @@ impl ReceiveSession {
             return Ok(Vec::new());
         };
         let mut out = Vec::new();
+        // A large push's commits and trees end their batch before its first file, so they
+        // fill bundles of their own: a walk or a partial clone never reads across files.
+        let split = self.writes.len() > SPLIT_OBJECTS;
+        let mut last = None;
         while let Some((id, kind)) = self.writes.get(self.written).copied() {
-            if !out.is_empty() && out.len() >= budget {
+            let files_start = split && kind == ObjectKind::Blob && last.is_some_and(|k| k != kind);
+            if !out.is_empty() && (out.len() >= budget || files_start) {
                 break;
             }
+            last = Some(kind);
             let data = pack.content(&id)?;
             let length = u32::try_from(data.len()).map_err(|_| bad("Object is too large"))?;
             out.push(match kind {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
 
@@ -61,6 +62,8 @@ export function BreakGlass({
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // A public reader sees the record of past break-glass actions, not the control.
+  const readOnly = useReadOnly();
   async function open() {
     setError('');
     try {
@@ -91,7 +94,7 @@ export function BreakGlass({
   return (
     <section className="source-break-glass" aria-label="Break-glass recovery">
       <BreakGlassRecords commit={commit} records={records} />
-      {head === undefined ? (
+      {readOnly ? null : head === undefined ? (
         <button type="button" className="quiet" onClick={open}>
           Break glass…
         </button>

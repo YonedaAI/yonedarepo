@@ -55,7 +55,7 @@ fn roles_map_to_scopes_and_strangers_stay_out() {
     let (h, root) = seeded();
     assert_eq!(
         code(member(&h, "stranger", json!({"op":"repo_status"}))),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     for (account, role) in [("rita", "read"), ("will", "write"), ("lana", "land")] {
         add(&h, account, role);
@@ -121,7 +121,7 @@ fn roles_map_to_scopes_and_strangers_stay_out() {
     // Only an account's own session is a member; an admin bearer naming it is not.
     let mut bearer = json!({"op":"repo_status","now":1});
     bearer["_session"] = json!({"workspace": "lana", "principal": "admin"});
-    assert_eq!(code(execute_repo_store(&h.db, bearer)), "FORBIDDEN");
+    assert_eq!(code(execute_repo_store(&h.db, bearer)), "NOT_FOUND");
 }
 
 #[test]
@@ -308,7 +308,7 @@ fn personal_tokens_hold_what_both_token_and_role_allow() {
             json!(["repo:admin"]),
             json!({"op":"repo_status"})
         ),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
 }
 
@@ -331,23 +331,23 @@ fn removal_ends_access_at_once_including_the_published_snapshot() {
         crate::platform_head::head_access(&json!({"head": head, "credentials": session}))
     };
     assert_eq!(access(&head).unwrap()["principal"], "user:rita");
-    // A head published before members carries none: refused there, the authority decides.
+    // A head published before members carries none: not found there, the authority decides.
     let mut old = head.clone();
     old.as_object_mut().unwrap().remove("members");
-    assert_eq!(code(access(&old)), "FORBIDDEN");
+    assert_eq!(code(access(&old)), "NOT_FOUND");
 
     assert_eq!(code(member(&h, "rita", json!({"op":"repo_status"}))), "OK");
     h.ok(OWNER, json!({"op":"repo_member_remove","account":"rita"}));
     assert_eq!(
         code(member(&h, "rita", json!({"op":"repo_status"}))),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     let after = h.ok(
         "platform:projection",
         json!({"op":"repo_head","ref":"main"}),
     );
     assert_eq!(after["access_version"], before["access_version"]);
-    assert_eq!(code(access(&after)), "FORBIDDEN");
+    assert_eq!(code(access(&after)), "NOT_FOUND");
 }
 
 #[test]

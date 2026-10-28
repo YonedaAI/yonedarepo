@@ -13,6 +13,7 @@ import {
 } from './CommitGates';
 import { commitPanel, revertBranch } from './commitPanel';
 import { principalName } from './fileActivity';
+import { useReadOnly } from './repoAccess';
 import type { RepoStatus } from './repoStatus';
 import { Failure } from './SourceStatus';
 import { type SourceApiError, sourceApi, when } from './sourceApi';
@@ -53,7 +54,14 @@ export function CommitLanding({
   onReload: () => void;
 }) {
   const commit = detail.commit;
-  const panel = commitPanel(detail, status?.viewer, status?.policy, username);
+  // A public reader sees the gates, checks and reviews, never review, land or revert.
+  const readOnly = useReadOnly();
+  const panel = commitPanel(
+    detail,
+    readOnly ? undefined : status?.viewer,
+    status?.policy,
+    username,
+  );
   const branches = (status?.refs ?? [])
     .filter((r) => r.name.startsWith('refs/heads/'))
     .map((r) => r.name.slice('refs/heads/'.length));

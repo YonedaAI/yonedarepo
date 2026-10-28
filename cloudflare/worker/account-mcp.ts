@@ -42,6 +42,12 @@ const managementTools: Json[] = [
           type: 'string',
           description: 'An organization to own the repository (you must be one of its owners)',
         },
+        visibility: {
+          type: 'string',
+          enum: ['private', 'public'],
+          description:
+            'private (default): only you and members; public: anyone reads, nobody else writes',
+        },
         files: { type: 'array', items: file, maxItems: 10000 },
         policy: {
           type: 'object',

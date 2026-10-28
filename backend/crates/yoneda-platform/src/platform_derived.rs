@@ -7,13 +7,15 @@ use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap};
 use yoneda_core::{
     Error, Result,
-    blame::blame,
+    blame::{BlameLine, blame},
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
-    search::{MAX_INDEXED_BYTES, Segment, build_segment, grep},
+    search::{MAX_INDEXED_BYTES, StoredSegment, build_segment, grep},
 };
 
 /// Files one directory may list for indexing (its index is built in chunks).
 const MAX_PARTITION_FILES: usize = 200_000;
+/// Characters of each line a blame answer carries; longer lines are cut there.
+const BLAME_LINE_CHARS: usize = 500;
 
 pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
     let Some(encoded) = c["blobs"].get(id.hex()).and_then(Value::as_str) else {
@@ -142,14 +144,32 @@ pub fn index_files(c: &Value) -> Result<Value> {
     if !need.is_empty() {
         return Ok(json!({ "need_blobs": need }));
     }
-    Ok(json!({ "segment": build_segment(&contents) }))
+    let segment = build_segment(&contents).encode()?;
+    Ok(json!({ "segment_b64": STANDARD.encode(segment) }))
 }
 
+/// `search_segment`: of a stored segment (`segment_b64`) under `prefix`, the files that may
+/// hold `query` and the files whose content is not searched, with why.
 pub fn search_segment(c: &Value) -> Result<Value> {
-    let segment: Segment =
-        serde_json::from_value(c["segment"].clone()).map_err(|_| bad("Invalid segment"))?;
+    let bytes = STANDARD
+        .decode(string(c, "segment_b64")?)
+        .map_err(|_| bad("segment_b64 is not base64"))?;
+    let segment = StoredSegment::open(&bytes)?;
     let prefix = c["prefix"].as_str().unwrap_or_default();
-    Ok(json!({ "candidates": segment.candidates(prefix, &string(c, "query")?) }))
+    let at = |path: &str| match prefix {
+        "" => path.to_owned(),
+        _ => format!("{prefix}/{path}"),
+    };
+    let unindexed: Vec<Value> = segment
+        .files
+        .iter()
+        .filter(|f| !f.indexed)
+        .map(|f| json!({ "path": at(&f.path), "reason": f.skipped.as_deref().unwrap_or("not indexed") }))
+        .collect();
+    Ok(json!({
+        "candidates": segment.candidates(prefix, &string(c, "query")?)?,
+        "unindexed": unindexed,
+    }))
 }
 
 pub fn grep_blob(c: &Value) -> Result<Value> {
@@ -179,7 +199,17 @@ pub fn blame_versions(c: &Value) -> Result<Value> {
     if !need.is_empty() {
         return Ok(json!({ "need_blobs": need }));
     }
-    Ok(json!({ "lines": blame(&history) }))
+    Ok(json!({ "lines": capped(blame(&history), BLAME_LINE_CHARS) }))
+}
+
+/// `lines` with each text cut to at most `max_chars` characters.
+fn capped(mut lines: Vec<BlameLine>, max_chars: usize) -> Vec<BlameLine> {
+    for line in &mut lines {
+        if let Some((at, _)) = line.text.char_indices().nth(max_chars) {
+            line.text.truncate(at);
+        }
+    }
+    lines
 }
 
 #[cfg(test)]

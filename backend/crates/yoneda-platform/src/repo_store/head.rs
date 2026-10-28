@@ -1,8 +1,8 @@
 //! The published head of a branch: everything a commit needs to begin and a read needs to
 //! serve the latest version, so neither asks the authority. The last projected Git head
 //! and the version it reflects (the base new work builds on), the changesets landed since
-//! (the overlay: path → blob, with the landed commit's tree), and the access snapshot (workspace, live token digests and
-//! grants, automation pause). Caches may serve it stale: landing re-checks access and
+//! (the overlay: path → blob, with the landed commit's tree), and the access snapshot (workspace, visibility, live
+//! token digests and grants, members, automation pause). Caches may serve it stale: landing re-checks access and
 //! validates the base against the log.
 use super::changesets::settled_head;
 use super::rows::{self, Settings, branch_ref, current_version};
@@ -43,8 +43,10 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
     let tokens = super::auth::live_tokens(db)?;
     let members = super::members::live(db)?;
     // Changes only when access does, so caches keep the access snapshot across landings.
+    let visibility = settings.visibility.as_str();
     let access_version = yoneda_core::fingerprint(&json!({
         "tokens": tokens, "members": members, "paused": paused, "workspace": settings.workspace,
+        "visibility": visibility,
     }))?;
     Ok(json!({
         "ref": refname, "version": current_version(db)?, "base_version": base_version,
@@ -52,7 +54,7 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
         "projected_version": projected_version, "overlay": overlay,
         "object_store": settings.object_store, "runners": !settings.policy.runners.is_empty(),
         "workspace": settings.workspace, "owner": settings.owner,
-        "paused": paused, "tokens": tokens, "members": members,
+        "paused": paused, "tokens": tokens, "members": members, "visibility": visibility,
         "access_version": access_version,
     }))
 }

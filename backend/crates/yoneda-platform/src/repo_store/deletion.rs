@@ -4,6 +4,7 @@
 //! asks for the store of record through `repo_purge_target`). Nothing is erased here, so
 //! the deletion commits in one transaction with no I/O.
 use super::auth::Actor;
+use super::op::{RepoOp, StoreOp};
 use super::rows::Settings;
 use crate::storage::{SqlStore, number, string};
 use serde_json::{Value, json};
@@ -15,8 +16,8 @@ pub fn gone() -> Error {
 }
 
 /// Whether `op` still runs on a tombstone: the (idempotent) delete and the purge read.
-pub fn allowed_when_deleted(op: &str) -> bool {
-    matches!(op, "repo_delete" | "repo_purge_target")
+pub fn allowed_when_deleted(op: StoreOp) -> bool {
+    matches!(op, StoreOp::Repo(RepoOp::Delete | RepoOp::PurgeTarget))
 }
 
 /// `repo_delete {confirm}`: the owner only (never an admin member), with the repository's

@@ -23,6 +23,8 @@ export type RepoStatus = {
   refs: RefHead[];
   version: number;
   viewer: Viewer;
+  /** Who may read: members only, or anyone. */
+  visibility: Visibility;
 };
 
 export type ForkParent = {
@@ -89,8 +91,12 @@ export type SecretAllow = {
 export type Viewer = {
   owner: boolean;
   principal: string;
+  /** Reading a public repository as neither owner nor member. */
+  public: boolean;
   role: Role | null;
 };
+
+export type Visibility = "private" | "public";
 
 export const repoStatusSchema = {
   "$defs": {
@@ -347,6 +353,10 @@ export const repoStatusSchema = {
         "principal": {
           "type": "string"
         },
+        "public": {
+          "description": "Reading a public repository as neither owner nor member.",
+          "type": "boolean"
+        },
         "role": {
           "anyOf": [
             {
@@ -361,9 +371,17 @@ export const repoStatusSchema = {
       "required": [
         "principal",
         "owner",
-        "role"
+        "role",
+        "public"
       ],
       "type": "object"
+    },
+    "Visibility": {
+      "enum": [
+        "private",
+        "public"
+      ],
+      "type": "string"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -440,6 +458,10 @@ export const repoStatusSchema = {
     },
     "viewer": {
       "$ref": "#/$defs/Viewer"
+    },
+    "visibility": {
+      "$ref": "#/$defs/Visibility",
+      "description": "Who may read: members only, or anyone."
     }
   },
   "required": [
@@ -456,6 +478,7 @@ export const repoStatusSchema = {
     "automation",
     "parent",
     "forks",
+    "visibility",
     "viewer",
     "grant"
   ],

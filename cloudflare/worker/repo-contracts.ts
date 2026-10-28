@@ -4,17 +4,24 @@
 // Which contract governs a symbol (authored, derived or stale) is decided in Rust.
 import { fileAt, handleOf } from './repo-code';
 import { compute } from './repo-compute';
-import { keepAllowed } from './repo-grants';
 import { withObjects } from './repo-object-compute';
-import { ApiError, type Json, type RepoContext, withTrees } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 
-const FACTS_BATCH = 32;
 const RECORD_PATHS = 1000;
+
+/** One blob's facts, named by language (extension) and blob id. */
+export function factsName(path: string, id: string) {
+  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : 'none';
+  return `${ext}/${id}`;
+}
+
+/** Where one blob's facts are cached. */
+export const factsKey = (repo: string, path: string, id: string) =>
+  `derived/v1/${repo}/facts/v1/${factsName(path, id)}`;
 
 /** Symbols, node digests, derived contracts and references of one blob (cached by id). */
 export async function factsOf(ctx: RepoContext, path: string, id: string): Promise<Json> {
-  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : 'none';
-  const key = `derived/v1/${ctx.repo}/facts/v1/${ext}/${id}`;
+  const key = factsKey(ctx.repo, path, id);
   const cached = await ctx.env.OBJECTS.get(key);
   if (cached) return cached.json<Json>();
   const facts = await withObjects(ctx, { op: 'code_facts', path, id });
@@ -31,38 +38,6 @@ export async function recordsFor(ctx: RepoContext, paths: string[], at?: unknown
     records.push(...(await ctx.call({ op: 'repo_contracts', paths: chunk, ...version })).records);
   }
   return records;
-}
-
-/**
- * Every file a revision-wide view may analyse: inside the caller's grant (hidden files
- * never enter the computation, so nothing about them can leak into a view), in a
- * supported language, bounded in number. Each comes with its facts.
- */
-export async function revisionFiles(ctx: RepoContext, tree: string, at?: unknown) {
-  const objects = await ctx.objects();
-  const { changes } = await withTrees(objects, { op: 'tree_diff', old: null, new: tree });
-  const listed = (changes as Json[]).map((c) => ({
-    path: c.path,
-    id: c.new?.id,
-    type: c.new?.type,
-  }));
-  const plan = compute({ op: 'view_files', files: await keepAllowed(ctx, listed) });
-  const files: Json[] = [];
-  for (let i = 0; i < plan.files.length; i += FACTS_BATCH)
-    files.push(
-      ...(await Promise.all(
-        (plan.files as Json[]).slice(i, i + FACTS_BATCH).map(async (f) => ({
-          path: f.path,
-          facts: await factsOf(ctx, f.path, f.id),
-        })),
-      )),
-    );
-  const records = await recordsFor(
-    ctx,
-    files.map((f) => f.path),
-    at,
-  );
-  return { files, records, truncated: plan.truncated as boolean, limit: plan.limit as number };
 }
 
 /** The governing contract of one symbol at a commit, branch or past version. */

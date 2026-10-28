@@ -48,7 +48,7 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   object_store: 'r2',
   policy,
   policy_digest: 'd'.repeat(64),
-  viewer: { principal: 'user:kit', ...viewer },
+  viewer: { principal: 'user:kit', public: false, ...viewer },
   refs: [
     { name: 'refs/heads/main', commit_id: 'b'.repeat(40), version: 2 },
     { name: 'refs/heads/dev', commit_id: 'c'.repeat(40), version: 1 },
@@ -60,6 +60,7 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   parent: null,
   forks: 0,
   grant: null,
+  visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>
   renderToStaticMarkup(

@@ -1,9 +1,11 @@
 //! Command-line parsing: a small table-driven parser (no framework). The command set is
 //! wide but each command has a handful of flags; clap would add more than it removes.
+mod change;
 #[cfg(test)]
 mod docs;
 mod org;
 mod parser;
+mod release;
 mod ssh_key;
 mod sub;
 
@@ -143,8 +145,8 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "reads" => sub::declared_reads(rest)?,
         "push" => Command::Push(rest.to_vec()),
         "session" => sub::session(rest)?,
-        "change" => sub::change(rest)?,
-        "release" => sub::release(rest)?,
+        "change" => change::change(rest)?,
+        "release" => release::release(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
@@ -245,10 +247,34 @@ mod tests {
                 origin: None,
                 command: RepoCommand::Create {
                     name: "web".into(),
-                    owner: Some("acme".into())
+                    owner: Some("acme".into()),
+                    public: false
                 }
             })
         );
+        assert_eq!(
+            parsed("repo create site --public").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Create {
+                    name: "site".into(),
+                    owner: None,
+                    public: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo visibility r1 private").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::Visibility {
+                    id: "r1".into(),
+                    public: false
+                }
+            })
+        );
+        assert!(parsed("repo visibility r1 internal").is_err());
+        assert!(parsed("repo list --public").is_err());
         assert_eq!(
             parsed("repo delete r1 --confirm demo").ok(),
             Some(Command::Repo {

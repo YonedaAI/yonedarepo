@@ -109,3 +109,24 @@ fn a_retained_reviewer_policy_still_bounds_sign_in() {
         false
     );
 }
+
+#[test]
+fn account_ops_round_trip_and_unknown_ops_are_not_found() {
+    use super::op::AccountOp;
+    let all = AccountOp::all();
+    for op in &all {
+        assert_eq!(AccountOp::parse(&json!({"op": op.name()})).unwrap(), *op);
+    }
+    // What the account adapters send (signup, login and recover are named by the route).
+    let sent = crate::ops::worker_op_literals(|source| source.contains("from './workspace'"));
+    assert!(sent.len() >= 25, "{}", sent.len());
+    for name in sent.iter().filter(|name| !name.starts_with("repo_")) {
+        assert!(AccountOp::parse(&json!({ "op": name })).is_ok(), "{name}");
+    }
+    let db = NativeStore::memory().unwrap();
+    let e = call(&db, json!({"op":"nope"})).unwrap_err();
+    assert_eq!(
+        (e.code.as_str(), e.message.as_str()),
+        ("NOT_FOUND", "Unknown workspace operation")
+    );
+}
