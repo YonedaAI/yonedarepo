@@ -177,6 +177,16 @@ pub fn entries<S: SqlStore>(
     until: u64,
     refname: Option<&str>,
 ) -> Result<Vec<TxEntry>> {
+    // Archived versions are not in this table: a caller needing them fails closed.
+    let floor = super::maintenance::archive::floor(db)?;
+    if after < floor && until > after {
+        return Err(Error::new(
+            "TXLOG_COMPACTED",
+            format!(
+                "Log versions up to {floor} are archived; this needs the log after version {after} (rebase onto a newer version)"
+            ),
+        ));
+    }
     let rows = match refname {
         Some(name) => db.query(
             "SELECT entry FROM txlog WHERE version>? AND version<=? AND refname=? ORDER BY version",
