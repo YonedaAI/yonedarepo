@@ -10,7 +10,9 @@ use super::{
     merging, prepare, projection, projection_plan, pushed, reads, rebase, record, releases,
     sessions, staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
-use super::{authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance};
+use super::{
+    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, visibility,
+};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::Result;
@@ -25,6 +27,7 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
+    visibility::gate(&actor, op, c)?;
     authorize(&actor, op, c)?;
     // Only the owner's own account keeps working while automation is paused (not admins).
     if !actor.repo_owner() && break_glass::pauses(op) {
@@ -166,6 +169,7 @@ fn run<S: SqlStore>(
         R::TokenRevoke => tokens::revoke_token(db, c, actor),
         R::Tokens => tokens::list_tokens(db, actor),
         R::Members => members::list(db),
+        R::SetVisibility => visibility::set(db, c, actor),
         R::MemberPut => members::put(db, c, actor, settings),
         R::MemberRemove => members::remove(db, c, actor, settings),
     }

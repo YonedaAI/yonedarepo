@@ -81,9 +81,11 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   expect((await api('/repos', agent)).status).toBe(403);
 
   const stranger = { cookie: await signup('bob') };
-  expect((await api(repo, stranger)).status).toBe(403);
+  expect((await api(repo, stranger)).status).toBe(404);
   expect((await api('/repos', stranger)).body.repos).toEqual([]);
-  expect((await api(repo, {})).status).toBe(401);
+  // Without credentials a private repository is not found; writes ask for credentials.
+  expect((await api(repo, {})).status).toBe(404);
+  expect((await api(`${repo}/commits`, {}, { body: {} })).status).toBe(401);
   expect((await api(repo, { token: 'yrp_guessed-token-value-0123456789' })).status).toBe(401);
 });
 

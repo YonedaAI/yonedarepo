@@ -6,8 +6,15 @@ pub enum RepoCommand {
         name: String,
         /// An organization to own it (the caller must be one of its owners).
         owner: Option<String>,
+        /// Anyone reads it, signed in or not (default: owner and members only).
+        public: bool,
     },
     List,
+    /// Makes repository `id` public or private (its owner only).
+    Visibility {
+        id: String,
+        public: bool,
+    },
     Delete {
         id: String,
         confirm: String,

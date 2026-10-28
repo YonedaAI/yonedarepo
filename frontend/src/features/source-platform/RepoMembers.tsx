@@ -11,8 +11,15 @@ import { type Loaded, useSource } from './useSource';
 export const MEMBER_ROLES = ['read', 'write', 'land', 'admin'] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
 export type Member = { account: string; role: MemberRole; added_by: string; added_at: number };
-/** The caller as `GET /repos/:id` reports it: `role` is null for the owner. */
-export type Viewer = { owner: boolean; role: MemberRole | null };
+/** The caller as `GET /repos/:id` reports it: `role` is null for the owner. `public` is set
+ * when the caller reads only because the repository is public (`principal` is `anonymous`
+ * when signed out); such a viewer may never change anything. */
+export type Viewer = {
+  owner: boolean;
+  role: MemberRole | null;
+  principal?: string;
+  public?: boolean;
+};
 
 export const ROLE_HELP: Record<MemberRole, string> = {
   read: 'read and clone',

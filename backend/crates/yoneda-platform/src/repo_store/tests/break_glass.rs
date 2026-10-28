@@ -92,7 +92,7 @@ fn every_non_human_caller_gets_the_same_refusal() {
             stranger,
             json!({"op":"repo_break_glass","action":"pause_automation","reason":"x"})
         )),
-        "FORBIDDEN"
+        "NOT_FOUND"
     );
     assert_eq!(audit_rows(&h), 0);
 }

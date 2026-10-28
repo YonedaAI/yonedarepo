@@ -295,7 +295,8 @@ function decide(head: Json, command: Json): Json | null {
   try {
     return compute({ ...command, head: access });
   } catch (e: any) {
-    if (['UNAUTHORIZED', 'FORBIDDEN'].includes(e.code)) return null;
+    // NOT_FOUND: a stranger to a private repository, or a member the snapshot predates.
+    if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND'].includes(e.code)) return null;
     throw new ApiError(e.code ?? 'INVALID_INPUT', e.message);
   }
 }

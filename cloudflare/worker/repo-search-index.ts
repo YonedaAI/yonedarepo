@@ -3,15 +3,21 @@
 // branch holding that subtree. A partition is indexed in chunks of bounded bytes, so no
 // directory is ever left out for its size: only a file over the per-file cap (4 MiB) or a
 // binary one is listed by path alone, with the reason. Paths are relative to the
-// partition; readers pass its prefix, so a renamed directory reuses its index.
+// partition; readers pass its prefix, so a renamed directory reuses its index. Segments
+// are stored compact (yoneda-core search/stored.rs) and handed to Rust as stored.
 import { bundledPlaces } from './repo-bundles';
+import { compute } from './repo-compute';
 import { withObjects } from './repo-object-compute';
+import { fromBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 
-// `search/v3`: an index may be several chunk segments, and files up to 4 MiB are indexed.
-// v2 indexed files up to 1 MiB and skipped a partition over 8 MiB whole.
-const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/v3/${key}`;
+// `search/v4`: segments are stored compact, not as JSON (under half the bytes for source).
+// v3: an index may be several chunk segments, and files up to 4 MiB are indexed. v2
+// indexed files up to 1 MiB and skipped a partition over 8 MiB whole.
+const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/v4/${key}`;
+/** A stored segment starts with these bytes; a chunked index's count is JSON. */
+const SEGMENT_MAGIC = 'YSG1';
 
 /** File bytes one chunk's build reads at most (all go into one compute call). */
 const CHUNK_BYTES = 8 * 1024 * 1024;
@@ -26,16 +32,27 @@ const TOO_LARGE = Number.MAX_SAFE_INTEGER;
 
 /** A partition's index: its one segment, or how many chunk segments it has; `refused` when
  * the directory lists more files than an index may hold. */
-export type PartitionIndex = { partition: Json; segment?: Json; chunks: number; refused?: string };
+export type PartitionIndex = {
+  partition: Json;
+  segment?: Uint8Array;
+  chunks: number;
+  refused?: string;
+};
 
 const chunkKey = (key: string, i: number) => `${key}/${i}`;
 
-async function stored(ctx: RepoContext, key: string): Promise<Json | null> {
-  const object = await timed('search.segment', () =>
-    ctx.env.OBJECTS.get(segmentKey(ctx.repo, key)),
-  );
-  return object ? await object.json<Json>() : null;
+/** A stored segment, or a chunked index's `{ chunks }`. */
+async function stored(ctx: RepoContext, key: string): Promise<Uint8Array | Json | null> {
+  const bytes = await timed('search.segment', async () => {
+    const object = await ctx.env.OBJECTS.get(segmentKey(ctx.repo, key));
+    return object ? new Uint8Array(await object.arrayBuffer()) : null;
+  });
+  if (!bytes) return null;
+  if (new TextDecoder().decode(bytes.subarray(0, 4)) === SEGMENT_MAGIC) return bytes;
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
+
+const isSegment = (value: unknown): value is Uint8Array => value instanceof Uint8Array;
 
 /** `files` in chunks of at most CHUNK_FILES and (as far as sizes are known) CHUNK_BYTES;
  * a file over the cap costs nothing, as it is not read. */
@@ -60,16 +77,16 @@ function chunked(files: Json[], sizes: Json) {
 
 /** Segments of `files`: one, or (when their content outgrows CHUNK_BYTES, as files of
  * unknown size can) those of each half; a single file over the budget is listed unread. */
-async function segmentsOf(ctx: RepoContext, files: Json[], sizes: Json): Promise<Json[]> {
+async function segmentsOf(ctx: RepoContext, files: Json[], sizes: Json): Promise<Uint8Array[]> {
   try {
-    const { segment } = await withObjects(
+    const { segment_b64 } = await withObjects(
       ctx,
       { op: 'index_files', files },
       [],
       CHUNK_BYTES,
       sizes,
     );
-    return [segment];
+    return [fromBase64(segment_b64)];
   } catch (e) {
     if (!(e instanceof ApiError && e.code === 'TOO_LARGE')) throw e;
     if (files.length === 1) {
@@ -105,21 +122,24 @@ async function build(ctx: RepoContext, p: Json): Promise<PartitionIndex> {
     files.map((f) => String(f.id)),
   );
   for (const [id, place] of places) sizes[id] = place.size;
-  const put = (key: string, value: Json) =>
-    ctx.env.OBJECTS.put(segmentKey(ctx.repo, key), JSON.stringify(value));
-  let first: Json | undefined;
+  const put = (key: string, value: Uint8Array | Json) =>
+    ctx.env.OBJECTS.put(
+      segmentKey(ctx.repo, key),
+      isSegment(value) ? value : JSON.stringify(value),
+    );
+  let first: Uint8Array | undefined;
   let count = 0;
   for (const chunk of chunked(files, sizes))
     for (const segment of await segmentsOf(ctx, chunk, sizes)) {
       if (count === 0) first = segment;
       else {
-        if (count === 1) await put(chunkKey(p.key, 0), first as Json);
+        if (count === 1) await put(chunkKey(p.key, 0), first as Uint8Array);
         await put(chunkKey(p.key, count), segment);
       }
       count++;
     }
   if (count <= 1) {
-    const segment = first ?? { files: [], grams: {} };
+    const segment = first ?? fromBase64(compute({ op: 'index_files', files: [] }).segment_b64);
     await put(p.key, segment);
     return { partition: p, segment, chunks: 1 };
   }
@@ -140,8 +160,8 @@ export async function searchSegments(ctx: RepoContext, root: string) {
       ...(await Promise.all(
         (partitions as Json[]).slice(i, i + SEGMENT_READS).map(async (partition) => {
           const value = await stored(ctx, partition.key);
-          if (value?.chunks) return { partition, chunks: Number(value.chunks) };
-          return { partition, chunks: value ? 1 : 0, ...(value ? { segment: value } : {}) };
+          if (isSegment(value)) return { partition, chunks: 1, segment: value };
+          return { partition, chunks: Number(value?.chunks ?? 0) };
         }),
       )),
     );
@@ -160,7 +180,7 @@ export async function* segmentsIn(ctx: RepoContext, indexes: PartitionIndex[]) {
     else
       for (let i = 0; i < index.chunks; i++) {
         const segment = await stored(ctx, chunkKey(index.partition.key, i));
-        if (!segment) throw new ApiError('NOT_FOUND', 'A search index chunk is missing');
+        if (!isSegment(segment)) throw new ApiError('NOT_FOUND', 'A search index chunk is missing');
         yield { partition: index.partition, segment };
       }
   }

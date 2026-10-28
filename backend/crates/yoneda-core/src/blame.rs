@@ -41,9 +41,7 @@ pub fn blame(versions: &[(ObjectId, Vec<u8>)]) -> Vec<BlameLine> {
             commit,
             text: String::from_utf8_lossy(text)
                 .trim_end_matches('\n')
-                .chars()
-                .take(500)
-                .collect(),
+                .to_owned(),
         })
         .collect()
 }
@@ -77,5 +75,13 @@ mod tests {
             vec![(1, id(1)), (2, id(1))]
         );
         assert!(blame(&[]).is_empty());
+    }
+
+    #[test]
+    fn keeps_whole_lines_however_long() {
+        let long = "x".repeat(2000);
+        let lines = blame(&[(id(1), format!("{long}\nshort\n").into_bytes())]);
+        assert_eq!(lines[0].text, long);
+        assert_eq!(lines[1].text, "short");
     }
 }

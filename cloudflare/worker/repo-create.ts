@@ -8,6 +8,7 @@ import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { dispatchProjection } from './repo-projection';
+import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
 import type { Env } from './types';
 
@@ -49,6 +50,7 @@ export async function owning(
       );
     return { _session: { workspace: auth._pat.workspace, principal: auth._pat.principal } };
   }
+  if ('_anonymous' in auth) throw new ApiError('UNAUTHORIZED', 'Sign in to create repositories');
   if (!('_session' in auth))
     throw new ApiError('FORBIDDEN', 'Repositories are created by workspace owners');
   if (body.workspace === undefined) return auth;
@@ -87,6 +89,7 @@ export function newRepoId() {
 
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await owning(env, requester, body);
+  const visibility = visibilityOf(body.visibility);
   const id = newRepoId();
   const store = newStore(env, `yr-${id}`);
   await store.create();
@@ -97,15 +100,12 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     name,
     object_store: store.spec,
     policy: body.policy ?? { required_checks: [], approvals: 1 },
+    visibility,
   });
   // Commit shards start (migrate) now rather than on the first commits' path.
   await shardOutboxes(env, id);
   // Listing projection, written after the authority accepted the repository.
-  await env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
-  )
-    .bind(id, auth._session.workspace, name, Date.now())
-    .run();
+  await listRepository(env, id, auth._session.workspace, name, visibility);
   const tokens = await issueTokens(ctx, body.tokens);
   if (!Array.isArray(body.files) || body.files.length === 0) return { id, ...tokens };
   const seeded = await commit(ctx, new RepoObjects(env, id, store), {
@@ -124,6 +124,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const auth = await owning(env, requester, body);
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
+  const visibility = visibilityOf(body.visibility);
   const url = String(body.url ?? '');
   if (!/^https:\/\/[^\s]+$/.test(url))
     throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
@@ -138,18 +139,30 @@ export async function importRepository(env: Env, requester: Credentials, body: J
     // Artifacts creates the store itself during import.
     object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
     policy: body.policy ?? { required_checks: [], approvals: 1 },
+    visibility,
   });
-  await env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
-  )
-    .bind(id, auth._session.workspace, name, Date.now())
-    .run();
+  await listRepository(env, id, auth._session.workspace, name, visibility);
   const tokens = await issueTokens(ctx, body.tokens);
   const instance = await env.PLATFORM_IMPORT.create({
     id: `import-${id}`,
     params: { repo: id, url, branch, max },
   });
   return { id, import: instance.id, branch, max_commits: max, ...tokens };
+}
+
+/** The listing row of a repository the authority accepted (a fork's too). */
+export function listRepository(
+  env: Env,
+  id: string,
+  workspace: string,
+  name: string,
+  visibility: string,
+) {
+  return env.INDEX.prepare(
+    'INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)',
+  )
+    .bind(id, workspace, name, Date.now(), visibility)
+    .run();
 }
 
 export function tokenSecret() {

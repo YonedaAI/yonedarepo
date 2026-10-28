@@ -167,7 +167,7 @@ export async function codemod(ctx: RepoContext, args: Json) {
   for await (const { partition, segment } of segmentsIn(ctx, indexes)) {
     const { candidates } = compute({
       op: 'search_segment',
-      segment,
+      segment_b64: toBase64(segment),
       prefix: partition.prefix,
       query: find,
     });

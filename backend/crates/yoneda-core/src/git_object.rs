@@ -14,10 +14,11 @@ mod pack_header;
 mod pack_reader;
 mod pack_walk;
 mod rewrite;
+mod signature;
 mod tag;
 mod tree;
 
-pub use commit::{Commit, Signature};
+pub use commit::{Commit, CommitHeader};
 pub use delta::{apply_delta, delta_result_size};
 pub use delta_encode::encode_delta;
 pub use diff::{TreeChange, Walk, diff_trees};
@@ -26,6 +27,7 @@ pub use id::{ObjectId, ObjectKind, hash_object};
 pub use pack::{PackLimits, PackWriter, read_pack, write_pack};
 pub use pack_reader::PackReader;
 pub use rewrite::{PathChange, Rewrite, TreeSource, rewrite_tree};
+pub use signature::{Signature, TzOffset};
 pub use tag::{AnnotatedTag, MAX_TAG_BYTES};
 pub use tree::{FileMode, MAX_TREE_ENTRIES, TreeEntry, decode_tree, encode_tree};
 

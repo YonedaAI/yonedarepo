@@ -12,16 +12,34 @@ pub fn repo(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         &rest,
         &["origin", "confirm", "name", "batch-files", "owner"],
-        &[],
+        &["public"],
     )?;
     if p.flag("owner").is_some() && sub != "create" && sub != "fork" {
         return Err(Error::usage("only repo create and repo fork take --owner"));
+    }
+    if p.on("public") && sub != "create" {
+        return Err(Error::usage(
+            "only repo create takes --public (then: repo visibility <id> public|private)",
+        ));
     }
     let command = match sub.as_str() {
         "create" => RepoCommand::Create {
             name: p.exactly(1, "repo create <name>")?[0].clone(),
             owner: p.flag("owner"),
+            public: p.on("public"),
         },
+        "visibility" => {
+            let usage = "repo visibility <id> public|private";
+            let args = p.exactly(2, usage)?;
+            RepoCommand::Visibility {
+                id: args[0].clone(),
+                public: match args[1].as_str() {
+                    "public" => true,
+                    "private" => false,
+                    _ => return Err(Error::usage(usage)),
+                },
+            }
+        }
         "list" => {
             p.at_most(0)?;
             RepoCommand::List

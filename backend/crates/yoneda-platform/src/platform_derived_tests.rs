@@ -47,8 +47,10 @@ fn search(root: ObjectId, trees: &Value, blobs: &Value, query: &str) -> (Vec<Val
     let mut paths = Vec::new();
     for p in &partitions {
         let built = index_partition(&p["tree"], &p["shallow"], trees, blobs, json!({}));
-        let found = compute(json!({ "op": "search_segment", "segment": built["segment"],
-            "prefix": p["prefix"], "query": query }))
+        let found = compute(
+            json!({ "op": "search_segment", "segment_b64": built["segment_b64"],
+            "prefix": p["prefix"], "query": query }),
+        )
         .unwrap();
         for file in found["candidates"].as_array().unwrap() {
             paths.push(file["path"].as_str().unwrap().to_owned());
@@ -65,7 +67,7 @@ fn renamed_and_duplicated_directories_share_a_key_and_a_segment_but_not_paths() 
     let blobs = json!({ blob.hex(): STANDARD.encode(content) });
     let (sub, sub_json) = tree(&[("retry.rs", FileMode::Blob, blob)]);
     let index = |trees: &Value, p: &Value| {
-        index_partition(&p["tree"], &p["shallow"], trees, &blobs, json!({}))["segment"].clone()
+        index_partition(&p["tree"], &p["shallow"], trees, &blobs, json!({}))["segment_b64"].clone()
     };
 
     // A rename of src/ to lib/ that leaves the content alone keeps the key and the segment.
@@ -126,7 +128,31 @@ fn files_known_too_large_are_listed_unread_with_the_same_segment() {
         json!([small_id])
     );
     let unread = index(json!({ small_id.hex(): STANDARD.encode(&small) }), sized);
-    assert_eq!(unread["segment"], read["segment"]);
-    assert_eq!(read["segment"]["files"][0]["indexed"], false);
-    assert_eq!(read["segment"]["files"][0]["skipped"], "larger than 4 MiB");
+    assert_eq!(unread["segment_b64"], read["segment_b64"]);
+    let found = compute(
+        json!({ "op": "search_segment", "segment_b64": read["segment_b64"],
+        "prefix": "", "query": "xxx" }),
+    )
+    .unwrap();
+    assert_eq!(
+        found["unindexed"],
+        json!([{ "path": "big.txt", "reason": "larger than 4 MiB" }])
+    );
+    assert_eq!(found["candidates"], json!([]));
+}
+
+#[test]
+fn blame_answers_cap_each_line_at_500_characters() {
+    let content = format!("{}\nshort\n", "é".repeat(2000));
+    let blob = hash_object(ObjectKind::Blob, content.as_bytes());
+    let commit = ObjectId::from_bytes([7; 20]);
+    let answer = compute(json!({
+        "op": "blame",
+        "versions": [{ "commit": commit, "blob": blob }],
+        "blobs": { blob.hex(): STANDARD.encode(&content) },
+    }))
+    .unwrap();
+    assert_eq!(answer["lines"][0]["text"], "é".repeat(500));
+    assert_eq!(answer["lines"][1]["text"], "short");
+    assert_eq!(answer["lines"][1]["line"], 2);
 }

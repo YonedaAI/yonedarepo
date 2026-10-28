@@ -6,7 +6,8 @@ usage: yoneda <command> [options]
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
   logout [--origin <url>]
-  repo create <name> [--owner <org>] | repo list | repo delete <id> --confirm <name>
+  repo create <name> [--owner <org>] [--public] | repo list | repo delete <id> --confirm <name>
+  repo visibility <id> public|private   public: anyone reads (no sign-in), only members write
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
   setup claude|codex|gemini|opencode                     a coding agent's skill or plugin and MCP config

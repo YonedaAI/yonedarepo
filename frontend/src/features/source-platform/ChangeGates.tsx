@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { type Conflict, ConflictList, GateSummary, ReviewButtons } from './CommitGates';
 import { type ChangeDetail, who } from './changeModel';
+import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 
@@ -19,6 +20,8 @@ export function ChangeGates({
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
+  // A public reader sees the gates and reviews, never the actions.
+  const readOnly = useReadOnly();
   async function act(label: string, path: string, body: unknown, done: string) {
     setBusy(label);
     setNotice('');
@@ -71,57 +74,59 @@ export function ChangeGates({
           ))}
         </ul>
       )}
-      <div className="source-actions">
-        {status === 'open' && head && (
-          <>
-            <ReviewButtons
-              disabled={!!busy}
-              onReview={(decision, reason) =>
-                act(
-                  decision,
-                  `/commits/${head}/reviews`,
-                  { decision, reason },
-                  decision === 'approve' ? 'Approved.' : 'Rejected.',
-                )
-              }
-            />
+      {!readOnly && (
+        <div className="source-actions">
+          {status === 'open' && head && (
+            <>
+              <ReviewButtons
+                disabled={!!busy}
+                onReview={(decision, reason) =>
+                  act(
+                    decision,
+                    `/commits/${head}/reviews`,
+                    { decision, reason },
+                    decision === 'approve' ? 'Approved.' : 'Rejected.',
+                  )
+                }
+              />
+              <button
+                type="button"
+                disabled={!!busy || (change.base_protected !== false && !commit?.gates.ready)}
+                onClick={() =>
+                  act(
+                    'land',
+                    '/land',
+                    { ref: change.base, commit: head },
+                    `Landed on ${change.base}.`,
+                  )
+                }
+              >
+                {busy === 'land' ? 'Landing…' : `Land on ${change.base}`}
+              </button>
+            </>
+          )}
+          {status === 'open' && (
             <button
               type="button"
-              disabled={!!busy || (change.base_protected !== false && !commit?.gates.ready)}
-              onClick={() =>
-                act(
-                  'land',
-                  '/land',
-                  { ref: change.base, commit: head },
-                  `Landed on ${change.base}.`,
-                )
-              }
+              className="quiet"
+              disabled={!!busy}
+              onClick={() => act('close', `${base}/close`, {}, 'Closed.')}
             >
-              {busy === 'land' ? 'Landing…' : `Land on ${change.base}`}
+              Close change
             </button>
-          </>
-        )}
-        {status === 'open' && (
-          <button
-            type="button"
-            className="quiet"
-            disabled={!!busy}
-            onClick={() => act('close', `${base}/close`, {}, 'Closed.')}
-          >
-            Close change
-          </button>
-        )}
-        {status === 'closed' && (
-          <button
-            type="button"
-            className="quiet"
-            disabled={!!busy}
-            onClick={() => act('reopen', `${base}/reopen`, {}, 'Reopened.')}
-          >
-            Reopen change
-          </button>
-        )}
-      </div>
+          )}
+          {status === 'closed' && (
+            <button
+              type="button"
+              className="quiet"
+              disabled={!!busy}
+              onClick={() => act('reopen', `${base}/reopen`, {}, 'Reopened.')}
+            >
+              Reopen change
+            </button>
+          )}
+        </div>
+      )}
       {notice && <p role="status">{notice}</p>}
       {error && <Failure error={error} />}
       <ConflictList conflicts={conflicts} />

@@ -4,7 +4,7 @@
 // branch's new commits into the parent (objects into its store of record first, then
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
 import { dispatchRuns } from './repo-checks';
-import { newRepoId, owning } from './repo-create';
+import { listRepository, newRepoId, owning } from './repo-create';
 import { rawObjects } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { enumerate } from './repo-git-upload';
@@ -12,6 +12,7 @@ import { refreshHead } from './repo-head';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
+import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
 import { FORK_DEPTH, forkDepth, forkSpec, forkStore, newStore, putRawBytes } from './repo-stores';
 import type { Env } from './types';
@@ -29,6 +30,8 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   const { env } = ctx;
   // Forking into an organization (`owner`) needs an owner of it, as creating there does.
   const auth = await owning(env, credentialsOf(ctx), { owner: args.owner });
+  // A fork is private unless asked otherwise, whatever its parent is.
+  const visibility = visibilityOf(args.visibility);
   const source = await ctx.call({ op: 'repo_fork_source' });
   if (forkDepth(source.object_store) >= FORK_DEPTH)
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);
@@ -44,6 +47,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
     object_store: forkSpec(ctx.repo, source.object_store, newStore(env, `yr-${id}`).spec),
     parent: { repo: ctx.repo, version: source.version },
     policy: args.policy ?? { required_checks: [], approvals: 1 },
+    visibility,
   });
   const platform = caller(env, id, { _system: 'import' });
   let after: Json | null = null;
@@ -65,11 +69,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   });
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
-  await env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at) VALUES(?,?,?,?)',
-  )
-    .bind(id, auth._session.workspace, name, Date.now())
-    .run();
+  await listRepository(env, id, auth._session.workspace, name, visibility);
   await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
   return {
     id,
