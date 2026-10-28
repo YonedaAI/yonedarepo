@@ -120,8 +120,14 @@ async fn rejects_escaping_or_duplicate_paths_and_bad_limits() {
 #[tokio::test]
 async fn keeps_symlinks_inside_the_root() {
     for (files, code) in [
-        (vec![file("link", "symlink", "../../etc/passwd")], "INVALID_INPUT"),
-        (vec![file("link", "symlink", "/etc/passwd")], "INVALID_INPUT"),
+        (
+            vec![file("link", "symlink", "../../etc/passwd")],
+            "INVALID_INPUT",
+        ),
+        (
+            vec![file("link", "symlink", "/etc/passwd")],
+            "INVALID_INPUT",
+        ),
         (vec![file("link", "symlink", "")], "INVALID_INPUT"),
         (
             // Defense in depth: a tree cannot pair `foo` with `foo/x`, but the writer
