@@ -51,11 +51,12 @@ impl Platform {
         let persist = scratch.path().join("state");
         let config = "tests/platform/wrangler.jsonc";
         // The platform's D1 schema, as the workerd fixture applies it: the repository
-        // listing, personal-token lookup and membership index.
+        // listing, personal-token lookup, membership index and visibility.
         for migration in [
             "0003_platform_repos.sql",
             "0004_platform_tokens.sql",
             "0005_platform_members.sql",
+            "0006_platform_repo_visibility.sql",
         ] {
             let schema = Command::new(&wrangler)
                 .current_dir(&root)
