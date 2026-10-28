@@ -1,36 +1,19 @@
 import { useState } from 'react';
-import { BreakGlass, type BreakGlassRecord } from './BreakGlass';
+import { BreakGlass } from './BreakGlass';
 import { CommitDiff } from './CommitDiff';
-import { CommitRepairs, type Repair } from './CommitRepairs';
+import {
+  type CommitDetail,
+  type Conflict,
+  ConflictList,
+  GateSummary,
+  ReviewButtons,
+} from './CommitGates';
+import { CommitRepairs } from './CommitRepairs';
 import { CommitSessions } from './CommitSessions';
 import { Failure, Loading } from './SourceStatus';
 import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
-
-type Detail = {
-  commit: string;
-  message: string;
-  principal: string;
-  parents: string[];
-  read_set: string[];
-  checks: { name: string; status: string; principal: string; recorded_at: number }[];
-  check_runs: { id: string; name: string; status: string; epoch: number }[];
-  reviews: { principal: string; decision: string; reason?: string; recorded_at: number }[];
-  landings: { refname: string; version: number; landed_at: number }[];
-  repairs: Repair[];
-  review_classes: { overall: string; files: { path: string; class: string }[] } | null;
-  break_glass: BreakGlassRecord[];
-  gates: {
-    ready: boolean;
-    auto_approved?: boolean;
-    approvals: number;
-    approvals_required: number;
-    rejected: boolean;
-    missing_checks: string[];
-    failing_checks: string[];
-  };
-};
 
 export function CommitView({
   repo,
@@ -43,12 +26,11 @@ export function CommitView({
   onNavigate: (r: SourceRoute) => void;
   onChanged: () => void;
 }) {
-  const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
+  const detail = useSource<CommitDetail>(`/repos/${repo}/commits/${commit}`);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
-  const [conflicts, setConflicts] = useState<{ path: string; kind: string; marked?: string }[]>([]);
+  const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [notice, setNotice] = useState('');
-  const [reason, setReason] = useState('');
   const [target, setTarget] = useState('main');
   async function act(
     label: string,
@@ -102,61 +84,19 @@ export function CommitView({
         )}
       </header>
       <section className="source-gates" aria-label="Landing gates">
-        <h3>{gates.ready ? 'Ready to land' : 'Not ready to land'}</h3>
-        <ul>
-          <li>
-            Review class:{' '}
-            {d.review_classes?.overall.replace('_', ' ') ?? 'not classified (needs a human)'}
-            {gates.auto_approved && ' · auto-approved by policy'}
-          </li>
-          <li>
-            Approvals {gates.approvals}/{gates.approvals_required}
-            {gates.rejected && ' · rejected'}
-          </li>
-          {gates.missing_checks.length > 0 && (
-            <li>Waiting for checks: {gates.missing_checks.join(', ')}</li>
-          )}
-          {gates.failing_checks.length > 0 && (
-            <li>Failing checks: {gates.failing_checks.join(', ')}</li>
-          )}
-          {d.landings.map((l) => (
-            <li key={l.refname}>
-              Landed on {l.refname.replace(/^refs\/heads\//, '')} at v{l.version} ·{' '}
-              {when(l.landed_at)}
-            </li>
-          ))}
-        </ul>
+        <GateSummary gates={gates} classes={d.review_classes} landings={d.landings} />
         <div className="source-actions">
-          <button
-            type="button"
+          <ReviewButtons
             disabled={!!busy}
-            onClick={() =>
-              act('approve', `/commits/${commit}/reviews`, { decision: 'approve' }, 'Approved.')
-            }
-          >
-            Approve
-          </button>
-          <input
-            aria-label="Rejection reason"
-            placeholder="Reason to reject"
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <button
-            type="button"
-            className="danger"
-            disabled={!!busy || !reason.trim()}
-            onClick={() =>
+            onReview={(decision, reason) =>
               act(
-                'reject',
+                decision,
                 `/commits/${commit}/reviews`,
-                { decision: 'reject', reason },
-                'Rejected.',
+                { decision, reason },
+                decision === 'approve' ? 'Approved.' : 'Rejected.',
               )
             }
-          >
-            Reject
-          </button>
+          />
           <button
             type="button"
             className="quiet"
@@ -221,15 +161,7 @@ export function CommitView({
         />
         {notice && <p role="status">{notice}</p>}
         {error && <Failure error={error} />}
-        {conflicts.map((c) => (
-          <section key={c.path} className="source-file" aria-label={`Conflict in ${c.path}`}>
-            <header>
-              <code>{c.path}</code>
-              <span>{c.kind.replace('_', '/')} conflict: resolve in a new commit</span>
-            </header>
-            {c.marked && <pre>{c.marked}</pre>}
-          </section>
-        ))}
+        <ConflictList conflicts={conflicts} />
       </section>
       <section aria-label="Checks">
         <h3>Checks</h3>

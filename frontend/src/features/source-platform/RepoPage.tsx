@@ -3,15 +3,17 @@ import type { ReactNode } from 'react';
 import type { Repository } from '../../lib/types';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import type { Navigate } from '../shell/useRoute';
+import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { HistoryTab } from './HistoryTab';
+import { RepoChanges } from './RepoChanges';
 import { RepoFiles } from './RepoFiles';
 import { RepoOverview } from './RepoOverview';
 import { RepoSearch } from './RepoSearch';
 import { RepoTabs, StatusChips } from './RepoTabs';
 import type { RepoStatus } from './repoStatus';
 import { Failure } from './SourceStatus';
-import { routeTab, type SourceRoute } from './sourceRoute';
+import { formatSourceRoute, routeTab, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -83,6 +85,23 @@ export function RepoPage({
                 repo={repo}
                 commit={route.commit}
                 onNavigate={navigate}
+                onChanged={status.reload}
+              />
+            )}
+            {route.view === 'changes' && (
+              <RepoChanges
+                repo={repo}
+                hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
+                onOpen={(number) => navigate({ view: 'change', repo, number })}
+              />
+            )}
+            {route.view === 'change' && (
+              <ChangeView
+                key={route.number}
+                repo={repo}
+                number={route.number}
+                onBack={() => navigate({ view: 'changes', repo })}
+                onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                 onChanged={status.reload}
               />
             )}

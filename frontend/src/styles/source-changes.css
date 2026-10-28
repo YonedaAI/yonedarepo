@@ -1,0 +1,181 @@
+/* Change requests: list, status chips, conversation and line threads. */
+.source-changes-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 8px;
+}
+.source-changes-head h2 {
+  margin: 0;
+}
+.source-changes {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.source-changes li {
+  display: grid;
+  grid-template-columns: 5.5em 1fr;
+  gap: 2px 10px;
+  align-items: baseline;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.source-changes .source-change-status {
+  justify-self: start;
+}
+.source-changes li > .source-meta {
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+.source-changes a:hover strong {
+  color: var(--blue);
+}
+.source-change-status {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 10px;
+  text-transform: capitalize;
+}
+.source-change-open {
+  background: #e9f7ef;
+  color: var(--success);
+}
+.source-change-landed {
+  background: #edf3ff;
+  color: var(--blue);
+}
+.source-change-closed {
+  background: #f1f4f9;
+  color: var(--muted);
+}
+.source-change > header h2 {
+  font-size: 22px;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+.source-change > section {
+  margin-bottom: 20px;
+}
+.source-change-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+.source-change-banner {
+  margin: 0 0 8px;
+  color: inherit;
+  font-weight: 500;
+}
+.source-back {
+  margin-bottom: 12px;
+}
+.source-comment {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+.source-comment p {
+  margin: 4px 0 0;
+  color: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.source-push {
+  margin: 4px 0 8px 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+.source-composer {
+  display: grid;
+  gap: 4px;
+  max-width: 760px;
+}
+.source-composer textarea {
+  min-height: 64px;
+  width: 100%;
+  resize: vertical;
+}
+.source-composer .source-actions {
+  margin-top: 4px;
+}
+.source-thread {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 8px 12px;
+  margin: 6px 0;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 14px;
+  white-space: normal;
+}
+.source-thread > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.source-thread-resolved {
+  background: var(--surface);
+}
+.source-patch .source-thread-row > td {
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 14px;
+  padding: 4px 8px;
+  white-space: normal;
+}
+.source-patch .source-line-comment {
+  min-height: 0;
+  min-width: 2.5em;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  justify-content: flex-end;
+}
+.source-patch .source-line-comment:hover,
+.source-patch .source-line-comment:focus-visible {
+  background: var(--blue);
+  color: #fff;
+}
+.source-open-change {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px 16px;
+  max-width: 560px;
+}
+.source-open-change .source-field {
+  max-width: none;
+}
+.source-reviews {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+.source-diff .source-thread {
+  margin: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: visible;
+}
+.source-diff .source-thread header,
+.source-diff .source-comment header {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.source-diff .source-thread > header {
+  display: flex;
+}
+.source-toolbar .source-open-change {
+  flex-basis: 100%;
+}
