@@ -20,7 +20,7 @@ vi.mock('./useSource', () => ({
 const { ChangeTable, StatusFilter } = await import('./RepoChanges');
 const { ChangeView } = await import('./ChangeView');
 const { ChangeSessions } = await import('./ChangeSessions');
-const { OpenChangeButton, proposable } = await import('./OpenChange');
+const { OpenChangeButton, baseChoices, proposable } = await import('./OpenChange');
 const { DiffFiles } = await import('./DiffFiles');
 const { anchorKey, conversation, diffAnchors, groupComments, rowAnchor } = await import(
   './changeModel'
@@ -148,6 +148,17 @@ describe('change rules', () => {
       'Open change',
     );
   });
+
+  it('offers every other branch as the base, main first', () => {
+    const refs = {
+      'refs/heads/main': head,
+      'refs/heads/fix': head,
+      'refs/heads/b': head,
+      'refs/tags/v1': head,
+    };
+    expect(baseChoices(refs, 'fix')).toEqual(['main', 'b']);
+    expect(baseChoices(undefined, 'fix')).toEqual(['main']);
+  });
 });
 
 describe('changes list', () => {
@@ -205,6 +216,15 @@ describe('change page', () => {
     expect(blocked).toContain('aria-label="Comment on src/a.ts line 2 (base)"');
     state.value = loaded({ data: detail({}, true) });
     expect(view()).toMatch(/<button type="button">Land on main/);
+  });
+
+  it('lands on its own base, ungated when the base is not protected', () => {
+    state.value = loaded({ data: detail({ base: 'stage', base_protected: false }) });
+    const page = view();
+    expect(page).toContain('landing <code>fix-retry</code> on <code>stage</code>');
+    expect(page).toMatch(/<button type="button">Land on stage/);
+    state.value = loaded({ data: detail({ base: 'release/1', base_protected: true }) });
+    expect(view()).toMatch(/<button type="button" disabled="">Land on release\/1/);
   });
 
   it('puts line threads under their line and lists outdated ones apart', () => {

@@ -1,4 +1,5 @@
-// The Changes tab: change requests (branches proposed for landing on main), filtered by status.
+// The Changes tab: change requests (branches proposed for landing on a base branch, main by
+// default), filtered by status.
 import { useState } from 'react';
 import { CHANGE_FILTERS, type Change, type ChangeFilter, changesPath, who } from './changeModel';
 import { Failure, Loading } from './SourceStatus';
@@ -10,10 +11,10 @@ export function ChangeStatusChip({ status }: { status: Change['status'] }) {
 }
 
 const EMPTY: Record<ChangeFilter, string> = {
-  open: 'No open changes. Push a branch and open a change to propose landing it on main.',
+  open: 'No open changes. Push a branch and open a change to propose landing it.',
   landed: 'No landed changes yet.',
   closed: 'No closed changes.',
-  all: 'No changes yet. Push a branch and open a change to propose landing it on main.',
+  all: 'No changes yet. Push a branch and open a change to propose landing it.',
 };
 
 export function ChangeTable({

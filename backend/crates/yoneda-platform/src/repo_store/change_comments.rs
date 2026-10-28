@@ -1,8 +1,8 @@
-//! A change request's conversation. A comment is free text (credentials refused) and may be
-//! anchored to one line of the change's diff at a commit: `path`, `line` and `side` (`old`
-//! is the base file, `new` the head file, numbered as the patch shows them). Resolving an
-//! anchor marks all its unresolved comments resolved; a later push leaves earlier anchors on
-//! the commit they were made against.
+//! A change request's conversation and its branch's timeline. A comment is free text
+//! (credentials refused) and may be anchored to one line of the change's diff at a commit:
+//! `path`, `line` and `side` (`old` is the base file, `new` the head file, numbered as the
+//! patch shows them). Resolving an anchor marks all its unresolved comments resolved; a later
+//! push leaves earlier anchors on the commit they were made against.
 use super::auth::Actor;
 use super::changes::{self, MAX_BODY, number_of, whole_repository};
 use super::{change_hooks, rows};
@@ -142,4 +142,28 @@ pub fn comment<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         )?;
     }
     Ok(json!({ "comment": posted, "resolved": resolved }))
+}
+
+/// The latest `limit` moves of the change's `branch` (newest first), for its timeline.
+pub(super) fn timeline<S: SqlStore>(db: &S, branch: &str, limit: u64) -> Result<Vec<Value>> {
+    let moves = db.query(
+        "SELECT entry FROM txlog WHERE refname=? ORDER BY version DESC LIMIT ?",
+        &[json!(format!("refs/heads/{branch}")), json!(limit)],
+    )?;
+    let mut timeline = Vec::with_capacity(moves.len());
+    for row in moves {
+        let entry: yoneda_core::txlog::TxEntry =
+            serde_json::from_str(row["entry"].as_str().unwrap_or_default())
+                .map_err(|_| rows::corrupt("log entry"))?;
+        let action = match (entry.old, entry.new) {
+            (_, None) => "deleted",
+            (None, _) => "created",
+            _ => "moved",
+        };
+        timeline.push(
+            json!({ "version": entry.version, "action": action, "before": entry.old,
+            "after": entry.new, "actor": entry.actor, "at": entry.committed_at_ms }),
+        );
+    }
+    Ok(timeline)
 }

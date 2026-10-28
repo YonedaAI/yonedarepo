@@ -124,7 +124,7 @@ async function cleanup(ctx, { before, protectedBefore, revoke, root }, m) {
     for (const number of ctx.changes)
       await attempt(`close change #${number}`, async () => {
         const done = await owner.raw('POST', `${path}/changes/${number}/close`);
-        if (!done.ok && !/is closed/.test(done.body?.error?.message ?? '')) throw new Error(`${done.status} ${done.body?.error?.message ?? ''}`);
+        if (!done.ok && !/is (closed|landed)/.test(done.body?.error?.message ?? '')) throw new Error(`${done.status} ${done.body?.error?.message ?? ''}`);
       });
     m.changes_closed = ctx.changes.join(',') || 'none';
     await attempt('delete scratch branches', async () => {

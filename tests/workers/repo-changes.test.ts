@@ -1,7 +1,8 @@
 // Change requests through the real authority (workerd): a stock push of a branch suggests
 // opening a change; the change follows the branch's pushes; anchored comments; approval is
 // a review of the head commit; landing the head on main lands the change in the same
-// transaction; close and reopen; the same operations over MCP; change hooks get events.
+// transaction; close and reopen; the same operations over MCP; change hooks get events. A
+// change on another base branch diffs against it and lands on it with only `write`.
 import { expect, it } from 'vitest';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
@@ -128,4 +129,32 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   const listed = await mcp('git_change_list', { status: 'all' }, reader);
   expect(listed.body.result.structuredContent.changes.map((c: any) => c.number)).toEqual([2, 1]);
   expect((await api(`/repos/${repo}/changes/9`, { token: reader })).status).toBe(404);
+});
+
+it('lands a change on its own base branch, leaving main alone', async () => {
+  const cookie = await signup('changes_base');
+  const created = await api('/repos', { cookie }, { body: { name: 'bases', policy: { approvals: 1, required_checks: [] }, files: [file('a.md', 'a\n')], author } });
+  const repo = created.body.id as string;
+  const agent = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'agent', scopes: ['read', 'write'] } })).body.token as string;
+  const main = (await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main'] as string;
+  const stage = await commitOf(main, 'export const tries = 2;\n');
+  expect(await push(repo, agent, 'refs/heads/stage', null, stage)).toContain('ok refs/heads/stage');
+  const fix = await commitOf(stage[0].id, 'export const tries = 3;\n');
+  expect(await push(repo, agent, 'refs/heads/fix', null, fix)).toContain('ok refs/heads/fix');
+
+  const open = (body: object) => api(`/repos/${repo}/changes`, { token: agent }, { body: { branch: 'fix', title: 'Stage it', ...body } });
+  expect((await open({ base: 'nope' })).body.error.code).toBe('NOT_FOUND');
+  expect((await open({ base: 'fix' })).body.error.code).toBe('INVALID_INPUT');
+  const mcp = await api(`/repos/${repo}/mcp`, { token: agent }, { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'git_change_create', arguments: { branch: 'fix', base: 'stage', title: 'Stage it' } } } });
+  expect(mcp.body.result.structuredContent).toMatchObject({ number: 1, base: 'stage', head: fix[0].id });
+  const shown = await api(`/repos/${repo}/changes/1?patch=1`, { token: agent });
+  expect(shown.body).toMatchObject({ base: 'stage', base_protected: false });
+  expect(shown.body.diff.base.commit).toBe(stage[0].id);
+  expect(shown.body.diff.changes[0].patch).toContain('+export const tries = 3;');
+
+  // Unapproved and unchecked: an unprotected base takes the head with the write scope.
+  const landed = await api(`/repos/${repo}/land`, { token: agent }, { body: { ref: 'stage', commit: fix[0].id } });
+  expect(landed.status, JSON.stringify(landed.body)).toBe(200);
+  expect((await api(`/repos/${repo}/changes/1`, { token: agent })).body).toMatchObject({ status: 'landed', landed_commit: fix[0].id });
+  expect((await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main']).toBe(main);
 });
