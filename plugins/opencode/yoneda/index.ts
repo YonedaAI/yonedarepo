@@ -73,7 +73,8 @@ const ENDED = ['session.execution.succeeded', 'session.execution.failed', 'sessi
 export const DEFAULT_MODEL = 'zai-coding-plan/glm-5.3';
 
 /** Appends one hook call to `$YONEDA_HOOK_LOG`, when set (what opencode passed, and what
- * the hook answered: for opencode-start, the context the session got). */
+ * the hook answered: for opencode-start, the context the session got; any stderr, which
+ * opencode does not show). */
 function logHook(entry: Json) {
   const log = process.env.YONEDA_HOOK_LOG;
   if (!log) return;
@@ -84,12 +85,12 @@ function logHook(entry: Json) {
 
 /** Runs `yoneda hook <event>` with `payload` on stdin; its stdout ('' on any failure). */
 export async function runHook(event: string, payload: Json, timeoutMs = 20_000): Promise<string> {
-  const output = await spawnHook(event, payload, timeoutMs);
-  logHook({ event, payload, output });
-  return output;
+  const { out, err } = await spawnHook(event, payload, timeoutMs);
+  logHook({ event, payload, output: out, ...(err ? { stderr: err } : {}) });
+  return out;
 }
 
-function spawnHook(event: string, payload: Json, timeoutMs: number): Promise<string> {
+function spawnHook(event: string, payload: Json, timeoutMs: number): Promise<{ out: string; err: string }> {
   return new Promise((resolve) => {
     const child = spawn(process.env.YONEDA_BIN || 'yoneda', ['hook', event], {
       cwd: typeof payload.cwd === 'string' ? payload.cwd : undefined,
@@ -103,12 +104,12 @@ function spawnHook(event: string, payload: Json, timeoutMs: number): Promise<str
     // No yoneda on PATH: nothing to do.
     child.on('error', () => {
       clearTimeout(timer);
-      resolve('');
+      resolve({ out: '', err: '' });
     });
     child.on('close', () => {
       clearTimeout(timer);
       if (err.trim()) console.error(err.trim());
-      resolve(out.trim());
+      resolve({ out: out.trim(), err: err.trim() });
     });
     child.stdin.on('error', () => {});
     child.stdin.end(JSON.stringify(payload));

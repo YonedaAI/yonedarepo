@@ -51,6 +51,11 @@ const oc = fakeOpencode(cwd, [
   { type: 'assistant', model: { providerID: 'fake', id: 'scripted' }, content: [{ type: 'text', text: summary }] },
 ]);
 const cleanup = await plugin.setup(oc.ctx);
+// opencode 2.2 sets each plugin up twice per run (seen in the agent sandbox: two setup calls
+// for one `opencode run`), and both instances hear the session end. The twin never sees a
+// model call; its record pass runs at the same time as the first instance's.
+const twin = fakeOpencode(cwd, oc.messages);
+const twinCleanup = await plugin.setup(twin.ctx);
 const call = modelCall(sessionID, { providerID: 'fake', id: 'scripted' });
 await oc.hooks['session.context'](call);
 event({ type: 'session.context', data: { sessionID, bytes: call.system[0]?.text.length ?? 0 } });
@@ -76,6 +81,6 @@ for (;;) {
   }
 }
 event({ type: 'message.updated', data: { message: { id: `${sessionID}-m1`, type: 'assistant', cost: 0.0001, pushes } } });
-oc.emit({ type: 'session.execution.succeeded', data: { sessionID } });
-await cleanup();
+for (const instance of [oc, twin]) instance.emit({ type: 'session.execution.succeeded', data: { sessionID } });
+await Promise.all([cleanup(), twinCleanup()]);
 event({ type: 'session.done', data: { sessionID, pushes } });
