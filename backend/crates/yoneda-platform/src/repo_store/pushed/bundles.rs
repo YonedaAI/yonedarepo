@@ -16,23 +16,20 @@ pub const LOCATE_IDS: usize = 2_000;
 const INSERT_ROWS: usize = 20;
 const SELECT_IDS: usize = 100;
 
-/// `repo_bundle_index` (`bundle`, `objects: [{id, kind, at, size}]`) and
-/// `repo_bundle_locate` (`ids`, answering `located: [{id, bundle, at, size, kind}]`; the
-/// adapter asks only where a repository is known to hold bundles, see `staged`).
-pub fn op<S: SqlStore>(db: &S, c: &Value, op: &str, actor: &Actor) -> Result<Value> {
-    if !actor.can("system") {
-        return Err(Error::new(
+/// Only the platform indexes and locates stored objects.
+pub fn require_system(actor: &Actor) -> Result<()> {
+    if actor.can("system") {
+        Ok(())
+    } else {
+        Err(Error::new(
             "FORBIDDEN",
             "Only the platform indexes stored objects",
-        ));
-    }
-    match op {
-        "repo_bundle_index" => index(db, c),
-        _ => locate(db, c),
+        ))
     }
 }
 
-fn index<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+/// `repo_bundle_index` (`bundle`, `objects: [{id, kind, at, size}]`).
+pub fn index<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let bundle = string(c, "bundle")?;
     if bundle.len() != 64
         || !bundle
@@ -77,7 +74,9 @@ fn index<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     Ok(json!({ "indexed": rows.len() }))
 }
 
-fn locate<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+/// `repo_bundle_locate` (`ids`, answering `located: [{id, bundle, at, size, kind}]`; the
+/// adapter asks only where a repository is known to hold bundles, see `staged`).
+pub fn locate<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let ids = c["ids"]
         .as_array()
         .filter(|list| list.len() <= LOCATE_IDS)

@@ -1,9 +1,9 @@
-//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, changes,
-//! releases, hooks.
+//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, context,
+//! hooks.
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
-    Anchor, ChangeCommand, CheckCommand, Command, HookEvent, OpencodeEvent, ReadCommand,
-    ReadsCommand, ReleaseCommand, RepoCommand, SessionCommand, SyncMode, TokenCommand,
+    CheckCommand, Command, HookEvent, OpencodeEvent, ReadCommand, ReadsCommand, RepoCommand,
+    SessionCommand, SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
@@ -228,98 +228,6 @@ pub fn session(rest: &[String]) -> Result<Command> {
         other => return Err(Error::usage(format!("unknown session command {other:?}"))),
     };
     Ok(Command::Session {
-        target: p.target(),
-        command,
-    })
-}
-
-pub fn change(rest: &[String]) -> Result<Command> {
-    let (sub, rest) = split_sub(rest, "change")?;
-    let p = Parsed::new(
-        &rest,
-        &with(&["title", "message", "base", "status", "path", "line", "side"]),
-        &["resolve", "to-parent"],
-    )?;
-    let number = || -> Result<u64> {
-        p.exactly(1, &format!("change {sub} <number>"))?[0]
-            .trim_start_matches('#')
-            .parse()
-            .ok()
-            .filter(|n| *n > 0)
-            .ok_or_else(|| Error::usage("a change number is a positive integer"))
-    };
-    let command = match sub.as_str() {
-        "create" => {
-            p.at_most(1)?;
-            ChangeCommand::Create {
-                branch: p.positional.first().cloned(),
-                title: p.flag("title"),
-                body: p.flag("message"),
-                base: p.flag("base"),
-                to_parent: p.on("to-parent"),
-            }
-        }
-        "list" => {
-            p.at_most(0)?;
-            ChangeCommand::List {
-                status: p.flag("status"),
-            }
-        }
-        "show" => ChangeCommand::Show { number: number()? },
-        "land" => ChangeCommand::Land { number: number()? },
-        "comment" => {
-            let anchor = match (p.flag("path"), p.number("line")?, p.flag("side")) {
-                (None, None, None) => None,
-                (Some(path), Some(line), Some(side)) if ["old", "new"].contains(&side.as_str()) => {
-                    Some(Anchor { path, line, side })
-                }
-                _ => {
-                    return Err(Error::usage(
-                        "an anchored comment needs --path, --line and --side old|new",
-                    ));
-                }
-            };
-            let (body, resolve) = (p.flag("message"), p.on("resolve"));
-            if body.is_none() && !(resolve && anchor.is_some()) {
-                return Err(Error::usage(
-                    "change comment needs -m <text> (or --resolve with an anchor)",
-                ));
-            }
-            ChangeCommand::Comment {
-                number: number()?,
-                body,
-                anchor,
-                resolve,
-            }
-        }
-        other => return Err(Error::usage(format!("unknown change command {other:?}"))),
-    };
-    Ok(Command::Change {
-        target: p.target(),
-        command,
-    })
-}
-
-pub fn release(rest: &[String]) -> Result<Command> {
-    let (sub, rest) = split_sub(rest, "release")?;
-    let p = Parsed::new(&rest, &with(&["title", "message", "asset"]), &[])?;
-    let command = match sub.as_str() {
-        "create" => ReleaseCommand::Create {
-            tag: p.exactly(1, "release create <tag>")?[0].clone(),
-            title: p.flag("title"),
-            notes: p.flag("message"),
-            asset: p.flag("asset"),
-        },
-        "list" => {
-            p.at_most(0)?;
-            ReleaseCommand::List
-        }
-        "show" => ReleaseCommand::Show {
-            tag: p.exactly(1, "release show <tag>")?[0].clone(),
-        },
-        other => return Err(Error::usage(format!("unknown release command {other:?}"))),
-    };
-    Ok(Command::Release {
         target: p.target(),
         command,
     })

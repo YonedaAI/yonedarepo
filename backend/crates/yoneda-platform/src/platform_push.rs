@@ -5,9 +5,9 @@ use crate::platform_objects::object_json;
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use yoneda_core::git_object::{
-    Commit, ObjectId, ObjectKind, combine_receive_pack_requests, hash_object, hidden_ref,
-    receive_pack_request, split_receive_pack_report, write_pack,
+use yoneda_core::git_object::{Commit, ObjectId, ObjectKind, hash_object, write_pack};
+use yoneda_core::transport::{
+    combine_receive_pack_requests, hidden_ref, receive_pack_request, split_receive_pack_report,
 };
 use yoneda_core::{Error, Result};
 

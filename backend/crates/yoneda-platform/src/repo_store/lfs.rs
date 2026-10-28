@@ -7,6 +7,7 @@
 //! whole repositories, so a path-restricted credential is refused, as for smart HTTP.
 use super::auth::Actor;
 use super::git_http::whole_repository;
+use super::op::LfsOp;
 use super::rows::Settings;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -24,43 +25,30 @@ const MAX_BATCH: usize = 1000;
 /// A reservation never verified lapses after a day (upload URLs expire well before).
 pub const PENDING_MS: i64 = 24 * 60 * 60 * 1000;
 
-const OPS: [&str; 5] = [
-    "repo_lfs_batch",
-    "repo_lfs_store",
-    "repo_lfs_discard",
-    "repo_lfs_usage",
-    "repo_lfs_set_quota",
-];
-
-pub(super) fn owns(op: &str) -> bool {
-    OPS.contains(&op)
-}
-
 /// Downloads need `read`, uploads `write`, the quota the owner (or an admin).
-pub(super) fn authorize(actor: &Actor, op: &str, c: &Value) -> Result<()> {
+pub(super) fn authorize(actor: &Actor, op: LfsOp, c: &Value) -> Result<()> {
     match op {
-        "repo_lfs_batch" if c["operation"] == "upload" => actor.require("write"),
-        "repo_lfs_store" | "repo_lfs_discard" => actor.require("write"),
-        "repo_lfs_set_quota" => actor.require_owner(),
-        _ => actor.require("read"),
+        LfsOp::Batch if c["operation"] == "upload" => actor.require("write"),
+        LfsOp::Store | LfsOp::Discard => actor.require("write"),
+        LfsOp::SetQuota => actor.require_owner(),
+        LfsOp::Batch | LfsOp::Usage => actor.require("read"),
     }
 }
 
 pub(super) fn run<S: SqlStore>(
     db: &S,
     c: &Value,
-    op: &str,
+    op: LfsOp,
     actor: &Actor,
     settings: &Settings,
 ) -> Result<Value> {
     whole_repository(actor)?;
     match op {
-        "repo_lfs_batch" => batch(db, c, actor, settings),
-        "repo_lfs_store" => store(db, c, actor),
-        "repo_lfs_discard" => discard(db, c),
-        "repo_lfs_usage" => usage(db).map(|u| u.json()),
-        "repo_lfs_set_quota" => set_quota(db, c, actor),
-        _ => Err(Error::new("UNKNOWN_OP", format!("Unknown LFS op {op}"))),
+        LfsOp::Batch => batch(db, c, actor, settings),
+        LfsOp::Store => store(db, c, actor),
+        LfsOp::Discard => discard(db, c),
+        LfsOp::Usage => usage(db).map(|u| u.json()),
+        LfsOp::SetQuota => set_quota(db, c, actor),
     }
 }
 

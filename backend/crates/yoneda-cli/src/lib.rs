@@ -1,6 +1,10 @@
 //! The YonedaRepo client: the `yoneda` command line and the `git-remote-yoneda` helper.
 //! Locally it is plain Git; the platform's value (server-side merges on landing, one
 //! transaction per push, server-side reads) is reached through the public HTTP API.
+//!
+//! Only this client runs `git`: it shells out to the local executable for worktree
+//! plumbing (`git`, `session_cmd`). The server never does; it reads and writes Git objects
+//! with `yoneda_core`.
 pub mod account;
 mod agent_hook;
 mod agent_transcript;

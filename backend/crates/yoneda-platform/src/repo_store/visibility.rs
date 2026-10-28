@@ -7,6 +7,7 @@
 //! so publishing grants nobody write and lifts no token's restriction. Only the owner's
 //! account (or an owner of the owning organization) changes visibility.
 use super::auth::Actor;
+use super::op::{ForkOp, LfsOp, RepoOp as R, StoreOp};
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -46,50 +47,53 @@ impl Visibility {
 /// forking. Everything else (writes, settings, tokens, members, hooks, policy, and direct
 /// object-store credentials through `repo_clone_access`) stays with owners and members,
 /// even where the operation itself would accept `read`.
-const PUBLIC_READS: &[&str] = &[
-    "repo_status",
-    "repo_refs",
-    "repo_snapshot",
-    "repo_log",
-    "repo_txlog",
-    "repo_commit",
-    "repo_merge_base",
-    "repo_path_history",
-    "repo_contracts",
-    "repo_contract_list",
-    "repo_sessions",
-    "repo_session_list",
-    "repo_session_show",
-    "repo_pin_list",
-    "repo_bisect_list",
-    "repo_agent_context",
-    "repo_changes",
-    "repo_change_show",
-    "repo_check_run",
-    "repo_tag_show",
-    "repo_releases",
-    "repo_release_show",
-    "repo_release_asset",
-    "repo_land_status",
-    "repo_git_access",
-    "repo_git_walk",
-    "repo_bundle_locate",
-    "repo_lfs_batch",
-    "repo_fork_source",
-    "repo_fork_export",
-];
+fn public_read(op: StoreOp) -> bool {
+    matches!(
+        op,
+        StoreOp::Repo(
+            R::Status
+                | R::Refs
+                | R::Snapshot
+                | R::Log
+                | R::Txlog
+                | R::Commit
+                | R::MergeBase
+                | R::PathHistory
+                | R::Contracts
+                | R::ContractList
+                | R::Sessions
+                | R::SessionList
+                | R::SessionShow
+                | R::PinList
+                | R::BisectList
+                | R::AgentContext
+                | R::Changes
+                | R::ChangeShow
+                | R::CheckRun
+                | R::TagShow
+                | R::Releases
+                | R::ReleaseShow
+                | R::ReleaseAsset
+                | R::LandStatus
+                | R::GitAccess
+                | R::GitWalk
+                | R::BundleLocate
+        ) | StoreOp::Lfs(LfsOp::Batch)
+            | StoreOp::Fork(ForkOp::Source | ForkOp::Export)
+    )
+}
 
-/// Refuses a public reader anything but `PUBLIC_READS` (the per-operation scope checks
+/// Refuses a public reader anything but `public_read` (the per-operation scope checks
 /// still apply): a caller without credentials is asked to sign in, an account that is not
 /// a member is refused.
-pub fn gate(actor: &Actor, op: &str, c: &Value) -> Result<()> {
+pub fn gate(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
     // A push and an LFS upload ask through read operations, but they are writes.
     let writes = match op {
-        "repo_git_access" => c["service"] != "git-upload-pack",
-        "repo_lfs_batch" => c["operation"] != "download",
+        StoreOp::Repo(R::GitAccess) => c["service"] != "git-upload-pack",
+        StoreOp::Lfs(LfsOp::Batch) => c["operation"] != "download",
         _ => false,
     };
-    if !actor.public || (PUBLIC_READS.contains(&op) && !writes) {
+    if !actor.public || (public_read(op) && !writes) {
         return Ok(());
     }
     Err(if actor.anonymous() {
