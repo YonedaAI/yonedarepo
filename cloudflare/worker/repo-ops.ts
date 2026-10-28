@@ -64,6 +64,8 @@ const KEEPS_REFS = new Set([
   'repo_adopt_commit',
   'repo_check_request',
   'repo_session_record',
+  'repo_sessions_recent',
+  'repo_agent_context',
   'repo_status',
   'repo_refs',
   'repo_snapshot',

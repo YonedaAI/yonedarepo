@@ -179,6 +179,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return run('git_session_record', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
+  if (resource === 'sessions' && !sha && get) return run('git_sessions_recent', query);
+  if (resource === 'context' && !sha && get) return run('git_context', query);
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'revert' && post)
