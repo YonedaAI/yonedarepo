@@ -38,6 +38,7 @@ export function RunDetail({
   onSelectRun,
   onRestart,
   onCancel,
+  onDelete,
   onAccept,
   onProviders,
   onContext,
@@ -54,6 +55,7 @@ export function RunDetail({
   onSelectRun: (id: string) => void;
   onRestart: () => void;
   onCancel: () => void;
+  onDelete?: () => void;
   onAccept: (
     candidate: string,
     rationale: string,
@@ -218,6 +220,7 @@ export function RunDetail({
               hasRoots={roots > 0 || (team && !!run.agents?.length)}
               onRestart={onRestart}
               onCancel={onCancel}
+              onDelete={onDelete}
             />
           )
         }

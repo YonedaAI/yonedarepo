@@ -32,6 +32,8 @@ mod ranked_context;
 mod reliability;
 #[path = "tests/restarts.rs"]
 mod restarts;
+#[path = "tests/run_delete.rs"]
+mod run_delete;
 #[path = "tests/single_agent.rs"]
 mod single_agent;
 #[path = "tests/working_branches.rs"]

@@ -1,4 +1,4 @@
-import { RotateCcw, StopCircle } from 'lucide-react';
+import { RotateCcw, StopCircle, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { canCancelRun } from './runControlState';
@@ -13,6 +13,8 @@ export function RunControls({
   supportsRestart,
   onRestart,
   onCancel,
+  deleteBlocker,
+  onDelete,
 }: {
   reviewer?: boolean;
   run: Record<string, any>;
@@ -23,8 +25,12 @@ export function RunControls({
   supportsRestart: boolean;
   onRestart: () => void;
   onCancel: () => void;
+  /** Why deletion is unavailable now; the control stays visible but disabled. */
+  deleteBlocker?: string;
+  onDelete?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="run-controls">
       {!reviewer && (
@@ -50,6 +56,54 @@ export function RunControls({
           <StopCircle size={16} />
           Cancel run
         </button>
+      )}
+      {!reviewer && onDelete && (
+        <button
+          type="button"
+          className="quiet"
+          disabled={busy || !!deleteBlocker}
+          title={deleteBlocker}
+          onClick={() => setDeleting(true)}
+        >
+          <Trash2 size={16} />
+          Delete run
+        </button>
+      )}
+      {!reviewer && onDelete && deleteBlocker && (
+        <p className="subtle delete-blocker">{deleteBlocker}</p>
+      )}
+      {deleting && onDelete && (
+        <Dialog
+          title="Delete this run?"
+          locked={busy}
+          initialFocus=".keep-run"
+          onClose={() => setDeleting(false)}
+        >
+          <p>
+            This permanently removes the run's results, agent logs and recorded history. Published
+            source is not affected.
+          </p>
+          <div className="run-actions">
+            <button
+              type="button"
+              className="quiet keep-run"
+              disabled={busy}
+              onClick={() => setDeleting(false)}
+            >
+              Keep run
+            </button>
+            <button
+              type="button"
+              disabled={busy || !!deleteBlocker}
+              onClick={() => {
+                setDeleting(false);
+                onDelete();
+              }}
+            >
+              Confirm delete run
+            </button>
+          </div>
+        </Dialog>
       )}
       {confirming && (
         <Dialog
