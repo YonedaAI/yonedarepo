@@ -1,6 +1,5 @@
 # The CheckContainer image: `yoneda-runtime check-server` plus the toolchains platform checks
 # run with (sh, git, Python, Node and npm with the workspace's TypeScript under /opt/yoneda, and Rust).
-# Agents run in AgentSandbox (cloudflare/sandbox/Dockerfile), not here.
 FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS node
 FROM rust:1.99.1-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
 COPY --from=node /usr/local/bin/ /usr/local/bin/

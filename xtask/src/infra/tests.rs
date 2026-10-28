@@ -117,10 +117,7 @@ fn ephemeral_env_shares_nothing_with_dev() {
     assert_eq!(spec.git_ref, None);
     assert_eq!(spec.secrets_file, ".local/infra/ephemeral-t1/secrets.env");
     let mut ephemeral_lock = Lock::default();
-    for name in [
-        "yonedarepo-eph-t1-platform-index",
-        "yonedarepo-eph-t1-agents-index",
-    ] {
+    for name in ["yonedarepo-eph-t1-platform-index"] {
         ephemeral_lock
             .d1
             .insert(name.into(), "00000000-0000-4000-8000-000000000000".into());

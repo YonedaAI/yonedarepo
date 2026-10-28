@@ -48,8 +48,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             build_wasm()?;
             run("pnpm", &["check"])?;
             run("pnpm", &["test"])?;
-            run("pnpm", &["test:apps"])?;
-            // The source platform must pass on its own, with the agent layer switched off.
+            // The source platform must pass on its own, in its platform-only test Worker.
             run("pnpm", &["test:platform"])?;
             run("pnpm", &["test:superfan"])?;
             run("pnpm", &["test:runtime"])?;
