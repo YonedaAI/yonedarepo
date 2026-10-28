@@ -126,7 +126,7 @@ export function AccountSettings({
         />
         {error && <Failure error={error} />}
       </section>
-      <PersonalTokens repos={repos} tokens={tokens} />
+      <PersonalTokens repos={repos} orgs={orgs?.data?.orgs} tokens={tokens} />
       {orgs && navigate && <AccountOrgs orgs={orgs} navigate={navigate} />}
     </div>
   );
