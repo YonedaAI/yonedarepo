@@ -1,7 +1,7 @@
 //! Stock `git` (no remote helper) against the local platform's smart HTTP at
 //! `/git/<repo>.git`, with tokens from Git's own credential store: clone, push a branch,
 //! push main (exact ids on a fast-forward, the server's merge otherwise), conflicts,
-//! `--atomic` with a stale ref, lightweight tags, a push cut off mid-body, deltified
+//! `--atomic` with a stale ref, lightweight and annotated tags, a push cut off mid-body, deltified
 //! pushes, a fresh clone that matches the platform byte for byte, and declared reads
 //! (`-o yoneda.reads=…`, `yoneda push`) refusing a stale read. Run with `cargo test
 //! -p yoneda-cli --test smart_http -- --include-ignored --nocapture`; it needs the
@@ -397,8 +397,9 @@ fn change_requests(w: &World) -> TestResult {
     )
 }
 
-/// Lightweight tags: `git push origin v1` creates one, a fresh clone has it, and it never
-/// moves or disappears; an annotated tag is refused.
+/// Tags: `git push origin v1` creates one, a fresh clone has it, and it never moves or
+/// disappears; an annotated tag keeps its object through push and clone, and a malformed
+/// one is refused.
 fn tags_push_and_clone(w: &World) -> TestResult {
     let (repo, token) = w.platform.repo(&[("a.txt", "a\n")])?;
     let c = w.client("tags", &token)?;
@@ -448,17 +449,55 @@ fn tags_push_and_clone(w: &World) -> TestResult {
         !deleted.status.success() && text(&deleted).contains("cannot be deleted"),
         &text(&deleted),
     )?;
-    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
-    let annotated = push(&c, &dir, &["origin", "v2"])?;
-    check(
-        !annotated.status.success()
-            && text(&annotated).contains("annotated tags are not supported"),
-        &text(&annotated),
-    )?;
     let refs = w.refs(&repo)?;
     check(
-        refs["refs/tags/v1"] == first.as_str() && refs.get("refs/tags/v2").is_none(),
+        refs["refs/tags/v1"] == first.as_str(),
         "refusals moved nothing",
+    )?;
+
+    // An annotated tag of an unpushed commit: the push records the commit, keeps the tag
+    // object, and a fresh clone has the very same object, peeled to that commit.
+    let later = c.git(&dir, &["rev-parse", "HEAD"])?;
+    c.git(&dir, &["tag", "-a", "v2", "-m", "annotated"])?;
+    let annotated = push(&c, &dir, &["origin", "v2"])?;
+    check(annotated.status.success(), &text(&annotated))?;
+    let object = c.git(&dir, &["rev-parse", "v2"])?;
+    let listed = w
+        .platform
+        .owner_call("GET", &format!("/repos/{repo}/refs"), None)?;
+    check(
+        listed["refs"]["refs/tags/v2"] == later.as_str()
+            && listed["annotated"]["refs/tags/v2"] == object.as_str(),
+        &listed.to_string(),
+    )?;
+    let fresh = w.client("tags-annotated", &token)?;
+    let copy = w.clone(&fresh, &repo, "annotated")?;
+    check(
+        fresh.git(&copy, &["cat-file", "-t", "v2"])? == "tag",
+        "a fresh clone has the tag object",
+    )?;
+    check(
+        fresh.git(&copy, &["rev-parse", "v2"])? == object
+            && fresh.git(&copy, &["rev-parse", "v2^{commit}"])? == later,
+        "the cloned tag is the pushed object, peeled to its commit",
+    )?;
+
+    // A malformed tag object is refused and moves nothing.
+    let bad = format!("object {later}\ntype commit\n\nno tag header\n");
+    std::fs::write(dir.join("bad-tag"), bad).map_err(|e| e.to_string())?;
+    let id = c.git(
+        &dir,
+        &["hash-object", "-t", "tag", "-w", "--literally", "bad-tag"],
+    )?;
+    c.git(&dir, &["update-ref", "refs/tags/v3", &id])?;
+    let malformed = push(&c, &dir, &["origin", "v3"])?;
+    check(
+        !malformed.status.success() && text(&malformed).contains("invalid tag object"),
+        &text(&malformed),
+    )?;
+    check(
+        w.refs(&repo)?.get("refs/tags/v3").is_none(),
+        "a malformed tag moved nothing",
     )
 }
 

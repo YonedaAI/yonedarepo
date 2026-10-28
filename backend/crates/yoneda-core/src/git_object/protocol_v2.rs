@@ -32,10 +32,11 @@ pub fn v2_capabilities(agent: &str) -> Vec<u8> {
 }
 
 /// `ls-refs` arguments: refs under any of `prefixes` (all when empty), with HEAD's target
-/// when `symrefs`.
+/// when `symrefs` and an annotated tag's commit when `peel`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LsRefs {
     pub symrefs: bool,
+    pub peel: bool,
     pub prefixes: Vec<String>,
 }
 
@@ -132,8 +133,9 @@ fn ls_refs(args: &[&str]) -> Result<LsRefs> {
     for arg in args {
         match *arg {
             "symrefs" => request.symrefs = true,
-            // Tags are lightweight (nothing to peel) and HEAD is always born when listed.
-            "peel" | "unborn" => {}
+            "peel" => request.peel = true,
+            // HEAD is always born when listed.
+            "unborn" => {}
             _ => match arg.strip_prefix("ref-prefix ") {
                 Some(prefix) if request.prefixes.len() < MAX_PREFIXES => {
                     request.prefixes.push(prefix.to_owned())
@@ -193,12 +195,13 @@ fn fetch(args: &[&str]) -> Result<FetchArgs> {
     Ok(request)
 }
 
-/// The `ls-refs` answer: one line per ref, HEAD with its target when asked.
+/// The `ls-refs` answer: one line per ref with its attribute, if any (HEAD's
+/// `symref-target:<ref>`, an annotated tag's `peeled:<commit>`).
 pub fn ls_refs_answer(refs: &[(String, ObjectId, Option<String>)]) -> Vec<u8> {
     let mut out = Vec::new();
-    for (name, id, target) in refs {
-        let line = match target {
-            Some(target) => format!("{id} {name} symref-target:{target}\n"),
+    for (name, id, attribute) in refs {
+        let line = match attribute {
+            Some(attribute) => format!("{id} {name} {attribute}\n"),
             None => format!("{id} {name}\n"),
         };
         out.extend(pkt_line(line.as_bytes()));
@@ -297,7 +300,7 @@ mod tests {
         let V2Command::LsRefs(request) = v2_request(&request("ls-refs", &args)).unwrap() else {
             panic!("not ls-refs");
         };
-        assert!(request.symrefs);
+        assert!(request.symrefs && request.peel);
         assert_eq!(request.prefixes, ["HEAD", "refs/heads/"]);
         let bare = [pkt_line(b"command=ls-refs\n"), FLUSH.to_vec()].concat();
         assert_eq!(
@@ -383,7 +386,11 @@ mod tests {
         assert_eq!(head.encode(), expected);
         assert_eq!(FetchHead::default().encode(), pkt_line(b"packfile\n"));
         let listed = ls_refs_answer(&[
-            ("HEAD".into(), id('a'), Some("refs/heads/main".into())),
+            (
+                "HEAD".into(),
+                id('a'),
+                Some("symref-target:refs/heads/main".into()),
+            ),
             ("refs/heads/main".into(), id('a'), None),
         ]);
         let text = String::from_utf8(listed).unwrap();

@@ -47,7 +47,8 @@ pub fn raw_objects(c: &Value) -> Result<Vec<(ObjectKind, Vec<u8>)>> {
                 Some("commit") => ObjectKind::Commit,
                 Some("tree") => ObjectKind::Tree,
                 Some("blob") => ObjectKind::Blob,
-                _ => return Err(bad("Objects are commits, trees or blobs")),
+                Some("tag") => ObjectKind::Tag,
+                _ => return Err(bad("Objects are commits, trees, blobs or tags")),
             };
             let data = STANDARD
                 .decode(object["data_b64"].as_str().unwrap_or_default())

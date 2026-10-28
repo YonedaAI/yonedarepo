@@ -17,6 +17,7 @@ mod protocol_v2;
 mod push_batch;
 mod rewrite;
 mod smart_http;
+mod tag;
 mod tree;
 
 pub use commit::{Commit, Signature};
@@ -40,6 +41,7 @@ pub use smart_http::{
     CommandList, FLUSH, Packet, RefCommand, UploadRequest, advertisement, command_list, next_pkt,
     pkt_line, report_status, side_band, upload_request, valid_ref_name,
 };
+pub use tag::{AnnotatedTag, MAX_TAG_BYTES};
 pub use tree::{FileMode, MAX_TREE_ENTRIES, TreeEntry, decode_tree, encode_tree};
 
 pub(crate) fn invalid(message: impl Into<String>) -> crate::Error {

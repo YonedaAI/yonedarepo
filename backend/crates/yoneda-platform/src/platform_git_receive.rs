@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use yoneda_core::{
     Result,
     git_object::{
-        CommandList, ObjectId, ObjectKind, PackLimits, PackReader, RefCommand, command_list,
+        AnnotatedTag, CommandList, ObjectId, ObjectKind, PackLimits, PackReader, RefCommand,
+        command_list,
     },
 };
 
@@ -104,23 +105,30 @@ impl ReceiveSession {
     }
 
     /// The commands parsed so far (each marked when its ref is protected, and once the pack
-    /// is read, when its new value is an annotated tag object), the capabilities the
-    /// client asked for and the read set its push options declare; none before the
-    /// command list is complete.
-    pub fn commands(&self) -> Value {
-        let annotated = |id: &Option<ObjectId>| {
-            id.and_then(|id| self.pack.as_ref()?.kind(&id)) == Some(ObjectKind::Tag)
-        };
-        let listed: Vec<Value> = self
-            .commands
-            .iter()
-            .flatten()
-            .map(|c| {
-                json!({ "ref": c.refname, "old": c.old, "new": c.new,
-                        "protected": crate::repo_store::protected_ref(&c.refname),
-                        "annotated": annotated(&c.new) })
-            })
-            .collect();
+    /// is read, when its new value is an annotated tag object: `tag` holds the tagged
+    /// commit and the object's bytes, or `tag_error` why the object is refused), the
+    /// capabilities the client asked for and the read set its push options declare; none
+    /// before the command list is complete.
+    pub fn commands(&mut self) -> Value {
+        let mut listed = Vec::new();
+        for c in self.commands.iter().flatten() {
+            let mut command = json!({ "ref": c.refname, "old": c.old, "new": c.new,
+                    "protected": crate::repo_store::protected_ref(&c.refname),
+                    "annotated": false });
+            if let Some(pack) = self.pack.as_mut()
+                && let Some(id) = c.new.filter(|id| pack.kind(id) == Some(ObjectKind::Tag))
+            {
+                command["annotated"] = json!(true);
+                match pack.content(&id).and_then(|data| {
+                    let tag = AnnotatedTag::decode(&data)?;
+                    Ok(json!({ "commit": tag.object, "data_b64": STANDARD.encode(data.as_slice()) }))
+                }) {
+                    Ok(tag) => command["tag"] = tag,
+                    Err(e) => command["tag_error"] = json!(format!("{}: {}", e.code, e.message)),
+                }
+            }
+            listed.push(command);
+        }
         json!({ "commands": listed, "capabilities": self.capabilities, "reads": self.reads })
     }
 
