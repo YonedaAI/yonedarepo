@@ -4,7 +4,6 @@
 //! use and no secret waits in storage. Poll outcomes are answers, not errors, so the poll
 //! bookkeeping (interval, consumption) commits with them.
 use super::*;
-use crate::storage::hash;
 use subtle::ConstantTimeEq;
 
 const LIFETIME_MS: i64 = 10 * 60 * 1000;

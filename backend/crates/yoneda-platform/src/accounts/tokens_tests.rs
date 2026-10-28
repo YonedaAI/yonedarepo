@@ -1,11 +1,12 @@
-//! Personal access tokens and device-login codes held by the workspace authority, and the
+//! Personal access tokens and device-login codes held by the account authority, and the
 //! forward-only workspace schema migration that adds them.
-use crate::{SqlStore, execute_workspace, native::NativeStore};
+use super::execute_workspace;
+use crate::{native::NativeStore, storage::SqlStore};
 use serde_json::{Value, json};
 
 const DAY: i64 = 24 * 60 * 60 * 1000;
 
-fn at(db: &NativeStore, now: i64, mut command: Value) -> yoneda_agents_core::Result<Value> {
+fn at(db: &NativeStore, now: i64, mut command: Value) -> yoneda_core::Result<Value> {
     command["now"] = json!(now);
     execute_workspace(db, command)
 }
@@ -17,7 +18,7 @@ fn account() -> NativeStore {
 fn create(db: &NativeStore, now: i64, id: &str, hash: char, scopes: Value) -> Value {
     at(db, now, json!({"op":"pat_create","id":id,"name":"laptop","token_hash":hash.to_string().repeat(64),"scopes":scopes,"expires_days":30,"repos":null})).unwrap()
 }
-fn check(db: &NativeStore, now: i64, hash: char) -> yoneda_agents_core::Result<Value> {
+fn check(db: &NativeStore, now: i64, hash: char) -> yoneda_core::Result<Value> {
     at(
         db,
         now,
@@ -45,7 +46,7 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
 
     // A store at version 1 (accounts only) upgrades in place and keeps its account.
     let old = NativeStore::memory().unwrap();
-    let v1 = include_str!("../migrations/workspace/0001_accounts.sql");
+    let v1 = include_str!("migrations/0001_accounts.sql");
     old.query(
         "CREATE TABLE workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
         &[],
@@ -56,7 +57,7 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
     }
     old.query(
         "INSERT INTO workspace_migrations(version,digest) VALUES(1,?)",
-        &[json!(yoneda_agents_core::digest(v1.as_bytes()))],
+        &[json!(yoneda_core::digest(v1.as_bytes()))],
     )
     .unwrap();
     old.query(
