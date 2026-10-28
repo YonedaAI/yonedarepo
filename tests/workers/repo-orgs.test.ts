@@ -173,3 +173,38 @@ it('a deleted team takes its grants with it: a new team of the same name starts 
   expect((await api(`/repos/${id}/members/${encodeURIComponent('team:gamma/devs')}`, erin, { method: 'DELETE' })).body).toMatchObject({ removed: true });
   expect((await api(`/repos/${id}/refs`, finn)).status).toBe(403);
 });
+
+it('a team change another isolate served reaches listing and reads within the access bound', async () => {
+  const hana = { cookie: await signup('orgs_hana') };
+  const ivan = { cookie: await signup('orgs_ivan') };
+  await api('/orgs', hana, { body: { name: 'delta' } });
+  await api('/orgs/delta/teams', hana, { body: { name: 'devs' } });
+  const id = (await api('/repos', hana, { body: { name: 'svc', owner: 'delta', files: [file('a.md', 'a\n')], author } })).body.id as string;
+  await api(`/repos/${id}/members`, hana, { body: { account: 'team:delta/devs', role: 'write' } });
+  await api('/orgs/delta/members', hana, { body: { account: 'orgs_ivan', role: 'member' } });
+  // This isolate now holds ivan's org answer: a member of delta in no team.
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  const real = Date.now;
+  const later = (ms: number) => vi.spyOn(Date, 'now').mockImplementation(() => real() + ms);
+
+  // Joining the team in an isolate this one is not: its copy lists and reads without the
+  // team for under ACCESS_MS (the kit's listing right after the add), then asks the org.
+  await workspace(scoped, 'delta', { op: 'team_member_put', actor: 'orgs_hana', team: 'devs', account: 'orgs_ivan', now: real() });
+  expect((await api('/repos', ivan)).body.repos).toEqual([]);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  later(ACCESS_MS);
+  expect((await api('/repos', ivan)).body.repos).toEqual([expect.objectContaining({ id, owner: 'delta', role: 'write' })]);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(200);
+  vi.restoreAllMocks();
+
+  // Leaving it the same way: a read inside the bound may pass (the kit's REST check right
+  // after a refused push), every read after it is refused and the listing drops the repo.
+  later(ACCESS_MS);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(200);
+  await workspace(scoped, 'delta', { op: 'team_member_remove', actor: 'orgs_hana', team: 'devs', account: 'orgs_ivan', now: real() });
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(200);
+  later(2 * ACCESS_MS);
+  expect((await api(`/repos/${id}/refs`, ivan)).status).toBe(403);
+  expect((await api('/repos', ivan)).body.repos).toEqual([]);
+  vi.restoreAllMocks();
+});
