@@ -1,17 +1,24 @@
-//! Reads across the compaction floor. Versions up to the floor live in sealed segments in
-//! the object store; the authority never fetches them (no network I/O here), it names the
-//! objects (`TXLOG_ARCHIVED`) and the adapter retries with their text in `_archive`, which
-//! is accepted only when it has the fingerprints recorded when the segment moved.
+//! The log across the compaction floor. Versions up to the floor live in sealed segments in
+//! the object store; the authority never fetches them (no network I/O here). A command that
+//! needs them is answered `TXLOG_ARCHIVED` naming the objects, and the adapter sends it
+//! again carrying their text (`supplied`), which is accepted only when it has the
+//! fingerprints recorded when the segment moved.
 use super::super::rows::corrupt;
+use super::supplied;
 use crate::storage::SqlStore;
-use serde_json::{Value, json};
+use serde_json::json;
 use yoneda_core::{
     Error, Result,
+    git_object::ObjectId,
     txlog::{
         Checkpoint, TxEntry,
         archive::{Segment, SegmentCheckpoints, state_at as replay_segment},
     },
 };
+
+/// Most archived segments one command may bring in (about a megabyte each). A writer whose
+/// concurrent window reaches further back than this is told to rebase.
+const MAX_SEGMENTS: usize = 16;
 
 /// One archived run of versions `(start, end]` as recorded when it moved.
 pub(super) struct SegmentRow {
@@ -60,6 +67,14 @@ pub fn anchor<S: SqlStore>(db: &S) -> Result<Option<Checkpoint>> {
     Ok(Some(checkpoint))
 }
 
+/// `refname` at `version` when it has not moved since the floor: its value there. Below the
+/// floor this is unknown here (the path index is archived too), so a landing on such a
+/// base is not routed as a changeset: the merge path checks it against the segments.
+pub fn ref_at_floor<S: SqlStore>(db: &S, refname: &str, version: u64) -> Result<Option<ObjectId>> {
+    let anchor = anchor(db)?.filter(|a| a.version <= version);
+    Ok(anchor.and_then(|a| a.refs.get(refname).copied()))
+}
+
 /// Records `end`'s state as the new anchor; the segment row it chains to is written first.
 pub(super) fn set_anchor<S: SqlStore>(db: &S, state: &Checkpoint) -> Result<()> {
     db.query(
@@ -74,12 +89,17 @@ pub(super) fn set_anchor<S: SqlStore>(db: &S, state: &Checkpoint) -> Result<()> 
 }
 
 pub(super) fn segment_row<S: SqlStore>(db: &S, start: u64) -> Result<Option<SegmentRow>> {
-    segment_where(db, "start_version=?", start)
+    Ok(segments_where(db, "start_version=?", &[start])?.pop())
+}
+
+/// The archived segments overlapping `(after, until]`, oldest first.
+fn overlapping<S: SqlStore>(db: &S, after: u64, until: u64) -> Result<Vec<SegmentRow>> {
+    segments_where(db, "end_version>? AND start_version<?", &[after, until])
 }
 
 /// The archived segment holding `version`.
 fn holding<S: SqlStore>(db: &S, version: u64) -> Result<SegmentRow> {
-    segment_where(db, "start_version<? AND end_version>=?", version)?.ok_or_else(|| {
+    overlapping(db, version - 1, version)?.pop().ok_or_else(|| {
         Error::new(
             "TXLOG_INVALID",
             format!("No archived segment holds version {version}"),
@@ -87,31 +107,41 @@ fn holding<S: SqlStore>(db: &S, version: u64) -> Result<SegmentRow> {
     })
 }
 
-fn segment_where<S: SqlStore>(db: &S, filter: &str, value: u64) -> Result<Option<SegmentRow>> {
-    let params = vec![json!(value); filter.matches('?').count()];
-    let Some(row) = db
-        .query(
-            &format!("SELECT * FROM txlog_segments WHERE {filter} LIMIT 1"),
-            &params,
-        )?
-        .into_iter()
-        .next()
-    else {
-        return Ok(None);
-    };
-    let text = |key: &str| row[key].as_str().unwrap_or_default().to_owned();
-    Ok(Some(SegmentRow {
-        start: row["start_version"]
-            .as_u64()
-            .ok_or_else(|| corrupt("segment"))?,
-        end: row["end_version"]
-            .as_u64()
-            .ok_or_else(|| corrupt("segment"))?,
-        segment_key: text("segment_key"),
-        segment_digest: text("segment_digest"),
-        checkpoints_key: text("checkpoints_key"),
-        checkpoints_digest: text("checkpoints_digest"),
-    }))
+fn segments_where<S: SqlStore>(db: &S, filter: &str, values: &[u64]) -> Result<Vec<SegmentRow>> {
+    let params: Vec<_> = values.iter().map(|v| json!(v)).collect();
+    db.query(
+        &format!("SELECT * FROM txlog_segments WHERE {filter} ORDER BY start_version"),
+        &params,
+    )?
+    .into_iter()
+    .map(|row| {
+        let text = |key: &str| row[key].as_str().unwrap_or_default().to_owned();
+        Ok(SegmentRow {
+            start: row["start_version"]
+                .as_u64()
+                .ok_or_else(|| corrupt("segment"))?,
+            end: row["end_version"]
+                .as_u64()
+                .ok_or_else(|| corrupt("segment"))?,
+            segment_key: text("segment_key"),
+            segment_digest: text("segment_digest"),
+            checkpoints_key: text("checkpoints_key"),
+            checkpoints_digest: text("checkpoints_digest"),
+        })
+    })
+    .collect()
+}
+
+/// Asks for the objects the command did not carry, naming every one it needs.
+fn require(keys: &[&str], what: &str) -> Result<()> {
+    let missing: Vec<&str> = keys.iter().copied().filter(|k| !supplied::has(k)).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(Error::new(
+        "TXLOG_ARCHIVED",
+        format!("{what} is archived in {}", missing.join(", ")),
+    ))
 }
 
 impl SegmentRow {
@@ -119,51 +149,63 @@ impl SegmentRow {
         (&self.segment_digest, &self.checkpoints_digest)
     }
 
-    /// The segment and its checkpoints from the command's `_archive`, verified against the
-    /// recorded fingerprints; without them, the error names the objects to fetch.
-    fn open(&self, c: &Value, version: u64) -> Result<(Segment, SegmentCheckpoints)> {
-        let Some(archive) = c.get("_archive").filter(|a| a.is_object()) else {
-            return Err(Error::new(
-                "TXLOG_ARCHIVED",
-                format!(
-                    "Version {version} is archived in {} and {}",
-                    self.segment_key, self.checkpoints_key
-                ),
-            ));
-        };
-        let text = |key: &str| {
-            archive[key].as_str().ok_or_else(|| {
-                Error::new(
-                    "ARCHIVE_CORRUPT",
-                    format!("Archived {key} for version {version} is missing"),
-                )
-            })
-        };
-        Ok((
-            Segment::open(text("segment")?, &self.segment_digest, self.start, self.end)?,
-            SegmentCheckpoints::open(
-                text("checkpoints")?,
-                &self.checkpoints_digest,
-                self.start,
-                self.end,
-            )?,
-        ))
+    fn segment(&self) -> Result<Segment> {
+        supplied::open(&self.segment_key, |text| {
+            Segment::open(text, &self.segment_digest, self.start, self.end)
+        })
+    }
+
+    fn checkpoints(&self) -> Result<SegmentCheckpoints> {
+        supplied::open(&self.checkpoints_key, |text| {
+            SegmentCheckpoints::open(text, &self.checkpoints_digest, self.start, self.end)
+        })
     }
 }
 
 /// The ref state at an archived `version` (`0 < version < floor`).
-pub fn state_at<S: SqlStore>(db: &S, c: &Value, version: u64) -> Result<Checkpoint> {
+pub fn state_at<S: SqlStore>(db: &S, version: u64) -> Result<Checkpoint> {
     let row = holding(db, version)?;
-    let (segment, checkpoints) = row.open(c, version)?;
+    let what = format!("Version {version}");
+    require(&[&row.segment_key, &row.checkpoints_key], &what)?;
     let projected = super::super::projection_plan::projected_between(db, row.start, version)?;
-    replay_segment(&segment, &checkpoints, version, &projected)
+    replay_segment(&row.segment()?, &row.checkpoints()?, version, &projected)
 }
 
 /// Archived entries after `after` (below the floor), up to `limit`, ending at the end of
 /// the segment holding `after + 1`: a listing pages through the archive a segment a time.
-pub fn page<S: SqlStore>(db: &S, c: &Value, after: u64, limit: u64) -> Result<Vec<TxEntry>> {
+pub fn page<S: SqlStore>(db: &S, after: u64, limit: u64) -> Result<Vec<TxEntry>> {
     let row = holding(db, after + 1)?;
-    let (segment, _) = row.open(c, after + 1)?;
+    require(&[&row.segment_key], &format!("Version {}", after + 1))?;
     let until = row.end.min(after.saturating_add(limit));
-    Ok(segment.entries[(after - row.start) as usize..(until - row.start) as usize].to_vec())
+    Ok(row.segment()?.entries[(after - row.start) as usize..(until - row.start) as usize].to_vec())
+}
+
+/// Archived entries `(after, until]` (`until` at most the floor), optionally for one ref,
+/// for commands that check against the log (a landing's concurrent window, a stream's
+/// cursor). More than `MAX_SEGMENTS` segments is refused: rebase onto a newer version.
+pub fn entries<S: SqlStore>(
+    db: &S,
+    after: u64,
+    until: u64,
+    refname: Option<&str>,
+) -> Result<Vec<TxEntry>> {
+    let rows = overlapping(db, after, until)?;
+    if rows.len() > MAX_SEGMENTS {
+        return Err(Error::new(
+            "TXLOG_COMPACTED",
+            format!(
+                "This needs the log after version {after}, {} archived segments back (at most {MAX_SEGMENTS}); rebase onto a newer version",
+                rows.len()
+            ),
+        ));
+    }
+    let keys: Vec<&str> = rows.iter().map(|r| r.segment_key.as_str()).collect();
+    require(&keys, &format!("The log after version {after}"))?;
+    let mut out = Vec::new();
+    for row in &rows {
+        out.extend(row.segment()?.entries.into_iter().filter(|e| {
+            e.version > after && e.version <= until && refname.is_none_or(|name| e.refname == name)
+        }));
+    }
+    Ok(out)
 }

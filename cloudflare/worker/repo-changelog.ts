@@ -17,7 +17,14 @@ export type ChangeLogState = {
   failures: number;
   last_sent_at?: string;
   last_error?: { code: string; message: string; at: string };
+  /** Ranges claimed and not yet confirmed sent: start version → claim time (ms). */
+  claims?: Record<string, number>;
 };
+
+/** A claim older than this belongs to a job that died; it no longer holds compaction. */
+const CLAIM_LEASE_MS = 10 * 60_000;
+const without = (claims: ChangeLogState['claims'], from: number) =>
+  Object.fromEntries(Object.entries(claims ?? {}).filter(([start]) => Number(start) !== from));
 
 const stateKey = (repo: string) => `platform/v1/${repo}/changelog/cursor.json`;
 const iso = (ms: unknown) => (typeof ms === 'number' ? new Date(ms).toISOString() : undefined);
@@ -50,10 +57,26 @@ async function readState(env: Env, repo: string): Promise<ChangeLogState> {
   return (await readCursor(env, repo)).state;
 }
 
-/** The version the change-log stream has read through, while one is bound: log
- * compaction keeps later versions in the authority. */
+/** The lowest version the change-log stream may still read after, while one is bound: its
+ * cursor, or the start of a live claim that may yet be given back. Log compaction never
+ * moves past it, so a given-back range is still in the authority's SQL log. */
 export async function changeLogHold(env: Env, repo: string) {
-  return env.CHANGELOG ? (await readState(env, repo)).version : undefined;
+  if (!env.CHANGELOG) return undefined;
+  const state = await readState(env, repo);
+  const live = Object.entries(state.claims ?? {})
+    .filter(([, at]) => at > Date.now() - CLAIM_LEASE_MS)
+    .map(([start]) => Number(start));
+  return Math.min(state.version, ...live);
+}
+
+/** Drops this job's confirmed claim (best effort: an unreleased claim only expires). */
+async function release(env: Env, repo: string, from: number) {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cursor = await readCursor(env, repo);
+    if (!cursor.etag || !(String(from) in (cursor.state.claims ?? {}))) return;
+    const state = { ...cursor.state, claims: without(cursor.state.claims, from) };
+    if (await swapCursor(env, repo, cursor.etag, state)) return;
+  }
 }
 
 /** The cursor and its etag; `etag` is null while no cursor exists yet. */
@@ -83,6 +106,8 @@ export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogSt
   if (!stream) return null;
   let state: ChangeLogState = { ...EMPTY };
   let claimed: { from: ChangeLogState; count: number } | null = null;
+  // The previous round's claim, sent: released in the next claim write or at the end.
+  let confirmed: number | null = null;
   try {
     const call = caller(env, repo, { _system: 'derive' });
     for (let round = 0; round < ROUNDS; round++) {
@@ -98,6 +123,7 @@ export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogSt
         break;
       const next: ChangeLogState = {
         ...state,
+        claims: { ...without(state.claims, confirmed ?? -1), [state.version]: Date.now() },
         version: page.version,
         ticket: page.ticket,
         sent: state.sent + events.length,
@@ -108,8 +134,13 @@ export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogSt
       claimed = { from: state, count: events.length };
       if (events.length > 0) await stream.send(events);
       claimed = null;
+      confirmed = state.version;
       state = next;
       if (page.version >= page.head_version) break;
+    }
+    if (confirmed !== null) {
+      await release(env, repo, confirmed);
+      state = { ...state, claims: without(state.claims, confirmed) };
     }
   } catch (e: any) {
     const error = {
@@ -139,6 +170,7 @@ async function giveBack(
     const from = claimed?.from;
     const state: ChangeLogState = {
       ...cursor.state,
+      claims: from ? without(cursor.state.claims, from.version) : cursor.state.claims,
       ...(claimed && from && from.version <= cursor.state.version
         ? {
             version: from.version,

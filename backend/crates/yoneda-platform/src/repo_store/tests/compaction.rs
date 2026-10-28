@@ -5,7 +5,7 @@ use crate::storage::SqlStore;
 use std::collections::BTreeMap;
 
 /// Plays R2: object key → body.
-type Store = RefCell<BTreeMap<String, String>>;
+pub(super) type Store = RefCell<BTreeMap<String, String>>;
 
 /// Main at `root` (version 1), then 100 branches moved in batches of 100 until `head`.
 fn grown(head: u64) -> (Harness, String, String) {
@@ -19,19 +19,27 @@ fn grown(head: u64) -> (Harness, String, String) {
             json!([]),
         )
         .unwrap();
+    grow(&h, &root, &child, head);
+    (h, root, child)
+}
+
+/// Moves branches `b0`..`b99` between `root` and `child`, 100 per batch, until `head`.
+pub(super) fn grow(h: &Harness, root: &str, child: &str, head: u64) {
     let mut at: Vec<Option<String>> = vec![None; 100];
-    let mut version = 1;
+    let mut version = h.ok(OWNER, json!({"op":"repo_status"}))["version"]
+        .as_u64()
+        .unwrap();
     while version < head {
         let take = (head - version).min(100) as usize;
         let updates: Vec<Value> = (0..take)
             .map(|i| {
-                let next = if at[i].as_deref() == Some(root.as_str()) {
-                    &child
+                let next = if at[i].as_deref() == Some(root) {
+                    child
                 } else {
-                    &root
+                    root
                 };
                 let update = json!({"ref": format!("b{i}"), "commit": next, "expected": at[i]});
-                at[i] = Some(next.clone());
+                at[i] = Some(next.to_owned());
                 update
             })
             .collect();
@@ -39,7 +47,6 @@ fn grown(head: u64) -> (Harness, String, String) {
             .as_u64()
             .unwrap();
     }
-    (h, root, child)
 }
 
 fn rows(h: &Harness, sql: &str) -> u64 {
@@ -47,7 +54,7 @@ fn rows(h: &Harness, sql: &str) -> u64 {
 }
 
 /// The adapter's job: plan, write both objects, read them back, then settle.
-fn compact_once(h: &Harness, r2: &Store, extra: Value) -> Value {
+pub(super) fn compact_once(h: &Harness, r2: &Store, extra: Value) -> Value {
     let mut plan = json!({"op":"repo_compact_plan"});
     let mut done = json!({"op":"repo_compact_done"});
     for (k, v) in extra.as_object().unwrap() {
@@ -79,22 +86,28 @@ fn compact_once(h: &Harness, r2: &Store, extra: Value) -> Value {
 
 /// A read, retried once with the archived objects the authority names (as the adapter does).
 fn read(h: &Harness, r2: &Store, command: Value) -> yoneda_core::Result<Value> {
-    match h.run(OWNER, command.clone()) {
+    run_archived(h, OWNER, r2, command)
+}
+
+/// Runs `command`; on `TXLOG_ARCHIVED`, once more carrying every object it names (null for
+/// one the store lacks), as the adapter does.
+pub(super) fn run_archived(
+    h: &Harness,
+    principal: &str,
+    r2: &Store,
+    command: Value,
+) -> yoneda_core::Result<Value> {
+    match h.run(principal, command.clone()) {
         Err(e) if e.code == "TXLOG_ARCHIVED" => {
-            let key = |kind: &str| {
-                let at = e
-                    .message
-                    .find(&format!("_log/{kind}-"))
-                    .expect("names its objects");
-                let len = e.message[at..].find(".json").unwrap() + 5;
-                e.message[at..at + len].to_owned()
-            };
+            let mut objects = serde_json::Map::new();
+            for (at, _) in e.message.match_indices("_log/") {
+                let key = &e.message[at..at + e.message[at..].find(".json").unwrap() + 5];
+                objects.insert(key.into(), json!(r2.borrow().get(key)));
+            }
+            assert!(!objects.is_empty(), "names its objects: {e}");
             let mut command = command;
-            command["_archive"] = json!({
-                "segment": r2.borrow().get(&key("segment")).cloned(),
-                "checkpoints": r2.borrow().get(&key("checkpoint")).cloned(),
-            });
-            h.run(OWNER, command)
+            command["_archive"] = json!(objects);
+            h.run(principal, command)
         }
         other => other,
     }
@@ -194,14 +207,17 @@ fn compaction_keeps_the_bound_and_old_versions_answer_from_segments() {
     let page = read(&h, &r2, json!({"op":"repo_txlog","after":2_040,"limit":20})).unwrap();
     assert_eq!(page["entries"].as_array().unwrap().len(), 8);
 
-    // Anything else that needs the archived log fails closed rather than skipping it.
+    // A stream reading behind the floor (a change-log range given back) asks for the
+    // segments, then reads them: nothing is skipped.
+    let records = json!({"op":"repo_change_records","after_version":1_020});
     assert_eq!(
-        code(h.run(
-            "platform:derive",
-            json!({"op":"repo_change_records","after_version":10})
-        )),
-        "TXLOG_COMPACTED"
+        code(h.run("platform:derive", records.clone())),
+        "TXLOG_ARCHIVED"
     );
+    let page = run_archived(&h, "platform:derive", &r2, records).unwrap();
+    assert_eq!(page["version"], 1_120);
+    let first = &page["records"][0];
+    assert_eq!(first["version"], 1_021, "{first}");
 }
 
 #[test]

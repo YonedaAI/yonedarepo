@@ -68,7 +68,9 @@ pub fn execute_repo_store<S: SqlStore>(db: &S, command: Value) -> Result<Value> 
 /// One command against a store this process already migrated.
 pub fn execute_migrated<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
     let owned = db.clone();
-    db.transaction(Box::new(move || dispatch(&owned, &command)))
+    db.transaction(Box::new(move || {
+        maintenance::scoped(&command, || dispatch(&owned, &command))
+    }))
 }
 
 fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
