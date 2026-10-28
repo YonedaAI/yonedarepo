@@ -1,14 +1,17 @@
-import { GitBranch, Menu, Plus, X } from 'lucide-react';
+import { Building2, GitBranch, Menu, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import type { RepoRow } from '../shell/repoRows';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import type { OrgSummary } from '../source-platform/orgModel';
 
 export function WorkspaceRail({
   authenticated,
   loading,
   rows = [],
   rowsError = '',
+  orgs = [],
   current,
+  currentOrg,
   navigate = () => {},
   onNew,
 }: {
@@ -16,8 +19,12 @@ export function WorkspaceRail({
   loading: boolean;
   rows?: RepoRow[];
   rowsError?: string;
+  /** The account's organizations. */
+  orgs?: OrgSummary[];
   /** The selected repository. */
   current?: string;
+  /** The organization whose page is open. */
+  currentOrg?: string;
   navigate?: Navigate;
   onNew?: () => void;
 }) {
@@ -85,6 +92,23 @@ export function WorkspaceRail({
             </button>
           )}
         </nav>
+        {orgs.length > 0 && (
+          <nav className="repository-list" aria-label="Organizations">
+            <p className="nav-label">Organizations</p>
+            {orgs.map((o) => (
+              <a
+                key={o.org}
+                className={o.org === currentOrg ? 'active' : ''}
+                aria-current={o.org === currentOrg ? 'page' : undefined}
+                {...linkTo({ view: 'org', org: o.org }, close)}
+              >
+                <Building2 size={17} aria-hidden="true" />
+                <span className="rail-repo-name">{o.org}</span>
+                <small className="rail-repo-shared">{o.role}</small>
+              </a>
+            ))}
+          </nav>
+        )}
         <div className="rail-bottom">
           <span className="environment">
             <i />
