@@ -69,6 +69,39 @@ describe('ref rules and requests', () => {
   });
 });
 
+describe("the viewer's own changes before a read includes them", () => {
+  // A refs read may predate the change (another isolate's snapshot): `stale` lacks it.
+  const stale = { refs: { 'refs/heads/main': a, 'refs/heads/old': b }, version: 5 };
+  const created = refModel.createdEdit({ ref: 'refs/heads/kit-ui-branch', commit: a, version: 6 });
+  const shown = (read: typeof stale, edits: any[]) =>
+    html(BranchTable, { refs: loaded({ data: refModel.withEdits(read, edits) }) });
+
+  it('shows a created branch from its answer, whatever the reads say until one includes it', () => {
+    expect(created).toEqual({ ref: 'refs/heads/kit-ui-branch', commit: a, version: 6 });
+    expect(shown(stale, [created])).toContain('<td>kit-ui-branch</td>');
+    expect(refModel.pendingEdits(stale, [created as any])).toHaveLength(1);
+    // A read at the change's version or newer decides, even against the change.
+    const current = { refs: stale.refs, version: 6 };
+    expect(refModel.pendingEdits(current, [created as any])).toHaveLength(0);
+    expect(shown(current, [created])).not.toContain('kit-ui-branch');
+  });
+  it('hides a deleted branch and shows a created tag the same way', () => {
+    const deleted = refModel.deletedEdit({ name: 'old', commit: b }, { version: 7, refs: {} });
+    const tag = refModel.createdEdit({ ref: 'refs/tags/v2', commit: b, tag: null, version: 8 });
+    const data = refModel.withEdits(stale, [deleted, tag] as any[]);
+    expect(refModel.branchRows(data?.refs).map((r) => r.name)).toEqual(['main']);
+    expect(refModel.tagRows(data?.refs)).toEqual([{ name: 'v2', commit: b }]);
+  });
+  it('applies edits in version order and keeps nothing for a no-op answer', () => {
+    const moved = { ref: 'refs/heads/kit-ui-branch', commit: b, version: 9 };
+    expect(
+      refModel.withEdits(stale, [moved, created as any])?.refs['refs/heads/kit-ui-branch'],
+    ).toBe(b);
+    expect(refModel.createdEdit({ ref: 'refs/heads/old', commit: b, already: true })).toBeNull();
+    expect(refModel.withEdits(undefined, [moved])).toBeUndefined();
+  });
+});
+
 describe('branches and tags panel', () => {
   it('shows loading, failure and empty states', () => {
     const onDelete = () => {};
