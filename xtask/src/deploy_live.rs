@@ -6,6 +6,7 @@ use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::{self, table};
 use crate::process::Result;
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 pub(crate) async fn live_revision(worker: &Deployable) -> Option<String> {
@@ -43,9 +44,7 @@ pub(crate) async fn wait_for_revision(worker: &Deployable, head: &str) -> Option
 }
 
 /// Container application name -> its current version (a rollout bumps it).
-pub(crate) fn container_versions(
-    account_id: &str,
-) -> Result<std::collections::BTreeMap<String, u64>> {
+pub(crate) fn container_versions(account_id: &str) -> Result<BTreeMap<String, u64>> {
     let apps: Value = serde_json::from_slice(&wrangler::output(
         account_id,
         &["containers", "list", "--json", "--per-page", "100"],
@@ -69,6 +68,15 @@ pub(crate) fn active_instances(account_id: &str, config: &Value) -> Result<u64> 
 /// Each declared container application of the Worker with its busy instance count.
 pub(crate) fn busy_instances(account_id: &str, config: &Value) -> Result<Vec<(String, u64)>> {
     let declared = inventory::containers(config);
+    busy_apps(account_id, |name| declared.contains_key(name))
+}
+
+/// Busy instances (active, assigned, starting or scheduling) of every container application
+/// whose name `wanted` accepts.
+pub(crate) fn busy_apps(
+    account_id: &str,
+    wanted: impl Fn(&str) -> bool,
+) -> Result<Vec<(String, u64)>> {
     let apps: Value = serde_json::from_slice(&wrangler::output(
         account_id,
         &["containers", "list", "--json", "--per-page", "100"],
@@ -78,7 +86,7 @@ pub(crate) fn busy_instances(account_id: &str, config: &Value) -> Result<Vec<(St
         let (Some(name), Some(id)) = (app["name"].as_str(), app["id"].as_str()) else {
             continue;
         };
-        if !declared.contains_key(name) {
+        if !wanted(name) {
             continue;
         }
         let info: Value = serde_json::from_slice(&wrangler::output(
@@ -223,4 +231,48 @@ async fn status_table(env: &Env, workers: &[Deployable]) -> Result<()> {
         &rows,
     );
     Ok(())
+}
+
+/// `--agent-smoke` (off by default): after the deploy, one cheap hosted agent on a fresh kit
+/// project must reach a checked candidate (`tools/staging/agent-smoke.mjs`; spends real model
+/// money, target under $0.01; kit credentials from ~/.config/yonedarepo).
+pub(crate) fn agent_smoke() -> Result<()> {
+    let status = std::process::Command::new("node")
+        .args(["tools/staging-realworld.mjs", "--agent-smoke"])
+        .status()
+        .map_err(|error| format!("Cannot start the agent smoke: {error}"))?;
+    if status.success() {
+        println!("AGENT SMOKE: PASS");
+        Ok(())
+    } else {
+        println!("AGENT SMOKE: FAIL ({status})");
+        Err("The deploy finished but the agent smoke failed; see its output above.".into())
+    }
+}
+
+/// Each container application with its version before and after the deploy (a new version
+/// means a rollout; versions unknown in a dry run or when the listing failed).
+pub(crate) fn rollouts(
+    worker: &Deployable,
+    before: Option<&BTreeMap<String, u64>>,
+    after: Option<&BTreeMap<String, u64>>,
+) -> String {
+    let apps: Vec<String> = inventory::containers(&worker.config)
+        .into_keys()
+        .map(|app| {
+            let version = |map: Option<&BTreeMap<String, u64>>| {
+                map.and_then(|m| m.get(&app))
+                    .map_or("?".to_owned(), |v| format!("v{v}"))
+            };
+            match (version(before), version(after)) {
+                (b, a) if b == a => format!("{app} {a} (no rollout)"),
+                (b, a) => format!("{app} {b} -> {a} (rolled out)"),
+            }
+        })
+        .collect();
+    if apps.is_empty() {
+        "-".into()
+    } else {
+        apps.join("; ")
+    }
 }

@@ -3,6 +3,7 @@
 //! The token comes from `CLOUDFLARE_API_TOKEN` or from `--token-file <KEY=VALUE file>`; it is
 //! held in memory only. A section that cannot be read is recorded in `errors`, so a plan
 //! never reports "unchanged" for something it did not see.
+use super::retired::Kind;
 use super::spec::Spec;
 use crate::process::Result;
 use serde_json::Value;
@@ -32,6 +33,13 @@ pub(crate) struct Live {
     pub routes: BTreeMap<String, String>,
     /// Custom domain hostname -> service.
     pub domains: BTreeMap<String, String>,
+    /// The spec zone's id, and the ids of its routes and the account's custom domains (for
+    /// detaching a host from the Worker that holds it, `hosts`).
+    pub zone_id: Option<String>,
+    pub route_ids: BTreeMap<String, String>,
+    pub domain_ids: BTreeMap<String, String>,
+    /// Retired Artifacts namespace -> its repositories (read only for `retired.artifacts`).
+    pub artifacts: BTreeMap<String, Vec<String>>,
     /// Sections that could not be read.
     pub errors: Vec<String>,
 }
@@ -51,16 +59,25 @@ pub(crate) fn token(args: &[String]) -> Result<String> {
     })
 }
 
-struct Client {
+pub(crate) struct Client {
     http: reqwest::Client,
     token: String,
 }
 
 impl Client {
-    async fn get(&self, path: &str) -> Result<Value> {
+    pub(crate) fn new(token: String) -> Self {
+        Self {
+            http: reqwest::Client::new(),
+            token,
+        }
+    }
+    pub(crate) async fn get(&self, path: &str) -> Result<Value> {
+        self.send(reqwest::Method::GET, path).await
+    }
+    pub(crate) async fn send(&self, method: reqwest::Method, path: &str) -> Result<Value> {
         let response = self
             .http
-            .get(format!("{API}{path}"))
+            .request(method.clone(), format!("{API}{path}"))
             .bearer_auth(&self.token)
             .send()
             .await?;
@@ -73,12 +90,12 @@ impl Client {
                 .flatten()
                 .map(|e| format!("{} {}", e["code"], e["message"].as_str().unwrap_or("")))
                 .collect();
-            return Err(format!("GET {path}: HTTP {status} {}", codes.join("; ")).into());
+            return Err(format!("{method} {path}: HTTP {status} {}", codes.join("; ")).into());
         }
         Ok(body)
     }
     /// All pages of a listing whose `result` is an array.
-    async fn list(&self, path: &str) -> Result<Vec<Value>> {
+    pub(crate) async fn list(&self, path: &str) -> Result<Vec<Value>> {
         let separator = if path.contains('?') { '&' } else { '?' };
         let mut all = Vec::new();
         for page in 1..=50 {
@@ -106,10 +123,7 @@ fn names(items: &[Value], field: &str) -> BTreeSet<String> {
 
 /// Reads every section the spec can declare, for the given Worker names.
 pub(crate) async fn read(spec: &Spec, token: String, workers: &[String]) -> Live {
-    let client = Client {
-        http: reqwest::Client::new(),
-        token,
-    };
+    let client = Client::new(token);
     let account = format!("/accounts/{}", spec.account_id);
     let mut live = Live::default();
     macro_rules! section {
@@ -202,42 +216,7 @@ pub(crate) async fn read(spec: &Spec, token: String, workers: &[String]) -> Live
         "Workers",
         read_workers(&client, &account, workers, &mut live.workers).await
     );
-    section!(
-        "Custom domains",
-        async {
-            for domain in client.list(&format!("{account}/workers/domains")).await? {
-                if let (Some(host), Some(service)) =
-                    (domain["hostname"].as_str(), domain["service"].as_str())
-                {
-                    live.domains.insert(host.into(), service.into());
-                }
-            }
-            Result::Ok(())
-        }
-        .await
-    );
-    section!(
-        "Routes",
-        async {
-            let zones = client.get(&format!("/zones?name={}", spec.zone)).await?;
-            let zone = zones["result"][0]["id"]
-                .as_str()
-                .ok_or("zone not found")?
-                .to_owned();
-            for route in client.get(&format!("/zones/{zone}/workers/routes")).await?["result"]
-                .as_array()
-                .into_iter()
-                .flatten()
-            {
-                if let Some(pattern) = route["pattern"].as_str() {
-                    let script = route["script"].as_str().unwrap_or("").to_owned();
-                    live.routes.insert(pattern.into(), script);
-                }
-            }
-            Result::Ok(())
-        }
-        .await
-    );
+    super::hosts::read(&client, spec, &mut live).await;
     live
 }
 
@@ -275,7 +254,8 @@ async fn read_workers(
     Ok(())
 }
 
-/// Applications under the env's prefix, with `max_instances` and `configuration.image`.
+/// Applications under the env's prefix or retired, with `max_instances` and
+/// `configuration.image`.
 fn containers_via_wrangler(spec: &Spec) -> Result<BTreeMap<String, Value>> {
     let account = &spec.account_id;
     let list: Value = serde_json::from_slice(&super::wrangler::output(
@@ -287,7 +267,9 @@ fn containers_via_wrangler(spec: &Spec) -> Result<BTreeMap<String, Value>> {
         let (Some(name), Some(id)) = (app["name"].as_str(), app["id"].as_str()) else {
             continue;
         };
-        if name.starts_with(&format!("{}-", spec.prefix)) {
+        if name.starts_with(&format!("{}-", spec.prefix))
+            || spec.retired.matches(Kind::Container, name)
+        {
             let info = super::wrangler::output(account, &["containers", "info", id, "--json"])?;
             apps.insert(name.to_owned(), serde_json::from_slice(&info)?);
         }
