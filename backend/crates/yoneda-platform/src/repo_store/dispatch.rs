@@ -53,7 +53,8 @@ fn run<S: SqlStore>(
         StoreOp::Repo(op) => op,
     };
     match op {
-        R::Status => reads::status(db, settings, actor),
+        R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
+            .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
         R::CloneAccess => Ok(json!({ "object_store": settings.object_store })),
         R::Refs => reads::refs(db, c),
         R::Snapshot => reads::snapshot(db, c),

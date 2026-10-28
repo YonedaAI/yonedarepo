@@ -9,8 +9,12 @@ use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
-/// Ordered by what they allow (`Read` least), so a caller's highest role wins.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+/// Ordered by what they allow (`Read` least), so a caller's highest role wins. Serializes
+/// as its lowercase name, like `Role::as_str`.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     Read,
     Write,

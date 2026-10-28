@@ -12,7 +12,8 @@ use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
 pub enum Visibility {
     Private,
     Public,

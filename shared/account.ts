@@ -1,7 +1,9 @@
 // Transport/browser counterpart of yoneda-core::account; parity cases live beside the Rust contract.
-export const ACCOUNT_IDENTIFIER_HELP =
-  'Use a username (3–32 letters, digits or underscores, starting with a letter) or an email address';
-export const MAX_ACCOUNT_IDENTIFIER_LENGTH = 254;
+import { accountSchema } from './contracts/account';
+
+export type { AccountIdentifier } from './contracts/account';
+export const ACCOUNT_IDENTIFIER_HELP = accountSchema.description;
+export const MAX_ACCOUNT_IDENTIFIER_LENGTH = accountSchema.maxLength;
 
 export function normalizeAccountIdentifier(value: string): string | null {
   const trimmed = value.trim();
