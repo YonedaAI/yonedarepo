@@ -112,6 +112,8 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
 /// The served objects among `wanted` and the ids the platform does not have. `raw` asks
 /// for commits as their exact Git content. Large blobs come as stubs (`large`: base64 in a
 /// JSON page costs the platform several copies of a blob) and are downloaded one by one.
+/// A page the platform cannot answer (a gateway error left after the client's retries, such
+/// as a Worker over its limits) is asked again for half as many ids, down to one.
 async fn request(
     api: &Api,
     wanted: &[(String, ObjectKind)],
@@ -120,18 +122,23 @@ async fn request(
     let mut fetched = Vec::with_capacity(wanted.len());
     let mut absent = Vec::new();
     for batch in wanted.chunks(REQUEST_OBJECTS) {
-        let ids: Vec<Value> = batch
-            .iter()
-            .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
-            .collect();
-        let mut after = 0u64;
-        loop {
-            let page = api
-                .post_read(
-                    "/objects",
-                    &json!({ "objects": ids, "after": after, "raw": raw, "large": true }),
-                )
-                .await?;
+        let mut pos = 0;
+        let mut window = batch.len();
+        while pos < batch.len() {
+            let part = &batch[pos..(pos + window).min(batch.len())];
+            let ids: Vec<Value> = part
+                .iter()
+                .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
+                .collect();
+            let body = json!({ "objects": ids, "after": 0, "raw": raw, "large": true });
+            let page = match api.post_read("/objects", &body).await {
+                Ok(page) => page,
+                Err(failure) if window > 1 && crate::api::transient(&failure) => {
+                    window = window.div_ceil(2);
+                    continue;
+                }
+                Err(failure) => return Err(failure.into()),
+            };
             absent.extend(
                 page["missing"]
                     .as_array()
@@ -146,11 +153,14 @@ async fn request(
                     object
                 });
             }
-            match page["next"].as_u64() {
-                Some(next) if next > after => after = next,
-                Some(_) => return Err(Error::new("the platform's object paging did not advance")),
-                None => break,
+            // `next`: where the page stopped within `part` (none: it served all of it).
+            let done = page["next"]
+                .as_u64()
+                .map_or(part.len(), |n| usize::try_from(n).unwrap_or(0));
+            if done == 0 {
+                return Err(Error::new("the platform's object paging did not advance"));
             }
+            pos += done;
         }
     }
     Ok((fetched, absent))
@@ -389,6 +399,113 @@ mod tests {
         let lines = seen.lock().map(|l| l.clone()).unwrap_or_default();
         assert_eq!(lines.len(), 2, "{lines:?}");
         assert!(lines[1].starts_with(&format!("GET /api/v1/objects/{id} ")));
+        Ok(())
+    }
+
+    /// A platform that 503s on pages of more than two ids (a Worker over its limits) still
+    /// serves every object: the client asks again for half as many ids.
+    #[tokio::test]
+    async fn halves_a_page_the_platform_cannot_answer() -> Result<()> {
+        let blobs: Vec<Vec<u8>> = (0..4u8).map(|i| vec![i; 64]).collect();
+        let ids: Vec<String> = blobs
+            .iter()
+            .map(|b| hash_object(ObjectKind::Blob, b).hex())
+            .collect();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        let origin = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|e| Error::new(e.to_string()))?
+        );
+        let sizes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = sizes.clone();
+        let served = blobs.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = Vec::new();
+                let mut chunk = [0u8; 8192];
+                // Headers, then the body its content-length announces.
+                loop {
+                    let n = socket.read(&mut chunk).await.unwrap_or(0);
+                    request.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&request).to_string();
+                    if let Some(end) = text.find("\r\n\r\n") {
+                        let length = text
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length: ")
+                                    .map(str::to_owned)
+                            })
+                            .and_then(|v| v.trim().parse::<usize>().ok())
+                            .unwrap_or(0);
+                        if n == 0 || request.len() >= end + 4 + length {
+                            break;
+                        }
+                    } else if n == 0 {
+                        break;
+                    }
+                }
+                let text = String::from_utf8_lossy(&request).to_string();
+                let body: Value = text
+                    .split_once("\r\n\r\n")
+                    .and_then(|(_, b)| serde_json::from_str(b).ok())
+                    .unwrap_or(Value::Null);
+                let asked: Vec<String> = body["objects"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|o| o["id"].as_str().map(str::to_owned))
+                    .collect();
+                if let Ok(mut log) = seen.lock() {
+                    log.push(asked.len());
+                }
+                let (status, kind, reply) = if asked.len() > 2 {
+                    (
+                        "503 Service Unavailable",
+                        "text/html",
+                        "<html>limits</html>".to_owned(),
+                    )
+                } else {
+                    let objects: Vec<Value> = asked
+                        .iter()
+                        .filter_map(|id| {
+                            served
+                                .iter()
+                                .find(|b| hash_object(ObjectKind::Blob, b).hex() == *id)
+                                .map(|b| json!({ "id": id, "kind": "blob",
+                                    "data_b64": base64::engine::general_purpose::STANDARD.encode(b) }))
+                        })
+                        .collect();
+                    let page = json!({ "objects": objects, "missing": [], "next": null });
+                    ("200 OK", "application/json", page.to_string())
+                };
+                let head = format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: {kind}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                    reply.len()
+                );
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        let api = Api::account(&origin, None)?;
+        let wanted: Vec<(String, ObjectKind)> = ids
+            .iter()
+            .map(|id| (id.clone(), ObjectKind::Blob))
+            .collect();
+        let fetched = fetch(&api, &wanted).await?;
+        let got: Vec<String> = fetched
+            .iter()
+            .map(|o| o["id"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        assert_eq!(got, ids);
+        let asked = sizes.lock().map(|l| l.clone()).unwrap_or_default();
+        // Four ids refused (with the client's own retries), then two pages of two.
+        assert_eq!(asked.iter().filter(|n| **n == 4).count(), 4, "{asked:?}");
+        assert_eq!(asked.iter().filter(|n| **n == 2).count(), 2, "{asked:?}");
         Ok(())
     }
 
