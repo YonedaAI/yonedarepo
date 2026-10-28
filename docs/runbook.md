@@ -124,4 +124,6 @@ A landing whose branch moved meanwhile is merged on the server or refused with `
 
 Migration changes must be additive and appended. Check fresh, repeat and preceding-version upgrades locally, then apply D1 migrations before deploying code that needs them. Do not modify an already-applied SQL file or remove Durable Object class migration history. Roll back code only to versions compatible with the deployed schema.
 
+Object bundles: with `PUSH_BUNDLES=on` (dev) a large push stores its objects as a few R2 bundles under `platform/v1/<repo>/bundles/`, indexed by the repository authority (`bundled_objects`, migration 0030); code from before the bundle reader cannot read those objects. Before rolling back below it, set `PUSH_BUNDLES` to `off` in the env spec, regenerate and deploy, then roll back. Even then, objects already pushed into bundles stay unreadable to the older code until it is deployed again.
+
 No live run, deployment or acceptance should be inferred from passing local tests. Record actual commands and outcomes in `docs/progress.md`.

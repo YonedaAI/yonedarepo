@@ -96,6 +96,7 @@
         "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
         "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
+        "PUSH_BUNDLES=off until dev has measured bundles live; readers serve bundles either way. Turn it off before rolling back below the bundle reader.",
         "Check runs: one per invocation, up to check_instances (4) at once.",
         "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store",
         "secret ZAI), bound to the platform Worker itself.",
@@ -138,6 +139,7 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "PUSH_BUNDLES": "off",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}"
         },

@@ -101,6 +101,7 @@
         "events: outcomes, logs, exceptions and CPU/wall time, with no API token.",
         "Batched landing, with commits beginning from and main reads served by the published",
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
+        "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
         "api.dev.yonedarepo.com is the platform API's own hostname (Custom Domain plus the exact route); WEB_ORIGIN is where people approve device logins (/device).",
@@ -143,6 +144,7 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}"
         },
