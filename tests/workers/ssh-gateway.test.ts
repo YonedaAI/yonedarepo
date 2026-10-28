@@ -2,9 +2,11 @@
 // egress (the platform's /internal/ssh and Git paths, through SELF), its start environment
 // per front door, the `connect` front door (refused unless chosen) and the tunnel's
 // keep-alive cron (only on the tunnel).
+import { ContainerProxy } from '@cloudflare/containers';
 import { expect, it } from 'vitest';
 import {
   forwardToPlatform,
+  SshGateway,
   frontDoor,
   gatewayStart,
   sshFrontDoor,
@@ -82,4 +84,19 @@ it('takes inbound TCP only on the connect front door, and keeps the gateway aliv
   // A failed keep-alive is logged, never thrown into the cron.
   const failing = { ...namespace, get: () => ({ keepAlive: async () => Promise.reject(new Error('capacity')) }) };
   await sshKeepAlive({ SSH_FRONT_DOOR: 'tunnel', SSH_GATEWAYS: failing } as unknown as Env, 'health');
+});
+
+it("routes the container's platform.internal requests to the platform (ContainerProxy)", async () => {
+  // ContainerProxy finds a class's handlers in the registry the static setter fills; a
+  // `static outboundByHost = …` field would hide the setter and leave it empty (HTTP 520).
+  expect(Object.hasOwn(SshGateway, 'outboundByHost')).toBe(false);
+  const seen: string[] = [];
+  const env = { SELF: { fetch: async (req: Request) => (seen.push(new URL(req.url).pathname), new Response('ok')) } };
+  const props = { className: 'SshGateway', containerId: 'c', enableInternet: false };
+  const proxy = new ContainerProxy({ props, waitUntil: () => {} } as never, env as never);
+  const lookup = await proxy.fetch(new Request('http://platform.internal/internal/ssh/lookup', { method: 'POST', body: '{}' }));
+  expect([lookup.status, seen]).toEqual([200, ['/internal/ssh/lookup']]);
+  // Anything else the container asks for is refused.
+  expect((await proxy.fetch(new Request('http://example.com/'))).status).toBe(520);
+  expect((await proxy.fetch(new Request('http://platform.internal/api/v1/repos'))).status).toBe(403);
 });
