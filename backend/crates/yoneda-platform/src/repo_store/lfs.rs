@@ -7,6 +7,7 @@
 //! whole repositories, so a path-restricted credential is refused, as for smart HTTP.
 use super::auth::Actor;
 use super::git_http::whole_repository;
+use super::rows::Settings;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -45,10 +46,16 @@ pub(super) fn authorize(actor: &Actor, op: &str, c: &Value) -> Result<()> {
     }
 }
 
-pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: &str, actor: &Actor) -> Result<Value> {
+pub(super) fn run<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    op: &str,
+    actor: &Actor,
+    settings: &Settings,
+) -> Result<Value> {
     whole_repository(actor)?;
     match op {
-        "repo_lfs_batch" => batch(db, c, actor),
+        "repo_lfs_batch" => batch(db, c, actor, settings),
         "repo_lfs_store" => store(db, c, actor),
         "repo_lfs_discard" => discard(db, c),
         "repo_lfs_usage" => usage(db).map(|u| u.json()),
@@ -139,8 +146,9 @@ fn lapse<S: SqlStore>(db: &S, now: i64) -> Result<Vec<String>> {
 /// (`present`), may be uploaded (`upload`), or an error (`{code, message}` as the LFS batch
 /// API answers it). Uploads are reserved against the quota as a whole: a batch that does
 /// not fit is refused (`QUOTA_EXCEEDED`) and reserves nothing. `lapsed` lists expired
-/// reservations whose bytes the adapter deletes.
-fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
+/// reservations whose bytes the adapter deletes. A fork's download answers its `parent`,
+/// which the adapter asks (with the caller's credentials) for objects the fork lacks.
+fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
     let upload = match c["operation"].as_str() {
         Some("upload") => true,
         Some("download") => false,
@@ -206,7 +214,12 @@ fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         }
         lapsed.retain(|oid| !reserve.contains_key(oid));
     }
-    Ok(json!({ "objects": answers, "lapsed": lapsed }))
+    let parent = settings
+        .parent
+        .as_ref()
+        .filter(|_| !upload)
+        .map(|(repo, _)| repo);
+    Ok(json!({ "objects": answers, "lapsed": lapsed, "parent": parent }))
 }
 
 /// `repo_lfs_store {oid, size}`: records an object whose bytes the adapter verified in R2.

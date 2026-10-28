@@ -52,7 +52,8 @@ export class Inherited {
   }
 }
 
-const REFUSED = ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND', 'GONE'];
+/** Failures that mean the caller may not read the parent (not an outage). */
+export const REFUSED = ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND', 'GONE'];
 
 /**
  * Serves `objects`' inherited objects to this request only if its caller can read the
