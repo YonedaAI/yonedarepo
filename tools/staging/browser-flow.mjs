@@ -1,7 +1,8 @@
 // Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
 // drives the served app as a person does, with zero model spend. It signs the kit account in
 // through the real login form, creates a repository with the shell's "New repository" dialog,
-// opens its Code, History, Changes (the empty list) and Settings (Landing rules, Connect) tabs
+// opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History,
+// Changes (the empty list) and Settings (Landing rules, Connect) tabs
 // and the account Settings page. Then the second kit account (a member at write) commits on a
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
 // page (the platform refuses an author's own approval); the page and the API must both read it
@@ -136,6 +137,24 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.waitForURL(`**/source/${id}`);
   await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
   await shot('source-code');
+  // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
+  const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
+  await page.locator('.clone-menu > summary').click();
+  const cloneMenu = page.locator('.clone-dropdown');
+  await cloneMenu.getByText('HTTPS (token as password)').waitFor();
+  const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
+  if (ssh?.front_door && ssh.host) {
+    m.ssh_clone = await sshBlock.locator('code').innerText();
+    assert.equal(m.ssh_clone, `git clone ssh://git@${ssh.host}/${id}.git`, 'the Clone menu SSH line');
+    if (ssh.front_door === 'tunnel')
+      await cloneMenu.getByRole('link', { name: 'Settings → SSH keys' }).waitFor();
+  } else {
+    await page.waitForTimeout(1000); // the SSH answer has arrived and showed nothing
+    assert.equal(await sshBlock.count(), 0, 'an SSH clone line while SSH is off');
+    m.ssh_clone = 'off (none shown)';
+  }
+  await shot('source-clone');
+  await page.keyboard.press('Escape');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'History' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();

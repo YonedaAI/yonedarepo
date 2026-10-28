@@ -126,7 +126,7 @@ export function SshKeys() {
   }
 
   return (
-    <section aria-labelledby="ssh-heading">
+    <section id="ssh-keys" aria-labelledby="ssh-heading">
       <h2 id="ssh-heading">SSH keys</h2>
       <p className="source-meta">
         Clone, fetch and push over SSH as this account. Add the contents of a <code>.pub</code>{' '}
