@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
-import { b64 } from './client.mjs';
+import { b64, sleep, until } from './client.mjs';
 import { accountSettings, settle } from './browser-flow.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
@@ -49,6 +49,14 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
   const main = (await account.get(api('/refs'))).refs['refs/heads/main'];
   const tag = 'v1';
   await account.post(api('/tags'), { name: tag, commit: main, message: 'Browser gate tag' });
+  // Another isolate may answer from a head copy up to ACCESS_MS (1 s) old: wait until the
+  // tag reads back, then out the bound, so the tab's refs read is not a stale copy.
+  await until(async () => (await account.get(api('/refs'))).refs[`refs/tags/${tag}`] === main, {
+    timeoutMs: 10_000,
+    intervalMs: 250,
+    what: `tag ${tag} in the repository's refs`,
+  });
+  await sleep(1_000);
   await tabs.getByRole('link', { name: 'Code' }).click();
   await tabs.getByRole('link', { name: 'Releases' }).click();
   await page.getByRole('button', { name: 'New release' }).click();
