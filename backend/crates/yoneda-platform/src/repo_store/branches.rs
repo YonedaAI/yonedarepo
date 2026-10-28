@@ -210,7 +210,9 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             set(db, &command, principal)?
         });
     }
-    Ok(json!({ "version": current_version(db)?, "refs": refs }))
+    // Each moved branch with its open change, so a push can suggest opening one.
+    let changes = super::changes::for_moves(db, &refs)?;
+    Ok(json!({ "version": current_version(db)?, "refs": refs, "changes": changes }))
 }
 
 fn expected_of(c: &Value) -> Result<Option<ObjectId>> {
