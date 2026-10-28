@@ -68,6 +68,7 @@ async fn run(command: Command) -> Result<()> {
             login::logout(origin.as_deref())
         }
         Command::Repo { origin, command } => account::run(origin.as_deref(), command).await,
+        Command::Org { origin, command } => crate::org_cmd::run(origin.as_deref(), command).await,
         Command::Setup { agent, origin } => {
             setup::run(agent, &target::account_origin(origin.as_deref())?)
         }

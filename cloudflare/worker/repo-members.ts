@@ -1,14 +1,22 @@
-// Repository members: other accounts that use a repository with a role (read, write, land
-// or admin). The authority decides who may manage whom; this adapter checks that an
-// invited account exists (its WorkspaceAuthority), keeps the D1 membership index that
-// lists shared repositories, and marks the published head stale so a change of access
-// reaches stateless reads at once.
+// Repository members: other accounts, or organizations' teams (`team:<org>/<team>`), that
+// use a repository with a role (read, write, land or admin). The authority decides who may
+// manage whom; this adapter checks that an invited account or team exists (its
+// WorkspaceAuthority, or the org's), keeps the D1 membership index that lists shared
+// repositories, and marks the published head stale so a change of access reaches stateless
+// reads at once.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
 import { refreshHead } from './repo-head';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { workspace } from './workspace';
 
+const TEAM_ENTRY = /^team:([a-z][a-z0-9_]{2,31})\/([a-z0-9][a-z0-9_-]{0,31})$/;
+
 function accountArg(value: unknown) {
+  if (typeof value === 'string' && value.trim().startsWith('team:')) {
+    if (!TEAM_ENTRY.test(value.trim()))
+      throw new ApiError('INVALID_INPUT', 'A team entry is team:<org>/<team>');
+    return value.trim();
+  }
   const account = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
   if (!account) throw new ApiError('INVALID_INPUT', ACCOUNT_IDENTIFIER_HELP);
   return account;
@@ -20,8 +28,15 @@ export const memberOperations = {
     const account = accountArg(a.account);
     // Who may manage members is asked first, so the account check reveals nothing to others.
     await ctx.call({ op: 'repo_members' });
-    const found = await workspace(ctx.env, account, { op: 'account_exists' });
-    if (found.exists !== true) throw new ApiError('NOT_FOUND', `No account named ${account}`);
+    const team = TEAM_ENTRY.exec(account);
+    const found = team
+      ? await workspace(ctx.env, team[1], { op: 'team_exists', team: team[2] }).catch((e) => {
+          if (e?.code === 'NOT_FOUND') return { exists: false };
+          throw e;
+        })
+      : await workspace(ctx.env, account, { op: 'account_exists' });
+    if (found.exists !== true)
+      throw new ApiError('NOT_FOUND', `No ${team ? 'team' : 'account'} named ${account}`);
     const put = await ctx.call({ op: 'repo_member_put', account, role: a.role });
     await ctx.env.INDEX.prepare(
       'INSERT INTO platform_members(repo,account,role) VALUES(?,?,?) ON CONFLICT(repo,account) DO UPDATE SET role=excluded.role',

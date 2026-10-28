@@ -6,9 +6,16 @@ usage: yoneda <command> [options]
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
   logout [--origin <url>]
-  repo create <name> | repo list | repo delete <id> --confirm <name>
+  repo create <name> [--owner <org>] | repo list | repo delete <id> --confirm <name>
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   setup claude|codex|gemini                              a coding agent's skill files and MCP config
+
+organizations (owners manage members and teams; a repository grants a team by
+`team:<org>/<team>` as a member)
+  org list | org create <name> | org show <org> | org repos <org>
+  org member add <org> <account> [--role owner|member] | org member remove <org> <account>
+  org team create|delete <org> <team>
+  org team add|remove <org> <team> <account>
 
 repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>])
   land [--branch <b>]                 land the branch's head on main
@@ -67,6 +74,8 @@ pub struct Target {
 pub enum RepoCommand {
     Create {
         name: String,
+        /// An organization to own it (the caller must be one of its owners).
+        owner: Option<String>,
     },
     List,
     Delete {
@@ -77,6 +86,48 @@ pub enum RepoCommand {
         dir: String,
         name: Option<String>,
         batch_files: usize,
+    },
+}
+
+/// `yoneda org …`: organizations, their members and teams.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrgCommand {
+    List,
+    Create {
+        name: String,
+    },
+    Show {
+        org: String,
+    },
+    Repos {
+        org: String,
+    },
+    MemberAdd {
+        org: String,
+        account: String,
+        role: String,
+    },
+    MemberRemove {
+        org: String,
+        account: String,
+    },
+    TeamCreate {
+        org: String,
+        team: String,
+    },
+    TeamDelete {
+        org: String,
+        team: String,
+    },
+    TeamAdd {
+        org: String,
+        team: String,
+        account: String,
+    },
+    TeamRemove {
+        org: String,
+        team: String,
+        account: String,
     },
 }
 
@@ -238,6 +289,10 @@ pub enum Command {
     Repo {
         origin: Option<String>,
         command: RepoCommand,
+    },
+    Org {
+        origin: Option<String>,
+        command: OrgCommand,
     },
     Setup {
         agent: Agent,

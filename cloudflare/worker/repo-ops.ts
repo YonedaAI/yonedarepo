@@ -2,6 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson } from './durable';
+import type { OrgAccess } from './org-access';
 import { archivedObjects } from './repo-archive';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
@@ -22,7 +23,7 @@ export type { PatGrant, PatScope } from './repo-pat';
 
 export type Json = Record<string, any>;
 export type Credentials =
-  | { _session: { workspace: string; principal: string; human?: true } }
+  | { _session: { workspace: string; principal: string; human?: true; orgs?: OrgAccess } }
   | { _token: string }
   /** A personal access token the adapter verified (repo-pat.ts). */
   | { _pat: PatGrant }
