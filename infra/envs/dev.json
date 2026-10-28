@@ -585,7 +585,9 @@
         "hook-receiver.yonedaai.org (owner approved 2026-10-27), on a zone without a wildcard Worker",
         "route (yonedarepo.com has the prod sites Worker's)."
       ],
-      "secrets": [],
+      "secrets": [
+        "BENCH_KEY"
+      ],
       "ephemeral": false,
       "config": {
         "name": "{prefix}-bench",
