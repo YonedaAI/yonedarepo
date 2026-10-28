@@ -5,7 +5,7 @@ import type { Snapshot } from '../../lib/types';
 import { RunDetail } from './RunDetail';
 import type { InitialRun } from './restartRun';
 import { runDraft } from './runDraft';
-import { selectionBlocker } from './runReviewState';
+import { runAttention, selectionBlocker } from './runReviewState';
 
 const revision = { repository: 'fixture/fork', commit: 'checked' };
 const branch = {
@@ -25,6 +25,7 @@ const run = {
   status: 'ready',
   working_branch_id: branch.id,
   base: { commit: 'previous-working' },
+  comparison: { version: 1, status: 'selected', selected_candidate_id: 'candidate' },
 };
 const candidate = {
   id: 'candidate',
@@ -109,5 +110,24 @@ describe('checked working branch review', () => {
     expect(draft).toHaveProperty('workingBranch', branch);
     expect(draft.budgets).toEqual(budgets);
     expect(draft.publication).toBeUndefined();
+  });
+  it('asks the owner to choose between checked compare results before any is selected', () => {
+    const unchosen = { ...run, comparison: undefined };
+    const atBase = { ...branch, version: 0, latest_candidate_id: null };
+    const second = { ...candidate, id: 'second', execution: 'agent' };
+    const fresh = {
+      ...snapshot,
+      runs: [unchosen],
+      working_branches: [atBase],
+      candidates: [candidate, second],
+    } as unknown as Snapshot;
+    expect(selectionBlocker(fresh, unchosen, candidate)).toBe(
+      'Choose this checked result before publishing it.',
+    );
+    expect(runAttention(fresh, unchosen)).toMatchObject({
+      tone: 'review',
+      title: 'Choose a result',
+      action: 'results',
+    });
   });
 });

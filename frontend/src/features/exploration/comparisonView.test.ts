@@ -10,6 +10,7 @@ const run = {
   working_branch_id: 'work',
   working_branch_version: 2,
   base: { repository: 'source', commit: 'base' },
+  comparison: { version: 1, status: 'selected', selected_candidate_id: 'right' },
 };
 const candidates = ['left', 'right'].map((id) => ({
   id,
@@ -71,7 +72,7 @@ const snapshot = {
   seq: 1,
 } as unknown as Snapshot;
 it('allows choosing the eligible sibling in the screenshot while publication still requires the selected working head', () => {
-  expect(selectionBlocker(snapshot, run, candidates[0])).toMatch(/working head/);
+  expect(selectionBlocker(snapshot, run, candidates[0])).toMatch(/Choose this checked result/);
   expect(comparisonChoiceBlocker(snapshot, run, candidates[0])).toBeUndefined();
   expect(selectionBlocker(snapshot, run, candidates[1])).toBeUndefined();
 });
