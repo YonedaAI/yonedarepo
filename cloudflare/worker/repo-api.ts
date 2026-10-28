@@ -12,6 +12,7 @@ import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-t
 import { deleteRepository, listRepositories } from './repo-admin';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
+import { changesRoute } from './repo-changes';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
@@ -204,6 +205,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'break-glass' && post) return breakGlass(ctx, await bodyOf(req));
   if (resource === 'hooks') return hooksRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (resource === 'members' && !sub) return membersRoute(ctx, req.method, sha, () => bodyOf(req));
+  if (resource === 'changes') return changesRoute(ctx, req, sha, sub, () => bodyOf(req));
   if (resource === 'clone' && post) {
     // The authority admits only a person who can read the whole repository.
     const access = await ctx.call({ op: 'repo_clone_access' });
