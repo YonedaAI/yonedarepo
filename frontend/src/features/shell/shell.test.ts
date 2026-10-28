@@ -1,6 +1,8 @@
-// The shell's sidebar rows and its New repository seed.
+// The shell's sidebar rows and its New repository dialog (seed, request body and labels).
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { createBody, readmeSeed } from './NewRepositoryDialog';
+import { createBody, NewRepositoryDialog, readmeSeed } from './NewRepositoryDialog';
 import { repoRows, rowLabel } from './repoRows';
 
 const a = 'r0000000000000000000a';
@@ -67,5 +69,37 @@ describe('new repository seed', () => {
       new TextDecoder().decode(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)));
     expect(decode(readmeSeed('demo', ''))).toBe('# demo\n');
     expect(decode(readmeSeed('demo', '  Café ✓ notes \n'))).toBe('# demo\n\nCafé ✓ notes\n');
+  });
+});
+
+describe('the New repository dialog', () => {
+  /** Each `<label>`'s text, tags stripped (what getByLabel matches against). */
+  const labels = (html: string) =>
+    [...html.matchAll(/<label[^>]*>([\s\S]*?)<\/label>/g)].map((m) => ({
+      text: m[1].replace(/<[^>]+>/g, '').trim(),
+      html: m[1],
+    }));
+  const dialog = renderToStaticMarkup(
+    createElement(NewRepositoryDialog, {
+      account: 'ada',
+      orgs: [{ org: 'kit_org_1', role: 'owner' }],
+      onClose: () => {},
+      onCreated: async () => {},
+    }),
+  );
+
+  it('labels exactly one control "Owner", the owner picker', () => {
+    const owner = labels(dialog).filter((l) => /owner/i.test(l.text));
+    expect(owner).toHaveLength(1);
+    expect(owner[0].html).toContain('<select name="owner"');
+    expect(owner[0].html).toContain('kit_org_1');
+  });
+
+  it('names each visibility radio by its label alone and describes it with its help', () => {
+    const radios = labels(dialog).filter((l) => l.html.includes('type="radio"'));
+    expect(radios.map((l) => l.text)).toEqual(['Private', 'Public']);
+    expect(dialog).toContain('aria-describedby="visibility-private-help"');
+    expect(dialog).toMatch(/<small id="visibility-private-help">Only the owner and members/);
+    expect(dialog).toContain('<legend>Visibility</legend>');
   });
 });
