@@ -3,7 +3,7 @@ import { reset, runInDurableObject, runDurableObjectAlarm } from 'cloudflare:tes
 import { afterEach, expect, it, vi } from 'vitest';
 import { projectRoute, provisionProject, sitePolicy } from '../../cloudflare/worker/projects';
 import type { Env, Json } from '../../cloudflare/worker/types';
-import { ensureProjectPlatform, projectSeed } from '../../cloudflare/worker/project-platform';
+import { ensureProjectPlatform, projectSeed, repoSlug } from '../../cloudflare/worker/project-platform';
 import { signup } from './reviewer-fixture';
 import { bindNewPlatformRepo, interceptPlatform, operator, platformJson, templateArtifacts } from './platform-fixture';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -84,6 +84,22 @@ it('creates the platform repository in the owner request and schedules setup out
   const { ledger } = await import('../../cloudflare/worker/storage');
   await expect(ledger(bindings, project?.id, { op: 'repository_status' })).rejects.toThrow();
   expect(await listed()).toBe(1);
+  // The repository carries the project's display name; a second project of that name gets a
+  // suffix instead of failing (repository names need not be unique, but stay addressable).
+  const again = await projectRoute(new Request('https://yoneda/api/projects', { method: 'POST', headers: { cookie }, body: JSON.stringify({ request_id: 'request-6543210987654321', name: 'New project' }) }), fake, { role: 'user', workspace: 'alice' });
+  expect(again?.status).toBe(202);
+  const names = await bindings.INDEX.prepare('SELECT name FROM platform_repos WHERE workspace=? ORDER BY created_at').bind('alice').all<{ name: string }>();
+  expect(names.results.map((r) => r.name)).toEqual(['New-project', 'New-project-2']);
+});
+it('turns any project name into a valid repository name', () => {
+  expect(repoSlug('New project')).toBe('New-project');
+  expect(repoSlug('  Café / Résumé site!! ')).toBe('Cafe-Resume-site');
+  expect(repoSlug('.hidden.')).toBe('hidden');
+  expect(repoSlug('日本語')).toBe('');
+  expect(repoSlug('v1.2_beta')).toBe('v1.2_beta');
+  expect(repoSlug('x'.repeat(150), 96)).toHaveLength(96);
+  for (const name of ['New project', '  Café / Résumé site!! ', '-a-', 'a'.repeat(300)])
+    expect(repoSlug(name)).toMatch(/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/);
 });
 it('reschedules a pending import and completes setup from its queue message without a browser', async () => {
   const project = await reserve('https://github.com/example/project');
