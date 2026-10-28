@@ -155,7 +155,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
  * it; the kit account opens the change by API, then approves and lands it on the Change page.
  * The member goes with the repository when it is deleted.
  */
-export async function changeLanded(page, { origin, kit, account, repo: { id }, shot }, m) {
+export async function changeLanded(page, { origin, kit, account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
@@ -169,6 +169,9 @@ export async function changeLanded(page, { origin, kit, account, repo: { id }, s
   const change = await account.post(api('/changes'), { branch: 'kit-browser', title: 'Browser gate change' });
   Object.assign(m, { change: change.number, head: made.commit, author: member.name });
 
+  // The source pages end on account settings: back to the repository through the sidebar.
+  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await page.waitForURL(`**/source/${id}`);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
   await page.waitForURL(`**/source/${id}/changes/${change.number}`);

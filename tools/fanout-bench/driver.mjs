@@ -64,8 +64,22 @@ export async function connect(url, client) {
     return replies.flat();
   }
 
-  async function createRepo(name, files) {
-    return (await post('/repos', { name: `${name}-${Date.now()}`, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR })).id;
+  const created = [];
+  async function createRepo(prefix, files) {
+    const name = `${prefix}-${Date.now()}`;
+    const { id } = await post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR });
+    created.push({ id, name });
+    return id;
+  }
+
+  /** Deletes every repository `createRepo` made (with their tokens); the names left behind. */
+  async function cleanup() {
+    const left = [];
+    for (const { id, name } of created.splice(0)) {
+      const { status, body } = await call('DELETE', `/repos/${id}?confirm=${encodeURIComponent(name)}`).catch((e) => ({ status: e.message, body: {} }));
+      if (status !== 200) left.push(`${name} (${[status, body.error?.code].filter(Boolean).join(' ')})`);
+    }
+    return left;
   }
 
   /** `count` repository tokens (read, write, land), minted 50 at a time. */
@@ -94,7 +108,7 @@ export async function connect(url, client) {
     return { entries, refused };
   }
 
-  return { url, cookie, call, post, invoke, fanout, createRepo, mintTokens, txlog };
+  return { url, cookie, call, post, invoke, fanout, createRepo, cleanup, mintTokens, txlog };
 }
 
 /** Writes `.local/platform-live/<name>.json` with the revision and prints it. */

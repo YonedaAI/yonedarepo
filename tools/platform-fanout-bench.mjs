@@ -2,7 +2,7 @@
 // Load against a deployed platform Worker, driven through the bench client Worker
 // (tools/fanout-bench) so the load is not capped by this machine's connections and is
 // measured from aws:us-east-1. An explicit, separate command: it creates a repository and
-// repository tokens. Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the
+// repository tokens, and deletes them when it ends. Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the
 // bench client. Evidence goes to .local/platform-live/.
 //
 // --workload picks what runs:
@@ -59,32 +59,43 @@ const positive = (name) => {
 };
 const mode = values.mode;
 
-if (values.workload === 'burst') {
-  const result = await burst(await connect(url, values.client), { writers: positive('writers'), principals: values.principals, mode });
-  await evidence(`fanout-${result.writers}-${values.principals}-${mode ?? 'default'}`, url, result);
-} else if (values.workload === 'sustained') {
-  const rates = values.rates.split(',').map(Number);
-  assert.ok(rates.length && rates.every((r) => Number.isFinite(r) && r > 0), '--rates is a list of lands/s');
-  const o = { rates, step_s: positive('step-seconds'), per_shard: positive('per-shard'), segment_s: positive('segment-seconds'), arrivals: values.arrivals, warmup_s: Number(values.warmup), mode };
-  assert.ok(o.per_shard <= 50 && o.segment_s <= 180, '--per-shard is at most 50 and --segment-seconds at most 180');
-  assert.ok(['poisson', 'fixed'].includes(o.arrivals), '--arrivals is poisson or fixed');
-  const planned = estimate(o);
-  console.error(`planned: ${JSON.stringify(planned)}`);
-  if (planned.requests > 2_000_000 && !values.yes) {
-    console.error(`${planned.requests} platform requests exceed 2,000,000; pass --yes to run`);
-    process.exit(2);
+// Every repository the workload creates is deleted afterwards, pass or fail; the evidence
+// file keeps the results.
+const session = await connect(url, values.client);
+try {
+  if (values.workload === 'burst') {
+    const result = await burst(session, { writers: positive('writers'), principals: values.principals, mode });
+    await evidence(`fanout-${result.writers}-${values.principals}-${mode ?? 'default'}`, url, result);
+  } else if (values.workload === 'sustained') {
+    const rates = values.rates.split(',').map(Number);
+    assert.ok(rates.length && rates.every((r) => Number.isFinite(r) && r > 0), '--rates is a list of lands/s');
+    const o = { rates, step_s: positive('step-seconds'), per_shard: positive('per-shard'), segment_s: positive('segment-seconds'), arrivals: values.arrivals, warmup_s: Number(values.warmup), mode };
+    assert.ok(o.per_shard <= 50 && o.segment_s <= 180, '--per-shard is at most 50 and --segment-seconds at most 180');
+    assert.ok(['poisson', 'fixed'].includes(o.arrivals), '--arrivals is poisson or fixed');
+    const planned = estimate(o);
+    console.error(`planned: ${JSON.stringify(planned)}`);
+    if (planned.requests > 2_000_000 && !values.yes) {
+      console.error(`${planned.requests} platform requests exceed 2,000,000; pass --yes to run`);
+      process.exit(2);
+    }
+    const result = await sustained(session, o);
+    await evidence(`sustained-${rates.join('_')}-${o.step_s}s-${mode ?? 'default'}`, url, { estimate: planned, ...result });
+  } else if (values.workload === 'skew') {
+    const o = { writers: positive('writers'), k: positive('skew-reads'), runs: positive('runs'), mode };
+    const result = await skew(session, o);
+    await evidence(`skew-${o.writers}x${o.k}-${mode ?? 'default'}`, url, result);
+    process.exitCode = result.serializable ? 0 : 1;
+  } else {
+    const sources = values.sources.split(',');
+    assert.ok(sources.every((s) => SOURCES[s]), `--sources from ${Object.keys(SOURCES).join(',')}`);
+    const result = await reads(session, { burst: positive('burst'), principals: values.principals, sources });
+    await evidence(`reads-${result.burst}-${values.principals}`, url, result);
+    process.exitCode = result.passed ? 0 : 1;
   }
-  const result = await sustained(await connect(url, values.client), o);
-  await evidence(`sustained-${rates.join('_')}-${o.step_s}s-${mode ?? 'default'}`, url, { estimate: planned, ...result });
-} else if (values.workload === 'skew') {
-  const o = { writers: positive('writers'), k: positive('skew-reads'), runs: positive('runs'), mode };
-  const result = await skew(await connect(url, values.client), o);
-  await evidence(`skew-${o.writers}x${o.k}-${mode ?? 'default'}`, url, result);
-  process.exitCode = result.serializable ? 0 : 1;
-} else {
-  const sources = values.sources.split(',');
-  assert.ok(sources.every((s) => SOURCES[s]), `--sources from ${Object.keys(SOURCES).join(',')}`);
-  const result = await reads(await connect(url, values.client), { burst: positive('burst'), principals: values.principals, sources });
-  await evidence(`reads-${result.burst}-${values.principals}`, url, result);
-  process.exitCode = result.passed ? 0 : 1;
+} finally {
+  const left = await session.cleanup();
+  if (left.length) {
+    console.error(`Left repositories: ${left.join(', ')}`);
+    process.exitCode ||= 1;
+  }
 }
