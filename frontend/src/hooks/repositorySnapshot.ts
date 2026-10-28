@@ -111,6 +111,51 @@ export function mergeRunDetails(
   return next;
 }
 
+/** The snapshot without deleted runs and every loaded row that belonged to them. */
+export function withoutRuns(snapshot: Snapshot, runIds: ReadonlySet<string>): Snapshot {
+  if (!runIds.size) return snapshot;
+  const kept = <T extends Record<string, any>>(rows: T[]) =>
+    rows.filter((row) => !runIds.has(row.run_id));
+  const candidates = new Set(
+    snapshot.candidates.filter((row) => runIds.has(row.run_id)).map((row) => row.id),
+  );
+  return {
+    ...snapshot,
+    runs: snapshot.runs.filter((run) => !runIds.has(run.id)),
+    executions: kept(snapshot.executions),
+    candidates: kept(snapshot.candidates),
+    evaluations: kept(snapshot.evaluations).filter((row) => !candidates.has(row.candidate)),
+    decisions: kept(snapshot.decisions),
+    artifacts: kept(snapshot.artifacts),
+    ...(snapshot.source_preparation
+      ? { source_preparation: kept(snapshot.source_preparation) }
+      : {}),
+  };
+}
+
+/**
+ * Runs the newest history page proves deleted: loaded, not hidden, missing from the page, yet
+ * inside the creation-time range it covers. Older loaded runs are outside its proof.
+ */
+export function deletedRunIds(page: RunsPage, runs: Record<string, any>[], keep: Set<string>) {
+  const listed = new Set(page.items.map((run) => run.id));
+  const oldest = page.has_more ? page.items.at(-1)?.created_at : -Infinity;
+  const newest = page.items[0]?.created_at ?? Infinity;
+  return new Set(
+    runs
+      .filter(
+        (run) =>
+          !listed.has(run.id) &&
+          !keep.has(run.id) &&
+          !run.hidden &&
+          typeof oldest === 'number' &&
+          run.created_at >= oldest &&
+          run.created_at <= newest,
+      )
+      .map((run) => run.id),
+  );
+}
+
 /**
  * Overlay an older run detail beneath a newer snapshot: repository state and every row the
  * snapshot already has stay current; the detail only fills rows the snapshot has not loaded.

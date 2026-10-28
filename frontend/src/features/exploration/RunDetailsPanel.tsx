@@ -4,6 +4,7 @@ import { ModelBudgetUsage } from './ModelBudgetUsage';
 import { RunBrief } from './RunBrief';
 import { RunControls } from './RunControls';
 import { RunWorkflow } from './RunWorkflow';
+import { runDeleteBlocker } from './runControlState';
 
 /** Run controls, brief, recorded workflow and decision for the Details tab. */
 export function RunDetailsPanel({
@@ -16,6 +17,7 @@ export function RunDetailsPanel({
   hasRoots,
   onRestart,
   onCancel,
+  onDelete,
 }: {
   reviewer: boolean;
   snapshot: Snapshot;
@@ -26,6 +28,7 @@ export function RunDetailsPanel({
   hasRoots: boolean;
   onRestart: () => void;
   onCancel: () => void;
+  onDelete?: () => void;
 }) {
   return (
     <>
@@ -51,6 +54,8 @@ export function RunDetailsPanel({
           supportsRestart={snapshot.capabilities?.model_budgets === 1}
           onRestart={onRestart}
           onCancel={onCancel}
+          deleteBlocker={runDeleteBlocker(snapshot, run)}
+          onDelete={onDelete}
         />
       </div>
       <RunBrief intent={run.intent} criteria={run.criteria} />

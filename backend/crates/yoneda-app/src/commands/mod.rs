@@ -28,6 +28,7 @@ mod publication;
 mod recovery;
 mod repository;
 mod restarts;
+mod run_delete;
 #[cfg(test)]
 pub(crate) mod run_kit;
 mod run_visibility;
@@ -115,6 +116,7 @@ pub(crate) fn dispatch<S: SqlStore>(db: &S, c: Value) -> Result<Value> {
         | "archive_status"
         | "schedule_archive_due" => archive::handle(db, c, now),
         "start_run" | "cancel_run" => runs::handle(db, c, now),
+        "delete_run" => run_delete::delete(db, &c, now),
         "context_publish" | "context_search" | "context_get" => typed_context::handle(db, c, now),
         "record_context_access" => context_access::record(db, c, now),
         "context_usage" => context_usage::read(db, c, now),

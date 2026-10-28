@@ -192,6 +192,11 @@
   gap: 8px;
   flex-shrink: 0;
 }
+.run-controls .delete-blocker {
+  flex-basis: 100%;
+  margin: 0;
+  text-align: right;
+}
 .run-composer .restart-notice {
   padding: 14px;
   background: #f4f8ff;
@@ -209,6 +214,9 @@
   }
   .run-controls {
     justify-content: flex-start;
+  }
+  .run-controls .delete-blocker {
+    text-align: left;
   }
   .model-budget-usage {
     padding: 16px;

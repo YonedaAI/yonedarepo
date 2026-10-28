@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { RepositoryOverview, RunDetail, Snapshot } from '../lib/types';
 import {
+  deletedRunIds,
   emptySnapshot,
   findRunInPages,
   mergeRunDetails,
   RunHistoryChangedError,
   scopedRunIds,
+  withoutRuns,
 } from './repositorySnapshot';
 
 describe('scoped snapshot refresh', () => {
@@ -173,5 +175,59 @@ describe('scoped snapshot refresh', () => {
     ]);
     expect(refreshed.nodes).toEqual([graphNode]);
     expect(refreshed.edges).toHaveLength(1);
+  });
+});
+
+describe('deleted runs', () => {
+  const run = (id: string, created_at: number, extra = {}) => ({ id, created_at, ...extra });
+  it('drops loaded runs the newest page covers but no longer lists', () => {
+    const page = {
+      items: [run('new', 30), run('mid', 20)],
+      watermark: 9,
+      has_more: true,
+      next_cursor: 'c',
+    };
+    const loaded = [
+      run('new', 30),
+      run('gone', 25),
+      run('hidden', 24, { hidden: true }),
+      run('older', 10),
+      run('started', 40),
+      run('fresh', 22),
+    ];
+    expect([...deletedRunIds(page, loaded, new Set(['fresh']))]).toEqual(['gone']);
+    expect([...deletedRunIds({ ...page, has_more: false }, loaded, new Set())]).toEqual([
+      'gone',
+      'older',
+      'fresh',
+    ]);
+  });
+  it('removes a deleted run with every row loaded for it', () => {
+    const snapshot = {
+      ...emptySnapshot({ repository: { id: 'repo' }, watermark: 1 } as RepositoryOverview),
+      runs: [{ id: 'gone' }, { id: 'kept' }],
+      executions: [
+        { id: 'e1', run_id: 'gone' },
+        { id: 'e2', run_id: 'kept' },
+      ],
+      candidates: [
+        { id: 'c1', run_id: 'gone' },
+        { id: 'c2', run_id: 'kept' },
+      ],
+      evaluations: [
+        { id: 'v1', candidate: 'c1' },
+        { id: 'v2', candidate: 'c2' },
+      ],
+      decisions: [{ id: 'd1', run_id: 'gone' }],
+      artifacts: [{ id: 'a1', run_id: 'gone' }],
+    } as Snapshot;
+    const after = withoutRuns(snapshot, new Set(['gone']));
+    expect(after.runs.map((row) => row.id)).toEqual(['kept']);
+    expect(after.executions.map((row) => row.id)).toEqual(['e2']);
+    expect(after.candidates.map((row) => row.id)).toEqual(['c2']);
+    expect(after.evaluations.map((row) => row.id)).toEqual(['v2']);
+    expect(after.decisions).toEqual([]);
+    expect(after.artifacts).toEqual([]);
+    expect(withoutRuns(snapshot, new Set())).toBe(snapshot);
   });
 });
