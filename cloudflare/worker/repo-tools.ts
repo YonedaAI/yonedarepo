@@ -1,6 +1,7 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 
+import { changeOperations } from './repo-changes';
 import { landMode } from './repo-changesets';
 import { dispatchRuns } from './repo-checks';
 import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
@@ -127,6 +128,7 @@ export const operations: Record<string, Operation> = {
     return created;
   },
   ...hookOperations,
+  ...changeOperations,
   ...memberOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))

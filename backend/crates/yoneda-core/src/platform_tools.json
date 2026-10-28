@@ -1209,7 +1209,7 @@
   },
   {
     "name": "git_land",
-    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged. Returns the landing's transaction-log version: reads of main that pass it as min_version see the landing at once, while main's Git commit is projected shortly after (git_commit is null until then).",
+    "description": "Move a branch to a commit that passed its required checks and approvals (requires the land scope). If the branch moved meanwhile, the platform merges on the server: independent or cleanly mergeable work lands as a platform merge commit (post-land checks run on it); a stale read or textual conflict returns CONFLICT with details. With fast_forward_only, the commit lands only if its first parent is the current head; otherwise STALE_HEAD, and nothing is queued or merged. Returns the landing's transaction-log version: reads of main that pass it as min_version see the landing at once, while main's Git commit is projected shortly after (git_commit is null until then). Landing a branch's head on main marks that branch's open change request landed in the same transaction.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1232,6 +1232,841 @@
     }
   },
   {
+    "name": "git_change_create",
+    "description": "Open a change request: propose landing a branch on main. The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: main, commit: head}; a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. REST: POST /changes.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "branch": {
+          "type": "string",
+          "description": "Branch name, e.g. fix-retry (or refs/heads/fix-retry)"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 8000
+        }
+      },
+      "required": [
+        "branch",
+        "title"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "A change request: a branch proposed for landing on base.",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Short branch name (no refs/heads/)"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "main"
+          ]
+        },
+        "author": {
+          "type": "string",
+          "description": "Principal that opened it"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "landed",
+            "closed"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Open or closed: the branch's current commit (null once the branch is deleted). Landed: the commit that landed."
+        },
+        "created_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "updated_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "landed_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "landed_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "comment_count": {
+          "type": "integer",
+          "description": "Number of comments"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "body",
+        "branch",
+        "base",
+        "author",
+        "status",
+        "head",
+        "created_at",
+        "updated_at",
+        "landed_version",
+        "landed_commit",
+        "comment_count"
+      ]
+    }
+  },
+  {
+    "name": "git_change_list",
+    "description": "Change requests, newest first, filtered by status (default open). REST: GET /changes?status=&limit=.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "landed",
+            "closed",
+            "all"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/change"
+          }
+        }
+      },
+      "required": [
+        "changes"
+      ],
+      "$defs": {
+        "change": {
+          "type": "object",
+          "description": "A change request: a branch proposed for landing on base.",
+          "properties": {
+            "number": {
+              "type": "integer"
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string",
+              "description": "Short branch name (no refs/heads/)"
+            },
+            "base": {
+              "type": "string",
+              "enum": [
+                "main"
+              ]
+            },
+            "author": {
+              "type": "string",
+              "description": "Principal that opened it"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "landed",
+                "closed"
+              ]
+            },
+            "head": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "Open or closed: the branch's current commit (null once the branch is deleted). Landed: the commit that landed."
+            },
+            "created_at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "updated_at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "landed_version": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "landed_commit": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "comment_count": {
+              "type": "integer",
+              "description": "Number of comments"
+            }
+          },
+          "required": [
+            "number",
+            "title",
+            "body",
+            "branch",
+            "base",
+            "author",
+            "status",
+            "head",
+            "created_at",
+            "updated_at",
+            "landed_version",
+            "landed_commit",
+            "comment_count"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "git_change_show",
+    "description": "One change request: the change, its head commit's record (git_show's shape: checks, check_runs, reviews and landing gates), its comments (oldest first), its branch's pushes from the transaction log (newest first) and the diff from the merge base with main to the head (git_diff's shape; for a landed change, against main just before it landed). patch adds unified patches. REST: GET /changes/:number?patch=1.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        },
+        "patch": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "allOf": [
+        {
+          "$ref": "#/$defs/change"
+        }
+      ],
+      "properties": {
+        "head_commit": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "git_show's answer for head (null when the change has no head)"
+        },
+        "comments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/comment"
+          }
+        },
+        "timeline": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/push"
+          }
+        },
+        "diff": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "git_diff's answer: {base, head, changes} (null when the change has no head)"
+        }
+      },
+      "required": [
+        "head_commit",
+        "comments",
+        "timeline",
+        "diff"
+      ],
+      "$defs": {
+        "change": {
+          "type": "object",
+          "description": "A change request: a branch proposed for landing on base.",
+          "properties": {
+            "number": {
+              "type": "integer"
+            },
+            "title": {
+              "type": "string"
+            },
+            "body": {
+              "type": "string"
+            },
+            "branch": {
+              "type": "string",
+              "description": "Short branch name (no refs/heads/)"
+            },
+            "base": {
+              "type": "string",
+              "enum": [
+                "main"
+              ]
+            },
+            "author": {
+              "type": "string",
+              "description": "Principal that opened it"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "open",
+                "landed",
+                "closed"
+              ]
+            },
+            "head": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "Open or closed: the branch's current commit (null once the branch is deleted). Landed: the commit that landed."
+            },
+            "created_at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "updated_at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "landed_version": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "landed_commit": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "comment_count": {
+              "type": "integer",
+              "description": "Number of comments"
+            }
+          },
+          "required": [
+            "number",
+            "title",
+            "body",
+            "branch",
+            "base",
+            "author",
+            "status",
+            "head",
+            "created_at",
+            "updated_at",
+            "landed_version",
+            "landed_commit",
+            "comment_count"
+          ]
+        },
+        "comment": {
+          "type": "object",
+          "description": "A comment. With path, line and side it is anchored to a line of the diff at commit: side old is the base file, new the head file (patchRows old/new line numbers).",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "old",
+                "new",
+                null
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "principal": {
+              "type": "string"
+            },
+            "at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "resolved_at": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "commit",
+            "path",
+            "line",
+            "side",
+            "body",
+            "principal",
+            "at",
+            "resolved_at"
+          ]
+        },
+        "push": {
+          "type": "object",
+          "description": "One move of the change's branch from the transaction log.",
+          "properties": {
+            "version": {
+              "type": "integer"
+            },
+            "action": {
+              "type": "string",
+              "enum": [
+                "created",
+                "moved",
+                "deleted"
+              ]
+            },
+            "before": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "after": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "actor": {
+              "type": "string"
+            },
+            "at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            }
+          },
+          "required": [
+            "version",
+            "action",
+            "before",
+            "after",
+            "actor",
+            "at"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "git_change_comment",
+    "description": "Comment on a change request (body at most 8000 bytes; credentials are refused). path, line and side anchor it to a diff line at commit (default: the change's head). resolve marks every unresolved comment on that anchor resolved, with or without a new body. Needs the write or review scope and a whole-repository credential. REST: POST /changes/:number/comments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "path": {
+          "type": "string",
+          "description": "Repository-relative file path"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "old",
+            "new"
+          ]
+        },
+        "resolve": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/comment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved": {
+          "type": "integer",
+          "description": "Comments this call marked resolved"
+        }
+      },
+      "required": [
+        "comment",
+        "resolved"
+      ],
+      "$defs": {
+        "comment": {
+          "type": "object",
+          "description": "A comment. With path, line and side it is anchored to a line of the diff at commit: side old is the base file, new the head file (patchRows old/new line numbers).",
+          "properties": {
+            "id": {
+              "type": "integer"
+            },
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "line": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "old",
+                "new",
+                null
+              ]
+            },
+            "body": {
+              "type": "string"
+            },
+            "principal": {
+              "type": "string"
+            },
+            "at": {
+              "type": "integer",
+              "description": "Unix milliseconds"
+            },
+            "resolved_at": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "commit",
+            "path",
+            "line",
+            "side",
+            "body",
+            "principal",
+            "at",
+            "resolved_at"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "git_change_close",
+    "description": "Close an open change request without landing it (the branch stays). Its author, the owner or a holder of the land scope may close it. REST: POST /changes/:number/close.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "A change request: a branch proposed for landing on base.",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Short branch name (no refs/heads/)"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "main"
+          ]
+        },
+        "author": {
+          "type": "string",
+          "description": "Principal that opened it"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "landed",
+            "closed"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Open or closed: the branch's current commit (null once the branch is deleted). Landed: the commit that landed."
+        },
+        "created_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "updated_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "landed_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "landed_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "comment_count": {
+          "type": "integer",
+          "description": "Number of comments"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "body",
+        "branch",
+        "base",
+        "author",
+        "status",
+        "head",
+        "created_at",
+        "updated_at",
+        "landed_version",
+        "landed_commit",
+        "comment_count"
+      ]
+    }
+  },
+  {
+    "name": "git_change_reopen",
+    "description": "Reopen a closed change request. Its branch must still exist with no other open change. Its author, the owner or a holder of the land scope may reopen it. REST: POST /changes/:number/reopen.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "A change request: a branch proposed for landing on base.",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Short branch name (no refs/heads/)"
+        },
+        "base": {
+          "type": "string",
+          "enum": [
+            "main"
+          ]
+        },
+        "author": {
+          "type": "string",
+          "description": "Principal that opened it"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "open",
+            "landed",
+            "closed"
+          ]
+        },
+        "head": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "Open or closed: the branch's current commit (null once the branch is deleted). Landed: the commit that landed."
+        },
+        "created_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "updated_at": {
+          "type": "integer",
+          "description": "Unix milliseconds"
+        },
+        "landed_version": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "landed_commit": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "comment_count": {
+          "type": "integer",
+          "description": "Number of comments"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "body",
+        "branch",
+        "base",
+        "author",
+        "status",
+        "head",
+        "created_at",
+        "updated_at",
+        "landed_version",
+        "landed_commit",
+        "comment_count"
+      ]
+    }
+  },
+  {
     "name": "git_hook_list",
     "description": "Webhooks of this repository: id, url, events, paths, active, consecutive failures and undelivered count. Secrets are never listed. Needs the owner or repo:admin.",
     "inputSchema": {
@@ -1243,7 +2078,7 @@
   },
   {
     "name": "git_hook_create",
-    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed or change.closed; titles and comment text only for hooks without paths); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1260,7 +2095,8 @@
               "refused",
               "branch",
               "tag",
-              "check"
+              "check",
+              "change"
             ]
           }
         },
