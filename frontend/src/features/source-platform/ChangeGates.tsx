@@ -1,5 +1,5 @@
-// A change's landing gates and its actions: approve or reject the head, land it on main,
-// close or reopen. The server decides each one; the panel only offers what the status allows.
+// A change's landing gates and its actions: approve or reject the head, land it on its base
+// (gated when the base is protected), close or reopen. The server decides each one; the panel only offers what the status allows.
 import { useState } from 'react';
 import { type Conflict, ConflictList, GateSummary, ReviewButtons } from './CommitGates';
 import { type ChangeDetail, who } from './changeModel';
@@ -87,10 +87,17 @@ export function ChangeGates({
             />
             <button
               type="button"
-              disabled={!!busy || !commit?.gates.ready}
-              onClick={() => act('land', '/land', { ref: 'main', commit: head }, 'Landed on main.')}
+              disabled={!!busy || (change.base_protected !== false && !commit?.gates.ready)}
+              onClick={() =>
+                act(
+                  'land',
+                  '/land',
+                  { ref: change.base, commit: head },
+                  `Landed on ${change.base}.`,
+                )
+              }
             >
-              {busy === 'land' ? 'Landing…' : 'Land on main'}
+              {busy === 'land' ? 'Landing…' : `Land on ${change.base}`}
             </button>
           </>
         )}

@@ -18,10 +18,11 @@ export function changeRequest(
   repo: string,
   parent: string | undefined,
   target: ChangeTarget,
-  change: { branch: string; title: string; body: string },
+  change: { branch: string; title: string; body: string; base?: string },
 ) {
   const fields = {
     branch: change.branch,
+    base: change.base?.trim() || undefined,
     title: change.title.trim(),
     body: change.body.trim() || undefined,
   };

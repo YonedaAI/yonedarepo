@@ -1,11 +1,47 @@
-// "Open change" for a branch: propose landing it on main (POST /changes). Main and release
-// branches cannot be proposed, and a branch has at most one open change; the server says so.
-// On a fork the change may target the parent's main instead (the fork's main too).
+// "Open change" for a branch: propose landing it on a base branch, main unless another one
+// of this repository is picked (POST /changes). Main and release branches cannot be
+// proposed, and a branch has at most one open change; the server says so. On a fork the
+// change may target the parent's main instead (the fork's main too).
 import { type FormEvent, useState } from 'react';
 import type { Change } from './changeModel';
 import { type ChangeTarget, changeRequest } from './forks';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
+import { useSource } from './useSource';
+
+/** The branches a change on `branch` may land on: every other branch, main first. */
+export function baseChoices(refs: Record<string, string> | undefined, branch: string): string[] {
+  const names = Object.keys(refs ?? {})
+    .filter((r) => r.startsWith('refs/heads/'))
+    .map((r) => r.slice('refs/heads/'.length))
+    .filter((b) => b !== branch && b !== 'main')
+    .sort();
+  return ['main', ...names];
+}
+
+/** The base picker: this repository's branches (main until they load). */
+function BaseSelect({
+  repo,
+  branch,
+  value,
+  onChange,
+}: {
+  repo: string;
+  branch: string;
+  value: string;
+  onChange: (base: string) => void;
+}) {
+  const refs = useSource<{ refs: Record<string, string> }>(`/repos/${repo}/refs`);
+  return (
+    <select aria-label="Base branch" value={value} onChange={(e) => onChange(e.target.value)}>
+      {baseChoices(refs.data?.refs, branch).map((b) => (
+        <option key={b} value={b}>
+          {b}
+        </option>
+      ))}
+    </select>
+  );
+}
 
 /** A short branch name from a ref, or null when the branch cannot be proposed. */
 export function proposable(ref: string): string | null {
@@ -35,6 +71,7 @@ export function OpenChangeButton({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [base, setBase] = useState('main');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   if (!branch) return null;
@@ -44,7 +81,12 @@ export function OpenChangeButton({
     setBusy(true);
     setError('');
     try {
-      const request = changeRequest(repo, parent, target, { branch: proposed, title, body });
+      const request = changeRequest(repo, parent, target, {
+        branch: proposed,
+        title,
+        body,
+        base: target === 'here' ? base : undefined,
+      });
       const change = await sourceApi<Change>(request.path, { body: request.body });
       setOpen(false);
       onOpened(change, request.repo);
@@ -77,13 +119,14 @@ export function OpenChangeButton({
       }}
     >
       <p className="source-meta">
-        Propose landing <code>{branch}</code> on <code>main</code>
+        Propose landing <code>{branch}</code> on{' '}
         {target === 'parent' ? (
           <>
-            {' '}
-            of the parent <code>{parent}</code>
+            <code>main</code> of the parent <code>{parent}</code>
           </>
-        ) : null}
+        ) : (
+          <BaseSelect repo={repo} branch={branch} value={base} onChange={setBase} />
+        )}
         .
       </p>
       {parent && local && (

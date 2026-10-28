@@ -219,7 +219,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
     let (sub, rest) = split_sub(rest, "change")?;
     let p = Parsed::new(
         &rest,
-        &with(&["title", "message", "status", "path", "line", "side"]),
+        &with(&["title", "message", "base", "status", "path", "line", "side"]),
         &["resolve", "to-parent"],
     )?;
     let number = || -> Result<u64> {
@@ -237,6 +237,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
                 branch: p.positional.first().cloned(),
                 title: p.flag("title"),
                 body: p.flag("message"),
+                base: p.flag("base"),
                 to_parent: p.on("to-parent"),
             }
         }

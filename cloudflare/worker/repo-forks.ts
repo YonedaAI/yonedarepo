@@ -105,6 +105,7 @@ export async function openForkChange(ctx: RepoContext, a: Json) {
   return ctx.call({
     op: 'repo_change_create',
     branch: mirror,
+    base: a.base ?? null,
     title: a.title,
     body: a.body,
     source_repo: fork,

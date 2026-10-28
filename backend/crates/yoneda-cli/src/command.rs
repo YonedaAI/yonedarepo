@@ -25,12 +25,12 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   land [--branch <b>]                 land the branch's head on main
   rebase <branch> [--onto <b>]        replay the branch onto main's head (or <b>'s) on the server
   review approve|reject <sha> [-m <reason>]
-  change create [<branch>] [--title <t>] [-m <body>]   open a change request (default: this branch)
+  change create [<branch>] [--title <t>] [-m <body>] [--base <b>]   open a change request on main or <b>
   change create [<branch>] --to-parent ...  in a fork: propose the branch to the parent's main
   change list [--status open|landed|closed|all]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
-  change land <n>                     land the change's head on main
+  change land <n>                     land the change's head on its base
   release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
   release list | release show <tag>   releases; a release's notes and assets (with sha256)
   policy show | policy set '<json>'
@@ -266,6 +266,8 @@ pub enum ChangeCommand {
         branch: Option<String>,
         title: Option<String>,
         body: Option<String>,
+        /// The branch to land on (the platform defaults to main).
+        base: Option<String>,
         /// In a fork: open the change on the parent, proposing this fork's branch.
         to_parent: bool,
     },
