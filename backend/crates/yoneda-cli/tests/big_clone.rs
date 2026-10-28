@@ -2,9 +2,9 @@
 //! version 2): a partial clone (`--filter=blob:none`) receives commits and trees only and
 //! fetches the files a checkout needs lazily, by id; a shallow clone (`--depth 1`) deepens
 //! (`git fetch --deepen 5`) and unshallows; every result passes `git fsck`, and a
-//! version 0 clone still works. A blob wanted by id is served only when a branch or tag
-//! reaches it: never from a push refused for a secret or a read conflict, or a deleted
-//! branch. Run with `cargo test -p yoneda-cli --test big_clone --
+//! version 0 clone still works. A commit or blob wanted by id is served only when a
+//! branch or tag reaches it: never from a push refused for a secret or a read conflict, or
+//! a deleted branch. A partial clone's checkout of more than 10,000 files fetches them all. Run with `cargo test -p yoneda-cli --test big_clone --
 //! --include-ignored --nocapture`; it needs the workspace's node modules (wrangler) and
 //! the Rust Wasm worker build.
 #[allow(dead_code)] // shared with the remote helper tests
@@ -209,33 +209,105 @@ fn partial_and_shallow_clones_over_protocol_v2() -> TestResult {
     let both = home.join("both");
     check(count(&reader, &both)? == 1, "partial shallow history")?;
     fsck(&reader, &both, "partial shallow")?;
-    unreachable_blobs_are_not_served(&platform)
+    unreachable_blobs_are_not_served(&platform)?;
+    big_checkout(&platform)
+}
+
+/// A partial clone's checkout of 10,200 files: Git wants every one in one fetch.
+fn big_checkout(platform: &Platform) -> TestResult {
+    const BIG: usize = 10_200;
+    let (repo, token) = platform.repo(&[("README.md", "# big\n")])?;
+    let url = format!("{}/git/{repo}.git", platform.origin);
+    let writer = client(platform, "big-writer", &token)?;
+    writer.git(&writer.home, &["clone", "-q", &url, "src"])?;
+    let src = writer.home.join("src");
+    for i in 0..BIG {
+        let path = src.join(format!("big/d{:03}/f{i}.txt", i % 100));
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, format!("file {i}\n")).map_err(|e| e.to_string())?;
+    }
+    writer.git(&src, &["add", "-A"])?;
+    writer.git(&src, &["commit", "-q", "-m", "many files"])?;
+    let out = writer.git_output(&src, &["push", "-q", "origin", "main"])?;
+    check(
+        out.status.success(),
+        &format!("big push: {}", String::from_utf8_lossy(&out.stderr)),
+    )?;
+    let reader = client(platform, "big-reader", &token)?;
+    let home = reader.home.clone();
+    reader.git(
+        &home,
+        &[
+            "clone",
+            "-q",
+            "--filter=blob:none",
+            "--no-checkout",
+            &url,
+            "c",
+        ],
+    )?;
+    let dir = home.join("c");
+    let started = std::time::Instant::now();
+    let out = reader.git_output(&dir, &["checkout", "-q", "main"])?;
+    check(
+        out.status.success(),
+        &format!("big checkout: {}", String::from_utf8_lossy(&out.stderr)),
+    )?;
+    eprintln!(
+        "checkout of {BIG} lazily fetched files: {} ms",
+        started.elapsed().as_millis()
+    );
+    let listed = reader.git(&dir, &["ls-files"])?.lines().count();
+    check(listed == BIG + 1, &format!("{listed} files checked out"))?;
+    let sample = std::fs::read_to_string(dir.join("big/d042/f10142.txt")).unwrap_or_default();
+    check(sample == "file 10142\n", "a fetched file")?;
+    fsck(&reader, &dir, "big checkout")
 }
 
 fn pkt(line: &str) -> String {
     format!("{:04x}{line}", line.len() + 4)
 }
 
-/// A raw protocol v2 fetch of `id` (as a partial clone's lazy fetch asks): the answer.
+/// A raw fetch of `id`: protocol v2 as a partial clone's lazy fetch asks, or v0 (`git
+/// fetch origin <id>` from an older Git). The answer, whatever its status.
 fn fetch_by_id(platform: &Platform, repo: &str, token: &str, id: &str) -> TestResult<String> {
-    let body = format!(
-        "{}0001{}{}{}0000",
-        pkt("command=fetch\n"),
-        pkt(&format!("want {id}\n")),
-        pkt("filter blob:none\n"),
-        pkt("done\n")
-    );
+    fetch_raw(platform, repo, token, id, 2)
+}
+
+fn fetch_raw(
+    platform: &Platform,
+    repo: &str,
+    token: &str,
+    id: &str,
+    version: u8,
+) -> TestResult<String> {
+    let body = if version == 2 {
+        format!(
+            "{}0001{}{}{}0000",
+            pkt("command=fetch\n"),
+            pkt(&format!("want {id}\n")),
+            pkt("filter blob:none\n"),
+            pkt("done\n")
+        )
+    } else {
+        format!(
+            "{}0000{}",
+            pkt(&format!("want {id} side-band-64k\n")),
+            pkt("done\n")
+        )
+    };
     let auth = base64::engine::general_purpose::STANDARD.encode(format!("git:{token}"));
     let url = format!("{}/git/{repo}.git/git-upload-pack", platform.origin);
     platform.rt.block_on(async {
-        let response = reqwest::Client::new()
+        let mut request = reqwest::Client::new()
             .post(url)
-            .header("authorization", format!("Basic {auth}"))
-            .header("git-protocol", "version=2")
-            .body(body)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?;
+            .header("authorization", format!("Basic {auth}"));
+        if version == 2 {
+            request = request.header("git-protocol", "version=2");
+        }
+        let response = request.body(body).send().await.map_err(|e| e.to_string())?;
         let bytes = response.bytes().await.map_err(|e| e.to_string())?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     })
@@ -310,6 +382,18 @@ fn unreachable_blobs_are_not_served(platform: &Platform) -> TestResult {
     refused(
         &fetch_by_id(platform, &repo, &token, &stale)?,
         "a blob of a refused ref move",
+    )?;
+    // Nor its commit, over either protocol (with it, its trees and files).
+    for version in [0, 2] {
+        refused(
+            &fetch_raw(platform, &repo, &token, &mine, version)?,
+            &format!("the refused push's commit over v{version}"),
+        )?;
+    }
+    let main = platform.main(&repo)?.1;
+    check(
+        fetch_raw(platform, &repo, &token, &main, 0)?.contains("PACK"),
+        "main's tip over v0",
     )?;
 
     b.commit(&db, "tmp", &[("tmp.txt", "only on a deleted branch\n")])?;

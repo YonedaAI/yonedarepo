@@ -12,9 +12,12 @@ use yoneda_core::{
     git_object::{CommitGraph, ObjectId},
 };
 
-/// Most commits one fetch sends; a larger history needs a partial clone (not yet served).
+/// Most commits one fetch sends.
 const WALK_COMMITS: usize = 100_000;
 const HAVES: usize = 10_000;
+/// Wants of a v2 fetch, which may name every file a partial clone's checkout lacks (Git
+/// asks for them in one request); what one answer sends is capped by the upload session.
+const OBJECT_WANTS: usize = 100_000;
 
 /// `repo_git_access`: `read` fetches, `write` pushes (landing a protected ref still needs
 /// what landing needs); either way over the whole repository.
@@ -65,24 +68,26 @@ const COMMON: u8 = 2;
 /// round) skips the walk. A shallow fetch (`shallows`, `depth`, `deepen_relative`) is cut
 /// as `git_shallow` plans and answers its `shallow` and `unshallow` lines. With `objects`
 /// (protocol v2, where a partial clone fetches missing blobs by id), wants that are not
-/// commits are listed as `objects` for the adapter to read from this repository's store,
-/// each only if a branch or tag reaches it (`git_wanted`).
+/// commits are listed as `objects` for the adapter to read from this repository's store.
+/// Every want, commit or blob, must be reachable from a branch or tag (`git_wanted`).
 pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
-    let wants = ids(c, "wants", HAVES)?;
+    let v2_objects = c["objects"] == true;
+    let wants = ids(c, "wants", if v2_objects { OBJECT_WANTS } else { HAVES })?;
     let haves = ids(c, "haves", HAVES)?;
     let graph = RecordedGraph(db);
     let mut marks: HashMap<ObjectId, u8> = HashMap::new();
     let mut queue = BinaryHeap::new();
+    let recorded = git_wanted::generations(db, &wants)?;
     let (mut wanted, mut objects) = (Vec::new(), Vec::new());
     for want in &wants {
-        match rows::commit_row(db, want)? {
-            Some(row) => {
+        match recorded.get(want) {
+            Some(generation) => {
                 *marks.entry(*want).or_default() |= WANTED;
-                queue.push((row.generation, *want));
-                wanted.push(*want);
+                queue.push((*generation, *want));
+                wanted.push((*want, *generation));
             }
-            None if c["objects"] == true => objects.push(*want),
+            None if v2_objects => objects.push(*want),
             None => {
                 return Err(Error::new(
                     "NOT_FOUND",
@@ -99,11 +104,13 @@ pub fn walk<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
             common.push(*have);
         }
     }
+    // Every round, a negotiation one too: nothing a branch or tag does not reach is served.
+    git_wanted::require_reachable(db, &graph, &wanted, &objects)?;
     // A negotiation round only asks which haves are common.
     if c["common_only"] == true {
         return Ok(json!({ "common": common }));
     }
-    git_wanted::require_reachable(db, &graph, &objects)?;
+    let wanted: Vec<ObjectId> = wanted.into_iter().map(|(id, _)| id).collect();
     let shallow = git_shallow::plan(db, &graph, c, &wanted)?;
     for id in shallow.client.iter().chain(&shallow.starts) {
         let mark = if shallow.client.contains(id) {

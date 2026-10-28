@@ -1,8 +1,8 @@
 //! Shallow and partial fetches at the authority (`repo_git_walk` with `depth`, `shallows`
 //! and `objects`): a depth cuts the walk at boundary commits sent with their whole trees,
 //! `deepen-relative` counts from the client's shallow commits and unshallows them, the
-//! client's shallow commits stop what it is known to hold, and a version 2 fetch may want
-//! a blob by id.
+//! client's shallow commits stop what it is known to hold, and a fetch may want a commit
+//! (or, in version 2, a blob by id) only when a branch or tag reaches it.
 use super::*;
 use yoneda_core::git_object::{ObjectId, Signature};
 
@@ -44,6 +44,11 @@ fn chain() -> (Harness, Vec<String>, String) {
     h.ok(
         AGENT,
         json!({ "op": "repo_record_pushed", "commits": items }),
+    );
+    // On a branch, so a fetch may want them.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_batch","updates":[{ "ref": "topic", "commit": ids[5], "expected": null }]}),
     );
     (h, ids, tree)
 }
@@ -183,12 +188,12 @@ fn a_version_2_fetch_may_want_only_blobs_a_branch_or_tag_reaches() {
     assert_eq!(code(walk(json!([unreached]))), "NOT_FOUND");
     // Reached through a branch: served; once the branch is deleted, not.
     let batch = |updates: Value| h.ok(AGENT, json!({"op":"repo_branch_batch","updates":updates}));
-    batch(json!([{ "ref": "topic", "commit": hidden, "expected": null }]));
+    batch(json!([{ "ref": "other", "commit": hidden, "expected": null }]));
     assert_eq!(
         walk(json!([unreached])).unwrap()["objects"],
         json!([unreached])
     );
-    batch(json!([{ "ref": "topic", "commit": null, "expected": hidden }]));
+    batch(json!([{ "ref": "other", "commit": null, "expected": hidden }]));
     assert_eq!(code(walk(json!([unreached]))), "NOT_FOUND");
     // A version 0 fetch still wants commits only.
     let v0 = h.run(
@@ -196,4 +201,72 @@ fn a_version_2_fetch_may_want_only_blobs_a_branch_or_tag_reaches() {
         json!({"op":"repo_git_walk","wants":[seeded[0]],"haves":[]}),
     );
     assert_eq!(code(v0), "NOT_FOUND");
+}
+
+#[test]
+fn a_fetch_may_want_only_commits_a_branch_or_tag_reaches() {
+    let (h, c, _) = chain();
+    let walk = |wants: Value, extra: Value| {
+        let mut command = json!({"op":"repo_git_walk","wants":wants,"haves":[]});
+        command
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        h.run(AGENT, command)
+    };
+    // A tip and an ancestor of one, in v0 and v2, negotiation rounds too.
+    for extra in [
+        json!({}),
+        json!({"objects": true}),
+        json!({"common_only": true}),
+    ] {
+        walk(json!([c[5], c[2]]), extra.clone()).unwrap();
+    }
+    // A commit recorded but never on a ref (a push refused at its ref move records its
+    // commits) is not ours, whatever the protocol.
+    let refused = h
+        .commit(
+            AGENT,
+            Some(&c[5]),
+            1,
+            json!([file("x.txt", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    for extra in [
+        json!({}),
+        json!({"objects": true}),
+        json!({"common_only": true}),
+    ] {
+        let err = walk(json!([c[5], refused]), extra).unwrap_err();
+        assert_eq!(err.code, "NOT_FOUND");
+        assert_eq!(err.message, format!("upload-pack: not our ref {refused}"));
+    }
+    // Once its branch is deleted, nothing reaches c1..c5 either.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_batch","updates":[{ "ref": "topic", "commit": null, "expected": c[5] }]}),
+    );
+    assert_eq!(code(walk(json!([c[3]]), json!({}))), "NOT_FOUND");
+    assert!(walk(json!([c[0]]), json!({})).is_ok(), "main's root");
+}
+
+#[test]
+fn a_version_2_fetch_may_want_more_objects_than_a_version_0_one() {
+    let (h, c, _) = chain();
+    let file =
+        h.ok(OWNER, json!({"op":"repo_commit","commit":c[0]}))["paths"][0]["new_blob"].clone();
+    let wants = |n: usize, objects: bool| {
+        let mut wants = vec![json!(c[5]); 1];
+        wants.extend(std::iter::repeat_n(file.clone(), n));
+        h.run(
+            AGENT,
+            json!({"op":"repo_git_walk","wants":wants,"haves":[],"objects":objects}),
+        )
+    };
+    // A checkout of more than 10,000 files wants each one in a single request.
+    let many = wants(12_000, true).unwrap();
+    assert_eq!(many["objects"].as_array().unwrap().len(), 12_000);
+    assert_eq!(code(wants(100_000, true)), "TOO_LARGE");
+    assert_eq!(code(wants(12_000, false)), "TOO_LARGE");
 }
