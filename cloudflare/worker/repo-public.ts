@@ -3,8 +3,9 @@
 // it may read: GETs of one repository's API, smart-HTTP fetches and LFS downloads, and the
 // public listing. The authority admits it on a public repository and answers NOT_FOUND on
 // a private one. Before anything of a repository wakes for an anonymous request, the
-// discovery index must list it as public (`admitAnonymous`). Anonymous requests are rate limited per client address, and the costly
-// reads (search, blame) more tightly and with smaller results. Visibility changes update the
+// discovery index must list it as public (`admitAnonymous`). Anonymous requests are rate
+// limited per client address, and the costly reads (search, blame) more tightly and with
+// smaller results. Visibility changes update the
 // discovery listing on the side that never lists a private repository, and republish main's
 // head before answering, so a repository made private stops serving anonymous reads
 // everywhere within ACCESS_MS.
