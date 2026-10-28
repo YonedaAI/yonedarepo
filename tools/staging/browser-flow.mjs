@@ -7,7 +7,8 @@
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
 // page (the platform refuses an author's own approval); the page and the API must both read it
 // back landed. A second branch, cut from main before that landing, is then behind main: its
-// Change page's "Rebase on main" replays it onto main. Releases, forks and organizations follow
+// Change page's "Rebase on main" replays it onto main. The Agents tab then shows a session
+// recorded by API (browser-agent-flow.mjs). Releases, forks and organizations follow
 // (browser-collab-flow.mjs), then tokens and deleting an org (browser-admin-flow.mjs). Each step's screenshot goes to .local/staging/browser-<ts>/; a
 // failure adds the page text and console errors there. The API (with the browser's own session
 // cookie) is used only to set up the change, read back and clean up.
@@ -16,6 +17,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
 import { adminPages } from './browser-admin-flow.mjs';
+import { agentPages } from './browser-agent-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep } from './client.mjs';
 
@@ -73,6 +75,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     const repo = await sourcePages(page, origin, account, { api, shot, cleanup }, m);
     const landed = await changeLanded(page, { origin, kit, account, repo, shot }, m);
     await changeRebased(page, { origin, account, repo, shot, ...landed }, m);
+    await agentPages(page, { account, repo, shot }, m);
     await releasePages(page, { account, repo, shot }, m);
     await forkPages(page, { account, repo, shot, cleanup }, m);
     await orgPages(page, { account, member: landed.member, shot, cleanup }, m);

@@ -187,7 +187,7 @@ export function CommitView({
         </ul>
       </section>
       <CommitRepairs repo={repo} repairs={d.repairs} onNavigate={onNavigate} />
-      <CommitSessions repo={repo} commit={commit} />
+      <CommitSessions repo={repo} commit={commit} navigate={onNavigate} />
       <section aria-label="Reviews">
         <h3>Reviews</h3>
         {d.reviews.length === 0 && <p className="source-empty">No reviews yet.</p>}

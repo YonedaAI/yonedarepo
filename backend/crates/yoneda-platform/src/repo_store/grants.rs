@@ -148,7 +148,7 @@ pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
                 .unwrap_or_default();
             result["symbol_touches"] = Value::Array(filter(grant, touches, "path"));
         }
-        "repo_contracts" => {
+        "repo_contracts" | "repo_contract_list" => {
             let records = result["records"].as_array().cloned().unwrap_or_default();
             result["records"] = Value::Array(filter(grant, records, "path"));
         }

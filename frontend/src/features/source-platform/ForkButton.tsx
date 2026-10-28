@@ -1,6 +1,7 @@
 // "Fork": a copy of this repository owned by the signed-in account or an organization it
 // owns (POST /fork; read here is enough). History is shared, not copied, so it is quick;
 // the new fork opens when done.
+import { GitFork } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { forkRequest } from './forks';
 import { type OrgSummary, ownerOptions } from './orgModel';
@@ -45,7 +46,8 @@ export function ForkButton({
   }
   if (!open)
     return (
-      <button type="button" className="quiet" onClick={() => setOpen(true)}>
+      <button type="button" className="quiet fork-button" onClick={() => setOpen(true)}>
+        <GitFork size={14} aria-hidden="true" />
         Fork
       </button>
     );

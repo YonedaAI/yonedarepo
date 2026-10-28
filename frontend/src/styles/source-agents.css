@@ -1,0 +1,189 @@
+/* Agents tab: sessions, contracts, pins and bisects */
+.agent-sections {
+  margin-bottom: 16px;
+}
+.agent-sections a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: #203a5b;
+  background: #fff;
+}
+.agent-sections a[aria-current="page"] {
+  background: #edf3ff;
+  color: var(--blue);
+  font-weight: 500;
+}
+.agent-sections a:focus-visible {
+  outline-offset: -3px;
+}
+.agent-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+}
+.agent-head h2 {
+  margin: 0;
+}
+.agent-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.agent-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.agent-filter select {
+  field-sizing: content;
+  padding: 3px 8px;
+  min-height: 28px;
+  font-size: 13px;
+  width: auto;
+}
+.agent-sessions,
+.agent-contracts,
+.agent-list,
+.agent-related,
+.agent-reads {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+.agent-sessions > li,
+.agent-contracts > li,
+.agent-list > li {
+  display: grid;
+  gap: 4px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.agent-session-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  min-width: 0;
+}
+.agent-summary {
+  color: #152436;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex-basis: 100%;
+}
+.agent-sessions .source-meta,
+.agent-contracts .source-meta,
+.agent-list .source-meta {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.agent-commits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.agent-commits a,
+.agent-list a,
+.agent-related a,
+.agent-facts a,
+.agent-contract-records a {
+  color: var(--blue);
+}
+.agent-session-ref {
+  color: var(--blue);
+}
+.agent-session-ref:hover,
+.agent-commits a:hover,
+.agent-list a:hover,
+.agent-related a:hover {
+  text-decoration: underline;
+}
+.agent-session > .toolbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.agent-session h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agent-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  font-size: 13px;
+  margin: 12px 0 20px;
+}
+.agent-facts dt {
+  color: var(--muted);
+}
+.agent-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.agent-reads li,
+.agent-related li {
+  padding: 3px 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.agent-contracts summary {
+  display: grid;
+  gap: 4px;
+  color: inherit;
+}
+.agent-contracts summary code {
+  color: var(--blue);
+  overflow-wrap: anywhere;
+}
+.agent-contract-records {
+  padding-left: 18px;
+}
+.agent-contract-records pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+}
+.agent-contract-stale,
+.agent-bisect-running {
+  color: #8a5a00;
+  border-color: #f0dca8;
+}
+.agent-contract-authored,
+.agent-bisect-found {
+  color: #1d6b3a;
+  border-color: #b9dcc5;
+}
+.agent-session-link:hover .agent-summary {
+  color: var(--blue);
+  text-decoration: underline;
+}
+.agent-sections a + a {
+  border-left: 1px solid #c5d6e1;
+}
+@media (max-width: 800px) {
+  .agent-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .agent-facts dd {
+    margin-bottom: 8px;
+  }
+}
