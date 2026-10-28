@@ -4,8 +4,8 @@
 // Which contract governs a symbol (authored, derived or stale) is decided in Rust.
 import { fileAt, handleOf } from './repo-code';
 import { compute } from './repo-compute';
-import { withObjects } from './repo-derived';
 import { keepAllowed } from './repo-grants';
+import { withObjects } from './repo-object-compute';
 import { ApiError, type Json, type RepoContext, withTrees } from './repo-ops';
 
 const FACTS_BATCH = 32;
