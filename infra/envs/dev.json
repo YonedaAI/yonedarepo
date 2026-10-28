@@ -109,12 +109,21 @@
         "Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store secret ZAI, the same store key the front Worker's managed connections use), bound to the platform Worker itself.",
         "Git LFS (/git/<repo>.git/info/lfs) hands out presigned R2 URLs on the OBJECTS bucket's S3 API",
         "(LFS_S3_ENDPOINT, LFS_S3_BUCKET). Secrets: LFS_S3_ACCESS_KEY_ID / LFS_S3_SECRET_ACCESS_KEY, the",
-        "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501."
+        "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.",
+        "Git over SSH (platform-ssh-gateway.ts): the SshGateway container (cloudflare/ssh-gateway/Dockerfile,",
+        "its own image, never the runtime's) runs yoneda-ssh-gateway; its only egress is this Worker (SELF).",
+        "SSH_FRONT_DOOR stays off until inbound TCP to Workers (Spectrum to a Worker, private beta) is",
+        "granted; while off no gateway container starts. Secrets: SSH_GATEWAY_SECRET (32+ random",
+        "characters, shared with the gateway), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY (OpenSSH private",
+        "host keys, generated once and kept: rotating them breaks every client's known_hosts)."
       ],
       "secrets": [
         "OWNER_TOKEN",
         "LFS_S3_ACCESS_KEY_ID",
-        "LFS_S3_SECRET_ACCESS_KEY"
+        "LFS_S3_SECRET_ACCESS_KEY",
+        "SSH_GATEWAY_SECRET",
+        "SSH_HOST_ED25519_KEY",
+        "SSH_HOST_ECDSA_KEY"
       ],
       "health": "yonedarepo-platform",
       "config": {
@@ -155,7 +164,8 @@
           "WEB_ORIGIN": "{origin}",
           "WORKERS_SUBDOMAIN": "{subdomain}",
           "LFS_S3_ENDPOINT": "https://{account_id}.r2.cloudflarestorage.com",
-          "LFS_S3_BUCKET": "{prefix}-platform-objects"
+          "LFS_S3_BUCKET": "{prefix}-platform-objects",
+          "SSH_FRONT_DOOR": "off"
         },
         "secrets_store_secrets": [
           {
@@ -196,6 +206,10 @@
             {
               "name": "LAND_COMBINERS",
               "class_name": "LandCombiner"
+            },
+            {
+              "name": "SSH_GATEWAYS",
+              "class_name": "SshGateway"
             }
           ]
         },
@@ -225,6 +239,12 @@
             "new_sqlite_classes": [
               "LandCombiner"
             ]
+          },
+          {
+            "tag": "v5",
+            "new_sqlite_classes": [
+              "SshGateway"
+            ]
           }
         ],
         "containers": [
@@ -233,6 +253,21 @@
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
             "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          },
+          {
+            "class_name": "SshGateway",
+            "image": "./ssh-gateway/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "basic",
+            "max_instances": 2,
             "rollout_step_percentage": [
               100
             ],

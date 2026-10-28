@@ -148,6 +148,23 @@ fn a_sandbox_with_its_own_images_keeps_its_dockerfile() {
 }
 
 #[test]
+fn the_ssh_gateway_keeps_its_own_dockerfile() {
+    let gateway = json!({"class_name": "SshGateway", "image": "./ssh-gateway/Dockerfile",
+        "image_build_context": "..", "max_instances": 2});
+    let config = json!({"name": "w", "containers": [
+        {"class_name": "CheckContainer", "image": "./containers/Dockerfile", "image_build_context": ".."},
+        gateway.clone()]});
+    let swapped = with_image(config.clone(), "registry.cloudflare.com/acct/r:t");
+    assert_eq!(
+        swapped["containers"][0]["image"],
+        "registry.cloudflare.com/acct/r:t"
+    );
+    assert_eq!(swapped["containers"][1], gateway);
+    let runtime = crate::infra::inventory::runtime_containers(&config);
+    assert_eq!(runtime.keys().collect::<Vec<_>>(), ["w-checkcontainer"]);
+}
+
+#[test]
 fn the_config_copy_sits_next_to_the_original() {
     assert_eq!(
         config_copy_path("cloudflare/wrangler.dev-platform.jsonc"),
