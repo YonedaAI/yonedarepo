@@ -55,53 +55,64 @@ export function RepoPage({
         </p>
       ))}
       {status.error && <Failure error={status.error} onRetry={status.reload} />}
-      <RepoTabs
-        repo={repo}
-        current={routeTab(route)}
-        runs={!!project}
-        settings={owner}
-        navigate={navigate}
-      />
-      <div className="repo-view">
-        {route.view === 'files' && <RepoFiles route={route} status={data} navigate={navigate} />}
-        {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
-        {(route.view === 'history' || route.view === 'transactions') && (
-          <HistoryTab route={route} status={data} navigate={navigate} agentContext={agentContext} />
-        )}
-        {route.view === 'commit' && (
-          <CommitView
-            key={route.commit}
+      {!status.error && (
+        <>
+          <RepoTabs
             repo={repo}
-            commit={route.commit}
-            onNavigate={navigate}
-            onChanged={status.reload}
-          />
-        )}
-        {route.view === 'search' && (
-          <RepoSearch key={route.query} repo={repo} query={route.query} onNavigate={navigate} />
-        )}
-        {route.view === 'runs' &&
-          (runs ?? (
-            <div className="source-empty-state">
-              <p>
-                Runs belong to repositories created with agent runs. This repository is used through
-                Git, the CLI and MCP.
-              </p>
-            </div>
-          ))}
-        {route.view === 'repo-settings' && (
-          <RepoSettings
-            repo={repo}
-            section={route.section}
-            status={data}
-            project={project}
+            current={routeTab(route)}
+            runs={!!project}
+            settings={owner}
             navigate={navigate}
-            onPolicySaved={status.reload}
-            onDeleted={onDeleted}
-            onDeleteProject={onDeleteProject}
           />
-        )}
-      </div>
+          <div className="repo-view">
+            {route.view === 'files' && (
+              <RepoFiles route={route} status={data} navigate={navigate} />
+            )}
+            {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
+            {(route.view === 'history' || route.view === 'transactions') && (
+              <HistoryTab
+                route={route}
+                status={data}
+                navigate={navigate}
+                agentContext={agentContext}
+              />
+            )}
+            {route.view === 'commit' && (
+              <CommitView
+                key={route.commit}
+                repo={repo}
+                commit={route.commit}
+                onNavigate={navigate}
+                onChanged={status.reload}
+              />
+            )}
+            {route.view === 'search' && (
+              <RepoSearch key={route.query} repo={repo} query={route.query} onNavigate={navigate} />
+            )}
+            {route.view === 'runs' &&
+              (runs ?? (
+                <div className="source-empty-state">
+                  <p>
+                    Runs belong to repositories created with agent runs. This repository is used
+                    through Git, the CLI and MCP.
+                  </p>
+                </div>
+              ))}
+            {route.view === 'repo-settings' && (
+              <RepoSettings
+                repo={repo}
+                section={route.section}
+                status={data}
+                project={project}
+                navigate={navigate}
+                onPolicySaved={status.reload}
+                onDeleted={onDeleted}
+                onDeleteProject={onDeleteProject}
+              />
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }

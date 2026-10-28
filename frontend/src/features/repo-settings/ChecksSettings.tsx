@@ -106,7 +106,9 @@ export function ChecksSettings({
       ) : (
         posted.map((check) => (
           <label key={check} className="source-field settings-wide">
-            Posters of <code>{check}</code>
+            <span>
+              Posters of <code>{check}</code>
+            </span>
             <input
               defaultValue={(draft.check_posters?.[check] ?? []).join(', ')}
               placeholder="owner (default)"
