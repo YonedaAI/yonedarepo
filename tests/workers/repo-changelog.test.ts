@@ -3,7 +3,7 @@
 // resumable and keyed for dedupe, and a failing pipeline never fails a landing or the job.
 import { expect, it } from 'vitest';
 import schema from '../../cloudflare/basin/change-log.schema.json';
-import type { ChangeEvent } from '../../cloudflare/worker/repo-changelog';
+import { type ChangeEvent, changeLogHold, emitChangeLog } from '../../cloudflare/worker/repo-changelog';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -123,4 +123,52 @@ it('returns a claimed range when its send fails, so a later job re-sends it', as
   await derive();
   expect(fake.sent.flat().map((e) => e.event_key)).toEqual([`${id}:v1`, `${id}:v2`]);
   expect((await api(`/repos/${id}/changelog`, owner, {}, env)).body).toMatchObject({ version: 2, sent: 2, failures: 1 });
+});
+
+it('holds log compaction at a claimed range until it is sent or given back', async () => {
+  let release!: (ok: boolean) => void;
+  let sending!: () => void;
+  const started = new Promise<void>((r) => {
+    sending = r;
+  });
+  const gate = new Promise<boolean>((r) => {
+    release = r;
+  });
+  const CHANGELOG = {
+    send: async () => {
+      sending();
+      if (!(await gate)) throw new Error('pipeline unavailable');
+    },
+  };
+  const env = { ...scoped, CHANGELOG } as unknown as Env;
+  const { id, land } = await setup('claimer', env);
+  await land('a.txt');
+  const cursor = async () => (await (await bindings.OBJECTS.get(`platform/v1/${id}/changelog/cursor.json`))!.json<any>());
+
+  // While versions 1-2 are claimed but unsent, the cursor is past them, the hold is not.
+  const emitting = emitChangeLog(env, id);
+  await started;
+  expect((await cursor()).version).toBe(2);
+  expect(await changeLogHold(env, id)).toBe(0);
+  // A failed send gives the range back: the cursor returns to it and nothing was compacted past it.
+  release(false);
+  expect((await emitting)?.version).toBe(0);
+  expect(await changeLogHold(env, id)).toBe(0);
+  expect((await cursor()).claims).toEqual({});
+});
+
+it('releases its claim once the range is sent', async () => {
+  const { env, fake } = pipeline();
+  const { id, land, derive } = await setup('releaser', env);
+  await land('a.txt');
+  await derive();
+  expect(fake.sent.flat()).toHaveLength(2);
+  expect(await changeLogHold(env, id)).toBe(2);
+  // A claim left by a job that died expires after its lease and stops holding.
+  const key = `platform/v1/${id}/changelog/cursor.json`;
+  const state = await (await bindings.OBJECTS.get(key))!.json<any>();
+  await bindings.OBJECTS.put(key, JSON.stringify({ ...state, claims: { 1: Date.now() - 11 * 60_000 } }));
+  expect(await changeLogHold(env, id)).toBe(2);
+  await bindings.OBJECTS.put(key, JSON.stringify({ ...state, claims: { 1: Date.now() } }));
+  expect(await changeLogHold(env, id)).toBe(1);
 });

@@ -16,6 +16,7 @@ pub const CHECKPOINT_EVERY: u64 = 64;
 /// must agree with the log's chain digest at its version, its ref map with its stored
 /// digest, and that digest with the next entry once there is one, or reads refuse it.
 /// Checkpoints written before ref-map digests are skipped: replay starts further back.
+/// Once the log is compacted, "further back" ends at the anchor (the state at the floor).
 pub fn checkpoint_at_or_before<S: SqlStore>(db: &S, version: u64) -> Result<Checkpoint> {
     let Some(row) = db
         .query(
@@ -25,7 +26,8 @@ pub fn checkpoint_at_or_before<S: SqlStore>(db: &S, version: u64) -> Result<Chec
         .into_iter()
         .next()
     else {
-        return Ok(Checkpoint::default());
+        let anchor = super::maintenance::archive::anchor(db)?.filter(|a| a.version <= version);
+        return Ok(anchor.unwrap_or_default());
     };
     let checkpoint: Checkpoint =
         serde_json::from_str(row["checkpoint"].as_str().unwrap_or_default())

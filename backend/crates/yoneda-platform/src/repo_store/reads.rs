@@ -53,6 +53,10 @@ pub(super) fn refs_at<S: SqlStore>(
             })
             .collect();
     }
+    // Below the compaction floor the state comes from the archived segment holding it.
+    if version > 0 && version < super::maintenance::archive::floor(db)? {
+        return Ok(super::maintenance::archive::state_at(db, version)?.refs);
+    }
     let from = rows::checkpoint_at_or_before(db, version)?;
     let tail = rows::entries(db, from.version, version, None)?;
     let projected = super::projection_plan::projected_between(db, from.version, version)?;
@@ -143,7 +147,13 @@ pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "SELECT version,projected,projected_at FROM changesets WHERE version>? AND version<=?",
         &[json!(after), json!(until)],
     )?;
-    let entries = rows::entries(db, after, until, None)?
+    // Archived versions are listed a segment at a time, from the segment's own objects.
+    let listed = if after < super::maintenance::archive::floor(db)? {
+        super::maintenance::archive::page(db, after, limit)?
+    } else {
+        rows::entries(db, after, until, None)?
+    };
+    let entries = listed
         .into_iter()
         .map(|entry| {
             let mut value = json!(entry);

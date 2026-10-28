@@ -2,6 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson } from './durable';
+import { archivedObjects } from './repo-archive';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { decide, keepAllowed, outside } from './repo-grants';
@@ -35,7 +36,8 @@ export type Credentials =
         | 'derive'
         | 'commits'
         | 'purge'
-        | 'hooks';
+        | 'hooks'
+        | 'compact';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_system'];
@@ -76,6 +78,9 @@ const KEEPS_REFS = new Set([
   'repo_git_access',
   'repo_git_walk',
   'repo_clone_access',
+  'repo_compact_plan',
+  'repo_compact_done',
+  'repo_set_retention',
 ]);
 const writes = new Map<string, number>();
 /** How many commands that may move refs this isolate has sent to `repo`. */
@@ -111,11 +116,20 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   };
   // A commit the authority has not seen may live in its commit shard: adopt, then retry.
   // A read at the latest version of a branch with unprojected changesets waits for them.
+  // A read below the compaction floor is retried once with the archived log it names.
   const call = async (command: Json) => {
+    let sent = command;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(command);
+        return await once(sent);
       } catch (e) {
+        if (e instanceof ApiError && e.code === 'TXLOG_ARCHIVED' && !sent._archive) {
+          const archive = await archivedObjects(env, repo, e.message);
+          if (archive) {
+            sent = { ...sent, _archive: archive };
+            continue;
+          }
+        }
         if (e instanceof ApiError && e.code === 'PROJECTION_PENDING' && attempt < 4) {
           await awaitProjection(env, repo);
           continue;

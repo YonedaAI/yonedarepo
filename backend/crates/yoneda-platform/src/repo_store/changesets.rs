@@ -144,7 +144,7 @@ fn head_at<S: SqlStore>(db: &S, refname: &str, version: u64) -> Result<Option<Ob
         .into_iter()
         .next()
     else {
-        return Ok(None);
+        return super::maintenance::archive::ref_at_floor(db, refname, version);
     };
     let entry: TxEntry = serde_json::from_str(row["entry"].as_str().unwrap_or_default())
         .map_err(|_| rows::corrupt("log entry"))?;

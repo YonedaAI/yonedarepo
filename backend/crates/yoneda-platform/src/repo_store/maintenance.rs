@@ -1,0 +1,53 @@
+//! Maintenance off the commit path: vacuum (releasing hidden refs, and the pins that keep
+//! them) and log compaction (moving old versions to the object store).
+pub(super) mod archive;
+mod compaction;
+pub(super) mod supplied;
+mod vacuum;
+use super::auth::Actor;
+use crate::storage::SqlStore;
+use serde_json::Value;
+/// Archived log objects a command carries are visible to its checks for that command.
+pub(super) use supplied::scoped;
+use yoneda_core::{Error, Result};
+
+const OPS: [&str; 6] = [
+    "repo_pin",
+    "repo_vacuum_plan",
+    "repo_vacuum_done",
+    "repo_compact_plan",
+    "repo_compact_done",
+    "repo_set_retention",
+];
+
+pub(super) fn owns(op: &str) -> bool {
+    OPS.contains(&op)
+}
+
+pub(super) fn authorize(actor: &Actor, op: &str) -> Result<()> {
+    match op {
+        "repo_vacuum_plan" | "repo_vacuum_done" if !(actor.owner || actor.can("system")) => Err(
+            Error::new("FORBIDDEN", "Vacuum is run by the owner or the platform"),
+        ),
+        // Compaction: the owner's trigger or the platform's compaction job.
+        "repo_compact_plan" | "repo_compact_done" if !actor.can("compact") => actor.require_owner(),
+        "repo_set_retention" => actor.require_owner(),
+        "repo_pin" => actor.require("write"),
+        _ => actor.require("read"),
+    }
+}
+
+pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: &str, principal: &str) -> Result<Value> {
+    match op {
+        "repo_pin" => vacuum::pin(db, c, principal),
+        "repo_vacuum_plan" => vacuum::plan(db, c),
+        "repo_vacuum_done" => vacuum::done(db, c),
+        "repo_compact_plan" => compaction::plan(db, c),
+        "repo_compact_done" => compaction::done(db, c),
+        "repo_set_retention" => compaction::set_retention(db, c),
+        _ => Err(Error::new(
+            "UNKNOWN_OP",
+            format!("Unknown maintenance op {op}"),
+        )),
+    }
+}

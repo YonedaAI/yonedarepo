@@ -177,6 +177,12 @@ pub fn entries<S: SqlStore>(
     until: u64,
     refname: Option<&str>,
 ) -> Result<Vec<TxEntry>> {
+    // Archived versions come from the segments the command carries (or it asks for them).
+    let floor = super::maintenance::archive::floor(db)?;
+    let mut archived = Vec::new();
+    if after < floor && until > after {
+        archived = super::maintenance::archive::entries(db, after, until.min(floor), refname)?;
+    }
     let rows = match refname {
         Some(name) => db.query(
             "SELECT entry FROM txlog WHERE version>? AND version<=? AND refname=? ORDER BY version",
@@ -187,12 +193,11 @@ pub fn entries<S: SqlStore>(
             &[json!(after), json!(until)],
         )?,
     };
-    rows.iter()
-        .map(|row| {
-            serde_json::from_str(row["entry"].as_str().unwrap_or_default())
-                .map_err(|_| corrupt("log entry"))
-        })
-        .collect()
+    let retained = rows.iter().map(|row| {
+        serde_json::from_str(row["entry"].as_str().unwrap_or_default())
+            .map_err(|_| corrupt("log entry"))
+    });
+    archived.into_iter().map(Ok).chain(retained).collect()
 }
 
 /// Protected refs (Scion: refs only for main and releases) move only by landing an
