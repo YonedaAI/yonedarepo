@@ -109,7 +109,7 @@ fn upgrades_from_the_members_schema_with_an_empty_sessions_table() {
 }
 
 #[test]
-fn a_session_id_ties_records_and_the_newest_come_first_in_pages() {
+fn a_session_id_ties_records_across_commits() {
     let (h, root) = seeded();
     let commits: Vec<String> = (0..3)
         .map(|n| {
@@ -154,36 +154,12 @@ fn a_session_id_ties_records_and_the_newest_come_first_in_pages() {
         );
     }
 
-    let page = h.ok(CI, json!({"op":"repo_sessions_recent","limit":2}));
-    let rows = page["sessions"].as_array().unwrap();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0]["summary"], "first");
-    assert_eq!(rows[0]["session_id"], "opencode:ses_c");
-    assert_eq!(rows[1]["summary"], "no id");
-    assert!(rows[1]["session_id"].is_null());
-    assert_eq!(rows[1]["commit"], commits[2]);
-    assert!(rows[1]["subject"].is_string());
-    let rest = h.ok(
-        CI,
-        json!({"op":"repo_sessions_recent","limit":2,"before":page["next"]}),
-    );
-    let summaries: Vec<&str> = rest["sessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| r["summary"].as_str().unwrap())
-        .collect();
-    assert_eq!(summaries, ["third", "second"]);
-    let last = h.ok(
-        CI,
-        json!({"op":"repo_sessions_recent","limit":2,"before":rest["next"]}),
-    );
-    assert_eq!(last["sessions"].as_array().unwrap().len(), 1);
-    assert!(last["next"].is_null());
-
+    let listed = h.ok(CI, json!({"op":"repo_sessions","commit":commits[0]}));
+    assert_eq!(listed["sessions"][0]["session_id"], "opencode:ses_a");
+    // The repository-wide listing (agent_reads) filters by it.
     let one = h.ok(
         CI,
-        json!({"op":"repo_sessions_recent","session_id":"opencode:ses_a"}),
+        json!({"op":"repo_session_list","session_id":"opencode:ses_a"}),
     );
     let summaries: Vec<&str> = one["sessions"]
         .as_array()
@@ -192,17 +168,6 @@ fn a_session_id_ties_records_and_the_newest_come_first_in_pages() {
         .map(|r| r["summary"].as_str().unwrap())
         .collect();
     assert_eq!(summaries, ["third", "first"]);
-    let listed = h.ok(CI, json!({"op":"repo_sessions","commit":commits[0]}));
-    assert_eq!(listed["sessions"][0]["session_id"], "opencode:ses_a");
-    for bad in [
-        json!({"limit":0}),
-        json!({"limit":51}),
-        json!({"before":-1}),
-    ] {
-        let mut op = bad;
-        op["op"] = json!("repo_sessions_recent");
-        assert_eq!(code(h.run(CI, op)), "INVALID_INPUT");
-    }
 }
 
 #[test]

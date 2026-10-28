@@ -10,6 +10,8 @@ export type SessionRecord = {
   prompt_digest: string | null;
   transcript_ref: string | null;
   read_set_digest: string | null;
+  /** The coding session's own id (`opencode:<id>`, `claude-code:<id>`); null on older records. */
+  session_id: string | null;
   recorded_by: string;
   at: number;
   /** The commit message's first line. */
@@ -129,12 +131,13 @@ export const shortRef = (ref: string) => ref.replace(/^refs\/(heads|tags)\//, ''
 /** One coding session as listed: its records (one per commit it produced), newest first. */
 export type SessionGroup = { key: string; latest: SessionRecord; records: SessionRecord[] };
 
-/** Groups records by session (the transcript reference, e.g. `claude-code:<id>`); a record
- * without one is a session of its own. Keeps the newest-first order of `records`. */
+/** Groups records by session: its session id, else (older records) its transcript
+ * reference; a record with neither is a session of its own. Keeps the newest-first order of
+ * `records`. */
 export function groupSessions(records: SessionRecord[]): SessionGroup[] {
   const groups = new Map<string, SessionGroup>();
   for (const record of records) {
-    const key = record.transcript_ref ?? `#${record.id}`;
+    const key = record.session_id ?? record.transcript_ref ?? `#${record.id}`;
     const group = groups.get(key);
     if (group) group.records.push(record);
     else groups.set(key, { key, latest: record, records: [record] });

@@ -287,6 +287,7 @@ describe('sessions behind a change', () => {
     prompt_digest: null,
     transcript_ref: null,
     read_set_digest: null,
+    session_id: null,
     recorded_by: 'token:agent',
     at: id,
     subject,
