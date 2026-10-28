@@ -47,6 +47,11 @@
 //          (= --only 0,reads: stock Git over smart HTTP; a push declaring a read that changed
 //          meanwhile is refused as a read conflict, lands after git pull, and its session
 //          record reads back; zero model spend)
+//        node tools/staging-realworld.mjs --browser [--headed]
+//          (= --only 0,browser: headless system Chrome signs the kit account in through the login
+//          form, opens a new repository's /source pages, runs a two-agent GLM flash compare run
+//          in the UI, uses the first checked result and publishes it; < $0.05. Needs Google
+//          Chrome; screenshots in .local/staging/browser-<ts>/. Also part of the full kit)
 //        node tools/staging-realworld.mjs --fund <username>
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
 import { execFile } from 'node:child_process';
@@ -55,6 +60,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs, promisify } from 'node:util';
 import { agentSmoke } from './staging/agent-smoke.mjs';
+import { browserFlow } from './staging/browser-flow.mjs';
 import { proof, proofPlan } from './staging/proof-flow.mjs';
 import { sandboxSmoke } from './staging/sandbox-smoke.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
@@ -67,7 +73,7 @@ import { modelCheck } from './staging/model-check-flow.mjs';
 import { readsSessionsFlow } from './staging/reads-sessions-flow.mjs';
 import { webhookFlow } from './staging/webhook-flow.mjs';
 import { cloneMatchesApi, containerCheck, manyRepoBurst } from './staging/platform-flow.mjs';
-import { BRIEFS, bindManagedProviders, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
+import { BRIEFS, bindManagedProviders, chooseResult, createProject, deleteProject, ensureAllowance, fundAccount, publish, refreshMerge, spend, startCompare, waitCompare } from './staging/project-flow.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -116,6 +122,9 @@ const { values } = parseArgs({
     members: { type: 'boolean', default: false },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
+    // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
+    browser: { type: 'boolean', default: false },
+    headed: { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -138,6 +147,8 @@ const only = values.proof
       ? new Set(['0', 'members'])
       : values['reads-sessions']
       ? new Set(['0', 'reads'])
+      : values.browser
+      ? new Set(['0', 'browser'])
       : values.only
       ? new Set(values.only.split(','))
       : null;
@@ -178,7 +189,7 @@ await step('1', 'Create project (browser flow, API)', async (m) => {
   state.project = await createProject(account, `kit-${Date.now()}`, m);
   m.project = state.project.id;
 });
-await step('2', 'Two compare runs (A, B), cheap real models', async (m) => {
+await step('2', 'Two compare runs (A, B), cheap real models, owner chooses', async (m) => {
   if (!state.project) return { skip: 'No project (item 1)' };
   await bindManagedProviders(owner, kit.KIT_USERNAME);
   await ensureAllowance(account, owner, kit.KIT_USERNAME);
@@ -186,7 +197,9 @@ await step('2', 'Two compare runs (A, B), cheap real models', async (m) => {
   const [a, b] = [await startCompare(account, state.project.id, BRIEFS.a), await startCompare(account, state.project.id, BRIEFS.b)];
   const [ma, mb] = [{}, {}];
   [state.run, state.runB] = await Promise.all([waitCompare(account, state.project.id, a, ma), waitCompare(account, state.project.id, b, mb)]);
-  Object.assign(m, { run_a: ma.run, a: ma.comparison, run_b: mb.run, b: mb.comparison, spend_usd: (Number(ma.spend_usd) + Number(mb.spend_usd)).toFixed(4) });
+  // The owner chooses each run's result (the agents' pick was retired): the first checked one.
+  for (const run of [state.run, state.runB]) await chooseResult(account, state.project.id, run);
+  Object.assign(m, { run_a: ma.run, a_eligible: ma.eligible, run_b: mb.run, b_eligible: mb.eligible, spend_usd: (Number(ma.spend_usd) + Number(mb.spend_usd)).toFixed(4) });
 });
 await step('3', 'Owner publish ff-only + readback', async (m) => {
   if (!state.run) return { skip: 'No compare run (item 2)' };
@@ -217,6 +230,9 @@ await step('members', 'Members: a second account reads, pushes and lands by role
 );
 await step('reads', 'Declared reads: a stale read is refused on a plain git push; session records', (m) =>
   readsSessionsFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
+);
+await step('browser', 'Browser: sign in, /source pages, compare run chosen and published in the UI, delete run', (m) =>
+  browserFlow({ origin: values.origin, owner, kit, root, headed: values.headed }, m),
 );
 await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
@@ -272,12 +288,12 @@ if (['12', '13', '14', '15', '16', '17'].some(wanted)) {
 
 // A failed run still spent money: its last observed spend is in item 2's metrics.
 const itemSpend = (id) => Number(rec.items.find((i) => i.id === id)?.metrics.spend_usd ?? 0);
-const modelSpend = (state.spend ?? itemSpend('2')) + itemSpend('smoke') + itemSpend('sandbox') + itemSpend('model') + itemSpend('proof');
+const modelSpend = (state.spend ?? itemSpend('2')) + itemSpend('smoke') + itemSpend('sandbox') + itemSpend('model') + itemSpend('proof') + itemSpend('browser');
 const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), model_spend_usd: modelSpend, items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
-const smoke = ['smoke', 'sandbox', 'model', 'hooks', 'members', 'reads', 'proof'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const prefix = { smoke: 'agent-smoke', sandbox: 'sandbox-smoke', model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', proof: `proof-${values.proof}` }[smoke] ?? 'realworld';
+const smoke = ['smoke', 'sandbox', 'model', 'hooks', 'members', 'reads', 'proof', 'browser'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
+const prefix = { smoke: 'agent-smoke', sandbox: 'sandbox-smoke', model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', proof: `proof-${values.proof}` }[smoke] ?? 'realworld';
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nModel spend: $${modelSpend.toFixed(4)}. Evidence: ${file}`);
