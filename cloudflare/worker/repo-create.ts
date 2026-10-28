@@ -1,7 +1,7 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
-import { orgArg, orgCaller, orgCommand } from './orgs';
+import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';

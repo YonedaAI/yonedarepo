@@ -2,7 +2,7 @@
 // The account's WorkspaceAuthority holds each token's digest, scopes, allowlist and expiry
 // and is asked on every request (strict: no cache), through a D1 lookup from digest to
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
-import { type OrgAccess, orgAccess } from './org-access';
+import { type OrgAccess, orgAccess } from './platform-org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';
 import type { Env } from './types';
