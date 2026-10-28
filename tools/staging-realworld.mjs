@@ -71,6 +71,13 @@
 //          Docker sandbox; needs Docker and the host opencode's stored credential for the
 //          model's provider: tools/staging/agent-run-flow.mjs)
 //        node tools/staging-realworld.mjs --cleanup-repos <prefix>   (the kit account's repos only)
+//        set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
+//        node tools/staging-realworld.mjs --dogfood [--dogfood-repo yonedarepo] [--dogfood-agents N] [--dogfood-tag]
+//          (item 30, dev only: the owner's own account (DEV_OWNER_USERNAME / DEV_OWNER_PASSWORD from
+//          the environment, never the kit files) on the owner's repository of this codebase: clones,
+//          everyday Git, a change, reads and optional sandboxed agents, on `dogfood/<ts>-*` scratch
+//          branches only, cleaned up afterwards: tools/staging/dogfood-flow.mjs)
+import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -86,6 +93,7 @@ import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
+import { dogfood } from './staging/dogfood-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
 import { gitSemantics } from './staging/git-semantics-flow.mjs';
 import { lfsFlow } from './staging/lfs-flow.mjs';
@@ -150,6 +158,12 @@ const { values } = parseArgs({
     // The browser gate alone (items 0 and browser); --headed shows the Chrome window.
     browser: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
+    // Item 30: the owner's account on the owner's repository (no kit account, no kit files).
+    dogfood: { type: 'boolean', default: false },
+    'dogfood-repo': { type: 'string', default: 'yonedarepo' },
+    'dogfood-agents': { type: 'string', default: '0' },
+    // Tags cannot be deleted on the platform: pushing one leaves dogfood/<ts>-tag for good.
+    'dogfood-tag': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -191,6 +205,12 @@ if (values.prod)
     api: 'https://api.yonedarepo.com',
     platform: 'https://yonedarepo-prod-platform.mlong-f01.workers.dev',
   });
+if (values.dogfood) {
+  assert.ok(!values.prod, '--dogfood runs on dev only');
+  const code = await dogfood(values, root);
+  await new Promise((done) => process.stdout.write('', done));
+  process.exit(code);
+}
 const kit = kitCredentials();
 const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PASSWORD);
