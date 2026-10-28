@@ -1,7 +1,7 @@
 // Agent-layer items of the staging kit, as the browser does them: create a project, run
-// two-builder compares with cheap real models, publish a selected result fast-forward only
-// with readback, refresh another run's pick onto the new main and publish it, and delete a
-// project.
+// two-builder compares with cheap real models, choose the first checked result as the owner,
+// publish it fast-forward only with readback, refresh another run's choice onto the new main
+// and publish it, and delete a project.
 import assert from 'node:assert/strict';
 import { requestId, until } from './client.mjs';
 
@@ -10,7 +10,9 @@ export const CHEAP = [
   { provider: 'zai', model: 'glm-5.3-flash' },
   { provider: 'mimo', model: 'mimo-v2.6-flash' },
 ];
-const TERMINAL = ['selected', 'needs_attention', 'stale'];
+const ACTIVE_RUN = ['planning', 'coordinating', 'awaiting_intent'];
+const ACTIVE_EXECUTION = ['queued', 'running', 'capturing', 'evaluating'];
+const UNSETTLED_CANDIDATE = ['pending', 'capturing', 'evaluating', 'queued', 'running'];
 
 /** Binds the deployment's Secrets Store keys to the kit account as managed connections. */
 export async function bindManagedProviders(owner, username) {
@@ -58,7 +60,7 @@ export const BRIEFS = {
   b: { intent: 'Create docs/about.md with two sentences describing this website. Do not modify any other file.', criteria: ['docs/about.md exists with two sentences', 'No other file changes'] },
 };
 
-/** Starts a compare run with the cheap managed builders; returns its id. */
+/** Starts a compare run with the cheap managed builders, as the browser does; returns its id. */
 export async function startCompare(account, repo, brief = BRIEFS.a) {
   const id = `run-${crypto.randomUUID()}`;
   await account.post(`/api/repos/${repo}/start_run`, {
@@ -67,27 +69,47 @@ export async function startCompare(account, repo, brief = BRIEFS.a) {
     ...brief,
     context: [],
     adaptive_team: { version: 1, requested_agents: CHEAP.map((c) => ({ connection: `managed-${c.provider}`, role: 'auto' })) },
-    comparison: { version: 1 },
+    runtime: 'sandbox-cli-v1',
   });
   return id;
 }
 
-/** Waits for a compare run's agents' pick; spend and outcome land in `metrics`. */
-export async function waitCompare(account, repo, id, metrics) {
-  const run = await until(
+/**
+ * Where an owner-chooses compare run stands, read as the browser does (runAttention):
+ * `selected` once the owner chose, `choose` when no work is active and a result passed its
+ * checks, `failed` when work stopped without one, else `waiting`.
+ */
+export function compareState({ run, executions = [], candidates = [] }) {
+  const own = candidates.filter((c) => (c.run_id ?? run.id) === run.id);
+  const eligible = own.filter((c) => c.status === 'eligible');
+  if (run.comparison?.selected_candidate_id) return { status: 'selected', eligible };
+  if (run.status === 'cancelled') return { status: 'failed', eligible, reason: 'run cancelled' };
+  const active = ACTIVE_RUN.includes(run.status) || executions.some((e) => (e.run_id ?? run.id) === run.id && ACTIVE_EXECUTION.includes(e.status));
+  if (active) return { status: 'waiting', eligible };
+  if (eligible.length) return { status: 'choose', eligible };
+  const stopped = run.status === 'failed' || (executions.length > 0 && !own.some((c) => UNSETTLED_CANDIDATE.includes(c.status)));
+  if (!stopped) return { status: 'waiting', eligible };
+  return { status: 'failed', eligible, reason: own.length ? `no checked result (${own.map((c) => c.status).join(', ')})` : 'no agent captured a result' };
+}
+
+/** Waits until the owner can choose a compare run's result; spend and outcome land in `metrics`. */
+export async function waitCompare(account, repo, id, metrics, timeoutMs = 40 * 60_000) {
+  const detail = await until(
     async () => {
       const detail = await account.get(`/api/repos/${repo}/runs/${id}`);
-      const { run } = detail;
-      metrics.spend_usd = spend(run).toFixed(4);
-      if (['failed', 'cancelled'].includes(run.status)) throw new Error(`Run ${run.status}: ${runFailure(detail)}`);
-      return TERMINAL.includes(run.comparison?.status) && run;
+      metrics.spend_usd = spend(detail.run).toFixed(4);
+      const state = compareState(detail);
+      if (state.status === 'failed') throw new Error(`Run ${detail.run.status}, ${state.reason}: ${runFailure(detail)}`);
+      return ['choose', 'selected'].includes(state.status) && detail;
     },
-    { timeoutMs: 40 * 60_000, intervalMs: 10_000, what: 'compare run review' },
+    { timeoutMs, intervalMs: 10_000, what: 'a checked compare result' },
   );
-  metrics.run = run.id;
-  metrics.comparison = run.comparison.status;
-  metrics.spend_usd = spend(run).toFixed(4);
-  return run;
+  const state = compareState(detail);
+  metrics.run = id;
+  metrics.comparison = state.status;
+  metrics.eligible = state.eligible.length;
+  metrics.spend_usd = spend(detail.run).toFixed(4);
+  return detail.run;
 }
 
 /** Why a run failed: its own error, else each failed execution's and job's error. */
@@ -101,28 +123,34 @@ export function runFailure({ run, executions = [] }) {
 /** Charged model spend of a run, in USD, from its frozen per-model budgets. */
 export const spend = (run) => (run.model_budgets ?? []).reduce((sum, b) => sum + Number(b.charged_microusd ?? 0), 0) / 1e6;
 
-/** The selected candidate, selecting a checked one first when the reviewer needed attention. */
-async function selectedCandidate(account, repo, run) {
-  if (run.comparison.status === 'selected') return run.comparison.selected_candidate_id;
+/**
+ * The owner's choice for a compare run: its current selection, else the first checked result,
+ * selected with the browser's lease (comparisonView.ts comparisonLease).
+ */
+export async function chooseResult(account, repo, run, reason = 'Staging kit: first checked result') {
   const snap = await snapshot(account, repo);
+  const current = snap.runs?.find((r) => r.id === run.id) ?? run;
+  if (current.comparison?.selected_candidate_id) return current.comparison.selected_candidate_id;
   const eligible = snap.candidates.filter((c) => c.run_id === run.id && c.status === 'eligible');
-  assert.ok(eligible.length, `No checked result to select (comparison ${run.comparison.status})`);
+  assert.ok(eligible.length, `No checked result to choose (run ${current.status})`);
+  const branch = (snap.working_branches ?? []).find((b) => b.id === current.working_branch_id);
   await account.post(`/api/repos/${repo}/select_comparison_candidate`, {
     run_id: run.id,
     request_id: requestId('select'),
     candidate_id: eligible[0].id,
-    reason: 'Staging kit: first checked result',
+    reason,
     expected_commit: snap.repository.head_commit,
     expected_version: snap.repository.version,
     expected_policy_version: snap.repository.policy?.version,
-    expected_selection_version: run.comparison.selection_version ?? 0,
+    ...(branch ? { expected_working_commit: branch.working_commit, expected_working_version: branch.version } : {}),
+    expected_selection_version: current.comparison?.selection_version ?? 0,
   });
   return eligible[0].id;
 }
 
 /** Owner accept → approve → fast-forward land → readback; verifies main on the platform. */
 export async function publish(account, repo, run, metrics, chosen) {
-  const candidate = chosen ?? (await selectedCandidate(account, repo, run));
+  const candidate = chosen ?? (await chooseResult(account, repo, run));
   const snap = await snapshot(account, repo);
   const decision = await account.post(`/api/repos/${repo}/accept`, {
     request_id: requestId('accept'),
@@ -130,6 +158,7 @@ export async function publish(account, repo, run, metrics, chosen) {
     expected_commit: snap.repository.head_commit,
     expected_version: snap.repository.version,
     rationale: 'Staging kit publication',
+    alternatives: [],
   });
   const { platform_repo, ref, commit } = decision.publication;
   const platform = `/api/v1/repos/${platform_repo}`;
@@ -148,14 +177,14 @@ export async function publish(account, repo, run, metrics, chosen) {
 }
 
 /**
- * N8 step 12: refresh run B's pick (built on the old main) onto the main A just published,
- * then publish the refreshed result. A compare run publishes only its selected result, so the
- * owner first selects the refreshed one when the ledger asks for it.
+ * N8 step 12: refresh run B's chosen result (built on the old main) onto the main A just
+ * published, then publish the refreshed result. A compare run publishes only its selected
+ * result, so the owner first selects the refreshed one when the ledger asks for it.
  */
 export async function refreshMerge(account, repo, runB, metrics) {
   const { run } = await account.get(`/api/repos/${repo}/runs/${runB.id}`);
   const picked = run.comparison?.selected_candidate_id;
-  assert.ok(picked, `Run B has no selected result (comparison ${run.comparison?.status})`);
+  assert.ok(picked, `Run B has no chosen result (comparison ${run.comparison?.status})`);
   const snap = await snapshot(account, repo);
   const started = performance.now();
   const refresh = await account.post(`/api/repos/${repo}/refresh_candidate`, {
