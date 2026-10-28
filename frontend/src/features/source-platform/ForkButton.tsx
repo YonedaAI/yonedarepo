@@ -1,9 +1,12 @@
-// "Fork": a copy of this repository owned by the signed-in account (POST /fork; read here is
-// enough). History is shared, not copied, so it is quick; the new fork opens when done.
+// "Fork": a copy of this repository owned by the signed-in account or an organization it
+// owns (POST /fork; read here is enough). History is shared, not copied, so it is quick;
+// the new fork opens when done.
 import { type FormEvent, useState } from 'react';
 import { forkRequest } from './forks';
+import { type OrgSummary, ownerOptions } from './orgModel';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
+import { useSource } from './useSource';
 
 export function ForkButton({
   repo,
@@ -17,6 +20,10 @@ export function ForkButton({
 }) {
   const [open, setOpen] = useState(false);
   const [forkName, setForkName] = useState('');
+  const [owner, setOwner] = useState('');
+  // The caller's orgs, read only once the form opens: owned ones may own the fork.
+  const orgs = useSource<{ orgs: OrgSummary[] }>(open ? '/orgs' : null);
+  const owners = ownerOptions(undefined, orgs.data?.orgs ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function fork(event: FormEvent) {
@@ -24,7 +31,7 @@ export function ForkButton({
     setBusy(true);
     setError('');
     try {
-      const request = forkRequest(repo, forkName);
+      const request = forkRequest(repo, forkName, owner);
       const forked = await sourceApi<{ id: string; name: string }>(request.path, {
         body: request.body,
       });
@@ -62,6 +69,18 @@ export function ForkButton({
           onChange={(e) => setForkName(e.target.value)}
         />
       </label>
+      {owners.length > 1 && (
+        <label className="source-field">
+          Owner
+          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            {owners.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="source-actions">
         <button type="submit" disabled={busy}>
           {busy ? 'Forking…' : 'Fork'}

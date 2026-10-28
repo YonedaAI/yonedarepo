@@ -1,5 +1,6 @@
 // A repository's Settings tab (owner and admins): landing rules, checks, secret exceptions,
-// webhooks, members, repository tokens, the LFS quota, connect, and deleting it.
+// webhooks, branches and tags, members, repository tokens, the LFS quota, connect, and
+// deleting it.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ConnectPanel, DeleteRepository } from '../source-platform/ConnectPanel';
 import { currentApiOrigin } from '../source-platform/connect';
@@ -12,6 +13,7 @@ import { ChecksSettings } from './ChecksSettings';
 import { LandingRules } from './LandingRules';
 import { LfsSettings } from './LfsSettings';
 import { PolicyForm } from './PolicyForm';
+import { RepoBranches } from './RepoBranches';
 import { RepoWebhooks } from './RepoWebhooks';
 import { SecretExceptions } from './SecretExceptions';
 
@@ -20,6 +22,7 @@ export const SECTION_TITLES: Record<RepoSettingsSection, string> = {
   checks: 'Checks',
   secrets: 'Secret exceptions',
   webhooks: 'Webhooks',
+  branches: 'Branches and tags',
   members: 'Members',
   tokens: 'Repository tokens',
   lfs: 'Large files (LFS)',
@@ -92,6 +95,7 @@ export function RepoSettings({
           </section>
         )}
         {section === 'webhooks' && <RepoWebhooks repo={repo} />}
+        {section === 'branches' && <RepoBranches repo={repo} />}
         {section === 'members' && <RepoMembers repo={repo} viewer={status.viewer} />}
         {section === 'tokens' && <RepoTokens repo={repo} />}
         {section === 'lfs' && <LfsSettings repo={repo} />}

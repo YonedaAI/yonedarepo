@@ -1,4 +1,5 @@
 // Webhook tables: the repository's hooks and one hook's latest delivery attempts.
+import { scopeList } from '../source-platform/connect';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import type { Loaded } from '../source-platform/useSource';
@@ -11,8 +12,21 @@ export const HOOK_EVENTS = [
   'branch',
   'tag',
   'check',
+  'change',
   'release',
 ] as const;
+
+/** What each event delivers (`change` covers change.opened, .commented, .closed, .landed). */
+export const HOOK_EVENT_HELP: Record<(typeof HOOK_EVENTS)[number], string> = {
+  land: 'a commit landed on main',
+  merged: 'a queued commit landed through a platform merge',
+  refused: 'a queued landing was refused',
+  branch: 'a working branch moved or was deleted',
+  tag: 'a tag was created',
+  check: 'a check run finished',
+  change: 'a change request opened, commented, closed or landed',
+  release: 'a release was published or deleted',
+};
 
 export type Hook = {
   id: number;
@@ -60,6 +74,7 @@ export function HookTable({
           <tr>
             <th>URL</th>
             <th>Events</th>
+            <th>Paths</th>
             <th>State</th>
             <th>Added</th>
             <th>
@@ -72,6 +87,7 @@ export function HookTable({
             <tr key={h.id}>
               <td className="settings-url">{h.url}</td>
               <td>{(h.events ?? HOOK_EVENTS).join(', ')}</td>
+              <td>{scopeList(h.paths).join(', ') || 'all'}</td>
               <td>
                 {h.active ? (
                   <span className="source-check-pass">
@@ -94,7 +110,12 @@ export function HookTable({
                 >
                   Deliveries
                 </button>
-                <button type="button" className="quiet" onClick={() => onDelete(h)}>
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={`Delete the webhook to ${h.url}`}
+                  onClick={() => onDelete(h)}
+                >
                   Delete
                 </button>
               </td>
