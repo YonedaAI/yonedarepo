@@ -1,6 +1,7 @@
 // Home (`/`): sign-in and onboarding, or every repository the account can use.
 import { ArrowRight, GitBranch, Plus } from 'lucide-react';
 import type { Session } from '../../hooks/useSession';
+import { PublicBadge } from '../source-platform/PublicBadge';
 import { WorkspaceWelcome } from '../workspace/WorkspaceWelcome';
 import type { RepoRow } from './repoRows';
 import { linkTo, type Navigate } from './useRoute';
@@ -48,7 +49,9 @@ export function HomePage({
             <a {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, navigate)}>
               <GitBranch size={18} aria-hidden="true" />
               <span className="home-repo-text">
-                <strong className="home-repo-name">{row.name}</strong>
+                <strong className="home-repo-name">
+                  {row.name} {row.public && <PublicBadge />}
+                </strong>
                 <small className="home-repo-meta">{row.shared ?? 'yours'}</small>
               </span>
               <ArrowRight size={16} aria-hidden="true" />

@@ -1,6 +1,6 @@
-import { Building2, GitBranch, Menu, Plus, X } from 'lucide-react';
+import { Building2, Compass, GitBranch, Menu, Plus, X } from 'lucide-react';
 import { useState } from 'react';
-import type { RepoRow } from '../shell/repoRows';
+import { type RepoRow, rowLabel } from '../shell/repoRows';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { OrgSummary } from '../source-platform/orgModel';
 
@@ -15,6 +15,7 @@ export function WorkspaceRail({
   orgs = [],
   current,
   currentOrg,
+  exploring = false,
   navigate = () => {},
   onNew,
 }: {
@@ -28,6 +29,8 @@ export function WorkspaceRail({
   current?: string;
   /** The organization whose page is open. */
   currentOrg?: string;
+  /** Explore (public repositories) is open. */
+  exploring?: boolean;
   navigate?: Navigate;
   onNew?: () => void;
 }) {
@@ -56,6 +59,17 @@ export function WorkspaceRail({
         </button>
       </div>
       <div className="rail-content">
+        {/* Signed in or not: public repositories are for everyone. */}
+        <nav className="repository-list rail-explore" aria-label="Explore">
+          <a
+            className={exploring ? 'active' : ''}
+            aria-current={exploring ? 'page' : undefined}
+            {...linkTo({ view: 'explore' }, close)}
+          >
+            <Compass size={17} aria-hidden="true" />
+            <span className="rail-repo-name">Explore</span>
+          </a>
+        </nav>
         <nav className="repository-list" aria-label="Repositories">
           <p className="nav-label">Repositories</p>
           {rows.map((row) => (
@@ -65,12 +79,17 @@ export function WorkspaceRail({
               className={row.repo === current ? 'active' : ''}
               aria-current={row.repo === current ? 'page' : undefined}
               title={row.shared ? `${row.name} (${row.shared})` : row.name}
-              aria-label={labelled(row.name, row.shared)}
+              aria-label={rowLabel(row)}
               {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, close)}
             >
               <GitBranch size={17} aria-hidden="true" />
               <span className="rail-repo-name">{row.name}</span>
               {row.shared && <small className="rail-repo-shared">{row.shared}</small>}
+              {row.public && (
+                <small className="rail-repo-public" aria-hidden="true">
+                  Public
+                </small>
+              )}
             </a>
           ))}
           {!rows.length && (
