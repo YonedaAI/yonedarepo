@@ -17,7 +17,8 @@ const INSERT_ROWS: usize = 20;
 const SELECT_IDS: usize = 100;
 
 /// `repo_bundle_index` (`bundle`, `objects: [{id, kind, at, size}]`) and
-/// `repo_bundle_locate` (`ids`, answering `located: [{id, bundle, at, size, kind}]`).
+/// `repo_bundle_locate` (`ids`, answering `located: [{id, bundle, at, size, kind}]`; the
+/// adapter asks only where a repository is known to hold bundles, see `staged`).
 pub fn op<S: SqlStore>(db: &S, c: &Value, op: &str, actor: &Actor) -> Result<Value> {
     if !actor.can("system") {
         return Err(Error::new(
@@ -80,8 +81,36 @@ fn locate<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let ids = c["ids"]
         .as_array()
         .filter(|list| list.len() <= LOCATE_IDS)
-        .ok_or_else(|| bad(&format!("ids must list at most {LOCATE_IDS} object ids")))?
-        .iter()
+        .ok_or_else(|| bad(&format!("ids must list at most {LOCATE_IDS} object ids")))?;
+    Ok(json!({ "located": located(db, ids.iter())? }))
+}
+
+/// `repo_staged_objects`; with `locate: true`, also where bundles hold the ids it did not
+/// find staged (`located`), so a read that missed R2 asks the authority once for both and a
+/// repository without bundles costs nothing more.
+pub fn staged<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let mut found = super::super::staging::read(db, c)?;
+    if c["locate"] != true || c.get("commit").is_some_and(|v| !v.is_null()) {
+        return Ok(found);
+    }
+    let held: Vec<Value> = found["objects"]
+        .as_array()
+        .map(|objects| objects.iter().map(|o| o["id"].clone()).collect())
+        .unwrap_or_default();
+    let ids = c["ids"].as_array().map(Vec::as_slice).unwrap_or_default();
+    found["located"] = json!(located(db, ids.iter().filter(|id| !held.contains(id)))?);
+    Ok(found)
+}
+
+/// Whether any object of this repository is in a bundle (rows outlive no repository).
+pub fn any<S: SqlStore>(db: &S) -> Result<bool> {
+    Ok(!db
+        .query("SELECT 1 FROM bundled_objects LIMIT 1", &[])?
+        .is_empty())
+}
+
+fn located<'a, S: SqlStore>(db: &S, ids: impl Iterator<Item = &'a Value>) -> Result<Vec<Value>> {
+    let ids = ids
         .map(|v| ObjectId::parse(v.as_str().unwrap_or_default()).map(|id| json!(id.hex())))
         .collect::<Result<Vec<_>>>()?;
     let mut located = Vec::new();
@@ -92,5 +121,5 @@ fn locate<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             chunk,
         )?);
     }
-    Ok(json!({ "located": located }))
+    Ok(located)
 }
