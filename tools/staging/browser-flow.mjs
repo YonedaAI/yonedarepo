@@ -1,7 +1,8 @@
 // Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
 // drives the served app as a person does. It signs the kit account in through the real login
-// form, creates a repository from the /source sidebar and opens its Files, History, Connect and
-// Tokens pages, then creates a project, starts a compare run with two cheap agents (managed GLM
+// form, creates a repository with the shell's "New repository" dialog and opens its Code, History
+// and Settings (Landing rules, Connect) tabs and the account Settings page, then creates a
+// repository with agent runs (a project), starts a compare run with two cheap agents (managed GLM
 // flash on opencode), waits for "Choose a result", uses the first checked result, publishes it
 // and checks the readback and the moved project head. When the "Delete run" control exists it
 // deletes the run and checks Run history; otherwise it records `delete=unavailable`. Each step's
@@ -100,16 +101,24 @@ export async function signIn(page, origin, { KIT_USERNAME, KIT_PASSWORD }) {
   const password = page.getByLabel('Password', { exact: true });
   await password.fill(KIT_PASSWORD);
   await password.press('Enter');
-  await settle(page.getByRole('button', { name: 'New repository' }), [page.getByRole('alert')], { timeoutMs: 30_000, what: 'sign-in' });
+  await settle(page.getByRole('button', { name: 'New repository' }).first(), [page.getByRole('alert')], { timeoutMs: 30_000, what: 'sign-in' });
 }
 
-/** /source: create a repository from the sidebar and open its pages, then delete it by API. */
+/** "New repository" opens a dialog; with `agents` it creates a project (agent runs). */
+export async function newRepository(page, name, { agents = false } = {}) {
+  await page.getByRole('button', { name: 'New repository' }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'New repository' });
+  await dialog.getByLabel('Repository name').fill(name);
+  if (agents) await dialog.getByLabel('Agent runs').check();
+  await dialog.getByRole('button', { name: 'Create repository' }).click();
+}
+
+/** A platform repository: create it, open its tabs and the account settings, then delete it by API. */
 export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
   const name = `kit-browser-${Date.now()}`;
-  await page.goto(`${origin}/source`);
+  await page.goto(origin);
   const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST');
-  await page.getByLabel('New repository').fill(name);
-  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await newRepository(page, name);
   const response = await created;
   assert.ok(response.ok(), `Create repository: HTTP ${response.status()}`);
   const { id } = await response.json();
@@ -123,27 +132,32 @@ export async function sourcePages(page, origin, account, { shot, cleanup }, m) {
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).waitFor();
   await page.waitForURL(`**/source/${id}`);
   await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
-  await shot('source-files');
+  await shot('source-code');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'History' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   await shot('source-history');
-  await tabs.getByRole('link', { name: 'Connect' }).click();
+  await tabs.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('heading', { name: 'Landing rules' }).waitFor();
+  await shot('source-settings');
+  await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
   await shot('source-connect');
-  await page.getByRole('banner').getByRole('link', { name: 'Tokens' }).click();
-  await page.getByRole('heading', { level: 1, name: 'Tokens' }).waitFor();
-  await shot('source-tokens');
-  m.source_pages = 'files,history,connect,tokens';
+  // The account menu (top right): its summary is labelled "Account: <name>".
+  const menu = page.locator('details.account-menu');
+  await menu.getByLabel(/^Account:/).click();
+  await menu.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
+  await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
+  await shot('account-settings');
+  m.source_pages = 'code,history,settings,connect,account-settings';
 }
 
 /** Workspace: new project, compare run, owner choice, publication, readback, run deletion. */
 async function projectRun(page, origin, account, { shot, cleanup, timeoutMs }, m) {
   await page.goto(origin);
-  await page.getByRole('button', { name: 'New repository' }).click();
   const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/projects' && r.request().method() === 'POST');
-  await page.getByLabel('Repository name').fill(`kit-browser-${Date.now()}`);
-  await page.getByRole('button', { name: 'Create repository' }).click();
+  await newRepository(page, `kit-browser-${Date.now()}`, { agents: true });
   const response = await created;
   assert.ok(response.ok(), `Create project: HTTP ${response.status()}`);
   const { id } = await response.json();
