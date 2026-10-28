@@ -26,6 +26,7 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState('');
   const [tick, setTick] = useState(0);
+  const [missing, setMissing] = useState<string>();
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const rows = repoRows(platform.data?.repos ?? []);
@@ -52,7 +53,9 @@ export function App() {
           ? 'Approve a device'
           : route.view === 'org'
             ? route.org
-            : (row?.name ?? repo ?? '');
+            : repo && repo === missing
+              ? 'Repository not found'
+              : (row?.name ?? repo ?? '');
   return (
     <div className="app">
       <a className="skip-link" href="#workspace">
@@ -159,6 +162,12 @@ export function App() {
                   navigate({ view: 'home' });
                   setNotice('Repository deleted.');
                 }}
+                onMissing={() => {
+                  // A stale sidebar entry (deleted elsewhere) drops out with the refreshed list.
+                  setMissing(route.repo);
+                  platform.reload();
+                }}
+                onNew={() => setCreating(true)}
               />
             )}
           </>

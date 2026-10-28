@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { CloneButton } from './CodeParts';
 import { ConnectPanel } from './ConnectPanel';
 import {
   apiOrigin,
@@ -8,6 +9,7 @@ import {
   cloneCommand,
   codexToml,
   expiresIn,
+  httpsCloneCommand,
   isUserCode,
   mcpUrl,
   normalizeUserCode,
@@ -17,6 +19,29 @@ import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
 
 const api = 'https://api.dev.yonedarepo.com';
 const repo = 'r0123456789abcdef0123';
+
+/** Each copy block's label and the exact text it shows (which is the text Copy copies). */
+const copyBlocks = (html: string) =>
+  [...html.matchAll(/<span>([^<]+)<\/span>.*?<code>([^<]*)<\/code>/g)].map(([, label, text]) => [
+    label,
+    text,
+  ]);
+
+describe('the Clone menu', () => {
+  it('offers whole git clone commands into a directory named after the repository', () => {
+    const html = renderToStaticMarkup(
+      createElement(CloneButton, { repo, name: 'demo', origin: api }),
+    );
+    expect(copyBlocks(html)).toEqual([
+      ['HTTPS (token as password)', `git clone ${api}/git/${repo}.git demo`],
+      ['yoneda remote helper', `git clone yoneda::${api}/${repo} demo`],
+    ]);
+  });
+  it('builds the HTTPS command with and without a directory', () => {
+    expect(httpsCloneCommand(api, repo)).toBe(`git clone ${api}/git/${repo}.git`);
+    expect(httpsCloneCommand(api, repo, 'demo')).toBe(`git clone ${api}/git/${repo}.git demo`);
+  });
+});
 
 describe('connect snippets', () => {
   it('points every Connect line at the API origin, never the page origin', () => {

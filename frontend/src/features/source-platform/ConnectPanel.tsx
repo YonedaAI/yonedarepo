@@ -6,15 +6,13 @@ import {
   claudePluginSteps,
   cloneCommand,
   codexToml,
+  httpsCloneCommand,
   installSteps,
   mcpUrl,
 } from './connect';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
-
-/** The clone URLs for a repository: stock Git over HTTPS and the yoneda remote helper. */
-export const httpsUrl = (origin: string, repo: string) => `${origin}/git/${repo}.git`;
 
 export function ConnectPanel({
   repo,
@@ -33,10 +31,7 @@ export function ConnectPanel({
           Stock Git over HTTPS with a token as the password, or the yoneda remote helper.{' '}
           <code>git push origin main</code> lands: the server merges disjoint concurrent changes.
         </p>
-        <CopyBlock
-          label="HTTPS"
-          text={`git clone ${httpsUrl(origin, repo)}${name ? ` ${name}` : ''}`}
-        />
+        <CopyBlock label="HTTPS" text={httpsCloneCommand(origin, repo, name)} />
         <CopyBlock label="clone" text={cloneCommand(origin, repo, name)} />
         <p className="source-meta">
           Repository id <code>{repo}</code>
