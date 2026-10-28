@@ -948,14 +948,14 @@
   },
   {
     "name": "git_sessions_recent",
-    "description": "The repository's session records newest first (default 20, at most 50): commit, its message's first line, cli, model, summary, session_id, who recorded each and when. Pass next as before for the following page, or session_id for one coding session's records.",
+    "description": "The repository's session records newest first (default 50, at most 200): commit, its message's first line, cli, model, summary, session_id, how many reads the commit declared, who recorded each and when. Filter by session_id (one coding session), cli, model or ref (the sessions behind a branch's commits); pass next as before for the following page.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "limit": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 50
+          "maximum": 200
         },
         "before": {
           "type": "integer",
@@ -964,6 +964,17 @@
         "session_id": {
           "type": "string",
           "maxLength": 128
+        },
+        "cli": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "ref": {
+          "type": "string"
         }
       },
       "additionalProperties": false

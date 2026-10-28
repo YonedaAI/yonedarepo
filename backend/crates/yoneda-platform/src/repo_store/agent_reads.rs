@@ -16,7 +16,7 @@ const MAX_LIMIT: u64 = 200;
 /// Declared reads shown with one session.
 const MAX_READS: usize = 500;
 const SESSION_COLUMNS: &str = "s.id,s.commit_id,s.cli,s.model,s.summary,s.prompt_digest,\
-    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,c.message,c.read_set";
+    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,s.session_id,c.message,c.read_set";
 
 fn limit(c: &Value) -> u64 {
     c["limit"]
@@ -55,7 +55,7 @@ fn session(row: &Value) -> Result<Value> {
         "id": row["id"], "commit": row["commit_id"], "cli": row["cli"], "model": row["model"],
         "summary": row["summary"], "prompt_digest": row["prompt_digest"],
         "transcript_ref": row["transcript_ref"], "read_set_digest": row["read_set_digest"],
-        "recorded_by": row["recorded_by"], "at": row["at"],
+        "recorded_by": row["recorded_by"], "at": row["at"], "session_id": row["session_id"],
         "subject": subject(&row["message"]), "reads": reads.len(),
     }))
 }
@@ -69,14 +69,15 @@ fn filter_value(c: &Value, key: &str) -> Result<Option<String>> {
     }
 }
 
-/// `repo_session_list`: `{cli?, model?, ref?, head?, base?, before?, limit?}`. Session
-/// records newest first, a `next` cursor when more remain, and the CLIs and models seen (for
+/// `repo_session_list`: `{cli?, model?, session_id?, ref?, head?, base?, before?, limit?}`.
+/// Session records newest first (`session_id`: one coding session's), a `next` cursor when more remain, and the CLIs and models seen (for
 /// filters). `ref` or `head` (a commit) keeps the commits they reach, less what `base` reaches:
 /// a change's head and merge base give the sessions behind the commits it introduces.
 pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let cli = filter_value(c, "cli")?;
     let model = filter_value(c, "model")?;
+    let session_id = filter_value(c, "session_id")?;
     let branch = match filter_value(c, "ref")? {
         Some(name) => Some(branch_ref(&json!({ "ref": name }))?),
         None => None,
@@ -101,7 +102,7 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
             &format!(
                 "SELECT {SESSION_COLUMNS} FROM sessions s JOIN commits c ON c.id=s.commit_id \
                  WHERE s.id<? AND (? IS NULL OR s.cli=?) AND (? IS NULL OR s.model=?) \
-                 ORDER BY s.id DESC LIMIT 200"
+                 AND (? IS NULL OR s.session_id=?) ORDER BY s.id DESC LIMIT 200"
             ),
             &[
                 json!(cursor),
@@ -109,6 +110,8 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
                 json!(cli),
                 json!(model),
                 json!(model),
+                json!(session_id),
+                json!(session_id),
             ],
         )?;
         let Some(last) = rows.last() else { break };
@@ -151,7 +154,8 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
 }
 
 /// `repo_session_show`: `{id}`. One record, its commit, the commit's declared reads and the
-/// other records of the same session (sharing a transcript reference or a prompt digest).
+/// other records of the same session: by its session id when it has one, else sharing a
+/// transcript reference or a prompt digest (records from before session ids).
 pub fn session_show<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let id = c["id"]
@@ -174,11 +178,14 @@ pub fn session_show<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     let related = db.query(
         &format!(
             "SELECT {SESSION_COLUMNS} FROM sessions s JOIN commits c ON c.id=s.commit_id \
-             WHERE s.id<>? AND ((? IS NOT NULL AND s.transcript_ref=?) \
-             OR (? IS NOT NULL AND s.prompt_digest=?)) ORDER BY s.id LIMIT 100"
+             WHERE s.id<>? AND CASE WHEN ? IS NOT NULL THEN s.session_id=? \
+             ELSE ((? IS NOT NULL AND s.transcript_ref=?) \
+             OR (? IS NOT NULL AND s.prompt_digest=?)) END ORDER BY s.id LIMIT 100"
         ),
         &[
             json!(id),
+            row["session_id"].clone(),
+            row["session_id"].clone(),
             row["transcript_ref"].clone(),
             row["transcript_ref"].clone(),
             row["prompt_digest"].clone(),

@@ -247,7 +247,6 @@ fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "repo_contract_list" => agent_reads::contract_list(db, c),
         "repo_pin_list" => agent_reads::pin_list(db, &actor),
         "repo_bisect_list" => agent_reads::bisect_list(db, c, &actor),
-        "repo_sessions_recent" => sessions::recent(db, c, &actor),
         "repo_agent_context" => agent_context::context(db, c, &actor, &settings),
         "repo_change_create" => changes::create(db, c, &actor),
         "repo_changes" => changes::list(db, c, &actor),

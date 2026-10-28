@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendPage,
+  type ContractRecord,
   changeSessionsPath,
   groupByCommit,
-  type ContractRecord,
   groupContracts,
   groupSessions,
   NO_FILTERS,
@@ -61,7 +61,11 @@ describe('agent pages', () => {
   });
 
   it('groups records into the sessions that produced them', () => {
-    const record = (id: number, transcript: string | null): SessionRecord => ({
+    const record = (
+      id: number,
+      transcript: string | null,
+      session: string | null = null,
+    ): SessionRecord => ({
       id,
       commit: String(id).repeat(40).slice(0, 40),
       cli: 'claude-code',
@@ -70,18 +74,25 @@ describe('agent pages', () => {
       prompt_digest: null,
       transcript_ref: transcript,
       read_set_digest: null,
+      session_id: session,
       recorded_by: 'token:agent',
       at: id,
       subject: 'change',
       reads: 0,
     });
     const groups = groupSessions([
+      record(6, 'shared', 'opencode:x'),
+      record(5, 'shared', 'opencode:y'),
       record(4, 'claude-code:a'),
       record(3, null),
       record(2, 'claude-code:a'),
       record(1, null),
+      record(0, 'other', 'opencode:x'),
     ]);
+    // The session id decides; older records without one group by transcript reference.
     expect(groups.map((g) => [g.key, g.latest.id, g.records.map((r) => r.id)])).toEqual([
+      ['opencode:x', 6, [6, 0]],
+      ['opencode:y', 5, [5]],
       ['claude-code:a', 4, [4, 2]],
       ['#3', 3, [3]],
       ['#1', 1, [1]],
