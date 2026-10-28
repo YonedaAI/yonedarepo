@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dailyCap } from '../../cloudflare/superfan/config';
+import { dailyCap, isWatchable } from '../../cloudflare/superfan/config';
 import { runWatch } from '../../cloudflare/superfan/watch';
 import {
   ANALYTICS_TOKEN,
@@ -8,7 +8,9 @@ import {
   fakeUpstreams,
   feed,
   hour,
+  lookup,
   MODEL_KEY,
+  NO_IDS,
   testEnv,
   traces,
 } from './fake-platform';
@@ -253,11 +255,13 @@ describe('superfan watch pass', () => {
     expect(JSON.stringify(finding)).not.toContain(ANALYTICS_TOKEN);
   });
 
-  it('refuses to watch production', async () => {
+  it('watches only a platform Worker (both envs), never an agent Worker', async () => {
+    for (const script of ['yonedarepo-dev-platform', 'yonedarepo-prod-platform'])
+      expect(isWatchable(script)).toBe(true);
     const calls = fakeUpstreams(analytics());
     const e = testEnv({
-      WATCH_SCRIPT: 'yonedarepo-dev',
-      WATCH_URL: 'https://yonedarepo-dev.example.workers.dev',
+      WATCH_SCRIPT: 'yonedarepo-prod-agents',
+      WATCH_URL: 'https://yonedarepo-prod-agents.example.workers.dev',
     });
     const d = deps(e, { now: start });
     expect(await runWatch(e, d)).toMatchObject({ outcome: 'telemetry_failed' });
@@ -268,6 +272,60 @@ describe('superfan watch pass', () => {
         summary: 'Configuration: WATCH_SCRIPT must name the isolated platform-only Worker',
         occurrences: 1,
       },
+    ]);
+  });
+
+  it('looks the ids up by name when the config sets none', async () => {
+    const calls = fakeUpstreams(analytics());
+    const e = testEnv(NO_IDS);
+    const d = deps(e, { now: start });
+    await feed(d.ledger, hour(recent(start)), start);
+    expect(await runWatch(e, d)).toMatchObject({ outcome: 'ok', anomalies: 0 });
+    expect(calls.lookups.map((l) => l.path.split('/').slice(3).join('/'))).toEqual([
+      'workers/scripts/yonedarepo-dev-platform/settings',
+      'queues?per_page=100',
+      'containers/applications',
+    ]);
+    expect(calls.lookups[0].headers.get('authorization')).toBe(`Bearer ${ANALYTICS_TOKEN}`);
+    const { variables } = JSON.parse(String(calls.graphql[0].body));
+    expect(variables).toMatchObject({
+      namespaces: [
+        '11111111111111111111111111111111',
+        '22222222222222222222222222222222',
+        '33333333333333333333333333333333',
+      ],
+      queues: ['44444444444444444444444444444444', '55555555555555555555555555555555'],
+      jobs: '44444444444444444444444444444444',
+      app: '66666666-6666-4666-8666-666666666666',
+    });
+  });
+
+  it('reports a failed id lookup as a configuration finding without the token', async () => {
+    const calls = fakeUpstreams(analytics(), (path) =>
+      path.includes('/queues')
+        ? Response.json({ success: false, errors: [{ code: 10000 }] }, { status: 403 })
+        : lookup(path),
+    );
+    const e = testEnv(NO_IDS);
+    const d = deps(e, { now: start });
+    await feed(d.ledger, hour(recent(start)), start);
+    await runWatch(e, d);
+    expect(calls.graphql).toHaveLength(0);
+    const findings = await d.ledger.findings('open', 10);
+    expect(findings).toMatchObject([{ dedup_key: 'telemetry:config' }]);
+    expect(findings[0].summary).toContain('GET /queues HTTP 403');
+    expect(findings[0].summary).toContain('Queues Read');
+    expect(JSON.stringify(findings)).not.toContain(ANALYTICS_TOKEN);
+  });
+
+  it('refuses a partial id configuration', async () => {
+    const calls = fakeUpstreams(analytics());
+    const e = testEnv({ ...NO_IDS, QUEUE_JOBS_ID: '44444444444444444444444444444444' });
+    const d = deps(e, { now: start });
+    await runWatch(e, d);
+    expect(calls.lookups).toHaveLength(0);
+    expect(await d.ledger.findings('open', 10)).toMatchObject([
+      { summary: 'Configuration: NS_SOURCE_REPOSITORY is missing or malformed' },
     ]);
   });
 

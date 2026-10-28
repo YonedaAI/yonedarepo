@@ -5,7 +5,7 @@ use super::inventory::{self, Deployable};
 use super::live::Live;
 use super::plan::{Action, effective_lock};
 use super::prune::{deletions, refusal};
-use super::retired::{Kind, Retired, declared, orphans};
+use super::retired::{Kind, declared, orphans};
 use super::spec::{Lock, PENDING_D1, Spec};
 use serde_json::json;
 use std::collections::BTreeSet;
@@ -173,11 +173,9 @@ fn prod_retired_names_are_exact_and_never_match_a_declared_name() {
 }
 
 #[test]
-fn a_retired_prefix_matches_the_name_and_its_dash_children_only() {
-    let retired = Retired {
-        prefix: Some("yonedarepo-staging".into()),
-        ..Retired::default()
-    };
+fn dev_retires_its_staging_prefix_only() {
+    let retired = dev().0.retired;
+    assert_eq!(retired.prefix.as_deref(), Some("yonedarepo-staging"));
     for name in [
         "yonedarepo-staging",
         "yonedarepo-staging-platform",
@@ -188,10 +186,200 @@ fn a_retired_prefix_matches_the_name_and_its_dash_children_only() {
     for name in [
         "yonedarepo-stagingx",
         "yonedarepo-dev-platform",
+        "yonedarepo-dev",
         "yonedarepo-staging2-a",
     ] {
         assert!(!retired.matches(Kind::Worker, name), "{name}");
     }
+}
+
+#[test]
+fn dev_retires_the_platform_dev_stack_by_exact_name() {
+    let retired = dev().0.retired;
+    for (kind, name) in [
+        (Kind::Worker, "yonedarepo-platform-dev"),
+        (Kind::Worker, "yonedarepo-agents-dev"),
+        (Kind::Worker, "yonedarepo-superfan-dev"),
+        (Kind::Worker, "yonedarepo-eval-dev"),
+        (Kind::Container, "yonedarepo-platform-dev-checkcontainer"),
+        (Kind::Container, "yonedarepo-agents-dev-agentsandbox"),
+        (Kind::Queue, "yonedarepo-platform-dev-dead-letter"),
+        (Kind::Queue, "yonedarepo-agents-dev-agent"),
+        (Kind::Workflow, "yonedarepo-platform-dev-import"),
+        (Kind::D1, "yonedarepo-agents-dev-index"),
+        (Kind::R2, "yonedarepo-platform-dev-analytics"),
+        (Kind::Artifacts, "yoneda-platform-dev"),
+        (Kind::Worker, "yonedarepo-acceptance"),
+        (Kind::Worker, "yonedarepo-acceptance-sites"),
+        (Kind::Worker, "yonedarepo-bench-client"),
+        (Kind::Container, "yonedarepo-acceptance-executioncontainer"),
+        (Kind::Queue, "yonedarepo-acceptance-publish"),
+        (Kind::D1, "yonedarepo-acceptance-index"),
+        (Kind::R2, "yonedarepo-acceptance-objects"),
+    ] {
+        assert!(retired.matches(kind, name), "{name}");
+    }
+    for (kind, name) in [
+        (Kind::Worker, "yonedarepo-platform-dev-x"),
+        (Kind::Worker, "yonedarepo-eval"),
+        (Kind::Queue, "yonedarepo-platform-dev"),
+    ] {
+        assert!(
+            !retired.matches(kind, name),
+            "{name} is not an exact retired name"
+        );
+    }
+}
+
+#[test]
+fn dev_and_prod_never_share_a_rate_limit_namespace() {
+    let namespaces = |workers: &[Deployable]| -> BTreeSet<String> {
+        workers
+            .iter()
+            .flat_map(|w| {
+                w.config["ratelimits"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default()
+            })
+            .filter_map(|r| r["namespace_id"].as_str().map(str::to_owned))
+            .collect()
+    };
+    let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
+    assert_eq!(prod, BTreeSet::from(["1001".to_owned()]));
+    assert_eq!(dev, BTreeSet::from(["2001".to_owned()]));
+}
+
+#[test]
+fn dev_is_renamed_on_the_same_hosts_and_secrets() {
+    let (spec, workers) = dev();
+    assert_eq!(spec.prefix, "yonedarepo-dev");
+    assert_eq!(spec.secrets_file, "~/.config/yonedarepo/staging.env");
+    assert_eq!(
+        spec.worker_names().unwrap(),
+        [
+            "yonedarepo-dev-superfan",
+            "yonedarepo-dev-platform",
+            "yonedarepo-dev-agents",
+            "yonedarepo-dev-sites",
+            "yonedarepo-dev-bench"
+        ]
+    );
+    let hosts: Vec<Vec<(String, bool)>> = workers.iter().map(hosts_of).collect();
+    let host = |p: &str, domain: bool| (p.to_owned(), domain);
+    assert_eq!(
+        hosts,
+        [
+            vec![],
+            vec![
+                host("api.dev.yonedarepo.com", true),
+                host("https://api.dev.yonedarepo.com/*", false)
+            ],
+            vec![
+                host("dev.yonedarepo.com", true),
+                host("https://dev.yonedarepo.com/*", false)
+            ],
+            vec![],
+            vec![host("hook-receiver.yonedaai.org", true)],
+        ]
+    );
+    let agents = &role(&workers, "agents").config;
+    assert_eq!(
+        agents["vars"]["SANDBOX_AI_GATEWAY"],
+        "f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev"
+    );
+    assert_eq!(agents["artifacts"][0]["namespace"], "yonedarepo-dev");
+    assert_eq!(agents["ratelimits"][0]["namespace_id"], "2001");
+    let mut strings = Vec::new();
+    collect(
+        &workers.iter().map(|w| w.config.clone()).collect::<Vec<_>>(),
+        &mut strings,
+    );
+    assert!(
+        !strings
+            .iter()
+            .any(|s| s.contains("staging-") && !s.contains("staging.env")),
+        "no staging name is left in the dev configs"
+    );
+}
+
+fn collect(values: &[serde_json::Value], out: &mut Vec<String>) {
+    for value in values {
+        match value {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(items) => collect(items, out),
+            serde_json::Value::Object(map) => {
+                collect(&map.values().cloned().collect::<Vec<_>>(), out)
+            }
+            _ => {}
+        }
+    }
+}
+
+#[test]
+fn dev_orphans_are_staging_and_platform_dev_never_old_prod_or_new_dev() {
+    let (spec, workers) = dev();
+    let mut live = cutover_account();
+    for name in ["yonedarepo-staging-platform", "yonedarepo-staging-agents"] {
+        live.workers.insert(name.into(), Default::default());
+    }
+    live.containers.insert(
+        "yonedarepo-staging-platform-checkcontainer".into(),
+        json!({"id": "app-staging"}),
+    );
+    live.d1
+        .insert("yonedarepo-staging-platform-index".into(), "2aca".into());
+    live.artifacts
+        .insert("yonedarepo-staging".into(), vec!["repo-1".into()]);
+    let rows = orphans(&spec.retired, &every_declared(), &live);
+    let found: Vec<&str> = rows.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(
+        found,
+        [
+            "yonedarepo-platform-dev",
+            "yonedarepo-staging-agents",
+            "yonedarepo-staging-platform",
+            "yonedarepo-staging-platform-checkcontainer",
+            "yonedarepo-staging-platform-index",
+            "yonedarepo-staging",
+        ]
+    );
+    // Host moves of the rename: from the staging Workers to the new names.
+    let mut hosts_live = Live::default();
+    holding(
+        &mut hosts_live,
+        "dev.yonedarepo.com",
+        "yonedarepo-staging-agents",
+        true,
+        "d1",
+    );
+    holding(
+        &mut hosts_live,
+        "https://dev.yonedarepo.com/*",
+        "yonedarepo-staging-agents",
+        false,
+        "r1",
+    );
+    holding(
+        &mut hosts_live,
+        "hook-receiver.yonedaai.org",
+        "yonedarepo-staging-bench",
+        true,
+        "d2",
+    );
+    let moved: Vec<String> = workers
+        .iter()
+        .flat_map(|w| hosts::plan(w, &hosts_live).unwrap())
+        .map(|m| m.describe())
+        .collect();
+    assert_eq!(
+        moved,
+        [
+            "domain dev.yonedarepo.com: yonedarepo-staging-agents -> yonedarepo-dev-agents",
+            "route https://dev.yonedarepo.com/*: yonedarepo-staging-agents -> yonedarepo-dev-agents",
+            "domain hook-receiver.yonedaai.org: yonedarepo-staging-bench -> yonedarepo-dev-bench",
+        ]
+    );
 }
 
 /// The account mid-cutover: old prod, the new prod Workers and dev under its new names.

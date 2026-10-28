@@ -100,12 +100,12 @@ fn the_image_is_named_by_its_content_in_the_account_registry() {
     let spec = dev();
     assert_eq!(
         prebuilt.local_tag(&spec),
-        "yonedarepo-staging-runtime:797bc8cc5339dfee"
+        "yonedarepo-dev-runtime:797bc8cc5339dfee"
     );
     assert_eq!(
         prebuilt.image_ref(&spec),
         format!(
-            "registry.cloudflare.com/{}/yonedarepo-staging-runtime:797bc8cc5339dfee",
+            "registry.cloudflare.com/{}/yonedarepo-dev-runtime:797bc8cc5339dfee",
             spec.account_id
         )
     );
@@ -150,8 +150,8 @@ fn a_sandbox_with_its_own_images_keeps_its_dockerfile() {
 #[test]
 fn the_config_copy_sits_next_to_the_original() {
     assert_eq!(
-        config_copy_path("cloudflare/wrangler.staging-platform.jsonc"),
-        "cloudflare/.prebuilt.wrangler.staging-platform.jsonc"
+        config_copy_path("cloudflare/wrangler.dev-platform.jsonc"),
+        "cloudflare/.prebuilt.wrangler.dev-platform.jsonc"
     );
 }
 

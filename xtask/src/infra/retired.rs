@@ -157,6 +157,21 @@ pub(crate) fn protected(workers: &[Deployable]) -> Result<BTreeSet<(Kind, String
     Ok(out)
 }
 
+/// An `extra` row (live, under the env's prefix, undeclared) that another committed env
+/// retires is that env's orphan, not this one's: after the dev rename, old prod's
+/// `yonedarepo-dev` Worker sits under dev's prefix until `infra prune --env prod`.
+pub(crate) fn retired_elsewhere(env: &Env, row: &Row) -> Result<bool> {
+    let Some(kind) = Kind::from_label(row.kind) else {
+        return Ok(false);
+    };
+    for other in [Env::Dev, Env::Prod].into_iter().filter(|e| e != env) {
+        if Spec::load(&other)?.retired.matches(kind, &row.name) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Live resources the retired list names. A retired name that a current spec still declares
 /// is shown as DRIFT (prune refuses to run while one exists), never as an orphan.
 pub(crate) fn orphans(

@@ -50,7 +50,7 @@ describe('superfan read endpoint', () => {
     });
     const status = await (await get(e, '/status', 'fixture-read-token')).json();
     expect(status).toMatchObject({
-      watching: 'yonedarepo-platform-dev',
+      watching: 'yonedarepo-dev-platform',
       tail_events_last_hour: 400,
       analytics: 'cloudflare',
       open_findings: 1,

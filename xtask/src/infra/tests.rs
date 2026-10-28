@@ -10,20 +10,20 @@ const PROD_LOCK: &str = include_str!("../../../infra/envs/prod.lock.json");
 
 fn committed(file: &str) -> Value {
     let text = match file {
-        "wrangler.staging-platform.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.staging-platform.jsonc")
+        "wrangler.dev-platform.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-platform.jsonc")
         }
-        "wrangler.staging-agents.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.staging-agents.jsonc")
+        "wrangler.dev-agents.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-agents.jsonc")
         }
-        "wrangler.staging-superfan.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.staging-superfan.jsonc")
+        "wrangler.dev-superfan.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-superfan.jsonc")
         }
-        "wrangler.staging-sites.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.staging-sites.jsonc")
+        "wrangler.dev-sites.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-sites.jsonc")
         }
-        "wrangler.staging-bench.jsonc" => {
-            include_str!("../../../cloudflare/wrangler.staging-bench.jsonc")
+        "wrangler.dev-bench.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-bench.jsonc")
         }
         "wrangler.prod-superfan.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-superfan.jsonc")
@@ -54,17 +54,17 @@ fn all_strings(value: &Value, out: &mut Vec<String>) {
 }
 
 #[test]
-fn dev_spec_regenerates_the_committed_staging_configs() {
+fn dev_spec_regenerates_the_committed_dev_configs() {
     let spec = Spec::parse(DEV).unwrap();
     let files: Vec<&str> = spec.workers.iter().map(|w| w.file.as_str()).collect();
     assert_eq!(
         files,
         [
-            "wrangler.staging-superfan.jsonc",
-            "wrangler.staging-platform.jsonc",
-            "wrangler.staging-agents.jsonc",
-            "wrangler.staging-sites.jsonc",
-            "wrangler.staging-bench.jsonc"
+            "wrangler.dev-superfan.jsonc",
+            "wrangler.dev-platform.jsonc",
+            "wrangler.dev-agents.jsonc",
+            "wrangler.dev-sites.jsonc",
+            "wrangler.dev-bench.jsonc"
         ],
         "the platform's tail consumer first, then cutover order: platform, agents, sites; the bench client last"
     );
@@ -152,7 +152,7 @@ fn ephemeral_env_shares_nothing_with_dev() {
         assert!(
             !strings
                 .iter()
-                .any(|s| s.contains("yonedarepo-staging") || s.contains("dev.yonedarepo.com")),
+                .any(|s| s.contains("yonedarepo-dev") || s.contains("dev.yonedarepo.com")),
             "{} still names a dev resource",
             worker.role
         );
@@ -241,7 +241,7 @@ fn inventory_reads_resources_and_health_origins() {
     let platform = by_role("platform");
     assert_eq!(
         platform.config_path,
-        "cloudflare/wrangler.staging-platform.jsonc"
+        "cloudflare/wrangler.dev-platform.jsonc"
     );
     assert_eq!(
         platform.health,
@@ -260,13 +260,13 @@ fn inventory_reads_resources_and_health_origins() {
     assert_eq!(
         inventory::d1(&platform.config),
         [(
-            "yonedarepo-staging-platform-index".to_string(),
+            "yonedarepo-dev-platform-index".to_string(),
             Some("cloudflare/migrations".to_string())
         )]
     );
     assert!(
         inventory::containers(&platform.config)
-            .contains_key("yonedarepo-staging-platform-checkcontainer")
+            .contains_key("yonedarepo-dev-platform-checkcontainer")
     );
 }
 
@@ -363,18 +363,18 @@ mod plan_diff {
     #[test]
     fn missing_resources_are_created_and_only_data_resources_need_explicit_creation() {
         let (spec, lock, workers, mut live) = matching();
-        live.d1.remove("yonedarepo-staging-agents-index");
-        live.r2.remove("yonedarepo-staging-platform-objects");
-        live.queues.remove("yonedarepo-staging-agents-dead-letter");
-        live.workers.remove("yonedarepo-staging-sites");
+        live.d1.remove("yonedarepo-dev-agents-index");
+        live.r2.remove("yonedarepo-dev-platform-objects");
+        live.queues.remove("yonedarepo-dev-agents-dead-letter");
+        live.workers.remove("yonedarepo-dev-sites");
         live.domains.clear();
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "d1", "yonedarepo-staging-agents-index"),
+            action(&rows, "d1", "yonedarepo-dev-agents-index"),
             Action::Create
         );
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-staging-sites"),
+            action(&rows, "worker", "yonedarepo-dev-sites"),
             Action::Create
         );
         assert_eq!(
@@ -384,9 +384,9 @@ mod plan_diff {
         assert_eq!(
             creations(&rows),
             [
-                Create::R2("yonedarepo-staging-platform-objects".into()),
-                Create::D1("yonedarepo-staging-agents-index".into()),
-                Create::Queue("yonedarepo-staging-agents-dead-letter".into()),
+                Create::R2("yonedarepo-dev-platform-objects".into()),
+                Create::D1("yonedarepo-dev-agents-index".into()),
+                Create::Queue("yonedarepo-dev-agents-dead-letter".into()),
             ]
         );
     }
@@ -394,18 +394,16 @@ mod plan_diff {
     #[test]
     fn changed_settings_bindings_and_identities_are_drift() {
         let (spec, lock, workers, mut live) = matching();
-        live.d1.insert(
-            "yonedarepo-staging-platform-index".into(),
-            "other-id".into(),
-        );
-        let platform = live.workers.get_mut("yonedarepo-staging-platform").unwrap();
+        live.d1
+            .insert("yonedarepo-dev-platform-index".into(), "other-id".into());
+        let platform = live.workers.get_mut("yonedarepo-dev-platform").unwrap();
         platform.settings["compatibility_date"] = json!("2026-01-01");
         platform.settings["bindings"]
             .as_array_mut()
             .unwrap()
             .push(json!({"name": "ROGUE_MODE", "type": "plain_text", "text": "batch"}));
         platform.migration_tag = Some("v3".into());
-        let agents = live.workers.get_mut("yonedarepo-staging-agents").unwrap();
+        let agents = live.workers.get_mut("yonedarepo-dev-agents").unwrap();
         for binding in agents.settings["bindings"].as_array_mut().unwrap() {
             if binding["name"] == "PUBLIC_APP_ORIGIN" {
                 *binding = json!({"name": "PUBLIC_APP_ORIGIN", "type": "plain_text", "text": "https://elsewhere"});
@@ -416,17 +414,17 @@ mod plan_diff {
             "yonedarepo-apps-dev".into(),
         );
         live.containers.insert(
-            "yonedarepo-staging-platform-checkcontainer".into(),
+            "yonedarepo-dev-platform-checkcontainer".into(),
             json!({"max_instances": 16}),
         );
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "d1", "yonedarepo-staging-platform-index"),
+            action(&rows, "d1", "yonedarepo-dev-platform-index"),
             Action::Drift
         );
         let platform = rows
             .iter()
-            .find(|r| r.name == "yonedarepo-staging-platform" && r.kind == "worker")
+            .find(|r| r.name == "yonedarepo-dev-platform" && r.kind == "worker")
             .unwrap();
         assert_eq!(platform.action, Action::Drift);
         for needle in [
@@ -442,7 +440,7 @@ mod plan_diff {
         }
         let agents = rows
             .iter()
-            .find(|r| r.name == "yonedarepo-staging-agents" && r.kind == "worker")
+            .find(|r| r.name == "yonedarepo-dev-agents" && r.kind == "worker")
             .unwrap();
         assert!(
             agents.detail.contains("PUBLIC_APP_ORIGIN"),
@@ -454,11 +452,7 @@ mod plan_diff {
             Action::Drift
         );
         assert_eq!(
-            action(
-                &rows,
-                "container",
-                "yonedarepo-staging-platform-checkcontainer"
-            ),
+            action(&rows, "container", "yonedarepo-dev-platform-checkcontainer"),
             Action::Drift
         );
     }
@@ -466,13 +460,13 @@ mod plan_diff {
     #[test]
     fn deploy_time_vars_and_secret_bindings_are_not_drift() {
         let (spec, lock, workers, mut live) = matching();
-        let platform = live.workers.get_mut("yonedarepo-staging-platform").unwrap();
+        let platform = live.workers.get_mut("yonedarepo-dev-platform").unwrap();
         let bindings = platform.settings["bindings"].as_array_mut().unwrap();
         bindings.push(json!({"name": "BUILD_REVISION", "type": "plain_text", "text": "abc"}));
         bindings.push(json!({"name": "OWNER_TOKEN", "type": "secret_text"}));
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-staging-platform"),
+            action(&rows, "worker", "yonedarepo-dev-platform"),
             Action::Unchanged
         );
     }
@@ -486,19 +480,15 @@ mod plan_diff {
         live.errors.push("Workers: HTTP 403".into());
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(
-                &rows,
-                "container",
-                "yonedarepo-staging-platform-checkcontainer"
-            ),
+            action(&rows, "container", "yonedarepo-dev-platform-checkcontainer"),
             Action::Unknown
         );
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-staging-agents"),
+            action(&rows, "worker", "yonedarepo-dev-agents"),
             Action::Unknown
         );
         assert_eq!(
-            action(&rows, "secret", "yonedarepo-staging-agents/VAULT_KEY"),
+            action(&rows, "secret", "yonedarepo-dev-agents/VAULT_KEY"),
             Action::Unknown
         );
         assert!(creations(&rows).is_empty());
@@ -508,17 +498,17 @@ mod plan_diff {
     fn undeclared_resources_under_the_prefix_are_extra() {
         let (spec, lock, workers, mut live) = matching();
         live.workers
-            .insert("yonedarepo-staging-scratch".into(), LiveWorker::default());
+            .insert("yonedarepo-dev-scratch".into(), LiveWorker::default());
         live.workers
             .insert("yonedarepo-platform-dev".into(), LiveWorker::default());
-        live.r2.insert("yonedarepo-staging-leftover".into());
+        live.r2.insert("yonedarepo-dev-leftover".into());
         let rows = diff(&spec, &lock, &workers, &live);
         assert_eq!(
-            action(&rows, "worker", "yonedarepo-staging-scratch"),
+            action(&rows, "worker", "yonedarepo-dev-scratch"),
             Action::Extra
         );
         assert_eq!(
-            action(&rows, "r2", "yonedarepo-staging-leftover"),
+            action(&rows, "r2", "yonedarepo-dev-leftover"),
             Action::Extra
         );
         assert!(
@@ -563,14 +553,14 @@ fn check_capacity_is_one_number_for_containers_and_their_consumer() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["queue"] == "yonedarepo-staging-platform-checks")
+        .find(|c| c["queue"] == "yonedarepo-dev-platform-checks")
         .unwrap();
     assert_eq!(consumer["max_concurrency"], json!(7));
     let jobs = config["queues"]["consumers"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|c| c["queue"] == "yonedarepo-staging-platform-jobs")
+        .find(|c| c["queue"] == "yonedarepo-dev-platform-jobs")
         .unwrap();
     assert_eq!(
         jobs["max_concurrency"],

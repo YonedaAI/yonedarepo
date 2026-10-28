@@ -101,8 +101,8 @@ test('the agent-layer Worker reaches the platform only through its public API', 
   assert.ok(seen.has('routes') && seen.has('agents-entrypoint'), [...seen].join());
   for (const module of seen)
     assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `agent Worker imports ${module}`);
-  const config = await readFile('cloudflare/wrangler.agents.jsonc', 'utf8');
+  const config = await readFile('cloudflare/wrangler.dev-agents.jsonc', 'utf8');
   for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'OBJECT_PUSHES', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
     assert.ok(!config.includes(`"${binding}"`), `agent Worker binds ${binding}`);
-  assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-platform-dev"/);
+  assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-dev-platform"/);
 });

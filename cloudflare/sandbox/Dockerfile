@@ -1,4 +1,4 @@
-# The sandbox-cli-v1 agent image (AgentSandbox, wrangler.staging-agents.jsonc `images.agent`),
+# The sandbox-cli-v1 agent image (AgentSandbox, wrangler.dev-agents.jsonc `images.agent`),
 # after Cloudflare's "Build a coding agent runner": git, Node.js, the pinned stock coding CLIs
 # (Claude Code, Codex CLI, opencode and MiMo Code; sandbox-cli.ts runs one per agent) and the
 # `yoneda` CLI with its Git remote helper, so `git clone yoneda::<platform>/<repo>` and

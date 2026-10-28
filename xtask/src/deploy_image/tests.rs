@@ -1,12 +1,12 @@
 use super::*;
 
 const ACCOUNT: &str = "f011d0ee02b23cad26b4b38151b204ad";
-const EXECUTION: &str = "yonedarepo-staging-agents-executioncontainer";
-const CHECK: &str = "yonedarepo-staging-platform-checkcontainer";
+const EXECUTION: &str = "yonedarepo-dev-agents-executioncontainer";
+const CHECK: &str = "yonedarepo-dev-platform-checkcontainer";
 const INPUTS: &str = "1111111111111111aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn image(tag: &str) -> String {
-    format!("registry.cloudflare.com/{ACCOUNT}/yonedarepo-staging-runtime:{tag}")
+    format!("registry.cloudflare.com/{ACCOUNT}/yonedarepo-dev-runtime:{tag}")
 }
 
 fn facts(deployed: &[(&str, Option<&str>)], records: &[(&str, &[&str])]) -> ImageFacts {
@@ -122,13 +122,13 @@ fn only_tagged_images_of_this_account_parse() {
     assert_eq!(
         parse_image(&image("ef9d08f6e761484c"), ACCOUNT),
         Some(RegistryImage {
-            repo: "yonedarepo-staging-runtime".into(),
+            repo: "yonedarepo-dev-runtime".into(),
             tag: "ef9d08f6e761484c".into()
         })
     );
     for other in [
         format!("registry.cloudflare.com/{ACCOUNT}/app@sha256:5a7b"),
-        "registry.cloudflare.com/other/yonedarepo-staging-runtime:ef9d".to_owned(),
+        "registry.cloudflare.com/other/yonedarepo-dev-runtime:ef9d".to_owned(),
         "docker.io/library/node:24".to_owned(),
     ] {
         assert_eq!(parse_image(&other, ACCOUNT), None, "{other}");

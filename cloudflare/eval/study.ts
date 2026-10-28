@@ -1,7 +1,8 @@
 // N9 evaluation study (paper Studies A/D, small scale): the synthetic codebase, its
-// layouts, the tasks, the acceptance oracle and the paper metrics. Shared by the scripted
-// workerd harness (tests/eval) and the model-driven eval Worker, so both arms measure
-// the same tasks the same way. Pure code, no imports: Node can also load it directly.
+// layouts, the tasks, the acceptance oracle and the paper metrics, used by the scripted
+// workerd harness (tests/eval, tests/workers/eval-study.test.ts) and tools/platform-eval.mjs.
+// The model-driven eval Worker that also used it was retired on 2026-10-27. Pure code, no
+// imports: Node can also load it directly.
 
 export type Json = Record<string, any>;
 export type Api = (

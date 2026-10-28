@@ -9,7 +9,7 @@ import {
   TelemetryError,
   WINDOW_MS,
 } from './analytics';
-import { dailyCap, type SuperfanEnv, type WatchTarget, watchTarget } from './config';
+import { dailyCap, type SuperfanEnv, type WatchSite, watchSite } from './config';
 import type { SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import {
@@ -27,7 +27,7 @@ const TELEMETRY_REASONS = ['config', 'disabled', 'token_missing', 'fetch_failed'
 
 export interface WatchDeps {
   /** A valid watch target, or the configuration error that prevents watching. */
-  target: WatchTarget | Error;
+  target: WatchSite | Error;
   analytics: AnalyticsSource;
   model: ModelClient | null;
   ledger: DurableObjectStub<SuperfanLedger>;
@@ -47,9 +47,9 @@ const failing = (reason: TelemetryError['reason'], detail: string): AnalyticsSou
 
 /** Builds the production dependencies; configuration faults surface as telemetry findings. */
 export function productionDeps(env: SuperfanEnv): WatchDeps {
-  let target: WatchTarget | Error;
+  let target: WatchSite | Error;
   try {
-    target = watchTarget(env);
+    target = watchSite(env);
   } catch (error) {
     target = error as Error;
   }

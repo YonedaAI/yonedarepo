@@ -13,7 +13,7 @@
 //   staging-kit.env   KIT_USERNAME / KIT_PASSWORD (created on first run)
 // Model keys stay in the Secrets Store: the owner route binds them to the kit account as
 // managed connections (MANAGED_PROVIDER_KEYS, staging only).
-//   staging-bench.env BENCH_KEY of the staging bench client Worker
+//   staging-bench.env BENCH_KEY of the dev bench client Worker (yonedarepo-dev-bench)
 // Usage: node tools/staging-realworld.mjs [--only 1,2,5] [--skip-bursts] [--project <id> --run <a> --run-b <b>]
 //        node tools/staging-realworld.mjs --only 12,13,14,15,16,17 [--api <platform origin>] [--cli-bin <dir>]
 //        node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17   (prod smoke)
@@ -79,8 +79,8 @@ import { BRIEFS, bindManagedProviders, chooseResult, createProject, deleteProjec
 const { values } = parseArgs({
   options: {
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
-    platform: { type: 'string', default: 'https://yonedarepo-staging-platform.mlong-f01.workers.dev' },
-    client: { type: 'string', default: 'https://yonedarepo-staging-bench.mlong-f01.workers.dev' },
+    platform: { type: 'string', default: 'https://yonedarepo-dev-platform.mlong-f01.workers.dev' },
+    client: { type: 'string', default: 'https://yonedarepo-dev-bench.mlong-f01.workers.dev' },
     // The platform API's own host, for the CLI items (yoneda::<api>/<repo> remotes, account MCP).
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     'cli-bin': { type: 'string' },

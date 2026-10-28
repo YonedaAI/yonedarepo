@@ -10,7 +10,7 @@ Preview gateway URLs are `${APP_ORIGIN}/v/${encodeURIComponent(preview_id)}/${en
 
 App mutations require an `Origin` header equal to their exact host origin. Input headers use an allowlist; the platform cookie, preview cookie, authorization, URL capability and internal authority metadata are removed before dispatch. Untrusted app responses cannot set cookies, emit arbitrary security headers or redirect to external hosts. CSP allows same-origin API requests and blocks browser outbound resources and service workers. Request/response bodies are bounded to 1 MiB/2 MiB; captured bundles are bounded to 2 MiB.
 
-The apps Worker needs `APP_DOMAIN`, `APP_ORIGIN`, `PLATFORM_ORIGIN`, `PLATFORM`, `APP_RUNNERS`, `OBJECTS` and `LOADER`. `wrangler.apps.jsonc` uses explicit existing development service/R2 names and compatibility date `2026-10-12`. Its exact gateway Custom Domain is declared; the app wildcard is staged pending parent-owned `www` route protection and proxied wildcard DNS. See [the live routing/TLS review and activation ordering](ROUTING.md). The parent owns zone changes, production configuration and deployment.
+The apps Worker needs `APP_DOMAIN`, `APP_ORIGIN`, `PLATFORM_ORIGIN`, `PLATFORM`, `APP_RUNNERS`, `OBJECTS` and `LOADER`. No environment deploys the apps Worker: its config (`wrangler.apps.jsonc`, bound to the Oct 14 production Worker) was removed with that production on 2026-10-27, and the production sites Worker took over `apps.yonedarepo.com` and the `*.yonedarepo.com` route for website previews. Deploying it again needs a new config in `infra/envs/` and the agent Worker's `APP_ORIGIN`. [ROUTING.md](ROUTING.md) is the historical routing/TLS review.
 
 ## Capture and execution
 
@@ -29,7 +29,6 @@ Loader IDs are `app:<repoID>:<bundle_digest>`. Explicit `{ js: source }` module 
 - `pnpm exec vitest run --config tests/workers/apps-runtime.config.ts`: 15 passed in actual workerd. Covers SQL API persistence, app/candidate/revision isolation, outbound denial, empty environment, publication fencing, migration history/restart/rollback, corrupt R2 and direct-access rejection, host capability exchange/revocation, exact-origin writes, credential stripping and the real event-booking multi-module API/UI.
 - `cargo test -p yoneda-core`: 18 passed; app policy/report tests included.
 - Owned Rust formatting, apps TypeScript and Biome checks: passed. Scoped all-target Clippy passed after the parent fixed its concurrent `team_prompt.rs` ordering warning. The parent owns the final combined gate.
-- `pnpm exec wrangler deploy --dry-run --config cloudflare/wrangler.apps.jsonc --outdir .local/stream-c-apps-build`: local bundling/config validation passed without an upload.
 
 CPU resource caps are configured; these local tests do not certify production CPU enforcement, wildcard TLS/routing, deployed authorization wiring or user acceptance. The rollback test intentionally logs a workerd constructor SQLite error for its invalid migration and still verifies recovery.
 
