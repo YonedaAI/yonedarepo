@@ -4,6 +4,7 @@
 //! consistent. The account's own row stays the authority: a lookup that finds a claim still
 //! checks the key with its account, so removal takes effect at once and a stale claim
 //! grants nothing.
+use super::op::SshOp;
 use super::*;
 use base64::{
     Engine,
@@ -26,10 +27,10 @@ pub(crate) struct PublicKey {
     pub fingerprint: String,
 }
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    match string(c, "op")?.as_str() {
-        "ssh_key_add" => add(db, c, now),
-        "ssh_key_list" => {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SshOp, now: i64) -> Result<Value> {
+    match op {
+        SshOp::KeyAdd => add(db, c, now),
+        SshOp::KeyList => {
             account(db)?;
             let rows = db.query(
                 "SELECT * FROM account_ssh_keys WHERE removed_at IS NULL ORDER BY created_at,id",
@@ -37,7 +38,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"keys": rows.iter().map(public).collect::<Vec<_>>()}))
         }
-        "ssh_key_check" => {
+        SshOp::KeyCheck => {
             let id = key_id(c)?;
             let row = db
                 .query(
@@ -65,7 +66,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             let orgs = super::orgs::hints(db)?;
             Ok(json!({"id":id,"fingerprint":row["fingerprint"],"username":username,"orgs":orgs}))
         }
-        "ssh_key_remove" => {
+        SshOp::KeyRemove => {
             account(db)?;
             let id = key_id(c)?;
             let found = db.query(
@@ -82,7 +83,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             audit(db, "ssh_key.removed", now, json!({"id":id}))?;
             Ok(json!({"id":id,"deleted":true,"fingerprint":row["fingerprint"]}))
         }
-        "ssh_fp_claim" => {
+        SshOp::FpClaim => {
             let fingerprint = fingerprint(c)?;
             let (account, key) = (string(c, "account")?, key_id(c)?);
             let held = claim(db, &fingerprint)?;
@@ -97,10 +98,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"claimed":true}))
         }
-        "ssh_fp_get" => {
+        SshOp::FpGet => {
             claim(db, &fingerprint(c)?)?.ok_or_else(|| Error::new("NOT_FOUND", "Unknown SSH key"))
         }
-        "ssh_fp_release" => {
+        SshOp::FpRelease => {
             db.query(
                 "DELETE FROM ssh_fingerprints WHERE fingerprint=? AND account=? AND key_id=?",
                 &[
@@ -111,7 +112,6 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({"released":true}))
         }
-        _ => Err(bad("Unknown SSH key command")),
     }
 }
 

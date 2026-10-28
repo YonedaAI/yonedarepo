@@ -5,6 +5,7 @@
 //! tokens, device login).
 mod accounts;
 mod commit_store;
+mod ops;
 mod platform_access;
 mod platform_build;
 mod platform_code;

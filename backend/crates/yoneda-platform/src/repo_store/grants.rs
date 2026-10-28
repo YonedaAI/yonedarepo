@@ -2,6 +2,7 @@
 //! Every read, search, write, review, land and contract record checks them; anything
 //! outside the grant is refused with one uniform error, so refusals reveal nothing about
 //! what exists there.
+use super::op::{MaintenanceOp, RepoOp as R, StoreOp};
 use crate::storage::bad;
 use serde_json::Value;
 use yoneda_core::{Error, Result, txlog::Access};
@@ -79,7 +80,7 @@ pub fn filter(grant: &Grant, items: Vec<Value>, key: &str) -> Vec<Value> {
 /// and reviewing, checking or landing a commit requires seeing all of its changes.
 pub fn precheck<S: crate::storage::SqlStore>(
     db: &S,
-    op: &str,
+    op: StoreOp,
     c: &Value,
     grant: &Grant,
 ) -> Result<()> {
@@ -87,32 +88,32 @@ pub fn precheck<S: crate::storage::SqlStore>(
         return Ok(());
     }
     match op {
-        "repo_prepare_commit" => {
+        StoreOp::Repo(R::PrepareCommit) => {
             for change in c["changes"].as_array().into_iter().flatten() {
                 require(grant, change["path"].as_str().unwrap_or_default())?;
             }
         }
-        "repo_begin_commit" => {
+        StoreOp::Repo(R::BeginCommit) => {
             for path in c["paths"].as_array().into_iter().flatten() {
                 require(grant, path.as_str().unwrap_or_default())?;
             }
         }
-        "repo_land" | "repo_land_enqueue" | "repo_review" | "repo_check" | "repo_check_request" => {
+        StoreOp::Repo(R::Land | R::LandEnqueue | R::Review | R::Check | R::CheckRequest) => {
             let id = super::rows::object_id(c, "commit")?;
             for touch in super::rows::touches(db, &id)? {
                 require(grant, &touch.path)?;
             }
         }
-        "repo_path_history" | "repo_record_contract" => {
+        StoreOp::Repo(R::PathHistory | R::RecordContract) => {
             require(grant, c["path"].as_str().unwrap_or_default())?
         }
-        "repo_contracts" => {
+        StoreOp::Repo(R::Contracts) => {
             for path in super::contracts::paths(c)? {
                 require(grant, &path)?;
             }
         }
         // Whether a hidden path was written since is itself hidden.
-        "repo_stale_reads" => {
+        StoreOp::Repo(R::StaleReads) => {
             for item in c["items"].as_array().into_iter().flatten() {
                 for entry in item["read_set"].as_array().into_iter().flatten() {
                     let access = Access::parse(entry.as_str().unwrap_or_default());
@@ -121,22 +122,23 @@ pub fn precheck<S: crate::storage::SqlStore>(
             }
         }
         // Check output can include any file's content.
-        "repo_check_run" | "repo_set_policy" | "repo_vacuum_plan" => return Err(outside()),
+        StoreOp::Repo(R::CheckRun | R::SetPolicy)
+        | StoreOp::Maintenance(MaintenanceOp::VacuumPlan) => return Err(outside()),
         _ => {}
     }
     Ok(())
 }
 
 /// Removes paths outside the grant from read results.
-pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
-    if op == "repo_status" {
+pub fn redact(op: StoreOp, grant: &Grant, mut result: Value) -> Value {
+    if op == StoreOp::Repo(R::Status) {
         result["grant"] = serde_json::json!(grant);
     }
     if grant.is_none() {
         return result;
     }
     match op {
-        "repo_commit" => {
+        StoreOp::Repo(R::Commit) => {
             let paths = result["paths"].as_array().cloned().unwrap_or_default();
             result["paths"] = Value::Array(filter(grant, paths, "path"));
             if let Some(files) = result["review_classes"]["files"].as_array().cloned() {
@@ -148,11 +150,11 @@ pub fn redact(op: &str, grant: &Grant, mut result: Value) -> Value {
                 .unwrap_or_default();
             result["symbol_touches"] = Value::Array(filter(grant, touches, "path"));
         }
-        "repo_contracts" | "repo_contract_list" => {
+        StoreOp::Repo(R::Contracts | R::ContractList) => {
             let records = result["records"].as_array().cloned().unwrap_or_default();
             result["records"] = Value::Array(filter(grant, records, "path"));
         }
-        "repo_txlog" => {
+        StoreOp::Repo(R::Txlog) => {
             for entry in result["entries"].as_array_mut().into_iter().flatten() {
                 let paths = entry["paths"].as_array().cloned().unwrap_or_default();
                 entry["paths"] = Value::Array(filter(grant, paths, "path"));

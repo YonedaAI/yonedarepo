@@ -7,21 +7,22 @@
 //! (`org_hint_*`) so the adapter knows whom to ask; hints never grant access. Deleting an
 //! org (its owners, once it owns no repositories: the adapter checks the listing) leaves a
 //! tombstone: the name is retired, so nothing a deleted org held can pass to a new account.
+use super::op::{OrgMemberOp, OrgOp};
 use super::*;
 
 const MEMBER_LIMIT: i64 = 1000;
 
-pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
-    match string(c, "op")?.as_str() {
-        "org_create" => create(db, c, now),
-        "org_access" => access(db, c),
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: OrgOp, now: i64) -> Result<Value> {
+    match op {
+        OrgOp::Create => create(db, c, now),
+        OrgOp::Access => access(db, c),
         // Whether a team exists (a repository grants roles only to existing teams).
-        "team_exists" => {
+        OrgOp::TeamExists => {
             org(db)?;
             let id = super::teams::id_of(db, c)?;
             Ok(json!({ "exists": id.is_some(), "id": id }))
         }
-        "org_hint_add" => {
+        OrgOp::HintAdd => {
             account(db)?;
             db.query(
                 "INSERT INTO account_orgs(org,added_at) VALUES(?,?) ON CONFLICT(org) DO NOTHING",
@@ -29,7 +30,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({ "orgs": hints(db)? }))
         }
-        "org_hint_remove" => {
+        OrgOp::HintRemove => {
             account(db)?;
             db.query(
                 "DELETE FROM account_orgs WHERE org=?",
@@ -37,34 +38,36 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> 
             )?;
             Ok(json!({ "orgs": hints(db)? }))
         }
-        op => {
-            let org = org(db)?;
-            let actor = string(c, "actor")?;
-            let role = role_of(db, &actor)?.ok_or_else(|| {
-                Error::new(
-                    "FORBIDDEN",
-                    format!("You are not a member of the {org} organization"),
-                )
-            })?;
-            let leaving = op == "org_member_remove" && c["account"] == actor.as_str();
-            if op != "org_show" && role != "owner" && !leaving {
-                return Err(Error::new(
-                    "FORBIDDEN",
-                    format!("Only an owner of {org} can do this"),
-                ));
-            }
-            let actor = format!("user:{actor}");
-            match op {
-                "org_show" => show(db, &org, &role),
-                "org_delete" => delete(db, c, &org, now),
-                "org_member_put" => member_put(db, c, &org, &actor, now),
-                "org_member_remove" => member_remove(db, c, &org, now),
-                "team_create" | "team_delete" | "team_member_put" | "team_member_remove" => {
-                    super::teams::handle(db, c, op, &actor, now)
-                }
-                _ => Err(Error::new("NOT_FOUND", "Unknown organization operation")),
-            }
-        }
+    }
+}
+
+/// Commands of the org's members: any member sees it and may leave; owners manage it.
+pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) -> Result<Value> {
+    let org = org(db)?;
+    let actor = string(c, "actor")?;
+    let role = role_of(db, &actor)?.ok_or_else(|| {
+        Error::new(
+            "FORBIDDEN",
+            format!("You are not a member of the {org} organization"),
+        )
+    })?;
+    let leaving = op == OrgMemberOp::MemberRemove && c["account"] == actor.as_str();
+    if op != OrgMemberOp::Show && role != "owner" && !leaving {
+        return Err(Error::new(
+            "FORBIDDEN",
+            format!("Only an owner of {org} can do this"),
+        ));
+    }
+    let actor = format!("user:{actor}");
+    match op {
+        OrgMemberOp::Show => show(db, &org, &role),
+        OrgMemberOp::Delete => delete(db, c, &org, now),
+        OrgMemberOp::MemberPut => member_put(db, c, &org, &actor, now),
+        OrgMemberOp::MemberRemove => member_remove(db, c, &org, now),
+        OrgMemberOp::TeamCreate => super::teams::create(db, c, &actor, now),
+        OrgMemberOp::TeamDelete => super::teams::delete(db, c, now),
+        OrgMemberOp::TeamMemberPut => super::teams::member_put(db, c, &actor, now),
+        OrgMemberOp::TeamMemberRemove => super::teams::member_remove(db, c, now),
     }
 }
 
