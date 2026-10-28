@@ -4,6 +4,7 @@
 // repository so access follows repository auth.
 import { afterAnswer } from './background';
 import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from './repo-bundles';
+import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
 import { stagedInShardOf, stagedInShards } from './repo-shards';
 import {
@@ -44,10 +45,6 @@ type Tier = keyof TierHits;
 type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown> };
 /** Object reads in flight in this isolate, by repository, kind and id. */
 const inFlight = new Map<string, Promise<Walked>>();
-const EDGE_ORIGIN = 'https://objects.yoneda.internal';
-/** How long a read waits for the edge before asking R2. An edge hit answers in
- * milliseconds; hosted burst read-backs (2026-10-28) saw Cache API calls of 24-33 s. */
-const EDGE_WAIT_MS = 500;
 
 /**
  * Tiered, content-addressed reads: parsed trees in memory -> Cache API (per colo; it
@@ -71,22 +68,6 @@ export class RepoObjects {
   private key(id: string) {
     return `platform/v1/${this.repo}/objects/${id}`;
   }
-  private edgeKey(id: string) {
-    return new Request(`${EDGE_ORIGIN}/${this.repo}/${id}`);
-  }
-  private async edgePut(id: string, kind: ObjectKind, body: Uint8Array | string) {
-    try {
-      await caches.default.put(
-        this.edgeKey(id),
-        new Response(body, {
-          headers: { 'cache-control': 'public, max-age=31536000, immutable', 'x-kind': kind },
-        }),
-      );
-    } catch {
-      // The edge tier is an optimization; R2 remains authoritative for cached objects.
-    }
-  }
-
   /** Writes both tiers (or one) in bounded chunks: unbounded fan-out stalls on large
    * imports. */
   async cache(objects: CachedObject[], tiers: 'all' | 'edge' | 'r2' = 'all') {
@@ -101,7 +82,8 @@ export class RepoObjects {
           timed('cache.edge', () =>
             Promise.all(
               chunk.map((o) =>
-                this.edgePut(
+                edgePut(
+                  this.repo,
                   o.id,
                   o.kind,
                   o.kind === 'blob' ? fromBase64(o.data_b64) : JSON.stringify(o),
@@ -139,34 +121,15 @@ export class RepoObjects {
     return afterAnswer(() => this.cache([object]));
   }
 
-  /** The edge copy of `id`, or null on a miss, a failure or a lookup slower than
-   * EDGE_WAIT_MS (the edge tier is an optimization: R2 answers instead). */
-  private async edgeHit(id: string, kind: ObjectKind): Promise<Uint8Array | null> {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const late = new Promise<null>((done) => {
-      timer = setTimeout(() => done(null), EDGE_WAIT_MS);
-    });
-    const lookup = caches.default
-      .match(this.edgeKey(id))
-      .then(async (hit) =>
-        hit && hit.headers.get('x-kind') === kind ? new Uint8Array(await hit.arrayBuffer()) : null,
-      )
-      .catch(() => null);
-    try {
-      return await Promise.race([lookup, late]);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
   /** Each tier a cold read asks is timed (`read.*`), so a slow read shows where it waited. */
   private async walk(id: string, kind: ObjectKind, stagedWith?: string): Promise<Walked> {
-    const edge = await timed('read.edge', () => this.edgeHit(id, kind));
-    if (edge) return { bytes: edge, tier: 'edge', filled: Promise.resolve() };
-    const cached = await timed('read.r2', () => this.env.OBJECTS.get(this.key(id)));
-    if (cached && (cached.customMetadata?.kind ?? kind) === kind) {
-      const bytes = new Uint8Array(await cached.arrayBuffer());
-      const filled = afterAnswer(() => timed('cache.edge', () => this.edgePut(id, kind, bytes)));
+    const copy = await cachedCopy(this.env, this.repo, this.key(id), id, kind);
+    if (copy?.tier === 'edge') return { ...copy, filled: Promise.resolve() };
+    if (copy) {
+      const { bytes } = copy;
+      const filled = afterAnswer(() =>
+        timed('cache.edge', () => edgePut(this.repo, id, kind, bytes)),
+      );
       return { bytes, tier: 'r2', filled };
     }
     const fromRaw = await timed('read.raw', () => this.recorded(id, kind));
