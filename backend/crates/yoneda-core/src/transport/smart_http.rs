@@ -2,8 +2,8 @@
 //! receive-pack command lists, upload-pack want/have requests, report-status and
 //! side-band framing. Everything here is framing and parsing; what a push or fetch may
 //! do is decided by the platform.
-use super::{ObjectId, invalid};
 use crate::Result;
+use crate::git_object::{ObjectId, invalid};
 
 const ZERO: &str = "0000000000000000000000000000000000000000";
 /// Side-band-64k carries at most 65520 bytes per packet, one of them the band.
@@ -31,10 +31,10 @@ pub fn side_band(band: u8, data: &[u8]) -> Vec<u8> {
 
 /// One pkt-line read from the front of a buffer: its payload (`None` for a flush) and the
 /// bytes it took.
-pub type Packet<'a> = (Option<&'a [u8]>, usize);
+type Packet<'a> = (Option<&'a [u8]>, usize);
 
 /// Reads the pkt-line at the front of `bytes`; `None` while it is not complete yet.
-pub fn next_pkt(bytes: &[u8]) -> Result<Option<Packet<'_>>> {
+fn next_pkt(bytes: &[u8]) -> Result<Option<Packet<'_>>> {
     let Some(head) = bytes.get(..4) else {
         return Ok(None);
     };
@@ -94,7 +94,7 @@ fn optional_id(hex: &str) -> Result<Option<ObjectId>> {
 }
 
 /// A ref name Git itself would accept (`git check-ref-format`), under `refs/`.
-pub fn valid_ref_name(name: &str) -> bool {
+fn valid_ref_name(name: &str) -> bool {
     name.starts_with("refs/")
         && name.len() <= 1024
         && !name.ends_with('/')

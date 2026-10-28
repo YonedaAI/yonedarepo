@@ -5,9 +5,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Result,
-    git_object::{
-        FLUSH, ObjectId, advertisement, pkt_line, report_status, side_band, upload_request,
-    },
+    git_object::ObjectId,
+    transport::{FLUSH, advertisement, pkt_line, report_status, side_band, upload_request},
 };
 
 pub(crate) const AGENT: &str = "agent=yonedarepo/1";

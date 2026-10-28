@@ -2,7 +2,8 @@
 //! streams in (command list, then the pack, resolved as it arrives), verification asks the
 //! adapter for what only the repository holds, and the verified objects stream out for the
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
-//! applies the ref updates through the authority's compare-and-swap paths.
+//! applies the ref updates through the authority's compare-and-swap paths, with each
+//! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
 use crate::platform_git_verify::{Step, Verifier};
 use crate::platform_objects::supplied_tree;
 use crate::storage::{bad, string};
@@ -10,10 +11,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use yoneda_core::{
     Result,
-    git_object::{
-        AnnotatedTag, CommandList, ObjectId, ObjectKind, PackLimits, PackReader, RefCommand,
-        command_list,
-    },
+    git_object::{AnnotatedTag, ObjectId, ObjectKind, PackLimits, PackReader},
+    transport::{CommandList, RefCommand, command_list},
 };
 
 /// Larger pushes go through `git-remote-yoneda`, which uploads commit by commit.
