@@ -2,7 +2,7 @@
 // verify action, and the locks endpoints answered without locking. The authority
 // (repo_store/lfs.rs) decides access (`read` downloads, `write` uploads, whole repository
 // only), the quota and which objects a repository holds; this adapter hands out presigned
-// R2 URLs (s3-presign.ts) so object bytes never pass through a Worker. An upload URL signs
+// R2 URLs (repo-s3-presign.ts) so object bytes never pass through a Worker. An upload URL signs
 // `x-amz-checksum-sha256` (the oid), so R2 refuses other bytes; verify then checks the
 // stored object's size and sha256 again before the authority records it. Objects live at
 // `platform/v1/<repo>/lfs/<oid>`, under the repository's prefix, so its purge removes them.
@@ -17,7 +17,7 @@ import { toHex } from './hmac';
 import { readJson } from './http';
 import { inheritObjects } from './repo-lfs-inherit';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { presign, type S3Credentials } from './s3-presign';
+import { presign, type S3Credentials } from './repo-s3-presign';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/info\/lfs\/(.+)$/;
